@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+.venv/
+venv/
+
+# Environment / secrets
+.env
+.env.*
+*.env
+secrets.*
+*.secret
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local runtime / debug
+logs/
+debug_outputs/
+tmp/
+temp/
+
+# If these contain secrets or local-only data, keep them out
+data/
+
+# Runtime / generated state
+*.lock
+*.jsonl
+runtime/heartbeats/
+runtime/telemetry/
+runtime/**/latest_*.json
+runtime/**/latest_*.txt
+
+# Generated charts / exports / local text dumps
+*.png
+*_dump.txt
+breadth_run_log*.txt
+calendar_dump.txt
+ingest_dump.txt
+momentum_dump.txt
+runner_dump.txt
+signal_dump.txt
+volatility_dump.txt
+
+# Local shell artifacts / accidental files
+Get-ScheduledTask
+powershell
+api-scrip-master-detailed.csv

@@ -1,0 +1,96 @@
+{
+  "sessions": [
+    {
+      "date": "2026-03-11",
+      "is_open": true,
+      "open_time": "09:15",
+      "close_time": "15:30",
+      "final_eod_ltp_time": "16:15",
+      "special_session": false,
+      "notes": "Normal trading day"
+    },
+    {
+      "date": "2026-03-12",
+      "is_open": true,
+      "open_time": "09:15",
+      "close_time": "15:30",
+      "final_eod_ltp_time": "16:15",
+      "special_session": false,
+      "notes": "Normal trading day"
+    },
+    {
+      "date": "2026-03-13",
+      "is_open": true,
+      "open_time": "09:15",
+      "close_time": "15:30",
+      "final_eod_ltp_time": "16:15",
+      "special_session": false,
+      "notes": "Normal trading day"
+    },
+    {
+      "date": "2026-03-14",
+      "is_open": false,
+      "notes": "Saturday"
+    },
+    {
+      "date": "2026-03-15",
+      "is_open": false,
+      "notes": "Sunday"
+    },
+    {
+      "date": "2026-03-16",
+      "is_open": true,
+      "open_time": "09:15",
+      "close_time": "15:30",
+      "final_eod_ltp_time": "16:15",
+      "special_session": false,
+      "notes": "Normal trading day"
+    },
+    {
+      "date": "2026-03-17",
+      "is_open": true,
+      "open_time": "09:15",
+      "close_time": "15:30",
+      "final_eod_ltp_time": "16:15",
+      "special_session": false,
+      "notes": "Normal trading day"
+    },
+    {
+      "date": "2026-03-18",
+      "is_open": true,
+      "open_time": "09:15",
+      "close_time": "15:30",
+      "final_eod_ltp_time": "16:15",
+      "special_session": false,
+      "notes": "Normal trading day"
+    },
+    {
+      "date": "2026-03-19",
+      "is_open": true,
+      "open_time": "09:15",
+      "close_time": "15:30",
+      "final_eod_ltp_time": "16:15",
+      "special_session": false,
+      "notes": "Normal trading day"
+    },
+    {
+      "date": "2026-03-20",
+      "is_open": true,
+      "open_time": "09:15",
+      "close_time": "15:30",
+      "final_eod_ltp_time": "16:15",
+      "special_session": false,
+      "notes": "Normal trading day"
+    },
+    {
+      "date": "2026-03-21",
+      "is_open": false,
+      "notes": "Saturday"
+    },
+    {
+      "date": "2026-03-22",
+      "is_open": false,
+      "notes": "Sunday"
+    }
+  ]
+}

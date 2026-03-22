@@ -1,0 +1,386 @@
+from __future__ import annotations
+
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from core.config import get_settings
+from core.supabase_client import SupabaseClient
+
+
+OUTPUT_FILE = Path(r"C:\GammaEnginePython\data\latest_trade_signal.json")
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def to_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def safe_float(value: Any, default: float = 0.0) -> float:
+    x = to_float(value)
+    return default if x is None else x
+
+
+def fetch_latest_market_state(sb: SupabaseClient, symbol: str) -> dict[str, Any]:
+    rows = sb.select(
+        table="market_state_snapshots",
+        select_expr="*",
+        filters={"symbol": f"eq.{symbol}"},
+        order="ts.desc",
+        limit=1,
+    )
+    if not rows:
+        raise RuntimeError(f"No market_state_snapshots rows found for symbol={symbol}")
+    return rows[0]
+
+
+def get_gamma_regime(state_row: dict[str, Any]) -> str:
+    gamma_features = state_row.get("gamma_features") or {}
+    return str(gamma_features.get("regime") or "UNKNOWN").strip().upper()
+
+
+def get_breadth_regime(state_row: dict[str, Any]) -> str:
+    breadth_features = state_row.get("breadth_features") or {}
+    return str(breadth_features.get("breadth_regime") or "UNKNOWN").strip().upper()
+
+
+def classify_volatility_regime(atm_iv_avg: float | None) -> str:
+    if atm_iv_avg is None:
+        return "UNKNOWN"
+    if atm_iv_avg < 18:
+        return "LOW_IV"
+    if atm_iv_avg < 26:
+        return "NORMAL_IV"
+    return "HIGH_IV"
+
+
+def compute_confidence_v4(
+    action: str,
+    gamma_regime: str,
+    breadth_regime: str,
+    gamma_concentration: float | None,
+    flip_distance: float | None,
+    straddle_slope: float | None,
+    dte: int | None,
+    expiry_type: str | None,
+    atm_iv_avg: float | None,
+    iv_skew: float | None,
+    volatility_regime: str,
+) -> float:
+    score = 50.0
+
+    if action in ("BUY_CE", "BUY_PE"):
+        score += 10.0
+    else:
+        score -= 8.0
+
+    if gamma_regime in ("LONG_GAMMA", "SHORT_GAMMA"):
+        score += 6.0
+    else:
+        score -= 8.0
+
+    if breadth_regime in ("BULLISH", "BEARISH"):
+        score += 12.0
+    elif breadth_regime == "TRANSITION":
+        score -= 15.0
+    else:
+        score -= 12.0
+
+    if gamma_concentration is not None:
+        if gamma_concentration >= 0.25:
+            score += 12.0
+        elif gamma_concentration >= 0.15:
+            score += 8.0
+        elif gamma_concentration >= 0.08:
+            score += 4.0
+        else:
+            score -= 8.0
+
+    if flip_distance is not None:
+        abs_fd = abs(flip_distance)
+        if abs_fd >= 500:
+            score += 10.0
+        elif abs_fd >= 150:
+            score += 6.0
+        elif abs_fd >= 50:
+            score += 3.0
+        else:
+            score -= 4.0
+
+    if straddle_slope is not None:
+        abs_slope = abs(straddle_slope)
+        if abs_slope >= 100:
+            score += 8.0
+        elif abs_slope >= 20:
+            score += 4.0
+        elif abs_slope < 5:
+            score -= 6.0
+
+    if dte is not None:
+        if dte < 0:
+            score -= 25.0
+        elif dte == 0:
+            score -= 20.0
+        elif dte == 1:
+            score -= 10.0
+        elif dte <= 3:
+            score += 2.0
+        elif dte <= 7:
+            score += 5.0
+        else:
+            score += 2.0
+
+    if expiry_type == "WEEKLY":
+        score += 2.0
+    elif expiry_type == "MONTHLY":
+        score += 1.0
+
+    if volatility_regime == "LOW_IV":
+        score += 4.0
+    elif volatility_regime == "NORMAL_IV":
+        score += 1.0
+    elif volatility_regime == "HIGH_IV":
+        score -= 10.0
+    else:
+        score -= 2.0
+
+    if atm_iv_avg is not None:
+        if atm_iv_avg >= 30:
+            score -= 6.0
+        elif atm_iv_avg >= 26:
+            score -= 3.0
+
+    if iv_skew is not None:
+        if abs(iv_skew) >= 2.0:
+            score -= 5.0
+        elif abs(iv_skew) >= 1.0:
+            score -= 2.0
+
+    score = max(0.0, min(score, 95.0))
+    return round(score, 2)
+
+
+def derive_entry_quality(action: str, confidence_score: float) -> str:
+    if action == "DO_NOTHING":
+        return "NO_TRADE"
+
+    if confidence_score >= 85:
+        return "A"
+    if confidence_score >= 72:
+        return "B"
+    if confidence_score >= 60:
+        return "C"
+    return "NO_TRADE"
+
+
+def build_signal_from_market_state(symbol: str, state_row: dict[str, Any]) -> dict[str, Any]:
+    gamma_features = state_row.get("gamma_features") or {}
+    breadth_features = state_row.get("breadth_features") or {}
+    volatility_features = state_row.get("volatility_features") or {}
+
+    ts = state_row.get("ts")
+    spot = to_float(state_row.get("spot"))
+    expiry_date = state_row.get("expiry_date")
+    expiry_type = state_row.get("expiry_type")
+    dte = state_row.get("dte")
+    gamma_run_id = state_row.get("gamma_run_id")
+
+    gamma_regime = get_gamma_regime(state_row)
+    breadth_regime = get_breadth_regime(state_row)
+    breadth_score = to_float(breadth_features.get("breadth_score"))
+
+    net_gex = to_float(gamma_features.get("net_gex"))
+    gamma_concentration = to_float(gamma_features.get("gamma_concentration"))
+    flip_level = to_float(gamma_features.get("flip_level"))
+    flip_distance = to_float(gamma_features.get("flip_distance"))
+    straddle_atm = to_float(gamma_features.get("straddle_atm"))
+    straddle_slope = to_float(gamma_features.get("straddle_slope"))
+
+    atm_strike = volatility_features.get("atm_strike")
+    atm_call_iv = to_float(volatility_features.get("atm_call_iv"))
+    atm_put_iv = to_float(volatility_features.get("atm_put_iv"))
+    atm_iv_avg = to_float(volatility_features.get("atm_iv_avg"))
+    iv_skew = to_float(volatility_features.get("iv_skew"))
+
+    volatility_regime = classify_volatility_regime(atm_iv_avg)
+
+    action = "DO_NOTHING"
+    direction_bias = "NEUTRAL"
+    reasons: list[str] = []
+    cautions: list[str] = []
+
+    if gamma_regime == "LONG_GAMMA" and breadth_regime == "BULLISH":
+        action = "BUY_CE"
+        direction_bias = "BULLISH"
+        reasons.append("Gamma regime is LONG_GAMMA")
+        reasons.append("Breadth regime is BULLISH")
+    elif gamma_regime == "SHORT_GAMMA" and breadth_regime == "BEARISH":
+        action = "BUY_PE"
+        direction_bias = "BEARISH"
+        reasons.append("Gamma regime is SHORT_GAMMA")
+        reasons.append("Breadth regime is BEARISH")
+    else:
+        action = "DO_NOTHING"
+        direction_bias = "NEUTRAL"
+        reasons.append("Gamma and breadth are not aligned for a directional options-buy signal")
+
+    if breadth_regime == "TRANSITION":
+        cautions.append("Breadth regime is TRANSITION")
+    elif breadth_regime == "UNKNOWN":
+        cautions.append("Breadth regime could not be determined")
+
+    if gamma_regime == "UNKNOWN":
+        cautions.append("Gamma regime could not be determined")
+
+    if gamma_concentration is not None and gamma_concentration < 0.08:
+        cautions.append("Gamma concentration is weak")
+
+    if straddle_slope is not None and abs(straddle_slope) < 5:
+        cautions.append("ATM straddle slope is relatively flat")
+
+    if dte is None:
+        cautions.append("DTE could not be determined")
+    elif dte < 0:
+        cautions.append("Expiry appears to be in the past")
+    elif dte == 0:
+        cautions.append("Same-day expiry raises execution risk")
+    elif dte == 1:
+        cautions.append("One-day-to-expiry raises gamma/theta risk")
+
+    if expiry_type is None:
+        cautions.append("Expiry type could not be determined")
+    elif expiry_type == "WEEKLY":
+        cautions.append("Weekly expiry can be more volatile")
+
+    if volatility_regime == "UNKNOWN":
+        cautions.append("Volatility regime could not be determined")
+    elif volatility_regime == "HIGH_IV":
+        cautions.append("IV is elevated for outright premium buying")
+
+    if atm_iv_avg is not None and atm_iv_avg >= 30:
+        cautions.append("ATM IV average is very high")
+
+    if iv_skew is not None and abs(iv_skew) >= 2.0:
+        cautions.append("IV skew is extreme")
+    elif iv_skew is not None and abs(iv_skew) >= 1.0:
+        cautions.append("IV skew is materially tilted")
+
+    confidence = compute_confidence_v4(
+        action=action,
+        gamma_regime=gamma_regime,
+        breadth_regime=breadth_regime,
+        gamma_concentration=gamma_concentration,
+        flip_distance=flip_distance,
+        straddle_slope=straddle_slope,
+        dte=dte,
+        expiry_type=expiry_type,
+        atm_iv_avg=atm_iv_avg,
+        iv_skew=iv_skew,
+        volatility_regime=volatility_regime,
+    )
+
+    trade_allowed = True
+    if action == "DO_NOTHING":
+        trade_allowed = False
+    if confidence < 60:
+        trade_allowed = False
+    if dte is not None and dte < 0:
+        trade_allowed = False
+    if breadth_regime in ("UNKNOWN", "TRANSITION"):
+        trade_allowed = False
+    if gamma_regime == "UNKNOWN":
+        trade_allowed = False
+
+    if volatility_regime == "HIGH_IV":
+        trade_allowed = False
+
+    entry_quality = derive_entry_quality(action, confidence)
+    if not trade_allowed:
+        entry_quality = "NO_TRADE"
+
+    return {
+        "ts": utc_now_iso(),
+        "market_state_ts": ts,
+        "symbol": symbol,
+        "expiry_date": expiry_date,
+        "expiry_type": expiry_type,
+        "dte": dte,
+        "spot": spot,
+        "action": action,
+        "trade_allowed": trade_allowed,
+        "entry_quality": entry_quality,
+        "direction_bias": direction_bias,
+        "confidence_score": confidence,
+        "gamma_regime": gamma_regime,
+        "breadth_regime": breadth_regime,
+        "breadth_score": breadth_score,
+        "volatility_regime": volatility_regime,
+        "atm_strike": atm_strike,
+        "atm_call_iv": atm_call_iv,
+        "atm_put_iv": atm_put_iv,
+        "atm_iv_avg": atm_iv_avg,
+        "iv_skew": iv_skew,
+        "net_gex": net_gex,
+        "gamma_concentration": gamma_concentration,
+        "flip_level": flip_level,
+        "flip_distance": flip_distance,
+        "straddle_atm": straddle_atm,
+        "straddle_slope": straddle_slope,
+        "source_run_id": gamma_run_id,
+        "breadth_source_table": breadth_features.get("source_table"),
+        "reasons": reasons,
+        "cautions": cautions,
+        "signal_source": "market_state_snapshots",
+    }
+
+
+def save_signal(signal: dict[str, Any]) -> None:
+    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with OUTPUT_FILE.open("w", encoding="utf-8") as f:
+        json.dump(signal, f, indent=2)
+
+
+def main() -> None:
+    if len(sys.argv) < 2:
+        raise RuntimeError("Usage: python .\\build_trade_signal_local.py NIFTY")
+
+    settings = get_settings()
+    symbol = sys.argv[1].strip().upper()
+
+    print("=" * 72)
+    print("Gamma Engine - Signal Engine V4")
+    print("=" * 72)
+    print(f"Base dir: {settings.base_dir}")
+    print(f"Symbol: {symbol}")
+    print("-" * 72)
+
+    sb = SupabaseClient()
+
+    market_state_row = fetch_latest_market_state(sb, symbol)
+    signal = build_signal_from_market_state(symbol, market_state_row)
+
+    print("Latest market state row:")
+    print(json.dumps(market_state_row, indent=2, default=str))
+    print("-" * 72)
+
+    print("Computed signal:")
+    print(json.dumps(signal, indent=2, default=str))
+    print("-" * 72)
+
+    save_signal(signal)
+    print(f"Signal saved to: {OUTPUT_FILE}")
+    print("SIGNAL ENGINE V4 COMPLETED")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,410 @@
+﻿from __future__ import annotations
+
+import os
+import sys
+import time
+import json
+import signal
+import atexit
+import subprocess
+import re
+from datetime import datetime, timedelta
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+IST = ZoneInfo("Asia/Kolkata")
+
+BASE_DIR = Path(r"C:\GammaEnginePython")
+LOG_PATH = BASE_DIR / "option_snapshot_intraday_runner.log"
+LOCK_PATH = BASE_DIR / "run_option_snapshot_intraday_runner.lock"
+
+SYMBOLS = ["NIFTY", "SENSEX"]
+
+SESSION_START_HOUR = 9
+SESSION_START_MINUTE = 15
+SESSION_END_HOUR = 15
+SESSION_END_MINUTE = 30
+
+CYCLE_MINUTES = 5
+
+TIMEOUT_LIVE_DEFAULT = 240
+TIMEOUT_SHADOW_DEFAULT = 180
+TIMEOUT_BREADTH = 300
+TIMEOUT_WCB = 180
+TIMEOUT_INGEST = 240
+TIMEOUT_ARCHIVE = 180
+TIMEOUT_GAMMA = 240
+TIMEOUT_VOL = 240
+TIMEOUT_MOMENTUM = 240
+TIMEOUT_STATE = 240
+TIMEOUT_SIGNAL = 240
+TIMEOUT_SHADOW_SIGNAL = 180
+
+SHADOW_FAILURE_IS_NON_BLOCKING = True
+
+LOCK_STALE_SECONDS = 900
+
+UUID_RE = re.compile(
+    r"\b[0-9a-fA-F]{8}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{12}\b"
+)
+
+
+def now_ist() -> datetime:
+    return datetime.now(IST)
+
+
+def ts() -> str:
+    return now_ist().strftime("%Y-%m-%d %H:%M:%S %Z")
+
+
+def log(message: str) -> None:
+    line = f"[{ts()}] {message}"
+    print(line, flush=True)
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with LOG_PATH.open("a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def is_market_session(dt: datetime) -> bool:
+    start = dt.replace(hour=SESSION_START_HOUR, minute=SESSION_START_MINUTE, second=0, microsecond=0)
+    end = dt.replace(hour=SESSION_END_HOUR, minute=SESSION_END_MINUTE, second=0, microsecond=0)
+    return start <= dt <= end
+
+
+def next_cycle_time(dt: datetime) -> datetime:
+    dt = dt.replace(second=0, microsecond=0)
+    minute_bucket = (dt.minute // CYCLE_MINUTES) * CYCLE_MINUTES
+    current_bucket = dt.replace(minute=minute_bucket)
+    if dt == current_bucket:
+        return dt
+    return current_bucket + timedelta(minutes=CYCLE_MINUTES)
+
+
+def next_session_start(dt: datetime) -> datetime:
+    candidate = dt.replace(hour=SESSION_START_HOUR, minute=SESSION_START_MINUTE, second=0, microsecond=0)
+    if dt < candidate:
+        return candidate
+    return candidate + timedelta(days=1)
+
+
+def sleep_until(target: datetime) -> None:
+    while True:
+        now = now_ist()
+        remaining = (target - now).total_seconds()
+        if remaining <= 0:
+            return
+        time.sleep(min(remaining, 5))
+
+
+def acquire_lock() -> None:
+    if LOCK_PATH.exists():
+        try:
+            raw = LOCK_PATH.read_text(encoding="utf-8").strip()
+            data = json.loads(raw) if raw else {}
+        except Exception:
+            data = {}
+
+        pid = data.get("pid")
+        created_at = data.get("created_at_epoch", 0)
+        age = time.time() - float(created_at or 0)
+
+        stale = age > LOCK_STALE_SECONDS
+        alive = False
+
+        if pid:
+            try:
+                if os.name == "nt":
+                    proc = subprocess.run(
+                        ["tasklist", "/FI", f"PID eq {pid}"],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
+                    alive = str(pid) in proc.stdout
+                else:
+                    os.kill(int(pid), 0)
+                    alive = True
+            except Exception:
+                alive = False
+
+        if alive and not stale:
+            log(f"Another runner appears active (pid={pid}). Exiting.")
+            sys.exit(255)
+
+        log(f"Reclaiming stale/dead lock file (pid={pid}, stale={stale}, alive={alive}).")
+        try:
+            LOCK_PATH.unlink(missing_ok=True)
+        except Exception as e:
+            log(f"WARNING: Failed to remove stale lock: {e}")
+
+    payload = {
+        "pid": os.getpid(),
+        "created_at_epoch": time.time(),
+        "created_at_local": ts(),
+    }
+    LOCK_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    log(f"Lock acquired: {LOCK_PATH}")
+
+
+def release_lock() -> None:
+    try:
+        if LOCK_PATH.exists():
+            LOCK_PATH.unlink()
+            log(f"Lock released: {LOCK_PATH}")
+    except Exception as e:
+        log(f"WARNING: Failed to release lock: {e}")
+
+
+def handle_exit(signum=None, frame=None) -> None:
+    if signum is not None:
+        log(f"Received signal {signum}. Shutting down.")
+    release_lock()
+    sys.exit(0)
+
+
+def run_cmd(args: list[str], timeout: int, step_name: str, non_blocking: bool = False) -> tuple[bool, str]:
+    cmd_str = " ".join(f'"{a}"' if " " in a else a for a in args)
+    log(f"START {step_name}: {cmd_str}")
+
+    try:
+        proc = subprocess.run(
+            args,
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        stdout = (proc.stdout or "").strip()
+        stderr = (proc.stderr or "").strip()
+
+        if stdout:
+            log(f"{step_name} STDOUT:\n{stdout}")
+        if stderr:
+            log(f"{step_name} STDERR:\n{stderr}")
+
+        if proc.returncode != 0:
+            msg = f"{step_name} failed with return code {proc.returncode}"
+            if non_blocking:
+                log(f"WARNING: {msg} (non-blocking)")
+                return False, stdout
+            raise RuntimeError(msg)
+
+        log(f"END {step_name}: success")
+        return True, stdout
+
+    except subprocess.TimeoutExpired:
+        msg = f"{step_name} timed out after {timeout}s"
+        if non_blocking:
+            log(f"WARNING: {msg} (non-blocking)")
+            return False, ""
+        raise RuntimeError(msg)
+
+
+def run_with_fallbacks(
+    script_name: str,
+    arg_variants: list[list[str]],
+    timeout: int,
+    step_name: str,
+    non_blocking: bool = False,
+) -> tuple[bool, str]:
+    py = sys.executable
+    last_error = None
+
+    for variant in arg_variants:
+        args = [py, str(BASE_DIR / script_name), *variant]
+        try:
+            ok, out = run_cmd(args, timeout=timeout, step_name=step_name, non_blocking=False)
+            return ok, out
+        except Exception as e:
+            last_error = e
+            log(f"{step_name}: variant failed -> {variant} :: {e}")
+
+    if non_blocking:
+        log(f"WARNING: {step_name} failed across all variants (non-blocking): {last_error}")
+        return False, ""
+
+    raise RuntimeError(f"{step_name} failed across all variants: {last_error}")
+
+
+def extract_run_id(stdout: str) -> str:
+    if not stdout:
+        raise RuntimeError("No stdout returned by ingest step; cannot extract run_id.")
+
+    matches = UUID_RE.findall(stdout)
+    if not matches:
+        raise RuntimeError("Unable to find UUID run_id in ingest stdout.")
+
+    for line in stdout.splitlines():
+        if "run id" in line.lower():
+            m = UUID_RE.search(line)
+            if m:
+                return m.group(0)
+
+    return matches[-1]
+
+
+def run_live_cycle_for_symbol(symbol: str) -> None:
+    log(f"========== LIVE PIPELINE START [{symbol}] ==========")
+
+    ok, ingest_out = run_with_fallbacks(
+        "ingest_option_chain_local.py",
+        [[symbol]],
+        timeout=TIMEOUT_INGEST,
+        step_name=f"{symbol} ingest_option_chain",
+    )
+    if not ok:
+        raise RuntimeError(f"{symbol} ingest failed unexpectedly.")
+
+    run_id = extract_run_id(ingest_out)
+    log(f"{symbol} run_id extracted: {run_id}")
+
+    run_with_fallbacks(
+        "archive_option_chain_history.py",
+        [[run_id]],
+        timeout=TIMEOUT_ARCHIVE,
+        step_name=f"{symbol} archive_option_chain_history",
+    )
+
+    run_with_fallbacks(
+        "compute_gamma_metrics_local.py",
+        [[run_id, symbol], [symbol, run_id], [run_id]],
+        timeout=TIMEOUT_GAMMA,
+        step_name=f"{symbol} compute_gamma_metrics",
+    )
+
+    run_with_fallbacks(
+        "compute_volatility_metrics_local.py",
+        [[run_id, symbol], [symbol, run_id], [run_id]],
+        timeout=TIMEOUT_VOL,
+        step_name=f"{symbol} compute_volatility_metrics",
+    )
+
+    run_with_fallbacks(
+        "build_momentum_features_local.py",
+        [[symbol]],
+        timeout=TIMEOUT_MOMENTUM,
+        step_name=f"{symbol} build_momentum_features_live",
+    )
+
+    run_with_fallbacks(
+        "build_market_state_snapshot_local.py",
+        [[symbol]],
+        timeout=TIMEOUT_STATE,
+        step_name=f"{symbol} build_market_state",
+    )
+
+    run_with_fallbacks(
+        "build_trade_signal_local.py",
+        [[symbol]],
+        timeout=TIMEOUT_SIGNAL,
+        step_name=f"{symbol} build_trade_signal_live",
+    )
+
+    # -------------------------
+    # SHADOW PIPELINE (NON-BLOCKING, PARALLEL)
+    # Runs after the live path is finalized.
+    # -------------------------
+
+    run_with_fallbacks(
+        "compute_options_flow_local.py",
+        [[run_id, symbol], [symbol, run_id], [run_id], [symbol]],
+        timeout=TIMEOUT_SHADOW_DEFAULT,
+        step_name=f"{symbol} compute_options_flow",
+        non_blocking=SHADOW_FAILURE_IS_NON_BLOCKING,
+    )
+
+    run_with_fallbacks(
+        "compute_momentum_features_v2_local.py",
+        [[symbol]],
+        timeout=TIMEOUT_SHADOW_DEFAULT,
+        step_name=f"{symbol} compute_momentum_features_v2",
+        non_blocking=SHADOW_FAILURE_IS_NON_BLOCKING,
+    )
+
+    run_with_fallbacks(
+        "compute_smdm_local.py",
+        [[symbol, run_id], [run_id, symbol], [symbol], [run_id]],
+        timeout=TIMEOUT_SHADOW_DEFAULT,
+        step_name=f"{symbol} compute_smdm",
+        non_blocking=SHADOW_FAILURE_IS_NON_BLOCKING,
+    )
+
+    run_with_fallbacks(
+        "build_shadow_signal_v3_local.py",
+        [[symbol]],
+        timeout=TIMEOUT_SHADOW_SIGNAL,
+        step_name=f"{symbol} build_shadow_signal_v3",
+        non_blocking=SHADOW_FAILURE_IS_NON_BLOCKING,
+    )
+
+    log(f"========== LIVE PIPELINE END [{symbol}] ==========")
+
+
+def run_full_cycle() -> None:
+    cycle_started = now_ist()
+    log("==================================================")
+    log("CYCLE START")
+    log("==================================================")
+
+    run_with_fallbacks(
+        "ingest_breadth_intraday_local.py",
+        [[]],
+        timeout=TIMEOUT_BREADTH,
+        step_name="ingest_breadth_intraday",
+    )
+
+    run_with_fallbacks(
+        "build_wcb_snapshot_local.py",
+        [[], ["NIFTY"], ["SENSEX"]],
+        timeout=TIMEOUT_WCB,
+        step_name="build_wcb_snapshot",
+    )
+
+    for symbol in SYMBOLS:
+        run_live_cycle_for_symbol(symbol)
+
+    duration = (now_ist() - cycle_started).total_seconds()
+    log(f"CYCLE END — duration={duration:.1f}s")
+    log("")
+
+
+def main() -> None:
+    BASE_DIR.mkdir(parents=True, exist_ok=True)
+    signal.signal(signal.SIGINT, handle_exit)
+    signal.signal(signal.SIGTERM, handle_exit)
+    atexit.register(release_lock)
+
+    acquire_lock()
+    log("Runner started.")
+
+    while True:
+        now = now_ist()
+
+        if not is_market_session(now):
+            target = next_session_start(now)
+            log(f"Outside market session. Sleeping until {target.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            sleep_until(target)
+            continue
+
+        target = next_cycle_time(now)
+        if target > now:
+            log(f"Waiting for next 5-minute boundary: {target.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            sleep_until(target)
+
+        now = now_ist()
+        if not is_market_session(now):
+            continue
+
+        try:
+            run_full_cycle()
+        except Exception as e:
+            log(f"FATAL CYCLE ERROR: {e}")
+            raise
+
+
+if __name__ == "__main__":
+    main()

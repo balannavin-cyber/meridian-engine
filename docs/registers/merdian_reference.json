@@ -1223,15 +1223,9 @@
       "governance": "Must reach 30+ sessions of DO_NOTHING outcome data before any threshold changes. Clock started V18A."
     },
     "E-02": {
-      "title": "Three-zone gamma model \u00e2\u20ac\u201d SHADOW LIVE",
-      "priority": "HIGH",
-      "status": "SHADOW LIVE (V18A) \u00e2\u20ac\u201d gamma_zone active in compute_gamma_metrics_local.py",
-      "fix": "Observe shadow for 2 weeks minimum. Then assess live promotion via Phase 4 gate.",
-      "thresholds": {
-        "HIGH_GAMMA": "flip_distance_pct < 0.5%",
-        "MID_GAMMA": "flip_distance_pct 0.5% to 1.5%",
-        "LOW_GAMMA": "flip_distance_pct > 1.5%"
-      }
+      "title": "Three-zone gamma model \u2014 shadow live",
+      "priority": "MEDIUM",
+      "status": "SHADOW LIVE (V18A). gamma_zone field active. 2-week observation in progress. 291 shadow rows accumulated as of 2026-03-27. Agreement with live: NIFTY 78.6%, SENSEX 77.1%. Phase 3 gate requires 10 sessions \u2014 at 6 sessions. Do not promote until gate passes."
     },
     "E-06": {
       "title": "Outcome engine migration from deprecated table",

@@ -159,38 +159,43 @@ def check_gamma_metrics_columns():
 
 def check_market_state_snapshots_uniqueness():
     """
-    C-01: market_state_snapshots should have UNIQUE(symbol, ts) constraint.
-    Without it, duplicate rows accumulate and corrupt signal output.
-    This check queries information_schema — if no unique constraint, returns WARN.
+    C-01: market_state_snapshots must have UNIQUE(symbol, ts) constraint.
+    Queries information_schema via Supabase to confirm constraint exists.
     """
-    # Query Supabase information_schema via the API
-    # We check by attempting to query table constraints
-    # Since we can't run arbitrary SQL easily without an RPC function,
-    # we use a proxy: check if there are duplicate (symbol, ts) rows
+    # Query information_schema for the constraint
     rows, err = _sb_table_get(
-        "market_state_snapshots",
-        "select=symbol,ts&limit=500&order=ts.desc"
+        "information_schema.table_constraints",
+        "table_name=eq.market_state_snapshots"
+        "&constraint_type=eq.UNIQUE"
+        "&select=constraint_name,constraint_type"
     )
+
     if err:
-        return WARN, f"Could not query market_state_snapshots: {err}"
+        # Fallback: check for duplicates if we can't query information_schema
+        rows2, err2 = _sb_table_get(
+            "market_state_snapshots",
+            "select=symbol,ts&limit=500&order=ts.desc"
+        )
+        if err2:
+            return WARN, f"Could not verify C-01 constraint: {err}"
+        seen = set()
+        dupes = 0
+        for row in (rows2 or []):
+            key = (row.get("symbol"), row.get("ts"))
+            if key in seen:
+                dupes += 1
+            seen.add(key)
+        if dupes > 0:
+            return FAIL, f"C-01 ACTIVE: {dupes} duplicate rows found. Add UNIQUE constraint."
+        return WARN, "C-01: Cannot verify constraint via information_schema. No duplicates in last 500 rows."
 
     if not rows:
-        return PASS, "market_state_snapshots empty — no duplicates possible yet"
+        return FAIL, ("C-01 OPEN: UNIQUE(symbol,ts) constraint missing on market_state_snapshots. "
+                      "Run: ALTER TABLE public.market_state_snapshots "
+                      "ADD CONSTRAINT uq_market_state_symbol_ts UNIQUE (symbol, ts);")
 
-    # Check for duplicates in what we got
-    seen = set()
-    dupes = 0
-    for row in rows:
-        key = (row.get("symbol"), row.get("ts"))
-        if key in seen:
-            dupes += 1
-        seen.add(key)
-
-    if dupes > 0:
-        return FAIL, (f"C-01 ACTIVE: {dupes} duplicate (symbol,ts) rows found in last 500 rows of "
-                      f"market_state_snapshots. Fix: add UNIQUE constraint + change INSERT to UPSERT.")
-    return WARN, ("C-01 OPEN: No duplicates in last 500 rows but UNIQUE constraint not yet confirmed. "
-                  "Apply fix before this becomes PASS.")
+    constraint_names = [r.get("constraint_name", "") for r in rows]
+    return PASS, f"C-01 CLOSED: UNIQUE constraint confirmed — {constraint_names}"
 
 def check_trading_calendar_today():
     """

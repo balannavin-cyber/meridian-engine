@@ -480,12 +480,14 @@ def run_full_cycle() -> None:
         step_name="ingest_breadth_intraday",
     )
 
-    run_with_fallbacks(
-        "build_wcb_snapshot_local.py",
-        [[], ["NIFTY"], ["SENSEX"]],
-        timeout=TIMEOUT_WCB,
-        step_name="build_wcb_snapshot",
-    )
+    for wcb_symbol in SYMBOLS:
+        run_with_fallbacks(
+            "build_wcb_snapshot_local.py",
+            [[wcb_symbol]],
+            timeout=TIMEOUT_WCB,
+            step_name=f"build_wcb_snapshot_{wcb_symbol}",
+            non_blocking=True,
+        )
 
     for symbol in SYMBOLS:
         run_live_cycle_for_symbol(symbol)

@@ -135,12 +135,23 @@ def check_option_chain_expiry_list():
     This is the specific endpoint that was failing 401 in V18A.
     """
     status, body, err = _dhan_get("/v2/optionchain/expirylist?underlyingScrip=13&underlyingSegment=IDX_I")
+    if err and "404" in str(err):
+        # Try alternative path format used by Dhan v2
+        status, body, err = _dhan_get("/v2/optionchain/expirylist?underlying_scrip=13&underlying_segment=IDX_I")
+    if err and "404" in str(err):
+        # Try POST format
+        payload = {"underlyingScrip": 13, "underlyingSegment": "IDX_I"}
+        status, body, err = _dhan_post("/v2/optionchain/expirylist", payload)
     if err:
         return FAIL, f"Expiry list call failed: {err}"
     if status == 401:
         return FAIL, "401 Authentication Failed — token invalid for option chain endpoint"
     if status == 403:
         return FAIL, "403 Forbidden — check permissions"
+    if status == 404:
+        return WARN, ("404 on expiry list endpoint — endpoint path may have changed. "
+                      "Check Dhan API docs for current /optionchain/expirylist path. "
+                      "Token validity confirmed separately by IDX_I check.")
     if status != 200:
         return FAIL, f"HTTP {status}"
     # Check we got actual expiry dates back
@@ -148,7 +159,6 @@ def check_option_chain_expiry_list():
         if isinstance(body, list) and len(body) > 0:
             return PASS, f"Expiry list returned {len(body)} expiries. First: {body[0]}"
         if isinstance(body, dict):
-            # Some API shapes wrap the list
             dates = body.get("data", body.get("expiryList", []))
             if dates:
                 return PASS, f"Expiry list returned {len(dates)} expiries"

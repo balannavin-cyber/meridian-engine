@@ -251,19 +251,20 @@ def check_signal_regret_log_schema():
 def check_data_freshness():
     """
     Check how stale the most recent data is for key tables.
-    WARN if stale but not enough to block (session may not have started yet).
-    FAIL if critically stale during market hours.
+    Only meaningful during market hours on trading days.
     """
     import datetime
 
-    now_utc = datetime.datetime.utcnow()
-    hour_utc = now_utc.hour
-
-    # Only check freshness during market hours (03:45 UTC = 09:15 IST to 10:00 UTC = 15:30 IST)
+    now_utc   = datetime.datetime.utcnow()
+    hour_utc  = now_utc.hour
+    # Market hours: 03:45-10:00 UTC = 09:15-15:30 IST
     market_hours = (3 <= hour_utc <= 10)
 
+    if not market_hours:
+        return PASS, "Outside market hours — freshness check not applicable"
+
     tables_to_check = [
-        ("option_chain_snapshots", "created_at", 600),   # 10 min threshold
+        ("option_chain_snapshots", "created_at", 600),
         ("gamma_metrics",          "created_at", 600),
         ("market_state_snapshots", "created_at", 600),
     ]
@@ -272,26 +273,22 @@ def check_data_freshness():
     for table, ts_col, threshold_sec in tables_to_check:
         rows, err = _sb_table_get(table, f"select={ts_col}&order={ts_col}.desc&limit=1")
         if err or not rows:
-            if market_hours:
-                issues.append(f"{table}: no recent rows or query failed")
+            issues.append(f"{table}: no recent rows or query failed")
             continue
         ts_str = rows[0].get(ts_col, "")
         if ts_str:
             try:
-                # Parse ISO timestamp
                 ts = datetime.datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
                 if ts.tzinfo is None:
                     ts = ts.replace(tzinfo=datetime.timezone.utc)
                 lag_sec = (datetime.datetime.now(datetime.timezone.utc) - ts).total_seconds()
-                if market_hours and lag_sec > threshold_sec:
+                if lag_sec > threshold_sec:
                     issues.append(f"{table}: lag={int(lag_sec)}s (threshold={threshold_sec}s)")
             except Exception:
                 pass
 
-    if issues and market_hours:
+    if issues:
         return WARN, f"Stale data during market hours: {'; '.join(issues)}"
-    if not market_hours:
-        return PASS, "Outside market hours — freshness check skipped"
     return PASS, "All checked tables have recent data"
 
 # ── Stage Runner ──────────────────────────────────────────────────

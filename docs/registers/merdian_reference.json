@@ -1206,7 +1206,7 @@
     "A-04": {
       "title": "AWS EOD ingestion cursor-gate logic",
       "priority": "HIGH",
-      "status": "OPEN",
+      "status": "CLOSED (2026-03-31) \u2014 cursor-gate logic confirmed present in ingest_equity_eod_local.py on AWS (Git sync). The script is not called by any AWS cron \u2014 that is a separate item (AWS post-market EOD automation, tracked as A-02 territory). Cursor-gate portability is complete.",
       "fix": "Port V17D1 cursor-gate logic to AWS ingest_equity_eod_local.py. Validate end-to-end."
     },
     "D-06": {

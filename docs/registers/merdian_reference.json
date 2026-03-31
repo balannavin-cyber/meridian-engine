@@ -1188,7 +1188,7 @@
     "A-01": {
       "title": "Port 4 intraday guards to AWS runner",
       "priority": "HIGH",
-      "status": "OPEN",
+      "status": "CLOSED (2026-03-31) \u2014 All 4 guards confirmed present in run_merdian_shadow_runner.py. guard_trading_calendar, guard_session_state, guard_breadth_coverage (95% threshold), guard_ltp_staleness (20min threshold). Implemented in V17D1.",
       "fix": "run_merdian_shadow_runner.py needs same 4-layer guard system as local: calendar, session-state, coverage, staleness."
     },
     "A-02": {

@@ -471,7 +471,7 @@ def main() -> None:
     first = option_rows[0]
     symbol = str(first["symbol"]).upper()
     expiry_date = parse_iso_date(first.get("expiry_date"))
-    ts_value = parse_iso_dt(first.get("ts"))
+    ts_value = parse_iso_dt(first.get("ts") or first.get("created_at"))
     spot = safe_float(first.get("spot"))
 
     if expiry_date is None:

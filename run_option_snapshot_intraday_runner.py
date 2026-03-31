@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import atexit
 import json
@@ -20,8 +20,8 @@ from trading_calendar import (
 
 IST = ZoneInfo("Asia/Kolkata")
 
-BASE_DIR = Path(r"C:\GammaEnginePython")
-LOG_PATH = BASE_DIR / "option_snapshot_intraday_runner.log"
+BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
+LOG_PATH = BASE_DIR / "logs" / "option_snapshot_intraday_runner.log"
 LOCK_PATH = BASE_DIR / "run_option_snapshot_intraday_runner.lock"
 
 SYMBOLS = ["NIFTY", "SENSEX"]
@@ -45,6 +45,14 @@ SHADOW_FAILURE_IS_NON_BLOCKING = True
 
 LOCK_STALE_SECONDS = 900
 LOCK_HEARTBEAT_UPDATE_SECONDS = 15
+
+# V18A-02: Auth failure patterns that trigger circuit-breaker
+AUTH_FAILURE_PATTERNS = [
+    "401",
+    "Authentication Failed",
+    "Client ID or Token invalid",
+    "accessToken",
+]
 
 UUID_RE = re.compile(
     r"\b[0-9a-fA-F]{8}-"
@@ -174,9 +182,6 @@ def acquire_lock() -> None:
         elif age is not None:
             stale = age > LOCK_STALE_SECONDS
 
-        # IMPORTANT:
-        # Do NOT reclaim a lock if the process still appears alive.
-        # That risks double runners.
         if alive:
             log(
                 f"Another runner appears active (pid={pid}, stale={stale}, "
@@ -311,6 +316,45 @@ def extract_run_id(stdout: str) -> str:
     return matches[-1]
 
 
+# ── V18A-02: Circuit-Breaker ──────────────────────────────────────────────────
+# runner alive != system valid.
+# If ingest_option_chain fails with a 401 auth error, downstream steps
+# (gamma, volatility, market state, signal) must NOT run — they would produce
+# stale or absent outputs that look valid but are not.
+# This circuit-breaker detects auth failure in ingest stdout and halts the
+# pipeline for that symbol for that cycle, firing a Telegram alert.
+# Reference: V18A Block 2 Discovery 5, V18A-02 Open Item.
+
+def _is_auth_failure(text: str) -> bool:
+    """Return True if text contains a Dhan 401 authentication failure pattern."""
+    return any(pattern in text for pattern in AUTH_FAILURE_PATTERNS)
+
+
+def _send_circuit_breaker_alert(message: str) -> None:
+    """Send Telegram alert for circuit-breaker events. Non-blocking."""
+    try:
+        import urllib.request as _urllib
+        token   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+        chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+        if not token or not chat_id:
+            log("CIRCUIT-BREAKER: Telegram credentials not set — alert not sent")
+            return
+        url     = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = json.dumps({
+            "chat_id": chat_id,
+            "text": f"\u26d4 MERDIAN CIRCUIT-BREAKER\n{message}"
+        }).encode()
+        req = _urllib.Request(url, data=payload,
+                              headers={"Content-Type": "application/json"})
+        with _urllib.urlopen(req, timeout=10):
+            pass
+        log("CIRCUIT-BREAKER: Telegram alert sent")
+    except Exception as e:
+        log(f"CIRCUIT-BREAKER: Alert send failed (non-blocking): {e}")
+
+# ── End V18A-02 helpers ───────────────────────────────────────────────────────
+
+
 def run_live_cycle_for_symbol(symbol: str) -> None:
     log(f"========== LIVE PIPELINE START [{symbol}] ==========")
 
@@ -322,6 +366,25 @@ def run_live_cycle_for_symbol(symbol: str) -> None:
     )
     if not ok:
         raise RuntimeError(f"{symbol} ingest failed unexpectedly.")
+
+    # ── V18A-02: Auth failure circuit-breaker ─────────────────────────────────
+    # Check ingest output for 401 / auth failure before proceeding downstream.
+    # If auth is broken: log, alert, and return early — do NOT run gamma/state/signal.
+    # This prevents the system from appearing alive while producing invalid outputs.
+    if _is_auth_failure(ingest_out):
+        msg = (
+            f"OPTION_AUTH_BREAK [{symbol}] — ingest_option_chain returned a Dhan "
+            f"authentication failure (401 / token invalid). "
+            f"Halting downstream pipeline (gamma / volatility / state / signal) "
+            f"for this symbol this cycle. "
+            f"Run refresh_dhan_token.py to restore. "
+            f"runner alive != system valid."
+        )
+        log(f"CIRCUIT-BREAKER: {msg}")
+        _send_circuit_breaker_alert(msg)
+        log(f"========== LIVE PIPELINE HALTED [{symbol}] — auth failure ==========")
+        return  # do NOT proceed to gamma / state / signal
+    # ── End circuit-breaker ───────────────────────────────────────────────────
 
     run_id = extract_run_id(ingest_out)
     log(f"{symbol} run_id extracted: {run_id}")

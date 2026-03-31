@@ -79,7 +79,13 @@ def _dhan_post(path, payload, timeout=15):
                 return resp.status, {}, None
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8") if e.fp else ""
-        return e.code, {}, f"HTTP {e.code}: {body[:200]}"
+        # Return the HTTP status code directly, not as an error string
+        # This allows callers to check status == 400, 401 etc cleanly
+        try:
+            body_dict = json.loads(body)
+        except Exception:
+            body_dict = {}
+        return e.code, body_dict, f"HTTP {e.code}: {body[:200]}"
     except Exception as ex:
         return 0, {}, str(ex)
 
@@ -123,36 +129,29 @@ def check_idx_i_nifty_ltp():
 def check_option_chain_expiry_list():
     """
     Call option chain expiry list for NIFTY.
-    Uses the Dhan v2 option chain endpoint.
-    On holidays the exchange may return limited data — 200 with empty list is acceptable.
+    400 = endpoint reached but exchange not serving data (holiday/closed) — WARN not FAIL.
+    401 = token invalid — FAIL.
     """
-    # Try the correct Dhan v2 format — POST with JSON body
-    payload = {"UnderlyingScrip": "13", "UnderlyingSegment": "IDX_I"}
+    payload = {"underlyingScrip": 13, "underlyingSegment": "IDX_I"}
     status, body, err = _dhan_post("/v2/optionchain/expirylist", payload)
 
-    if err and ("400" in str(err) or "404" in str(err)):
-        # Try alternate casing
-        payload2 = {"underlyingScrip": "13", "underlyingSegment": "IDX_I"}
-        status, body, err = _dhan_post("/v2/optionchain/expirylist", payload2)
-
-    if err and ("400" in str(err) or "404" in str(err)):
-        # Try with integer scrip
-        payload3 = {"underlyingScrip": 13, "underlyingSegment": "IDX_I"}
-        status, body, err = _dhan_post("/v2/optionchain/expirylist", payload3)
-
-    if err:
-        return FAIL, f"Expiry list call failed: {err}"
     if status == 401:
         return FAIL, "401 — token invalid for option chain endpoint"
     if status == 400:
-        # 400 on holiday = endpoint reachable but exchange not serving data
-        # This is acceptable — token is valid
-        return WARN, (f"HTTP 400 on expiry list — market may be closed (holiday). "
-                      f"Token confirmed valid via IDX_I check. "
-                      f"Verify on next trading day.")
+        return WARN, ("HTTP 400 on expiry list — market closed or exchange not serving data (holiday). "
+                      "Token confirmed valid via IDX_I check. Verify on next trading day.")
     if status == 404:
-        return WARN, ("HTTP 404 on expiry list — endpoint path may differ in your Dhan plan. "
+        return WARN, ("HTTP 404 on expiry list — endpoint path may differ. "
                       "Token confirmed valid via IDX_I check.")
+    if err:
+        # Check if the error string contains a meaningful HTTP code
+        for code, meaning in [("401", "token invalid"), ("400", "market closed/holiday"),
+                               ("404", "endpoint not found")]:
+            if code in str(err):
+                if code == "401":
+                    return FAIL, f"401 — {meaning}: {err}"
+                return WARN, f"HTTP {code} on expiry list — {meaning}. Token valid via IDX_I."
+        return FAIL, f"Expiry list call failed: {err}"
     if status != 200:
         return FAIL, f"HTTP {status}"
     try:

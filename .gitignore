@@ -1,56 +1,18 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.log
-.venv/
-venv/
+﻿# Backup files
+*.BAK_*
+*.pre_C01_backup.py
+*.pre_C02_backup.py
+*.pre_v17d_step1_backup.py
+*.PRE_V17D1_MARKET_STATE_UPSERT_BACKUP.py
+*.PRE_GROUP1_C04_BACKUP.py
+*.PRE_EOD_HARDENING_BACKUP.py
+*.RESTORED_FROM_BACKUP.py
+*.pre_premarket_fix.DEAD
+run_equity_eod_until_done.pre_C02_backup.py
+build_market_state_snapshot_local.20260327_084658.pre_C01.py
 
-# Environment / secrets
-.env
-.env.*
-*.env
-secrets.*
-*.secret
-*.pem
-*.key
+# Runtime generated files
+runtime/
 
-# OS / editor
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-
-# Local runtime / debug
-logs/
-debug_outputs/
-tmp/
-temp/
-
-# If these contain secrets or local-only data, keep them out
-data/
-
-# Runtime / generated state
-*.lock
-*.jsonl
-runtime/heartbeats/
-runtime/telemetry/
-runtime/**/latest_*.json
-runtime/**/latest_*.txt
-
-# Generated charts / exports / local text dumps
-*.png
-*_dump.txt
-breadth_run_log*.txt
-calendar_dump.txt
-ingest_dump.txt
-momentum_dump.txt
-runner_dump.txt
-signal_dump.txt
-volatility_dump.txt
-
-# Local shell artifacts / accidental files
-Get-ScheduledTask
-powershell
-api-scrip-master-detailed.csv
+# Temporary files
+tmp_*.sql

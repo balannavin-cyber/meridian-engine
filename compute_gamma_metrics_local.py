@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import math
 import os
+import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 from supabase import Client, create_client
@@ -13,24 +13,26 @@ from supabase import Client, create_client
 
 # ============================================================
 # MERDIAN - compute_gamma_metrics_local.py
-# Full-file replacement
 #
 # Purpose:
 #   1. Read one option-chain batch from option_chain_snapshots via run_id
-#   2. FILTER OUT unusable rows (gamma == 0 or oi <= 0)
+#   2. Filter out unusable rows (gamma == 0 or oi <= 0)
 #   3. Build signed strike exposure map
-#   4. Compute a genuine flip level ONLY if a real zero-crossing exists
+#   4. Compute a genuine flip level only if a real zero-crossing exists
 #   5. If no zero-crossing exists, write flip_level = NULL
-#
-# Key permanent fix in this version:
-#   - NO "min strike" fallback
-#   - zero-gamma / zero-OI rows are excluded before flip computation
+#   6. E-02: add gamma_zone using canonical flip_distance_pct
 # ============================================================
 
 
-# -----------------------------
-# Environment / Supabase client
-# -----------------------------
+UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{12}$"
+)
+
+
 def _load_env() -> Client:
     load_dotenv()
 
@@ -43,7 +45,7 @@ def _load_env() -> Client:
     if not service_role_key:
         raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY not found in environment or .env")
 
-    if not supabase_url.startswith("http://") and not supabase_url.startswith("https://"):
+    if not supabase_url.startswith(("http://", "https://")):
         raise RuntimeError(
             f"SUPABASE_URL is invalid: {supabase_url!r}. It must start with https://"
         )
@@ -54,9 +56,6 @@ def _load_env() -> Client:
 SUPABASE: Client = _load_env()
 
 
-# -----------------------------
-# Helpers
-# -----------------------------
 def _rows(result: Any) -> list[dict[str, Any]]:
     if result is None:
         return []
@@ -75,15 +74,6 @@ def to_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def to_int(value: Any, default: int = 0) -> int:
-    try:
-        if value is None or value == "":
-            return default
-        return int(float(value))
-    except Exception:
-        return default
-
-
 def as_iso_ts(value: Any) -> str:
     if isinstance(value, str):
         return value
@@ -94,15 +84,11 @@ def as_iso_ts(value: Any) -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def signed_gamma_exposure(row: dict[str, Any], spot: float) -> float:
-    """
-    Dealer-style signed gamma exposure proxy.
+def is_uuid_like(value: str) -> bool:
+    return bool(UUID_RE.match(value.strip()))
 
-    Convention used in MERDIAN docs:
-      exposure ~ gamma * OI * spot^2
-      CE positive
-      PE negative
-    """
+
+def signed_gamma_exposure(row: dict[str, Any], spot: float) -> float:
     gamma = to_float(row.get("gamma"))
     oi = to_float(row.get("oi"))
     option_type = str(row.get("option_type", "")).upper()
@@ -111,10 +97,7 @@ def signed_gamma_exposure(row: dict[str, Any], spot: float) -> float:
         return 0.0
 
     base = gamma * oi * (spot ** 2)
-
-    if option_type == "PE":
-        return -base
-    return base
+    return -base if option_type == "PE" else base
 
 
 @dataclass
@@ -129,20 +112,14 @@ class GammaMetricsResult:
     flip_level: float | None
     flip_distance: float | None
     flip_distance_pct: float | None
+    gamma_zone: str | None
     straddle_atm: float | None
     straddle_slope: float | None
     regime: str
     expansion_probability: float | None
 
 
-# -----------------------------
-# Data fetch
-# -----------------------------
 def fetch_option_chain_rows(run_id: str, expected_symbol: str | None = None) -> list[dict[str, Any]]:
-    """
-    Fetch all rows for one run_id.
-    If expected_symbol is provided, filter by that symbol.
-    """
     page_size = 1000
     offset = 0
     out: list[dict[str, Any]] = []
@@ -170,9 +147,6 @@ def fetch_option_chain_rows(run_id: str, expected_symbol: str | None = None) -> 
 
 
 def fetch_symbols_for_run_id(run_id: str) -> dict[str, int]:
-    """
-    Diagnostic helper for clearer error messages.
-    """
     result = (
         SUPABASE.table("option_chain_snapshots")
         .select("symbol")
@@ -189,22 +163,13 @@ def fetch_symbols_for_run_id(run_id: str) -> dict[str, int]:
     return counts
 
 
-# -----------------------------
-# Chain cleaning / metrics
-# -----------------------------
 def filter_usable_option_rows(option_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """
-    Permanent integrity fix:
-      keep only rows with gamma != 0 and oi > 0
-    """
     usable: list[dict[str, Any]] = []
-
     for row in option_rows:
         gamma = to_float(row.get("gamma"))
         oi = to_float(row.get("oi"))
         if gamma != 0.0 and oi > 0.0:
             usable.append(row)
-
     return usable
 
 
@@ -250,88 +215,30 @@ def infer_strike_step(option_rows: list[dict[str, Any]]) -> float | None:
     if len(strikes) < 2:
         return None
 
-    diffs = []
+    diffs: list[float] = []
     for i in range(1, len(strikes)):
         diff = strikes[i] - strikes[i - 1]
         if diff > 0:
             diffs.append(diff)
 
-    if not diffs:
-        return None
+    return min(diffs) if diffs else None
 
-    return min(diffs)
+
+def compute_net_gex(option_rows: list[dict[str, Any]], spot: float) -> float:
+    return sum(signed_gamma_exposure(r, spot) for r in option_rows)
 
 
 def build_strike_exposure_map(option_rows: list[dict[str, Any]], spot: float) -> dict[float, float]:
-    """
-    Aggregate signed gamma exposure by strike.
-    """
     strike_map: dict[float, float] = {}
-
     for row in option_rows:
         strike = to_float(row.get("strike"))
-        if strike <= 0.0:
+        if strike <= 0:
             continue
-
-        exposure = signed_gamma_exposure(row, spot)
-        if exposure == 0.0:
-            continue
-
-        strike_map[strike] = strike_map.get(strike, 0.0) + exposure
-
-    return dict(sorted(strike_map.items(), key=lambda kv: kv[0]))
+        strike_map[strike] = strike_map.get(strike, 0.0) + signed_gamma_exposure(row, spot)
+    return dict(sorted(strike_map.items(), key=lambda x: x[0]))
 
 
-def compute_flip_level(strike_map: dict[float, float]) -> float | None:
-    """
-    Compute zero-crossing of cumulative exposure across strikes.
-
-    Permanent fix:
-      - If no real zero-crossing exists, return None
-      - DO NOT fall back to min strike
-    """
-    if len(strike_map) < 2:
-        return None
-
-    ordered = sorted(strike_map.items(), key=lambda kv: kv[0])
-
-    cumulative_points: list[tuple[float, float]] = []
-    running = 0.0
-
-    for strike, exposure in ordered:
-        running += exposure
-        cumulative_points.append((strike, running))
-
-    prev_strike, prev_cum = cumulative_points[0]
-
-    if prev_cum == 0.0:
-        return float(prev_strike)
-
-    for strike, cum in cumulative_points[1:]:
-        if cum == 0.0:
-            return float(strike)
-
-        sign_changed = (prev_cum < 0.0 < cum) or (prev_cum > 0.0 > cum)
-        if sign_changed:
-            # Linear interpolation between the two cumulative points
-            denom = cum - prev_cum
-            if denom == 0:
-                return float(strike)
-
-            frac = (0.0 - prev_cum) / denom
-            interpolated = prev_strike + frac * (strike - prev_strike)
-            return float(interpolated)
-
-        prev_strike, prev_cum = strike, cum
-
-    # Permanent fix: no fake fallback
-    return None
-
-
-def compute_gamma_concentration(strike_map: dict[float, float], spot: float, strike_step: float | None) -> float | None:
-    """
-    Share of absolute exposure concentrated near ATM.
-    """
+def compute_gamma_concentration(strike_map: dict[float, float]) -> float | None:
     if not strike_map:
         return None
 
@@ -339,81 +246,111 @@ def compute_gamma_concentration(strike_map: dict[float, float], spot: float, str
     if total_abs <= 0:
         return None
 
-    if not strike_step or strike_step <= 0:
-        window = 3
-        near_abs = 0.0
-        ordered = sorted(strike_map.items(), key=lambda kv: abs(kv[0] - spot))
-        for _, exposure in ordered[:window]:
-            near_abs += abs(exposure)
-        return near_abs / total_abs
-
-    near_abs = 0.0
-    for strike, exposure in strike_map.items():
-        if abs(strike - spot) <= (3 * strike_step):
-            near_abs += abs(exposure)
-
-    return near_abs / total_abs
+    max_abs = max(abs(v) for v in strike_map.values())
+    return max_abs / total_abs if max_abs > 0 else None
 
 
-def compute_straddle_atm(option_rows: list[dict[str, Any]], spot: float) -> tuple[float | None, float | None]:
-    """
-    Returns:
-      (straddle_atm, straddle_slope)
+def compute_flip_level(strike_map: dict[float, float]) -> float | None:
+    if not strike_map:
+        return None
 
-    straddle_slope here is an approximate local slope:
-      upper_neighbor_straddle - lower_neighbor_straddle
-    """
+    strikes = sorted(strike_map.keys())
+    cumulative_points: list[tuple[float, float]] = []
+
+    running = 0.0
+    for strike in strikes:
+        running += strike_map[strike]
+        cumulative_points.append((strike, running))
+
+    if len(cumulative_points) < 2:
+        return None
+
+    for i in range(1, len(cumulative_points)):
+        strike_prev, cum_prev = cumulative_points[i - 1]
+        strike_curr, cum_curr = cumulative_points[i]
+
+        if cum_prev == 0.0:
+            return strike_prev
+        if cum_curr == 0.0:
+            return strike_curr
+
+        if (cum_prev < 0.0 < cum_curr) or (cum_prev > 0.0 > cum_curr):
+            denom = cum_curr - cum_prev
+            if denom == 0:
+                return None
+            frac = -cum_prev / denom
+            return strike_prev + frac * (strike_curr - strike_prev)
+
+    return None
+
+
+def find_atm_strike(option_rows: list[dict[str, Any]], spot: float) -> float | None:
     strikes = sorted({to_float(r.get("strike")) for r in option_rows if to_float(r.get("strike")) > 0})
     if not strikes:
-        return None, None
+        return None
+    return min(strikes, key=lambda s: abs(s - spot))
 
-    atm_strike = min(strikes, key=lambda s: abs(s - spot))
 
-    def ltp_for(strike: float, option_type: str) -> float | None:
-        candidates = [
-            r for r in option_rows
-            if to_float(r.get("strike")) == strike
-            and str(r.get("option_type", "")).upper() == option_type
-        ]
-        if not candidates:
-            return None
+def compute_straddle_atm(option_rows: list[dict[str, Any]], spot: float) -> float | None:
+    atm_strike = find_atm_strike(option_rows, spot)
+    if atm_strike is None:
+        return None
 
-        # Prefer positive LTP if available
-        positive = [to_float(r.get("ltp")) for r in candidates if to_float(r.get("ltp")) > 0]
-        if positive:
-            return positive[0]
+    ce_ltp = None
+    pe_ltp = None
 
-        vals = [to_float(r.get("ltp")) for r in candidates]
-        return vals[0] if vals else None
+    for row in option_rows:
+        strike = to_float(row.get("strike"))
+        opt_type = str(row.get("option_type", "")).upper()
+        if strike != atm_strike:
+            continue
+        if opt_type == "CE":
+            ce_ltp = to_float(row.get("ltp"), default=0.0)
+        elif opt_type == "PE":
+            pe_ltp = to_float(row.get("ltp"), default=0.0)
 
-    atm_ce = ltp_for(atm_strike, "CE")
-    atm_pe = ltp_for(atm_strike, "PE")
+    if ce_ltp is None or pe_ltp is None:
+        return None
 
-    if atm_ce is None or atm_pe is None:
-        return None, None
+    return ce_ltp + pe_ltp
 
-    straddle_atm = atm_ce + atm_pe
 
+def compute_straddle_slope(option_rows: list[dict[str, Any]], spot: float) -> float | None:
+    atm_strike = find_atm_strike(option_rows, spot)
     strike_step = infer_strike_step(option_rows)
-    if not strike_step:
-        return straddle_atm, None
 
-    lower_strike = atm_strike - strike_step
-    upper_strike = atm_strike + strike_step
+    if atm_strike is None or strike_step is None or strike_step <= 0:
+        return None
 
-    lower_ce = ltp_for(lower_strike, "CE")
-    lower_pe = ltp_for(lower_strike, "PE")
-    upper_ce = ltp_for(upper_strike, "CE")
-    upper_pe = ltp_for(upper_strike, "PE")
+    lower = atm_strike - strike_step
+    upper = atm_strike + strike_step
 
-    lower_straddle = (lower_ce + lower_pe) if (lower_ce is not None and lower_pe is not None) else None
-    upper_straddle = (upper_ce + upper_pe) if (upper_ce is not None and upper_pe is not None) else None
+    def straddle_for_strike(target_strike: float) -> float | None:
+        ce_ltp = None
+        pe_ltp = None
 
-    if lower_straddle is None or upper_straddle is None:
-        return straddle_atm, None
+        for row in option_rows:
+            strike = to_float(row.get("strike"))
+            opt_type = str(row.get("option_type", "")).upper()
+            if strike != target_strike:
+                continue
+            if opt_type == "CE":
+                ce_ltp = to_float(row.get("ltp"), default=0.0)
+            elif opt_type == "PE":
+                pe_ltp = to_float(row.get("ltp"), default=0.0)
 
-    straddle_slope = upper_straddle - lower_straddle
-    return straddle_atm, straddle_slope
+        if ce_ltp is None or pe_ltp is None:
+            return None
+        return ce_ltp + pe_ltp
+
+    lower_straddle = straddle_for_strike(lower)
+    atm_straddle = straddle_for_strike(atm_strike)
+    upper_straddle = straddle_for_strike(upper)
+
+    if lower_straddle is None or atm_straddle is None or upper_straddle is None:
+        return None
+
+    return ((upper_straddle - atm_straddle) + (atm_straddle - lower_straddle)) / 2.0
 
 
 def compute_expansion_probability(
@@ -421,87 +358,71 @@ def compute_expansion_probability(
     flip_distance_pct: float | None,
     net_gex: float,
 ) -> float | None:
-    """
-    Lightweight placeholder probability proxy.
-    Keeps field populated without pretending false precision.
-    """
     if gamma_concentration is None:
         return None
 
-    # Base probability rises when concentration is low and flip is close.
-    base = 0.50
+    score = 45.0 if net_gex < 0 else 20.0
+
+    if gamma_concentration >= 0.25:
+        score += 20.0
+    elif gamma_concentration >= 0.15:
+        score += 12.0
+    else:
+        score += 5.0
 
     if flip_distance_pct is not None:
         if flip_distance_pct < 0.5:
-            base += 0.20
+            score += 20.0
         elif flip_distance_pct < 1.5:
-            base += 0.10
+            score += 10.0
         else:
-            base -= 0.05
+            score += 2.0
 
-    # Lower concentration implies easier expansion
-    base += max(0.0, 0.20 - gamma_concentration) * 0.75
-
-    # Short gamma mildly increases expansion tendency
-    if net_gex < 0:
-        base += 0.05
-
-    return max(0.0, min(1.0, base))
+    return max(0.0, min(100.0, score))
 
 
 def determine_regime(net_gex: float, flip_level: float | None) -> str:
-    """
-    Keep regime honest.
-    If no valid flip exists, mark that explicitly.
-    """
     if flip_level is None:
         return "NO_FLIP"
-
-    if net_gex > 0:
-        return "LONG_GAMMA"
-    if net_gex < 0:
-        return "SHORT_GAMMA"
-    return "NEUTRAL_GAMMA"
+    return "LONG_GAMMA" if net_gex >= 0 else "SHORT_GAMMA"
 
 
-# -----------------------------
-# Core compute
-# -----------------------------
-def compute(run_id: str, expected_symbol: str | None = None) -> GammaMetricsResult:
-    option_rows = fetch_option_chain_rows(run_id, expected_symbol=expected_symbol)
+def determine_gamma_zone(flip_distance_pct: float | None) -> str | None:
+    if flip_distance_pct is None:
+        return None
+    if flip_distance_pct < 0.5:
+        return "HIGH_GAMMA"
+    if flip_distance_pct < 1.5:
+        return "MID_GAMMA"
+    return "LOW_GAMMA"
 
-    if not option_rows:
+
+def compute_gamma_metrics(run_id: str, expected_symbol: str | None = None) -> GammaMetricsResult:
+    option_rows_raw = fetch_option_chain_rows(run_id, expected_symbol=expected_symbol)
+
+    if not option_rows_raw:
         available = fetch_symbols_for_run_id(run_id)
+        if expected_symbol:
+            raise RuntimeError(
+                f"No option_chain_snapshots rows found for run_id={run_id}, symbol={expected_symbol}. "
+                f"Available symbols for this run_id: {available}"
+            )
+        raise RuntimeError(f"No option_chain_snapshots rows found for run_id={run_id}")
+
+    symbol = infer_symbol(option_rows_raw, expected_symbol=expected_symbol)
+    spot = infer_spot(option_rows_raw)
+    expiry_date = infer_expiry_date(option_rows_raw)
+    ts = infer_ts(option_rows_raw)
+
+    option_rows = filter_usable_option_rows(option_rows_raw)
+    if not option_rows:
         raise RuntimeError(
-            f"No option_chain_snapshots rows found for run_id={run_id}"
-            + (f" and symbol={expected_symbol}" if expected_symbol else "")
-            + f". Available symbols for this run_id: {available}"
+            f"All option rows were filtered out as unusable for run_id={run_id}, symbol={symbol}"
         )
 
-    symbol = infer_symbol(option_rows, expected_symbol=expected_symbol)
-    spot = infer_spot(option_rows)
-    expiry_date = infer_expiry_date(option_rows)
-    ts = infer_ts(option_rows)
-
-    raw_count = len(option_rows)
-    usable_rows = filter_usable_option_rows(option_rows)
-    usable_count = len(usable_rows)
-
-    if not usable_rows:
-        raise RuntimeError(
-            f"No usable option rows after filtering zero gamma / zero OI for run_id={run_id}, symbol={symbol}. "
-            f"raw_rows={raw_count}, usable_rows={usable_count}"
-        )
-
-    strike_step = infer_strike_step(usable_rows)
-    strike_map = build_strike_exposure_map(usable_rows, spot)
-
-    if not strike_map:
-        raise RuntimeError(
-            f"Usable rows remained after filtering, but strike exposure map is empty for run_id={run_id}, symbol={symbol}"
-        )
-
-    net_gex = sum(strike_map.values())
+    strike_map = build_strike_exposure_map(option_rows, spot)
+    net_gex = compute_net_gex(option_rows, spot)
+    gamma_concentration = compute_gamma_concentration(strike_map)
     flip_level = compute_flip_level(strike_map)
 
     if flip_level is None:
@@ -511,8 +432,9 @@ def compute(run_id: str, expected_symbol: str | None = None) -> GammaMetricsResu
         flip_distance = spot - flip_level
         flip_distance_pct = abs(flip_distance) / spot * 100.0 if spot > 0 else None
 
-    gamma_concentration = compute_gamma_concentration(strike_map, spot, strike_step)
-    straddle_atm, straddle_slope = compute_straddle_atm(option_rows, spot)
+    gamma_zone = determine_gamma_zone(flip_distance_pct)
+    straddle_atm = compute_straddle_atm(option_rows, spot)
+    straddle_slope = compute_straddle_slope(option_rows, spot)
     expansion_probability = compute_expansion_probability(gamma_concentration, flip_distance_pct, net_gex)
     regime = determine_regime(net_gex, flip_level)
 
@@ -527,6 +449,7 @@ def compute(run_id: str, expected_symbol: str | None = None) -> GammaMetricsResu
         flip_level=flip_level,
         flip_distance=flip_distance,
         flip_distance_pct=flip_distance_pct,
+        gamma_zone=gamma_zone,
         straddle_atm=straddle_atm,
         straddle_slope=straddle_slope,
         regime=regime,
@@ -534,14 +457,11 @@ def compute(run_id: str, expected_symbol: str | None = None) -> GammaMetricsResu
     )
 
 
-# -----------------------------
-# Database write
-# -----------------------------
-def upsert_gamma_metrics(result: GammaMetricsResult) -> None:
-    row = {
+def upsert_gamma_metrics(result: GammaMetricsResult) -> dict[str, Any]:
+    payload = {
         "run_id": result.run_id,
-        "ts": result.ts,
         "symbol": result.symbol,
+        "ts": result.ts,
         "expiry_date": result.expiry_date,
         "spot": result.spot,
         "net_gex": result.net_gex,
@@ -549,45 +469,78 @@ def upsert_gamma_metrics(result: GammaMetricsResult) -> None:
         "flip_level": result.flip_level,
         "flip_distance": result.flip_distance,
         "flip_distance_pct": result.flip_distance_pct,
+        "gamma_zone": result.gamma_zone,
         "straddle_atm": result.straddle_atm,
         "straddle_slope": result.straddle_slope,
-        "vix": None,
-        "breadth_regime": None,
-        "expansion_probability": result.expansion_probability,
         "regime": result.regime,
+        "expansion_probability": result.expansion_probability,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "raw": {
+            "builder": "compute_gamma_metrics_local.py",
+            "builder_version": "E02_GAMMA_ZONE_SHADOW_V1",
+            "gamma_zone_policy": {
+                "HIGH_GAMMA_lt_pct": 0.5,
+                "MID_GAMMA_lt_pct": 1.5,
+                "LOW_GAMMA_gte_pct": 1.5,
+                "canonical_distance_field": "flip_distance_pct",
+            },
+        },
     }
 
-    SUPABASE.table("gamma_metrics").upsert(row, on_conflict="run_id").execute()
+    response = SUPABASE.table("gamma_metrics").upsert(payload, on_conflict="symbol,ts").execute()
+    rows = _rows(response)
+    return rows[0] if rows else payload
 
 
-# -----------------------------
-# CLI
-# -----------------------------
+def parse_args(argv: list[str]) -> tuple[str, Optional[str]]:
+    if len(argv) not in {2, 3}:
+        raise RuntimeError(
+            "Usage: python compute_gamma_metrics_local.py <run_id> [symbol]\n"
+            "   or: python compute_gamma_metrics_local.py <symbol> <run_id>"
+        )
+
+    if len(argv) == 2:
+        run_id = argv[1].strip()
+        if not is_uuid_like(run_id):
+            raise RuntimeError("Single-argument mode requires a UUID run_id")
+        return run_id, None
+
+    a = argv[1].strip()
+    b = argv[2].strip()
+
+    if is_uuid_like(a) and not is_uuid_like(b):
+        return a, b.upper()
+    if is_uuid_like(b) and not is_uuid_like(a):
+        return b, a.upper()
+    if is_uuid_like(a) and is_uuid_like(b):
+        return a, None
+
+    raise RuntimeError("Could not determine run_id from arguments")
+
+
 def main() -> None:
-    if len(sys.argv) not in (2, 3):
-        print("Usage: python compute_gamma_metrics_local.py <run_id> [symbol]")
-        sys.exit(1)
+    run_id, expected_symbol = parse_args(sys.argv)
 
-    run_id = sys.argv[1]
-    expected_symbol = sys.argv[2].upper() if len(sys.argv) == 3 else None
+    result = compute_gamma_metrics(run_id, expected_symbol=expected_symbol)
+    upserted = upsert_gamma_metrics(result)
 
-    result = compute(run_id, expected_symbol=expected_symbol)
-    upsert_gamma_metrics(result)
-
-    print("Gamma metrics upsert complete.")
+    print("=" * 72)
+    print("MERDIAN - Local Python compute_gamma_metrics")
+    print("=" * 72)
     print(f"run_id={result.run_id}")
     print(f"symbol={result.symbol}")
-    print(f"ts={result.ts}")
-    print(f"spot={result.spot}")
+    print(f"upserted_id={upserted.get('id')}")
     print(f"net_gex={result.net_gex}")
     print(f"gamma_concentration={result.gamma_concentration}")
     print(f"flip_level={result.flip_level}")
     print(f"flip_distance={result.flip_distance}")
     print(f"flip_distance_pct={result.flip_distance_pct}")
+    print(f"gamma_zone={result.gamma_zone}")
     print(f"straddle_atm={result.straddle_atm}")
     print(f"straddle_slope={result.straddle_slope}")
-    print(f"expansion_probability={result.expansion_probability}")
     print(f"regime={result.regime}")
+    print(f"expansion_probability={result.expansion_probability}")
+    print("=" * 72)
 
 
 if __name__ == "__main__":

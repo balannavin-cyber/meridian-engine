@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import time
 from datetime import date, datetime, timedelta, UTC
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -14,6 +15,7 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 DHAN_API_TOKEN = os.getenv("DHAN_API_TOKEN", "")
+DHAN_CLIENT_ID = os.getenv("DHAN_CLIENT_ID", "")
 JOB_NAME = os.getenv("JOB_NAME", "equity_eod")
 DEFAULT_LIMIT_PER_RUN = int(os.getenv("DEFAULT_LIMIT_PER_RUN", "30"))
 DHAN_FROM_DAYS_BACK = int(os.getenv("DHAN_FROM_DAYS_BACK", "220"))
@@ -21,6 +23,12 @@ DHAN_HISTORICAL_URL = os.getenv(
     "DHAN_HISTORICAL_URL",
     "https://api.dhan.co/v2/charts/historical",
 )
+
+# Safety controls
+EOD_SAFE_LAG_DAYS = int(os.getenv("EOD_SAFE_LAG_DAYS", "1"))  # default = T-1
+EOD_INTER_REQUEST_SLEEP_SEC = float(os.getenv("EOD_INTER_REQUEST_SLEEP_SEC", "0.20"))
+EOD_RATE_LIMIT_RETRIES = int(os.getenv("EOD_RATE_LIMIT_RETRIES", "4"))
+EOD_RATE_LIMIT_SLEEP_SEC = float(os.getenv("EOD_RATE_LIMIT_SLEEP_SEC", "2.0"))
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY or not DHAN_API_TOKEN:
     print("ERROR: Missing SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, or DHAN_API_TOKEN in .env")
@@ -97,12 +105,15 @@ def get_ticker_batch(cursor: int, limit_per_run: int) -> List[Dict[str, Any]]:
     return data
 
 
-def fetch_dhan_daily(security_id: str, from_date: str, to_date: str) -> Dict[str, Any]:
+def fetch_dhan_daily_once(security_id: str, from_date: str, to_date: str) -> Dict[str, Any]:
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
         "access-token": DHAN_API_TOKEN,
     }
+    if DHAN_CLIENT_ID:
+        headers["client-id"] = DHAN_CLIENT_ID
+
     body = {
         "securityId": str(security_id),
         "exchangeSegment": "NSE_EQ",
@@ -116,6 +127,9 @@ def fetch_dhan_daily(security_id: str, from_date: str, to_date: str) -> Dict[str
     r = requests.post(DHAN_HISTORICAL_URL, headers=headers, json=body, timeout=60)
     text = r.text
 
+    if r.status_code == 429:
+        raise RuntimeError(f"Dhan HTTP 429: {text[:500]}")
+
     if not r.ok:
         raise RuntimeError(f"Dhan HTTP {r.status_code}: {text[:500]}")
 
@@ -123,6 +137,36 @@ def fetch_dhan_daily(security_id: str, from_date: str, to_date: str) -> Dict[str
         return r.json()
     except Exception as e:
         raise RuntimeError(f"Dhan returned non-JSON response for securityId={security_id}: {e}") from e
+
+
+def is_rate_limit_message(msg: str) -> bool:
+    msg_l = msg.lower()
+    return (
+        "dh-904" in msg_l
+        or "rate_limit" in msg_l
+        or "too many requests" in msg_l
+        or "429" in msg_l
+    )
+
+
+def fetch_dhan_daily(security_id: str, from_date: str, to_date: str) -> Dict[str, Any]:
+    last_err: Optional[str] = None
+
+    for attempt in range(1, EOD_RATE_LIMIT_RETRIES + 1):
+        try:
+            return fetch_dhan_daily_once(security_id, from_date, to_date)
+        except Exception as e:
+            msg = str(e)
+            last_err = msg
+
+            if is_rate_limit_message(msg) and attempt < EOD_RATE_LIMIT_RETRIES:
+                sleep_for = EOD_RATE_LIMIT_SLEEP_SEC * attempt
+                time.sleep(sleep_for)
+                continue
+
+            raise RuntimeError(last_err)
+
+    raise RuntimeError(last_err or "Unknown Dhan historical fetch failure")
 
 
 def parse_dhan_daily(data: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -139,13 +183,12 @@ def parse_dhan_daily(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     for i in range(n):
         try:
             trade_date = datetime.fromtimestamp(int(ts_arr[i]), tz=UTC).date().isoformat()
-            close_val = float(close_arr[i])
             row = {
                 "trade_date": trade_date,
                 "open": float(open_arr[i]) if open_arr[i] is not None else None,
                 "high": float(high_arr[i]) if high_arr[i] is not None else None,
                 "low": float(low_arr[i]) if low_arr[i] is not None else None,
-                "close": close_val,
+                "close": float(close_arr[i]) if close_arr[i] is not None else None,
                 "volume": int(volume_arr[i]) if i < len(volume_arr) and volume_arr[i] is not None else None,
             }
             rows.append(row)
@@ -156,10 +199,6 @@ def parse_dhan_daily(data: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def dedupe_equity_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Deduplicate by (ticker, trade_date).
-    Keep the last occurrence.
-    """
     deduped: Dict[Tuple[str, str], Dict[str, Any]] = {}
     for row in rows:
         key = (str(row["ticker"]), str(row["trade_date"]))
@@ -202,9 +241,15 @@ def update_state(
 
 
 def compute_date_window() -> Tuple[str, str]:
-    to_dt = date.today()
-    from_dt = to_dt - timedelta(days=DHAN_FROM_DAYS_BACK)
-    return from_dt.isoformat(), to_dt.isoformat()
+    """
+    Critical fix:
+    do NOT query Dhan historical through 'today' by default.
+    Use T-1 (or more conservative lag if configured).
+    """
+    today_dt = date.today()
+    safe_to_dt = today_dt - timedelta(days=max(EOD_SAFE_LAG_DAYS, 1))
+    from_dt = safe_to_dt - timedelta(days=DHAN_FROM_DAYS_BACK)
+    return from_dt.isoformat(), safe_to_dt.isoformat()
 
 
 def is_auth_failure_message(msg: str) -> bool:
@@ -250,45 +295,56 @@ def main() -> None:
             raw = fetch_dhan_daily(str(security_id), from_date, to_date)
             rows = parse_dhan_daily(raw)
 
-            final_rows = []
+            final_rows: List[Dict[str, Any]] = []
             for r in rows:
-                final_rows.append({
-                    "ticker": ticker,
-                    "trade_date": r["trade_date"],
-                    "open": r["open"],
-                    "high": r["high"],
-                    "low": r["low"],
-                    "close": r["close"],
-                    "volume": r["volume"],
-                })
+                final_rows.append(
+                    {
+                        "ticker": ticker,
+                        "trade_date": r["trade_date"],
+                        "open": r["open"],
+                        "high": r["high"],
+                        "low": r["low"],
+                        "close": r["close"],
+                        "volume": r["volume"],
+                    }
+                )
 
-            deduped_rows = dedupe_equity_rows(final_rows)
+            final_rows = dedupe_equity_rows(final_rows)
+            upsert_rows("equity_eod", final_rows, on_conflict="ticker,trade_date")
 
-            if deduped_rows:
-                upsert_rows("equity_eod", deduped_rows, on_conflict="ticker,trade_date")
-                candles_upserted += len(deduped_rows)
-
+            candles_upserted += len(final_rows)
             print(
                 f"[OK] {ticker} | security_id={security_id} | "
-                f"candles_raw={len(final_rows)} | candles_upserted={len(deduped_rows)}"
+                f"candles_raw={len(rows)} | candles_upserted={len(final_rows)}"
             )
 
         except Exception as e:
-            err = {
-                "ticker": ticker,
-                "security_id": security_id,
-                "error": str(e),
-            }
-            failures.append(err)
+            failures.append(
+                {
+                    "ticker": ticker,
+                    "security_id": str(security_id),
+                    "error": str(e),
+                }
+            )
             print(f"[ERR] {ticker} | security_id={security_id} | {e}")
 
-    auth_failures = [f for f in failures if is_auth_failure_message(f.get("error", ""))]
-    all_failed = processed > 0 and len(failures) == processed
-    all_failed_due_to_auth = all_failed and len(auth_failures) == len(failures)
+        if EOD_INTER_REQUEST_SLEEP_SEC > 0:
+            time.sleep(EOD_INTER_REQUEST_SLEEP_SEC)
+
+    all_failed_due_to_auth = (
+        len(tickers) > 0
+        and len(failures) == len(tickers)
+        and all(is_auth_failure_message(f["error"]) for f in failures)
+    )
+
+    any_auth_failure = any(is_auth_failure_message(f["error"]) for f in failures)
 
     if all_failed_due_to_auth:
         next_cursor = cursor
         status = "AUTH_FAILED_NO_CURSOR_ADVANCE"
+    elif any_auth_failure:
+        next_cursor = cursor
+        status = "AUTH_PARTIAL_NO_CURSOR_ADVANCE"
     else:
         next_cursor = 0 if len(tickers) < limit_per_run else cursor + limit_per_run
         status = "PARTIAL_OK" if failures else "OK"
@@ -309,16 +365,9 @@ def main() -> None:
     print(f"Next cursor     : {next_cursor}")
     print(f"Status          : {status}")
 
-    if all_failed_due_to_auth:
-        print("Detected full-batch Dhan authentication failure.")
-        print("Cursor was NOT advanced.")
-
     if failures:
         print("Sample failures:")
         print(jdump(failures[:5]))
-
-    if all_failed_due_to_auth:
-        sys.exit(2)
 
 
 if __name__ == "__main__":

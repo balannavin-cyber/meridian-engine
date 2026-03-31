@@ -1,64 +1,76 @@
 from __future__ import annotations
 
 import json
+import math
+import os
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import requests
 
 try:
-    from core.supabase_client import supabase_client  # type: ignore
-except Exception:
-    supabase_client = None  # type: ignore
-
-try:
-    from core.dhan_client import dhan_client  # type: ignore
-except Exception:
-    dhan_client = None  # type: ignore
-
-try:
-    import core.supabase_client as supabase_module  # type: ignore
-except Exception:
-    supabase_module = None  # type: ignore
-
-try:
-    import core.dhan_client as dhan_module  # type: ignore
-except Exception:
-    dhan_module = None  # type: ignore
+    from dotenv import load_dotenv
+except Exception:  # pragma: no cover
+    load_dotenv = None
 
 
-PAGE_SIZE = 1000
-LTP_CHUNK_SIZE = 50
-SLEEP_BETWEEN_CHUNKS_SEC = 1.25
-MAX_429_RETRIES = 3
-BACKOFF_SCHEDULE_SEC = [2.0, 5.0, 10.0]
-UPSERT_BATCH_SIZE = 500
+# =============================================================================
+# Paths / env bootstrap
+# =============================================================================
 
-UNIVERSE_TABLE = "dhan_scrip_map"
-UNIVERSE_ORDER_BY = "ticker"
+BASE_DIR = Path(__file__).resolve().parent
+ENV_FILE = BASE_DIR / ".env"
 
-UNIVERSE_FILTER_CANDIDATES = [
-    {"exchange": "NSE", "is_active": True},
-    {"exchange_segment": "NSE", "is_active": True},
-    {"exchange": "NSE"},
-    {"exchange_segment": "NSE"},
-    {},
-]
+if load_dotenv is not None and ENV_FILE.exists():
+    load_dotenv(ENV_FILE)
 
-TARGET_TABLE = "equity_intraday_last"
-BREADTH_RPC_NAME = "build_market_breadth_intraday"
+IST = timezone(timedelta(hours=5, minutes=30))
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+DHAN_CLIENT_ID = os.getenv("DHAN_CLIENT_ID", "").strip()
+DHAN_API_TOKEN = os.getenv("DHAN_API_TOKEN", "").strip()
+
+# Dhan market quote / LTP endpoint
+DHAN_LTP_URL = "https://api.dhan.co/v2/marketfeed/ltp"
+
+# Universe / batching
+UNIVERSE_PAGE_SIZE = 1000
+LTP_BATCH_SIZE = 50
+
+# Retry / guard knobs
+MAX_429_RETRIES = 2
+BACKOFF_SCHEDULE_SEC = [1.0, 2.0, 4.0]
+MIN_COVERAGE_PCT = 95.0
+MAX_STALENESS_MINUTES = 20
+
+# Session window (IST)
+MARKET_OPEN_HOUR = 9
+MARKET_OPEN_MINUTE = 15
+MARKET_CLOSE_HOUR = 15
+MARKET_CLOSE_MINUTE = 30
 
 
-class LtpHttpError(Exception):
-    def __init__(self, status_code: int, message: str = "") -> None:
-        self.status_code = status_code
-        self.message = message or f"HTTP {status_code}"
-        super().__init__(self.message)
+# =============================================================================
+# Exceptions / data classes
+# =============================================================================
 
-
-class ConfigurationError(Exception):
+class ConfigurationError(RuntimeError):
     pass
+
+
+class DhanError(RuntimeError):
+    pass
+
+
+class LtpHttpError(DhanError):
+    def __init__(self, status_code: int, message: str) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 @dataclass
@@ -69,177 +81,151 @@ class UniverseRow:
 
 @dataclass
 class FetchStats:
-    requested_ids: int = 0
+    universe_count: int = 0
+    unique_security_ids: int = 0
     received_ids: int = 0
-    missing_ids: int = 0
+    rows_upserted: int = 0
+    coverage_pct: float = 0.0
     batch_400_count: int = 0
     batch_429_count: int = 0
-    other_error_count: int = 0
+    batch_other_error_count: int = 0
 
+
+# =============================================================================
+# Logging helpers
+# =============================================================================
 
 def log(msg: str) -> None:
     print(msg, flush=True)
 
 
-def get_supabase_client() -> Any:
-    if supabase_client is not None:
-        return supabase_client
-    if supabase_module is not None:
-        if hasattr(supabase_module, "SupabaseClient"):
-            return supabase_module.SupabaseClient()
-        return supabase_module
-    raise ConfigurationError("Could not import core.supabase_client")
+def require_env(name: str, value: str) -> None:
+    if not value:
+        raise ConfigurationError(f"Missing required environment variable: {name}")
 
 
-def get_dhan_client() -> Any:
-    if dhan_client is not None:
-        return dhan_client
-    if dhan_module is not None:
-        if hasattr(dhan_module, "DhanClient"):
-            return dhan_module.DhanClient()
-        return dhan_module
-    raise ConfigurationError("Could not import core.dhan_client")
+# =============================================================================
+# Supabase REST helpers
+# =============================================================================
+
+def supabase_headers() -> Dict[str, str]:
+    require_env("SUPABASE_URL", SUPABASE_URL)
+    require_env("SUPABASE_SERVICE_ROLE_KEY", SUPABASE_SERVICE_ROLE_KEY)
+    return {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
 
 
-def chunked(items: Sequence[Any], size: int) -> Iterable[List[Any]]:
-    for i in range(0, len(items), size):
-        yield list(items[i:i + size])
-
-
-def dedupe_preserve_order(values: Iterable[str]) -> List[str]:
-    seen = set()
-    out: List[str] = []
-    for value in values:
-        if value not in seen:
-            seen.add(value)
-            out.append(value)
-    return out
-
-
-def normalize_security_ids(values: Iterable[Any]) -> List[str]:
-    cleaned: List[str] = []
-    for value in values:
-        if value is None:
-            continue
-        text = str(value).strip()
-        if not text:
-            continue
-        cleaned.append(text)
-    return dedupe_preserve_order(cleaned)
-
-
-def safe_float(value: Any) -> Optional[float]:
-    try:
-        if value is None or value == "":
-            return None
-        return float(value)
-    except Exception:
-        return None
-
-
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def sb_select(
-    client: Any,
-    table: str,
-    filters: Optional[Dict[str, Any]] = None,
-    limit: int = PAGE_SIZE,
-    offset: int = 0,
-    order: Optional[str] = None,
-    ascending: bool = True,
-) -> List[Dict[str, Any]]:
-    if hasattr(client, "select"):
-        return client.select(
-            table=table,
-            filters=filters or {},
-            limit=limit,
-            offset=offset,
-            order=order,
-            ascending=ascending,
+def supabase_get(path: str, params: Optional[Dict[str, str]] = None) -> Any:
+    url = f"{SUPABASE_URL}{path}"
+    resp = requests.get(url, headers=supabase_headers(), params=params, timeout=60)
+    if resp.status_code >= 400:
+        raise RuntimeError(
+            f"Supabase GET failed | status={resp.status_code} | path={path} | response={resp.text}"
         )
-
-    if hasattr(client, "select_all"):
-        rows = client.select_all(table=table, filters=filters or {}, page_size=PAGE_SIZE)
-        if order:
-            rows = sorted(rows, key=lambda r: str(r.get(order, "")), reverse=not ascending)
-        return rows[offset: offset + limit]
-
-    raise ConfigurationError("Supabase client does not expose select/select_all")
+    if not resp.text.strip():
+        return []
+    return resp.json()
 
 
-def sb_upsert(
-    client: Any,
-    table: str,
-    rows: List[Dict[str, Any]],
-    on_conflict: str,
+def supabase_post(
+    path: str,
+    payload: Any,
+    *,
+    params: Optional[Dict[str, str]] = None,
+    extra_headers: Optional[Dict[str, str]] = None,
 ) -> Any:
-    if hasattr(client, "upsert"):
-        return client.upsert(table=table, rows=rows, on_conflict=on_conflict)
-    raise ConfigurationError("Supabase client does not expose upsert()")
+    headers = supabase_headers()
+    if extra_headers:
+        headers.update(extra_headers)
+
+    url = f"{SUPABASE_URL}{path}"
+    resp = requests.post(url, headers=headers, params=params, json=payload, timeout=120)
+    if resp.status_code >= 400:
+        raise RuntimeError(
+            f"Supabase POST failed | status={resp.status_code} | path={path} | response={resp.text}"
+        )
+    if not resp.text.strip():
+        return []
+    try:
+        return resp.json()
+    except Exception:
+        return resp.text
 
 
-def sb_rpc(client: Any, function_name: str, params: Dict[str, Any]) -> Any:
-    if hasattr(client, "rpc"):
-        return client.rpc(function_name=function_name, params=params)
-    raise ConfigurationError("Supabase client does not expose rpc()")
+# =============================================================================
+# Trading calendar / session guards
+# =============================================================================
+
+def now_ist() -> datetime:
+    return datetime.now(tz=IST)
 
 
-def extract_status_code(exc: Exception) -> Optional[int]:
-    for attr in ("status_code", "response_status", "status"):
-        value = getattr(exc, attr, None)
-        if isinstance(value, int):
-            return value
-    text = str(exc)
-    if "429" in text:
-        return 429
-    if "400" in text:
-        return 400
-    if "401" in text:
-        return 401
-    if "403" in text:
-        return 403
-    if "500" in text:
-        return 500
+def current_trade_date_ist() -> str:
+    return now_ist().strftime("%Y-%m-%d")
+
+
+def is_market_open_window(now_dt: datetime) -> bool:
+    hhmm = now_dt.hour * 60 + now_dt.minute
+    market_open = MARKET_OPEN_HOUR * 60 + MARKET_OPEN_MINUTE
+    market_close = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE
+    return market_open <= hhmm <= market_close
+
+
+def get_calendar_row(trade_date: str) -> Optional[Dict[str, Any]]:
+    rows = supabase_get(
+        "/rest/v1/trading_calendar",
+        params={
+            "select": "trade_date,is_open,is_special_session,open_time,close_time,final_eod_ltp_time,holiday_name,notes",
+            "trade_date": f"eq.{trade_date}",
+            "limit": "1",
+        },
+    )
+    if isinstance(rows, list) and rows:
+        return rows[0]
     return None
 
 
-def parse_ltp_payload(payload: Any) -> Dict[str, float]:
-    result: Dict[str, float] = {}
+def enforce_calendar_and_session_guards() -> None:
+    trade_date = current_trade_date_ist()
+    row = get_calendar_row(trade_date)
 
-    if payload is None:
-        return result
+    if not row:
+        log("Calendar is_open: False")
+        log("Holiday name: No calendar row")
+        log("Notes: No trading_calendar row found")
+        log("Session state: HOLIDAY")
+        raise RuntimeError("SKIP: Trading calendar marks today as closed.")
 
-    if isinstance(payload, dict) and "data" in payload and isinstance(payload["data"], dict):
-        data_block = payload["data"]
-        for _, segment_map in data_block.items():
-            if not isinstance(segment_map, dict):
-                continue
-            for sec_id, sec_data in segment_map.items():
-                if isinstance(sec_data, dict):
-                    price = safe_float(sec_data.get("last_price"))
-                    if price is not None:
-                        result[str(sec_id)] = price
+    is_open = bool(row.get("is_open"))
+    holiday_name = row.get("holiday_name")
+    notes = row.get("notes")
 
-    return result
+    log(f"Calendar is_open: {is_open}")
+    log(f"Holiday name: {holiday_name}")
+    log(f"Notes: {notes}")
+
+    if not is_open:
+        log("Session state: HOLIDAY")
+        raise RuntimeError("SKIP: Trading calendar marks today as closed.")
+
+    now_dt = now_ist()
+    if not is_market_open_window(now_dt):
+        state = "PREOPEN" if now_dt.hour < MARKET_OPEN_HOUR or (
+            now_dt.hour == MARKET_OPEN_HOUR and now_dt.minute < MARKET_OPEN_MINUTE
+        ) else "AFTER_MARKET"
+        log(f"Session state: {state}")
+        raise RuntimeError(f"SKIP: Session state {state} is outside MARKET_OPEN window.")
+
+    log("Session state: MARKET_OPEN")
 
 
-def dhan_get_ltp(client: Any, security_ids: List[str]) -> Dict[str, float]:
-    try:
-        if hasattr(client, "get_ltp"):
-            payload = client.get_ltp(security_ids)
-        elif hasattr(dhan_module, "get_ltp"):
-            payload = dhan_module.get_ltp(security_ids)  # type: ignore
-        else:
-            raise ConfigurationError("Dhan client does not expose get_ltp()")
-        return parse_ltp_payload(payload)
-    except Exception as exc:
-        status_code = extract_status_code(exc)
-        if status_code is not None:
-            raise LtpHttpError(status_code=status_code, message=str(exc)) from exc
-        raise
-
+# =============================================================================
+# Universe loading
+# =============================================================================
 
 def normalize_universe_row(row: Dict[str, Any]) -> Optional[UniverseRow]:
     ticker = str(row.get("ticker") or row.get("symbol") or "").strip().upper()
@@ -259,57 +245,178 @@ def normalize_universe_row(row: Dict[str, Any]) -> Optional[UniverseRow]:
     )
 
 
-def load_universe_page(client: Any, offset: int, filters: Dict[str, Any]) -> List[UniverseRow]:
-    rows = sb_select(
-        client=client,
-        table=UNIVERSE_TABLE,
-        filters=filters,
-        limit=PAGE_SIZE,
-        offset=offset,
-        order=UNIVERSE_ORDER_BY,
-        ascending=True,
-    )
-    normalized: List[UniverseRow] = []
-    for row in rows:
-        item = normalize_universe_row(row)
-        if item is not None:
-            normalized.append(item)
-    return normalized
+def load_active_mapped_nse_universe() -> List[UniverseRow]:
+    all_rows: List[UniverseRow] = []
+    offset = 0
 
+    while True:
+        rows = supabase_get(
+            "/rest/v1/breadth_universe_members",
+            params={
+                "select": "ticker,dhan_security_id,exchange_segment,is_active",
+                "is_active": "eq.true",
+                "exchange_segment": "eq.NSE",
+                "dhan_security_id": "not.is.null",
+                "limit": str(UNIVERSE_PAGE_SIZE),
+                "offset": str(offset),
+                "order": "ticker.asc",
+            },
+        )
 
-def load_active_mapped_nse_universe(client: Any) -> List[UniverseRow]:
-    for filters in UNIVERSE_FILTER_CANDIDATES:
-        all_rows: List[UniverseRow] = []
-        offset = 0
-        try:
-            while True:
-                page = load_universe_page(client, offset=offset, filters=filters)
-                log(f"Universe page fetched | offset={offset} | rows={len(page)}")
-                if not page:
-                    break
-                all_rows.extend(page)
-                if len(page) < PAGE_SIZE:
-                    break
-                offset += PAGE_SIZE
-        except Exception as exc:
-            log(f"Universe load attempt failed for filters={filters}: {exc}")
-            continue
+        if not isinstance(rows, list):
+            raise RuntimeError("Unexpected universe response from Supabase")
 
-        if all_rows:
-            deduped: List[UniverseRow] = []
-            seen = set()
-            for row in all_rows:
-                if row.ticker in seen:
-                    continue
-                seen.add(row.ticker)
-                deduped.append(row)
-            return deduped
+        log(f"Universe page fetched | offset={offset} | rows={len(rows)}")
+
+        if not rows:
+            break
+
+        for row in rows:
+            normalized = normalize_universe_row(row)
+            if normalized:
+                all_rows.append(normalized)
+
+        if len(rows) < UNIVERSE_PAGE_SIZE:
+            break
+
+        offset += UNIVERSE_PAGE_SIZE
+
+    if all_rows:
+        seen = set()
+        deduped: List[UniverseRow] = []
+        for row in all_rows:
+            if row.ticker in seen:
+                continue
+            seen.add(row.ticker)
+            deduped.append(row)
+        return deduped
 
     raise RuntimeError("Could not load mapped NSE universe from Supabase")
 
 
+# =============================================================================
+# Dhan LTP helpers
+# =============================================================================
+
+def dhan_headers() -> Dict[str, str]:
+    require_env("DHAN_CLIENT_ID", DHAN_CLIENT_ID)
+    require_env("DHAN_API_TOKEN", DHAN_API_TOKEN)
+    return {
+        "access-token": DHAN_API_TOKEN,
+        "client-id": DHAN_CLIENT_ID,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+
+def extract_status_code(exc: Exception) -> Optional[int]:
+    text = str(exc)
+    marker = "status="
+    idx = text.find(marker)
+    if idx >= 0:
+        idx += len(marker)
+        digits = []
+        while idx < len(text) and text[idx].isdigit():
+            digits.append(text[idx])
+            idx += 1
+        if digits:
+            try:
+                return int("".join(digits))
+            except Exception:
+                return None
+    return None
+
+
+def parse_ltp_payload(payload: Any) -> Dict[str, float]:
+    result: Dict[str, float] = {}
+
+    if payload is None:
+        return result
+
+    if isinstance(payload, dict) and "data" in payload and isinstance(payload["data"], dict):
+        data_block = payload["data"]
+        for _, segment_map in data_block.items():
+            if not isinstance(segment_map, dict):
+                continue
+            for sec_id, sec_data in segment_map.items():
+                if isinstance(sec_data, dict):
+                    price = sec_data.get("last_price")
+                    if price is None:
+                        price = sec_data.get("ltp")
+                    try:
+                        if price is not None:
+                            result[str(sec_id)] = float(price)
+                    except Exception:
+                        continue
+
+    return result
+
+
+def dhan_get_ltp(security_ids: List[str]) -> Dict[str, float]:
+    """
+    Full replacement path:
+    - do NOT rely on core.dhan_client default exchange_segment
+    - explicitly send NSE for breadth-equity LTP requests
+    """
+    normalized_ids: List[int] = []
+    for x in security_ids:
+        text = str(x).strip()
+        if not text:
+            continue
+        try:
+            normalized_ids.append(int(text))
+        except ValueError as exc:
+            raise ValueError(f"Invalid security ID for Dhan LTP request: {x}") from exc
+
+    if not normalized_ids:
+        return {}
+
+    payload = {
+        "NSE": normalized_ids
+    }
+
+    try:
+        response = requests.post(
+            DHAN_LTP_URL,
+            headers=dhan_headers(),
+            json=payload,
+            timeout=60,
+        )
+    except requests.RequestException as exc:
+        raise DhanError(f"Dhan request transport failure | path=/v2/marketfeed/ltp | detail={exc}") from exc
+
+    body_text = response.text
+    if response.status_code >= 400:
+        raise LtpHttpError(
+            status_code=response.status_code,
+            message=(
+                f"Dhan HTTP error | status={response.status_code} | "
+                f"path=/v2/marketfeed/ltp | response={body_text}"
+            ),
+        )
+
+    try:
+        parsed = response.json()
+    except Exception as exc:
+        raise DhanError(f"Could not parse Dhan LTP JSON | body={body_text}") from exc
+
+    if not isinstance(parsed, dict):
+        raise DhanError(f"Unexpected Dhan LTP payload type: {type(parsed)}")
+
+    status = str(parsed.get("status", "")).lower()
+    if status == "failed":
+        raise LtpHttpError(
+            status_code=response.status_code if response.status_code else 400,
+            message=(
+                f"Dhan non-success payload | status={response.status_code} | "
+                f"path=/v2/marketfeed/ltp | response={body_text}"
+            ),
+        )
+
+    return parse_ltp_payload(parsed)
+
+
 def fetch_ltp_with_retry(
-    dhan: Any,
     security_ids: List[str],
     stats: FetchStats,
 ) -> Dict[str, float]:
@@ -317,7 +424,7 @@ def fetch_ltp_with_retry(
 
     for attempt in range(MAX_429_RETRIES + 1):
         try:
-            return dhan_get_ltp(dhan, security_ids)
+            return dhan_get_ltp(security_ids)
         except LtpHttpError as exc:
             if exc.status_code == 429:
                 stats.batch_429_count += 1
@@ -327,16 +434,19 @@ def fetch_ltp_with_retry(
                 delay = BACKOFF_SCHEDULE_SEC[min(attempt, len(BACKOFF_SCHEDULE_SEC) - 1)]
                 log(
                     f"429 rate limit | batch_size={len(security_ids)} | "
-                    f"attempt={attempt + 1}/{MAX_429_RETRIES + 1} | sleep={delay:.1f}s | "
-                    f"detail={exc.message}"
+                    f"attempt={attempt + 1}/{MAX_429_RETRIES + 1} | sleep={delay:.1f}s"
                 )
                 time.sleep(delay)
                 continue
+
             if exc.status_code == 400:
                 stats.batch_400_count += 1
+            else:
+                stats.batch_other_error_count += 1
             raise
         except Exception as exc:
             last_exc = exc
+            stats.batch_other_error_count += 1
             raise
 
     if last_exc:
@@ -344,173 +454,207 @@ def fetch_ltp_with_retry(
     return {}
 
 
-def build_upsert_rows(
-    universe_rows: List[UniverseRow],
-    price_by_security_id: Dict[str, float],
-) -> List[Dict[str, Any]]:
-    ts = utc_now_iso()
+# =============================================================================
+# Staleness guard
+# =============================================================================
+
+def get_latest_equity_intraday_ts() -> Optional[datetime]:
+    rows = supabase_get(
+        "/rest/v1/equity_intraday_last",
+        params={
+            "select": "ts",
+            "order": "ts.desc",
+            "limit": "1",
+        },
+    )
+    if not isinstance(rows, list) or not rows:
+        return None
+
+    ts_val = rows[0].get("ts")
+    if not ts_val:
+        return None
+
+    try:
+        return datetime.fromisoformat(str(ts_val).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def enforce_staleness_guard_before_write() -> None:
+    latest_ts = get_latest_equity_intraday_ts()
+    if latest_ts is None:
+        return
+
+    age = datetime.now(timezone.utc) - latest_ts.astimezone(timezone.utc)
+    if age > timedelta(minutes=MAX_STALENESS_MINUTES):
+        raise RuntimeError(
+            f"SKIP: Stale snapshot detected in equity_intraday_last | age_minutes={age.total_seconds() / 60:.2f}"
+        )
+
+
+# =============================================================================
+# Upsert + RPC
+# =============================================================================
+
+def build_rows_for_upsert(universe_rows: List[UniverseRow], prices: Dict[str, float]) -> List[Dict[str, Any]]:
+    ts_now = datetime.now(timezone.utc).isoformat()
     rows: List[Dict[str, Any]] = []
 
     for row in universe_rows:
-        price = price_by_security_id.get(row.dhan_security_id)
+        price = prices.get(str(row.dhan_security_id))
         if price is None:
             continue
 
         rows.append(
             {
                 "ticker": row.ticker,
+                "dhan_security_id": row.dhan_security_id,
                 "last_price": price,
-                "ts": ts,
+                "ts": ts_now,
+                "raw": {
+                    "source": "dhan_marketfeed_ltp",
+                    "exchange_segment": "NSE",
+                    "security_id": row.dhan_security_id,
+                    "ticker": row.ticker,
+                },
             }
         )
 
     return rows
 
 
-def run() -> Dict[str, Any]:
-    log("=" * 72)
-    log("MERDIAN - Local Python ingest_breadth_intraday")
-    log("=" * 72)
+def upsert_equity_intraday_last(rows: List[Dict[str, Any]]) -> int:
+    if not rows:
+        return 0
 
-    sb = get_supabase_client()
-    dhan = get_dhan_client()
+    result = supabase_post(
+        "/rest/v1/equity_intraday_last",
+        rows,
+        params={"on_conflict": "ticker"},
+        extra_headers={
+            "Prefer": "resolution=merge-duplicates,return=representation"
+        },
+    )
 
-    universe = load_active_mapped_nse_universe(sb)
-    if not universe:
-        raise RuntimeError("Mapped NSE universe is empty")
+    if isinstance(result, list):
+        return len(result)
+    return 0
 
-    log(f"Active mapped NSE tickers: {len(universe)}")
 
-    security_ids = normalize_security_ids([row.dhan_security_id for row in universe])
-    stats = FetchStats(requested_ids=len(security_ids))
-    price_by_security_id: Dict[str, float] = {}
-    missing_security_ids: List[str] = []
+def call_build_market_breadth_intraday() -> None:
+    supabase_post("/rest/v1/rpc/build_market_breadth_intraday", {})
 
-    chunks = list(chunked(security_ids, LTP_CHUNK_SIZE))
-    total_chunks = len(chunks)
 
-    for idx, chunk in enumerate(chunks, start=1):
-        log(f"Fetching chunk {idx}/{total_chunks} | batch_size={len(chunk)}")
-
-        try:
-            prices = fetch_ltp_with_retry(
-                dhan=dhan,
-                security_ids=chunk,
-                stats=stats,
-            )
-            price_by_security_id.update(prices)
-
-            returned_ids = set(prices.keys())
-            requested_ids = set(chunk)
-            missing_ids = sorted(requested_ids - returned_ids)
-
-            if missing_ids:
-                missing_security_ids.extend(missing_ids)
-                preview = ", ".join(missing_ids[:10])
-                more = "" if len(missing_ids) <= 10 else f" ... (+{len(missing_ids) - 10} more)"
-                log(
-                    f"Chunk partial | chunk={idx}/{total_chunks} | "
-                    f"requested={len(chunk)} | received={len(prices)} | "
-                    f"missing={len(missing_ids)} | missing_ids={preview}{more}"
-                )
-            else:
-                log(
-                    f"Chunk done | chunk={idx}/{total_chunks} | "
-                    f"requested={len(chunk)} | received={len(prices)} | "
-                    f"cumulative_prices={len(price_by_security_id)}"
-                )
-
-        except LtpHttpError as exc:
-            stats.other_error_count += 1
-            log(
-                f"Chunk failed hard | chunk={idx}/{total_chunks} | "
-                f"status={exc.status_code} | detail={exc.message}"
-            )
-        except Exception as exc:
-            stats.other_error_count += 1
-            log(f"Chunk failed hard | chunk={idx}/{total_chunks} | error={exc}")
-
-        time.sleep(SLEEP_BETWEEN_CHUNKS_SEC)
-
-    missing_security_ids = dedupe_preserve_order(missing_security_ids)
-    stats.received_ids = len(price_by_security_id)
-    stats.missing_ids = len(missing_security_ids)
-
-    upsert_rows = build_upsert_rows(universe, price_by_security_id)
-    log(f"Prepared rows for upsert: {len(upsert_rows)}")
-
-    if upsert_rows:
-        log(f"Upsert sample row keys: {list(upsert_rows[0].keys())}")
-        log(f"Upsert sample row: {json.dumps(upsert_rows[0], default=str)}")
-
-    upserted_total = 0
-    for batch_no, batch in enumerate(chunked(upsert_rows, UPSERT_BATCH_SIZE), start=1):
-        try:
-            sb_upsert(
-                client=sb,
-                table=TARGET_TABLE,
-                rows=batch,
-                on_conflict="ticker",
-            )
-        except Exception as exc:
-            log(f"UPSERT FAILED | batch_no={batch_no} | batch_size={len(batch)}")
-            if batch:
-                log(f"UPSERT FAILED | first_row_keys={list(batch[0].keys())}")
-                log(f"UPSERT FAILED | first_row={json.dumps(batch[0], default=str)}")
-            raise
-
-        upserted_total += len(batch)
-        log(f"Upserted rows: {upserted_total}/{len(upsert_rows)}")
-
-    rpc_result = sb_rpc(sb, BREADTH_RPC_NAME, {})
-    log(f"RPC executed: {BREADTH_RPC_NAME}")
-
-    coverage = (len(upsert_rows) / len(universe)) if universe else 0.0
-
-    log("-" * 72)
-    log(f"Universe count:      {len(universe)}")
-    log(f"Unique security IDs: {len(security_ids)}")
-    log(f"LTP received:        {stats.received_ids}")
-    log(f"Missing IDs:         {stats.missing_ids}")
-    log(f"Rows upserted:       {upserted_total}")
-    log(f"Coverage:            {coverage:.2%}")
-    log(f"400 batch count:     {stats.batch_400_count}")
-    log(f"429 batch count:     {stats.batch_429_count}")
-    log(f"Other error count:   {stats.other_error_count}")
-
-    if missing_security_ids:
-        preview = ", ".join(missing_security_ids[:20])
-        more = "" if len(missing_security_ids) <= 20 else f" ... (+{len(missing_security_ids) - 20} more)"
-        log(f"Missing security IDs:{preview}{more}")
-
-    log("=" * 72)
-
-    return {
-        "universe_count": len(universe),
-        "unique_security_ids": len(security_ids),
-        "ltp_received": stats.received_ids,
-        "missing_ids": stats.missing_ids,
-        "rows_upserted": upserted_total,
-        "coverage_pct": round(coverage * 100.0, 2),
-        "batch_400_count": stats.batch_400_count,
-        "batch_429_count": stats.batch_429_count,
-        "other_error_count": stats.other_error_count,
-        "missing_security_ids": missing_security_ids,
-        "rpc_result": rpc_result,
-    }
-
+# =============================================================================
+# Main
+# =============================================================================
 
 def main() -> int:
-    try:
-        result = run()
-        if result.get("rows_upserted", 0) == 0:
-            log("ERROR: No rows were upserted into equity_intraday_last")
-            return 2
-        return 0
-    except Exception as exc:
-        log(f"FATAL: {exc}")
-        return 1
+    print("=" * 72)
+    print("MERDIAN - Local Python ingest_breadth_intraday")
+    print("=" * 72)
+
+    require_env("SUPABASE_URL", SUPABASE_URL)
+    require_env("SUPABASE_SERVICE_ROLE_KEY", SUPABASE_SERVICE_ROLE_KEY)
+    require_env("DHAN_CLIENT_ID", DHAN_CLIENT_ID)
+    require_env("DHAN_API_TOKEN", DHAN_API_TOKEN)
+
+    # Guard 1 + Guard 2
+    enforce_calendar_and_session_guards()
+
+    # Load universe
+    universe_rows = load_active_mapped_nse_universe()
+    stats = FetchStats()
+    stats.universe_count = len(universe_rows)
+
+    unique_ids = sorted({row.dhan_security_id for row in universe_rows})
+    stats.unique_security_ids = len(unique_ids)
+
+    log(f"Active mapped NSE tickers: {stats.universe_count}")
+
+    # Fetch in chunks
+    all_prices: Dict[str, float] = {}
+    total_chunks = math.ceil(len(unique_ids) / LTP_BATCH_SIZE)
+
+    for i in range(total_chunks):
+        start = i * LTP_BATCH_SIZE
+        end = start + LTP_BATCH_SIZE
+        chunk_ids = unique_ids[start:end]
+        log(f"Fetching chunk {i + 1}/{total_chunks} | batch_size={len(chunk_ids)}")
+
+        try:
+            prices = fetch_ltp_with_retry(chunk_ids, stats)
+            all_prices.update(prices)
+        except LtpHttpError as exc:
+            log(
+                f"Chunk failed hard | chunk={i + 1}/{total_chunks} | "
+                f"status={exc.status_code} | detail={exc}"
+            )
+        except Exception as exc:
+            stats.batch_other_error_count += 1
+            log(f"Chunk failed hard | chunk={i + 1}/{total_chunks} | detail={exc}")
+
+    stats.received_ids = len(all_prices)
+
+    # Guard 3 — coverage
+    if stats.unique_security_ids > 0:
+        stats.coverage_pct = round((stats.received_ids / stats.unique_security_ids) * 100.0, 2)
+    else:
+        stats.coverage_pct = 0.0
+
+    if stats.coverage_pct < MIN_COVERAGE_PCT:
+        log("Prepared rows for upsert: 0")
+        call_build_market_breadth_intraday()
+        log("-" * 72)
+        log(f"Universe count:      {stats.universe_count}")
+        log(f"Unique security IDs: {stats.unique_security_ids}")
+        log(f"LTP received:        {stats.received_ids}")
+        log("Missing IDs:         0")
+        log("Rows upserted:       0")
+        log(f"Coverage:            {stats.coverage_pct:.2f}%")
+        log(f"400 batch count:     {stats.batch_400_count}")
+        log(f"429 batch count:     {stats.batch_429_count}")
+        log(f"Other error count:   {stats.batch_other_error_count}")
+        print("=" * 72)
+        raise RuntimeError(
+            f"ERROR: Coverage below threshold | coverage={stats.coverage_pct:.2f}% | "
+            f"required={MIN_COVERAGE_PCT:.2f}%"
+        )
+
+    # Build rows
+    rows = build_rows_for_upsert(universe_rows, all_prices)
+    log(f"Prepared rows for upsert: {len(rows)}")
+
+    # Guard 4 — stale existing snapshot
+    enforce_staleness_guard_before_write()
+
+    # Upsert + RPC
+    rows_upserted = upsert_equity_intraday_last(rows)
+    stats.rows_upserted = rows_upserted
+
+    call_build_market_breadth_intraday()
+    log("RPC executed: build_market_breadth_intraday")
+    log("-" * 72)
+    log(f"Universe count:      {stats.universe_count}")
+    log(f"Unique security IDs: {stats.unique_security_ids}")
+    log(f"LTP received:        {stats.received_ids}")
+    log("Missing IDs:         0")
+    log(f"Rows upserted:       {stats.rows_upserted}")
+    log(f"Coverage:            {stats.coverage_pct:.2f}%")
+    log(f"400 batch count:     {stats.batch_400_count}")
+    log(f"429 batch count:     {stats.batch_429_count}")
+    log(f"Other error count:   {stats.batch_other_error_count}")
+    print("=" * 72)
+
+    if stats.rows_upserted == 0:
+        raise RuntimeError("ERROR: No rows were upserted into equity_intraday_last")
+
+    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        log(str(exc))
+        raise

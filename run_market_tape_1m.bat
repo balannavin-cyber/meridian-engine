@@ -1,19 +1,22 @@
-@'
 @echo off
 setlocal
 
-cd /d C:\gammaenginepython
+cd /d C:\GammaEnginePython
 
 if not exist logs mkdir logs
 
-echo ================================================== >> logs\run_market_tape_1m.log
-echo TASK START %date% %time% >> logs\run_market_tape_1m.log
-echo ================================================== >> logs\run_market_tape_1m.log
+set "PYTHON_EXE=C:\Users\balan\AppData\Local\Programs\Python\Python312\python.exe"
+set "LOG_FILE=C:\GammaEnginePython\logs\run_market_tape_1m.log"
 
-python C:\gammaenginepython\run_market_tape_1m.py >> logs\run_market_tape_1m.log 2>&1
+echo ================================================== >> "%LOG_FILE%"
+echo TASK START %date% %time% >> "%LOG_FILE%"
+echo ================================================== >> "%LOG_FILE%"
 
-echo TASK END %date% %time% >> logs\run_market_tape_1m.log
-echo. >> logs\run_market_tape_1m.log
+"%PYTHON_EXE%" -u C:\GammaEnginePython\run_market_tape_1m.py >> "%LOG_FILE%" 2>&1
+set "EXIT_CODE=%ERRORLEVEL%"
 
-endlocal
-'@ | Set-Content C:\gammaenginepython\run_market_tape_1m.bat
+echo EXIT CODE %EXIT_CODE% >> "%LOG_FILE%"
+echo TASK END %date% %time% >> "%LOG_FILE%"
+echo. >> "%LOG_FILE%"
+
+endlocal & exit /b %EXIT_CODE%

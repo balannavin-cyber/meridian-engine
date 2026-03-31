@@ -10,7 +10,12 @@ from pathlib import Path
 from typing import Optional
 
 from gamma_engine_heartbeat import mark_component_error, mark_component_ok, mark_component_warn
-from trading_calendar import get_session_times, is_trading_day
+from trading_calendar import (
+    MissingSessionConfigError,
+    TradingCalendarError,
+    current_session_state,
+    get_today_session_config,
+)
 
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -25,13 +30,6 @@ SUPERVISOR_HEARTBEAT_STALE_AFTER_SECONDS = 180
 
 RUNNER_SCRIPT = "run_option_snapshot_intraday_runner.py"
 SUPERVISOR_COMPONENT_NAME = "gamma_engine_supervisor"
-
-PREMARKET_START_HOUR_FALLBACK = 9
-PREMARKET_START_MINUTE_FALLBACK = 0
-SESSION_START_HOUR_FALLBACK = 9
-SESSION_START_MINUTE_FALLBACK = 15
-SESSION_END_HOUR_FALLBACK = 15
-SESSION_END_MINUTE_FALLBACK = 30
 
 
 def now_ist() -> datetime:
@@ -48,85 +46,6 @@ def log(message: str) -> None:
     print(line)
     with open(SUPERVISOR_LOG_FILE, "a", encoding="utf-8") as f:
         f.write(line + "\n")
-
-
-def parse_hhmm(value: str, fallback_hour: int, fallback_minute: int) -> tuple[int, int]:
-    try:
-        raw = str(value).strip()
-        parts = raw.split(":")
-        if len(parts) != 2:
-            raise ValueError("Invalid HH:MM format")
-        hour = int(parts[0])
-        minute = int(parts[1])
-        if not (0 <= hour <= 23 and 0 <= minute <= 59):
-            raise ValueError("Invalid time values")
-        return hour, minute
-    except Exception:
-        return fallback_hour, fallback_minute
-
-
-def get_session_bounds_for_today() -> tuple[datetime, datetime]:
-    session_cfg = get_session_times()
-
-    if session_cfg:
-        open_hour, open_minute = parse_hhmm(
-            session_cfg.get("open", "09:15"),
-            SESSION_START_HOUR_FALLBACK,
-            SESSION_START_MINUTE_FALLBACK,
-        )
-        close_hour, close_minute = parse_hhmm(
-            session_cfg.get("close", "15:30"),
-            SESSION_END_HOUR_FALLBACK,
-            SESSION_END_MINUTE_FALLBACK,
-        )
-    else:
-        open_hour, open_minute = SESSION_START_HOUR_FALLBACK, SESSION_START_MINUTE_FALLBACK
-        close_hour, close_minute = SESSION_END_HOUR_FALLBACK, SESSION_END_MINUTE_FALLBACK
-
-    now = now_ist()
-
-    session_start = now.replace(
-        hour=open_hour,
-        minute=open_minute,
-        second=0,
-        microsecond=0,
-    )
-    session_end = now.replace(
-        hour=close_hour,
-        minute=close_minute,
-        second=0,
-        microsecond=0,
-    )
-
-    return session_start, session_end
-
-
-def get_premarket_start_for_today() -> datetime:
-    now = now_ist()
-    return now.replace(
-        hour=PREMARKET_START_HOUR_FALLBACK,
-        minute=PREMARKET_START_MINUTE_FALLBACK,
-        second=0,
-        microsecond=0,
-    )
-
-
-def current_session_label() -> str:
-    now = now_ist()
-
-    if not is_trading_day():
-        return "Market Closed"
-
-    premarket_start = get_premarket_start_for_today()
-    session_start, session_end = get_session_bounds_for_today()
-
-    if now < premarket_start:
-        return "Market Closed"
-    if now < session_start:
-        return "PREMARKET"
-    if now <= session_end:
-        return "Market OPEN"
-    return "Market Closed"
 
 
 def _safe_int(value) -> int | None:
@@ -208,6 +127,13 @@ def _process_is_running(pid: int) -> bool:
         return False
 
 
+def session_label_for_heartbeat() -> str:
+    try:
+        return current_session_state()
+    except Exception:
+        return "UNKNOWN"
+
+
 def _write_supervisor_heartbeat(
     *,
     status: str,
@@ -227,7 +153,7 @@ def _write_supervisor_heartbeat(
     if runner_healthy is not None:
         extra["runner_healthy"] = runner_healthy
 
-    session = current_session_label()
+    session = session_label_for_heartbeat()
 
     if status == "OK":
         mark_component_ok(
@@ -336,17 +262,27 @@ def _runner_status() -> tuple[bool, str]:
 def _start_runner() -> None:
     cmd = [sys.executable, RUNNER_SCRIPT]
 
+    # IMPORTANT:
+    # Do NOT open a new terminal window.
+    # Use DETACHED_PROCESS + CREATE_NO_WINDOW on Windows so no console pops up.
     creationflags = 0
+    startupinfo = None
+
     if os.name == "nt":
-        creationflags = subprocess.CREATE_NEW_CONSOLE
+        creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW
 
     subprocess.Popen(
         cmd,
         cwd=str(Path(__file__).resolve().parent),
         creationflags=creationflags,
+        startupinfo=startupinfo,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL,
+        close_fds=True,
     )
 
-    log(f"Started runner: {' '.join(cmd)}")
+    log(f"Started runner without terminal window: {' '.join(cmd)}")
 
 
 def main() -> None:
@@ -378,8 +314,11 @@ def main() -> None:
         _update_lock_heartbeat(SUPERVISOR_LOCK_FILE, Path(__file__).name)
 
         try:
-            if not is_trading_day():
-                detail = "Trading calendar says CLOSED today. Supervisor idle."
+            cfg = get_today_session_config()
+            state = current_session_state()
+
+            if not cfg.is_open:
+                detail = f"Trading calendar marks {cfg.date} as CLOSED. Supervisor idle."
                 log(detail)
                 _write_supervisor_heartbeat(
                     status="OK",
@@ -391,30 +330,40 @@ def main() -> None:
                 time.sleep(SUPERVISOR_CHECK_INTERVAL_SECONDS)
                 continue
 
-            session_start, session_end = get_session_bounds_for_today()
-            now = now_ist()
-
-            if now < session_start:
-                detail = f"Before session start. Waiting. Session starts at {session_start.isoformat()}"
+            if state in {"CLOSED", "PREMARKET_MONITOR", "PREMARKET_REF_DUE", "OPEN_WAIT"}:
+                detail = f"Supervisor waiting for regular session. Current state={state}"
                 log(detail)
                 _write_supervisor_heartbeat(
                     status="OK",
                     notes=detail,
                     last_successful_cycle_utc=now_utc_iso(),
-                    runner_detail="Supervisor waiting for trading session",
+                    runner_detail="Supervisor waiting for regular session",
                     runner_healthy=None,
                 )
                 time.sleep(SUPERVISOR_CHECK_INTERVAL_SECONDS)
                 continue
 
-            if now > session_end:
-                detail = "Session already ended for today. Supervisor idle."
+            if state in {"POST_CLOSE_WAIT", "POSTMARKET_REF_DUE", "POSTMARKET_COMPLETE"}:
+                detail = f"Session no longer active for options runner. Current state={state}"
                 log(detail)
                 _write_supervisor_heartbeat(
                     status="OK",
                     notes=detail,
                     last_successful_cycle_utc=now_utc_iso(),
-                    runner_detail="Supervisor idle after market close",
+                    runner_detail="Supervisor idle after active session",
+                    runner_healthy=None,
+                )
+                time.sleep(SUPERVISOR_CHECK_INTERVAL_SECONDS)
+                continue
+
+            if state != "REGULAR_SESSION":
+                detail = f"Unexpected session state={state}. Supervisor idle."
+                log(detail)
+                _write_supervisor_heartbeat(
+                    status="WARN",
+                    notes=detail,
+                    last_successful_cycle_utc=now_utc_iso(),
+                    runner_detail="Supervisor encountered unexpected state",
                     runner_healthy=None,
                 )
                 time.sleep(SUPERVISOR_CHECK_INTERVAL_SECONDS)
@@ -444,6 +393,26 @@ def main() -> None:
 
             time.sleep(SUPERVISOR_CHECK_INTERVAL_SECONDS)
 
+        except MissingSessionConfigError as exc:
+            detail = f"Trading calendar coverage missing: {exc}"
+            log(detail)
+            _write_supervisor_heartbeat(
+                status="ERROR",
+                notes=detail,
+                last_successful_cycle_utc=now_utc_iso(),
+            )
+            time.sleep(SUPERVISOR_CHECK_INTERVAL_SECONDS)
+
+        except TradingCalendarError as exc:
+            detail = f"Trading calendar configuration error: {exc}"
+            log(detail)
+            _write_supervisor_heartbeat(
+                status="ERROR",
+                notes=detail,
+                last_successful_cycle_utc=now_utc_iso(),
+            )
+            time.sleep(SUPERVISOR_CHECK_INTERVAL_SECONDS)
+
         except KeyboardInterrupt:
             log("Supervisor interrupted by user. Exiting.")
             _write_supervisor_heartbeat(
@@ -452,6 +421,7 @@ def main() -> None:
                 last_successful_cycle_utc=now_utc_iso(),
             )
             break
+
         except Exception as exc:
             detail = f"Supervisor error: {exc}"
             log(detail)

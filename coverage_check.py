@@ -1,5 +1,7 @@
 import os
 import sys
+from collections import defaultdict
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -23,6 +25,8 @@ SUPABASE_HEADERS = {
 }
 
 PAGE_SIZE = 1000
+COMPLETE_EOD_THRESHOLD_PCT = 95.0
+RECENT_EOD_CANDIDATE_DAYS = 10
 
 
 def table_url(name: str) -> str:
@@ -71,18 +75,78 @@ def get_active_universe_count() -> int:
     return total
 
 
-def get_eod_coverage() -> Tuple[Optional[str], int, int, float]:
-    rows = get_json(table_url("breadth_coverage_latest"))
+def get_latest_available_eod_trade_date() -> Optional[str]:
+    params = {
+        "select": "trade_date",
+        "order": "trade_date.desc",
+        "limit": "1",
+    }
+    rows = get_json(table_url("equity_eod"), params=params)
     if not rows:
-        return None, 0, 0, 0.0
+        return None
+    return rows[0].get("trade_date")
 
-    row = rows[0]
-    return (
-        row.get("trade_date"),
-        int(row.get("tickers_with_eod") or 0),
-        int(row.get("active_universe") or 0),
-        float(row.get("coverage_pct") or 0.0),
-    )
+
+def get_recent_eod_rows(start_date: str) -> List[Dict[str, Any]]:
+    all_rows: List[Dict[str, Any]] = []
+    offset = 0
+
+    while True:
+        params = {
+            "select": "ticker,trade_date",
+            "trade_date": f"gte.{start_date}",
+            "order": "trade_date.desc,ticker.asc",
+            "offset": str(offset),
+            "limit": str(PAGE_SIZE),
+        }
+        rows = get_json(table_url("equity_eod"), params=params)
+        all_rows.extend(rows)
+
+        if len(rows) < PAGE_SIZE:
+            break
+
+        offset += PAGE_SIZE
+
+    return all_rows
+
+
+def get_latest_complete_eod_coverage(
+    active_universe: int,
+) -> Tuple[Optional[str], Optional[str], int, int, float]:
+    latest_available = get_latest_available_eod_trade_date()
+    if not latest_available:
+        return None, None, 0, active_universe, 0.0
+
+    latest_dt = datetime.strptime(latest_available, "%Y-%m-%d").date()
+    start_dt = latest_dt - timedelta(days=RECENT_EOD_CANDIDATE_DAYS)
+    rows = get_recent_eod_rows(start_dt.isoformat())
+
+    by_date: Dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        ticker = str(row.get("ticker") or "").strip().upper()
+        trade_date = str(row.get("trade_date") or "").strip()
+        if ticker and trade_date:
+            by_date[trade_date].add(ticker)
+
+    candidate_dates = sorted(by_date.keys(), reverse=True)
+    selected_date: Optional[str] = None
+    selected_count = 0
+
+    for trade_date in candidate_dates:
+        count_for_date = len(by_date[trade_date])
+        pct = (count_for_date / active_universe * 100.0) if active_universe else 0.0
+        if pct >= COMPLETE_EOD_THRESHOLD_PCT:
+            selected_date = trade_date
+            selected_count = count_for_date
+            break
+
+    if selected_date is None:
+        latest_count = len(by_date.get(latest_available, set()))
+        latest_pct = (latest_count / active_universe * 100.0) if active_universe else 0.0
+        return latest_available, None, latest_count, active_universe, round(latest_pct, 2)
+
+    pct = (selected_count / active_universe * 100.0) if active_universe else 0.0
+    return latest_available, selected_date, selected_count, active_universe, round(pct, 2)
 
 
 def get_latest_intraday_ts() -> Optional[str]:
@@ -150,17 +214,18 @@ def main() -> None:
     active_universe = get_active_universe_count()
     print(f"Active mapped NSE universe: {active_universe}")
 
-    eod_date, eod_have, eod_total, eod_pct = get_eod_coverage()
-    print(f"EOD coverage date  : {eod_date}")
-    print(f"EOD coverage       : {eod_have}/{eod_total} = {eod_pct:.2f}% [{classify(eod_pct)}]")
+    latest_available_eod_date, selected_eod_date, eod_have, eod_total, eod_pct = get_latest_complete_eod_coverage(active_universe)
+    print(f"Latest available EOD date : {latest_available_eod_date}")
+    print(f"Selected EOD coverage date: {selected_eod_date}")
+    print(f"EOD coverage              : {eod_have}/{eod_total} = {eod_pct:.2f}% [{classify(eod_pct)}]")
 
     ltp_ts, ltp_have, ltp_total, ltp_pct = get_intraday_ltp_coverage(active_universe)
-    print(f"Intraday LTP ts    : {ltp_ts}")
-    print(f"Intraday LTP       : {ltp_have}/{ltp_total} = {ltp_pct:.2f}% [{classify(ltp_pct)}]")
+    print(f"Intraday LTP ts           : {ltp_ts}")
+    print(f"Intraday LTP              : {ltp_have}/{ltp_total} = {ltp_pct:.2f}% [{classify(ltp_pct)}]")
 
     bts, breadth_have, breadth_total, breadth_pct = get_intraday_breadth_coverage(active_universe)
-    print(f"Intraday breadth ts: {bts}")
-    print(f"Intraday breadth   : {breadth_have}/{breadth_total} = {breadth_pct:.2f}% [{classify(breadth_pct)}]")
+    print(f"Intraday breadth ts       : {bts}")
+    print(f"Intraday breadth          : {breadth_have}/{breadth_total} = {breadth_pct:.2f}% [{classify(breadth_pct)}]")
 
 
 if __name__ == "__main__":

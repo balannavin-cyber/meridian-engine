@@ -1,16 +1,22 @@
 ﻿from __future__ import annotations
 
+import atexit
+import json
 import os
+import re
+import signal
+import subprocess
 import sys
 import time
-import json
-import signal
-import atexit
-import subprocess
-import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+from trading_calendar import (
+    MissingSessionConfigError,
+    TradingCalendarError,
+    current_session_state,
+)
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -19,11 +25,6 @@ LOG_PATH = BASE_DIR / "option_snapshot_intraday_runner.log"
 LOCK_PATH = BASE_DIR / "run_option_snapshot_intraday_runner.lock"
 
 SYMBOLS = ["NIFTY", "SENSEX"]
-
-SESSION_START_HOUR = 9
-SESSION_START_MINUTE = 15
-SESSION_END_HOUR = 15
-SESSION_END_MINUTE = 30
 
 CYCLE_MINUTES = 5
 
@@ -43,6 +44,7 @@ TIMEOUT_SHADOW_SIGNAL = 180
 SHADOW_FAILURE_IS_NON_BLOCKING = True
 
 LOCK_STALE_SECONDS = 900
+LOCK_HEARTBEAT_UPDATE_SECONDS = 15
 
 UUID_RE = re.compile(
     r"\b[0-9a-fA-F]{8}-"
@@ -57,6 +59,10 @@ def now_ist() -> datetime:
     return datetime.now(IST)
 
 
+def now_utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def ts() -> str:
     return now_ist().strftime("%Y-%m-%d %H:%M:%S %Z")
 
@@ -69,10 +75,12 @@ def log(message: str) -> None:
         f.write(line + "\n")
 
 
-def is_market_session(dt: datetime) -> bool:
-    start = dt.replace(hour=SESSION_START_HOUR, minute=SESSION_START_MINUTE, second=0, microsecond=0)
-    end = dt.replace(hour=SESSION_END_HOUR, minute=SESSION_END_MINUTE, second=0, microsecond=0)
-    return start <= dt <= end
+def is_active_market_session() -> bool:
+    try:
+        return current_session_state() == "REGULAR_SESSION"
+    except (MissingSessionConfigError, TradingCalendarError) as exc:
+        log(f"Trading calendar unavailable for option runner: {exc}")
+        return False
 
 
 def next_cycle_time(dt: datetime) -> datetime:
@@ -84,13 +92,6 @@ def next_cycle_time(dt: datetime) -> datetime:
     return current_bucket + timedelta(minutes=CYCLE_MINUTES)
 
 
-def next_session_start(dt: datetime) -> datetime:
-    candidate = dt.replace(hour=SESSION_START_HOUR, minute=SESSION_START_MINUTE, second=0, microsecond=0)
-    if dt < candidate:
-        return candidate
-    return candidate + timedelta(days=1)
-
-
 def sleep_until(target: datetime) -> None:
     while True:
         now = now_ist()
@@ -100,42 +101,93 @@ def sleep_until(target: datetime) -> None:
         time.sleep(min(remaining, 5))
 
 
+def _read_lock_payload() -> dict:
+    if not LOCK_PATH.exists():
+        return {}
+    try:
+        raw = LOCK_PATH.read_text(encoding="utf-8").strip()
+        return json.loads(raw) if raw else {}
+    except Exception:
+        return {}
+
+
+def _write_lock_payload(payload: dict) -> None:
+    LOCK_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _process_is_running(pid: int | None) -> bool:
+    if not pid:
+        return False
+
+    try:
+        if os.name == "nt":
+            proc = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return str(pid) in proc.stdout
+        os.kill(int(pid), 0)
+        return True
+    except Exception:
+        return False
+
+
+def _parse_iso_datetime(value: str | None):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def update_lock_heartbeat() -> None:
+    if not LOCK_PATH.exists():
+        return
+
+    payload = _read_lock_payload()
+    payload["pid"] = os.getpid()
+    payload["last_heartbeat_utc"] = now_utc_iso()
+    payload["last_heartbeat_local"] = ts()
+    _write_lock_payload(payload)
+
+
 def acquire_lock() -> None:
     if LOCK_PATH.exists():
-        try:
-            raw = LOCK_PATH.read_text(encoding="utf-8").strip()
-            data = json.loads(raw) if raw else {}
-        except Exception:
-            data = {}
+        data = _read_lock_payload()
 
         pid = data.get("pid")
-        created_at = data.get("created_at_epoch", 0)
-        age = time.time() - float(created_at or 0)
+        created_at = float(data.get("created_at_epoch", 0) or 0)
+        last_heartbeat = _parse_iso_datetime(data.get("last_heartbeat_utc"))
 
-        stale = age > LOCK_STALE_SECONDS
-        alive = False
+        age = time.time() - created_at if created_at else None
+        heartbeat_age = None
+        if last_heartbeat is not None:
+            heartbeat_age = (datetime.now(timezone.utc) - last_heartbeat).total_seconds()
 
-        if pid:
-            try:
-                if os.name == "nt":
-                    proc = subprocess.run(
-                        ["tasklist", "/FI", f"PID eq {pid}"],
-                        capture_output=True,
-                        text=True,
-                        timeout=10,
-                    )
-                    alive = str(pid) in proc.stdout
-                else:
-                    os.kill(int(pid), 0)
-                    alive = True
-            except Exception:
-                alive = False
+        alive = _process_is_running(pid)
+        stale = False
+        if heartbeat_age is not None:
+            stale = heartbeat_age > LOCK_STALE_SECONDS
+        elif age is not None:
+            stale = age > LOCK_STALE_SECONDS
 
-        if alive and not stale:
-            log(f"Another runner appears active (pid={pid}). Exiting.")
+        # IMPORTANT:
+        # Do NOT reclaim a lock if the process still appears alive.
+        # That risks double runners.
+        if alive:
+            log(
+                f"Another runner appears active (pid={pid}, stale={stale}, "
+                f"heartbeat_age={heartbeat_age}). Exiting."
+            )
             sys.exit(255)
 
-        log(f"Reclaiming stale/dead lock file (pid={pid}, stale={stale}, alive={alive}).")
+        log(
+            f"Reclaiming stale/dead lock file "
+            f"(pid={pid}, stale={stale}, alive={alive}, heartbeat_age={heartbeat_age})."
+        )
         try:
             LOCK_PATH.unlink(missing_ok=True)
         except Exception as e:
@@ -145,16 +197,28 @@ def acquire_lock() -> None:
         "pid": os.getpid(),
         "created_at_epoch": time.time(),
         "created_at_local": ts(),
+        "created_at_utc": now_utc_iso(),
+        "last_heartbeat_utc": now_utc_iso(),
+        "last_heartbeat_local": ts(),
+        "script": Path(__file__).name,
     }
-    LOCK_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    _write_lock_payload(payload)
     log(f"Lock acquired: {LOCK_PATH}")
 
 
 def release_lock() -> None:
     try:
         if LOCK_PATH.exists():
-            LOCK_PATH.unlink()
-            log(f"Lock released: {LOCK_PATH}")
+            data = _read_lock_payload()
+            lock_pid = data.get("pid")
+            if lock_pid is None or int(lock_pid) == os.getpid():
+                LOCK_PATH.unlink()
+                log(f"Lock released: {LOCK_PATH}")
+            else:
+                log(
+                    f"Lock file not removed because it belongs to another pid "
+                    f"(lock pid={lock_pid}, current pid={os.getpid()})."
+                )
     except Exception as e:
         log(f"WARNING: Failed to release lock: {e}")
 
@@ -163,7 +227,7 @@ def handle_exit(signum=None, frame=None) -> None:
     if signum is not None:
         log(f"Received signal {signum}. Shutting down.")
     release_lock()
-    sys.exit(0)
+    raise SystemExit(0)
 
 
 def run_cmd(args: list[str], timeout: int, step_name: str, non_blocking: bool = False) -> tuple[bool, str]:
@@ -288,6 +352,7 @@ def run_live_cycle_for_symbol(symbol: str) -> None:
         [[symbol]],
         timeout=TIMEOUT_MOMENTUM,
         step_name=f"{symbol} build_momentum_features_live",
+        non_blocking=True,
     )
 
     run_with_fallbacks(
@@ -303,11 +368,6 @@ def run_live_cycle_for_symbol(symbol: str) -> None:
         timeout=TIMEOUT_SIGNAL,
         step_name=f"{symbol} build_trade_signal_live",
     )
-
-    # -------------------------
-    # SHADOW PIPELINE (NON-BLOCKING, PARALLEL)
-    # Runs after the live path is finalized.
-    # -------------------------
 
     run_with_fallbacks(
         "compute_options_flow_local.py",
@@ -381,29 +441,40 @@ def main() -> None:
     acquire_lock()
     log("Runner started.")
 
+    last_heartbeat_write = 0.0
+
     while True:
+        now_epoch = time.time()
+        if now_epoch - last_heartbeat_write >= LOCK_HEARTBEAT_UPDATE_SECONDS:
+            update_lock_heartbeat()
+            last_heartbeat_write = now_epoch
+
+        if not is_active_market_session():
+            log("Outside active market session. Exiting runner cleanly.")
+            break
+
         now = now_ist()
-
-        if not is_market_session(now):
-            target = next_session_start(now)
-            log(f"Outside market session. Sleeping until {target.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-            sleep_until(target)
-            continue
-
         target = next_cycle_time(now)
         if target > now:
             log(f"Waiting for next 5-minute boundary: {target.strftime('%Y-%m-%d %H:%M:%S %Z')}")
             sleep_until(target)
 
-        now = now_ist()
-        if not is_market_session(now):
-            continue
+        update_lock_heartbeat()
+        last_heartbeat_write = time.time()
+
+        if not is_active_market_session():
+            log("No longer inside active market session after wait. Exiting runner cleanly.")
+            break
 
         try:
             run_full_cycle()
         except Exception as e:
-            log(f"FATAL CYCLE ERROR: {e}")
-            raise
+            log(f"CYCLE ERROR (continuing to next cycle): {e}")
+
+        update_lock_heartbeat()
+        last_heartbeat_write = time.time()
+
+    release_lock()
 
 
 if __name__ == "__main__":

@@ -1,553 +1,347 @@
 from __future__ import annotations
 
-import math
+import json
 import os
 import sys
-from dataclasses import dataclass
+from bisect import bisect_left
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
-
-try:
-    from dotenv import load_dotenv
-except ImportError:  # pragma: no cover
-    load_dotenv = None
+from dotenv import load_dotenv
 
 
-# ============================================================================
-# MERDIAN - Build Signal Regret Log V1
-# ----------------------------------------------------------------------------
-# Purpose:
-#   Evaluate DO_NOTHING signals across spot, futures, and execution-style
-#   option contracts (CE lower / PE higher).
-#
-# Reads from:
-#   public.signal_snapshots
-#   public.market_spot_snapshots
-#   public.index_futures_snapshots
-#   public.option_execution_price_history
-#
-# Writes to:
-#   public.signal_regret_log_v1
-#
-# Notes:
-#   - This version processes DO_NOTHING signals only.
-#   - Uses nearest available point at or after each horizon target.
-#   - Option logic uses asymmetric strike selection:
-#       CE = closest lower strike
-#       PE = next higher strike
-#   - Option price history source is assumed to be
-#       source = 'dhan_execution_capture_v2'
-# ============================================================================
+load_dotenv()
 
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
-if load_dotenv is not None:
-    load_dotenv()
+if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+    print("ERROR: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env")
+    sys.exit(1)
 
-
-SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
-SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
-
-REQUEST_TIMEOUT_SECONDS = 30
-SIGNAL_LIMIT = 500
-
-STRIKE_STEP = {
-    "NIFTY": 50,
-    "SENSEX": 100,
+SUPABASE_HEADERS = {
+    "apikey": SUPABASE_SERVICE_ROLE_KEY,
+    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+    "Content-Type": "application/json",
+    "Accept": "application/json",
 }
 
-
-class ConfigError(RuntimeError):
-    pass
-
-
-class SupabaseError(RuntimeError):
-    pass
+SIGNAL_FETCH_LIMIT = 1000
+UPSERT_BATCH_SIZE = 500
 
 
-@dataclass
-class SignalRecord:
-    signal_id: int
-    symbol: str
-    signal_ts: str
-    signal_action: str
-    confidence_score: Optional[float]
-    direction_bias: Optional[str]
-    entry_spot: Optional[float]
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
-@dataclass
-class PricePoint:
-    ts: str
-    value: float
+def utc_now_iso() -> str:
+    return utc_now().isoformat()
 
 
-@dataclass
-class OptionPoint:
-    ts: str
-    ltp: float
-    expiry_date: Optional[str]
+def jdump(obj: Any) -> str:
+    return json.dumps(obj, ensure_ascii=False, indent=2)
 
 
-def require_env(name: str, value: str) -> str:
-    if not value:
-        raise ConfigError(f"Missing required environment variable: {name}")
-    return value
+def supabase_table_url(table_name: str) -> str:
+    return f"{SUPABASE_URL}/rest/v1/{table_name}"
 
 
-def print_header() -> None:
-    print("=" * 72)
-    print("MERDIAN - Build Signal Regret Log V1")
-    print("=" * 72)
+def http_get(url: str, params: Optional[Dict[str, Any]] = None) -> requests.Response:
+    r = requests.get(url, headers=SUPABASE_HEADERS, params=params or {}, timeout=60)
+    r.raise_for_status()
+    return r
 
 
-def now_utc_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def http_post(url: str, json_body: Any, params: Optional[Dict[str, Any]] = None) -> requests.Response:
+    r = requests.post(url, headers=SUPABASE_HEADERS, params=params or {}, json=json_body, timeout=120)
+    r.raise_for_status()
+    return r
 
 
-def parse_float(value: Any) -> Optional[float]:
+def parse_ts(value: Any) -> Optional[datetime]:
     if value is None:
         return None
+    text = str(value).strip()
+    if not text:
+        return None
+    text = text.replace("Z", "+00:00")
     try:
+        dt = datetime.fromisoformat(text)
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def safe_float(value: Any) -> Optional[float]:
+    try:
+        if value is None or value == "":
+            return None
         return float(value)
     except Exception:
         return None
 
 
-def parse_dt(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
-
-
-def pct_move(entry: Optional[float], later: Optional[float]) -> Optional[float]:
-    if entry is None or later is None or entry == 0:
-        return None
-    return ((later - entry) / entry) * 100.0
-
-
-def abs_move(entry: Optional[float], later: Optional[float]) -> Optional[float]:
-    if entry is None or later is None:
-        return None
-    return later - entry
-
-
-def get_supabase_headers() -> Dict[str, str]:
-    return {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
+def get_recent_signals(limit: int = SIGNAL_FETCH_LIMIT) -> List[Dict[str, Any]]:
+    url = supabase_table_url("signal_snapshots")
+    params = {
+        "select": (
+            "id,ts,symbol,action,direction_bias,confidence_score,"
+            "gamma_regime,breadth_regime,flip_distance,spot"
+        ),
+        "order": "ts.desc",
+        "limit": str(limit),
     }
-
-
-def supabase_get(table: str, params: Dict[str, str]) -> List[Dict[str, Any]]:
-    url = f"{SUPABASE_URL}/rest/v1/{table}"
-    response = requests.get(
-        url,
-        headers=get_supabase_headers(),
-        params=params,
-        timeout=REQUEST_TIMEOUT_SECONDS,
-    )
-    if response.status_code >= 300:
-        raise SupabaseError(
-            f"GET {table} failed | status={response.status_code} | body={response.text}"
-        )
-    data = response.json()
+    r = http_get(url, params=params)
+    data = r.json()
     if not isinstance(data, list):
-        raise SupabaseError(f"GET {table} returned unexpected payload: {data}")
+        raise RuntimeError(f"signal_snapshots response is not a list: {jdump(data)}")
     return data
 
 
-def supabase_post_upsert(table: str, rows: List[Dict[str, Any]], on_conflict: str) -> None:
-    url = f"{SUPABASE_URL}/rest/v1/{table}"
-    headers = get_supabase_headers()
-    headers["Prefer"] = "resolution=merge-duplicates"
-    response = requests.post(
-        url,
-        headers=headers,
-        params={"on_conflict": on_conflict},
-        json=rows,
-        timeout=REQUEST_TIMEOUT_SECONDS,
-    )
-    if response.status_code >= 300:
-        raise SupabaseError(
-            f"POST upsert {table} failed | status={response.status_code} | body={response.text}"
-        )
+def get_logged_signal_ids() -> set[int]:
+    url = supabase_table_url("signal_regret_log")
+    params = {
+        "select": "signal_snapshot_id",
+        "limit": "10000",
+    }
+    r = http_get(url, params=params)
+    data = r.json()
+    if not isinstance(data, list):
+        return set()
 
-
-def fetch_do_nothing_signals() -> List[SignalRecord]:
-    rows = supabase_get(
-        "signal_snapshots",
-        {
-            "select": "id,symbol,ts,action,confidence_score,direction_bias,spot",
-            "action": "eq.DO_NOTHING",
-            "order": "ts.desc",
-            "limit": str(SIGNAL_LIMIT),
-        },
-    )
-
-    signals: List[SignalRecord] = []
-    for row in rows:
-        signal_id = row.get("id")
-        symbol = row.get("symbol")
-        signal_ts = row.get("ts")
-        signal_action = row.get("action")
-
-        if signal_id is None or not symbol or not signal_ts or not signal_action:
+    out: set[int] = set()
+    for row in data:
+        try:
+            out.add(int(row["signal_snapshot_id"]))
+        except Exception:
             continue
-
-        signals.append(
-            SignalRecord(
-                signal_id=int(signal_id),
-                symbol=str(symbol),
-                signal_ts=str(signal_ts),
-                signal_action=str(signal_action),
-                confidence_score=parse_float(row.get("confidence_score")),
-                direction_bias=(str(row.get("direction_bias")).strip().upper() if row.get("direction_bias") is not None else None),
-                entry_spot=parse_float(row.get("spot")),
-            )
-        )
-
-    print(f"[INFO] DO_NOTHING signals fetched: {len(signals)}")
-    return signals
+    return out
 
 
-def first_point_at_or_after_price(series: List[PricePoint], target_dt: datetime) -> Optional[PricePoint]:
-    for point in series:
-        if parse_dt(point.ts) >= target_dt:
-            return point
-    return None
+def get_unlogged_signals(limit: int = SIGNAL_FETCH_LIMIT) -> List[Dict[str, Any]]:
+    recent = get_recent_signals(limit=limit)
+    logged_ids = get_logged_signal_ids()
 
-
-def first_point_at_or_after_option(series: List[OptionPoint], target_dt: datetime) -> Optional[OptionPoint]:
-    for point in series:
-        if parse_dt(point.ts) >= target_dt:
-            return point
-    return None
-
-
-def fetch_spot_series(symbol: str, signal_ts: str) -> List[PricePoint]:
-    signal_dt = parse_dt(signal_ts)
-    end_dt = signal_dt + timedelta(minutes=60)
-
-    rows = supabase_get(
-        "market_spot_snapshots",
-        {
-            "select": "ts,spot",
-            "symbol": f"eq.{symbol}",
-            "ts": f"gte.{signal_dt.isoformat()}",
-            "order": "ts.asc",
-            "limit": "5000",
-        },
-    )
-
-    series: List[PricePoint] = []
-    for row in rows:
-        ts = row.get("ts")
-        spot = parse_float(row.get("spot"))
-        if not ts or spot is None:
+    out: List[Dict[str, Any]] = []
+    for row in recent:
+        try:
+            signal_id = int(row["id"])
+        except Exception:
             continue
-        if parse_dt(str(ts)) > end_dt:
-            continue
-        series.append(PricePoint(ts=str(ts), value=spot))
-
-    return series
-
-
-def fetch_futures_series(symbol: str, signal_ts: str) -> List[PricePoint]:
-    signal_dt = parse_dt(signal_ts)
-    end_dt = signal_dt + timedelta(minutes=60)
-
-    rows = supabase_get(
-        "index_futures_snapshots",
-        {
-            "select": "ts,futures_price",
-            "symbol": f"eq.{symbol}",
-            "ts": f"gte.{signal_dt.isoformat()}",
-            "order": "ts.asc",
-            "limit": "5000",
-        },
-    )
-
-    series: List[PricePoint] = []
-    for row in rows:
-        ts = row.get("ts")
-        px = parse_float(row.get("futures_price"))
-        if not ts or px is None:
-            continue
-        if parse_dt(str(ts)) > end_dt:
-            continue
-        series.append(PricePoint(ts=str(ts), value=px))
-
-    return series
+        if signal_id not in logged_ids:
+            out.append(row)
+    out.sort(key=lambda r: str(r.get("ts") or ""))
+    return out
 
 
-def execution_strikes(symbol: str, spot: float) -> Tuple[float, float]:
-    step = STRIKE_STEP[symbol]
-    lower = math.floor(spot / step) * step
-    upper = math.ceil(spot / step) * step
-    return float(lower), float(upper)
-
-
-def fetch_option_series(
-    symbol: str,
-    signal_ts: str,
-    option_type: str,
-    strike: float,
-) -> List[OptionPoint]:
-    signal_dt = parse_dt(signal_ts)
-    end_dt = signal_dt + timedelta(minutes=60)
-
-    rows = supabase_get(
-        "option_execution_price_history",
-        {
-            "select": "ts,ltp,expiry_date",
-            "symbol": f"eq.{symbol}",
-            "option_type": f"eq.{option_type}",
-            "strike": f"eq.{strike}",
-            "source": "eq.dhan_execution_capture_v2",
-            "ts": f"gte.{signal_dt.isoformat()}",
-            "order": "ts.asc",
-            "limit": "5000",
-        },
-    )
-
-    series: List[OptionPoint] = []
-    for row in rows:
-        ts = row.get("ts")
-        ltp = parse_float(row.get("ltp"))
-        if not ts or ltp is None:
-            continue
-        if parse_dt(str(ts)) > end_dt:
-            continue
-        series.append(
-            OptionPoint(
-                ts=str(ts),
-                ltp=ltp,
-                expiry_date=(str(row.get("expiry_date")) if row.get("expiry_date") is not None else None),
-            )
-        )
-
-    return series
-
-
-def classify_regret(
-    spot_move_pct: Optional[float],
-    threshold_pct: float = 0.25,
-) -> Optional[str]:
-    if spot_move_pct is None:
-        return None
-    if spot_move_pct <= -threshold_pct:
-        return "MISSED_BEARISH"
-    if spot_move_pct >= threshold_pct:
-        return "MISSED_BULLISH"
-    return "JUSTIFIED_NO_TRADE"
-
-
-def build_regret_row(signal: SignalRecord) -> Optional[Dict[str, Any]]:
-    if signal.symbol not in STRIKE_STEP:
-        return None
-
-    signal_dt = parse_dt(signal.signal_ts)
-
-    spot_series = fetch_spot_series(signal.symbol, signal.signal_ts)
-    futures_series = fetch_futures_series(signal.symbol, signal.signal_ts)
-
-    if not spot_series:
-        return None
-
-    spot_entry = spot_series[0]
-    entry_spot = signal.entry_spot if signal.entry_spot is not None else spot_entry.value
-
-    lower_strike, upper_strike = execution_strikes(signal.symbol, entry_spot)
-
-    ce_series = fetch_option_series(signal.symbol, signal.signal_ts, "CE", lower_strike)
-    pe_series = fetch_option_series(signal.symbol, signal.signal_ts, "PE", upper_strike)
-
-    spot_15 = first_point_at_or_after_price(spot_series, signal_dt + timedelta(minutes=15))
-    spot_30 = first_point_at_or_after_price(spot_series, signal_dt + timedelta(minutes=30))
-    spot_60 = first_point_at_or_after_price(spot_series, signal_dt + timedelta(minutes=60))
-
-    fut_entry = futures_series[0].value if futures_series else None
-    fut_15 = first_point_at_or_after_price(futures_series, signal_dt + timedelta(minutes=15)) if futures_series else None
-    fut_30 = first_point_at_or_after_price(futures_series, signal_dt + timedelta(minutes=30)) if futures_series else None
-    fut_60 = first_point_at_or_after_price(futures_series, signal_dt + timedelta(minutes=60)) if futures_series else None
-
-    ce_entry = ce_series[0] if ce_series else None
-    ce_15 = first_point_at_or_after_option(ce_series, signal_dt + timedelta(minutes=15)) if ce_series else None
-    ce_30 = first_point_at_or_after_option(ce_series, signal_dt + timedelta(minutes=30)) if ce_series else None
-    ce_60 = first_point_at_or_after_option(ce_series, signal_dt + timedelta(minutes=60)) if ce_series else None
-
-    pe_entry = pe_series[0] if pe_series else None
-    pe_15 = first_point_at_or_after_option(pe_series, signal_dt + timedelta(minutes=15)) if pe_series else None
-    pe_30 = first_point_at_or_after_option(pe_series, signal_dt + timedelta(minutes=30)) if pe_series else None
-    pe_60 = first_point_at_or_after_option(pe_series, signal_dt + timedelta(minutes=60)) if pe_series else None
-
-    spot_15_val = spot_15.value if spot_15 else None
-    spot_30_val = spot_30.value if spot_30 else None
-    spot_60_val = spot_60.value if spot_60 else None
-
-    fut_15_val = fut_15.value if fut_15 else None
-    fut_30_val = fut_30.value if fut_30 else None
-    fut_60_val = fut_60.value if fut_60 else None
-
-    ce_entry_ltp = ce_entry.ltp if ce_entry else None
-    ce_15_ltp = ce_15.ltp if ce_15 else None
-    ce_30_ltp = ce_30.ltp if ce_30 else None
-    ce_60_ltp = ce_60.ltp if ce_60 else None
-
-    pe_entry_ltp = pe_entry.ltp if pe_entry else None
-    pe_15_ltp = pe_15.ltp if pe_15 else None
-    pe_30_ltp = pe_30.ltp if pe_30 else None
-    pe_60_ltp = pe_60.ltp if pe_60 else None
-
-    spot_move_15 = abs_move(entry_spot, spot_15_val)
-    spot_move_30 = abs_move(entry_spot, spot_30_val)
-    spot_move_60 = abs_move(entry_spot, spot_60_val)
-
-    spot_move_15_pct = pct_move(entry_spot, spot_15_val)
-    spot_move_30_pct = pct_move(entry_spot, spot_30_val)
-    spot_move_60_pct = pct_move(entry_spot, spot_60_val)
-
-    futures_move_15 = abs_move(fut_entry, fut_15_val)
-    futures_move_30 = abs_move(fut_entry, fut_30_val)
-    futures_move_60 = abs_move(fut_entry, fut_60_val)
-
-    futures_move_15_pct = pct_move(fut_entry, fut_15_val)
-    futures_move_30_pct = pct_move(fut_entry, fut_30_val)
-    futures_move_60_pct = pct_move(fut_entry, fut_60_val)
-
-    ce_move_15 = abs_move(ce_entry_ltp, ce_15_ltp)
-    ce_move_30 = abs_move(ce_entry_ltp, ce_30_ltp)
-    ce_move_60 = abs_move(ce_entry_ltp, ce_60_ltp)
-
-    ce_move_15_pct = pct_move(ce_entry_ltp, ce_15_ltp)
-    ce_move_30_pct = pct_move(ce_entry_ltp, ce_30_ltp)
-    ce_move_60_pct = pct_move(ce_entry_ltp, ce_60_ltp)
-
-    pe_move_15 = abs_move(pe_entry_ltp, pe_15_ltp)
-    pe_move_30 = abs_move(pe_entry_ltp, pe_30_ltp)
-    pe_move_60 = abs_move(pe_entry_ltp, pe_60_ltp)
-
-    pe_move_15_pct = pct_move(pe_entry_ltp, pe_15_ltp)
-    pe_move_30_pct = pct_move(pe_entry_ltp, pe_30_ltp)
-    pe_move_60_pct = pct_move(pe_entry_ltp, pe_60_ltp)
-
-    row = {
-        "signal_id": signal.signal_id,
-        "symbol": signal.symbol,
-        "signal_ts": signal.signal_ts,
-        "signal_action": signal.signal_action,
-        "confidence_score": signal.confidence_score,
-        "direction_bias": signal.direction_bias,
-        "entry_spot": entry_spot,
-        "entry_futures": fut_entry,
-        "ce_strike": lower_strike,
-        "pe_strike": upper_strike,
-        "ce_expiry_date": ce_entry.expiry_date if ce_entry else None,
-        "pe_expiry_date": pe_entry.expiry_date if pe_entry else None,
-        "spot_15m": spot_15_val,
-        "spot_30m": spot_30_val,
-        "spot_60m": spot_60_val,
-        "futures_15m": fut_15_val,
-        "futures_30m": fut_30_val,
-        "futures_60m": fut_60_val,
-        "ce_entry_ltp": ce_entry_ltp,
-        "ce_15m_ltp": ce_15_ltp,
-        "ce_30m_ltp": ce_30_ltp,
-        "ce_60m_ltp": ce_60_ltp,
-        "pe_entry_ltp": pe_entry_ltp,
-        "pe_15m_ltp": pe_15_ltp,
-        "pe_30m_ltp": pe_30_ltp,
-        "pe_60m_ltp": pe_60_ltp,
-        "spot_move_15m": spot_move_15,
-        "spot_move_30m": spot_move_30,
-        "spot_move_60m": spot_move_60,
-        "spot_move_15m_pct": spot_move_15_pct,
-        "spot_move_30m_pct": spot_move_30_pct,
-        "spot_move_60m_pct": spot_move_60_pct,
-        "futures_move_15m": futures_move_15,
-        "futures_move_30m": futures_move_30,
-        "futures_move_60m": futures_move_60,
-        "futures_move_15m_pct": futures_move_15_pct,
-        "futures_move_30m_pct": futures_move_30_pct,
-        "futures_move_60m_pct": futures_move_60_pct,
-        "ce_move_15m": ce_move_15,
-        "ce_move_30m": ce_move_30,
-        "ce_move_60m": ce_move_60,
-        "ce_move_15m_pct": ce_move_15_pct,
-        "ce_move_30m_pct": ce_move_30_pct,
-        "ce_move_60m_pct": ce_move_60_pct,
-        "pe_move_15m": pe_move_15,
-        "pe_move_30m": pe_move_30,
-        "pe_move_60m": pe_move_60,
-        "pe_move_15m_pct": pe_move_15_pct,
-        "pe_move_30m_pct": pe_move_30_pct,
-        "pe_move_60m_pct": pe_move_60_pct,
-        "regret_label_15m": classify_regret(spot_move_15_pct),
-        "regret_label_30m": classify_regret(spot_move_30_pct),
-        "regret_label_60m": classify_regret(spot_move_60_pct),
-        "source": "build_signal_regret_log_v1",
-        "raw": {
-            "built_at_utc": now_utc_iso(),
-            "spot_points": len(spot_series),
-            "futures_points": len(futures_series),
-            "ce_points": len(ce_series),
-            "pe_points": len(pe_series),
-            "ce_entry_ts": ce_entry.ts if ce_entry else None,
-            "pe_entry_ts": pe_entry.ts if pe_entry else None,
-            "spot_entry_ts": spot_entry.ts if spot_entry else None,
-        },
+def fetch_spot_rows_for_symbol(symbol: str, start_ts: datetime, end_ts: datetime) -> List[Dict[str, Any]]:
+    url = supabase_table_url("market_spot_snapshots")
+    params = {
+        "select": "ts,spot",
+        "symbol": f"eq.{symbol}",
+        "ts": f"gte.{start_ts.isoformat()}",
+        "order": "ts.asc",
+        "limit": "10000",
     }
 
-    return row
+    r = http_get(url, params=params)
+    data = r.json()
+    if not isinstance(data, list):
+        raise RuntimeError(f"market_spot_snapshots response is not a list for {symbol}: {jdump(data)}")
 
-
-def main() -> int:
-    print_header()
-
-    require_env("SUPABASE_URL", SUPABASE_URL)
-    require_env("SUPABASE_SERVICE_ROLE_KEY", SUPABASE_SERVICE_ROLE_KEY)
-
-    signals = fetch_do_nothing_signals()
-    if not signals:
-        print("[DONE] No DO_NOTHING signals found.")
-        return 0
-
-    output_rows: List[Dict[str, Any]] = []
-    skipped = 0
-
-    for signal in signals:
-        row = build_regret_row(signal)
-        if row is None:
-            skipped += 1
+    out: List[Dict[str, Any]] = []
+    for row in data:
+        ts_val = parse_ts(row.get("ts"))
+        if ts_val is None:
             continue
+        if ts_val > end_ts:
+            break
+        out.append(
+            {
+                "ts": ts_val,
+                "spot": safe_float(row.get("spot")),
+            }
+        )
+    return out
 
-        output_rows.append(row)
+
+def build_spot_index(spot_rows: List[Dict[str, Any]]) -> Tuple[List[datetime], List[Optional[float]]]:
+    ts_list: List[datetime] = []
+    spot_list: List[Optional[float]] = []
+
+    for row in spot_rows:
+        ts_val = row["ts"]
+        spot_val = row["spot"]
+        ts_list.append(ts_val)
+        spot_list.append(spot_val)
+
+    return ts_list, spot_list
+
+
+def first_spot_at_or_after(
+    ts_list: List[datetime],
+    spot_list: List[Optional[float]],
+    target_ts: datetime,
+) -> Optional[float]:
+    idx = bisect_left(ts_list, target_ts)
+    while idx < len(ts_list):
+        val = spot_list[idx]
+        if val is not None:
+            return val
+        idx += 1
+    return None
+
+
+def pct_move(from_spot: Optional[float], to_spot: Optional[float]) -> Optional[float]:
+    if from_spot is None or to_spot is None:
+        return None
+    if from_spot == 0:
+        return None
+    return ((to_spot - from_spot) / from_spot) * 100.0
+
+
+def direction_correct(action: str, move_pct: Optional[float]) -> Optional[bool]:
+    if move_pct is None:
+        return None
+
+    action_u = str(action or "").upper()
+    if action_u == "BUY_CE":
+        return move_pct > 0
+    if action_u == "BUY_PE":
+        return move_pct < 0
+    if action_u == "DO_NOTHING":
+        return None
+    return None
+
+
+def build_symbol_spot_cache(signal_rows: List[Dict[str, Any]]) -> Dict[str, Tuple[List[datetime], List[Optional[float]]]]:
+    by_symbol: Dict[str, List[datetime]] = {}
+
+    for s in signal_rows:
+        symbol = str(s.get("symbol") or "").strip().upper()
+        signal_ts = parse_ts(s.get("ts"))
+        if not symbol or signal_ts is None:
+            continue
+        by_symbol.setdefault(symbol, []).append(signal_ts)
+
+    cache: Dict[str, Tuple[List[datetime], List[Optional[float]]]] = {}
+
+    for symbol, ts_values in by_symbol.items():
+        start_ts = min(ts_values) - timedelta(minutes=1)
+        end_ts = max(ts_values) + timedelta(minutes=61)
+
+        spot_rows = fetch_spot_rows_for_symbol(symbol, start_ts, end_ts)
+        ts_list, spot_list = build_spot_index(spot_rows)
+        cache[symbol] = (ts_list, spot_list)
+
         print(
-            f"[ROW] signal_id={signal.signal_id} | symbol={signal.symbol} | ts={signal.signal_ts}"
+            f"Spot cache built | symbol={symbol} | rows={len(spot_rows)} | "
+            f"window={start_ts.isoformat()} -> {end_ts.isoformat()}"
         )
 
-    print(f"[INFO] Regret rows built: {len(output_rows)}")
-    print(f"[INFO] Skipped: {skipped}")
+    return cache
 
-    if not output_rows:
-        print("[DONE] No regret rows to upsert.")
-        return 0
 
-    supabase_post_upsert(
-        "signal_regret_log_v1",
-        output_rows,
-        on_conflict="signal_id",
-    )
+def build_regret_rows(signal_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    spot_cache = build_symbol_spot_cache(signal_rows)
 
-    print(f"[DONE] Rows upserted: {len(output_rows)}")
-    return 0
+    for s in signal_rows:
+        try:
+            signal_id = int(s["id"])
+        except Exception:
+            continue
+
+        symbol = str(s.get("symbol") or "").strip().upper()
+        action = str(s.get("action") or "").strip()
+        signal_ts = parse_ts(s.get("ts"))
+        spot_at_signal = safe_float(s.get("spot"))
+
+        if not symbol or not action or signal_ts is None:
+            continue
+
+        ts_15m = signal_ts + timedelta(minutes=15)
+        ts_30m = signal_ts + timedelta(minutes=30)
+        ts_60m = signal_ts + timedelta(minutes=60)
+
+        ts_list, spot_list = spot_cache.get(symbol, ([], []))
+
+        spot_15m = first_spot_at_or_after(ts_list, spot_list, ts_15m)
+        spot_30m = first_spot_at_or_after(ts_list, spot_list, ts_30m)
+        spot_60m = first_spot_at_or_after(ts_list, spot_list, ts_60m)
+
+        move_15m_pct = pct_move(spot_at_signal, spot_15m)
+        move_30m_pct = pct_move(spot_at_signal, spot_30m)
+        move_60m_pct = pct_move(spot_at_signal, spot_60m)
+
+        row = {
+            "signal_snapshot_id": signal_id,
+            "symbol": symbol,
+            "signal_ts": signal_ts.isoformat(),
+            "action": action,
+            "direction_bias": s.get("direction_bias"),
+            "confidence_score": s.get("confidence_score"),
+            "gamma_regime": s.get("gamma_regime"),
+            "breadth_regime": s.get("breadth_regime"),
+            "flip_distance_raw": s.get("flip_distance"),
+            "spot_at_signal": spot_at_signal,
+            "spot_at_15m": spot_15m,
+            "spot_at_30m": spot_30m,
+            "spot_at_60m": spot_60m,
+            "move_15m_pct": move_15m_pct,
+            "move_30m_pct": move_30m_pct,
+            "move_60m_pct": move_60m_pct,
+            "direction_was_correct": direction_correct(action, move_60m_pct),
+            "labeller_version": "v1",
+            "created_at": utc_now_iso(),
+        }
+        rows.append(row)
+
+    return rows
+
+
+def chunked(items: List[Dict[str, Any]], size: int) -> List[List[Dict[str, Any]]]:
+    return [items[i:i + size] for i in range(0, len(items), size)]
+
+
+def upsert_regret_rows(rows: List[Dict[str, Any]]) -> None:
+    if not rows:
+        return
+
+    url = supabase_table_url("signal_regret_log")
+    headers = dict(SUPABASE_HEADERS)
+    headers["Prefer"] = "resolution=merge-duplicates"
+
+    for batch in chunked(rows, UPSERT_BATCH_SIZE):
+        r = requests.post(
+            url,
+            headers=headers,
+            params={"on_conflict": "signal_snapshot_id"},
+            json=batch,
+            timeout=120,
+        )
+        r.raise_for_status()
+        print(f"Upserted batch size: {len(batch)}")
+
+
+def main() -> None:
+    print("=" * 72)
+    print("MERDIAN - build_signal_regret_log_v1")
+    print("=" * 72)
+
+    signal_rows = get_unlogged_signals(limit=SIGNAL_FETCH_LIMIT)
+    print(f"Signals to process: {len(signal_rows)}")
+
+    regret_rows = build_regret_rows(signal_rows)
+    print(f"Regret rows built : {len(regret_rows)}")
+
+    upsert_regret_rows(regret_rows)
+
+    print("DONE")
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except Exception as exc:
-        print(f"[ERROR] {exc}", file=sys.stderr)
-        raise
+    main()

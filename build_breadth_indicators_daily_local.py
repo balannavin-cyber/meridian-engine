@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import json
-import math
 import os
 import sys
 from collections import defaultdict
-from datetime import date, datetime, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 from dotenv import load_dotenv
@@ -31,6 +30,8 @@ SUPABASE_HEADERS = {
 PAGE_SIZE = 1000
 UNIVERSE_ID = "excel_v1"
 LOOKBACK_CALENDAR_DAYS = 120
+COMPLETE_EOD_THRESHOLD_PCT = 95.0
+RECENT_EOD_CANDIDATE_DAYS = 10
 
 
 def jdump(obj: Any) -> str:
@@ -91,7 +92,7 @@ def get_active_universe() -> List[str]:
     return sorted(set(tickers))
 
 
-def get_latest_eod_trade_date() -> str:
+def get_latest_available_trade_date() -> str:
     params = {
         "select": "trade_date",
         "order": "trade_date.desc",
@@ -99,7 +100,7 @@ def get_latest_eod_trade_date() -> str:
     }
     rows = get_json(table_url("equity_eod"), params=params)
     if not rows or not rows[0].get("trade_date"):
-        raise RuntimeError("Could not determine latest trade_date from equity_eod")
+        raise RuntimeError("Could not determine latest available trade_date from equity_eod")
     return str(rows[0]["trade_date"])
 
 
@@ -152,9 +153,68 @@ def pct_change(current: float, base: Optional[float]) -> Optional[float]:
     return ((current / base) - 1.0) * 100.0
 
 
+def get_recent_candidate_trade_dates(
+    eod_rows: List[Dict[str, Any]],
+    latest_available_trade_date: str,
+) -> List[str]:
+    dates = sorted(
+        {
+            str(row.get("trade_date") or "").strip()
+            for row in eod_rows
+            if str(row.get("trade_date") or "").strip()
+        }
+    )
+    dates = [d for d in dates if d <= latest_available_trade_date]
+    return sorted(dates, reverse=True)[:RECENT_EOD_CANDIDATE_DAYS]
+
+
+def select_latest_complete_trade_date(
+    universe_tickers: List[str],
+    eod_rows: List[Dict[str, Any]],
+    latest_available_trade_date: str,
+) -> Tuple[str, Dict[str, int]]:
+    active_universe_count = len(universe_tickers)
+    if active_universe_count == 0:
+        raise RuntimeError("Active universe count is zero")
+
+    by_date: Dict[str, set[str]] = defaultdict(set)
+    for row in eod_rows:
+        ticker = str(row.get("ticker") or "").strip().upper()
+        trade_date = str(row.get("trade_date") or "").strip()
+        close_val = safe_float(row.get("close"))
+        if ticker and trade_date and close_val is not None:
+            by_date[trade_date].add(ticker)
+
+    recent_dates = get_recent_candidate_trade_dates(eod_rows, latest_available_trade_date)
+    if not recent_dates:
+        raise RuntimeError("Could not derive candidate EOD trade dates")
+
+    coverage_map: Dict[str, int] = {}
+    selected_date: Optional[str] = None
+
+    for trade_date in recent_dates:
+        count_for_date = len(by_date.get(trade_date, set()))
+        coverage_map[trade_date] = count_for_date
+        pct = (count_for_date / active_universe_count) * 100.0
+        print(
+            f"EOD candidate date | trade_date={trade_date} | "
+            f"rows={count_for_date}/{active_universe_count} | pct={pct:.2f}%"
+        )
+        if pct >= COMPLETE_EOD_THRESHOLD_PCT and selected_date is None:
+            selected_date = trade_date
+
+    if selected_date is None:
+        raise RuntimeError(
+            "No complete EOD trade date found within recent candidates. "
+            f"Latest available date is {latest_available_trade_date}"
+        )
+
+    return selected_date, coverage_map
+
+
 def build_daily_rows(
     universe_tickers: List[str],
-    latest_trade_date: str,
+    rebuild_trade_date: str,
     eod_rows: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     by_ticker: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
@@ -177,6 +237,7 @@ def build_daily_rows(
 
     out_rows: List[Dict[str, Any]] = []
     missing_tickers: List[str] = []
+    no_row_for_rebuild_date: List[str] = []
 
     for ticker in universe_tickers:
         history = by_ticker.get(ticker, [])
@@ -185,15 +246,23 @@ def build_daily_rows(
             continue
 
         history = sorted(history, key=lambda x: x["trade_date"])
-        latest_row = history[-1]
 
-        if latest_row["trade_date"] != latest_trade_date:
-            # Skip stale tickers for this rebuild date
+        history_up_to_rebuild = [x for x in history if x["trade_date"] <= rebuild_trade_date]
+        if not history_up_to_rebuild:
+            no_row_for_rebuild_date.append(ticker)
             continue
 
-        closes = [float(x["close"]) for x in history]
-        current_close = closes[-1]
-        prev_close = closes[-2] if len(closes) >= 2 else None
+        target_rows = [x for x in history_up_to_rebuild if x["trade_date"] == rebuild_trade_date]
+        if not target_rows:
+            no_row_for_rebuild_date.append(ticker)
+            continue
+
+        target_row = target_rows[-1]
+        closes = [float(x["close"]) for x in history_up_to_rebuild]
+        current_close = float(target_row["close"])
+
+        target_index = len(history_up_to_rebuild) - 1
+        prev_close = closes[target_index - 1] if target_index >= 1 else None
 
         dma10 = rolling_mean(closes, 10)
         dma20 = rolling_mean(closes, 20)
@@ -215,7 +284,7 @@ def build_daily_rows(
         row = {
             "universe_id": UNIVERSE_ID,
             "ticker": ticker,
-            "trade_date": latest_trade_date,
+            "trade_date": rebuild_trade_date,
             "close": current_close,
             "prev_close": prev_close,
             "dma10": dma10,
@@ -235,7 +304,8 @@ def build_daily_rows(
         }
         out_rows.append(row)
 
-    print(f"Tickers missing any EOD history: {len(missing_tickers)}")
+    print(f"Tickers missing any EOD history  : {len(missing_tickers)}")
+    print(f"Tickers missing rebuild date row : {len(no_row_for_rebuild_date)}")
     return out_rows
 
 
@@ -264,10 +334,10 @@ def main() -> None:
     print("Gamma Engine - Local Python build_breadth_indicators_daily")
     print("=" * 72)
 
-    latest_trade_date = get_latest_eod_trade_date()
-    print(f"Latest EOD trade date: {latest_trade_date}")
+    latest_available_trade_date = get_latest_available_trade_date()
+    print(f"Latest available EOD trade date: {latest_available_trade_date}")
 
-    latest_dt = datetime.strptime(latest_trade_date, "%Y-%m-%d").date()
+    latest_dt = datetime.strptime(latest_available_trade_date, "%Y-%m-%d").date()
     start_dt = latest_dt - timedelta(days=LOOKBACK_CALENDAR_DAYS)
     start_date = start_dt.isoformat()
 
@@ -277,9 +347,16 @@ def main() -> None:
     eod_rows = get_eod_rows_from_date(start_date)
     print(f"EOD rows fetched for rebuild window: {len(eod_rows)}")
 
+    rebuild_trade_date, coverage_map = select_latest_complete_trade_date(
+        universe_tickers=universe_tickers,
+        eod_rows=eod_rows,
+        latest_available_trade_date=latest_available_trade_date,
+    )
+    print(f"Selected rebuild trade date: {rebuild_trade_date}")
+
     daily_rows = build_daily_rows(
         universe_tickers=universe_tickers,
-        latest_trade_date=latest_trade_date,
+        rebuild_trade_date=rebuild_trade_date,
         eod_rows=eod_rows,
     )
 
@@ -292,8 +369,9 @@ def main() -> None:
 
     print("-" * 72)
     print("BUILD BREADTH INDICATORS DAILY COMPLETED")
-    print(f"trade_date rebuilt: {latest_trade_date}")
-    print(f"rows upserted     : {len(daily_rows)}")
+    print(f"latest_available_trade_date : {latest_available_trade_date}")
+    print(f"selected_rebuild_trade_date: {rebuild_trade_date}")
+    print(f"rows upserted              : {len(daily_rows)}")
 
 
 if __name__ == "__main__":

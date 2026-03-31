@@ -14,10 +14,12 @@ UNDERLYING_MAP = {
     "NIFTY": {
         "UnderlyingScrip": 13,
         "UnderlyingSeg": "IDX_I",
+        "strike_step": 50,
     },
     "SENSEX": {
         "UnderlyingScrip": 51,
         "UnderlyingSeg": "IDX_I",
+        "strike_step": 100,
     },
 }
 
@@ -44,6 +46,55 @@ def to_int(value: Any) -> int | None:
         return None
 
 
+def normalize_mode(mode: str) -> str:
+    mode = str(mode or "FULL").strip().upper()
+    if mode not in {"FULL", "ATM_ONLY"}:
+        raise RuntimeError(f"Unsupported mode: {mode}. Use FULL or ATM_ONLY.")
+    return mode
+
+
+def filter_oc_for_atm_only(
+    symbol: str,
+    spot: float | None,
+    oc: dict[str, Any],
+    width_each_side: int = 2,
+) -> dict[str, Any]:
+    """
+    Keep only strikes around ATM.
+    width_each_side=2 means:
+      ATM-2, ATM-1, ATM, ATM+1, ATM+2
+    """
+    if spot is None:
+        return oc
+
+    strike_keys: list[int] = []
+    for strike_key in oc.keys():
+        strike_val = to_int(strike_key)
+        if strike_val is not None:
+            strike_keys.append(strike_val)
+
+    if not strike_keys:
+        return oc
+
+    strike_keys = sorted(set(strike_keys))
+
+    atm_strike = min(strike_keys, key=lambda s: abs(s - spot))
+    atm_index = strike_keys.index(atm_strike)
+
+    start_index = max(0, atm_index - width_each_side)
+    end_index = min(len(strike_keys), atm_index + width_each_side + 1)
+
+    selected_strikes = set(strike_keys[start_index:end_index])
+
+    filtered: dict[str, Any] = {}
+    for strike_key, strike_block in oc.items():
+        strike_val = to_int(strike_key)
+        if strike_val is not None and strike_val in selected_strikes:
+            filtered[str(strike_key)] = strike_block
+
+    return filtered
+
+
 def extract_option_rows(
     symbol: str,
     expiry_date: str,
@@ -51,6 +102,7 @@ def extract_option_rows(
     run_id: str,
     spot: float | None,
     option_chain_response: dict[str, Any],
+    mode: str = "FULL",
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
 
@@ -61,6 +113,10 @@ def extract_option_rows(
     oc = data.get("oc")
     if not isinstance(oc, dict):
         raise RuntimeError("Option chain response missing dict at key data['oc']")
+
+    mode = normalize_mode(mode)
+    if mode == "ATM_ONLY":
+        oc = filter_oc_for_atm_only(symbol=symbol, spot=spot, oc=oc, width_each_side=2)
 
     for strike_key, strike_block in oc.items():
         strike = to_int(strike_key)
@@ -117,8 +173,10 @@ def extract_option_rows(
     return rows
 
 
-def ingest_symbol(symbol: str) -> None:
+def ingest_symbol(symbol: str, mode: str = "FULL") -> None:
     symbol = symbol.upper().strip()
+    mode = normalize_mode(mode)
+
     if symbol not in UNDERLYING_MAP:
         raise RuntimeError(f"Unsupported symbol: {symbol}. Use NIFTY or SENSEX.")
 
@@ -131,6 +189,7 @@ def ingest_symbol(symbol: str) -> None:
     print("Gamma Engine - Local Python ingest_option_chain")
     print("=" * 72)
     print(f"Symbol: {symbol}")
+    print(f"Mode: {mode}")
     print(f"UnderlyingScrip: {underlying['UnderlyingScrip']}")
     print(f"UnderlyingSeg: {underlying['UnderlyingSeg']}")
     print("-" * 72)
@@ -183,10 +242,11 @@ def ingest_symbol(symbol: str) -> None:
         run_id=run_id,
         spot=spot,
         option_chain_response=chain_resp,
+        mode=mode,
     )
 
     if not rows:
-        raise RuntimeError(f"No option rows extracted for {symbol}")
+        raise RuntimeError(f"No option rows extracted for {symbol} in mode={mode}")
 
     print(f"Extracted rows: {len(rows)}")
     print(f"Run ID: {run_id}")
@@ -209,10 +269,12 @@ def ingest_symbol(symbol: str) -> None:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        raise RuntimeError("Usage: python .\\ingest_option_chain_local.py NIFTY")
+        raise RuntimeError("Usage: python .\\ingest_option_chain_local.py SYMBOL [FULL|ATM_ONLY]")
 
     symbol = sys.argv[1]
-    ingest_symbol(symbol)
+    mode = sys.argv[2] if len(sys.argv) >= 3 else "FULL"
+
+    ingest_symbol(symbol, mode)
 
 
 if __name__ == "__main__":

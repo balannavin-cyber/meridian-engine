@@ -1152,7 +1152,7 @@
     "C-08": {
       "title": "Intermittent SENSEX volatility RuntimeError (ts missing)",
       "priority": "MEDIUM",
-      "status": "OPEN",
+      "status": "CLOSED (2026-03-31) \u2014 Added fallback to created_at when ts is None in first option row. compute_volatility_metrics_local.py line 474.",
       "fix": "Investigate compute_volatility_metrics_local.py SENSEX ts missing error. Add defensive ts check.",
       "blocks": [
         "SENSEX volatility reliability"

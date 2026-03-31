@@ -1143,7 +1143,7 @@
     "C-05": {
       "title": "build_trade_signal_local.py timeout",
       "priority": "HIGH",
-      "status": "OPEN",
+      "status": "CLOSED (2026-03-31) \u2014 Misdiagnosed as signal timeout. Root cause: momentum_snapshots INSERT failing on duplicate (symbol,ts) due to race condition during crash loop. uq_momentum_snapshots_symbol_ts constraint confirmed present. UPSERT code already correct. CalendarSkip fix eliminates crash loop that caused the race. No code change required.",
       "fix": "Add DB query logging to identify which query is timing out.",
       "blocks": [
         "Live signal generation"

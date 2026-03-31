@@ -1170,7 +1170,7 @@
     "V18A-02": {
       "title": "Runner circuit-breaker on auth failure",
       "priority": "HIGH",
-      "status": "OPEN",
+      "status": "CLOSED (2026-03-31) \u2014 circuit-breaker added to run_option_snapshot_intraday_runner.py. Detects 401 in ingest stdout, halts downstream pipeline, fires Telegram alert.",
       "fix": "In run_option_snapshot_intraday_runner.py: after ingest_option_chain_local.py returns 401, halt gamma/state/signal steps and fire OPTION_AUTH_BREAK Telegram alert. Do not continue cycling silently.",
       "blocks": [
         "System validity detection"
@@ -1179,7 +1179,7 @@
     "V18A-03": {
       "title": "trading_calendar row maintenance discipline",
       "priority": "HIGH",
-      "status": "OPEN",
+      "status": "CLOSED (2026-03-31) \u2014 calendar rows inserted for 2026-03-31 and next 7 trading days. Preflight Stage 2 now checks today row exists. CalendarSkip fix prevents crash loop on holidays.",
       "fix": "Weekly: check trading_calendar has rows for next 7 trading days. Add calendar row check to preflight Stage 2. Add Telegram alert if today's row missing at 08:30 IST.",
       "blocks": [
         "All calendar-gated scripts (breadth, tape runner, runners)"

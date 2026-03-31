@@ -16,3 +16,36 @@ runtime/
 
 # Temporary files
 tmp_*.sql
+# Environment and secrets
+.env
+
+# Python cache
+__pycache__/
+core/__pycache__/
+*.pyc
+
+# Virtual environment
+.venv/
+
+# Log files
+logs/
+*.log
+*.lock
+
+# Dump and debug files
+*_dump.txt
+debug_outputs/
+
+# Data and output files
+data/
+*.png
+*.csv
+*.txt
+
+# PowerShell artifacts
+Get-ScheduledTask
+powershell
+
+# Runtime generated
+runtime/
+tmp_*.sql

@@ -47,7 +47,7 @@ REQUEST_TIMEOUT_SECONDS = 30
 MAX_RETRIES = 4
 INITIAL_BACKOFF_SECONDS = 2.0
 
-DEBUG_DIR = Path(r"C:\gammaenginepython\debug_outputs")
+DEBUG_DIR = Path(os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug_outputs"))
 DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
 INDEX_CONTRACTS = {

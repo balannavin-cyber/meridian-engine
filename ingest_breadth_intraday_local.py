@@ -73,6 +73,17 @@ class LtpHttpError(DhanError):
         self.status_code = status_code
 
 
+class CalendarSkip(SystemExit):
+    """
+    Raised when the calendar or session guard determines we should not run.
+    Inherits from SystemExit so it exits with code 0 — a SKIP is not an error.
+    The runner must not treat this as a cycle failure.
+    """
+    def __init__(self, reason: str) -> None:
+        super().__init__(0)
+        self.reason = reason
+
+
 @dataclass
 class UniverseRow:
     ticker: str
@@ -190,6 +201,12 @@ def get_calendar_row(trade_date: str) -> Optional[Dict[str, Any]]:
 
 
 def enforce_calendar_and_session_guards() -> None:
+    """
+    Guard 1 (calendar) + Guard 2 (session window).
+
+    SKIP conditions exit with code 0 via CalendarSkip — they are not errors.
+    The runner must not retry on a clean skip.
+    """
     trade_date = current_trade_date_ist()
     row = get_calendar_row(trade_date)
 
@@ -198,7 +215,8 @@ def enforce_calendar_and_session_guards() -> None:
         log("Holiday name: No calendar row")
         log("Notes: No trading_calendar row found")
         log("Session state: HOLIDAY")
-        raise RuntimeError("SKIP: Trading calendar marks today as closed.")
+        log("SKIP: Trading calendar marks today as closed.")
+        raise CalendarSkip("No trading_calendar row for today")
 
     is_open = bool(row.get("is_open"))
     holiday_name = row.get("holiday_name")
@@ -210,7 +228,8 @@ def enforce_calendar_and_session_guards() -> None:
 
     if not is_open:
         log("Session state: HOLIDAY")
-        raise RuntimeError("SKIP: Trading calendar marks today as closed.")
+        log("SKIP: Trading calendar marks today as closed.")
+        raise CalendarSkip(f"Holiday: {holiday_name}")
 
     now_dt = now_ist()
     if not is_market_open_window(now_dt):
@@ -218,7 +237,8 @@ def enforce_calendar_and_session_guards() -> None:
             now_dt.hour == MARKET_OPEN_HOUR and now_dt.minute < MARKET_OPEN_MINUTE
         ) else "AFTER_MARKET"
         log(f"Session state: {state}")
-        raise RuntimeError(f"SKIP: Session state {state} is outside MARKET_OPEN window.")
+        log(f"SKIP: Session state {state} is outside MARKET_OPEN window.")
+        raise CalendarSkip(f"Outside market hours: {state}")
 
     log("Session state: MARKET_OPEN")
 
@@ -353,11 +373,6 @@ def parse_ltp_payload(payload: Any) -> Dict[str, float]:
 
 
 def dhan_get_ltp(security_ids: List[str]) -> Dict[str, float]:
-    """
-    Full replacement path:
-    - do NOT rely on core.dhan_client default exchange_segment
-    - explicitly send NSE for breadth-equity LTP requests
-    """
     normalized_ids: List[int] = []
     for x in security_ids:
         text = str(x).strip()
@@ -560,6 +575,7 @@ def main() -> int:
     require_env("DHAN_API_TOKEN", DHAN_API_TOKEN)
 
     # Guard 1 + Guard 2
+    # CalendarSkip exits with code 0 — not a runner error, not a retry trigger
     enforce_calendar_and_session_guards()
 
     # Load universe
@@ -653,8 +669,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except Exception as exc:
-        log(str(exc))
-        raise
+    main()

@@ -7,7 +7,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 
-CALENDAR_FILE = Path(r"C:\GammaEnginePython\trading_calendar.json")
+import sys as _sys, os as _os; CALENDAR_FILE = Path(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "trading_calendar.json"))
 IST = ZoneInfo("Asia/Kolkata")
 
 

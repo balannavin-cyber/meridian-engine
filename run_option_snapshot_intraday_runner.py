@@ -486,6 +486,7 @@ def run_full_cycle() -> None:
         [[]],
         timeout=TIMEOUT_BREADTH,
         step_name="ingest_breadth_intraday",
+        non_blocking=True,
     )
 
     for wcb_symbol in SYMBOLS:

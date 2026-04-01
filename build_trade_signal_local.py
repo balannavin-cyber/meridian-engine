@@ -22,6 +22,14 @@ from supabase import Client, create_client
 #   - Never fabricates flip-distance interpretation when flip is NULL
 #   - Does NOT add "far from gamma flip" cautions if no flip exists
 #   - Keeps action and trade_allowed separate
+#
+# V18.1 fix (Track 1 regression repair):
+#   - Restores spot, atm_strike, expiry_date, dte, atm_call_iv,
+#     atm_put_iv, atm_iv_avg, iv_skew, entry_quality, source_run_id,
+#     india_vix, vix_change, vix_regime, wcb_* fields to output dict.
+#     These were present in early signals (IDs 23-35) but dropped
+#     during a full-file replacement. Required for premium outcome
+#     measurement layer.
 # ============================================================
 
 
@@ -195,6 +203,17 @@ def infer_direction_bias(breadth_regime: str, momentum_direction: str) -> str:
     return "NEUTRAL"
 
 
+def derive_entry_quality(confidence: float, direction_bias: str, gamma_regime: str) -> str:
+    """Derive entry quality label from confidence and regime context."""
+    if direction_bias == "NEUTRAL":
+        return "NO_TRADE"
+    if confidence >= 75:
+        return "A" if gamma_regime == "SHORT_GAMMA" else "B"
+    if confidence >= 60:
+        return "B" if gamma_regime == "SHORT_GAMMA" else "C"
+    return "D"
+
+
 # -----------------------------
 # Scoring
 # -----------------------------
@@ -211,6 +230,43 @@ def build_signal(symbol: str) -> dict[str, Any]:
     market_state_ts = ts
     dte = to_int(state.get("dte"))
     spot = to_float(state.get("spot"))
+
+    # --- Expiry context ---
+    expiry_date = state.get("expiry_date")
+    expiry_type = state.get("expiry_type")
+    source_run_id = state.get("source_run_id") or state.get("run_id")
+
+    # --- ATM / IV context from vol_features ---
+    atm_strike = to_int(vol_features.get("atm_strike"))
+    atm_call_iv = to_float(vol_features.get("atm_call_iv"))
+    atm_put_iv = to_float(vol_features.get("atm_put_iv"))
+    atm_iv_avg = to_float(vol_features.get("atm_iv_avg"))
+    iv_skew = to_float(vol_features.get("iv_skew"))
+
+    # --- VIX fields ---
+    india_vix = to_float(vol_features.get("india_vix"))
+    vix_change = to_float(vol_features.get("vix_change"))
+    vix_regime = prefer(
+        vol_features.get("vix_regime"),
+        vol_features.get("vix_context_regime"),
+    )
+
+    # --- WCB fields ---
+    wcb_regime = breadth_features.get("wcb_regime")
+    wcb_score = to_float(breadth_features.get("wcb_score"))
+    wcb_alignment = breadth_features.get("wcb_alignment")
+    wcb_weight_coverage_pct = to_float(breadth_features.get("wcb_weight_coverage_pct"))
+
+    # --- Breadth score ---
+    breadth_score = to_float(breadth_features.get("breadth_score"))
+
+    # --- Gamma fields for output ---
+    net_gex = to_float(gamma_features.get("net_gex"))
+    gamma_concentration = to_float(gamma_features.get("gamma_concentration"))
+    flip_level = to_float(gamma_features.get("flip_level"))
+    flip_distance = to_float(gamma_features.get("flip_distance"))
+    straddle_atm = to_float(gamma_features.get("straddle_atm"))
+    straddle_slope = to_float(gamma_features.get("straddle_slope"))
 
     gamma_regime = get_gamma_regime(gamma_features)
     breadth_regime = get_breadth_regime(breadth_features)
@@ -250,12 +306,10 @@ def build_signal(symbol: str) -> dict[str, Any]:
             confidence -= 8.0
     elif gamma_regime == "NO_FLIP":
         reasons.append("No valid gamma flip is available from current chain structure")
-        # Intentionally no far/near flip caution and no gamma penalty
     else:
         cautions.append("Gamma regime is unavailable or unknown")
 
     # Gamma concentration
-    gamma_concentration = to_float(gamma_features.get("gamma_concentration"))
     if gamma_concentration is not None:
         if gamma_concentration >= 0.25:
             reasons.append("Gamma concentration is supportive")
@@ -274,7 +328,6 @@ def build_signal(symbol: str) -> dict[str, Any]:
             cautions.append("Spot is relatively far from gamma flip")
 
     # Straddle context
-    straddle_slope = to_float(gamma_features.get("straddle_slope"))
     if straddle_slope is not None:
         if straddle_slope > 0:
             cautions.append("ATM straddle is expanding")
@@ -284,11 +337,9 @@ def build_signal(symbol: str) -> dict[str, Any]:
             cautions.append("ATM straddle slope is relatively flat")
 
     # Volatility context
-    india_vix = to_float(vol_features.get("india_vix"))
     if india_vix is not None:
         cautions.append(f"India VIX is {india_vix:.2f}")
 
-    vix_regime = prefer(vol_features.get("vix_regime"), vol_features.get("vix_context_regime"))
     if vix_regime:
         cautions.append(f"India VIX regime is {str(vix_regime).upper()}")
 
@@ -297,7 +348,6 @@ def build_signal(symbol: str) -> dict[str, Any]:
         cautions.append("IV is elevated for outright premium buying")
         confidence -= 8.0
 
-    atm_iv_avg = to_float(vol_features.get("atm_iv_avg"))
     if atm_iv_avg is not None and india_vix is not None and atm_iv_avg > india_vix * 1.15:
         cautions.append("ATM IV is significantly above India VIX")
         confidence -= 4.0
@@ -350,17 +400,62 @@ def build_signal(symbol: str) -> dict[str, Any]:
         cautions.append("High India VIX reduces options-buy attractiveness")
         trade_allowed = False
 
+    # Entry quality
+    entry_quality = derive_entry_quality(confidence, direction_bias, gamma_regime)
+
     out = {
+        # Timestamps and identity
         "ts": ts,
         "market_state_ts": market_state_ts,
         "symbol": symbol,
+        "source_run_id": source_run_id,
+
+        # Expiry context
+        "expiry_date": expiry_date,
+        "expiry_type": expiry_type,
+        "dte": dte,
+
+        # Spot and ATM
+        "spot": spot,
+        "atm_strike": atm_strike,
+        "atm_call_iv": atm_call_iv,
+        "atm_put_iv": atm_put_iv,
+        "atm_iv_avg": atm_iv_avg,
+        "iv_skew": iv_skew,
+
+        # Signal output
         "action": action,
         "trade_allowed": trade_allowed,
+        "entry_quality": entry_quality,
         "confidence_score": round(confidence, 1),
         "direction_bias": direction_bias,
+
+        # Regime context
         "gamma_regime": gamma_regime,
         "breadth_regime": breadth_regime,
+        "breadth_score": breadth_score,
         "volatility_regime": volatility_regime,
+        "vix_regime": vix_regime,
+
+        # VIX fields
+        "india_vix": india_vix,
+        "vix_change": vix_change,
+
+        # Gamma detail
+        "net_gex": net_gex,
+        "gamma_concentration": gamma_concentration,
+        "flip_level": flip_level,
+        "flip_distance": flip_distance,
+        "straddle_atm": straddle_atm,
+        "straddle_slope": straddle_slope,
+
+        # WCB fields
+        "wcb_regime": wcb_regime,
+        "wcb_score": wcb_score,
+        "wcb_alignment": wcb_alignment,
+        "wcb_weight_coverage_pct": wcb_weight_coverage_pct,
+
+        # Narrative
         "reasons": reasons,
         "cautions": cautions,
     }
@@ -384,10 +479,14 @@ def main() -> None:
     print("Signal snapshot insert complete.")
     print(f"symbol={row.get('symbol')}")
     print(f"ts={row.get('ts')}")
-    print(f"market_state_ts={row.get('market_state_ts')}")
     print(f"action={row.get('action')}")
     print(f"trade_allowed={row.get('trade_allowed')}")
     print(f"confidence_score={row.get('confidence_score')}")
+    print(f"spot={row.get('spot')}")
+    print(f"atm_strike={row.get('atm_strike')}")
+    print(f"expiry_date={row.get('expiry_date')}")
+    print(f"dte={row.get('dte')}")
+    print(f"entry_quality={row.get('entry_quality')}")
     print(f"gamma_regime={row.get('gamma_regime')}")
 
 

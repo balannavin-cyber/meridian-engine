@@ -177,10 +177,10 @@ def fetch_latest(table: str, symbol: str, columns: str = "*") -> Optional[Dict[s
 
 
 def fetch_recent_breadth(symbol: str, limit: int = 3) -> List[Dict[str, Any]]:
+    # market_breadth_intraday is a single-universe table with no symbol column
     rows = supabase_select("market_breadth_intraday", {
-        "select": "breadth_score,ts,created_at",
-        "symbol": f"eq.{symbol}",
-        "order": "created_at.desc",
+        "select": "breadth_score,ts",
+        "order": "ts.desc",
         "limit": str(limit),
     })
     return sorted(rows, key=lambda r: r.get("ts") or "")
@@ -539,10 +539,9 @@ def detect_opening_gap(
 
 
 def detect_rollover_window(
-    gamma_row: Dict[str, Any],
+    dte: Optional[int],
     breadth_rows: List[Dict[str, Any]],
 ) -> bool:
-    dte = to_int(gamma_row.get("dte"))
     if dte is None or not (ROLLOVER_DTE_WINDOW_MIN <= dte <= ROLLOVER_DTE_WINDOW_MAX):
         return False
     if len(breadth_rows) < 3:
@@ -632,7 +631,7 @@ def detect(
     gamma_row = fetch_latest(
         "gamma_metrics", symbol,
         "regime,net_gex,flip_level,flip_distance_pct,straddle_atm,"
-        "straddle_velocity,otm_oi_velocity,spot_vs_range,dte,run_id,"
+        "straddle_velocity,otm_oi_velocity,spot_vs_range,run_id,"
         "run_type,vix,spot,gamma_concentration,raw"
     )
     if not gamma_row:
@@ -641,7 +640,6 @@ def detect(
 
     effective_run_id = run_id or str(gamma_row.get("run_id") or "")
     spot = to_float(gamma_row.get("spot")) or 0.0
-    dte = to_int(gamma_row.get("dte"))
     straddle_velocity = to_float(gamma_row.get("straddle_velocity"))
     otm_oi_velocity = to_float(gamma_row.get("otm_oi_velocity"))
 
@@ -650,8 +648,10 @@ def detect(
     option_rows = fetch_option_chain_for_run(effective_run_id, symbol) if effective_run_id else []
 
     vol_row = fetch_latest(
-        "volatility_snapshots", symbol, "atm_iv_vs_vix_spread,india_vix,atm_iv_avg"
+        "volatility_snapshots", symbol, "atm_iv_vs_vix_spread,india_vix,atm_iv_avg,dte"
     )
+    # dte lives in volatility_snapshots, not gamma_metrics
+    dte = to_int(vol_row.get("dte")) if vol_row else None
     vix_straddle_ratio = None
     if vol_row:
         vix = to_float(vol_row.get("india_vix"))
@@ -693,7 +693,7 @@ def detect(
         opening_gap_alert, opening_gap_pct, gap_target_strike = detect_opening_gap(
             symbol, option_rows, spot, current_ts
         )
-        rollover_window_flag = detect_rollover_window(gamma_row, breadth_rows)
+        rollover_window_flag = detect_rollover_window(dte, breadth_rows)
 
     cautions = build_cautions(
         dte=dte,

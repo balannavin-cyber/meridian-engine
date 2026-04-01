@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
@@ -124,7 +124,6 @@ def write_debug_payload(payload: Dict[str, Any]) -> None:
     path = DEBUG_DIR / "market_spot_idx_i_payload.json"
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
-    print(f"[DEBUG] Wrote payload to {path.relative_to(Path(r'C:\gammaenginepython'))}")
 
 
 def fetch_idx_i_ltp_payload_with_retry() -> Dict[str, Any]:

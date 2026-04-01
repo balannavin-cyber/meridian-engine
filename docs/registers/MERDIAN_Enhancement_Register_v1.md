@@ -8,7 +8,7 @@
 |---|---|
 | Document | MERDIAN Enhancement Register v1 |
 | Created | 2026-03-31 |
-| Sources | MERDIAN Enhancement Plan (original 5-improvement plan) · MERDIAN Master V18 v2 Section 12 · Architectural thinking sessions 2026-03-31 (Heston/Monte Carlo, Bloomberg function mapping, Braket quantum, API commercialisation) |
+| Sources | MERDIAN Enhancement Plan (original 5-improvement plan) · MERDIAN Master V18 v2 Section 12 · Architectural thinking sessions 2026-03-31 (Heston/Monte Carlo, Bloomberg function mapping, Braket quantum, API commercialisation) · Session 2026-04-01 (historical ingest pipeline, outcome measurement layer, SMDM gap analysis, storage architecture) |
 | Purpose | Forward-looking register of all proposed MERDIAN improvements. Living document — updated whenever architectural thinking produces new enhancement candidates. |
 | Authority | This register tracks proposals, not decisions. Decisions (with rejected alternatives) live in V18 v2 Section 17 Decision Registry. |
 | Update rule | Update this file in the same session that produces new architectural thinking. Commit to Git immediately. |
@@ -168,6 +168,106 @@ These can be built against the current architecture. No new data sources, no mod
 **What it does:** In any position monitoring layer, tracks vega exposure by expiry bucket (near-dated vs far-dated) rather than aggregating total vega. A long near-dated vega and short far-dated vega are not offsetting exposures — they are two different factor bets on the vol term structure.
 
 **Why it matters:** Aggregating vega across expiries is a common but incorrect risk practice. It can make a position look flat-vega when it actually has significant term structure exposure. Relevant as soon as MERDIAN begins tracking positions.
+
+---
+
+### ENH-28: Historical Data Ingest Pipeline (Vendor 1m OHLCV)
+
+| Field | Detail |
+|---|---|
+| Source | Architectural session 2026-04-01 — vendor data acquisition decision |
+| Status | IN PROGRESS — hist_ingest_controller.py built (commit b420d4b), vendor delivery pending EOD 2026-04-01 |
+| Dependency | ENH-31 (expiry calendar utility) must be built before production run |
+| Priority Tier | 1 |
+| Commercial Relevance | Internal — foundational for signal validation and backtest harness |
+
+**What it does:** Ingests vendor-supplied 1-minute OHLCV CSV files (NIFTY + SENSEX options, futures, spot) into the three-tier storage architecture. Validates OHLCV integrity, routes segments (options/futures/spot/LEAPs), deduplicates via SHA-256 checksum, batches Supabase upserts at 1000 rows, writes local Parquet warm tier partitioned by year/month/day. Logs completeness checks per expiry per session.
+
+**Why it matters:** Without historical 1m bar data, the outcome measurement layer (ENH-29) cannot compute path-dependent metrics (MFE, MAE, time_to_mfe, drawdown_before_profit). Without those metrics, the signal validation gate (required before any Tier 2 or Tier 3 work) cannot be passed. This is the critical path item.
+
+**Open items:** HIST-01 (expiry calendar logic — pre/post 1 Sep 2025 rule change and holiday rollback must be implemented before production run). HIST-02 (S3 archiver — LocalParquetArchiver interface ready, swap to S3ParquetArchiver when AWS credentials configured).
+
+---
+
+### ENH-29: Signal Premium Outcome Measurement Layer
+
+| Field | Detail |
+|---|---|
+| Source | Architectural session 2026-04-01 — Track 1 outcome layer |
+| Status | IN PROGRESS — signal_premium_outcomes table live, premium_outcome_writer.py built (commit b420d4b). Signal 615 written (entry=233.4). Path metrics pending hist bar data (ENH-28). |
+| Dependency | build_trade_signal_local.py context fields populated (fixed 2026-04-01, commit 3727f64) |
+| Priority Tier | 1 |
+| Commercial Relevance | Internal — signal validation gate. Required before any commercial path. |
+
+**What it does:** For every BUY_CE/BUY_PE signal, measures: entry premium, premium at T+15m/30m/60m/EOD, premium moves in points, capture thresholds (25/50/75/100pts), IV change during trade (IV crush detection), direction correctness, MFE/MAE/time_to_mfe/drawdown_before_profit (from hist_option_bars_1m when available), outcome label (WIN_LARGE/WIN_MEDIUM/WIN_SMALL/SCRATCH/LOSS_SMALL/LOSS_LARGE), failure mode (NEVER_MOVED/MOVED_THEN_REVERSED/IV_CRUSH/THETA_DECAY/WHIPSAW). Stores full entry context for condition-pattern analysis.
+
+**Quant additions beyond basic outcome tracking:** entry_iv_percentile (vs 30-day history), confidence_decile (bucketed 1-10), session_pct_elapsed (0-100), mins_since_prior_signal and consecutive_same_direction (clustering detection), mfe_to_close_giveback_pct (path quality), first_adverse_move_pts (stop calibration input), iv_crushed flag.
+
+**SMDM slots reserved:** smdm_squeeze_score, smdm_squeeze_alert, smdm_signal_suppressed, smdm_pattern_flags, smdm_otm_bleed_pct, smdm_straddle_velocity, smdm_otm_oi_velocity — all NULL columns, populated when Track 2 (ENH-30) is built.
+
+**Open items:** SPO-01 (DTE null in signal_snapshots — derivable from expiry_date as workaround). SPO-02 (live canary validation for build_trade_signal_local.py fix on 2026-04-02).
+
+---
+
+### ENH-30: SMDM Infrastructure (Track 2)
+
+| Field | Detail |
+|---|---|
+| Source | SMDM Spec V7 gap analysis session 2026-04-01 |
+| Status | PARTIALLY BUILT — all read inputs exist and are richer than spec. structural_alerts table not built. straddle_velocity/otm_oi_velocity absent from gamma_metrics. detect_structural_manipulation.py not built. |
+| Dependency | ENH-29 (Track 1) stable and live canary passed — do not build Track 2 while context regression fix is unvalidated |
+| Priority Tier | 1 |
+| Commercial Relevance | Internal — defensive layer, suppresses signals during manufactured move setups |
+
+**Gap analysis vs SMDM Spec V7 (against V18 live system as of 2026-04-01):**
+- `structural_alerts` table: NOT BUILT — needs DDL + creation
+- `intraday_ohlc`: EXISTS (spec said ADDING) — has session_high/session_low, missing `basis` column
+- `gamma_metrics` straddle_velocity/otm_oi_velocity: NOT IN TABLE, NOT IN raw{} JSONB — needs ALTER TABLE + compute_gamma_metrics_local.py update
+- `volatility_snapshots`: FAR RICHER than spec — `atm_iv_vs_vix_spread` is functional equivalent of vix_straddle_ratio
+- `signal_snapshots`: cautions JSONB and trade_allowed both exist — SMDM writes directly to them, no schema change needed
+- `detect_structural_manipulation.py`: NOT BUILT
+
+**Build sequence when Track 2 opens:**
+1. `structural_alerts` DDL
+2. `ALTER TABLE intraday_ohlc ADD COLUMN basis NUMERIC`
+3. `ALTER TABLE gamma_metrics ADD COLUMN straddle_velocity NUMERIC, ADD COLUMN otm_oi_velocity NUMERIC, ADD COLUMN spot_vs_range NUMERIC, ADD COLUMN run_type TEXT`
+4. Update `compute_gamma_metrics_local.py` to populate new columns — touches live code, full change protocol required
+5. `detect_structural_manipulation.py`
+6. Wire to signal pipeline
+
+---
+
+### ENH-31: Expiry Calendar Utility
+
+| Field | Detail |
+|---|---|
+| Source | Ingest pipeline design session 2026-04-01 |
+| Status | NOT BUILT — flagged as open item HIST-01 |
+| Dependency | Must be built before ENH-28 production run |
+| Priority Tier | 1 |
+| Commercial Relevance | Internal — data integrity |
+
+**What it does:** Provides `is_trading_day(date)` and `get_expiry_date(symbol, year, month, weekly=True)` functions handling NSE/BSE expiry calendar rules:
+- Pre-1 Sep 2025: NIFTY weekly = Thursday, SENSEX weekly = Friday. Monthly = last Thursday/Friday of month.
+- Post-1 Sep 2025: NIFTY weekly = Tuesday, SENSEX weekly = Thursday. Monthly = last Tuesday/Thursday of month.
+- Holiday rollback: if computed expiry falls on a market holiday, expiry moves to previous trading day.
+- Example: Thursday 26 March 2026 was a holiday — monthly SENSEX expiry moved forward to Wednesday 25 March.
+
+**Why it matters:** Vendor ticker data has correct expiry dates baked in — the ingest controller parses them directly and is not affected. Risk is in derived logic that computes expiry independently: DTE calculations, completeness checks, LEAP horizon filtering, and the SMDM pattern detection for rollover window (DTE 3-5 of monthly). Without this utility, those computations silently produce wrong results around the 1 Sep 2025 rule change boundary and around holidays.
+
+---
+
+### ENH-32: S3 Warm Tier Archiver
+
+| Field | Detail |
+|---|---|
+| Source | Storage architecture session 2026-04-01 |
+| Status | STUBBED — LocalParquetArchiver interface ready in hist_ingest_controller.py |
+| Dependency | AWS credentials configured locally + S3 bucket provisioned |
+| Priority Tier | 1 (when AWS credentials ready) |
+| Commercial Relevance | Internal infrastructure — cost reduction at scale, enables DuckDB-on-S3 backtest harness |
+
+**What it does:** Replaces `LocalParquetArchiver` with `S3ParquetArchiver` in `hist_ingest_controller.py`. Same `write(table, df, trade_date)` interface — controller code unchanged. Writes Parquet to `s3://meridian-warm-tier/{table}/year={y}/month={m}/day={d}/data.parquet` via boto3. Updates `hist_ingest_log.s3_parquet_key` on completion. Configurable via `.env`: `WARM_TIER_BACKEND=local|s3`.
 
 ---
 
@@ -525,6 +625,11 @@ These require the classical Monte Carlo system to be built and proven before qua
 | ENH-06 | Pre-trade cost filter (Almgren-Chriss) | 1 | PROPOSED | None |
 | ENH-07 | Basis-implied risk-free rate | 1 | PROPOSED | None |
 | ENH-08 | Vega bucketing by expiry | 1 | PROPOSED | None |
+| ENH-28 | Historical data ingest pipeline | 1 | IN PROGRESS | ENH-31 (expiry calendar) |
+| ENH-29 | Signal premium outcome measurement | 1 | IN PROGRESS | build_trade_signal_local fix (done) |
+| ENH-30 | SMDM infrastructure (Track 2) | 1 | PARTIAL | ENH-29 stable + live canary |
+| ENH-31 | Expiry calendar utility | 1 | NOT BUILT | Must precede ENH-28 production run |
+| ENH-32 | S3 warm tier archiver | 1 | STUBBED | AWS credentials |
 | ENH-09 | Heston calibration layer | 2 | PROPOSED | Signal validation (ENH-20 gate) |
 | ENH-10 | Monte Carlo theoretical pricing | 2 | PROPOSED | ENH-09 |
 | ENH-11 | Calibrated strike selection (vertical spreads) | 2 | PROPOSED | ENH-10 |
@@ -568,6 +673,16 @@ For reference: how MERDIAN's planned capabilities map to the Bloomberg functions
 
 | Table | Required By | Description |
 |---|---|---|
+| `hist_option_bars_1m` | ENH-28 | Vendor 1m OHLCV for options — hot tier rolling 90-day window |
+| `hist_spot_bars_1m` | ENH-28 | Vendor 1m OHLCV for spot index |
+| `hist_future_bars_1m` | ENH-28 | Vendor 1m OHLCV for continuous futures |
+| `hist_ingest_log` | ENH-28 | Full audit trail per vendor file — SHA-256 dedup |
+| `hist_ingest_rejects` | ENH-28 | Row-level rejection log per ingest batch |
+| `hist_completeness_checks` | ENH-28 | Bar count verification per expiry per session |
+| `aging_policy` | ENH-28 | Configurable hot tier retention (default 90 days) |
+| `hist_iv_surface_daily` | ENH-28 | EOD IV surface summary + Heston parameter slots (Phase 2 reserved) |
+| `signal_premium_outcomes` | ENH-29 | Signal outcome measurement — entry context, path metrics, capture thresholds, IV crush, failure taxonomy, SMDM slots reserved |
+| `structural_alerts` | ENH-30 | SMDM output store — squeeze scores, pattern flags, cautions (NOT YET BUILT) |
 | `vol_model_snapshots` | ENH-09 | Per-cycle Heston parameters (kappa, theta, xi, rho, v0, calibration_rmse) |
 | `theoretical_option_prices` | ENH-10 | Per-strike fair value, market LTP, mispricing gap, model Greeks |
 | `position_monitor` | ENH-18 | Per open position: entry params, current Greeks, model-state exit conditions |
@@ -576,4 +691,4 @@ For reference: how MERDIAN's planned capabilities map to the Bloomberg functions
 
 ---
 
-*MERDIAN Enhancement Register v1 — 2026-03-31 — Living document, commit to Git after every update*
+*MERDIAN Enhancement Register v1 — last updated 2026-04-01 — Living document, commit to Git after every update*

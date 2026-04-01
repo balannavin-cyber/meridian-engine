@@ -1,214 +1,226 @@
 {
-  "sessions": [
-    {
-      "date": "2026-03-11",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-12",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-13",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-14",
-      "is_open": false,
-      "notes": "Saturday"
-    },
-    {
-      "date": "2026-03-15",
-      "is_open": false,
-      "notes": "Sunday"
-    },
-    {
-      "date": "2026-03-16",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-17",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-18",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-19",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-20",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-21",
-      "is_open": false,
-      "notes": "Saturday"
-    },
-    {
-      "date": "2026-03-22",
-      "is_open": false,
-      "notes": "Sunday"
-    },
-    {
-      "date": "2026-03-23",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-24",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-25",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-26",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-27",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-28",
-      "is_open": false,
-      "notes": "Saturday"
-    },
-    {
-      "date": "2026-03-29",
-      "is_open": false,
-      "notes": "Sunday"
-    },
-    {
-      "date": "2026-03-30",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-31",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    }
-  ]
+    "sessions":  [
+                     {
+                         "date":  "2026-03-11",
+                         "is_open":  true,
+                         "monitor_start_time":  "09:00",
+                         "premarket_ref_time":  "09:08",
+                         "open_time":  "09:15",
+                         "close_time":  "15:30",
+                         "postmarket_ref_time":  "16:00",
+                         "final_eod_ltp_time":  "16:15",
+                         "special_session":  false,
+                         "notes":  "Normal trading day"
+                     },
+                     {
+                         "date":  "2026-03-12",
+                         "is_open":  true,
+                         "monitor_start_time":  "09:00",
+                         "premarket_ref_time":  "09:08",
+                         "open_time":  "09:15",
+                         "close_time":  "15:30",
+                         "postmarket_ref_time":  "16:00",
+                         "final_eod_ltp_time":  "16:15",
+                         "special_session":  false,
+                         "notes":  "Normal trading day"
+                     },
+                     {
+                         "date":  "2026-03-13",
+                         "is_open":  true,
+                         "monitor_start_time":  "09:00",
+                         "premarket_ref_time":  "09:08",
+                         "open_time":  "09:15",
+                         "close_time":  "15:30",
+                         "postmarket_ref_time":  "16:00",
+                         "final_eod_ltp_time":  "16:15",
+                         "special_session":  false,
+                         "notes":  "Normal trading day"
+                     },
+                     {
+                         "date":  "2026-03-14",
+                         "is_open":  false,
+                         "notes":  "Saturday"
+                     },
+                     {
+                         "date":  "2026-03-15",
+                         "is_open":  false,
+                         "notes":  "Sunday"
+                     },
+                     {
+                         "date":  "2026-03-16",
+                         "is_open":  true,
+                         "monitor_start_time":  "09:00",
+                         "premarket_ref_time":  "09:08",
+                         "open_time":  "09:15",
+                         "close_time":  "15:30",
+                         "postmarket_ref_time":  "16:00",
+                         "final_eod_ltp_time":  "16:15",
+                         "special_session":  false,
+                         "notes":  "Normal trading day"
+                     },
+                     {
+                         "date":  "2026-03-17",
+                         "is_open":  true,
+                         "monitor_start_time":  "09:00",
+                         "premarket_ref_time":  "09:08",
+                         "open_time":  "09:15",
+                         "close_time":  "15:30",
+                         "postmarket_ref_time":  "16:00",
+                         "final_eod_ltp_time":  "16:15",
+                         "special_session":  false,
+                         "notes":  "Normal trading day"
+                     },
+                     {
+                         "date":  "2026-03-18",
+                         "is_open":  true,
+                         "monitor_start_time":  "09:00",
+                         "premarket_ref_time":  "09:08",
+                         "open_time":  "09:15",
+                         "close_time":  "15:30",
+                         "postmarket_ref_time":  "16:00",
+                         "final_eod_ltp_time":  "16:15",
+                         "special_session":  false,
+                         "notes":  "Normal trading day"
+                     },
+                     {
+                         "date":  "2026-03-19",
+                         "is_open":  true,
+                         "monitor_start_time":  "09:00",
+                         "premarket_ref_time":  "09:08",
+                         "open_time":  "09:15",
+                         "close_time":  "15:30",
+                         "postmarket_ref_time":  "16:00",
+                         "final_eod_ltp_time":  "16:15",
+                         "special_session":  false,
+                         "notes":  "Normal trading day"
+                     },
+                     {
+                         "date":  "2026-03-20",
+                         "is_open":  true,
+                         "monitor_start_time":  "09:00",
+                         "premarket_ref_time":  "09:08",
+                         "open_time":  "09:15",
+                         "close_time":  "15:30",
+                         "postmarket_ref_time":  "16:00",
+                         "final_eod_ltp_time":  "16:15",
+                         "special_session":  false,
+                         "notes":  "Normal trading day"
+                     },
+                     {
+                         "date":  "2026-03-21",
+                         "is_open":  false,
+                         "notes":  "Saturday"
+                     },
+                     {
+                         "date":  "2026-03-22",
+                         "is_open":  false,
+                         "notes":  "Sunday"
+                     },
+                     {
+                         "date":  "2026-03-23",
+                         "is_open":  true,
+                         "monitor_start_time":  "09:00",
+                         "premarket_ref_time":  "09:08",
+                         "open_time":  "09:15",
+                         "close_time":  "15:30",
+                         "postmarket_ref_time":  "16:00",
+                         "final_eod_ltp_time":  "16:15",
+                         "special_session":  false,
+                         "notes":  "Normal trading day"
+                     },
+                     {
+                         "date":  "2026-03-24",
+                         "is_open":  true,
+                         "monitor_start_time":  "09:00",
+                         "premarket_ref_time":  "09:08",
+                         "open_time":  "09:15",
+                         "close_time":  "15:30",
+                         "postmarket_ref_time":  "16:00",
+                         "final_eod_ltp_time":  "16:15",
+                         "special_session":  false,
+                         "notes":  "Normal trading day"
+                     },
+                     {
+                         "date":  "2026-03-25",
+                         "is_open":  true,
+                         "monitor_start_time":  "09:00",
+                         "premarket_ref_time":  "09:08",
+                         "open_time":  "09:15",
+                         "close_time":  "15:30",
+                         "postmarket_ref_time":  "16:00",
+                         "final_eod_ltp_time":  "16:15",
+                         "special_session":  false,
+                         "notes":  "Normal trading day"
+                     },
+                     {
+                         "date":  "2026-03-26",
+                         "is_open":  true,
+                         "monitor_start_time":  "09:00",
+                         "premarket_ref_time":  "09:08",
+                         "open_time":  "09:15",
+                         "close_time":  "15:30",
+                         "postmarket_ref_time":  "16:00",
+                         "final_eod_ltp_time":  "16:15",
+                         "special_session":  false,
+                         "notes":  "Normal trading day"
+                     },
+                     {
+                         "date":  "2026-03-27",
+                         "is_open":  true,
+                         "monitor_start_time":  "09:00",
+                         "premarket_ref_time":  "09:08",
+                         "open_time":  "09:15",
+                         "close_time":  "15:30",
+                         "postmarket_ref_time":  "16:00",
+                         "final_eod_ltp_time":  "16:15",
+                         "special_session":  false,
+                         "notes":  "Normal trading day"
+                     },
+                     {
+                         "date":  "2026-03-28",
+                         "is_open":  false,
+                         "notes":  "Saturday"
+                     },
+                     {
+                         "date":  "2026-03-29",
+                         "is_open":  false,
+                         "notes":  "Sunday"
+                     },
+                     {
+                         "date":  "2026-03-30",
+                         "is_open":  true,
+                         "monitor_start_time":  "09:00",
+                         "premarket_ref_time":  "09:08",
+                         "open_time":  "09:15",
+                         "close_time":  "15:30",
+                         "postmarket_ref_time":  "16:00",
+                         "final_eod_ltp_time":  "16:15",
+                         "special_session":  false,
+                         "notes":  "Normal trading day"
+                     },
+                     {
+                         "date":  "2026-03-31",
+                         "is_open":  true,
+                         "monitor_start_time":  "09:00",
+                         "premarket_ref_time":  "09:08",
+                         "open_time":  "09:15",
+                         "close_time":  "15:30",
+                         "postmarket_ref_time":  "16:00",
+                         "final_eod_ltp_time":  "16:15",
+                         "special_session":  false,
+                         "notes":  "Normal trading day"
+                     },
+                     {
+                         "date":  "2026-04-01",
+                         "is_open":  true,
+                         "monitor_start_time":  "09:00",
+                         "premarket_ref_time":  "09:08",
+                         "open_time":  "09:15",
+                         "close_time":  "15:30",
+                         "postmarket_ref_time":  "16:00",
+                         "final_eod_ltp_time":  "16:15",
+                         "special_session":  false,
+                         "notes":  "Normal trading day ? NIFTY weekly expiry (Tuesday)"
+                     }
+                 ]
 }

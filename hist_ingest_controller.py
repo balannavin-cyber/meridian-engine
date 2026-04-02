@@ -1,4 +1,4 @@
-"""
+﻿"""
 hist_ingest_controller.py
 =========================
 MERDIAN — Historical Vendor Data Ingest Controller
@@ -37,6 +37,9 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
+import shutil
+import tempfile
+import zipfile
 from typing import Any, Iterator
 
 import pandas as pd
@@ -66,8 +69,8 @@ log = logging.getLogger("hist_ingest")
 # Constants
 # ---------------------------------------------------------------------------
 
-# Maximum rows per Supabase upsert call — REST API payload limit
-UPSERT_BATCH_SIZE = 1_000
+# Maximum rows per Supabase upsert call — reduced from 1000 to avoid timeouts
+UPSERT_BATCH_SIZE = 500
 
 # Expected bars in a full session: 09:15 to 15:29 inclusive = 375 minutes
 EXPECTED_BARS_FULL_SESSION = 375
@@ -272,9 +275,6 @@ def route_segments(
     Returns dict with keys: 'options', 'futures', 'spot'.
     """
     segments: dict[str, list[dict]] = {"options": [], "futures": [], "spot": []}
-    leap_cutoff = (datetime.now().date() - trade_date).days  # days since trade date
-    # For historical data, LEAP = expiry was >90 days from trade_date at time of trade
-    # We compute expiry horizon relative to trade_date, not today
 
     for _, row in df.iterrows():
         ticker = str(row["Ticker"])
@@ -409,6 +409,7 @@ def upsert_batched(
 ) -> int:
     """
     Upsert rows into Supabase in chunks of batch_size.
+    Retry logic for transient network errors is handled in SupabaseClient._request.
     Returns total rows upserted.
     """
     total = 0
@@ -477,8 +478,11 @@ def walk_vendor_directory(
     filter_year: int | None = None,
 ) -> Iterator[tuple[date, Path]]:
     """
-    Walk year/month/day vendor directory structure.
-    Yields (trade_date, csv_file_path) for each CSV found.
+    Walk vendor delivery structure:
+      <root>/<year>/<MONTH_YEAR>.zip -> <MONTH_YEAR>/<prefix>_DDMMYYYY.csv
+
+    Extracts each ZIP to a temp directory, yields (trade_date, csv_path),
+    then cleans up the temp directory after all files in that ZIP are yielded.
     Applies optional date or year filter.
     """
     for year_dir in sorted(root.iterdir()):
@@ -492,40 +496,56 @@ def walk_vendor_directory(
         if filter_year and year != filter_year:
             continue
 
-        for month_dir in sorted(year_dir.iterdir()):
-            if not month_dir.is_dir():
-                continue
+        for zip_path in sorted(year_dir.glob("*.zip")):
+            tmp_dir = Path(tempfile.mkdtemp(prefix="meridian_hist_"))
+            try:
+                log.info(f"Extracting: {zip_path.name}")
+                with zipfile.ZipFile(zip_path, "r") as zf:
+                    zf.extractall(tmp_dir)
 
-            for day_dir in sorted(month_dir.iterdir()):
-                if not day_dir.is_dir():
-                    continue
+                # ZIP contains subfolder named same as ZIP stem: APR_2025/
+                zip_stem = zip_path.stem
+                inner_dir = tmp_dir / zip_stem
 
-                # Parse trade date from directory name (YYYYMMDD or DDMMYYYY)
-                trade_date = _parse_day_dir(day_dir.name, year)
-                if trade_date is None:
-                    log.warning(f"Cannot parse trade date from directory: {day_dir}")
-                    continue
+                # Fallback: if subfolder missing, search tmp_dir directly
+                search_dir = inner_dir if inner_dir.is_dir() else tmp_dir
 
-                if filter_date and trade_date != filter_date:
-                    continue
-
-                for csv_file in sorted(day_dir.glob("*.csv")):
+                for csv_file in sorted(search_dir.glob("*.csv")):
+                    trade_date = _parse_date_from_filename(csv_file.name)
+                    if trade_date is None:
+                        log.warning(f"Cannot parse trade date from filename: {csv_file.name}")
+                        continue
+                    if filter_date and trade_date != filter_date:
+                        continue
                     yield trade_date, csv_file
 
+            except zipfile.BadZipFile as exc:
+                log.error(f"Bad ZIP file: {zip_path} -- {exc}")
+            finally:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
 
-def _parse_day_dir(name: str, year: int) -> date | None:
-    """Try common day directory naming formats."""
-    digits = re.sub(r"\D", "", name)
-    for fmt_digits in [
-        (8, lambda d: date(int(d[:4]), int(d[4:6]), int(d[6:8]))),    # YYYYMMDD
-        (8, lambda d: date(int(d[4:8]), int(d[2:4]), int(d[:2]))),    # DDMMYYYY
-        (6, lambda d: date(year, int(d[:2]), int(d[2:4]))),            # MMDD + year from parent
-    ]:
-        if len(digits) == fmt_digits[0]:
-            try:
-                return fmt_digits[1](digits)
-            except ValueError:
-                continue
+
+def _parse_date_from_filename(filename: str) -> date | None:
+    """
+    Extract trade date from vendor filename.
+    Handles:
+      GFDLNFO_BACKADJUSTED_DDMMYYYY.csv  (current delivery format)
+      GFDLNFO_DDMMYYYY.csv               (legacy format)
+    Last underscore-separated token before extension is always DDMMYYYY.
+    """
+    stem = Path(filename).stem
+    parts = stem.split("_")
+    date_token = parts[-1]
+
+    if len(date_token) == 8 and date_token.isdigit():
+        try:
+            return date(
+                int(date_token[4:8]),
+                int(date_token[2:4]),
+                int(date_token[0:2]),
+            )
+        except ValueError:
+            pass
     return None
 
 
@@ -568,7 +588,7 @@ def process_file(
     log.info(f"Processing: {csv_path} | batch={batch_id}")
 
     # ------------------------------------------------------------------
-    # Step 1: Checksum + deduplification
+    # Step 1: Checksum + deduplication
     # ------------------------------------------------------------------
     checksum = sha256_file(csv_path)
 
@@ -623,7 +643,6 @@ def process_file(
     log.info(f"  Accepted: {result.rows_accepted} | Rejected: {result.rows_rejected}")
 
     if rejects and not dry_run:
-        # Write rejects in batches
         upsert_batched(client, "hist_ingest_rejects", rejects,
                        on_conflict="id", batch_size=500)
 
@@ -670,13 +689,11 @@ def process_file(
         nifty_id = resolver.resolve("NIFTY", "NSE")
         sensex_id = resolver.resolve("SENSEX", "BSE")
 
-        # Use segment prefix as proxy (GFDLNFO = NSE, GFDLBFO = BSE)
         inst_id = nifty_id if "NSE" in segment else sensex_id
 
         if inst_id:
             options_rows = options_df.copy()
             options_rows["instrument_id"] = inst_id
-            # Drop pre-market from hot tier options (keep flag, store anyway for completeness)
             upsert_batched(
                 client,
                 "hist_option_bars_1m",
@@ -740,7 +757,6 @@ def process_file(
                     expiry_date = date.fromisoformat(str(expiry_str))
                 except ValueError:
                     continue
-                # Count unique timestamps as proxy for bar count
                 unique_ts = grp["bar_ts"].nunique()
                 run_completeness_check(
                     client, batch_id, inst_id,
@@ -775,14 +791,14 @@ def _update_ingest_log(
             {
                 "id": batch_id,
                 "source_filename": result.filename,
-                "source_checksum": "",      # already set on insert
+                "source_checksum": "",
                 "vendor_date": result.vendor_date.isoformat(),
                 "segment": result.segment,
-                "rows_received": result.rows_received,
-                "rows_accepted": result.rows_accepted,
-                "rows_rejected": result.rows_rejected,
-                "rows_pre_market": result.rows_pre_market,
-                "rows_leap_flagged": result.rows_leap_flagged,
+                "rows_received": int(result.rows_received),
+                "rows_accepted": int(result.rows_accepted),
+                "rows_rejected": int(result.rows_rejected),
+                "rows_pre_market": int(result.rows_pre_market),
+                "rows_leap_flagged": int(result.rows_leap_flagged),
                 "parquet_path": result.parquet_path,
                 "status": result.status,
                 "error_detail": "; ".join(result.errors) if result.errors else None,
@@ -899,3 +915,13 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+```
+
+---
+
+**Both files are ready to deploy. Do not touch the running ingest.** Replace both files on disk now — they'll be picked up on the next run (remaining folders after 2025 completes).
+
+**Paste these two commands to confirm line counts match after you save:**
+```
+(Get-Content C:\GammaEnginePython\hist_ingest_controller.py).Count
+(Get-Content C:\GammaEnginePython\core\supabase_client.py).Count

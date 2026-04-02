@@ -14,7 +14,7 @@ import requests
 
 try:
     from dotenv import load_dotenv
-except Exception:  # pragma: no cover
+except Exception:
     load_dotenv = None
 
 
@@ -40,11 +40,18 @@ DHAN_LTP_URL = "https://api.dhan.co/v2/marketfeed/ltp"
 
 # Universe / batching
 UNIVERSE_PAGE_SIZE = 1000
-LTP_BATCH_SIZE = 50
+
+# Reduced from 50 → 25 to reduce per-request payload size and 429 pressure
+LTP_BATCH_SIZE = 25
+
+# Inter-chunk sleep to stay within Dhan rate limits (seconds)
+# At 25 per chunk, ~500 tickers = 20 chunks. 0.5s sleep = ~10s total overhead.
+INTER_CHUNK_SLEEP_SEC = 0.5
 
 # Retry / guard knobs
-MAX_429_RETRIES = 2
-BACKOFF_SCHEDULE_SEC = [1.0, 2.0, 4.0]
+# Increased retries and backoff to handle persistent 429s
+MAX_429_RETRIES = 4
+BACKOFF_SCHEDULE_SEC = [2.0, 5.0, 10.0, 20.0]
 MIN_COVERAGE_PCT = 95.0
 MAX_STALENESS_MINUTES = 20
 
@@ -575,7 +582,6 @@ def main() -> int:
     require_env("DHAN_API_TOKEN", DHAN_API_TOKEN)
 
     # Guard 1 + Guard 2
-    # CalendarSkip exits with code 0 — not a runner error, not a retry trigger
     enforce_calendar_and_session_guards()
 
     # Load universe
@@ -587,6 +593,7 @@ def main() -> int:
     stats.unique_security_ids = len(unique_ids)
 
     log(f"Active mapped NSE tickers: {stats.universe_count}")
+    log(f"LTP batch size: {LTP_BATCH_SIZE} | inter-chunk sleep: {INTER_CHUNK_SLEEP_SEC}s")
 
     # Fetch in chunks
     all_prices: Dict[str, float] = {}
@@ -609,6 +616,10 @@ def main() -> int:
         except Exception as exc:
             stats.batch_other_error_count += 1
             log(f"Chunk failed hard | chunk={i + 1}/{total_chunks} | detail={exc}")
+
+        # Inter-chunk sleep to avoid rate limit accumulation across chunks
+        if i < total_chunks - 1:
+            time.sleep(INTER_CHUNK_SLEEP_SEC)
 
     stats.received_ids = len(all_prices)
 
@@ -670,3 +681,17 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
+```
+
+---
+
+**Summary of what changed:**
+
+`compute_momentum_features_v2_local.py`: replaced `supabase_insert` with `supabase_upsert` using conflict key `symbol,ts`. Duplicate key error on NIFTY/SENSEX same-cycle runs eliminated.
+
+`ingest_breadth_intraday_local.py`: `LTP_BATCH_SIZE` 50 → 25, `MAX_429_RETRIES` 2 → 4, backoff `[1,2,4]` → `[2,5,10,20]`, added `INTER_CHUNK_SLEEP_SEC = 0.5` between chunks. This should bring 429 hits from 27/28 chunks down to near zero.
+
+**Verify line counts after saving:**
+```
+(Get-Content C:\GammaEnginePython\compute_momentum_features_v2_local.py).Count
+(Get-Content C:\GammaEnginePython\ingest_breadth_intraday_local.py).Count

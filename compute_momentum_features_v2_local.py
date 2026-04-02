@@ -86,15 +86,33 @@ def supabase_select(
     return data
 
 
-def supabase_insert(table_name: str, rows: List[Dict[str, Any]], timeout: int = 60) -> List[Dict[str, Any]]:
+def supabase_upsert(
+    table_name: str,
+    rows: List[Dict[str, Any]],
+    on_conflict: str,
+    timeout: int = 60,
+) -> List[Dict[str, Any]]:
+    """
+    UPSERT rows into Supabase using merge-duplicates resolution.
+    Replaces the previous INSERT which caused duplicate key errors when
+    both NIFTY and SENSEX cycles ran within the same timestamp bucket.
+    Conflict key: symbol,ts (uq_momentum_snapshots_v2_symbol_ts)
+    """
     if not rows:
         return []
 
     base_url, headers = get_supabase_config()
+    headers["Prefer"] = "resolution=merge-duplicates,return=representation"
     url = f"{base_url}/rest/v1/{table_name}"
-    resp = requests.post(url, headers=headers, json=rows, timeout=timeout)
+    resp = requests.post(
+        url,
+        headers=headers,
+        json=rows,
+        params={"on_conflict": on_conflict},
+        timeout=timeout,
+    )
     if resp.status_code >= 400:
-        raise RuntimeError(f"Supabase INSERT failed ({resp.status_code}) on {table_name}: {resp.text}")
+        raise RuntimeError(f"Supabase UPSERT failed ({resp.status_code}) on {table_name}: {resp.text}")
     data = resp.json()
     if isinstance(data, list):
         return data
@@ -279,7 +297,6 @@ def main() -> int:
         row = build_row(symbol)
         if row is None:
             continue
-
         out_rows.append(row)
         for k, v in row.items():
             print(f"{k}={v}")
@@ -290,8 +307,8 @@ def main() -> int:
 
     print("------------------------------------------------------------------------")
     print("Writing rows to public.momentum_snapshots_v2 ...")
-    inserted = supabase_insert("momentum_snapshots_v2", out_rows)
-    print(f"Inserted rows returned by Supabase: {len(inserted)}")
+    inserted = supabase_upsert("momentum_snapshots_v2", out_rows, on_conflict="symbol,ts")
+    print(f"Upserted rows returned by Supabase: {len(inserted)}")
     print("COMPUTE MOMENTUM FEATURES V2 COMPLETED")
     return 0
 

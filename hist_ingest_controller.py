@@ -86,16 +86,21 @@ PRE_MARKET_CUTOFF = "09:15:00"
 #   OPTIONS, FUTURES, SPOT, MIXED, OPTIONS_FUTURES_NSE,
 #   OPTIONS_FUTURES_BSE, SPOT_NSE, SPOT_BSE
 SEGMENT_MAP = {
-    "GFDLNFO":     "OPTIONS_FUTURES_NSE",   # NSE options + continuous futures
-    "GFDLCM":      "SPOT_NSE",              # NSE cash / spot index
-    "GFDLBFO":     "OPTIONS_FUTURES_BSE",   # BSE options + continuous futures
-    "GFDLBM":      "SPOT_BSE",              # BSE cash / spot index
-    "BFO":         "OPTIONS_FUTURES_BSE",   # SENSEX contractwise F&O
-    "BSE":         "SPOT_BSE",              # BSE spot indices (BSE_INDICES_*)
+    "GFDLNFO":  "OPTIONS_FUTURES_NSE",   # NSE options + continuous futures
+    "GFDLCM":   "SPOT_NSE",              # NSE cash / spot index
+    "GFDLBFO":  "OPTIONS_FUTURES_BSE",   # BSE options + continuous futures
+    "GFDLBM":   "SPOT_BSE",              # BSE cash / spot index
+    "BFO":      "OPTIONS_FUTURES_BSE",   # SENSEX contractwise F&O
+    "BSE":      "SPOT_BSE",              # BSE spot indices (BSE_INDICES_*)
 }
 
 # Tickers that are continuous futures series, not options
 FUTURES_PATTERN = re.compile(r"^(NIFTY|SENSEX|BANKNIFTY)-(I{1,3})\.(NFO|BFO)$")
+
+# Individual dated futures contracts: SENSEX08APR25FUT.BFO
+INDIVIDUAL_FUTURES_PATTERN = re.compile(
+    r"^(?P<symbol>[A-Z]+)(?P<day>\d{2})(?P<month>[A-Z]{3})(?P<year>\d{2})FUT\.(?P<exchange>NFO|BFO)$"
+)
 
 # Options ticker pattern: NIFTY03JUL2522800CE.NFO
 OPTIONS_PATTERN = re.compile(
@@ -163,6 +168,27 @@ def parse_ticker(raw: str) -> ParsedTicker | None:
             symbol=m.group(1),
             exchange=m.group(3),
             contract_series=series_map.get(m.group(2), 1),
+        )
+
+    # Individual dated futures: SENSEX08APR25FUT.BFO
+    # contract_series=0 distinguishes from continuous series (1/2/3)
+    m = INDIVIDUAL_FUTURES_PATTERN.match(raw)
+    if m:
+        try:
+            expiry = date(
+                2000 + int(m.group("year")),
+                MONTH_MAP[m.group("month")],
+                int(m.group("day")),
+            )
+        except (KeyError, ValueError):
+            return None
+        return ParsedTicker(
+            raw=raw,
+            kind="FUTURES",
+            symbol=m.group("symbol"),
+            exchange=m.group("exchange"),
+            expiry_date=expiry,
+            contract_series=0,
         )
 
     # Options: NIFTY03JUL2522800CE.NFO
@@ -315,8 +341,8 @@ def route_segments(
         elif parsed.kind == "FUTURES":
             segments["futures"].append({
                 **base,
-                "expiry_date": None,
-                "contract_series": parsed.contract_series,
+                "expiry_date": parsed.expiry_date.isoformat() if parsed.expiry_date else None,
+                "contract_series": parsed.contract_series if parsed.contract_series is not None else 0,
                 "volume": int(row["Volume"]),
                 "oi": int(row["Open Interest"]),
             })
@@ -703,7 +729,9 @@ def process_file(
         else:
             log.warning("Could not resolve instrument_id for options — check instruments table")
 
-    # Futures
+    # Futures — conflict key includes expiry_date to handle both continuous
+    # series (expiry_date=NULL, contract_series=1/2/3) and individual dated
+    # contracts (expiry_date=YYYY-MM-DD, contract_series=0)
     if not futures_df.empty:
         inst_id = resolver.resolve("NIFTY", "NSE") if "NSE" in segment else resolver.resolve("SENSEX", "BSE")
         if inst_id:
@@ -713,7 +741,7 @@ def process_file(
                 client,
                 "hist_future_bars_1m",
                 futures_rows.to_dict("records"),
-                on_conflict="instrument_id,bar_ts,contract_series",
+                on_conflict="instrument_id,bar_ts,contract_series,expiry_date",
             )
 
     # Spot

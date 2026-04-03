@@ -83,10 +83,11 @@ PRE_MARKET_CUTOFF = "09:15:00"
 
 # Filename prefix → segment mapping
 SEGMENT_MAP = {
-    "GFDLNFO": "OPTIONS_FUTURES_NSE",   # NSE options + continuous futures
-    "GFDLCM":  "SPOT_NSE",              # NSE cash / spot index
-    "GFDLBFO": "OPTIONS_FUTURES_BSE",   # BSE options + continuous futures
-    "GFDLBM":  "SPOT_BSE",              # BSE cash / spot index
+    "GFDLNFO":    "OPTIONS_FUTURES_NSE",   # NSE options + continuous futures
+    "GFDLCM":     "SPOT_NSE",              # NSE cash / spot index
+    "GFDLBFO":    "OPTIONS_FUTURES_BSE",   # BSE options + continuous futures
+    "GFDLBM":     "SPOT_BSE",              # BSE cash / spot index
+    "BFO":        "OPTIONS_FUTURES_BSE",   # SENSEX contractwise F&O
 }
 
 # Tickers that are continuous futures series, not options
@@ -246,7 +247,7 @@ def parse_and_validate(
             rejects.append({
                 "id": str(uuid.uuid4()),
                 "batch_id": batch_id,
-                "source_row_number": int(i) + 2,    # +2 for header and 0-index
+                "source_row_number": int(i) + 2,
                 "raw_ticker": str(row.get("Ticker", "")),
                 "raw_date": str(row.get("Date", "")),
                 "raw_time": str(row.get("Time", "")),
@@ -310,7 +311,7 @@ def route_segments(
         elif parsed.kind == "FUTURES":
             segments["futures"].append({
                 **base,
-                "expiry_date": None,        # continuous series, no fixed expiry
+                "expiry_date": None,
                 "contract_series": parsed.contract_series,
                 "volume": int(row["Volume"]),
                 "oi": int(row["Open Interest"]),
@@ -503,11 +504,9 @@ def walk_vendor_directory(
                 with zipfile.ZipFile(zip_path, "r") as zf:
                     zf.extractall(tmp_dir)
 
-                # ZIP contains subfolder named same as ZIP stem: APR_2025/
                 zip_stem = zip_path.stem
                 inner_dir = tmp_dir / zip_stem
 
-                # Fallback: if subfolder missing, search tmp_dir directly
                 search_dir = inner_dir if inner_dir.is_dir() else tmp_dir
 
                 for csv_file in sorted(search_dir.glob("*.csv")):
@@ -529,8 +528,9 @@ def _parse_date_from_filename(filename: str) -> date | None:
     """
     Extract trade date from vendor filename.
     Handles:
-      GFDLNFO_BACKADJUSTED_DDMMYYYY.csv  (current delivery format)
-      GFDLNFO_DDMMYYYY.csv               (legacy format)
+      GFDLNFO_BACKADJUSTED_DDMMYYYY.csv  (backadjusted format)
+      GFDLCM_NIFTY 50_DDMMYYYY.csv       (spot format)
+      BFO_CONTRACT_DDMMYYYY.csv           (contractwise format)
     Last underscore-separated token before extension is always DDMMYYYY.
     """
     stem = Path(filename).stem
@@ -574,7 +574,6 @@ def process_file(
     filename = csv_path.name
     batch_id = str(uuid.uuid4())
 
-    # Detect segment from filename prefix
     prefix = filename.split("_")[0]
     segment = SEGMENT_MAP.get(prefix, "UNKNOWN")
 
@@ -603,7 +602,6 @@ def process_file(
             result.status = "SKIPPED_DUPLICATE"
             return result
 
-        # Open ingest log record
         client.insert("hist_ingest_log", {
             "id": batch_id,
             "source_filename": filename,
@@ -626,7 +624,7 @@ def process_file(
         result.status = "FAILED"
         result.errors.append(f"CSV read error: {exc}")
         log.error(f"CSV read failed: {csv_path} — {exc}")
-        _update_ingest_log(client, batch_id, result, dry_run)
+        _update_ingest_log(client, batch_id, result, dry_run, checksum)
         return result
 
     result.rows_received = len(df_raw)
@@ -649,7 +647,7 @@ def process_file(
     if df_valid.empty:
         result.status = "FAILED"
         result.errors.append("No valid rows after validation")
-        _update_ingest_log(client, batch_id, result, dry_run)
+        _update_ingest_log(client, batch_id, result, dry_run, checksum)
         return result
 
     # ------------------------------------------------------------------
@@ -661,7 +659,6 @@ def process_file(
     futures_df = segments["futures"]
     spot_df    = segments["spot"]
 
-    # Count pre-market and LEAP rows
     if not options_df.empty:
         result.rows_pre_market += options_df["is_pre_market"].sum()
         result.rows_leap_flagged += options_df["is_leap"].sum()
@@ -767,7 +764,7 @@ def process_file(
     # Step 8: Finalise ingest log
     # ------------------------------------------------------------------
     result.status = "BARS_LOADED"
-    _update_ingest_log(client, batch_id, result, dry_run)
+    _update_ingest_log(client, batch_id, result, dry_run, checksum)
 
     log.info(f"  Completed: {filename} | status={result.status}")
     return result
@@ -782,6 +779,7 @@ def _update_ingest_log(
     batch_id: str,
     result: IngestResult,
     dry_run: bool,
+    checksum: str = "",
 ) -> None:
     if dry_run:
         return
@@ -791,7 +789,7 @@ def _update_ingest_log(
             {
                 "id": batch_id,
                 "source_filename": result.filename,
-                "source_checksum": "",
+                "source_checksum": checksum,
                 "vendor_date": result.vendor_date.isoformat(),
                 "segment": result.segment,
                 "rows_received": int(result.rows_received),

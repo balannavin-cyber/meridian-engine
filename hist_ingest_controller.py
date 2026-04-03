@@ -82,12 +82,16 @@ LEAP_HORIZON_DAYS = 90
 PRE_MARKET_CUTOFF = "09:15:00"
 
 # Filename prefix → segment mapping
+# Must match the check constraint on hist_ingest_log.segment:
+#   OPTIONS, FUTURES, SPOT, MIXED, OPTIONS_FUTURES_NSE,
+#   OPTIONS_FUTURES_BSE, SPOT_NSE, SPOT_BSE
 SEGMENT_MAP = {
-    "GFDLNFO":    "OPTIONS_FUTURES_NSE",   # NSE options + continuous futures
-    "GFDLCM":     "SPOT_NSE",              # NSE cash / spot index
-    "GFDLBFO":    "OPTIONS_FUTURES_BSE",   # BSE options + continuous futures
-    "GFDLBM":     "SPOT_BSE",              # BSE cash / spot index
-    "BFO":        "OPTIONS_FUTURES_BSE",   # SENSEX contractwise F&O
+    "GFDLNFO":     "OPTIONS_FUTURES_NSE",   # NSE options + continuous futures
+    "GFDLCM":      "SPOT_NSE",              # NSE cash / spot index
+    "GFDLBFO":     "OPTIONS_FUTURES_BSE",   # BSE options + continuous futures
+    "GFDLBM":      "SPOT_BSE",              # BSE cash / spot index
+    "BFO":         "OPTIONS_FUTURES_BSE",   # SENSEX contractwise F&O
+    "BSE":         "SPOT_BSE",              # BSE spot indices (BSE_INDICES_*)
 }
 
 # Tickers that are continuous futures series, not options
@@ -182,7 +186,7 @@ def parse_ticker(raw: str) -> ParsedTicker | None:
             opt_type=m.group("opt_type"),
         )
 
-    # Spot index: NIFTY 50.NSE_IDX
+    # Spot index: NIFTY 50.NSE_IDX, SENSEX.BSE_IDX
     m = SPOT_PATTERN.match(raw)
     if m:
         exchange = raw.split(".")[-1]
@@ -528,9 +532,10 @@ def _parse_date_from_filename(filename: str) -> date | None:
     """
     Extract trade date from vendor filename.
     Handles:
-      GFDLNFO_BACKADJUSTED_DDMMYYYY.csv  (backadjusted format)
-      GFDLCM_NIFTY 50_DDMMYYYY.csv       (spot format)
-      BFO_CONTRACT_DDMMYYYY.csv           (contractwise format)
+      GFDLNFO_BACKADJUSTED_DDMMYYYY.csv  (NSE F&O backadjusted)
+      GFDLCM_NIFTY 50_DDMMYYYY.csv       (NSE spot)
+      BFO_CONTRACT_DDMMYYYY.csv           (BSE F&O contractwise)
+      BSE_INDICES_DDMMYYYY.csv            (BSE spot)
     Last underscore-separated token before extension is always DDMMYYYY.
     """
     stem = Path(filename).stem
@@ -575,7 +580,7 @@ def process_file(
     batch_id = str(uuid.uuid4())
 
     prefix = filename.split("_")[0]
-    segment = SEGMENT_MAP.get(prefix, "UNKNOWN")
+    segment = SEGMENT_MAP.get(prefix, "SPOT_BSE")
 
     result = IngestResult(
         batch_id=batch_id,
@@ -685,9 +690,7 @@ def process_file(
     if not options_df.empty:
         nifty_id = resolver.resolve("NIFTY", "NSE")
         sensex_id = resolver.resolve("SENSEX", "BSE")
-
         inst_id = nifty_id if "NSE" in segment else sensex_id
-
         if inst_id:
             options_rows = options_df.copy()
             options_rows["instrument_id"] = inst_id

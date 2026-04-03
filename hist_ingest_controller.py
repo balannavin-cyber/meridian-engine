@@ -915,13 +915,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-```
-
----
-
-**Both files are ready to deploy. Do not touch the running ingest.** Replace both files on disk now — they'll be picked up on the next run (remaining folders after 2025 completes).
-
-**Paste these two commands to confirm line counts match after you save:**
-```
-(Get-Content C:\GammaEnginePython\hist_ingest_controller.py).Count
-(Get-Content C:\GammaEnginePython\core\supabase_client.py).Count

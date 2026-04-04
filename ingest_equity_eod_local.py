@@ -2,7 +2,8 @@ import json
 import os
 import sys
 import time
-from datetime import date, datetime, timedelta, UTC
+from datetime import date, datetime, timedelta, timezone
+UTC = timezone.utc
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests

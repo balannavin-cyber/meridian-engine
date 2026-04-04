@@ -106,6 +106,35 @@ def main() -> int:
     if expiry_time:
         print(f"Expiry time: {expiry_time}")
     print("DHAN_API_TOKEN has been refreshed in .env")
+
+    # Sync token to Supabase so AWS can read it
+    try:
+        supabase_url = require_env("SUPABASE_URL")
+        supabase_key = require_env("SUPABASE_SERVICE_ROLE_KEY")
+        headers = {
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        }
+        payload = {
+            "config_value": access_token,
+            "updated_at": "now()",
+            "updated_by": "local_token_refresh",
+        }
+        r = requests.patch(
+            f"{supabase_url}/rest/v1/system_config?config_key=eq.dhan_api_token",
+            headers=headers,
+            json=payload,
+            timeout=15,
+        )
+        if r.status_code in (200, 204):
+            print("Token synced to Supabase successfully.")
+        else:
+            print(f"WARNING: Supabase sync returned {r.status_code}: {r.text}")
+    except Exception as e:
+        print(f"WARNING: Supabase sync failed (non-fatal): {e}")
+
     return 0
 
 

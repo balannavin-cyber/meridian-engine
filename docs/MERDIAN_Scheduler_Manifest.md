@@ -19,7 +19,7 @@
 ### MERDIAN_Dhan_Token_Refresh
 | Field | Value |
 |---|---|
-| Trigger | Daily, Mon–Fri, 09:05 IST (03:35 UTC) — fires once |
+| Trigger | Daily, Mon–Fri, 08:15 IST (02:45 UTC) — fires once at 08:15 IST |
 | Script | `run_token_refresh.bat` |
 | What it does | Runs `refresh_dhan_token.py` → writes fresh Dhan token to `.env` → syncs token to `system_config.dhan_api_token` in Supabase |
 | Owner | Local Windows machine |
@@ -125,7 +125,7 @@
 
 | Time (UTC) | Time (IST) | Job |
 |---|---|---|
-| 03:40 Mon–Fri | 09:10 IST | `pull_token_from_supabase.py` — pulls Dhan token written by Local at 09:05 |
+| 03:55 Mon–Fri | 08:25 IST | `pull_token_from_supabase.py` — pulls Dhan token written by Local at 08:15 |
 | 03:38 Mon–Fri | 09:08 IST | `capture_market_spot_snapshot_local.py` — pre-open spot capture |
 | 03:45 Mon–Fri | 09:15 IST | `run_merdian_shadow_runner.py` — AWS shadow pipeline |
 | 10:30 Mon–Fri | 16:00 IST | `capture_postmarket_1600.py` |

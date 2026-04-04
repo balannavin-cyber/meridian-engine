@@ -189,6 +189,8 @@ def decide_shadow_signal(
     iv_rank = to_float(iv_context.get("iv_rank")) if iv_context else None
     iv_regime = iv_context.get("iv_regime") if iv_context else None
     vix_trend = iv_context.get("vix_trend") if iv_context else None
+    vol_features = market_state.get("volatility_features") or {}
+    india_vix = float(vol_features["india_vix"]) if vol_features.get("india_vix") is not None else None
     iv_context_low_conf = bool(iv_context.get("low_confidence")) if iv_context else None
 
     smdm_squeeze_active = bool(smdm.get("squeeze_active")) if smdm else False
@@ -260,6 +262,11 @@ def decide_shadow_signal(
         cautions.append("IV regime is high; outright premium buying is less attractive")
     elif iv_regime == "IV_ELEVATED":
         confidence -= 3
+
+    # E-03: India VIX confidence penalty
+    if india_vix is not None and india_vix > 20:
+        confidence -= 8
+        cautions.append(f"India VIX elevated ({india_vix:.1f} > 20) — confidence penalised")
         cautions.append("IV regime is elevated")
 
     if iv_context_low_conf:
@@ -308,6 +315,11 @@ def decide_shadow_signal(
 
     if not trade_allowed and action != "DO_NOTHING":
         cautions.append("Shadow confidence threshold not met for execution")
+
+    # E-03: India VIX panic gate
+    if india_vix is not None and india_vix > 25:
+        trade_allowed = False
+        cautions.append(f"India VIX panic gate active ({india_vix:.1f} > 25) — trade blocked")
 
     ts = market_state.get("ts") or utc_now().isoformat()
 

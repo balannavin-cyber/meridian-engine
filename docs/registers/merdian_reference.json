@@ -1232,6 +1232,51 @@
       "priority": "MEDIUM",
       "status": "OPEN",
       "fix": "Update build_option_execution_outcomes_v1.py to read execution price from option_chain_snapshots ATM_ONLY rows nearest to signal timestamp."
+    },
+    "OI-01": {
+      "title": "SENSEX 2025 individual futures replay",
+      "priority": "MEDIUM",
+      "status": "OPEN"
+    },
+    "OI-02": {
+      "title": "Vendor correction MAY/JUN 2025 and JAN 2026 SENSEX files",
+      "priority": "MEDIUM",
+      "status": "OPEN - email sent"
+    },
+    "OI-03": {
+      "title": "MERDIAN_Market_Tape_1M task disabled",
+      "priority": "MEDIUM",
+      "status": "OPEN - token conflict assessment needed"
+    },
+    "OI-04": {
+      "title": "AWS shadow runner architecture review",
+      "priority": "LOW",
+      "status": "OPEN"
+    },
+    "OI-05": {
+      "title": "ENH-31 expiry calendar utility HIST-01",
+      "priority": "MEDIUM",
+      "status": "OPEN - required before production ingest"
+    },
+    "OI-06": {
+      "title": "Stale IN_PROGRESS in hist_ingest_log",
+      "priority": "LOW",
+      "status": "OPEN - safe to delete"
+    },
+    "OI-07": {
+      "title": "Supabase disk monitoring",
+      "priority": "LOW",
+      "status": "OPEN - 9.5GB of 18GB at V18C close"
+    },
+    "SPO-01": {
+      "title": "DTE null in signal_snapshots",
+      "priority": "MEDIUM",
+      "status": "OPEN - derivable from expiry_date as workaround"
+    },
+    "HIST-02": {
+      "title": "S3 archiver for warm tier",
+      "priority": "LOW",
+      "status": "OPEN - LocalParquetArchiver stubbed pending AWS credentials"
     }
   },
   "governance_rules": {
@@ -1266,5 +1311,35 @@
       "RELEVANT_FILES": "[list only files relevant to this session's goal]",
       "RELEVANT_TABLES": "[list only tables relevant to this session's goal]"
     }
-  }
+  },
+  "session_log": [
+    {
+      "date": "2026-03-31",
+      "appendix": "V18A",
+      "git_end": "a31eabe",
+      "items_closed": [
+        "C-01",
+        "C-02",
+        "C-05",
+        "C-08",
+        "A-01",
+        "A-04",
+        "V18A-02",
+        "V18A-03"
+      ],
+      "summary": "Open items resolution + preflight harness Sprint 1"
+    },
+    {
+      "date": "2026-04-01",
+      "appendix": "MERDIAN_Appendix_V18B",
+      "git_end": "b420d4b",
+      "summary": "Hist ingest pipeline + outcome measurement + signal context regression fix"
+    },
+    {
+      "date": "2026-04-03",
+      "appendix": "MERDIAN_Appendix_V18C",
+      "git_end": "d6cb60e",
+      "summary": "Infrastructure + historical data ingest + code fixes Good Friday"
+    }
+  ]
 }

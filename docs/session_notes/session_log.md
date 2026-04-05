@@ -1,3 +1,52 @@
+## 2026-04-04 / 2026-04-05 — code_debug / infrastructure / architecture — V18C Session + Historical Backfill Sprint
+
+**Goal:** Close all actionable open items from Groups 1–5, build historical gamma backfill pipeline, ingest vendor correction data, build live monitoring dashboard.
+
+**Session type:** code_debug / infrastructure / architecture (extended — 2 days)
+
+**Completed:**
+- V18A-01: Token refresh race condition fixed — Local writes token to Supabase, AWS pulls at 08:25 IST
+- OI-03: MERDIAN_Market_Tape_1M re-enabled
+- C-04/C-05/C-06: Closed from query evidence
+- S-01/S-02: Supervisor task swap — MERDIAN_Intraday_Supervisor_Start enabled, legacy launcher disabled
+- S-05: Table freshness checks added to gamma_engine_telemetry_logger.py
+- S-07: watchdog_check.ps1 rebuilt with trading_calendar guard and market hours gate
+- S-08: MERDIAN_Scheduler_Manifest.md created in docs/
+- S-03/S-06/M-01: Confirmed already built — closed
+- A-04: Python 3.10 compatibility fix on AWS (datetime.UTC → timezone.utc)
+- E-03: India VIX signal rules added to build_shadow_signal_v3_local.py (shadow only)
+- D-09/E-06: 13 shadow table DDLs documented in docs/MERDIAN_Shadow_Tables_DDL.md
+- Token refresh timing corrected to 08:15 IST per Change Protocol Rule 6
+- MERDIAN_Live_Dashboard: live HTTP monitoring dashboard built (localhost:8765)
+- Three new Supabase tables: hist_gamma_metrics, hist_volatility_snapshots, hist_market_state
+- backfill_gamma_metrics.py: pure-Python BS IV + GEX computation from hist_option_bars_1m
+- batch_backfill_gamma.py: batch wrapper — 421/514 dates passed
+- batch_reconstruct_signals.py: expiry-aligned batch reconstruction wrapper
+- Vendor correction files ingesting: SENSEX F+O contractwise (247 files, 19M rows)
+- OpenItems Register converted from docx to markdown — v4 edition
+
+**Open after session:**
+- F+O vendor ingest running (MAY/JUN 2025, JAN 2026 SENSEX data)
+- SENSEX gamma backfill for May–Jun 2025 and Jan 2026 (after ingest)
+- C-03/C-07a/C-07b/S-04/A-05/M-02: require Monday live session
+- Shadow gate: 4/10 sessions — needs 6 more clean live sessions
+- backfill_volatility_metrics.py and backfill_market_state.py: not yet built
+- Appendix V18D: required per documentation protocol
+
+**Files changed:** merdian_live_dashboard.py (NEW), backfill_gamma_metrics.py (NEW), batch_backfill_gamma.py (NEW), batch_reconstruct_signals.py (NEW), gamma_engine_telemetry_logger.py, watchdog_check.ps1, build_shadow_signal_v3_local.py, refresh_dhan_token.py, ingest_equity_eod_local.py (AWS), docs/MERDIAN_Scheduler_Manifest.md, docs/registers/MERDIAN_OpenItems_Register_v4.md, docs/MERDIAN_Shadow_Tables_DDL.md
+
+**Schema changes:** hist_gamma_metrics (NEW), hist_volatility_snapshots (NEW), hist_market_state (NEW), system_config row dhan_api_token (NEW)
+
+**Open items closed:** V18A-01, OI-03, C-01, C-02, C-04, C-05, C-06, C-08, A-03, A-04, E-03, D-09/E-06, S-01–S-08, M-01, Group 3 steps 3.1–3.6, Group 4 items 4.1/4.3/4.6
+
+**Git commit hash:** 0655599
+
+**Next session goal:** Run SENSEX gamma backfill for vendor-corrected months. Build backfill_volatility_metrics.py. Write Appendix V18D.
+
+**docs_updated:** yes
+
+---
+
 ﻿
 ## 2026-04-03 â€” Infrastructure + Data Ingest â€” V18C: Historical Data Ingest + Infrastructure Upgrade (Good Friday)
 

@@ -138,3 +138,14 @@
 - Exact trigger times for: `MERDIAN_IV_Context_0905`, `MERDIAN_Market_Close_Capture`, `MERDIAN_Post_Market_1600_Capture`, `MERDIAN_Session_Markers_1602`, `MERDIAN_EOD_Breadth_Refresh`
 - Exact script names for the above tasks
 - S-04: Confirm pipeline runs through 15:30 without the 15:10 stop (now that duplicate launcher is disabled)
+
+---
+
+### MERDIAN_Live_Dashboard
+| Field | Value |
+|---|---|
+| Trigger | At user logon |
+| Script | `merdian_live_dashboard.py --no-browser` |
+| What it does | Starts HTTP server at localhost:8765. Live dashboard showing pipeline stages, component heartbeats, table freshness, latest signals, and action buttons. Auto-refreshes every 30s. |
+| Owner | Standalone |
+| Notes | Added V18C session 2026-04-05. Bookmark http://localhost:8765 in browser. Committed at 1f599bd. |

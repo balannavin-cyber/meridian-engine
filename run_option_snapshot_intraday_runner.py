@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import atexit
 import json
@@ -246,6 +246,7 @@ def run_cmd(args: list[str], timeout: int, step_name: str, non_blocking: bool = 
             capture_output=True,
             text=True,
             timeout=timeout,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         stdout = (proc.stdout or "").strip()
         stderr = (proc.stderr or "").strip()
@@ -316,10 +317,10 @@ def extract_run_id(stdout: str) -> str:
     return matches[-1]
 
 
-# â”€â”€ V18A-02: Circuit-Breaker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── V18A-02: Circuit-Breaker ──────────────────────────────────────────────────
 # runner alive != system valid.
 # If ingest_option_chain fails with a 401 auth error, downstream steps
-# (gamma, volatility, market state, signal) must NOT run â€” they would produce
+# (gamma, volatility, market state, signal) must NOT run — they would produce
 # stale or absent outputs that look valid but are not.
 # This circuit-breaker detects auth failure in ingest stdout and halts the
 # pipeline for that symbol for that cycle, firing a Telegram alert.
@@ -337,7 +338,7 @@ def _send_circuit_breaker_alert(message: str) -> None:
         token   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
         chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
         if not token or not chat_id:
-            log("CIRCUIT-BREAKER: Telegram credentials not set â€” alert not sent")
+            log("CIRCUIT-BREAKER: Telegram credentials not set — alert not sent")
             return
         url     = f"https://api.telegram.org/bot{token}/sendMessage"
         payload = json.dumps({
@@ -352,7 +353,7 @@ def _send_circuit_breaker_alert(message: str) -> None:
     except Exception as e:
         log(f"CIRCUIT-BREAKER: Alert send failed (non-blocking): {e}")
 
-# â”€â”€ End V18A-02 helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── End V18A-02 helpers ───────────────────────────────────────────────────────
 
 
 def run_live_cycle_for_symbol(symbol: str) -> None:
@@ -367,13 +368,13 @@ def run_live_cycle_for_symbol(symbol: str) -> None:
     if not ok:
         raise RuntimeError(f"{symbol} ingest failed unexpectedly.")
 
-    # â”€â”€ V18A-02: Auth failure circuit-breaker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── V18A-02: Auth failure circuit-breaker ─────────────────────────────────
     # Check ingest output for 401 / auth failure before proceeding downstream.
-    # If auth is broken: log, alert, and return early â€” do NOT run gamma/state/signal.
+    # If auth is broken: log, alert, and return early — do NOT run gamma/state/signal.
     # This prevents the system from appearing alive while producing invalid outputs.
     if _is_auth_failure(ingest_out):
         msg = (
-            f"OPTION_AUTH_BREAK [{symbol}] â€” ingest_option_chain returned a Dhan "
+            f"OPTION_AUTH_BREAK [{symbol}] — ingest_option_chain returned a Dhan "
             f"authentication failure (401 / token invalid). "
             f"Halting downstream pipeline (gamma / volatility / state / signal) "
             f"for this symbol this cycle. "
@@ -382,9 +383,9 @@ def run_live_cycle_for_symbol(symbol: str) -> None:
         )
         log(f"CIRCUIT-BREAKER: {msg}")
         _send_circuit_breaker_alert(msg)
-        log(f"========== LIVE PIPELINE HALTED [{symbol}] â€” auth failure ==========")
+        log(f"========== LIVE PIPELINE HALTED [{symbol}] — auth failure ==========")
         return  # do NOT proceed to gamma / state / signal
-    # â”€â”€ End circuit-breaker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── End circuit-breaker ───────────────────────────────────────────────────
 
     run_id = extract_run_id(ingest_out)
     log(f"{symbol} run_id extracted: {run_id}")
@@ -502,7 +503,7 @@ def run_full_cycle() -> None:
         run_live_cycle_for_symbol(symbol)
 
     duration = (now_ist() - cycle_started).total_seconds()
-    log(f"CYCLE END â€” duration={duration:.1f}s")
+    log(f"CYCLE END — duration={duration:.1f}s")
     log("")
 
 
@@ -553,3 +554,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

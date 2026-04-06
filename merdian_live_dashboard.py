@@ -252,14 +252,14 @@ def get_pipeline_stages() -> Dict:
         else:
             stages.append({"name": "Options", "ts": "—", "value": "—", "lag": None, "ok": False})
 
-        rows = sb_get("gamma_metrics", f"select=ts,gamma_regime,flip_level&symbol=eq.{symbol}&order=ts.desc&limit=1")
+        rows = sb_get("gamma_metrics", f"select=ts,regime,flip_level&symbol=eq.{symbol}&order=ts.desc&limit=1")
         if rows:
             ts = rows[0].get("ts", "")
             dt = parse_ist_dt(ts)
             lag = lag_sec(ts)
             flip = rows[0].get("flip_level")
             stages.append({"name": "Gamma", "ts": dt.strftime("%H:%M:%S") if dt else "?",
-                           "value": f"{rows[0].get('gamma_regime','?')} / flip {int(flip) if flip else '?'}",
+                           "value": f"{rows[0].get('regime','?')} / flip {int(flip) if flip else '?'}",
                            "lag": lag, "ok": lag is not None and lag < 600})
         else:
             stages.append({"name": "Gamma", "ts": "—", "value": "—", "lag": None, "ok": False})
@@ -289,13 +289,23 @@ def get_pipeline_stages() -> Dict:
         else:
             stages.append({"name": "Momentum", "ts": "—", "value": "—", "lag": None, "ok": False})
 
-        rows = sb_get("market_state_snapshots", f"select=ts,gamma_regime,wcb_regime,wcb_score&symbol=eq.{symbol}&order=ts.desc&limit=1")
+        rows = sb_get("market_state_snapshots", f"select=ts,gamma_features,wcb_features&symbol=eq.{symbol}&order=ts.desc&limit=1")
         if rows:
             ts = rows[0].get("ts", "")
             dt = parse_ist_dt(ts)
             lag = lag_sec(ts)
+            gf = rows[0].get("gamma_features") or {}
+            if isinstance(gf, str):
+                try: gf = json.loads(gf)
+                except: gf = {}
+            wf = rows[0].get("wcb_features") or {}
+            if isinstance(wf, str):
+                try: wf = json.loads(wf)
+                except: wf = {}
+            gamma_r = gf.get("regime", gf.get("gamma_regime", "?"))
+            wcb_r = wf.get("wcb_regime", "?")
             stages.append({"name": "Market State", "ts": dt.strftime("%H:%M:%S") if dt else "?",
-                           "value": f"γ:{rows[0].get('gamma_regime','?')} WCB:{rows[0].get('wcb_regime','?')}",
+                           "value": f"γ:{gamma_r} WCB:{wcb_r}",
                            "lag": lag, "ok": lag is not None and lag < 600})
         else:
             stages.append({"name": "Market State", "ts": "—", "value": "—", "lag": None, "ok": False})

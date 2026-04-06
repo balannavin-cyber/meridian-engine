@@ -1,262 +1,34 @@
 {
-  "sessions": [
+  "holidays": [
+    {"date": "2026-01-26", "name": "Republic Day"},
+    {"date": "2026-02-19", "name": "Chhatrapati Shivaji Maharaj Jayanti"},
+    {"date": "2026-03-02", "name": "Mahashivratri"},
+    {"date": "2026-03-20", "name": "Id-Ul-Fitr (Ramzan Id)"},
+    {"date": "2026-04-02", "name": "Ram Navami"},
+    {"date": "2026-04-03", "name": "Good Friday"},
+    {"date": "2026-04-14", "name": "Dr. Baba Saheb Ambedkar Jayanti"},
+    {"date": "2026-05-01", "name": "Maharashtra Day"},
+    {"date": "2026-06-27", "name": "Bakri Id"},
+    {"date": "2026-07-06", "name": "Muharram"},
+    {"date": "2026-08-15", "name": "Independence Day"},
+    {"date": "2026-08-27", "name": "Ganesh Chaturthi"},
+    {"date": "2026-10-02", "name": "Mahatma Gandhi Jayanti / Dussehra"},
+    {"date": "2026-10-20", "name": "Diwali Laxmi Pujan"},
+    {"date": "2026-10-21", "name": "Diwali Balipratipada"},
+    {"date": "2026-11-04", "name": "Gurunanak Jayanti"},
+    {"date": "2026-11-25", "name": "Christmas"},
+    {"date": "2025-10-02", "name": "Mahatma Gandhi Jayanti"},
+    {"date": "2025-10-23", "name": "Diwali Laxmi Pujan"},
+    {"date": "2025-10-24", "name": "Diwali Balipratipada"},
+    {"date": "2025-11-05", "name": "Prakash Gurpurb Sri Guru Nanak Dev Ji"},
+    {"date": "2025-12-25", "name": "Christmas"}
+  ],
+  "special_sessions": [
     {
-      "date": "2026-03-11",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-12",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-13",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-14",
-      "is_open": false,
-      "notes": "Saturday"
-    },
-    {
-      "date": "2026-03-15",
-      "is_open": false,
-      "notes": "Sunday"
-    },
-    {
-      "date": "2026-03-16",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-17",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-18",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-19",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-20",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-21",
-      "is_open": false,
-      "notes": "Saturday"
-    },
-    {
-      "date": "2026-03-22",
-      "is_open": false,
-      "notes": "Sunday"
-    },
-    {
-      "date": "2026-03-23",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-24",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-25",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-26",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-27",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-28",
-      "is_open": false,
-      "notes": "Saturday"
-    },
-    {
-      "date": "2026-03-29",
-      "is_open": false,
-      "notes": "Sunday"
-    },
-    {
-      "date": "2026-03-30",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-03-31",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day"
-    },
-    {
-      "date": "2026-04-01",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day ? NIFTY weekly expiry (Tuesday)"
-    },
-    {
-      "date": "2026-04-02",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day - SENSEX weekly expiry Thursday"
-    },
-    {
-      "date": "2026-04-06",
-      "is_open": false,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Sunday - market closed"
-    },
-    {
-      "date": "2026-04-07",
-      "is_open": true,
-      "monitor_start_time": "09:00",
-      "premarket_ref_time": "09:08",
-      "open_time": "09:15",
-      "close_time": "15:30",
-      "postmarket_ref_time": "16:00",
-      "final_eod_ltp_time": "16:15",
-      "special_session": false,
-      "notes": "Normal trading day - NIFTY weekly expiry Tuesday"
+      "date": "2025-10-20",
+      "name": "Muhurat Trading 2025",
+      "open_time": "18:15",
+      "close_time": "18:30"
     }
   ]
 }

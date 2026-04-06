@@ -32,6 +32,11 @@ from typing import Any, Dict, List, Optional
 import requests as req
 from dotenv import load_dotenv
 
+# Force UTF-8 safe output on Windows cp1252 systems
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
 BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR / ".env"
 TOKEN_STATUS_FILE = BASE_DIR / "runtime" / "token_status.json"
@@ -637,16 +642,19 @@ def _run_action(action_id: str, ainfo: dict) -> None:
             ainfo["cmd"],
             cwd=str(BASE_DIR),
             capture_output=True,
-            text=True,
             timeout=ainfo.get("timeout", 60),
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
-        output = (result.stdout or "").strip()[-400:] or (result.stderr or "").strip()[-400:]
+        stdout = result.stdout.decode("utf-8", errors="replace").strip() if result.stdout else ""
+        stderr = result.stderr.decode("utf-8", errors="replace").strip() if result.stderr else ""
+        output = stdout[-400:] or stderr[-400:]
         ok = result.returncode == 0
     except subprocess.TimeoutExpired:
         ok, output = False, "Timed out"
     except Exception as e:
         ok, output = False, str(e)[:300]
+    # Strip non-ASCII characters that cause cp1252 encoding errors on Windows
+    output = output.encode("ascii", errors="replace").decode("ascii")
     with _action_lock:
         _action_results[action_id] = {"ok": ok, "ts": ts, "output": output}
 
@@ -663,7 +671,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-            self.wfile.write(html.encode("utf-8"))
+            self.wfile.write(html.encode("utf-8", errors="replace"))
         except Exception as e:
             try:
                 self.send_response(500)

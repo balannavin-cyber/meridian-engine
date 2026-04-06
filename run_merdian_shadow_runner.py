@@ -577,28 +577,12 @@ def run_cycle() -> bool:
         )
         return False
 
-    breadth = run_step(
-        [PYTHON_BIN, "ingest_breadth_intraday_local.py"],
-        TIMEOUT_BREADTH_SECONDS,
-        "ingest_breadth_intraday_local.py",
-    )
-    if not breadth.ok:
-        update_state("ERROR", {"failed_step": "ingest_breadth_intraday_local.py"})
-        return False
-
-    coverage_ok, coverage_msg, coverage_pct, rows_upserted = guard_breadth_coverage(breadth.stdout_full)
-    if not coverage_ok:
-        log(f"GUARD 3 STOP: {coverage_msg}")
-        update_state(
-            "ERROR",
-            {
-                "failed_guard": "coverage",
-                "guard_message": coverage_msg,
-                "coverage_pct": coverage_pct,
-                "rows_upserted": rows_upserted,
-            },
-        )
-        return False
+    # AWS SHADOW: breadth ingest is skipped on AWS.
+    # Local Windows already ingests breadth and writes to Supabase.
+    # Running breadth on AWS simultaneously saturates the shared Dhan token rate limit.
+    log("BREADTH: Skipped on AWS shadow (Local is the breadth source)")
+    coverage_pct = None
+    rows_upserted = None
 
     stale_ok, stale_msg, latest_ltp_ts = guard_ltp_staleness()
     if not stale_ok:

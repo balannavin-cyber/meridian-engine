@@ -681,17 +681,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     main()
-```
-
----
-
-**Summary of what changed:**
-
-`compute_momentum_features_v2_local.py`: replaced `supabase_insert` with `supabase_upsert` using conflict key `symbol,ts`. Duplicate key error on NIFTY/SENSEX same-cycle runs eliminated.
-
-`ingest_breadth_intraday_local.py`: `LTP_BATCH_SIZE` 50 → 25, `MAX_429_RETRIES` 2 → 4, backoff `[1,2,4]` → `[2,5,10,20]`, added `INTER_CHUNK_SLEEP_SEC = 0.5` between chunks. This should bring 429 hits from 27/28 chunks down to near zero.
-
-**Verify line counts after saving:**
-```
-(Get-Content C:\GammaEnginePython\compute_momentum_features_v2_local.py).Count
-(Get-Content C:\GammaEnginePython\ingest_breadth_intraday_local.py).Count

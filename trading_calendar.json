@@ -233,6 +233,30 @@
       "final_eod_ltp_time": "16:15",
       "special_session": false,
       "notes": "Normal trading day - SENSEX weekly expiry Thursday"
+    },
+    {
+      "date": "2026-04-06",
+      "is_open": false,
+      "monitor_start_time": "09:00",
+      "premarket_ref_time": "09:08",
+      "open_time": "09:15",
+      "close_time": "15:30",
+      "postmarket_ref_time": "16:00",
+      "final_eod_ltp_time": "16:15",
+      "special_session": false,
+      "notes": "Sunday - market closed"
+    },
+    {
+      "date": "2026-04-07",
+      "is_open": true,
+      "monitor_start_time": "09:00",
+      "premarket_ref_time": "09:08",
+      "open_time": "09:15",
+      "close_time": "15:30",
+      "postmarket_ref_time": "16:00",
+      "final_eod_ltp_time": "16:15",
+      "special_session": false,
+      "notes": "Normal trading day - NIFTY weekly expiry Tuesday"
     }
   ]
 }

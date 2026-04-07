@@ -1,3 +1,42 @@
+## 2026-04-07 — live_canary / code_debug — Second Live Session + Operational Fixes
+
+**Goal:** Run second live market session and resolve operational failures carried over from day 1.
+
+**Session type:** live_canary / code_debug
+
+**Completed:**
+
+Morning failures (root causes and fixes):
+- Supervisor did not auto-start runner — PID 16248 from yesterday had loaded old trading_calendar.py before the rewrite was deployed. Running Python process does not reload imported modules from disk. Fix: added weekly 08:00 Mon-Fri trigger to MERDIAN_Intraday_Supervisor_Start task — supervisor now restarts fresh every morning.
+- AWS token 401 at 09:00 — cron at 08:25 IST pulled token before Local's Supabase sync completed. Fixed: AWS cron shifted from 08:25 (03:55 UTC) to 08:35 (03:05 UTC).
+- Runner started manually at 09:32, first cycle 09:35. Session ran 09:35–15:28.
+
+Live session:
+- NIFTY: 34,452 option chain rows (09:42–15:27) ✅. BUY_PE all session, confidence 48–64, trade_allowed=False (VIX panic gate >25)
+- SENSEX: 33,600 rows (09:43–15:28) ✅. BUY_PE / DO_NOTHING, confidence 28–56, trade_allowed=False
+- Breadth: LIVE — Advances 387, Declines 934, BEARISH — heavily bearish day
+- AWS shadow runner: auto-started via cron at 09:15 (PID 80952), ran full session ✅
+
+Task scheduler audit:
+- MERDIAN_Market_Tape_1M DISABLED — was failing every run (DhanError 401), producing no useful output, and making 390 extra Dhan API calls/day contributing to 429 rate limiting on breadth ingest
+- All other 8 tasks confirmed correct and needed
+
+**Open after session:**
+- C-07b: Pre-open capture still missed — supervisor starts at 09:14, too late for 09:00-09:08 window
+- Dashboard preflight button cp1252 encoding error — cosmetic only, preflight works from command line
+- Shadow gate count: 6/10 (verify)
+- ENH-35: run_validation_analysis.py — next build priority
+
+**Files changed:** None (Task Scheduler and crontab changes only — no code changes)
+**Schema changes:** None
+**Open items closed:** OI-03 (MERDIAN_Market_Tape_1M disabled — confirmed broken and harmful)
+**Open items added:** None
+**Git commit hash:** 8a992ee (no code changes today)
+**Next session goal:** Fix C-07b pre-open capture gap, fix dashboard preflight encoding, build ENH-35 run_validation_analysis.py
+**docs_updated:** yes
+
+---
+
 ## 2026-04-06 — live_canary / code_debug / architecture — First Live Session + Architecture Repairs
 
 **Goal:** Run first live market session (NIFTY/SENSEX options pipeline) and repair all root-cause failures discovered during the session.

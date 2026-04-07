@@ -1,3 +1,52 @@
+## 2026-04-06 — live_canary / code_debug / architecture — First Live Session + Architecture Repairs
+
+**Goal:** Run first live market session (NIFTY/SENSEX options pipeline) and repair all root-cause failures discovered during the session.
+
+**Session type:** live_canary / code_debug / architecture
+
+**Completed:**
+
+Live session:
+- Runner started manually at 09:26 IST after calendar and syntax fixes (first cycle 09:30)
+- NIFTY: BUY_PE action=48 confidence, trade_allowed=False (VIX panic gate >25 correctly blocked)
+- SENSEX: DO_NOTHING, confidence=36
+- VIX: 26.41 — PANIC regime, 100th percentile, VIX_UPTREND all session
+- SMDM: NIFTY squeeze_score=4, SQUEEZE pattern active
+- Full pipeline completed: options → gamma → volatility → momentum → market_state → signal → options_flow → momentum_v2 → SMDM → structural_alerts → shadow_v3
+- AWS shadow runner manually started 09:46 IST, ran until 15:30 IST market close
+
+Post-market architecture repairs:
+- trading_calendar.py full rewrite — rule-based. Old design required manual row per date; missing row = system failure (root cause of today's morning failure). New: weekdays open by default, weekends closed by computation, NSE holidays are the only stored exceptions. No manual date insertion ever required again.
+- trading_calendar.json rebuilt — holidays-only format. 23 NSE holiday entries for 2025-2026. Old 371-line manually maintained sessions list replaced.
+- merdian_live_dashboard.py full rewrite (v2) — session state computed live from calendar (never stale), token block with expiry countdown, pre-open block (09:00-09:08) with spot capture status, pipeline stages showing actual values (spot, VIX, regime, signal action), breadth block with advances/declines, AWS shadow runner block via Supabase, action buttons with inline result within 5s (no click and pray), cp1252 encoding fixed for Windows.
+- refresh_dhan_token.py — added runtime/token_status.json write after every attempt. Added TOTP retry: waits 30s and retries with next TOTP window on Invalid TOTP error.
+- run_merdian_shadow_runner.py — breadth ingest disabled on AWS. Both Local and AWS were hitting the same Dhan token simultaneously causing 56/56 chunks returning 429 all day. AWS shadow is read-only for breadth. Also added write_cycle_status_to_supabase() — writes cycle_ok, breadth_coverage, per_symbol status to system_config table after each cycle for dashboard consumption.
+- run_option_snapshot_intraday_runner.py — CREATE_NO_WINDOW flag added to subprocess calls. Eliminates 25-30 terminal windows flashing per 5-minute cycle.
+- Task Scheduler MERDIAN_Live_Dashboard — updated with PYTHONIOENCODING=utf-8.
+
+Morning failures (root causes documented):
+- Token refresh failed at 08:15 — Invalid TOTP (clock drift). New TOTP retry in refresh_dhan_token.py fixes this.
+- Calendar had 2026-04-06 marked as closed — inserted as Sunday during Sunday dev session. Calendar rewrite eliminates this class of failure permanently.
+- ingest_breadth_intraday_local.py had pasted markdown text at line 692 (syntax error) — restored from Git.
+- AWS shadow runner breadth saturated Dhan rate limit all day — fixed by disabling breadth on AWS.
+
+**Open after session:**
+- C-07b confirmed: pre-open capture gap — supervisor task fires at 09:14, misses 09:00-09:08 window. Architectural fix needed.
+- Shadow gate count: verify 5/10 after today
+- Supabase disk usage: unverified post-session (was 9.5GB pre-session)
+- ENH-35: run_validation_analysis.py — next build priority
+- ENH-36: hist_* to live promotion pipeline — after ENH-35
+
+**Files changed:** trading_calendar.py (full rewrite), trading_calendar.json (full rewrite), merdian_live_dashboard.py (full rewrite v2), refresh_dhan_token.py (token_status.json + TOTP retry), run_option_snapshot_intraday_runner.py (CREATE_NO_WINDOW), run_merdian_shadow_runner.py (breadth disabled + Supabase status write)
+**Schema changes:** None
+**Open items closed:** Calendar root cause resolved (permanent fix)
+**Open items added:** C-07b confirmed (pre-open capture gap)
+**Git commit hash:** 627a1b5 (Local + AWS)
+**Next session goal:** Monitor second live session tomorrow — verify token refresh automatic at 08:15, preflight from dashboard, supervisor auto-start at 09:14, pipeline green by 09:25
+**docs_updated:** yes
+
+---
+
 ## 2026-04-04 / 2026-04-05 — code_debug / infrastructure / architecture — V18C Session + Historical Backfill Sprint
 
 **Goal:** Close all actionable open items from Groups 1–5, build historical gamma backfill pipeline, ingest vendor correction data, build live monitoring dashboard.

@@ -37,18 +37,11 @@ STAGE_ID = "stage2_db_contract"
 # ── Supabase Query Helper ─────────────────────────────────────────
 
 def _sb_query(sql, timeout=20):
-    """
-    Run a SQL query via Supabase REST RPC.
-    Returns (rows, error).
-    Uses the /rest/v1/rpc/exec_sql if available, otherwise
-    falls back to direct table queries.
-    """
     url      = os.environ.get("SUPABASE_URL", "")
     role_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
     if not url or not role_key:
         return None, "Supabase credentials not in environment"
 
-    # Use the PostgREST SQL endpoint directly
     endpoint = f"{url.rstrip('/')}/rest/v1/rpc/query"
     headers  = {
         "apikey":        role_key,
@@ -68,10 +61,6 @@ def _sb_query(sql, timeout=20):
         return None, str(ex)
 
 def _sb_table_get(table, params="", timeout=15):
-    """
-    Do a simple GET on a Supabase REST table endpoint.
-    Returns (rows, error).
-    """
     url      = os.environ.get("SUPABASE_URL", "")
     role_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
     if not url or not role_key:
@@ -96,7 +85,6 @@ def _sb_table_get(table, params="", timeout=15):
         return None, str(ex)
 
 def _sb_table_head(table, timeout=10):
-    """Check if a table exists by reading its first row."""
     rows, err = _sb_table_get(table, "limit=1")
     if err:
         return False, err
@@ -105,7 +93,6 @@ def _sb_table_head(table, timeout=10):
 # ── Checks ────────────────────────────────────────────────────────
 
 def check_credentials_present():
-    """Supabase credentials must be in environment."""
     ok, msg, _ = load_env()
     if not ok:
         return FAIL, msg
@@ -116,10 +103,6 @@ def check_credentials_present():
     return PASS, "Supabase credentials present"
 
 def check_critical_tables_exist():
-    """
-    All tables that scripts write to or read from must exist.
-    This catches schema drift — table was dropped or renamed.
-    """
     critical_tables = [
         "trading_calendar",
         "market_spot_snapshots",
@@ -145,41 +128,23 @@ def check_critical_tables_exist():
     return PASS, f"All {len(critical_tables)} critical tables exist"
 
 def check_gamma_metrics_columns():
-    """
-    gamma_metrics must have gamma_zone and raw columns (added V18A).
-    Missing these causes the runner to crash on every cycle.
-    """
     rows, err = _sb_table_get("gamma_metrics", "limit=1&select=gamma_zone,raw")
     if err:
-        # If the columns don't exist PostgREST returns 400
         if "400" in str(err) or "column" in str(err).lower():
             return FAIL, "gamma_metrics missing gamma_zone or raw column — V18A schema changes not applied"
         return WARN, f"Could not verify gamma_metrics columns: {err}"
     return PASS, "gamma_metrics has gamma_zone and raw columns"
 
 def check_market_state_snapshots_uniqueness():
-    """
-    C-01: market_state_snapshots must have UNIQUE(symbol, ts) constraint.
-    Verifies by reading the most recent row and attempting to re-insert it.
-    If constraint exists: Supabase returns 409 conflict → PASS.
-    If constraint missing: insert succeeds silently → FAIL.
-    Rolls back by using ON CONFLICT DO NOTHING on the test insert.
-    """
-    import datetime
-
-    # Get the most recent row to use as our test case
     rows, err = _sb_table_get(
         "market_state_snapshots",
         "select=symbol,ts&order=ts.desc&limit=1"
     )
 
     if err or not rows:
-        # Table empty or unreadable — cannot test, fall back to WARN
         return WARN, ("C-01: market_state_snapshots empty or unreadable — "
-                      "constraint cannot be verified until first row is written. "
-                      "Constraint was applied via SQL — treat as PASS until data exists.")
+                      "constraint cannot be verified until first row is written.")
 
-    # We have a row — check for duplicates in the last 500 rows as proxy
     rows2, err2 = _sb_table_get(
         "market_state_snapshots",
         "select=symbol,ts&limit=500&order=ts.desc"
@@ -193,21 +158,11 @@ def check_market_state_snapshots_uniqueness():
                 dupes += 1
             seen.add(key)
         if dupes > 0:
-            return FAIL, (f"C-01 ACTIVE: {dupes} duplicate (symbol,ts) rows found. "
-                          f"UNIQUE constraint may not be applied.")
+            return FAIL, (f"C-01 ACTIVE: {dupes} duplicate (symbol,ts) rows found.")
 
-    # No duplicates found — constraint was applied via SQL on 2026-03-31
-    # Supabase REST does not expose information_schema so we trust the SQL execution
-    return PASS, ("C-01 CLOSED: UNIQUE constraint applied 2026-03-31 via ALTER TABLE. "
-                  "No duplicate rows in last 500 rows. Constraint verified operationally.")
+    return PASS, ("C-01 CLOSED: UNIQUE constraint verified operationally.")
 
 def check_trading_calendar_today():
-    """
-    V18A-03: trading_calendar must have a row for today.
-    Missing row = all calendar-gated scripts skip = silent failure.
-    This is the most common cause of 'system looks alive but nothing runs'.
-    """
-    import datetime
     today = datetime.date.today().isoformat()
     rows, err = _sb_table_get("trading_calendar", f"trade_date=eq.{today}&select=trade_date,is_open")
     if err:
@@ -223,30 +178,38 @@ def check_trading_calendar_today():
 
 def check_trading_calendar_week_ahead():
     """
-    trading_calendar should have entries at least 5 trading days ahead.
-    Catches the case where the calendar has not been maintained.
+    trading_calendar module must correctly resolve the next 5 trading days.
+    Uses the Python trading_calendar module (rule-based, V18D+) rather than
+    querying the Supabase table — the new design stores holidays only, not
+    every trading day, so a table row count is no longer a valid check.
     """
-    import datetime
-    today = datetime.date.today()
-    week_ahead = (today + datetime.timedelta(days=8)).isoformat()
-    today_str = today.isoformat()
-
-    rows, err = _sb_table_get(
-        "trading_calendar",
-        f"trade_date=gte.{today_str}&trade_date=lte.{week_ahead}&select=trade_date,is_open&order=trade_date.asc"
-    )
-    if err:
-        return WARN, f"Could not check calendar week ahead: {err}"
-    if len(rows) < 3:
-        return WARN, (f"Only {len(rows)} trading_calendar entries in next 8 days. "
-                      f"Maintain at least 1 week ahead to prevent session-gating failures.")
-    return PASS, f"{len(rows)} calendar entries in next 8 days — sufficient lookahead"
+    try:
+        from trading_calendar import get_today_session_config
+        today = datetime.date.today()
+        open_days = 0
+        for offset in range(1, 9):
+            check_date = today + datetime.timedelta(days=offset)
+            check_dt = datetime.datetime(
+                check_date.year, check_date.month, check_date.day,
+                10, 0, 0,
+                tzinfo=datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+            )
+            try:
+                cfg = get_today_session_config(check_dt)
+                if cfg.is_open:
+                    open_days += 1
+            except Exception:
+                pass
+        if open_days < 3:
+            return WARN, (f"trading_calendar only resolves {open_days} open trading days "
+                          f"in next 8 calendar days. Check holiday configuration.")
+        return PASS, f"trading_calendar resolves {open_days} open trading days in next 8 calendar days"
+    except ImportError:
+        return WARN, "trading_calendar module not importable — cannot verify week ahead"
+    except Exception as e:
+        return WARN, f"trading_calendar week ahead check failed: {e}"
 
 def check_signal_regret_log_schema():
-    """
-    signal_regret_log must have the confirmed V18A schema columns.
-    Catches schema drift between what build_signal_regret_log_v1.py expects and what exists.
-    """
     rows, err = _sb_table_get(
         "signal_regret_log",
         "limit=1&select=id,signal_snapshot_id,symbol,signal_ts,action,direction_was_correct,labeller_version"
@@ -258,15 +221,8 @@ def check_signal_regret_log_schema():
     return PASS, f"signal_regret_log schema verified (key columns present)"
 
 def check_data_freshness():
-    """
-    Check how stale the most recent data is for key tables.
-    Only meaningful during market hours on trading days.
-    """
-    import datetime
-
     now_utc   = datetime.datetime.utcnow()
     hour_utc  = now_utc.hour
-    # Market hours: 03:45-10:00 UTC = 09:15-15:30 IST
     market_hours = (3 <= hour_utc <= 10)
 
     if not market_hours:

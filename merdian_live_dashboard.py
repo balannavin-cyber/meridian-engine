@@ -124,16 +124,31 @@ def parse_ist_dt(ts_str: str) -> Optional[datetime]:
     if not ts_str:
         return None
     try:
-        s = ts_str.strip()[:26].replace(" ", "T")
-        if "+" not in s[10:] and "Z" not in s:
-            s += "+00:00"
-        s = s.replace("Z", "+00:00")
+        s = str(ts_str).strip()
+        # Handle microseconds truncation — take first 26 chars max
+        # but preserve timezone info which comes after
+        if "+" in s[10:]:
+            # Has timezone — split on + to preserve it
+            parts = s[10:].split("+", 1)
+            s = s[:10] + parts[0][:16] + "+" + parts[1]
+        elif "Z" in s:
+            s = s.replace("Z", "+00:00")
+            s = s[:26]
+        else:
+            s = s[:26] + "+00:00"
+        s = s.replace(" ", "T")
         dt = datetime.fromisoformat(s)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.astimezone(IST)
     except Exception:
-        return None
+        try:
+            # Fallback: try parsing just the date+time part
+            s = str(ts_str).strip()[:19].replace(" ", "T")
+            dt = datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+            return dt.astimezone(IST)
+        except Exception:
+            return None
 
 
 def lag_sec(ts_str: str) -> Optional[int]:

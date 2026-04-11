@@ -1,4 +1,4 @@
-from __future__ import annotations
+ï»¿from __future__ import annotations
 
 import os
 import sys
@@ -202,11 +202,11 @@ def infer_direction_bias(breadth_regime: str, momentum_direction: str) -> str:
     if breadth_regime == "BULLISH" and momentum_direction == "BULLISH":
         return "BULLISH"
     # BULLISH breadth + BEARISH momentum (CONFLICT) ? BULLISH
-    # ENH-35: SENSEX 58.7% accuracy, NIFTY 55.4% at N=3575 — strong edge
+    # ENH-35: SENSEX 58.7% accuracy, NIFTY 55.4% at N=3575 â€” strong edge
     if breadth_regime == "BULLISH" and momentum_direction == "BEARISH":
         return "BULLISH"
     # BEARISH breadth + BULLISH momentum (CONFLICT) ? NEUTRAL
-    # ENH-35: 47-49% accuracy — below random, correctly blocked
+    # ENH-35: 47-49% accuracy â€” below random, correctly blocked
     if breadth_regime == "BEARISH" and momentum_direction == "BULLISH":
         return "NEUTRAL"
     if breadth_regime == "TRANSITION":
@@ -313,13 +313,18 @@ def build_signal(symbol: str) -> dict[str, Any]:
             confidence += 8.0
     elif gamma_regime == "LONG_GAMMA":
         # ENH-35 validated 2026-04-11: LONG_GAMMA signals 47.7% accuracy
-        # at N=24,579 — structurally below random. Gate to DO_NOTHING.
-        cautions.append("LONG_GAMMA gated — historical accuracy below random (ENH-35)")
+        # at N=24,579 â€” structurally below random. Gate to DO_NOTHING.
+        cautions.append("LONG_GAMMA gated â€” historical accuracy below random (ENH-35)")
         action = "DO_NOTHING"
         trade_allowed = False
         direction_bias = "NEUTRAL"
     elif gamma_regime == "NO_FLIP":
-        reasons.append("No valid gamma flip is available from current chain structure")
+        # ENH-35 v2: NO_FLIP signals 45-48% accuracy â€” below random
+        # No flip level = no institutional reference point
+        cautions.append("NO_FLIP gated â€” no gamma flip reference (ENH-35)")
+        action = "DO_NOTHING"
+        trade_allowed = False
+        direction_bias = "NEUTRAL"
     else:
         cautions.append("Gamma regime is unavailable or unknown")
 
@@ -405,7 +410,7 @@ def build_signal(symbol: str) -> dict[str, Any]:
         cautions.append("No directional bias available")
 
     # Final trade gate
-    if action != "DO_NOTHING" and confidence < 60.0:
+    if action != "DO_NOTHING" and confidence < 40.0:
         trade_allowed = False
         cautions.append("Confidence threshold not met for trade execution")
 
@@ -414,7 +419,24 @@ def build_signal(symbol: str) -> dict[str, Any]:
     # BEAR_OB|HIGH_IV +174.6% vs BEAR_OB|MED_IV +84.8%
     # Gate was suppressing the best trades. Replaced by IV-scaled sizing.
     if india_vix is not None and india_vix >= 20:
-        cautions.append(f"India VIX elevated at {india_vix:.1f} — monitoring only")
+        cautions.append(f"India VIX elevated at {india_vix:.1f} â€” monitoring only")
+
+
+    # Session time gate: no signals after 15:00 IST
+    # SHORT_GAMMA after 15:00 is expiry unwinding noise, not tradeable
+    if ts:
+        from datetime import timezone as _tz
+        import dateutil.parser as _dp
+        try:
+            _ts = _dp.parse(ts).astimezone(_tz.utc)
+            _ist_hour = _ts.hour + 5 + (1 if _ts.minute >= 30 else 0)
+            _ist_min  = (_ts.minute + 30) % 60
+            if _ist_hour >= 15:
+                action = "DO_NOTHING"
+                trade_allowed = False
+                cautions.append("Power hour gate: signals after 15:00 IST excluded")
+        except Exception:
+            pass
 
     # Entry quality
     entry_quality = derive_entry_quality(confidence, direction_bias, gamma_regime)
@@ -508,4 +530,11 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
 

@@ -330,7 +330,7 @@ def get_pipeline_stages() -> Dict:
         else:
             stages.append({"name": "Market State", "ts": "—", "value": "—", "lag": None, "ok": False})
 
-        rows = sb_get("signal_snapshots", f"select=created_at,action,confidence_score,trade_allowed&symbol=eq.{symbol}&order=created_at.desc&limit=1")
+        rows = sb_get("signal_snapshots", f"select=created_at,action,confidence_score,trade_allowed,ict_pattern,ict_tier,ict_size_mult,ict_mtf_context&symbol=eq.{symbol}&order=created_at.desc&limit=1")
         if rows:
             ts = rows[0].get("created_at", "")
             dt = parse_ist_dt(ts)
@@ -338,10 +338,17 @@ def get_pipeline_stages() -> Dict:
             action = rows[0].get("action", "?")
             conf = rows[0].get("confidence_score", "?")
             allowed = rows[0].get("trade_allowed", False)
+            ict_pat  = rows[0].get("ict_pattern", "NONE") or "NONE"
+            ict_tier = rows[0].get("ict_tier", "NONE") or "NONE"
+            ict_mtf  = rows[0].get("ict_mtf_context", "NONE") or "NONE"
+            ict_mult = rows[0].get("ict_size_mult", 1.0) or 1.0
+            ict_str  = f" | ICT:{ict_pat}({ict_tier})[{ict_mtf}]x{ict_mult}" if ict_pat != "NONE" else ""
             stages.append({"name": "Signal", "ts": dt.strftime("%H:%M:%S") if dt else "?",
-                           "value": f"{action} | conf {conf} | {'✓' if allowed else '✗'}",
+                           "value": f"{action} | conf {conf} | {'✓' if allowed else '✗'}{ict_str}",
                            "lag": lag, "ok": lag is not None and lag < 600,
-                           "action": action, "allowed": allowed})
+                           "action": action, "allowed": allowed,
+                           "ict_pattern": ict_pat, "ict_tier": ict_tier,
+                           "ict_mtf": ict_mtf, "ict_mult": ict_mult})
         else:
             stages.append({"name": "Signal", "ts": "—", "value": "—", "lag": None, "ok": False})
 
@@ -457,6 +464,53 @@ def build_html(data: Dict) -> str:
         preopen_html += f'<div style="font-size:12px;margin:2px 0;color:#333">{r["ts"]} — {r["symbol"]} <strong>{r["spot"]}</strong></div>'
     if not preopen_html:
         preopen_html = '<div style="font-size:12px;color:#888">No pre-open data for today</div>'
+
+    # ENH-37: ICT zones data fetch
+    import datetime as _dt
+    _today = str(_dt.date.today())
+    _ict_q = ("select=pattern_type,ict_tier,ict_mtf_context,"
+              "ict_size_mult,zone_high,zone_low,detected_at_ts"
+              "&status=eq.ACTIVE&order=detected_at_ts.desc&limit=5"
+              "&trade_date=eq." + _today)
+    ict_rows_nifty  = sb_get("ict_zones", _ict_q + "&symbol=eq.NIFTY")
+    ict_rows_sensex = sb_get("ict_zones", _ict_q + "&symbol=eq.SENSEX")
+
+    def _ict_row_html(r, sym):
+        pat  = r.get("pattern_type", "?")
+        tier = r.get("ict_tier", "?")
+        mtf  = r.get("ict_mtf_context", "?")
+        mult = float(r.get("ict_size_mult") or 1.0)
+        zhi  = float(r.get("zone_high", 0))
+        zlo  = float(r.get("zone_low", 0))
+        col     = "#1a7a1a" if "BULL" in pat else "#8b0000"
+        mtf_col = {"VERY_HIGH": "#7700cc", "HIGH": "#005599",
+                   "MEDIUM": "#886600", "LOW": "#888"}.get(mtf, "#888")
+        return (
+            f"<tr>"
+            f"<td style='font-size:11px'>{sym}</td>"
+            f"<td style='font-size:11px;color:{col}'><strong>{pat}</strong></td>"
+            f"<td style='font-size:11px'>{tier}</td>"
+            f"<td style='font-size:11px;color:{mtf_col}'>{mtf}</td>"
+            f"<td style='font-size:11px'>{zlo:,.0f}–{zhi:,.0f}</td>"
+            f"<td style='font-size:11px'>{mult}x</td>"
+            f"</tr>"
+        )
+
+    ict_all = ([(r, "NIFTY")  for r in (ict_rows_nifty  or [])] +
+               [(r, "SENSEX") for r in (ict_rows_sensex or [])])
+    if ict_all:
+        ict_zones_html = (
+            "<table style='width:100%;font-size:12px'>"
+            "<tr><th>Sym</th><th>Pattern</th><th>Tier</th>"
+            "<th>MTF</th><th>Zone</th><th>Size</th></tr>"
+            + "".join(_ict_row_html(r, s) for r, s in ict_all)
+            + "</table>"
+        )
+    else:
+        ict_zones_html = (
+            "<div style='color:#888;font-size:12px;padding:8px'>"
+            "No active ICT zones today</div>"
+        )
 
     pipeline_rows = ""
     for symbol in ["NIFTY", "SENSEX"]:
@@ -601,6 +655,13 @@ th{{background:#f6f8fa;padding:6px 10px;text-align:left;font-size:11px;color:#66
     </tr>
     {pipeline_rows}
   </table>
+</div>
+
+<div class="card" style="margin-bottom:12px">
+  <div class="ct">ICT Pattern Zones</div>
+  <div class="cb" id="ict-zones-block">
+    {ict_zones_html}
+  </div>
 </div>
 
 <div class="g2">

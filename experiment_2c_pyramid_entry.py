@@ -1,0 +1,732 @@
+#!/usr/bin/env python3
+"""
+experiment_2c_pyramid_entry.py
+MERDIAN Experiment 2c — Pyramid Entry vs Fixed Position
+
+Tests three execution structures on proven ICT patterns using futures:
+
+  STRUCTURE A — FIXED 1 UNIT (baseline, minimal risk)
+    Enter 1 lot at pattern bar close.
+    Stop: 0.5% adverse from entry.
+    No adds regardless of how the trade develops.
+    Max loss per trade: 0.5% of spot.
+
+  STRUCTURE B — FIXED 6 UNITS (maximum exposure)
+    Enter 6 lots at pattern bar close.
+    Stop: 0.5% adverse from entry.
+    Max loss per trade: 3.0% of spot.
+
+  STRUCTURE C — PYRAMID 1→3→6 (your proposal)
+    Tier 1: Enter 1 lot at pattern bar close. Stop: 0.5% from T1 entry.
+    Tier 2: At T+5m, if move ≥ 0.20% in direction — add 2 lots.
+            Stop moves to T1 entry (breakeven on T1, T2 still exposed).
+    Tier 3: At T+10m, if move ≥ 0.40% from T1 entry — add 3 more lots.
+            Stop moves to T2 entry (T1 in profit, T2 at breakeven, T3 exposed).
+    Exit:   T+15m, T+30m, T+60m — all active lots at market.
+
+Stop is checked against bar close at each interval (intrabar wicks excluded —
+this slightly underestimates stop frequency but is directionally correct).
+
+Key metrics per structure:
+  - Win rate, Avg P&L, Expectancy (normalised to max capital base)
+  - Max single-trade loss
+  - Best single-trade gain
+  - Tier 2 trigger rate (% of trades that confirm and add)
+  - Tier 3 trigger rate (% of trades that fully pyramid)
+  - Capital efficiency: P&L per unit of max capital deployed
+
+P&L normalisation:
+  All structures normalised to the same 6-unit capital base for fair comparison.
+  Example: Fixed-1 makes +0.5% on 1 unit = +0.08% on 6-unit equivalent.
+           Pyramid fully loaded makes +1.5% across 6 units = +1.5% on 6-unit.
+  This makes the "reward for confirmations" directly visible.
+
+Patterns tested: BULL_OB, BEAR_OB, JUDAS_BULL, JUDAS_BEAR,
+                 BULL_FVG, BOS_BULL, MSS_BULL
+
+Read-only. Runtime: ~8-12 minutes.
+
+Usage:
+    python experiment_2c_pyramid_entry.py
+"""
+
+import os
+import bisect
+import time
+from datetime import datetime, timedelta, date, time as dtime
+from collections import defaultdict
+from itertools import groupby
+from merdian_utils import build_expiry_index_simple, nearest_expiry_db
+
+from dotenv import load_dotenv
+from supabase import create_client
+
+load_dotenv()
+
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+
+PAGE_SIZE = 1_000
+SESSION_END = dtime(15, 30)
+
+# ── Pyramid parameters ────────────────────────────────────────────────
+STOP_PCT      = 0.50    # % adverse move triggers stop on each tier
+T2_CONFIRM    = 0.20    # % move in direction required to trigger Tier 2 (T+5m)
+T3_CONFIRM    = 0.40    # % move in direction required to trigger Tier 3 (T+10m)
+T1_UNITS      = 1       # lots at entry
+T2_UNITS      = 2       # lots added at T2
+T3_UNITS      = 3       # lots added at T3
+MAX_UNITS     = T1_UNITS + T2_UNITS + T3_UNITS  # = 6
+
+# ── Instrument conventions ────────────────────────────────────────────
+DIRECTION   = {
+    "BULL_OB": +1, "BULL_FVG": +1, "BOS_BULL": +1,
+    "MSS_BULL": +1, "JUDAS_BULL": +1,
+    "BEAR_OB": -1, "BEAR_FVG": -1, "BOS_BEAR": -1,
+    "MSS_BEAR": -1, "JUDAS_BEAR": -1,
+}
+
+TARGET_PATTERNS = set(DIRECTION.keys())
+
+# ── Detection parameters ──────────────────────────────────────────────
+SWING_LB        = 5
+OB_MIN_MOVE_PCT = 0.40
+FVG_MIN_PCT     = 0.10
+JUDAS_MIN_PCT   = 0.25
+MAX_GAP_MIN     = 3
+
+# ── Check horizons ────────────────────────────────────────────────────
+CHECK_POINTS = [5, 10, 15, 30, 60]  # minutes — includes pyramid add points
+
+
+# ── Utilities ─────────────────────────────────────────────────────────
+
+def log(msg):
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+
+def pct_move(a, b, direction):
+    """Directional % move from a to b. Positive = in trade direction."""
+    if not a:
+        return 0.0
+    return 100.0 * (b - a) / a * direction
+
+def in_session(ts, h):
+    return (ts + timedelta(minutes=h)).time() <= SESSION_END
+
+def compute_dte(td, expiry_idx):
+    ed = nearest_expiry_db(td, expiry_idx)
+    return (ed - td).days if ed else 0
+
+def dte_bucket(dte):
+    if dte == 0: return "DTE=0"
+    if dte == 1: return "DTE=1"
+    if dte <= 3: return "DTE=2-3"
+    return "DTE=4+"
+
+
+# ── Data loading ──────────────────────────────────────────────────────
+
+def fetch_bars_paginated(sb, table, filters,
+                          select="bar_ts, trade_date, open, high, low, close"):
+    """Paginated fetch with retry."""
+    all_rows, offset = [], 0
+    while True:
+        q = (sb.table(table).select(select)
+             .order("bar_ts")
+             .range(offset, offset + PAGE_SIZE - 1))
+        for method, *args in filters:
+            q = getattr(q, method)(*args)
+        rows = None
+        for attempt in range(4):
+            try:
+                rows = q.execute().data
+                break
+            except Exception:
+                if attempt == 3:
+                    raise
+                wait = 2 ** attempt
+                log(f"    Retry {attempt+1}/4 in {wait}s...")
+                time.sleep(wait)
+        for r in rows:
+            r["bar_ts"]     = datetime.fromisoformat(r["bar_ts"])
+            r["trade_date"] = date.fromisoformat(r["trade_date"])
+            for k in ("open","high","low","close"):
+                if k in r and r[k] is not None:
+                    r[k] = float(r[k])
+        all_rows.extend(rows)
+        if len(rows) < PAGE_SIZE:
+            break
+        offset += PAGE_SIZE
+        if offset % 20_000 == 0:
+            log(f"    {offset:,} bars...")
+    return all_rows
+
+
+def sessions_from_bars(bars):
+    result = {}
+    for k, g in groupby(bars, key=lambda b: b["trade_date"]):
+        result[k] = list(g)
+    return result
+
+
+def get_price_at(bars, target_ts, max_gap=MAX_GAP_MIN):
+    """Nearest close to target_ts. Returns (price, bar) or (None, None)."""
+    if not bars:
+        return None, None
+    tss = [b["bar_ts"] for b in bars]
+    idx = bisect.bisect_left(tss, target_ts)
+    best_p, best_g, best_b = None, timedelta(minutes=max_gap+1), None
+    for i in (idx-1, idx):
+        if 0 <= i < len(bars):
+            g = abs(bars[i]["bar_ts"] - target_ts)
+            if g < best_g:
+                best_g, best_p, best_b = g, bars[i]["close"], bars[i]
+    return (best_p, best_b) if best_g <= timedelta(minutes=max_gap) else (None, None)
+
+
+def stop_triggered(price, stop_level, direction):
+    """True if price crossed stop level against trade direction."""
+    if price is None or stop_level is None:
+        return False
+    if direction == +1:
+        return price <= stop_level   # long: stop if price drops to stop
+    return price >= stop_level       # short: stop if price rises to stop
+
+
+# ── Pattern detectors ─────────────────────────────────────────────────
+
+def find_swings(bars, lb=SWING_LB):
+    swings, n = [], len(bars)
+    for i in range(lb, n-lb):
+        w = range(i-lb, i+lb+1)
+        h, l = bars[i]["high"], bars[i]["low"]
+        if all(bars[j]["high"] <= h for j in w if j != i):
+            swings.append((i,"HIGH",h))
+        if all(bars[j]["low"]  >= l for j in w if j != i):
+            swings.append((i,"LOW",l))
+    return swings
+
+
+def detect_obs(bars):
+    out, seen, n = [], set(), len(bars)
+    for i in range(n-6):
+        mv = 100*(bars[min(i+5,n-1)]["close"]-bars[i]["close"])/bars[i]["close"]
+        if mv <= -OB_MIN_MOVE_PCT:
+            for j in range(i, max(i-6,-1), -1):
+                if bars[j]["close"] > bars[j]["open"] and j not in seen:
+                    seen.add(j)
+                    out.append(dict(bar_idx=j,bar=bars[j],pattern="BEAR_OB"))
+                    break
+        elif mv >= OB_MIN_MOVE_PCT:
+            for j in range(i, max(i-6,-1), -1):
+                if bars[j]["close"] < bars[j]["open"] and j not in seen:
+                    seen.add(j)
+                    out.append(dict(bar_idx=j,bar=bars[j],pattern="BULL_OB"))
+                    break
+    return out
+
+
+def detect_fvg(bars):
+    out, min_g = [], FVG_MIN_PCT/100.0
+    for i in range(1, len(bars)-1):
+        p, c, n = bars[i-1], bars[i], bars[i+1]
+        ref = c["close"]
+        if p["low"] > n["high"] and (p["low"]-n["high"])/ref >= min_g:
+            out.append(dict(bar_idx=i,bar=c,pattern="BEAR_FVG"))
+        if p["high"] < n["low"] and (n["low"]-p["high"])/ref >= min_g:
+            out.append(dict(bar_idx=i,bar=c,pattern="BULL_FVG"))
+    return out
+
+
+def detect_mss_bos(bars, swings):
+    out = []
+    if len(swings) < 4:
+        return out
+    highs = [(idx,p) for idx,t,p in swings if t=="HIGH"]
+    lows  = [(idx,p) for idx,t,p in swings if t=="LOW"]
+    for i in range(1, len(bars)):
+        ph = [(idx,p) for idx,p in highs if idx<i]
+        pl = [(idx,p) for idx,p in lows  if idx<i]
+        if len(ph)<2 or len(pl)<2:
+            continue
+        lsh,psh = ph[-1][1],ph[-2][1]
+        lsl,psl = pl[-1][1],pl[-2][1]
+        c,pc = bars[i]["close"], bars[i-1]["close"]
+        up   = lsh>psh and lsl>psl
+        down = lsh<psh and lsl<psl
+        if   up   and c>lsh and pc<=lsh:
+            out.append(dict(bar_idx=i,bar=bars[i],pattern="BOS_BULL"))
+        elif down and c<lsl and pc>=lsl:
+            out.append(dict(bar_idx=i,bar=bars[i],pattern="BOS_BEAR"))
+        elif down and c>lsh and pc<=lsh:
+            out.append(dict(bar_idx=i,bar=bars[i],pattern="MSS_BULL"))
+        elif up   and c<lsl and pc>=lsl:
+            out.append(dict(bar_idx=i,bar=bars[i],pattern="MSS_BEAR"))
+    return out
+
+
+def detect_judas(bars):
+    out = []
+    if len(bars) < 46:
+        return out
+    mv = 100*(bars[14]["close"]-bars[0]["open"])/bars[0]["open"]
+    if abs(mv) < JUDAS_MIN_PCT:
+        return out
+    rev = bars[15:45]
+    if mv > 0:
+        if 100*(min(b["low"] for b in rev)-bars[14]["close"])/bars[14]["close"] <= -mv*0.50:
+            out.append(dict(bar_idx=14,bar=bars[14],pattern="JUDAS_BEAR"))
+    else:
+        if 100*(max(b["high"] for b in rev)-bars[14]["close"])/bars[14]["close"] >= abs(mv)*0.50:
+            out.append(dict(bar_idx=14,bar=bars[14],pattern="JUDAS_BULL"))
+    return out
+
+
+# ── Pyramid P&L computation ───────────────────────────────────────────
+
+def compute_structures(fut_session, entry_ts, entry_price, direction):
+    """
+    Compute P&L for all three structures.
+    Returns dict of structure → horizon → pnl_pct (normalised to MAX_UNITS basis)
+    Also returns tier trigger flags and max loss info.
+    """
+    if entry_price is None:
+        return None
+
+    # Fetch prices at all check points
+    prices = {}
+    for h in CHECK_POINTS:
+        if in_session(entry_ts, h):
+            p, _ = get_price_at(fut_session, entry_ts + timedelta(minutes=h))
+            prices[h] = p
+        else:
+            prices[h] = None
+
+    # ── Pyramid logic ─────────────────────────────────────────────────
+    t1_stop    = entry_price * (1 - direction * STOP_PCT/100)
+    t2_triggered = False
+    t3_triggered = False
+    t2_price   = None
+    t2_stop    = None
+    t3_price   = None
+    active_stop = t1_stop
+
+    # Check T+5m for Tier 2
+    p5 = prices.get(5)
+    if p5 is not None:
+        move5 = pct_move(entry_price, p5, direction)
+        if move5 >= T2_CONFIRM and not stop_triggered(p5, active_stop, direction):
+            t2_triggered = True
+            t2_price     = p5
+            active_stop  = entry_price  # breakeven on T1
+
+    # Check T+10m for Tier 3 (only if T2 triggered)
+    p10 = prices.get(10)
+    if t2_triggered and p10 is not None:
+        move10 = pct_move(entry_price, p10, direction)
+        if move10 >= T3_CONFIRM and not stop_triggered(p10, active_stop, direction):
+            t3_triggered = True
+            t3_price     = p10
+            active_stop  = t2_price  # breakeven on T2
+
+    # ── P&L at each exit horizon ──────────────────────────────────────
+    results = {"A_fixed1": {}, "B_fixed6": {}, "C_pyramid": {}}
+
+    for h in [15, 30, 60]:
+        p_exit = prices.get(h)
+        if p_exit is None:
+            for struct in results:
+                results[struct][h] = None
+            continue
+
+        # ── Structure A: Fixed 1 unit ─────────────────────────────────
+        stop_a = entry_price * (1 - direction * STOP_PCT/100)
+        if stop_triggered(p_exit, stop_a, direction):
+            raw_a = -STOP_PCT
+        else:
+            raw_a = pct_move(entry_price, p_exit, direction)
+        # Normalise to MAX_UNITS basis (1 unit / 6 max)
+        results["A_fixed1"][h] = raw_a * T1_UNITS / MAX_UNITS
+
+        # ── Structure B: Fixed 6 units ────────────────────────────────
+        stop_b = entry_price * (1 - direction * STOP_PCT/100)
+        if stop_triggered(p_exit, stop_b, direction):
+            raw_b = -STOP_PCT
+        else:
+            raw_b = pct_move(entry_price, p_exit, direction)
+        # Already at MAX_UNITS
+        results["B_fixed6"][h] = raw_b   # expressed as single-unit %, × 6 implied
+
+        # ── Structure C: Pyramid ──────────────────────────────────────
+        # Check if active stop was triggered by exit price
+        if stop_triggered(p_exit, active_stop, direction):
+            # All tiers stopped at their respective stop levels
+            pnl_t1 = pct_move(entry_price, active_stop, direction) * T1_UNITS
+            pnl_t2 = (pct_move(t2_price, active_stop, direction) * T2_UNITS
+                      if t2_triggered else 0.0)
+            pnl_t3 = (pct_move(t3_price, active_stop, direction) * T3_UNITS
+                      if t3_triggered else 0.0)
+        else:
+            # Exit at market
+            pnl_t1 = pct_move(entry_price, p_exit, direction) * T1_UNITS
+            pnl_t2 = (pct_move(t2_price, p_exit, direction) * T2_UNITS
+                      if t2_triggered else 0.0)
+            pnl_t3 = (pct_move(t3_price, p_exit, direction) * T3_UNITS
+                      if t3_triggered else 0.0)
+
+        active_units = T1_UNITS + (T2_UNITS if t2_triggered else 0) + (T3_UNITS if t3_triggered else 0)
+        total_pnl = pnl_t1 + pnl_t2 + pnl_t3
+
+        # Normalise to MAX_UNITS basis
+        results["C_pyramid"][h] = total_pnl / MAX_UNITS
+
+    meta = {
+        "t2": t2_triggered,
+        "t3": t3_triggered,
+        "max_loss_a": -STOP_PCT * T1_UNITS / MAX_UNITS,
+        "max_loss_b": -STOP_PCT,
+        "max_loss_c": compute_max_loss_pyramid(
+            entry_price, t2_price, t3_price,
+            active_stop, direction,
+            t2_triggered, t3_triggered
+        ),
+    }
+    return results, meta
+
+
+def compute_max_loss_pyramid(ep, t2p, t3p, active_stop, direction,
+                               t2, t3):
+    """Worst-case loss per unit (normalised to MAX_UNITS) for pyramid."""
+    # Worst case: T3 fully loaded, then stop triggers
+    if t3:
+        # T1: locked at breakeven (T1 entry = active_stop at T2 level, stop is T2)
+        # Actually: active_stop = t2_price after T3 triggers
+        pnl_t1 = pct_move(ep,  active_stop, direction) * T1_UNITS  # T1 in profit
+        pnl_t2 = 0.0 * T2_UNITS                                     # T2 at breakeven
+        pnl_t3 = pct_move(t3p, active_stop, direction) * T3_UNITS   # T3 loses to stop
+        return (pnl_t1 + pnl_t2 + pnl_t3) / MAX_UNITS
+    elif t2:
+        # T1 at breakeven, T2 loses to stop (0.5% from T2 price)
+        pnl_t2 = -STOP_PCT * T2_UNITS
+        return pnl_t2 / MAX_UNITS
+    else:
+        # Only T1 active, loses 0.5%
+        return -STOP_PCT * T1_UNITS / MAX_UNITS
+
+
+# ── Aggregation ───────────────────────────────────────────────────────
+
+class PyramidBucket:
+    def __init__(self):
+        self.n         = 0
+        self.t2_count  = 0
+        self.t3_count  = 0
+        self.pnl       = {"A_fixed1": {h:[] for h in [15,30,60]},
+                          "B_fixed6": {h:[] for h in [15,30,60]},
+                          "C_pyramid":{h:[] for h in [15,30,60]}}
+        self.max_losses= {"A": [], "B": [], "C": []}
+
+    def add(self, results, meta):
+        self.n += 1
+        if meta["t2"]: self.t2_count += 1
+        if meta["t3"]: self.t3_count += 1
+        for struct in ("A_fixed1","B_fixed6","C_pyramid"):
+            for h in [15,30,60]:
+                v = results[struct].get(h)
+                if v is not None:
+                    self.pnl[struct][h].append(v)
+        self.max_losses["A"].append(meta["max_loss_a"])
+        self.max_losses["B"].append(meta["max_loss_b"])
+        self.max_losses["C"].append(meta["max_loss_c"])
+
+    def stats(self, struct, h):
+        v = self.pnl[struct][h]
+        if not v:
+            return None
+        wins = [x for x in v if x > 0]
+        loss = [x for x in v if x <= 0]
+        wr   = len(wins)/len(v)
+        aw   = sum(wins)/len(wins) if wins else 0.0
+        al   = sum(loss)/len(loss) if loss else 0.0
+        return dict(n=len(v), wr=wr*100, avg=sum(v)/len(v),
+                    exp=wr*aw+(1-wr)*al,
+                    best=max(v), worst=min(v))
+
+
+def fmt(v, w=9):
+    if v is None: return f"{'n/a':>{w}}"
+    sign = "+" if v >= 0 else ""
+    return f"{sign}{v:.2f}%".rjust(w)
+
+def fmtpct(v):
+    if v is None: return "  n/a"
+    return f"{v:.0f}%"
+
+
+def print_comparison(title, buckets_data, min_n=5, horizon=30):
+    print(f"\n{'='*115}")
+    print(f"  {title}")
+    print(f"  All P&L normalised to {MAX_UNITS}-unit capital base. T+{horizon}m primary horizon.")
+    print(f"  T2%=Tier2 trigger rate | T3%=Tier3 trigger rate | Exp=Expectancy")
+    print(f"{'='*115}")
+    print(f"  {'Label':<30} {'N':>5}  {'T2%':>5} {'T3%':>5}  "
+          f"{'A:Fix1 Exp':>11} {'B:Fix6 Exp':>11} {'C:Pyr Exp':>10}  "
+          f"{'A:WR':>7} {'B:WR':>7} {'C:WR':>7}  "
+          f"{'A:MaxLoss':>10} {'B:MaxLoss':>10} {'C:MaxLoss':>10}  "
+          f"Winner")
+    print(f"  {'-'*112}")
+
+    rows = [(label, b) for label,b in buckets_data if b.n >= min_n]
+
+    def sort_key(x):
+        s = x[1].stats("C_pyramid", horizon)
+        return s["exp"] if s else -999
+    rows.sort(key=sort_key, reverse=True)
+
+    for label, b in rows:
+        sa = b.stats("A_fixed1",  horizon)
+        sb_ = b.stats("B_fixed6", horizon)
+        sc = b.stats("C_pyramid", horizon)
+        t2r = f"{100*b.t2_count/b.n:.0f}%"
+        t3r = f"{100*b.t3_count/b.n:.0f}%"
+        avg_ml_a = sum(b.max_losses["A"])/len(b.max_losses["A"]) if b.max_losses["A"] else None
+        avg_ml_b = sum(b.max_losses["B"])/len(b.max_losses["B"]) if b.max_losses["B"] else None
+        avg_ml_c = sum(b.max_losses["C"])/len(b.max_losses["C"]) if b.max_losses["C"] else None
+
+        exps = {
+            "A:Fix1":  (sa["exp"]  if sa  else -999),
+            "B:Fix6":  (sb_["exp"] if sb_ else -999),
+            "C:Pyr":   (sc["exp"]  if sc  else -999),
+        }
+        winner = max(exps, key=exps.get)
+        flag   = " ◄" if exps[winner] > 0.05 else ""
+
+        print(f"  {label:<30} {b.n:>5}  {t2r:>5} {t3r:>5}  "
+              f"{fmt(sa['exp']  if sa  else None):>11} "
+              f"{fmt(sb_['exp'] if sb_ else None):>11} "
+              f"{fmt(sc['exp']  if sc  else None):>10}  "
+              f"{fmtpct(sa['wr']  if sa  else None):>7} "
+              f"{fmtpct(sb_['wr'] if sb_ else None):>7} "
+              f"{fmtpct(sc['wr']  if sc  else None):>7}  "
+              f"{fmt(avg_ml_a):>10} {fmt(avg_ml_b):>10} {fmt(avg_ml_c):>10}  "
+              f"{winner}{flag}")
+
+
+# ── Main ──────────────────────────────────────────────────────────────
+
+def main():
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    log("Fetching instrument IDs...")
+    inst = {r["symbol"]: r["id"] for r in
+            sb.table("instruments").select("id, symbol").execute().data}
+
+    by_pattern  = defaultdict(PyramidBucket)
+    by_pat_dte  = defaultdict(PyramidBucket)
+    by_pat_sym  = defaultdict(PyramidBucket)
+
+    for symbol in ["NIFTY", "SENSEX"]:
+        expiry_idx = build_expiry_index_simple(sb, inst[symbol])
+        log(f"\n── {symbol} ─────────────────────────────────────────────")
+
+        log("  Loading spot bars...")
+        spot_bars = fetch_bars_paginated(
+            sb, "hist_spot_bars_1m",
+            [("eq","instrument_id",inst[symbol]),("eq","is_pre_market",False)]
+        )
+        spot_sessions = sessions_from_bars(spot_bars)
+        dates = sorted(spot_sessions.keys())
+        log(f"  {len(spot_bars):,} spot bars | {len(dates)} sessions")
+
+        log("  Loading futures bars...")
+        cs = 1 if symbol == "NIFTY" else 0
+        fut_bars = fetch_bars_paginated(
+            sb, "hist_future_bars_1m",
+            [("eq","instrument_id",inst[symbol]),("eq","contract_series",cs)]
+        )
+        fut_sessions = sessions_from_bars(fut_bars)
+        log(f"  {len(fut_bars):,} futures bars")
+
+        log("  Detecting patterns...")
+        pattern_list = []
+        for i, d in enumerate(dates):
+            bars = spot_sessions[d]
+            if len(bars) < 30:
+                continue
+            sw   = find_swings(bars)
+            pats = (detect_obs(bars)
+                    + detect_fvg(bars)
+                    + detect_mss_bos(bars, sw)
+                    + detect_judas(bars))
+            for pat in pats:
+                if pat["pattern"] not in TARGET_PATTERNS:
+                    continue
+                dte = compute_dte(d, expiry_idx)
+                pattern_list.append({
+                    "pattern":   pat["pattern"],
+                    "bar":       pat["bar"],
+                    "td":        d,
+                    "direction": DIRECTION[pat["pattern"]],
+                    "dte":       dte,
+                    "dteb":      dte_bucket(dte),
+                    "symbol":    symbol,
+                })
+
+        log(f"  {len(pattern_list)} patterns detected")
+        log("  Scoring pyramid structures...")
+
+        for i, pat in enumerate(pattern_list):
+            ts        = pat["bar"]["bar_ts"]
+            direction = pat["direction"]
+            pat_name  = pat["pattern"]
+            dteb      = pat["dteb"]
+            sym       = pat["symbol"]
+            td        = pat["td"]
+
+            fut_session = fut_sessions.get(td, [])
+
+            # Futures entry
+            entry_price, _ = get_price_at(fut_session, ts)
+            if entry_price is None:
+                continue
+
+            out = compute_structures(fut_session, ts, entry_price, direction)
+            if out is None:
+                continue
+            results, meta = out
+
+            by_pattern[pat_name].add(results, meta)
+            by_pat_dte[f"{pat_name}|{dteb}"].add(results, meta)
+            by_pat_sym[f"{pat_name}|{sym}"].add(results, meta)
+
+            if i % 500 == 0:
+                log(f"    {i}/{len(pattern_list)} patterns scored...")
+
+        log(f"  {symbol} complete.")
+
+    # ── Output ────────────────────────────────────────────────────────
+    print("\n" + "=" * 115)
+    print("  MERDIAN EXPERIMENT 2c — PYRAMID ENTRY vs FIXED POSITION")
+    print(f"  Period: Apr 2025 – Mar 2026  |  NIFTY + SENSEX")
+    print(f"  Stop: {STOP_PCT}%  |  T2 confirm: {T2_CONFIRM}% at T+5m  |"
+          f"  T3 confirm: {T3_CONFIRM}% at T+10m")
+    print(f"  Units: T1={T1_UNITS} | T2={T2_UNITS} | T3={T3_UNITS} | Max={MAX_UNITS}")
+    print(f"  P&L normalised to {MAX_UNITS}-unit capital base for fair comparison")
+    print(f"  A:Fix1=1 unit fixed | B:Fix6=6 units fixed | C:Pyr=pyramid 1→3→6")
+    print(f"  MaxLoss=average max loss per trade | Winner=highest T+30m expectancy")
+    print("=" * 115)
+
+    print_comparison(
+        "SECTION 1 — ALL PATTERNS (T+30m primary)",
+        [(k,v) for k,v in by_pattern.items()],
+        min_n=10, horizon=30
+    )
+
+    print_comparison(
+        "SECTION 2 — BY PATTERN × DTE (T+30m)",
+        [(k,v) for k,v in by_pat_dte.items()],
+        min_n=8, horizon=30
+    )
+
+    print_comparison(
+        "SECTION 3 — BY PATTERN × SYMBOL (T+30m)",
+        [(k,v) for k,v in by_pat_sym.items()],
+        min_n=10, horizon=30
+    )
+
+    # ── Section 4: Tier trigger analysis ─────────────────────────────
+    print(f"\n{'='*115}")
+    print("  SECTION 4 — PYRAMID TIER TRIGGER ANALYSIS")
+    print("  When T2 triggers (0.20% confirm), how does the trade resolve?")
+    print("  When T3 triggers (0.40% confirm), what's the final outcome?")
+    print(f"{'='*115}")
+    print(f"  {'Pattern':<22} {'N':>5}  {'T2%':>6}  {'T3%':>6}  "
+          f"{'Pyr Exp T+15':>13}  {'Pyr Exp T+30':>13}  {'Pyr Exp T+60':>13}  "
+          f"{'MaxLoss A':>10}  {'MaxLoss C':>10}")
+    print(f"  {'-'*110}")
+
+    for pat_name in sorted(by_pattern.keys()):
+        b = by_pattern[pat_name]
+        if b.n < 10:
+            continue
+        s15 = b.stats("C_pyramid",15)
+        s30 = b.stats("C_pyramid",30)
+        s60 = b.stats("C_pyramid",60)
+        t2r = f"{100*b.t2_count/b.n:.0f}%"
+        t3r = f"{100*b.t3_count/b.n:.0f}%"
+        ml_a = sum(b.max_losses["A"])/len(b.max_losses["A"]) if b.max_losses["A"] else None
+        ml_c = sum(b.max_losses["C"])/len(b.max_losses["C"]) if b.max_losses["C"] else None
+        print(f"  {pat_name:<22} {b.n:>5}  {t2r:>6}  {t3r:>6}  "
+              f"{fmt(s15['exp'] if s15 else None):>13}  "
+              f"{fmt(s30['exp'] if s30 else None):>13}  "
+              f"{fmt(s60['exp'] if s60 else None):>13}  "
+              f"{fmt(ml_a):>10}  {fmt(ml_c):>10}")
+
+    # ── Section 5: DTE pivot ──────────────────────────────────────────
+    print(f"\n{'='*115}")
+    print("  SECTION 5 — DTE PIVOT: Pyramid performance by expiry proximity")
+    print(f"{'='*115}")
+    print(f"  {'DTE':<12} {'N':>6}  {'T2%':>6} {'T3%':>6}  "
+          f"{'A:Exp T+30':>12}  {'B:Exp T+30':>12}  {'C:Exp T+30':>12}  "
+          f"{'C MaxLoss':>10}  Winner")
+    print(f"  {'-'*100}")
+
+    bull_pats = ["BULL_OB","BULL_FVG","BOS_BULL","MSS_BULL","JUDAS_BULL"]
+    for dteb in ["DTE=0","DTE=1","DTE=2-3","DTE=4+"]:
+        agg = PyramidBucket()
+        for pat in bull_pats:
+            key = f"{pat}|{dteb}"
+            b   = by_pat_dte.get(key)
+            if b:
+                agg.n += b.n
+                agg.t2_count += b.t2_count
+                agg.t3_count += b.t3_count
+                for struct in agg.pnl:
+                    for h in [15,30,60]:
+                        agg.pnl[struct][h].extend(b.pnl[struct][h])
+                for k in ("A","B","C"):
+                    agg.max_losses[k].extend(b.max_losses[k])
+        if agg.n < 10:
+            continue
+        sa  = agg.stats("A_fixed1",  30)
+        sb_ = agg.stats("B_fixed6",  30)
+        sc  = agg.stats("C_pyramid", 30)
+        t2r = f"{100*agg.t2_count/agg.n:.0f}%"
+        t3r = f"{100*agg.t3_count/agg.n:.0f}%"
+        ml_c = sum(agg.max_losses["C"])/len(agg.max_losses["C"]) if agg.max_losses["C"] else None
+        exps = {
+            "A:Fix1": (sa["exp"]  if sa  else -999),
+            "B:Fix6": (sb_["exp"] if sb_ else -999),
+            "C:Pyr":  (sc["exp"]  if sc  else -999),
+        }
+        winner = max(exps, key=exps.get)
+        print(f"  {dteb:<12} {agg.n:>6}  {t2r:>6} {t3r:>6}  "
+              f"{fmt(sa['exp']  if sa  else None):>12}  "
+              f"{fmt(sb_['exp'] if sb_ else None):>12}  "
+              f"{fmt(sc['exp']  if sc  else None):>12}  "
+              f"{fmt(ml_c):>10}  {winner}")
+
+    # ── Summary ───────────────────────────────────────────────────────
+    print(f"\n{'='*115}")
+    print("  SUMMARY — KEY FINDINGS")
+    print(f"{'='*115}")
+    print(f"\n  Tier trigger rates reveal market character:")
+    print(f"  Low T2% = market reverses quickly after pattern (stops/chops)")
+    print(f"  High T2% + High T3% = market confirms and trends (pyramid pays)")
+    print()
+    print(f"  Structure A (Fixed-1):  Lowest risk, lowest reward.")
+    print(f"  Structure B (Fixed-6):  Highest risk, same per-unit return as A.")
+    print(f"  Structure C (Pyramid):  Risk starts at A level, scales toward B")
+    print(f"                          ONLY when market confirms direction.")
+    print(f"  Pyramid advantage:      T2/T3 stops protect prior tiers.")
+    print(f"                          Max loss on failed T3 = only T3 units lose.")
+    print(f"                          T1 and T2 are at breakeven by then.")
+    print(f"\n  Config: Stop={STOP_PCT}% | T2={T2_CONFIRM}% at T+5m | T3={T3_CONFIRM}% at T+10m")
+    print(f"  Rerun with different thresholds to optimise for specific patterns.")
+    print(f"{'='*115}\n")
+
+
+if __name__ == "__main__":
+    main()
+
+

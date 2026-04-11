@@ -194,10 +194,21 @@ def get_momentum_direction(momentum_features: dict[str, Any]) -> str:
 
 
 def infer_direction_bias(breadth_regime: str, momentum_direction: str) -> str:
+    # ENH-35 validated 2026-04-11:
+    # BEARISH+BEARISH aligned ? BEARISH (core signal)
     if breadth_regime == "BEARISH" and momentum_direction == "BEARISH":
         return "BEARISH"
+    # BULLISH+BULLISH aligned ? BULLISH (core signal)
     if breadth_regime == "BULLISH" and momentum_direction == "BULLISH":
         return "BULLISH"
+    # BULLISH breadth + BEARISH momentum (CONFLICT) ? BULLISH
+    # ENH-35: SENSEX 58.7% accuracy, NIFTY 55.4% at N=3575 — strong edge
+    if breadth_regime == "BULLISH" and momentum_direction == "BEARISH":
+        return "BULLISH"
+    # BEARISH breadth + BULLISH momentum (CONFLICT) ? NEUTRAL
+    # ENH-35: 47-49% accuracy — below random, correctly blocked
+    if breadth_regime == "BEARISH" and momentum_direction == "BULLISH":
+        return "NEUTRAL"
     if breadth_regime == "TRANSITION":
         return "NEUTRAL"
     return "NEUTRAL"
@@ -301,9 +312,12 @@ def build_signal(symbol: str) -> dict[str, Any]:
         if direction_bias in {"BULLISH", "BEARISH"}:
             confidence += 8.0
     elif gamma_regime == "LONG_GAMMA":
-        cautions.append("Long gamma may dampen directional follow-through")
-        if direction_bias in {"BULLISH", "BEARISH"}:
-            confidence -= 8.0
+        # ENH-35 validated 2026-04-11: LONG_GAMMA signals 47.7% accuracy
+        # at N=24,579 — structurally below random. Gate to DO_NOTHING.
+        cautions.append("LONG_GAMMA gated — historical accuracy below random (ENH-35)")
+        action = "DO_NOTHING"
+        trade_allowed = False
+        direction_bias = "NEUTRAL"
     elif gamma_regime == "NO_FLIP":
         reasons.append("No valid gamma flip is available from current chain structure")
     else:
@@ -395,10 +409,12 @@ def build_signal(symbol: str) -> dict[str, Any]:
         trade_allowed = False
         cautions.append("Confidence threshold not met for trade execution")
 
-    # Optional additional high-VIX block
+    # VIX gate REMOVED 2026-04-11 (ENH-35 + Experiment 5)
+    # HIGH_IV environments have MORE edge, not less:
+    # BEAR_OB|HIGH_IV +174.6% vs BEAR_OB|MED_IV +84.8%
+    # Gate was suppressing the best trades. Replaced by IV-scaled sizing.
     if india_vix is not None and india_vix >= 20:
-        cautions.append("High India VIX reduces options-buy attractiveness")
-        trade_allowed = False
+        cautions.append(f"India VIX elevated at {india_vix:.1f} — monitoring only")
 
     # Entry quality
     entry_quality = derive_entry_quality(confidence, direction_bias, gamma_regime)
@@ -492,3 +508,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

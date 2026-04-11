@@ -1,3 +1,68 @@
+## 2026-04-11 — research / engineering — ENH-35 Validation + ENH-37 Full Build + Signal Engine Overhaul
+
+**Goal:** Validate signal engine accuracy, apply ENH-35 findings, build ENH-37 ICT detection layer end-to-end.
+
+**Session type:** research / engineering
+
+**Completed:**
+
+Expiry bug found and fixed:
+- NIFTY switched Thursday→Tuesday expiry Sep 2025. Hardcoded `EXPIRY_WD = {"NIFTY": 3}` caused all post-Aug 2025 sessions to be skipped as "no option data" in all 11 experiment scripts. DB confirmed full option coverage Apr 2025–Mar 2026 (not a vendor gap — a code bug).
+- Fix: `merdian_utils.py` — `build_expiry_index_simple()` + `nearest_expiry_db()`. All 11 scripts patched via `patch_expiry_fix.py`. ENH-31 CLOSED.
+
+Experiments 14 + 14b — session pyramid definitively closed:
+- Exp 14 (v1, mid-bounce): Pyramid -₹9,044 (22% WR) vs single T+30m +₹8,329 (100% WR) across 9 sessions.
+- Exp 14b (v2, confirmed reversal): v2 improved v1 by ₹3,133 but still -₹12,645 vs single trade.
+- Verdict: Single T+30m exit on first OB remains optimal. Session pyramid deferred to post-ENH-42 (WebSocket + bullish sessions needed).
+
+ENH-35 — three validation runs:
+- Run 1 (baseline): NIFTY 47.4% below random, 25,762 signals
+- Run 2 (+3 changes): SHORT_GAMMA 55.5%, overall still noisy, 8,967 signals
+- Run 3 (+6 changes): NIFTY 58.6% STRONG EDGE, 244 signals/year
+- Final: trade_allowed=YES pool 268 bars, 55.2% accuracy. Phase 4 target met.
+- Key finding: CONFLICT BUY_CE (breadth BULLISH + momentum BEARISH) = 67.9% at N=661 — the old CONFLICT rule was blocking the best trades.
+
+Six signal engine changes applied and validated:
+1. CONFLICT BUY_CE now trades (58.7% SENSEX / 55.4% NIFTY)
+2. LONG_GAMMA → DO_NOTHING (47.7% — below random)
+3. NO_FLIP → DO_NOTHING (45-48% — below random)
+4. VIX gate removed (HIGH_IV has more edge — Experiment 5)
+5. Confidence threshold 60→40 (edge in conf_20-49 band)
+6. Power hour gate — no signals after 15:00 IST (SENSEX 20.8% expiry noise eliminated)
+
+ENH-37 ICT Pattern Detection Layer — all 6 steps complete:
+- `ict_zones` (28 cols) + `ict_htf_zones` (16 cols) created in Supabase
+- `detect_ict_patterns.py` — ICTDetector class, VERY_HIGH/HIGH/MEDIUM/LOW MTF hierarchy, tier assignment from Experiment 8, breach detection
+- `build_ict_htf_zones.py` — W/D/H zone builder. 1H layer added after design discussion (bridges timeframe gap). 39 zones written on first run.
+- `detect_ict_patterns_runner.py` — runner integration, every 5-min cycle, non-blocking
+- Signal engine enriched: ict_pattern, ict_tier, ict_size_mult, ict_mtf_context (4 new columns in signal_snapshots)
+- Dashboard: ICT zones card + signal display updated
+- 1H zone rationale: weekly/daily zones are pre-market. Without 1H, a 1M pattern in a bullish 1H structure incorrectly gets LOW context. 1H refreshes hourly during session.
+
+**Open after session:**
+- C-07b: Pre-open capture gap still open (supervisor starts 09:14)
+- R-04: Dynamic exit v2 — deferred to Phase 4 execution layer
+- Shadow gate: 8/10 — sessions 9+10 Monday/Tuesday
+- Phase 4 decision: after session 10
+- Rerun Exp 5, 8, 10c, portfolio sims on full year data (expiry fix now applied)
+- Monday pre-market: `python build_ict_htf_zones.py --timeframe D`
+
+**Files changed:** merdian_utils.py (NEW), patch_expiry_fix.py (NEW), experiment_14_session_pyramid.py (NEW), experiment_14b_session_pyramid_v2.py (NEW), detect_ict_patterns.py (NEW), build_ict_htf_zones.py (NEW), detect_ict_patterns_runner.py (NEW), patch_runner_ict.py (NEW), patch_signal_ict.py (NEW), patch_dashboard_ict.py (NEW), build_trade_signal_local.py (6 changes), run_option_snapshot_intraday_runner.py (ICT step wired), merdian_live_dashboard.py (ICT zones card), run_validation_analysis.py (replay engine updated)
+
+**Schema changes:** ict_zones (NEW — 28 cols), ict_htf_zones (NEW — 16 cols), signal_snapshots (+ict_pattern, +ict_tier, +ict_size_mult, +ict_mtf_context)
+
+**Open items closed:** ENH-31 (expiry calendar), ENH-35 (validation), S-05 (signal accuracy), S-06 (expiry bug), C-09 (power hour noise), R-01 (VIX gate), R-02 (sequence filter), R-03 (gamma gate), R-08 (session pyramid)
+
+**Open items added:** none new
+
+**Git commit hash:** 26c5e72 (Local + AWS)
+
+**Next session goal:** Shadow sessions 9+10 results → Phase 4 promotion decision. If approved: wire ict_size_mult to order quantity (ENH-38), scope ENH-42 WebSocket.
+
+**docs_updated:** yes
+
+---
+
 ## 2026-04-10 / 2026-04-11 — research / architecture — ICT Research Series Complete + Signal Rule Book v1.0
 
 **Goal:** Complete the full ICT pattern research series (Experiments 0–13) while monitoring live pipeline. Produce Signal Rule Book v1.0 as implementation-ready document.

@@ -116,7 +116,7 @@ def main() -> int:
         if "Invalid TOTP" in error_msg:
             import time as _time
             print(f"WARNING: Invalid TOTP on first attempt. Waiting 30s for next window...")
-            _time.sleep(30)
+            _time.sleep(120)
             totp_code = generate_totp(totp_seed)
             token_response = request_dhan_token(client_id, pin, totp_code)
         else:

@@ -427,6 +427,13 @@ def run_live_cycle_for_symbol(symbol: str) -> None:
     )
 
     run_with_fallbacks(
+        "detect_ict_patterns_runner.py",
+        [[symbol]],
+        timeout=60,
+        step_name=f"{symbol} detect_ict_patterns",
+        non_blocking=SHADOW_FAILURE_IS_NON_BLOCKING,
+    )
+    run_with_fallbacks(
         "build_trade_signal_local.py",
         [[symbol]],
         timeout=TIMEOUT_SIGNAL,

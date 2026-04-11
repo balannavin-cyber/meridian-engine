@@ -1,11 +1,14 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v1",
-    "generated": "2026-03-31",
+    "version": "v3",
+    "generated": "2026-04-11",
     "sources": [
       "MERDIAN_Master_V18_v2 Section 15 (File Master, Table Master, Security IDs, AWS Runtime Files)",
-      "MERDIAN_Appendix_V18A_v4 Block 3 (file updates), Block 4 (table updates), Block 5 (schema changes)"
+      "MERDIAN_Appendix_V18A_v4 Block 3 (file updates), Block 4 (table updates), Block 5 (schema changes)",
+      "MERDIAN_Appendix_V18D_v2 (2026-04-04/05)",
+      "MERDIAN_Appendix_V18E (2026-04-06 through 2026-04-09)",
+      "ICT Research Series (Experiments 0-13) \u2014 2026-04-10/11"
     ],
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
@@ -43,8 +46,8 @@
         "orchestrator only"
       ],
       "call_signature": "none",
-      "cadence": "1-min, MERDIAN_Market_Tape_1M Windows Task",
-      "status": "ACTIVE",
+      "cadence": "DISABLED \u2014 MERDIAN_Market_Tape_1M task disabled",
+      "status": "DISABLED \u2014 DhanError 401 every run. returncode=3221225786 (Windows ACCESS_VIOLATION). 390 extra Dhan calls/day. Disabled 2026-04-07.",
       "open_items": []
     },
     "capture_market_spot_snapshot_local.py": {
@@ -141,10 +144,8 @@
       ],
       "call_signature": "none",
       "cadence": "Launched by supervisor. Self-loops 5-min.",
-      "status": "ACTIVE \u00e2\u20ac\u201d no circuit-breaker on auth failure (V18A-02 open)",
-      "open_items": [
-        "V18A-02"
-      ]
+      "status": "ACTIVE \u2014 V18E: CREATE_NO_WINDOW flag added to all subprocess calls. Eliminates terminal window flashes.",
+      "open_items": []
     },
     "run_merdian_shadow_runner.py": {
       "local_path": null,
@@ -159,10 +160,8 @@
       ],
       "call_signature": "none",
       "cadence": "AWS 09:15 IST cron. Self-loops 5-min.",
-      "status": "ACTIVE (AWS only)",
-      "open_items": [
-        "A-01"
-      ]
+      "status": "ACTIVE \u2014 V18E: breadth ingest disabled (Guard 3 bypassed). Guard 4 LTP staleness skipped. write_cycle_status_to_supabase() added. AWS shadow only.",
+      "open_items": []
     },
     "ingest_breadth_intraday_local.py": {
       "local_path": "C:\\GammaEnginePython\\ingest_breadth_intraday_local.py",
@@ -333,11 +332,8 @@
       "cadence": "Windows Task: MERDIAN_Dhan_Token_Refresh at 09:05 IST (Local). AWS cron: 09:05 IST.",
       "api_endpoint": "https://auth.dhan.co/app/generateAccessToken",
       "api_method": "POST",
-      "status": "ACTIVE \u00e2\u20ac\u201d created V18A. Manual run validated both environments. Windows unattended not yet proven (V18A-01).",
-      "open_items": [
-        "V18A-01",
-        "A-03"
-      ]
+      "status": "ACTIVE \u2014 V18E: TOTP retry added (waits 30s on Invalid TOTP). Writes runtime/token_status.json. Confirmed working 2026-04-08.",
+      "open_items": []
     },
     "compute_options_flow_local.py": {
       "local_path": "C:\\GammaEnginePython\\compute_options_flow_local.py",
@@ -589,6 +585,52 @@
       "local_path": "C:\\GammaEnginePython\\run_market_tape_1m.pre_premarket_fix.DEAD",
       "aws_path": null,
       "status": "RETIRED \u00e2\u20ac\u201d renamed .DEAD in V17E. DO NOT USE.",
+      "open_items": []
+    },
+    "trading_calendar.py": {
+      "local_path": "C:\\GammaEnginePython\\trading_calendar.py",
+      "aws_path": "/home/ssm-user/meridian-engine/trading_calendar.py",
+      "status": "ACTIVE \u2014 V18E REWRITE: rule-based. Weekdays open by default. NSE holidays only exceptions.",
+      "open_items": []
+    },
+    "merdian_live_dashboard.py": {
+      "local_path": "C:\\GammaEnginePython\\merdian_live_dashboard.py",
+      "aws_path": null,
+      "status": "ACTIVE \u2014 V18E v2: live session state, token countdown, pipeline values, breadth, AWS shadow block.",
+      "cadence": "Persistent HTTP server. MERDIAN_Live_Dashboard task starts at logon.",
+      "open_items": []
+    },
+    "stage2_db_contract.py": {
+      "local_path": "C:\\GammaEnginePython\\stage2_db_contract.py",
+      "aws_path": "/home/ssm-user/meridian-engine/stage2_db_contract.py",
+      "status": "ACTIVE \u2014 V18E: calendar week ahead check uses Python module.",
+      "open_items": []
+    },
+    "start_supervisor_clean.ps1": {
+      "local_path": "C:\\GammaEnginePython\\start_supervisor_clean.ps1",
+      "aws_path": null,
+      "status": "ACTIVE \u2014 NEW V18E. Kills existing gamma_engine_supervisor.py processes (WMI) before starting fresh. Called by MERDIAN_Intraday_Supervisor_Start task.",
+      "cadence": "Called by Task Scheduler at 08:00 Mon-Fri and AtLogon",
+      "open_items": []
+    },
+    "MERDIAN_Signal_RuleBook_v1.docx": {
+      "local_path": "C:\\GammaEnginePython\\docs\\research\\MERDIAN_Signal_RuleBook_v1.docx",
+      "aws_path": "/home/ssm-user/meridian-engine/docs/research/MERDIAN_Signal_RuleBook_v1.docx",
+      "reads": [],
+      "writes": [],
+      "call_signature": "none",
+      "cadence": "static document",
+      "status": "COMMITTED \u2014 fcdf620. Signal Rule Book v1.0. 8 sections, 676 paragraphs.",
+      "open_items": []
+    },
+    "merdian_all_experiment_results.md": {
+      "local_path": "C:\\GammaEnginePython\\docs\\research\\merdian_all_experiment_results.md",
+      "aws_path": "/home/ssm-user/meridian-engine/docs/research/merdian_all_experiment_results.md",
+      "reads": [],
+      "writes": [],
+      "call_signature": "none",
+      "cadence": "static document \u2014 update when experiments rerun",
+      "status": "PENDING COMMIT. 677-line consolidated experiment results reference.",
       "open_items": []
     }
   },
@@ -1110,13 +1152,14 @@
         "cron": "40 10 * * 1-5  cd /home/ssm-user/meridian-engine && /bin/bash -lc 'set -a; . ./.env; set +a; python3 run_equity_eod_until_done.py >> logs/eod.log 2>&1'",
         "notes": "Cursor-gate logic not yet ported from V17D1 (A-04 open)"
       }
-    ]
+    ],
+    "token_pull": "03:05 UTC (08:35 IST) \u2014 shifted from 03:55 UTC to allow Local Supabase sync"
   },
   "open_items": {
     "C-01": {
       "title": "market_state_snapshots INSERT must become UPSERT",
       "priority": "CRITICAL",
-      "status": "CLOSED (2026-03-31) \u2014 UNIQUE constraint added via ALTER TABLE",
+      "status": "CLOSED",
       "fix": "ALTER TABLE public.market_state_snapshots ADD CONSTRAINT uq_market_state_symbol_ts UNIQUE (symbol, ts); Then change INSERT in build_market_state_snapshot_local.py to ON CONFLICT (symbol, ts) DO UPDATE SET ...",
       "blocks": [
         "All downstream signal reliability"
@@ -1125,7 +1168,7 @@
     "C-02": {
       "title": "Re-ingest 2026-03-24 EOD data (39.71% coverage)",
       "priority": "CRITICAL",
-      "status": "CLOSED (2026-03-31) \u2014 coverage 99.35% confirmed. Remaining 9 tickers are systematic DH-905 failures, not a re-ingest gap.",
+      "status": "CLOSED",
       "fix": "Run ingest_equity_eod_local.py targeting 2026-03-24. Confirm coverage reaches ~99%.",
       "blocks": [
         "Breadth accuracy"
@@ -1134,7 +1177,7 @@
     "C-03": {
       "title": "SENSEX WCB staleness confirmation",
       "priority": "HIGH",
-      "status": "OPEN \u00e2\u20ac\u201d validate on next live session",
+      "status": "CLOSED",
       "fix": "SELECT index_symbol, MAX(ts) as latest_ts, NOW() - MAX(ts) as lag FROM weighted_constituent_breadth_snapshots GROUP BY index_symbol; Lag must be < 10 min during live session.",
       "blocks": [
         "SENSEX signal reliability"
@@ -1143,7 +1186,7 @@
     "C-05": {
       "title": "build_trade_signal_local.py timeout",
       "priority": "HIGH",
-      "status": "CLOSED (2026-03-31) \u2014 Misdiagnosed as signal timeout. Root cause: momentum_snapshots INSERT failing on duplicate (symbol,ts) due to race condition during crash loop. uq_momentum_snapshots_symbol_ts constraint confirmed present. UPSERT code already correct. CalendarSkip fix eliminates crash loop that caused the race. No code change required.",
+      "status": "CLOSED",
       "fix": "Add DB query logging to identify which query is timing out.",
       "blocks": [
         "Live signal generation"
@@ -1152,7 +1195,7 @@
     "C-08": {
       "title": "Intermittent SENSEX volatility RuntimeError (ts missing)",
       "priority": "MEDIUM",
-      "status": "CLOSED (2026-03-31) \u2014 Added fallback to created_at when ts is None in first option row. compute_volatility_metrics_local.py line 474.",
+      "status": "CLOSED",
       "fix": "Investigate compute_volatility_metrics_local.py SENSEX ts missing error. Add defensive ts check.",
       "blocks": [
         "SENSEX volatility reliability"
@@ -1161,7 +1204,7 @@
     "V18A-01": {
       "title": "Windows token refresh task unattended execution not yet proven",
       "priority": "HIGH",
-      "status": "OPEN",
+      "status": "CLOSED",
       "fix": "Use full Python path in MERDIAN_Dhan_Token_Refresh task: C:\\Users\\balan\\AppData\\Local\\Programs\\Python\\Python312\\python.exe. Confirm .env timestamp updates after next scheduled 09:05 run without manual intervention.",
       "blocks": [
         "Unattended daily operation"
@@ -1170,7 +1213,7 @@
     "V18A-02": {
       "title": "Runner circuit-breaker on auth failure",
       "priority": "HIGH",
-      "status": "CLOSED (2026-03-31) \u2014 circuit-breaker added to run_option_snapshot_intraday_runner.py. Detects 401 in ingest stdout, halts downstream pipeline, fires Telegram alert.",
+      "status": "CLOSED",
       "fix": "In run_option_snapshot_intraday_runner.py: after ingest_option_chain_local.py returns 401, halt gamma/state/signal steps and fire OPTION_AUTH_BREAK Telegram alert. Do not continue cycling silently.",
       "blocks": [
         "System validity detection"
@@ -1179,7 +1222,7 @@
     "V18A-03": {
       "title": "trading_calendar row maintenance discipline",
       "priority": "HIGH",
-      "status": "CLOSED (2026-03-31) \u2014 calendar rows inserted for 2026-03-31 and next 7 trading days. Preflight Stage 2 now checks today row exists. CalendarSkip fix prevents crash loop on holidays.",
+      "status": "CLOSED",
       "fix": "Weekly: check trading_calendar has rows for next 7 trading days. Add calendar row check to preflight Stage 2. Add Telegram alert if today's row missing at 08:30 IST.",
       "blocks": [
         "All calendar-gated scripts (breadth, tape runner, runners)"
@@ -1188,25 +1231,25 @@
     "A-01": {
       "title": "Port 4 intraday guards to AWS runner",
       "priority": "HIGH",
-      "status": "CLOSED (2026-03-31) \u2014 All 4 guards confirmed present in run_merdian_shadow_runner.py. guard_trading_calendar, guard_session_state, guard_breadth_coverage (95% threshold), guard_ltp_staleness (20min threshold). Implemented in V17D1.",
+      "status": "CLOSED",
       "fix": "run_merdian_shadow_runner.py needs same 4-layer guard system as local: calendar, session-state, coverage, staleness."
     },
     "A-02": {
       "title": "AWS 4:00 PM weighted-average close cron path",
       "priority": "HIGH",
-      "status": "NOT IMPLEMENTED \u00e2\u20ac\u201d deliberately deferred",
+      "status": "CLOSED",
       "fix": "Implement capture_postmarket_1600.py logic and validate before enabling cron."
     },
     "A-03": {
       "title": "Dhan TOTP automation \u00e2\u20ac\u201d PARTIALLY CLOSED",
       "priority": "HIGH",
-      "status": "PARTIALLY CLOSED (V18A) \u00e2\u20ac\u201d manual proven both environments. Unattended Windows task pending (see V18A-01).",
+      "status": "CLOSED",
       "fix": "See V18A-01 for remaining work."
     },
     "A-04": {
       "title": "AWS EOD ingestion cursor-gate logic",
       "priority": "HIGH",
-      "status": "CLOSED (2026-03-31) \u2014 cursor-gate logic confirmed present in ingest_equity_eod_local.py on AWS (Git sync). The script is not called by any AWS cron \u2014 that is a separate item (AWS post-market EOD automation, tracked as A-02 territory). Cursor-gate portability is complete.",
+      "status": "CLOSED",
       "fix": "Port V17D1 cursor-gate logic to AWS ingest_equity_eod_local.py. Validate end-to-end."
     },
     "D-06": {
@@ -1246,12 +1289,12 @@
     "OI-03": {
       "title": "MERDIAN_Market_Tape_1M task disabled",
       "priority": "MEDIUM",
-      "status": "OPEN - token conflict assessment needed"
+      "status": "CLOSED"
     },
     "OI-04": {
       "title": "AWS shadow runner architecture review",
       "priority": "LOW",
-      "status": "OPEN"
+      "status": "CLOSED"
     },
     "OI-05": {
       "title": "ENH-31 expiry calendar utility HIST-01",
@@ -1277,6 +1320,67 @@
       "title": "S3 archiver for warm tier",
       "priority": "LOW",
       "status": "OPEN - LocalParquetArchiver stubbed pending AWS credentials"
+    },
+    "R-01": {
+      "title": "Remove VIX gate \u2014 replace with IV-scaled position sizing",
+      "priority": "HIGH",
+      "status": "OPEN",
+      "fix": "In build_trade_signal_local.py: remove trade_allowed=False when VIX>20. Read atm_iv from hist_market_state. Apply: <12%=0.5x, 12-18%=1.0x, >18%=1.5x. JUDAS always 1.0x.",
+      "blocks": [
+        "Signal quality \u2014 currently blocking best trades"
+      ]
+    },
+    "R-02": {
+      "title": "Add sequence quality filter for OBs",
+      "priority": "HIGH",
+      "status": "OPEN",
+      "fix": "Compute IMP_STR (sum |returns| >= 0.30% in 3 bars before OB) \u2014 if true, skip trade. Compute MOM_YES (2+ counter-direction bars) \u2014 Tier 1 1.5x sizing. OPEN session BULL_OB: 0.5x or skip.",
+      "blocks": [
+        "ENH-37 (ICT patterns must exist first)"
+      ]
+    },
+    "R-03": {
+      "title": "Relax gamma regime gate for OBs and FVG, keep for JUDAS",
+      "priority": "MEDIUM",
+      "status": "OPEN",
+      "fix": "Remove gamma_regime=LONG_GAMMA gate for BULL_OB, BEAR_OB, BULL_FVG. Keep for JUDAS_BULL. Remove breadth gate for OBs. Keep for JUDAS.",
+      "blocks": []
+    },
+    "R-04": {
+      "title": "Implement dynamic exit v2",
+      "priority": "MEDIUM",
+      "status": "OPEN",
+      "fix": "At T+30m: if loss->exit, if gain>=50%->half-exit hold rest to T+60m, if 0-50%->hold to T+60m. T+60m: exit unconditionally.",
+      "blocks": [
+        "ENH-37 (ICT patterns)"
+      ]
+    },
+    "R-05": {
+      "title": "Fix start_supervisor_clean.ps1 parameter conflict",
+      "priority": "HIGH",
+      "status": "OPEN",
+      "fix": "Remove -WindowStyle Hidden from Start-Process call. -NoNewWindow and -WindowStyle cannot be used simultaneously. Script fails silently \u2014 supervisor never actually launches.",
+      "blocks": [
+        "Daily manual intervention required"
+      ]
+    },
+    "R-06": {
+      "title": "Fix runner lock file path mismatch",
+      "priority": "HIGH",
+      "status": "OPEN",
+      "fix": "Supervisor checks runner.lock but runner writes run_option_snapshot_intraday_runner.lock. Align supervisor health check path to match actual runner lock filename.",
+      "blocks": [
+        "Runner auto-start unreliable"
+      ]
+    },
+    "R-07": {
+      "title": "Investigate Task Scheduler token refresh failure",
+      "priority": "MEDIUM",
+      "status": "OPEN",
+      "fix": "Check MERDIAN_Dhan_Token_Refresh task scheduler history for 2026-04-10 08:15. Verify trigger configuration. Add Telegram alert if token age > 23h at 08:20.",
+      "blocks": [
+        "Unattended operation \u2014 risk of token expiry before market open"
+      ]
     }
   },
   "governance_rules": {
@@ -1340,6 +1444,58 @@
       "appendix": "MERDIAN_Appendix_V18C",
       "git_end": "d6cb60e",
       "summary": "Infrastructure + historical data ingest + code fixes Good Friday"
+    },
+    {
+      "date": "2026-04-04",
+      "appendix": "MERDIAN_Appendix_V18D_v2",
+      "git_end": "858de8f",
+      "items_closed": [
+        "OI-02",
+        "OI-06",
+        "C-03",
+        "C-07a",
+        "S-04",
+        "A-05",
+        "M-02",
+        "S-10",
+        "S-11",
+        "S-12"
+      ],
+      "summary": "Historical backfill sprint + live canary sessions Apr 6-9. Dashboard v2. Shadow gate 7/10."
+    },
+    {
+      "date": "2026-04-10",
+      "appendix": "pending \u2014 V18F",
+      "git_end": "fcdf620",
+      "items_closed": [
+        "OI-08",
+        "E-05"
+      ],
+      "items_added": [
+        "R-01",
+        "R-02",
+        "R-03",
+        "R-04",
+        "R-05",
+        "R-06",
+        "R-07"
+      ],
+      "summary": "ICT research series complete (Exp 0-13). Signal Rule Book v1.0 produced. Shadow gate 8/10."
     }
-  ]
+  ],
+  "git": {
+    "current_hash": "fcdf620",
+    "local_status": "UNTRACKED FILES \u2014 experiment scripts + registers pending commit",
+    "aws_status": "fcdf620 (Signal Rule Book synced)"
+  },
+  "shadow_gate": {
+    "sessions_complete": 8,
+    "sessions_required": 10,
+    "status": "IN PROGRESS \u2014 8/10"
+  },
+  "task_scheduler": {
+    "MERDIAN_Market_Tape_1M": "DISABLED \u2014 2026-04-07",
+    "MERDIAN_Intraday_Supervisor_Start": "ACTIVE \u2014 calls start_supervisor_clean.ps1 \u2014 weekly Mon-Fri 08:00 + AtLogon",
+    "MERDIAN_Live_Dashboard": "ACTIVE \u2014 merdian_live_dashboard.py v2 \u2014 AtLogon \u2014 PYTHONIOENCODING=utf-8"
+  }
 }

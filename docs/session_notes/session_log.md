@@ -4,6 +4,16 @@
 
 **Session type:** research / documentation
 
+**Git end:** e24297f (Local + AWS in sync)
+
+**Documents produced this session:**
+- MERDIAN_AppendixV18F_v2.docx (rebuild-grade, audit-corrected) — docs/appendices/
+- MERDIAN_Enhancement_Register_v5.md — docs/registers/
+- MERDIAN_OpenItems_Register_v6.md — docs/registers/
+- MERDIAN_Experiment_Compendium_v1.md — docs/registers/
+- merdian_reference.json v3 — docs/registers/ (git updated, shadow gate 8/10, 6 new files, 3 new tables, 8 new governance rules, research_findings key added)
+- session_log.md — prepended (this entry)
+
 **Completed:**
 
 Overnight runner fixes (encoding + expiry):

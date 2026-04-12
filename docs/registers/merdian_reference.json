@@ -2,13 +2,13 @@
   "_meta": {
     "document": "merdian_reference.json",
     "version": "v3",
-    "generated": "2026-04-11",
+    "generated": "2026-04-12",
     "sources": [
       "MERDIAN_Master_V18_v2 Section 15 (File Master, Table Master, Security IDs, AWS Runtime Files)",
       "MERDIAN_Appendix_V18A_v4 Block 3 (file updates), Block 4 (table updates), Block 5 (schema changes)",
       "MERDIAN_Appendix_V18D_v2 (2026-04-04/05)",
       "MERDIAN_Appendix_V18E (2026-04-06 through 2026-04-09)",
-      "ICT Research Series (Experiments 0-13) \u2014 2026-04-10/11"
+      "MERDIAN_Appendix_V18F_v2 (2026-04-11/12) — Experiment Series 2-16 + Kelly Sizing"
     ],
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
@@ -46,8 +46,8 @@
         "orchestrator only"
       ],
       "call_signature": "none",
-      "cadence": "DISABLED \u2014 MERDIAN_Market_Tape_1M task disabled",
-      "status": "DISABLED \u2014 DhanError 401 every run. returncode=3221225786 (Windows ACCESS_VIOLATION). 390 extra Dhan calls/day. Disabled 2026-04-07.",
+      "cadence": "DISABLED — MERDIAN_Market_Tape_1M task disabled",
+      "status": "DISABLED — DhanError 401 every run. returncode=3221225786 (Windows ACCESS_VIOLATION). 390 extra Dhan calls/day. Disabled 2026-04-07.",
       "open_items": []
     },
     "capture_market_spot_snapshot_local.py": {
@@ -78,7 +78,7 @@
       ],
       "call_signature": "none",
       "cadence": "Step 2 of tape runner",
-      "status": "ACTIVE \u00e2\u20ac\u201d dynamic contract resolution (V17E). Static security_ids REMOVED.",
+      "status": "ACTIVE â€” dynamic contract resolution (V17E). Static security_ids REMOVED.",
       "open_items": []
     },
     "ingest_option_chain_local.py": {
@@ -92,8 +92,8 @@
       ],
       "call_signature": "<symbol> [--mode FULL|ATM_ONLY]",
       "cadence": "Step 3 of tape runner (ATM_ONLY ~10 rows). Step 3 of options runner (FULL ~534/606 rows).",
-      "stdout_contract": "Emits 'Run ID: <uuid>' on success. Runner parses this line to extract run_id for gamma and volatility steps. TREAT AS API CONTRACT \u00e2\u20ac\u201d do not change prefix.",
-      "status": "ACTIVE \u00e2\u20ac\u201d currently failing 401 on Local (V18A). AWS status depends on token refresh.",
+      "stdout_contract": "Emits 'Run ID: <uuid>' on success. Runner parses this line to extract run_id for gamma and volatility steps. TREAT AS API CONTRACT â€” do not change prefix.",
+      "status": "ACTIVE â€” currently failing 401 on Local (V18A). AWS status depends on token refresh.",
       "open_items": [
         "V18A-01",
         "V18A-02"
@@ -127,7 +127,7 @@
       ],
       "call_signature": "none",
       "cadence": "MERDIAN_Intraday_Supervisor_Start Windows Task",
-      "status": "ACTIVE \u00e2\u20ac\u201d clean exit implemented (V17E)",
+      "status": "ACTIVE â€” clean exit implemented (V17E)",
       "open_items": [
         "M-07"
       ]
@@ -144,14 +144,14 @@
       ],
       "call_signature": "none",
       "cadence": "Launched by supervisor. Self-loops 5-min.",
-      "status": "ACTIVE \u2014 V18E: CREATE_NO_WINDOW flag added to all subprocess calls. Eliminates terminal window flashes.",
+      "status": "ACTIVE — V18E: CREATE_NO_WINDOW flag added to all subprocess calls. Eliminates terminal window flashes.",
       "open_items": []
     },
     "run_merdian_shadow_runner.py": {
       "local_path": null,
       "aws_path": "/home/ssm-user/meridian-engine/run_merdian_shadow_runner.py",
       "reads": [
-        "orchestrator \u00e2\u20ac\u201d parses ingest stdout for run_id"
+        "orchestrator â€” parses ingest stdout for run_id"
       ],
       "writes": [
         "runtime/aws_shadow_runner_state.json",
@@ -160,7 +160,7 @@
       ],
       "call_signature": "none",
       "cadence": "AWS 09:15 IST cron. Self-loops 5-min.",
-      "status": "ACTIVE \u2014 V18E: breadth ingest disabled (Guard 3 bypassed). Guard 4 LTP staleness skipped. write_cycle_status_to_supabase() added. AWS shadow only.",
+      "status": "ACTIVE — V18E: breadth ingest disabled (Guard 3 bypassed). Guard 4 LTP staleness skipped. write_cycle_status_to_supabase() added. AWS shadow only.",
       "open_items": []
     },
     "ingest_breadth_intraday_local.py": {
@@ -180,9 +180,9 @@
         "Guard 1: trading_calendar is_open check",
         "Guard 2: session state check",
         "Guard 3: coverage check",
-        "Guard 4: staleness check \u00e2\u20ac\u201d MAX(ts) > 20min -> STOP"
+        "Guard 4: staleness check â€” MAX(ts) > 20min -> STOP"
       ],
-      "status": "ACTIVE \u00e2\u20ac\u201d skips when trading_calendar row missing (V18A-03)",
+      "status": "ACTIVE â€” skips when trading_calendar row missing (V18A-03)",
       "open_items": [
         "V18A-03"
       ]
@@ -199,7 +199,7 @@
       ],
       "call_signature": "<symbol>",
       "cadence": "Step 2 of options runner",
-      "status": "ACTIVE \u00e2\u20ac\u201d continues writing rows even when Dhan option auth is broken (V18A confirmed)",
+      "status": "ACTIVE â€” continues writing rows even when Dhan option auth is broken (V18A confirmed)",
       "open_items": []
     },
     "archive_option_chain_history.py": {
@@ -212,7 +212,7 @@
         "historical_option_chain_snapshots"
       ],
       "call_signature": "<run_id>",
-      "cadence": "Step 3a of options runner (idempotent \u00e2\u20ac\u201d skips if run_id already archived)",
+      "cadence": "Step 3a of options runner (idempotent â€” skips if run_id already archived)",
       "status": "ACTIVE",
       "open_items": [
         "D-03"
@@ -229,7 +229,7 @@
       ],
       "call_signature": "<run_id>   NOTE: run_id is UUID, NOT symbol",
       "cadence": "Step 4 of options runner",
-      "status": "ACTIVE \u00e2\u20ac\u201d updated V18A: gamma_zone and raw columns added. UPSERT on (symbol,ts).",
+      "status": "ACTIVE â€” updated V18A: gamma_zone and raw columns added. UPSERT on (symbol,ts).",
       "v18a_changes": "Added gamma_zone (E-02 three-zone shadow). Added raw jsonb metadata. Changed INSERT to UPSERT with unique index on (symbol,ts).",
       "open_items": []
     },
@@ -244,7 +244,7 @@
       ],
       "call_signature": "<run_id>   NOTE: run_id is UUID, NOT symbol",
       "cadence": "Step 5 of options runner",
-      "status": "ACTIVE \u00e2\u20ac\u201d IV=0 filter active. ATM fallback: if CE IV=0 uses PE IV. UNIQUE(symbol,ts) enforced.",
+      "status": "ACTIVE â€” IV=0 filter active. ATM fallback: if CE IV=0 uses PE IV. UNIQUE(symbol,ts) enforced.",
       "open_items": [
         "C-08"
       ]
@@ -282,7 +282,7 @@
       ],
       "call_signature": "<symbol>   NOTE: symbol not run_id",
       "cadence": "Step 7 of options runner",
-      "status": "ACTIVE \u00e2\u20ac\u201d V18A: flip_distance_pct canonical, flip_distance_points added as diagnostic. C-01 UPSERT fix still pending.",
+      "status": "ACTIVE â€” V18A: flip_distance_pct canonical, flip_distance_points added as diagnostic. C-01 UPSERT fix still pending.",
       "v18a_changes": "flip_distance_pct is now canonical gamma distance field. flip_distance_points added as raw diagnostic. flip_distance retained for backward compat.",
       "open_items": [
         "C-01"
@@ -299,9 +299,15 @@
       ],
       "call_signature": "<symbol>",
       "cadence": "Step 8 of options runner",
-      "status": "ACTIVE \u00e2\u20ac\u201d confirmed already using flip_distance_pct correctly (V18A audit). Not modified in V18A.",
+      "status": "ACTIVE — 6 signal engine changes applied (ENH-35 2026-04-11): (1) CONFLICT BUY_CE now trades, (2) LONG_GAMMA gates to DO_NOTHING, (3) NO_FLIP gates to DO_NOTHING, (4) VIX gate removed from trade_allowed, (5) MIN_CONFIDENCE 60→40, (6) power hour gate after 15:00 IST. 4 new ICT columns added to signal output (patch_signal_ict.py).",
       "open_items": [
         "C-05"
+      ],
+      "ict_columns_added": [
+        "ict_pattern",
+        "ict_tier",
+        "ict_size_mult",
+        "ict_mtf_context"
       ]
     },
     "build_signal_regret_log_v1.py": {
@@ -316,7 +322,7 @@
       ],
       "call_signature": "none (batch run)",
       "cadence": "Manual / scheduled batch. NOT per-minute live step.",
-      "status": "ACTIVE \u00e2\u20ac\u201d built and validated V18A. 614 rows confirmed.",
+      "status": "ACTIVE â€” built and validated V18A. 614 rows confirmed.",
       "open_items": []
     },
     "refresh_dhan_token.py": {
@@ -332,7 +338,7 @@
       "cadence": "Windows Task: MERDIAN_Dhan_Token_Refresh at 09:05 IST (Local). AWS cron: 09:05 IST.",
       "api_endpoint": "https://auth.dhan.co/app/generateAccessToken",
       "api_method": "POST",
-      "status": "ACTIVE \u2014 V18E: TOTP retry added (waits 30s on Invalid TOTP). Writes runtime/token_status.json. Confirmed working 2026-04-08.",
+      "status": "ACTIVE — V18E: TOTP retry added (waits 30s on Invalid TOTP). Writes runtime/token_status.json. Confirmed working 2026-04-08.",
       "open_items": []
     },
     "compute_options_flow_local.py": {
@@ -425,7 +431,7 @@
       ],
       "call_signature": "none",
       "cadence": "Scheduled / manual backfill. Cursor-gate logic active (V17D1 fix).",
-      "status": "ACTIVE \u00e2\u20ac\u201d cursor advance gated on full coverage confirmation",
+      "status": "ACTIVE â€” cursor advance gated on full coverage confirmation",
       "open_items": [
         "C-02",
         "C-06",
@@ -483,7 +489,7 @@
       ],
       "call_signature": "none",
       "cadence": "Continuous background process",
-      "status": "ACTIVE \u00e2\u20ac\u201d supervisor write failure (M-07 open)",
+      "status": "ACTIVE â€” supervisor write failure (M-07 open)",
       "open_items": [
         "M-07"
       ]
@@ -506,13 +512,13 @@
       "local_path": "C:\\GammaEnginePython\\build_option_execution_outcomes_v1.py",
       "aws_path": null,
       "reads": [
-        "option_execution_price_history (DEPRECATED \u00e2\u20ac\u201d needs migration)"
+        "option_execution_price_history (DEPRECATED â€” needs migration)"
       ],
       "writes": [
         "outcome tables"
       ],
       "call_signature": "none",
-      "status": "NEEDS MIGRATION \u00e2\u20ac\u201d must be updated to read from option_chain_snapshots ATM_ONLY rows",
+      "status": "NEEDS MIGRATION â€” must be updated to read from option_chain_snapshots ATM_ONLY rows",
       "open_items": [
         "E-06"
       ]
@@ -530,7 +536,7 @@
       ],
       "call_signature": "none",
       "cadence": "Manual",
-      "status": "FUNCTIONAL \u00e2\u20ac\u201d returns 0 rows until sufficient forward horizon data in intraday_ohlc. Not a defect.",
+      "status": "FUNCTIONAL â€” returns 0 rows until sufficient forward horizon data in intraday_ohlc. Not a defect.",
       "open_items": []
     },
     "run_market_close_capture_once.bat": {
@@ -558,7 +564,7 @@
       ],
       "call_signature": "none",
       "cadence": "AWS cron: 16:00 IST",
-      "status": "ACTIVE (AWS only) \u00e2\u20ac\u201d added V18A",
+      "status": "ACTIVE (AWS only) â€” added V18A",
       "open_items": []
     },
     "run_market_close_capture_once.py": {
@@ -572,65 +578,141 @@
       ],
       "call_signature": "none",
       "cadence": "AWS companion to local .bat file",
-      "status": "ACTIVE (AWS only) \u00e2\u20ac\u201d created V18A for AWS parity",
+      "status": "ACTIVE (AWS only) â€” created V18A for AWS parity",
       "open_items": []
     },
     "ingest_option_execution_price_history_v2.DEAD": {
       "local_path": "C:\\GammaEnginePython\\ingest_option_execution_price_history_v2.DEAD",
       "aws_path": null,
-      "status": "RETIRED \u00e2\u20ac\u201d renamed .DEAD in V17E. DO NOT USE.",
+      "status": "RETIRED â€” renamed .DEAD in V17E. DO NOT USE.",
       "open_items": []
     },
     "run_market_tape_1m.pre_premarket_fix.DEAD": {
       "local_path": "C:\\GammaEnginePython\\run_market_tape_1m.pre_premarket_fix.DEAD",
       "aws_path": null,
-      "status": "RETIRED \u00e2\u20ac\u201d renamed .DEAD in V17E. DO NOT USE.",
+      "status": "RETIRED â€” renamed .DEAD in V17E. DO NOT USE.",
       "open_items": []
     },
     "trading_calendar.py": {
       "local_path": "C:\\GammaEnginePython\\trading_calendar.py",
       "aws_path": "/home/ssm-user/meridian-engine/trading_calendar.py",
-      "status": "ACTIVE \u2014 V18E REWRITE: rule-based. Weekdays open by default. NSE holidays only exceptions.",
+      "status": "ACTIVE — V18E REWRITE: rule-based. Weekdays open by default. NSE holidays only exceptions.",
       "open_items": []
     },
     "merdian_live_dashboard.py": {
       "local_path": "C:\\GammaEnginePython\\merdian_live_dashboard.py",
       "aws_path": null,
-      "status": "ACTIVE \u2014 V18E v2: live session state, token countdown, pipeline values, breadth, AWS shadow block.",
+      "status": "ACTIVE — V18E v2: live session state, token countdown, pipeline values, breadth, AWS shadow block.",
       "cadence": "Persistent HTTP server. MERDIAN_Live_Dashboard task starts at logon.",
       "open_items": []
     },
     "stage2_db_contract.py": {
       "local_path": "C:\\GammaEnginePython\\stage2_db_contract.py",
       "aws_path": "/home/ssm-user/meridian-engine/stage2_db_contract.py",
-      "status": "ACTIVE \u2014 V18E: calendar week ahead check uses Python module.",
+      "status": "ACTIVE — V18E: calendar week ahead check uses Python module.",
       "open_items": []
     },
     "start_supervisor_clean.ps1": {
       "local_path": "C:\\GammaEnginePython\\start_supervisor_clean.ps1",
       "aws_path": null,
-      "status": "ACTIVE \u2014 NEW V18E. Kills existing gamma_engine_supervisor.py processes (WMI) before starting fresh. Called by MERDIAN_Intraday_Supervisor_Start task.",
+      "status": "ACTIVE — NEW V18E. Kills existing gamma_engine_supervisor.py processes (WMI) before starting fresh. Called by MERDIAN_Intraday_Supervisor_Start task.",
       "cadence": "Called by Task Scheduler at 08:00 Mon-Fri and AtLogon",
       "open_items": []
     },
-    "MERDIAN_Signal_RuleBook_v1.docx": {
-      "local_path": "C:\\GammaEnginePython\\docs\\research\\MERDIAN_Signal_RuleBook_v1.docx",
-      "aws_path": "/home/ssm-user/meridian-engine/docs/research/MERDIAN_Signal_RuleBook_v1.docx",
-      "reads": [],
-      "writes": [],
-      "call_signature": "none",
-      "cadence": "static document",
-      "status": "COMMITTED \u2014 fcdf620. Signal Rule Book v1.0. 8 sections, 676 paragraphs.",
+    "merdian_utils.py": {
+      "local_path": "C:\\GammaEnginePython\\merdian_utils.py",
+      "aws_path": null,
+      "reads": [
+        "hist_option_bars_1m (expiry dates via paginated fetch)"
+      ],
+      "writes": [
+        "returns list of date objects in-memory. no db writes."
+      ],
+      "call_signature": "from merdian_utils import build_expiry_index_simple, nearest_expiry_db",
+      "cadence": "imported by all experiment scripts at run time",
+      "status": "STABLE — v2 paginated. Handles NIFTY Thursday→Tuesday expiry change Sep 2025. ENH-31 CLOSED.",
+      "key_functions": {
+        "build_expiry_index_simple": "paginated fetch of distinct weekly expiry dates. PAGE_SIZE=1000, 4-attempt retry.",
+        "nearest_expiry_db": "binary search for nearest expiry >= trade_date. Returns None if index empty."
+      },
       "open_items": []
     },
-    "merdian_all_experiment_results.md": {
-      "local_path": "C:\\GammaEnginePython\\docs\\research\\merdian_all_experiment_results.md",
-      "aws_path": "/home/ssm-user/meridian-engine/docs/research/merdian_all_experiment_results.md",
-      "reads": [],
-      "writes": [],
-      "call_signature": "none",
-      "cadence": "static document \u2014 update when experiments rerun",
-      "status": "PENDING COMMIT. 677-line consolidated experiment results reference.",
+    "detect_ict_patterns.py": {
+      "local_path": "C:\\GammaEnginePython\\detect_ict_patterns.py",
+      "aws_path": null,
+      "reads": [
+        "Bar objects (in-memory)",
+        "HTFZone objects (in-memory)"
+      ],
+      "writes": [
+        "returns list of ICTPattern objects in-memory. no db writes."
+      ],
+      "call_signature": "ICTDetector(symbol).detect(bars, atm_iv, htf_zones, prior_high, prior_low)",
+      "cadence": "called by detect_ict_patterns_runner.py each 5-min cycle",
+      "status": "PRODUCTION — ENH-37. BEAR_OB/BULL_OB/BULL_FVG/JUDAS_BULL. TIER1/TIER2/SKIP. MTF context VERY_HIGH/HIGH/MEDIUM/LOW.",
+      "critical_note": "Field is opt_type NOT ot. Pattern.opt_type = CE or PE.",
+      "open_items": []
+    },
+    "build_ict_htf_zones.py": {
+      "local_path": "C:\\GammaEnginePython\\build_ict_htf_zones.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_1m (via paginated fetch)"
+      ],
+      "writes": [
+        "ict_htf_zones (39 zones on first run, persistent)"
+      ],
+      "call_signature": "called by detect_ict_patterns_runner.py",
+      "cadence": "W/D zones: session start. H zones: updated each 5-min cycle",
+      "status": "PRODUCTION — ENH-37. Had f-string corruption at line 475 (fixed). build_weekly_bars requires 'date' field as date object (not string).",
+      "open_items": []
+    },
+    "detect_ict_patterns_runner.py": {
+      "local_path": "C:\\GammaEnginePython\\detect_ict_patterns_runner.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_1m",
+        "ict_htf_zones",
+        "signal_snapshots"
+      ],
+      "writes": [
+        "ict_zones (session-scoped, cleared at start)",
+        "signal_snapshots (4 new ICT fields)"
+      ],
+      "call_signature": "called as step 4a of options runner (after market_state, before signal build)",
+      "cadence": "every 5-min cycle via run_option_snapshot_intraday_runner.py",
+      "status": "PRODUCTION — ENH-37. Wired by patch_runner_ict.py. Non-blocking.",
+      "pipeline_position": "step 4a: after build_market_state_snapshot_local.py, before build_trade_signal_local.py",
+      "open_items": []
+    },
+    "run_validation_analysis.py": {
+      "local_path": "C:\\GammaEnginePython\\run_validation_analysis.py",
+      "aws_path": null,
+      "reads": [
+        "hist_market_state",
+        "hist_spot_bars_1m"
+      ],
+      "writes": [
+        "read-only. console output only."
+      ],
+      "call_signature": "python run_validation_analysis.py",
+      "cadence": "manual only. ran 3 times during ENH-35.",
+      "status": "COMPLETE — ENH-35. Run 3 result: NIFTY 58.6% T+30m STRONG EDGE. Phase 4 gate passed. Do not re-run.",
+      "open_items": []
+    },
+    "run_all_experiments_overnight.py": {
+      "local_path": "C:\\GammaEnginePython\\run_all_experiments_overnight.py",
+      "aws_path": null,
+      "reads": [
+        "11 experiment scripts"
+      ],
+      "writes": [
+        "spawns subprocesses. console output only."
+      ],
+      "call_signature": "python run_all_experiments_overnight.py",
+      "cadence": "manual only. research use.",
+      "status": "STABLE — rebuilt clean (prior version corrupted by PowerShell). CHILD_ENV with PYTHONIOENCODING=utf-8 required.",
+      "critical_note": "ALWAYS set $env:PYTHONIOENCODING=\"utf-8\" or use CHILD_ENV before running. INR symbol breaks cp1252 consoles.",
       "open_items": []
     }
   },
@@ -645,7 +727,7 @@
         "market_spot_session_markers (derived)"
       ],
       "constraint": "None confirmed",
-      "status": "LIVE \u00e2\u20ac\u201d 1-min cadence",
+      "status": "LIVE â€” 1-min cadence",
       "critical_rule": "NO trade_date column. Use ts AT TIME ZONE 'Asia/Kolkata' for session date. Never WHERE trade_date = current_date.",
       "open_items": []
     },
@@ -670,7 +752,7 @@
         "build_market_state_snapshot_local.py (futures basis)"
       ],
       "constraint": "None confirmed",
-      "status": "LIVE \u00e2\u20ac\u201d dynamic contract (V17E). contract_symbol shows actual front-month.",
+      "status": "LIVE â€” dynamic contract (V17E). contract_symbol shows actual front-month.",
       "critical_rule": "expiry_date is dynamically resolved, not hardcoded. Old static security_ids REMOVED.",
       "open_items": []
     },
@@ -687,7 +769,7 @@
         "outcome engine (pending migration)"
       ],
       "constraint": "None at table level (run_id is per-call UUID)",
-      "status": "LIVE \u00e2\u20ac\u201d dual cadence. Currently failing 401 on Local (V18A).",
+      "status": "LIVE â€” dual cadence. Currently failing 401 on Local (V18A).",
       "critical_rule": "FULL rows: ~534 NIFTY / ~606 SENSEX per cycle. ATM_ONLY: ~10 per cycle. Distinguish by row count per run_id or ts cadence. Schema uses ts NOT trade_date.",
       "open_items": [
         "V18A-01",
@@ -701,8 +783,8 @@
       "read_by": [
         "build_market_state_snapshot_local.py"
       ],
-      "constraint": "UNIQUE INDEX uix_gamma_metrics_symbol_ts ON (symbol, ts) \u00e2\u20ac\u201d ADDED V18A",
-      "status": "LIVE \u00e2\u20ac\u201d updated V18A",
+      "constraint": "UNIQUE INDEX uix_gamma_metrics_symbol_ts ON (symbol, ts) â€” ADDED V18A",
+      "status": "LIVE â€” updated V18A",
       "critical_rule": "Call signature: run_id (UUID) NOT symbol. regime: LONG_GAMMA | SHORT_GAMMA | NO_FLIP. gamma_zone: HIGH_GAMMA | MID_GAMMA | LOW_GAMMA | None (new V18A).",
       "v18a_changes": "ADD COLUMN gamma_zone text. ADD COLUMN raw jsonb. CREATE UNIQUE INDEX uix_gamma_metrics_symbol_ts ON (symbol, ts).",
       "columns_confirmed": [
@@ -733,7 +815,7 @@
       "read_by": [
         "build_market_state_snapshot_local.py"
       ],
-      "constraint": "UNIQUE (symbol, ts) \u00e2\u20ac\u201d added V17C",
+      "constraint": "UNIQUE (symbol, ts) â€” added V17C",
       "status": "LIVE",
       "critical_rule": "Call signature: run_id (UUID) NOT symbol. IV=0 filter active. ATM fallback: if CE IV=0 uses PE IV.",
       "open_items": [
@@ -748,7 +830,7 @@
         "build_market_state_snapshot_local.py (wcb_features)"
       ],
       "constraint": "None confirmed",
-      "status": "LIVE \u00e2\u20ac\u201d continues writing even when Dhan option auth broken (V18A confirmed)",
+      "status": "LIVE â€” continues writing even when Dhan option auth broken (V18A confirmed)",
       "critical_rule": "Uses index_symbol NOT symbol. Coverage field: active_weight_pct NOT weight_coverage_pct.",
       "open_items": [
         "C-03"
@@ -774,8 +856,8 @@
         "build_trade_signal_local.py",
         "analytics"
       ],
-      "constraint": "MISSING \u00e2\u20ac\u201d C-01 CRITICAL. No UNIQUE(symbol,ts). Duplicate rows confirmed.",
-      "status": "LIVE WITH DEFECT \u00e2\u20ac\u201d C-01 open. Duplicate rows exist.",
+      "constraint": "MISSING â€” C-01 CRITICAL. No UNIQUE(symbol,ts). Duplicate rows confirmed.",
+      "status": "LIVE WITH DEFECT â€” C-01 open. Duplicate rows exist.",
       "critical_rule": "Features are JSONB not flat columns. Use ->> extraction. flip_distance_pct is canonical (V18A). C-01: INSERT must become UPSERT. UNIQUE(symbol,ts) must be added.",
       "v18a_changes": "flip_distance_pct now canonical. flip_distance_points added as raw diagnostic. flip_distance retained for backward compat.",
       "open_items": [
@@ -795,7 +877,17 @@
       "constraint": "None confirmed",
       "status": "LIVE",
       "critical_rule": "conviction_score_debug + execution_penalty_debug = confidence_score. trade_allowed field gates execution.",
-      "open_items": []
+      "open_items": [],
+      "ict_columns": {
+        "added_by": "patch_signal_ict.py (2026-04-11)",
+        "new_columns": [
+          "ict_pattern",
+          "ict_tier",
+          "ict_size_mult",
+          "ict_mtf_context"
+        ],
+        "alter_table": "ALTER TABLE public.signal_snapshots ADD COLUMN IF NOT EXISTS ict_pattern text, ADD COLUMN IF NOT EXISTS ict_tier text, ADD COLUMN IF NOT EXISTS ict_size_mult numeric, ADD COLUMN IF NOT EXISTS ict_mtf_context text;"
+      }
     },
     "signal_regret_log": {
       "written_by": [
@@ -806,7 +898,7 @@
         "future signal quality analysis"
       ],
       "constraint": "None confirmed",
-      "status": "ACTIVE \u00e2\u20ac\u201d 614 rows. Built and validated V18A.",
+      "status": "ACTIVE â€” 614 rows. Built and validated V18A.",
       "critical_rule": "signal_snapshot_id is bigint (NOT uuid). FK mismatch was resolved in V18A. Schema confirmed V18A Block 5.",
       "columns_confirmed": [
         "id (uuid)",
@@ -842,7 +934,7 @@
         "EOD analytics"
       ],
       "constraint": "None confirmed",
-      "status": "MOSTLY CURRENT \u00e2\u20ac\u201d 2026-03-24 coverage 39.71% (C-02 open)",
+      "status": "MOSTLY CURRENT â€” 2026-03-24 coverage 39.71% (C-02 open)",
       "critical_rule": "Cursor state in breadth_ingest_state. Cursor advance gated on full coverage (V17D1 fix).",
       "open_items": [
         "C-02",
@@ -869,30 +961,30 @@
         "build_market_state_snapshot_local.py (breadth_features)"
       ],
       "constraint": "UNIQUE (ts, universe_id)",
-      "status": "LIVE \u00e2\u20ac\u201d FIXED. RPC rebased to breadth_universe_members LEFT JOIN.",
+      "status": "LIVE â€” FIXED. RPC rebased to breadth_universe_members LEFT JOIN.",
       "critical_rule": "universe_count must be ~1,385. If 550: RPC using stale LTP or guards fired.",
       "open_items": []
     },
     "latest_market_breadth_intraday": {
       "written_by": [
-        "build_market_breadth_intraday RPC \u00e2\u20ac\u201d view or derived"
+        "build_market_breadth_intraday RPC â€” view or derived"
       ],
       "read_by": [
         "build_market_state_snapshot_local.py for breadth_features block"
       ],
       "constraint": "None confirmed",
-      "status": "ACTIVE \u00e2\u20ac\u201d may be a view over market_breadth_intraday. Verify in Supabase before querying directly.",
+      "status": "ACTIVE â€” may be a view over market_breadth_intraday. Verify in Supabase before querying directly.",
       "open_items": []
     },
     "breadth_universe_members": {
       "written_by": [
-        "Static \u00e2\u20ac\u201d manual maintenance"
+        "Static â€” manual maintenance"
       ],
       "read_by": [
         "build_market_breadth_intraday RPC (LEFT JOIN base)"
       ],
       "constraint": "None confirmed",
-      "status": "ACTIVE \u00e2\u20ac\u201d source of truth for universe. is_active=true filter.",
+      "status": "ACTIVE â€” source of truth for universe. is_active=true filter.",
       "open_items": []
     },
     "breadth_indicators_daily": {
@@ -903,7 +995,7 @@
         "build_market_breadth_intraday RPC"
       ],
       "constraint": "None confirmed",
-      "status": "ACTIVE \u00e2\u20ac\u201d indicator layer for DMA10/DMA20/DMA40. RPC uses LEFT JOIN so missing indicators do not shrink universe.",
+      "status": "ACTIVE â€” indicator layer for DMA10/DMA20/DMA40. RPC uses LEFT JOIN so missing indicators do not shrink universe.",
       "open_items": []
     },
     "breadth_ingest_state": {
@@ -914,7 +1006,7 @@
         "ingest_equity_eod_local.py (cursor read)"
       ],
       "constraint": "None confirmed",
-      "status": "ACTIVE \u00e2\u20ac\u201d tracks EOD cursor per trade_date",
+      "status": "ACTIVE â€” tracks EOD cursor per trade_date",
       "critical_rule": "Cursor advance gated on full coverage confirmation (V17D1 fix). Query: SELECT * FROM breadth_ingest_state ORDER BY updated_at DESC LIMIT 5 to inspect cursor state.",
       "open_items": []
     },
@@ -928,8 +1020,8 @@
         "all session-gated scripts"
       ],
       "constraint": "PRIMARY KEY (trade_date)",
-      "status": "AUTHORITATIVE \u00e2\u20ac\u201d hard gate. Missing row = system treats day as closed/holiday.",
-      "critical_rule": "Maintain entries at least 1 week ahead at all times. Missing row is NOT a soft warning \u00e2\u20ac\u201d it causes authoritative skip for ALL calendar-gated scripts. V18A-03 open.",
+      "status": "AUTHORITATIVE â€” hard gate. Missing row = system treats day as closed/holiday.",
+      "critical_rule": "Maintain entries at least 1 week ahead at all times. Missing row is NOT a soft warning â€” it causes authoritative skip for ALL calendar-gated scripts. V18A-03 open.",
       "open_items": [
         "V18A-03"
       ]
@@ -942,7 +1034,7 @@
         "build_shadow_signal_v3_local.py"
       ],
       "constraint": "UNIQUE (symbol, ts)",
-      "status": "ACTIVE \u00e2\u20ac\u201d manual only. Shadow version.",
+      "status": "ACTIVE â€” manual only. Shadow version.",
       "open_items": []
     },
     "options_flow_snapshots": {
@@ -952,8 +1044,8 @@
       "read_by": [
         "build_shadow_signal_v3_local.py"
       ],
-      "constraint": "UNIQUE (symbol, ts) \u00e2\u20ac\u201d UPSERT-safe",
-      "status": "ACTIVE \u00e2\u20ac\u201d manual only",
+      "constraint": "UNIQUE (symbol, ts) â€” UPSERT-safe",
+      "status": "ACTIVE â€” manual only",
       "open_items": []
     },
     "smdm_snapshots": {
@@ -963,8 +1055,8 @@
       "read_by": [
         "build_shadow_signal_v3_local.py"
       ],
-      "constraint": "UNIQUE (symbol, ts) \u00e2\u20ac\u201d UPSERT-safe",
-      "status": "ACTIVE \u00e2\u20ac\u201d manual only. pattern field: SQUEEZE | STOP_HUNT | etc.",
+      "constraint": "UNIQUE (symbol, ts) â€” UPSERT-safe",
+      "status": "ACTIVE â€” manual only. pattern field: SQUEEZE | STOP_HUNT | etc.",
       "open_items": []
     },
     "shadow_signal_snapshots_v3": {
@@ -976,7 +1068,7 @@
         "shadow analytics"
       ],
       "constraint": "None confirmed",
-      "status": "ACTIVE \u00e2\u20ac\u201d manual only",
+      "status": "ACTIVE â€” manual only",
       "critical_rule": "shadow_signal_snapshots_v2 was NEVER created. All queries must target v3. Columns include: live_action, live_confidence for parallel comparison.",
       "open_items": []
     },
@@ -988,21 +1080,68 @@
         "build_shadow_signal_v3_local.py"
       ],
       "constraint": "None confirmed",
-      "status": "ACTIVE \u00e2\u20ac\u201d morning task via MERDIAN_IV_Context_0905",
+      "status": "ACTIVE â€” morning task via MERDIAN_IV_Context_0905",
       "open_items": []
     },
     "option_execution_price_history": {
       "written_by": [
-        "NOTHING \u00e2\u20ac\u201d retired"
+        "NOTHING â€” retired"
       ],
       "read_by": [
         "build_option_execution_outcomes_v1.py (pending migration)"
       ],
       "constraint": "None",
-      "status": "DEPRECATED \u00e2\u20ac\u201d no new rows. Formal DROP pending after outcome engine migration.",
+      "status": "DEPRECATED â€” no new rows. Formal DROP pending after outcome engine migration.",
       "open_items": [
         "E-06"
       ]
+    },
+    "ict_zones": {
+      "schema": "public",
+      "columns": 28,
+      "written_by": "detect_ict_patterns_runner.py",
+      "read_by": [
+        "dashboard",
+        "build_trade_signal_local.py (via context)"
+      ],
+      "scope": "session-scoped. cleared at start of each trading session.",
+      "status": "LIVE — ENH-37",
+      "key_columns": {
+        "pattern_type": "BEAR_OB | BULL_OB | BULL_FVG | JUDAS_BULL",
+        "ict_tier": "TIER1 | TIER2 | SKIP",
+        "mtf_context": "VERY_HIGH | HIGH | MEDIUM | LOW",
+        "opt_type": "CE | PE",
+        "status": "ACTIVE | BREACHED | EXPIRED"
+      }
+    },
+    "ict_htf_zones": {
+      "schema": "public",
+      "columns": 16,
+      "written_by": "build_ict_htf_zones.py",
+      "read_by": [
+        "detect_ict_patterns_runner.py",
+        "experiment_15.py",
+        "experiment_15b.py"
+      ],
+      "scope": "persistent. 39 zones on first run.",
+      "status": "LIVE — ENH-37",
+      "key_columns": {
+        "timeframe": "W | D | H",
+        "pattern_type": "BULL_OB | BEAR_OB | BULL_FVG | BEAR_FVG",
+        "status": "ACTIVE | EXPIRED | BREACHED"
+      }
+    },
+    "capital_tracker": {
+      "schema": "public",
+      "columns": 3,
+      "written_by": "NOT YET BUILT (OI-09)",
+      "read_by": [
+        "detect_ict_patterns_runner.py (ENH-38, pending)"
+      ],
+      "scope": "persistent. one row per symbol.",
+      "status": "NOT BUILT — OI-09. Required before ENH-38.",
+      "ddl": "CREATE TABLE public.capital_tracker (symbol text PRIMARY KEY, capital numeric NOT NULL DEFAULT 200000, updated_at timestamptz DEFAULT now());",
+      "seed": "INSERT INTO capital_tracker VALUES ('NIFTY', 200000, now()), ('SENSEX', 200000, now());"
     }
   },
   "security_ids": {
@@ -1013,7 +1152,7 @@
       "used_by": [
         "capture_market_spot_snapshot_local.py"
       ],
-      "notes": "Stable \u00e2\u20ac\u201d exchange-defined."
+      "notes": "Stable â€” exchange-defined."
     },
     "SENSEX_spot": {
       "security_id": "51",
@@ -1022,7 +1161,7 @@
       "used_by": [
         "capture_market_spot_snapshot_local.py"
       ],
-      "notes": "Stable \u00e2\u20ac\u201d exchange-defined."
+      "notes": "Stable â€” exchange-defined."
     },
     "NIFTY_option_chain": {
       "security_id": "underlying_scrip=13",
@@ -1043,7 +1182,7 @@
       "notes": "Parameter to get_option_chain API call."
     },
     "NIFTY_futures": {
-      "security_id": "DYNAMIC \u00e2\u20ac\u201d resolved at session start",
+      "security_id": "DYNAMIC â€” resolved at session start",
       "segment": "FUTIDX",
       "exchange": "NSE",
       "used_by": [
@@ -1053,7 +1192,7 @@
       "notes": "Old static value 51714 REMOVED V17E. Dynamic resolution active."
     },
     "SENSEX_futures": {
-      "security_id": "DYNAMIC \u00e2\u20ac\u201d resolved at session start",
+      "security_id": "DYNAMIC â€” resolved at session start",
       "segment": "FUTIDX",
       "exchange": "BSE",
       "used_by": [
@@ -1098,7 +1237,7 @@
     },
     "aws_shadow_runner.lock": {
       "path": "/home/ssm-user/meridian-engine/runtime/aws_shadow_runner.lock",
-      "purpose": "Concurrency guard. Stale lock expected if prior run was killed \u00e2\u20ac\u201d remove and restart.",
+      "purpose": "Concurrency guard. Stale lock expected if prior run was killed â€” remove and restart.",
       "status": "ACTIVE"
     },
     "aws_crontab_snapshot.txt": {
@@ -1153,7 +1292,7 @@
         "notes": "Cursor-gate logic not yet ported from V17D1 (A-04 open)"
       }
     ],
-    "token_pull": "03:05 UTC (08:35 IST) \u2014 shifted from 03:55 UTC to allow Local Supabase sync"
+    "token_pull": "03:05 UTC (08:35 IST) — shifted from 03:55 UTC to allow Local Supabase sync"
   },
   "open_items": {
     "C-01": {
@@ -1241,7 +1380,7 @@
       "fix": "Implement capture_postmarket_1600.py logic and validate before enabling cron."
     },
     "A-03": {
-      "title": "Dhan TOTP automation \u00e2\u20ac\u201d PARTIALLY CLOSED",
+      "title": "Dhan TOTP automation â€” PARTIALLY CLOSED",
       "priority": "HIGH",
       "status": "CLOSED",
       "fix": "See V18A-01 for remaining work."
@@ -1253,22 +1392,22 @@
       "fix": "Port V17D1 cursor-gate logic to AWS ingest_equity_eod_local.py. Validate end-to-end."
     },
     "D-06": {
-      "title": "flip_distance unit inconsistency \u00e2\u20ac\u201d SUBSTANTIALLY CLOSED",
+      "title": "flip_distance unit inconsistency â€” SUBSTANTIALLY CLOSED",
       "priority": "MEDIUM",
-      "status": "SUBSTANTIALLY CLOSED (V18A) \u00e2\u20ac\u201d market-state canonicalization done. E-02 unblocked.",
+      "status": "SUBSTANTIALLY CLOSED (V18A) â€” market-state canonicalization done. E-02 unblocked.",
       "fix": "Done. flip_distance_pct is canonical. Remaining: confirm no other consumer reads raw points field.",
       "blocks": []
     },
     "E-01": {
-      "title": "Signal regret log \u00e2\u20ac\u201d CLOSED",
+      "title": "Signal regret log â€” CLOSED",
       "priority": "HIGH",
-      "status": "CLOSED (V18A) \u00e2\u20ac\u201d 614 rows confirmed",
+      "status": "CLOSED (V18A) â€” 614 rows confirmed",
       "governance": "Must reach 30+ sessions of DO_NOTHING outcome data before any threshold changes. Clock started V18A."
     },
     "E-02": {
-      "title": "Three-zone gamma model \u2014 shadow live",
+      "title": "Three-zone gamma model — shadow live",
       "priority": "MEDIUM",
-      "status": "SHADOW LIVE (V18A). gamma_zone field active. 2-week observation in progress. 291 shadow rows accumulated as of 2026-03-27. Agreement with live: NIFTY 78.6%, SENSEX 77.1%. Phase 3 gate requires 10 sessions \u2014 at 6 sessions. Do not promote until gate passes."
+      "status": "SHADOW LIVE (V18A). gamma_zone field active. 2-week observation in progress. 291 shadow rows accumulated as of 2026-03-27. Agreement with live: NIFTY 78.6%, SENSEX 77.1%. Phase 3 gate requires 10 sessions — at 6 sessions. Do not promote until gate passes."
     },
     "E-06": {
       "title": "Outcome engine migration from deprecated table",
@@ -1299,17 +1438,12 @@
     "OI-05": {
       "title": "ENH-31 expiry calendar utility HIST-01",
       "priority": "MEDIUM",
-      "status": "OPEN - required before production ingest"
+      "status": "CLOSED (2026-04-11) — merdian_utils.py built. build_expiry_index_simple() + nearest_expiry_db() replace hardcoded EXPIRY_WD across all scripts."
     },
     "OI-06": {
       "title": "Stale IN_PROGRESS in hist_ingest_log",
       "priority": "LOW",
       "status": "OPEN - safe to delete"
-    },
-    "OI-07": {
-      "title": "Supabase disk monitoring",
-      "priority": "LOW",
-      "status": "OPEN - 9.5GB of 18GB at V18C close"
     },
     "SPO-01": {
       "title": "DTE null in signal_snapshots",
@@ -1321,71 +1455,89 @@
       "priority": "LOW",
       "status": "OPEN - LocalParquetArchiver stubbed pending AWS credentials"
     },
-    "R-01": {
-      "title": "Remove VIX gate \u2014 replace with IV-scaled position sizing",
-      "priority": "HIGH",
-      "status": "OPEN",
-      "fix": "In build_trade_signal_local.py: remove trade_allowed=False when VIX>20. Read atm_iv from hist_market_state. Apply: <12%=0.5x, 12-18%=1.0x, >18%=1.5x. JUDAS always 1.0x.",
-      "blocks": [
-        "Signal quality \u2014 currently blocking best trades"
-      ]
+    "OI-07-INFRA": {
+      "title": "Supabase disk monitoring (infrastructure) [was OI-07 pre-V18F]",
+      "priority": "LOW",
+      "status": "OPEN - 9.5GB of 18GB at V18C close",
+      "note": "Renumbered to OI-07-INFRA to avoid collision with Research OI-07 (experiment_15b). See below."
     },
-    "R-02": {
-      "title": "Add sequence quality filter for OBs",
-      "priority": "HIGH",
+    "RESEARCH-OI-07": {
+      "title": "experiment_15b_kelly_sizing.py: detect_daily_zones date type mismatch",
+      "priority": "LOW",
       "status": "OPEN",
-      "fix": "Compute IMP_STR (sum |returns| >= 0.30% in 3 bars before OB) \u2014 if true, skip trade. Compute MOM_YES (2+ counter-direction bars) \u2014 Tier 1 1.5x sizing. OPEN session BULL_OB: 0.5x or skip.",
-      "blocks": [
-        "ENH-37 (ICT patterns must exist first)"
-      ]
+      "blocking": "Non-blocking. Experiment 15 answers the 1H zone question.",
+      "fix": "detect_daily_zones internally calls date.fromisoformat(target_date) then compares against dict keys. Pass str(td) as target parameter, or pre-convert daily_ohlcv keys to strings before calling zone builder."
     },
-    "R-03": {
-      "title": "Relax gamma regime gate for OBs and FVG, keep for JUDAS",
+    "RESEARCH-OI-08": {
+      "title": "ENH-38: Live Kelly tiered sizing in detect_ict_patterns_runner.py",
+      "priority": "HIGH",
+      "status": "OPEN — implement after shadow gate 9+10",
+      "blocking": "Blocks live Kelly sizing deployment.",
+      "fix": "Implement effective_sizing_capital() + Kelly lot calculation. Read from capital_tracker (OI-09). Start with Half Kelly: TIER1=50%, TIER2=40%, TIER3=20%. Write ict_lots_t1/t2/t3 to signal_snapshots."
+    },
+    "RESEARCH-OI-09": {
+      "title": "capital_tracker Supabase table",
+      "priority": "HIGH",
+      "status": "OPEN — build before RESEARCH-OI-08",
+      "blocking": "Blocks RESEARCH-OI-08.",
+      "fix": "DDL: CREATE TABLE public.capital_tracker (symbol text PRIMARY KEY, capital numeric NOT NULL DEFAULT 200000, updated_at timestamptz DEFAULT now()). Seed: INSERT ... VALUES ('NIFTY',200000,now()),('SENSEX',200000,now())."
+    },
+    "RESEARCH-OI-10": {
+      "title": "Signal Rule Book v1.1: incorporate all experiment findings",
       "priority": "MEDIUM",
       "status": "OPEN",
-      "fix": "Remove gamma_regime=LONG_GAMMA gate for BULL_OB, BEAR_OB, BULL_FVG. Keep for JUDAS_BULL. Remove breadth gate for OBs. Keep for JUDAS.",
-      "blocks": []
+      "blocking": "Non-blocking for live. Required before ENH-38 documentation is complete.",
+      "fix": "6 new rules, 3 changed rules, 4 confirmed rules. All specified in AppendixV18F v2 Block 10.4."
     },
-    "R-04": {
-      "title": "Implement dynamic exit v2",
-      "priority": "MEDIUM",
-      "status": "OPEN",
-      "fix": "At T+30m: if loss->exit, if gain>=50%->half-exit hold rest to T+60m, if 0-50%->hold to T+60m. T+60m: exit unconditionally.",
-      "blocks": [
-        "ENH-37 (ICT patterns)"
+    "ENH-35": {
+      "title": "Historical signal validation and accuracy measurement",
+      "status": "COMPLETE (2026-04-11)",
+      "result": "NIFTY 58.6% T+30m accuracy. 6 signal engine changes applied. Phase 4 gate passed. Do not re-run."
+    },
+    "ENH-37": {
+      "title": "ICT pattern detection layer",
+      "status": "PRODUCTION (2026-04-11)",
+      "components": [
+        "detect_ict_patterns.py",
+        "build_ict_htf_zones.py",
+        "detect_ict_patterns_runner.py",
+        "ict_zones_ddl.sql",
+        "patch_runner_ict.py",
+        "patch_signal_ict.py"
       ]
     },
-    "R-05": {
-      "title": "Fix start_supervisor_clean.ps1 parameter conflict",
-      "priority": "HIGH",
-      "status": "OPEN",
-      "fix": "Remove -WindowStyle Hidden from Start-Process call. -NoNewWindow and -WindowStyle cannot be used simultaneously. Script fails silently \u2014 supervisor never actually launches.",
-      "blocks": [
-        "Daily manual intervention required"
-      ]
+    "ENH-38": {
+      "title": "Live Kelly tiered sizing",
+      "status": "PROPOSED — implement after shadow gate 9+10 pass",
+      "dependency": "RESEARCH-OI-09 (capital_tracker table)",
+      "fractions": {
+        "TIER1": "50%/100%",
+        "TIER2": "40%/80%",
+        "TIER3": "20%/40%"
+      },
+      "ceiling": {
+        "floor": "INR 2L",
+        "freeze": "INR 25L",
+        "hard_cap": "INR 50L"
+      },
+      "start_with": "Half Kelly (C). Upgrade to Full Kelly (D) after 3-6 months live experience."
     },
-    "R-06": {
-      "title": "Fix runner lock file path mismatch",
-      "priority": "HIGH",
-      "status": "OPEN",
-      "fix": "Supervisor checks runner.lock but runner writes run_option_snapshot_intraday_runner.lock. Align supervisor health check path to match actual runner lock filename.",
-      "blocks": [
-        "Runner auto-start unreliable"
-      ]
-    },
-    "R-07": {
-      "title": "Investigate Task Scheduler token refresh failure",
-      "priority": "MEDIUM",
-      "status": "OPEN",
-      "fix": "Check MERDIAN_Dhan_Token_Refresh task scheduler history for 2026-04-10 08:15. Verify trigger configuration. Add Telegram alert if token age > 23h at 08:20.",
-      "blocks": [
-        "Unattended operation \u2014 risk of token expiry before market open"
-      ]
+    "ENH-42": {
+      "title": "WebSocket ATM option feed",
+      "status": "PROPOSED — DEFERRED to post-Phase 4",
+      "files": [
+        "ws_option_feed.py (not yet built)"
+      ],
+      "new_tables": [
+        "atm_option_ticks",
+        "atm_option_ticks_1m"
+      ],
+      "why_deferred": "Phase 4 promotion should happen on current 5-min REST architecture. WebSocket adds operational complexity that should not gate live promotion."
     }
   },
   "governance_rules": {
     "run_id_vs_symbol_contract": "compute_gamma_metrics_local.py and compute_volatility_metrics_local.py take run_id (UUID), NOT symbol. build_momentum_features_local.py, build_market_state_snapshot_local.py, build_trade_signal_local.py take symbol (NIFTY/SENSEX). Never swap these.",
-    "stdout_run_id_api_contract": "ingest_option_chain_local.py emits 'Run ID: <uuid>' to stdout on success. Both local and AWS runners parse this exact string. Format is an API contract \u00e2\u20ac\u201d do not change the prefix without updating runner parse logic.",
+    "stdout_run_id_api_contract": "ingest_option_chain_local.py emits 'Run ID: <uuid>' to stdout on success. Both local and AWS runners parse this exact string. Format is an API contract â€” do not change the prefix without updating runner parse logic.",
     "runner_alive_ne_system_valid": "Runner appearing alive does NOT mean system is valid. DB-dependent steps (WCB) can succeed while API-dependent steps (option ingest) fail 401. Confirmed V18A. Health checks must verify table recency, not just process existence.",
     "trading_calendar_is_hard_gate": "Missing trading_calendar row = authoritative skip for ALL calendar-gated scripts. Not a soft warning. Maintain 1 week ahead at all times.",
     "premarket_anchor": "09:08 IST snapshot only. 09:00-09:07 premarket stream discarded by design.",
@@ -1393,13 +1545,21 @@
     "threshold_governance": "No confidence threshold changes until signal_regret_log has 30+ sessions of DO_NOTHING outcome data. ABSOLUTE GATE. Clock started V18A (614 rows).",
     "measure_validate_shadow_promote": "No change to any live signal file until (1) measurement gaps closed, (2) evidence collected, (3) shadow runs 2+ weeks at or above live accuracy, (4) model change log entry written.",
     "full_file_replacement_only": "Promote full file replacements only. No hand-patched partial snippets in deployment flow.",
-    "aws_env_load": "set -a; . ./.env; set +a \u00e2\u20ac\u201d canonical pattern for loading .env on AWS. Verify with echo $SUPABASE_URL after loading.",
+    "aws_env_load": "set -a; . ./.env; set +a â€” canonical pattern for loading .env on AWS. Verify with echo $SUPABASE_URL after loading.",
     "aws_cron_install": "NEVER use interactive crontab -e. ALWAYS use temp-file non-interactive install. Save snapshot after every change: crontab -l > logs/aws_crontab_snapshot.txt",
     "no_direct_aws_edits": "Edit in Local only. AWS is deploy target. Emergency AWS edits (BREAK_GLASS only) must be copied to Local and committed to Git same session.",
     "db_over_logs": "DB is truth. Logs are secondary evidence. Health checks and validation must query tables (MAX(created_at), COUNT(*)) not parse log lines.",
     "vwap_field_name": "Coverage field in weighted_constituent_breadth_snapshots is active_weight_pct NOT weight_coverage_pct.",
     "no_trade_date_in_option_chain": "option_chain_snapshots has no trade_date column. Always use WHERE ts::date = CURRENT_DATE or ts AT TIME ZONE 'Asia/Kolkata'.",
-    "shadow_v3_not_v2": "shadow_signal_snapshots_v2 was NEVER created. All shadow signal queries must target shadow_signal_snapshots_v3."
+    "shadow_v3_not_v2": "shadow_signal_snapshots_v2 was NEVER created. All shadow signal queries must target shadow_signal_snapshots_v3.",
+    "subprocess_encoding": "ALL subprocess.run() calls that spawn Python scripts MUST use CHILD_ENV = {**os.environ, \"PYTHONIOENCODING\":\"utf-8\", \"PYTHONUTF8\":\"1\"}. Without this, INR symbol (\\u20b9) causes UnicodeEncodeError on Windows cp1252 consoles. Established V18F.",
+    "no_powershell_set_content_on_python": "NEVER use PowerShell Set-Content to edit Python files. Encoding artifacts are silently introduced. Use text editors or Python fix_*.py scripts only. Established V18F after run_all_experiments_overnight.py and build_ict_htf_zones.py were corrupted.",
+    "no_python_c_multiline": "NEVER use python -c for multi-line string replacement involving quotes. PowerShell backslash escaping conflicts with Python string parsing causing SyntaxError. Always write a fix_*.py file, copy to project, run as python fix_X.py. Established V18F.",
+    "t30m_exit_final": "T+30m exit is the confirmed final exit for all ICT patterns. Experiment 15 Section 7: T+30m +INR 10,43,976 (63.8% WR) vs ICT structure break +INR 7,37,341 (36.9% WR). No further exit experiments. Established V18F.",
+    "futures_permanently_closed": "Futures experiments are permanently closed. Options only. Experiment 2b: options beat futures on every pattern/DTE combination. BEAR_OB DTE=0/1 exception uses combined structure (futures + CE insurance), not pure futures. Established V18F.",
+    "capital_ceiling": "Live trading capital ceiling: INR 50L hard cap, INR 25L sizing freeze, INR 2L floor. Lots stop growing at INR 25L. No lot calculation uses more than INR 50L equivalent. Implemented via effective_sizing_capital() function. Final. Established V18F.",
+    "kelly_sizing_strategy": "Start live with Half Kelly (Strategy C). Upgrade to Full Kelly (Strategy D) after 3-6 months experience. Kelly fractions: TIER1=50%/100%, TIER2=40%/80%, TIER3=20%/40% (Half/Full). Established V18F. Validated by Experiment 16.",
+    "ict_1h_zone_confirmed": "1H zones (MEDIUM context) are confirmed to add edge and must remain in ENH-37 hierarchy. Experiment 15: MEDIUM 77.3% WR vs HIGH 46.7%. BULL_OB inside 1H zone avg +INR 18,938 vs +INR 9,774 without. Do not remove 1H layer. Established V18F."
   },
   "session_resume_template": {
     "description": "Paste this structure at the start of every new dev session, filled in for the specific goal.",
@@ -1411,7 +1571,7 @@
       "OPEN_CRITICAL": "C-01, V18A-01, V18A-02, V18A-03",
       "LAST_SESSION_DID": "[3 bullet points max]",
       "THIS_SESSION_GOAL": "[1 sentence, specific]",
-      "DO_NOT_REOPEN": "[items that are settled \u00e2\u20ac\u201d prevents re-litigation]",
+      "DO_NOT_REOPEN": "[items that are settled â€” prevents re-litigation]",
       "RELEVANT_FILES": "[list only files relevant to this session's goal]",
       "RELEVANT_TABLES": "[list only tables relevant to this session's goal]"
     }
@@ -1446,56 +1606,109 @@
       "summary": "Infrastructure + historical data ingest + code fixes Good Friday"
     },
     {
-      "date": "2026-04-04",
+      "date": "2026-04-04/05",
       "appendix": "MERDIAN_Appendix_V18D_v2",
-      "git_end": "858de8f",
+      "git_end": "bea5224",
       "items_closed": [
         "OI-02",
         "OI-06",
+        "M-02",
+        "A-05"
+      ],
+      "summary": "Historical backfill pipeline + live monitoring dashboard + vendor data correction (SENSEX 4.8M rows)"
+    },
+    {
+      "date": "2026-04-06 to 2026-04-09",
+      "appendix": "MERDIAN_Appendix_V18E",
+      "git_end": "858de8f",
+      "items_closed": [
+        "OI-03",
         "C-03",
         "C-07a",
         "S-04",
-        "A-05",
-        "M-02",
         "S-10",
         "S-11",
-        "S-12"
+        "A-05"
       ],
-      "summary": "Historical backfill sprint + live canary sessions Apr 6-9. Dashboard v2. Shadow gate 7/10."
+      "summary": "Live canary sprint 4 sessions. Shadow gate 1-8. Dashboard v2. trading_calendar rewrite. TOTP retry."
     },
     {
-      "date": "2026-04-10",
-      "appendix": "pending \u2014 V18F",
-      "git_end": "fcdf620",
+      "date": "2026-04-11",
+      "appendix": "Research Session 2 (pre-V18F compressed)",
+      "git_end": "fee7b7c",
       "items_closed": [
-        "OI-08",
-        "E-05"
+        "OI-05",
+        "ENH-31"
       ],
-      "items_added": [
-        "R-01",
-        "R-02",
-        "R-03",
-        "R-04",
-        "R-05",
-        "R-06",
-        "R-07"
+      "summary": "ENH-35 validation 3 runs (58.6% accuracy). 6 signal engine changes. ENH-37 ICT layer full build. Expiry bug fixed (merdian_utils.py). Experiments 14/14b (session pyramid closed). ENH-42 proposed."
+    },
+    {
+      "date": "2026-04-11/12",
+      "appendix": "MERDIAN_Appendix_V18F_v2",
+      "git_end": "cfba66e",
+      "items_closed": [
+        "ENH-35",
+        "ENH-37"
       ],
-      "summary": "ICT research series complete (Exp 0-13). Signal Rule Book v1.0 produced. Shadow gate 8/10."
+      "summary": "Full experiment series 2-16 complete. Kelly tiered sizing architecture + capital ceiling. Futures permanently closed. T+30m exit confirmed. 1H zones confirmed. AppendixV18F v2 (audit-corrected)."
     }
   ],
   "git": {
-    "current_hash": "fcdf620",
-    "local_status": "UNTRACKED FILES \u2014 experiment scripts + registers pending commit",
-    "aws_status": "fcdf620 (Signal Rule Book synced)"
+    "current_hash": "cfba66e",
+    "local_status": "CLEAN",
+    "aws_status": "needs pull after cfba66e"
   },
   "shadow_gate": {
     "sessions_complete": 8,
     "sessions_required": 10,
-    "status": "IN PROGRESS \u2014 8/10"
+    "status": "IN PROGRESS — 8/10. Sessions 9+10 pending Mon/Tue 2026-04-14/15. After gate: implement ENH-38 live Kelly sizing."
   },
   "task_scheduler": {
-    "MERDIAN_Market_Tape_1M": "DISABLED \u2014 2026-04-07",
-    "MERDIAN_Intraday_Supervisor_Start": "ACTIVE \u2014 calls start_supervisor_clean.ps1 \u2014 weekly Mon-Fri 08:00 + AtLogon",
-    "MERDIAN_Live_Dashboard": "ACTIVE \u2014 merdian_live_dashboard.py v2 \u2014 AtLogon \u2014 PYTHONIOENCODING=utf-8"
+    "MERDIAN_Market_Tape_1M": "DISABLED — 2026-04-07",
+    "MERDIAN_Intraday_Supervisor_Start": "ACTIVE — calls start_supervisor_clean.ps1 — weekly Mon-Fri 08:00 + AtLogon",
+    "MERDIAN_Live_Dashboard": "ACTIVE — merdian_live_dashboard.py v2 — AtLogon — PYTHONIOENCODING=utf-8"
+  },
+  "research_findings": {
+    "_note": "Key validated findings from Experiments 2-16. Full detail in MERDIAN_Experiment_Compendium_v1.md.",
+    "BEAR_OB": {
+      "wr": "94.4% (pure ICT, no gates)",
+      "morning": "100% WR TIER1",
+      "afternoon_skip": "13:00-14:30 hard skip (-24.7%)",
+      "dte_exception": "DTE=0/1 use combined structure"
+    },
+    "BULL_OB": {
+      "wr": "86.4%",
+      "dte0": "100% WR +107.4% TIER1",
+      "afternoon": "100% WR +75.3% TIER1",
+      "medium_context": "+73.5% expectancy vs +40.7% HIGH context"
+    },
+    "BULL_FVG": {
+      "wr_unconfluenced": "50.3% (near random without regime context)",
+      "high_dte0": "87.5% WR +58.9% TIER1 (new rule)",
+      "iv_scaling": "LOW=0.5x MED=1.0x HIGH=1.5x"
+    },
+    "JUDAS_BULL": {
+      "wr": "69.0%",
+      "confirmation_window": "T+15m (not T+5m, T2 rate 12%->44%)"
+    },
+    "JUDAS_BEAR": {
+      "wr": "83.3%",
+      "expectancy": "+11.6% T+30m"
+    },
+    "MOM_YES": "strongest single filter (+21.6pp lift on BEAR_OB)",
+    "experiment_16_results": {
+      "strategy_C_half_kelly": {
+        "combined_return": "+18,585%",
+        "max_dd": "16.6%",
+        "ret_dd": "1122x",
+        "final": "INR 7.47Cr"
+      },
+      "strategy_D_full_kelly": {
+        "combined_return": "+44,234%",
+        "max_dd": "24.8%",
+        "ret_dd": "1785x",
+        "final": "INR 17.7Cr"
+      }
+    }
   }
 }

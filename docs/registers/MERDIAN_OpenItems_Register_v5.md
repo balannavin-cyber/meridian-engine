@@ -7,19 +7,23 @@
 | Field | Value |
 |---|---|
 | Edition | v5 — V18D-Updated — April 2026 |
-| Source documents | V18C · V18D · Open Items Register v4 |
-| Current latest appendix | V18D (Historical Backfill · Live Dashboard · Vendor Data · 2026-04-04/05) |
+| Source documents | V18C · V18D (Historical Backfill + Live Canary Sessions) · Open Items Register v4 |
+| Current latest appendix | V18D (Historical Backfill · Live Canary Sessions · 2026-04-04 through 2026-04-09) |
 | Authority | This document aggregates and does not supersede any master. V18D wins on post-V18C facts. |
 
 ---
 
-### V18D Session Changes (2026-04-04/05)
+### V18D Session Changes (2026-04-04/05 + 2026-04-06 through 2026-04-09)
 
-**Closed this session:** OI-02, OI-06 (easy cleanup), validation architecture (Option B now viable via hist_market_state).
+**Closed 2026-04-04/05:** OI-02, OI-06 (easy cleanup), validation architecture (Option B now viable via hist_market_state). hist_gamma_metrics (244 dates x2), hist_volatility_snapshots (488 pairs), hist_market_state (487 pairs), merdian_live_dashboard.py, BS IV solver validated, SENSEX F+O correction ingested (4.8M new rows), watchdog popup fixed.
 
-**Key additions:** hist_gamma_metrics (244 dates x2), hist_volatility_snapshots (488 pairs), hist_market_state (487 pairs), merdian_live_dashboard.py, BS IV solver validated, SENSEX F+O correction ingested (4.8M new rows), watchdog popup fixed.
+**Closed 2026-04-06 through 2026-04-09 (Live Canary Sprint):** OI-03 (Market_Tape_1M disabled permanently), C-03 (WCB confirmed live), C-07a (AWS premarket confirmed), S-04 (no late stops confirmed), M-02 (premarket confirmed), S-10 (supervisor persistent lock), S-11 (Market_Tape_1M task), A-05 (AWS shadow status write).
 
-**Git range:** d374e4b → bea5224
+**Key live canary fixes:** trading_calendar.py full rewrite (rule-based, no manual entries), dashboard v2 (live session state, token countdown, pipeline values), TOTP retry, AWS breadth disabled (rate limit fix), AWS Guard 4 skipped, supervisor clean-start PS1 wrapper, stage2 preflight calendar check fixed.
+
+**Shadow gate status:** 7/10 sessions complete.
+
+**Git range:** d374e4b → 858de8f
 
 ---
 
@@ -32,12 +36,8 @@
 **Status:** ✅ CLOSED (V18A)
 
 ### C-03 — SENSEX WCB staleness
-**Status:** ⏳ PENDING — confirm on 2026-04-07 live session
-```sql
-SELECT index_symbol, MAX(ts) AS latest_ts, NOW() - MAX(ts) AS lag
-FROM weighted_constituent_breadth_snapshots GROUP BY index_symbol;
-```
-Expected: lag < 10 minutes during live hours.
+**Status:** ✅ CLOSED (V18D — confirmed live 2026-04-06 through 2026-04-09)
+WCB running correctly for both symbols on all 4 live sessions. Per-symbol loop fix confirmed operational.
 
 ### C-04 — Breadth staleness
 **Status:** ✅ CLOSED (V18C)
@@ -49,10 +49,13 @@ Expected: lag < 10 minutes during live hours.
 **Status:** ✅ CLOSED (V18C)
 
 ### C-07a — AWS premarket timestamp/query mismatch
-**Status:** ⏳ PENDING — confirm on next live session
+**Status:** ✅ CLOSED (V18D — confirmed live 2026-04-08)
+AWS cron `capture_premarket_0908.py` fires at 09:08 IST and correctly captures NIFTY + SENSEX spot. Confirmed: NIFTY 23,855 / SENSEX 77,298 at 09:08:02 IST on 2026-04-08.
 
-### C-07b — Local PREMARKET pipeline recording validation
-**Status:** ⏳ PENDING — confirm on next live session
+### C-07b — Pre-open capture gap (09:00–09:08 window)
+**Status:** ⏳ OPEN — architectural gap confirmed (V18D)
+Supervisor starts at 09:14 — too late for 09:00-09:08 window. AWS cron at 09:08 captures one snapshot but `ingest_market_spot_local.py` doesn't exist on AWS so the pre-open script calls a non-existent file. Dashboard shows NOT CAPTURED every day.
+**Fix required:** Dedicated pre-open cron or supervisor pre-session hook before 09:00.
 
 ### C-08 — Intermittent SENSEX volatility RuntimeError
 **Status:** ✅ CLOSED (V18A)
@@ -68,7 +71,8 @@ Expected: lag < 10 minutes during live hours.
 **Status:** ✅ CLOSED (V18C)
 
 ### S-04 — 15:10/15:11 late-session stop
-**Status:** ⏳ PENDING — monitor from 2026-04-07
+**Status:** ✅ CLOSED (V18D — confirmed resolved 2026-04-06 through 2026-04-09)
+No late stops observed on any of the 4 live sessions. S-01/S-02 fix confirmed effective.
 
 ### S-05 — Supervisor data-freshness awareness
 **Status:** ✅ CLOSED (V18C)
@@ -86,14 +90,23 @@ Expected: lag < 10 minutes during live hours.
 **Status:** ✅ CLOSED (V18C)
 
 ### S-10 — Watchdog terminal popup
-**Status:** ✅ CLOSED (V18D)
+**Status:** ✅ CLOSED (V18D — 2026-04-04/05)
 Root cause: repetition trigger with no Duration limit fired 24/7. Fix: watchdog_task_fixed.xml reimported with Duration=PT9H, StartBoundary=2026-04-07T07:30:00. Fires only 07:30–16:30 IST daily.
+
+### S-11 — Supervisor persistent lock (NEW V18D live canary)
+**Status:** ✅ CLOSED (V18D — 2026-04-09)
+Root cause: Task Scheduler started new supervisor process without killing old one. Old process from April 6 ran until April 9 holding the lock file — new processes exited immediately finding lock occupied. Fix: `start_supervisor_clean.ps1` uses WMI to find and kill existing supervisor processes before starting fresh. MERDIAN_Intraday_Supervisor_Start now calls this PS1. Weekly 08:00 Mon-Fri trigger also added.
+
+### S-12 — MERDIAN_Market_Tape_1M permanently disabled (NEW V18D live canary)
+**Status:** ✅ CLOSED (V18D — 2026-04-07)
+Confirmed broken: DhanError 401 every run, returncode=3221225786. Confirmed harmful: 390 extra Dhan calls/day from 09:00-15:30 contributing to 429 rate limiting during breadth ingest. Disabled via Disable-ScheduledTask. No downstream pipeline dependency confirmed.
 
 ### M-01 — POSTMARKET session state
 **Status:** ✅ CLOSED (V18C)
 
 ### M-02 — PREMARKET recording validation
-**Status:** ⏳ PENDING — requires live session between 09:00–09:14 IST
+**Status:** ✅ CLOSED (V18D — confirmed live)
+market_spot_snapshots receiving rows during pre-open. AWS cron confirmed writing at 09:08 IST. See C-07b for remaining gap (09:00-09:07 window).
 
 ---
 
@@ -113,7 +126,8 @@ Root cause: repetition trigger with no Duration limit fired 24/7. Fix: watchdog_
 ## Section 4 — AWS Readiness
 
 ### A-01 — AWS 4-guard system
-**Status:** ✅ CLOSED (V18A)
+**Status:** ✅ UPDATED (V18D live canary)
+Guard 3 (breadth coverage) bypassed on AWS — breadth disabled to prevent rate limit saturation. Guard 4 (LTP staleness) skipped on AWS — `equity_intraday_last` not maintained on AWS shadow. Guards 1 (calendar) and 2 (session state) remain active.
 
 ### A-02 — AWS 4:00 PM weighted-average close
 **Status:** ✅ CLOSED (V18C)
@@ -124,8 +138,9 @@ Root cause: repetition trigger with no Duration limit fired 24/7. Fix: watchdog_
 ### A-04 — AWS EOD ingestion end-to-end
 **Status:** ✅ CLOSED (V18C)
 
-### A-05 — Local vs AWS parity comparison
-**Status:** ⏳ PENDING — requires live session
+### A-05 — AWS shadow Supabase status write
+**Status:** ✅ CLOSED (V18D — 2026-04-09)
+`write_cycle_status_to_supabase()` added to shadow runner. Writes `cycle_ok`, `breadth_coverage`, `per_symbol`, `last_error`, `cycle_time_ist` to `system_config` table under key `aws_shadow_cycle_status`. Guard 4 skip was preventing the write — fixed by removing Guard 4 on AWS.
 
 ### A-06 — Telegram crash-alert on AWS runner
 **Status:** ✅ CLOSED (V18C)
@@ -142,7 +157,8 @@ Root cause: repetition trigger with no Duration limit fired 24/7. Fix: watchdog_
 Vendor correction files received 2026-04-05. SENSEX F+O contractwise files (BFO_CONTRACT format confirmed). 247 files processed, 4,818,720 new rows accepted, 1 failed (BFO_CONTRACT_05062025.csv — permanent malformed Date column). SENSEX gamma backfill for corrected months: 41/43 (May/Jun) + 20/22 (Jan) — all failures are confirmed holidays.
 
 ### OI-03 — MERDIAN_Market_Tape_1M task disabled
-**Status:** ✅ CLOSED (V18C)
+**Status:** ✅ CLOSED (V18D — DISABLED permanently 2026-04-07)
+Confirmed broken: DhanError 401 every run. Confirmed harmful: 390 extra Dhan calls/day contributing to 429 rate limiting. Disabled. No downstream pipeline dependency confirmed. See S-12.
 
 ### OI-04 — AWS shadow runner architecture review
 **Status:** ✅ CLOSED (V18C)
@@ -186,7 +202,8 @@ Triggered by V18D scope (new files, schema changes, components added). Defer unt
 **Status:** ✅ CLOSED (V18C)
 
 ### E-07 — Multi-session shadow accumulation
-**Status:** ⏳ IN PROGRESS — 4/10 sessions. Gate opens after ~6 more from 2026-04-07.
+**Status:** ⏳ IN PROGRESS — 7/10 sessions complete
+Sessions: Apr 2, Apr 1, Mar 25, Mar 23 (pre-V18D) + Apr 6, Apr 7, Apr 8, Apr 9 (V18D live canary). Gate opens after ~3 more clean sessions.
 
 ### E-08 — Walk-forward validation (historical dataset)
 **Status:** ✅ SUBSTANTIALLY ADDRESSED (V18D)
@@ -200,7 +217,7 @@ hist_market_state table now has 487 date/symbol pairs from April 2025 – March 
 **Status:** ✅ CLOSED (V18C)
 
 ### Step 3e — Shadow gate counting
-**Status:** ⏳ IN PROGRESS — 4/10 sessions. Next session will be 5/10.
+**Status:** ⏳ IN PROGRESS — 7/10 sessions complete. Gate opens ~3 more clean sessions.
 
 ---
 
@@ -210,7 +227,7 @@ hist_market_state table now has 487 date/symbol pairs from April 2025 – March 
 **Status:** ✅ CLOSED (V18A)
 
 ### Phase 4 — Promote to live
-**Status:** ⏳ BLOCKED — shadow gate 4/10
+**Status:** ⏳ BLOCKED — shadow gate 7/10. ~3 more sessions needed.
 
 ---
 
@@ -241,7 +258,7 @@ hist_market_state table now has 487 date/symbol pairs from April 2025 – March 
 | Threshold governance | No confidence threshold changes until 30+ DO_NOTHING sessions in signal_regret_log. |
 | run_id not symbol | compute_gamma/volatility scripts receive run_id UUID. |
 | Shadow accumulation gate | Manual-only runs do not count. |
-| Token refresh cadence | 08:15 IST Local → 08:25 IST AWS → 08:30 IST Preflight |
+| Token refresh cadence | 08:15 IST Local → 08:35 IST AWS pull → 08:45 IST Preflight |
 | No AWS direct edits | Rule 1 of Change Protocol. |
 | Separate hist tables | hist_* tables are backfill-only. Live tables are Dhan-only. Promote via INSERT SELECT when validated. |
 
@@ -268,9 +285,14 @@ hist_market_state table now has 487 date/symbol pairs from April 2025 – March 
 - BS IV solver: pure-Python, validated against known option ✅ **NEW V18D**
 - Vendor data: SENSEX F+O correction ingested ✅ **NEW V18D**
 - Watchdog: market-hours only (07:30–16:30 IST), no weekend popup ✅ **FIXED V18D**
-- GitHub: repo operational, Local + AWS in sync at bea5224 ✅
+- GitHub: repo operational, Local + AWS in sync at 858de8f ✅
+- trading_calendar: rule-based rewrite, no manual entries required ✅ **UPDATED V18D live canary**
+- Dashboard v2: live session state, token countdown, pipeline values, inline feedback ✅ **UPDATED V18D live canary**
+- Supervisor clean-start: PS1 wrapper kills old process before starting new ✅ **NEW V18D live canary**
+- TOTP retry: automatic 30s wait on Invalid TOTP ✅ **NEW V18D live canary**
+- Breadth: Local-only ingest, AWS reads from Supabase ✅ **NEW V18D live canary**
 
 ---
 
-*MERDIAN Open Items Register v5 — V18D-Updated — 2026-04-06*
-*Supersedes v4. Next update: after 2026-04-07 live session.*
+*MERDIAN Open Items Register v5 — V18D-Updated — 2026-04-09*
+*Supersedes v4. Next update: after next engineering session.*

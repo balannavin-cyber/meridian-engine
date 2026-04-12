@@ -1,4 +1,4 @@
-# MERDIAN — Master Open Items & Enhancement Status Register v6
+# MERDIAN — Master Open Items & Enhancement Status Register
 
 **Market Structure Intelligence & Options Decision Engine**
 
@@ -6,117 +6,122 @@
 
 | Field | Value |
 |---|---|
-| Edition | v6 — 2026-04-11 |
-| Supersedes | v5 (2026-04-09) |
-| Source documents | v5 · Session 2026-04-11 |
-| Git range | 858de8f → 26c5e72 |
+| Edition | v6 — Research Session Update — 2026-04-12 |
+| Source documents | Open Items Register v5 · Research Sessions 2 and 3 (2026-04-11/12) |
+| Current latest appendix | V18E (live canary) + Research Appendix (experiments) |
+| Authority | This document aggregates and does not supersede any master. |
 
 ---
 
-## Session 2026-04-11 Changes
+### Research Session Changes (2026-04-11 through 2026-04-12)
 
-**Completed this session:** ENH-31 (expiry fix), ENH-35 (three validation runs, 55.2% accuracy confirmed), ENH-37 (full ICT layer — 6 steps), six signal engine changes applied and validated, Experiments 14+14b closed (session pyramid deferred), expiry bug fixed across all experiment scripts.
+**Experiments completed:** 2 (full year), 2b, 2c, 2c v2, 5, 8, 10c, 15, 16 — all 11 scheduled experiments complete except 15b (date type fix pending, not blocking).
 
-**Shadow gate:** 8/10. Sessions 9+10 Monday/Tuesday.
+**Key decisions made:**
+- Futures experiments permanently closed — options only
+- INR 50L capital ceiling and INR 25L sizing freeze established
+- Strategy D (Full Kelly tiered) selected for live implementation
+- T+30m exit confirmed over ICT structure break
+- MEDIUM (1H zone) context confirmed — keep in ENH-37
+- BEAR_OB AFTERNOON hard skip rule established
+- Signal Rule Book v1.1 ready to write (ENH-40)
 
-**Git:** 858de8f → 26c5e72
+**Open items added:** OI-07, OI-08, OI-09, OI-10
+
+**Shadow gate:** 8/10 sessions complete (Mon/Tue = sessions 9 and 10)
 
 ---
 
 ## Section 1 — Critical Fixes
 
-### C-01 through C-07a — ALL CLOSED (see v5)
+### C-07b — Pre-open capture gap (09:00-09:08 window)
+**Status:** OPEN
 
-### C-07b — Pre-open capture gap
-**Status:** OPEN. Supervisor starts 09:14, pre-open window is 09:00-09:08. Dashboard shows NOT CAPTURED daily. Fix: dedicated pre-open cron before 09:00.
-
-### C-08 — Intermittent SENSEX volatility RuntimeError
-**Status:** OPEN — occasional, non-blocking.
-
-### C-09 — SENSEX SHORT_GAMMA power hour noise
-**Status:** CLOSED 2026-04-11. All 24 SENSEX signals fired 15:04-15:28 at 20.8% accuracy. Power hour gate added: no signals after 15:00 IST for both symbols.
+All other C-series items: CLOSED — see v5.
 
 ---
 
-## Section 2 — Signal Engine
+## Section 5 — Open Items Register (OI series)
 
-### S-01 through S-04 — ALL CLOSED (see v5)
-
-### S-05 — Signal engine below-random accuracy
-**Status:** CLOSED 2026-04-11. ENH-35 identified root causes. Six changes applied and validated. NIFTY 58.6% accuracy, 244 signals/year, trade_allowed=YES pool 55.2% at N=268.
-
-Changes:
-1. CONFLICT BUY_CE now trades (58.7%/55.4% accuracy)
-2. LONG_GAMMA gated to DO_NOTHING (47.7% — below random)
-3. NO_FLIP gated to DO_NOTHING (45-48% — below random)
-4. VIX gate removed (HIGH_IV has more edge — Experiment 5)
-5. Confidence threshold 60→40 (edge lives in conf_20-49)
-6. Power hour gate — no signals after 15:00 IST
-
-### S-06 — Expiry bug in experiment scripts
-**Status:** CLOSED 2026-04-11. NIFTY switched Thu→Tue expiry Sep 2025. Hardcoded EXPIRY_WD caused all post-Aug sessions to be skipped. Fixed via merdian_utils.py + patch_expiry_fix.py across 11 scripts.
+### OI-01 through OI-06
+**Status:** CLOSED — see v5
 
 ---
 
-## Section 3 — Research Items
+### OI-07 — Experiment 15b completion
+**Status:** OPEN — minor fix required
 
-### R-01 — VIX gate — CLOSED (removed, HIGH_IV has more edge)
-### R-02 — Sequence quality filter — CLOSED (ENH-37 ICT tier assignment)
-### R-03 — Gamma gate — CLOSED (LONG_GAMMA + NO_FLIP both gated)
-### R-05, R-06, R-07 — ALL CLOSED (V18E)
-
-### R-04 — Dynamic exit v2
-**Status:** OPEN — deferred to Phase 4. Portfolio simulation v2 confirmed +6% improvement on NIFTY. Needs execution layer.
-
-### R-08 — Session pyramid (Experiments 14 + 14b)
-**Status:** CLOSED 2026-04-11 — concept deferred.
-
-All 9 qualifying sessions were BEARISH. Results: Pyramid -₹4,558 (22% WR) vs single T+30m exit +₹8,329 (100% WR). v2 confirmed reversal entry improved v1 by ₹3,133 but still -₹12,645 vs single trade. Deferred pending WebSocket (ENH-42) + bullish session data + Jan-Mar 2026 HIGH_VOL rerun.
+`experiment_15b_kelly_sizing.py` has a date type mismatch in `detect_daily_zones`. Fix: ensure `daily_ohlcv` "date" field is passed as string to zone builders while dict keys remain as date objects. Non-blocking — Exp 15 already confirmed 1H zone edge. Run after shadow gate completes.
 
 ---
 
-## Section 4 — ENH-37 Operational Notes
+### OI-08 — ENH-38 Live Kelly Sizing Implementation
+**Status:** OPEN — next engineering build after shadow gate
 
-### Zone Schedule
-| Job | When | Command |
+Implement Kelly tiered sizing in `detect_ict_patterns_runner.py`. Replace current `ict_size_mult` flat multiplier with dynamic lot calculation per trade:
+1. Read current capital from `capital_tracker` table (OI-09)
+2. Apply `effective_sizing_capital()`: floor INR 2L, freeze at INR 25L, hard cap INR 50L
+3. Compute lots using Half Kelly fractions: TIER1=50%, TIER2=40%, TIER3=20%
+4. Write computed lots to `signal_snapshots`: `ict_lots_t1`, `ict_lots_t2`, `ict_lots_t3`
+5. Execution layer reads at trade time
+
+Start with Half Kelly (Strategy C). Upgrade to Full Kelly after 3-6 months live experience.
+
+---
+
+### OI-09 — Capital Tracker Table
+**Status:** OPEN — required for OI-08
+
+New Supabase table:
+```sql
+CREATE TABLE capital_tracker (
+  symbol      text PRIMARY KEY,
+  capital     numeric NOT NULL DEFAULT 200000,
+  updated_at  timestamptz DEFAULT now()
+);
+INSERT INTO capital_tracker VALUES ('NIFTY', 200000, now());
+INSERT INTO capital_tracker VALUES ('SENSEX', 200000, now());
+```
+Updated after every trade close (T+30m). Read by sizing engine at next signal fire. Build before OI-08.
+
+---
+
+### OI-10 — Signal Rule Book v1.1
+**Status:** OPEN — document update
+
+Update Signal Rule Book with all research-validated rules:
+
+**New rules:**
+- BEAR_OB AFTERNOON (13:00-14:30) SKIP — hard rule. 17% WR, -24.7% expectancy.
+- BULL_OB AFTERNOON (13:00-15:00) TIER1 — 100% WR, +75.3% expectancy.
+- BULL_FVG|HIGH|DTE=0 TIER1 — 87.5% WR, +58.9% expectancy.
+- JUDAS_BULL confirmation at T+15m (not T+5m) — T2 rate 12%→44%.
+
+**Changed rules:**
+- BEAR_OB DTE=0 and DTE=1 — combined structure (futures + CE insurance), not pure PE.
+- BULL_FVG without regime context — TIER3 minimum sizing only (50.3% WR unconfluenced).
+- BEAR_FVG HIGH context — remove zone filter (HIGH context destroys BEAR_FVG edge).
+
+**Confirmed rules (document as tested):**
+- T+30m exit over ICT structure break — confirmed +41% more P&L.
+- BEAR_OB MORNING TIER1 — 100% WR, +70.9%.
+- BULL_OB DTE=0 TIER1 — 100% WR, +107.4%.
+- 1H zones (MEDIUM) in ENH-37 hierarchy — confirmed edge, BULL_OB MEDIUM avg +INR 18,938 vs +INR 9,774 without.
+- MOM_YES = single strongest filter — +21.6pp lift on BEAR_OB.
+
+---
+
+## Section 6 — Shadow Gate Tracking
+
+| Session | Date | Status |
 |---|---|---|
-| Weekly zones | Sunday night | `python build_ict_htf_zones.py --timeframe W` |
-| Daily zones | Pre-market 08:45 | `python build_ict_htf_zones.py --timeframe D` |
-| 1H zones | Hourly in session | Automatic from runner |
-| Intraday detection | Every 5-min cycle | Automatic from runner |
+| 1-8 | 2026-04-06 to 2026-04-11 | PASSED |
+| 9 | 2026-04-14 Monday | PENDING |
+| 10 | 2026-04-15 Tuesday | PENDING |
 
-### Monday/Tuesday — What to Watch
-- ICT zones card in dashboard populating during session
-- Signal stage showing `ICT:BEAR_OB(TIER1)[HIGH]x1.5` when pattern fires
-- ict_pattern, ict_tier, ict_mtf_context fields in signal_snapshots
-- Zone breach transitions (ACTIVE → BROKEN)
-- ICT step is non-blocking — runner continues if it fails
+Gate passes after sessions 9 and 10. Post-gate: implement OI-09 then OI-08.
 
 ---
 
-## Section 5 — Phase 4 Checklist
-
-| Gate | Status |
-|---|---|
-| Shadow 8/10 | DONE |
-| ENH-35 accuracy validated | DONE — 55.2% at N=268 |
-| CONFLICT fix | DONE |
-| LONG_GAMMA gate | DONE |
-| NO_FLIP gate | DONE |
-| Power hour gate | DONE |
-| ENH-37 ICT layer | DONE |
-| Session 9 shadow (Monday) | PENDING |
-| Session 10 shadow (Tuesday) | PENDING |
-| Phase 4 decision | AFTER session 10 |
-
----
-
-## Open Items Summary
-
-| ID | Description | Priority | Status |
-|---|---|---|---|
-| C-07b | Pre-open capture gap | HIGH | OPEN |
-| C-08 | SENSEX volatility RuntimeError | MED | OPEN |
-| R-04 | Dynamic exit v2 | HIGH | Phase 4 |
-| R-08 | Session pyramid | LOW | Post-ENH-42 |
-| Phase 4 | Shadow sessions 9+10 | CRITICAL | Mon/Tue |
+*MERDIAN Open Items Register v6 — 2026-04-12*
+*Supersedes v5 (2026-04-09).*

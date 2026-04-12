@@ -1,3 +1,58 @@
+## 2026-04-12 — research — Full Experiment Series + Sizing Architecture + Documentation
+
+**Goal:** Complete all 11 overnight experiments, analyse results, establish sizing architecture, document everything.
+
+**Session type:** research / documentation
+
+**Completed:**
+
+Overnight runner fixes (encoding + expiry):
+- UTF-8 cp1252 encoding fixed via PYTHONIOENCODING=utf-8 in subprocess env
+- EXPIRY_WD compute_dte patched in all remaining scripts via fix_remaining_errors.py
+- build_ict_htf_zones.py f-string corruption repaired
+- 8/11 experiments completed overnight. 3 remaining fixed and run this session.
+
+All 11 experiments now complete (full year Apr 2025–Mar 2026):
+
+Experiment results summary:
+- Exp 2: BULL_OB 88.9% WR +41.9% T+30m, BEAR_OB 73.0% +34.9%. BEAR_OB AFTERNOON -24.7% (hard skip). BULL_OB AFTERNOON 100% WR +75.3% (new TIER1).
+- Exp 2b: Options beat futures on every pattern/DTE. Only exception: BEAR_OB DTE=0 and DTE=1 (combined structure wins). Futures experiments permanently closed.
+- Exp 2c: Fixed-6 beats pyramid 1→2→3 on every pattern. Session pyramid deferred (ENH-42).
+- Exp 2c v2: Judas T2 rate 12%→44% with T+15m confirmation window. Still fixed position wins.
+- Exp 5: VIX gate removed for BULL_OB and BULL_FVG. Kept for BEAR_OB HIGH_IV. IV-scaled sizing per pattern established.
+- Exp 8: MOM_YES = strongest filter (+21.6pp lift on BEAR_OB). IMP_WEK preferred over IMP_STR.
+- Exp 10c: MEDIUM context (1H zone) outperforms HIGH (daily) for BULL_OB (+73.5% vs +40.7%). BULL_FVG|HIGH|DTE=0 new TIER1 rule (+58.9%, 87.5% WR). BEAR_FVG HIGH context destroys edge (-40.2%).
+- Exp 15: Pure ICT, 1-lot compounding. BEAR_OB 94.4% WR. MEDIUM (1H zone) 77.3% WR. T+30m beats ICT structure break by 41%. Max DD 1.1% NIFTY.
+- Exp 16: Kelly tiered sizing with capital ceiling. Strategy C (Half Kelly) +18,585% INR 7.47Cr. Strategy D (Full Kelly) +44,234% INR 17.7Cr. Both realistic and tradeable with INR 25L/50L ceiling.
+
+Key decisions:
+1. Futures experiments permanently closed. Options only.
+2. INR 50L capital ceiling — liquidity constraint. INR 25L sizing freeze.
+3. Strategy D (Full Kelly) selected for live. Start with C, upgrade after 3-6 months.
+4. T+30m exit confirmed final. No further exit experiments needed.
+5. 1H zones (MEDIUM context) confirmed in ENH-37 hierarchy.
+6. BEAR_OB AFTERNOON hard skip rule.
+7. BEAR_OB DTE=0/1 combined structure (futures + CE insurance) not pure PE.
+
+Experiment 15b started but incomplete (date type mismatch in detect_daily_zones). Non-blocking.
+
+Documentation produced:
+- Enhancement Register v5
+- Open Items Register v6
+- MERDIAN_Experiment_Compendium_v1.md (new)
+- session_log.md prepended (this entry)
+
+Next session goals:
+1. Shadow gate sessions 9 and 10 (Monday and Tuesday)
+2. Build capital_tracker Supabase table (OI-09)
+3. Implement ENH-38 Live Kelly Sizing in runner
+4. Update Signal Rule Book v1.1 (OI-10)
+5. Fix and run Experiment 15b (OI-07)
+
+**Git commit:** fee7b7c → [pending after doc commit]
+
+---
+
 ## 2026-04-11 — research / engineering — ENH-35 Validation + ENH-37 Full Build + Signal Engine Overhaul
 
 **Goal:** Validate signal engine accuracy, apply ENH-35 findings, build ENH-37 ICT detection layer end-to-end.

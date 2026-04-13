@@ -507,18 +507,32 @@ def build_signal(symbol: str) -> dict[str, Any]:
         _today = str(_date.today())
         _ict_rows = (SUPABASE.table("ict_zones")
                      .select("id,pattern_type,direction,zone_high,zone_low,"
-                             "status,ict_tier,ict_size_mult,mtf_context,detected_at_ts")
+                             "status,ict_tier,ict_size_mult,mtf_context,detected_at_ts,"
+                             "ict_lots_t1,ict_lots_t2,ict_lots_t3")
                      .eq("symbol", symbol)
                      .eq("trade_date", _today)
                      .eq("status", "ACTIVE")
                      .execute().data)
         out = enrich_signal_with_ict(out, _ict_rows, float(spot or 0))
+        # ENH-38: forward Kelly lots from active zone to signal_snapshots
+        # All active zones carry the same lots (same capital/IV/DTE per cycle)
+        if _ict_rows:
+            out['ict_lots_t1'] = _ict_rows[0].get('ict_lots_t1')
+            out['ict_lots_t2'] = _ict_rows[0].get('ict_lots_t2')
+            out['ict_lots_t3'] = _ict_rows[0].get('ict_lots_t3')
+        else:
+            out['ict_lots_t1'] = None
+            out['ict_lots_t2'] = None
+            out['ict_lots_t3'] = None
     except Exception as _ict_err:
         # Non-blocking â€” ICT enrichment failure never halts signal
         out["ict_pattern"]     = "NONE"
         out["ict_tier"]        = "NONE"
         out["ict_size_mult"]   = 1.0
         out["ict_mtf_context"] = "NONE"
+        out["ict_lots_t1"]     = None
+        out["ict_lots_t2"]     = None
+        out["ict_lots_t3"]     = None
 
     return out
 def insert_signal(row: dict[str, Any]) -> None:

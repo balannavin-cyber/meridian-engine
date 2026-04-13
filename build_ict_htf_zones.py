@@ -1,13 +1,13 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 build_ict_htf_zones.py
-ENH-37 — MERDIAN ICT Higher-Timeframe Zone Builder
+ENH-37 â€” MERDIAN ICT Higher-Timeframe Zone Builder
 
 Builds weekly and daily ICT zones from hist_spot_bars_1m and writes
 them to ict_htf_zones. Runs offline (not in the live runner cycle).
 
 Schedule:
-  Weekly zones:  Sunday night (or Monday pre-market) — one run per week
+  Weekly zones:  Sunday night (or Monday pre-market) â€” one run per week
   Daily zones:   Pre-market each morning at 08:45 IST
 
 Weekly zones built from:
@@ -18,7 +18,7 @@ Weekly zones built from:
 Daily zones built from:
   - Daily OB: last session's key order block
   - PDH/PDL: Prior day high and low
-  - Asia high/low (pre-market range — approximated from first 30 bars)
+  - Asia high/low (pre-market range â€” approximated from first 30 bars)
 
 Usage:
   python build_ict_htf_zones.py --timeframe W   # build weekly zones
@@ -26,7 +26,7 @@ Usage:
   python build_ict_htf_zones.py                 # build both
 
 Read: hist_spot_bars_1m
-Write: ict_htf_zones (upsert — safe to rerun)
+Write: ict_htf_zones (upsert â€” safe to rerun)
 """
 
 import os
@@ -47,7 +47,7 @@ SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
 PAGE_SIZE = 1_000
 
-# ── Config ────────────────────────────────────────────────────────────
+# â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 OB_MIN_MOVE_PCT = 0.40  # % weekly/daily move to qualify as OB-generating
 FVG_MIN_PCT     = 0.15  # % gap size for weekly FVG (larger than intraday)
 
@@ -58,7 +58,7 @@ WEEKLY_LOOKBACK = 8   # 8 weeks of weekly zones
 DAILY_LOOKBACK  = 5   # 5 days of daily zones
 
 
-# ── Utilities ─────────────────────────────────────────────────────────
+# â”€â”€ Utilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -75,7 +75,7 @@ def week_end(d):
     return d - timedelta(days=d.weekday()) + timedelta(days=4)
 
 
-# ── Data loading ──────────────────────────────────────────────────────
+# â”€â”€ Data loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def fetch_paginated(sb, table, filters, select, order="bar_ts"):
     all_rows, offset = [], 0
@@ -128,7 +128,7 @@ def load_daily_ohlcv(sb, inst_id, from_date, to_date):
     return daily
 
 
-# ── Weekly zone detection ─────────────────────────────────────────────
+# â”€â”€ Weekly zone detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def build_weekly_bars(daily_ohlcv):
     """
@@ -174,7 +174,7 @@ def detect_weekly_zones(weekly_bars, symbol):
         valid_to   = curr["week_end"]
         src_date   = prev["week_end"]  # zone formed in prior week
 
-        # ── Prior Week High / Low (liquidity levels) ──────────────────
+        # â”€â”€ Prior Week High / Low (liquidity levels) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         zones.append({
             "symbol":       symbol,
             "timeframe":    "W",
@@ -200,13 +200,13 @@ def detect_weekly_zones(weekly_bars, symbol):
             "status":       "ACTIVE",
         })
 
-        # ── Weekly Order Blocks ───────────────────────────────────────
-        # Strong bullish week after bearish prior week → BULL_OB
+        # â”€â”€ Weekly Order Blocks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # Strong bullish week after bearish prior week â†’ BULL_OB
         curr_move = pct(curr["open"], curr["close"])
         prev_move = pct(prev["open"], prev["close"])
 
         if curr_move >= OB_MIN_MOVE_PCT and prev_move < 0:
-            # Bullish impulse week — prior bearish week is the OB
+            # Bullish impulse week â€” prior bearish week is the OB
             zones.append({
                 "symbol":       symbol,
                 "timeframe":    "W",
@@ -221,7 +221,7 @@ def detect_weekly_zones(weekly_bars, symbol):
             })
 
         if curr_move <= -OB_MIN_MOVE_PCT and prev_move > 0:
-            # Bearish impulse week — prior bullish week is the OB
+            # Bearish impulse week â€” prior bullish week is the OB
             zones.append({
                 "symbol":       symbol,
                 "timeframe":    "W",
@@ -235,7 +235,7 @@ def detect_weekly_zones(weekly_bars, symbol):
                 "status":       "ACTIVE",
             })
 
-        # ── Weekly FVG ────────────────────────────────────────────────
+        # â”€â”€ Weekly FVG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if i >= 2:
             two_prev = weekly_bars[i - 2]
             ref = curr["open"]
@@ -259,7 +259,7 @@ def detect_weekly_zones(weekly_bars, symbol):
     return zones
 
 
-# ── Daily zone detection ──────────────────────────────────────────────
+# â”€â”€ Daily zone detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def detect_daily_zones(daily_ohlcv, symbol, target_date):
     """
@@ -283,7 +283,7 @@ def detect_daily_zones(daily_ohlcv, symbol, target_date):
     valid_to   = str(target_date)
     src_date   = prior_str
 
-    # ── Prior Day High / Low ──────────────────────────────────────────
+    # â”€â”€ Prior Day High / Low â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     zones.append({
         "symbol":       symbol,
         "timeframe":    "D",
@@ -309,11 +309,11 @@ def detect_daily_zones(daily_ohlcv, symbol, target_date):
         "status":       "ACTIVE",
     })
 
-    # ── Prior Day Order Block ─────────────────────────────────────────
+    # â”€â”€ Prior Day Order Block â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     prior_move = pct(prior["open"], prior["close"])
 
     if prior_move >= OB_MIN_MOVE_PCT:
-        # Prior day was bullish — use prior day open candle as OB zone
+        # Prior day was bullish â€” use prior day open candle as OB zone
         zones.append({
             "symbol":       symbol,
             "timeframe":    "D",
@@ -344,7 +344,7 @@ def detect_daily_zones(daily_ohlcv, symbol, target_date):
     return zones
 
 
-# ── DB write ──────────────────────────────────────────────────────────
+# â”€â”€ DB write â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def upsert_zones(sb, zones, dry_run=False):
     """
@@ -357,7 +357,7 @@ def upsert_zones(sb, zones, dry_run=False):
         return 0
 
     if dry_run:
-        log(f"  DRY RUN — would write {len(zones)} zones")
+        log(f"  DRY RUN â€” would write {len(zones)} zones")
         for z in zones[:5]:
             log(f"    {z['symbol']} {z['timeframe']} {z['pattern_type']} "
                 f"{z['zone_low']:.0f}-{z['zone_high']:.0f} "
@@ -385,14 +385,14 @@ def upsert_zones(sb, zones, dry_run=False):
     return written
 
 
-# ── Expire old zones ──────────────────────────────────────────────────
+# â”€â”€ Expire old zones â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def expire_old_zones(sb, symbol, today, dry_run=False):
     """
     Mark zones with valid_to < today as EXPIRED.
     """
     if dry_run:
-        log("  DRY RUN — would expire old zones")
+        log("  DRY RUN â€” would expire old zones")
         return
 
     try:
@@ -407,22 +407,23 @@ def expire_old_zones(sb, symbol, today, dry_run=False):
         log(f"  Warning: could not expire old zones: {e}")
 
 
-# ── Main ──────────────────────────────────────────────────────────────
+# â”€â”€ Main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--timeframe", choices=["W", "D", "both"],
+    parser.add_argument("--timeframe", choices=["W", "D", "H", "both"],
                         default="both",
-                        help="W=weekly, D=daily, both=all")
+                        help="W=weekly, D=daily, H=1H intraday, both=W+D")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print zones without writing to DB")
     parser.add_argument("--date", default=str(date.today()),
-                        help="Target date for daily zones (YYYY-MM-DD)")
+                        help="Target date (YYYY-MM-DD)")
     args = parser.parse_args()
 
     target_date = date.fromisoformat(args.date)
     do_weekly   = args.timeframe in ("W", "both")
     do_daily    = args.timeframe in ("D", "both")
+    do_1h       = args.timeframe == "H"
     dry_run     = args.dry_run
 
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -434,34 +435,31 @@ def main():
     total_written = 0
 
     for symbol in ["NIFTY", "SENSEX"]:
-        log(f"\n── {symbol} ─────────────────────────────────────────────")
+        log(f"-- {symbol} ---")
 
-        # Expire stale zones
+        if do_1h:
+            log("  Building 1H intraday zones...")
+            h_zones = detect_1h_zones(sb, inst[symbol], symbol, target_date)
+            log(f"  Detected {len(h_zones)} 1H zones")
+            n = upsert_zones(sb, h_zones, dry_run)
+            log(f"  Written {n} 1H zones")
+            total_written += n
+            continue
+
         expire_old_zones(sb, symbol, target_date, dry_run)
 
-        # Load OHLCV
-        lookback_days = max(
-            WEEKLY_LOOKBACK * 7 + 7,
-            DAILY_LOOKBACK + 3
-        )
+        lookback_days = max(WEEKLY_LOOKBACK * 7 + 7, DAILY_LOOKBACK + 3)
         from_date = target_date - timedelta(days=lookback_days)
-        log(f"  Loading daily OHLCV {from_date} → {target_date}...")
-
-        daily_ohlcv = load_daily_ohlcv(
-            sb, inst[symbol], from_date, target_date
-        )
+        log(f"  Loading daily OHLCV {from_date} -> {target_date}...")
+        daily_ohlcv = load_daily_ohlcv(sb, inst[symbol], from_date, target_date)
         log(f"  {len(daily_ohlcv)} trading days loaded")
 
         if do_weekly:
             log("  Building weekly zones...")
             weekly_bars = build_weekly_bars(daily_ohlcv)
-            log(f"  {len(weekly_bars)} weekly bars")
-
-            # Only last WEEKLY_LOOKBACK weeks
             weekly_bars = weekly_bars[-WEEKLY_LOOKBACK:]
             w_zones = detect_weekly_zones(weekly_bars, symbol)
             log(f"  Detected {len(w_zones)} weekly zones")
-
             n = upsert_zones(sb, w_zones, dry_run)
             log(f"  Written {n} weekly zones")
             total_written += n
@@ -470,30 +468,192 @@ def main():
             log("  Building daily zones...")
             d_zones = detect_daily_zones(daily_ohlcv, symbol, target_date)
             log(f"  Detected {len(d_zones)} daily zones")
-
             n = upsert_zones(sb, d_zones, dry_run)
             log(f"  Written {n} daily zones")
             total_written += n
 
-    log(f"\nDone — {total_written} total zones written to ict_htf_zones")
+    log(f"Done -- {total_written} total zones written to ict_htf_zones")
 
     if not dry_run:
-        log("\nVerify:")
+        log("Verify:")
         for symbol in ["NIFTY", "SENSEX"]:
             rows = (sb.table("ict_htf_zones")
-                    .select("timeframe, pattern_type, zone_low, zone_high, "
-                            "valid_from, valid_to, status")
-                    .eq("symbol", symbol)
-                    .eq("status", "ACTIVE")
-                    .order("valid_from", desc=True)
-                    .limit(10)
-                    .execute().data)
+                    .select("timeframe, pattern_type, zone_low, zone_high, valid_from, status")
+                    .eq("symbol", symbol).eq("status", "ACTIVE")
+                    .order("valid_from", desc=True).limit(10).execute().data)
             log(f"  {symbol}: {len(rows)} active HTF zones")
             for r in rows[:5]:
                 log(f"    {r['timeframe']} {r['pattern_type']:10s} "
-                    f"{float(r['zone_low']):,.0f}-{float(r['zone_high']):,.0f} "
-                    f"[{r['valid_from']} → {r['valid_to']}]")
+                    f"{float(r['zone_low']):,.0f}-{float(r['zone_high']):,.0f}")
 
 
 if __name__ == "__main__":
+
     main()
+
+
+# â”€â”€ 1H Zone Detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Added for ENH-37 â€” 1H zones provide MEDIUM context for intraday signals
+# MTF hierarchy: W=VERY_HIGH, D=HIGH, H=MEDIUM, none=LOW
+
+def aggregate_to_hourly(intraday_bars):
+    """
+    Aggregate 1M spot bars into hourly OHLCV bars.
+    Groups bars by hour (IST = UTC+5:30).
+    Returns list of hourly bar dicts sorted by hour_start.
+    """
+    from datetime import timezone, timedelta as td
+    IST = timezone(td(hours=5, minutes=30))
+
+    hourly = defaultdict(list)
+    for b in intraday_bars:
+        ts     = datetime.fromisoformat(b["bar_ts"])
+        ts_ist = ts.astimezone(IST)
+        # Group by hour start (truncate to hour)
+        hour_key = ts_ist.replace(minute=0, second=0, microsecond=0)
+        hourly[hour_key].append(b)
+
+    result = []
+    for hour_start, bars in sorted(hourly.items()):
+        bars.sort(key=lambda b: b["bar_ts"])
+        result.append({
+            "hour_start": hour_start,
+            "open":       float(bars[0]["open"]),
+            "high":       max(float(b["high"]) for b in bars),
+            "low":        min(float(b["low"])  for b in bars),
+            "close":      float(bars[-1]["close"]),
+            "n_bars":     len(bars),
+        })
+
+    return result
+
+
+def detect_1h_zones(sb, inst_id, symbol, trade_date):
+    """
+    Detect 1H ICT zones from today's intraday bars.
+    Builds zones from each completed hourly bar.
+    Only processes completed hours â€” current incomplete hour excluded.
+
+    Returns list of zone dicts for ict_htf_zones upsert.
+    """
+    from datetime import timezone, timedelta as td
+    IST = timezone(td(hours=5, minutes=30))
+
+    # Fetch today's intraday bars
+    rows = fetch_paginated(
+        sb, "hist_spot_bars_1m",
+        [("eq", "instrument_id", str(inst_id)),
+         ("eq", "is_pre_market", False),
+         ("eq", "trade_date", str(trade_date))],
+        "bar_ts, trade_date, open, high, low, close"
+    )
+
+    if not rows:
+        return []
+
+    hourly_bars = aggregate_to_hourly(rows)
+    now_ist     = datetime.now(IST)
+    current_hour = now_ist.replace(minute=0, second=0, microsecond=0)
+
+    # Only use completed hours (exclude current incomplete hour)
+    completed = [h for h in hourly_bars if h["hour_start"] < current_hour]
+
+    if len(completed) < 2:
+        return []  # Need at least 2 hours for OB detection
+
+    zones = []
+    valid_from = str(trade_date)
+    valid_to   = str(trade_date)
+    n = len(completed)
+
+    for i in range(1, n):
+        curr = completed[i]
+        prev = completed[i - 1]
+        src_date = str(trade_date)
+
+        curr_move = pct(curr["open"], curr["close"])
+        prev_move = pct(prev["open"], prev["close"])
+
+        # 1H BULL_OB: bearish candle (prev) before bullish impulse (curr)
+        if curr_move >= OB_MIN_MOVE_PCT and prev["close"] < prev["open"]:
+            zones.append({
+                "symbol":       symbol,
+                "timeframe":    "H",
+                "pattern_type": "BULL_OB",
+                "direction":    +1,
+                "zone_high":    max(prev["open"], prev["close"]),
+                "zone_low":     min(prev["open"], prev["close"]),
+                "valid_from":   valid_from,
+                "valid_to":     valid_to,
+                "source_bar_date": src_date,
+                "status":       "ACTIVE",
+            })
+
+        # 1H BEAR_OB: bullish candle (prev) before bearish impulse (curr)
+        if curr_move <= -OB_MIN_MOVE_PCT and prev["close"] > prev["open"]:
+            zones.append({
+                "symbol":       symbol,
+                "timeframe":    "H",
+                "pattern_type": "BEAR_OB",
+                "direction":    -1,
+                "zone_high":    max(prev["open"], prev["close"]),
+                "zone_low":     min(prev["open"], prev["close"]),
+                "valid_from":   valid_from,
+                "valid_to":     valid_to,
+                "source_bar_date": src_date,
+                "status":       "ACTIVE",
+            })
+
+        # 1H BULL_FVG: gap between prev-prev high and curr low
+        if i >= 2:
+            two_prev = completed[i - 2]
+            ref = curr["open"]
+            if two_prev["high"] < curr["low"]:
+                gap_pct = (curr["low"] - two_prev["high"]) / ref * 100
+                if gap_pct >= FVG_MIN_PCT:
+                    zones.append({
+                        "symbol":       symbol,
+                        "timeframe":    "H",
+                        "pattern_type": "BULL_FVG",
+                        "direction":    +1,
+                        "zone_high":    curr["low"],
+                        "zone_low":     two_prev["high"],
+                        "valid_from":   valid_from,
+                        "valid_to":     valid_to,
+                        "source_bar_date": src_date,
+                        "status":       "ACTIVE",
+                    })
+
+    # Session high/low as liquidity reference
+    if completed:
+        session_high = max(h["high"] for h in completed)
+        session_low  = min(h["low"]  for h in completed)
+
+        zones.append({
+            "symbol":       symbol,
+            "timeframe":    "H",
+            "pattern_type": "PDH",
+            "direction":    -1,
+            "zone_high":    session_high + 10,
+            "zone_low":     session_high - 10,
+            "valid_from":   valid_from,
+            "valid_to":     valid_to,
+            "source_bar_date": src_date,
+            "status":       "ACTIVE",
+        })
+        zones.append({
+            "symbol":       symbol,
+            "timeframe":    "H",
+            "pattern_type": "PDL",
+            "direction":    +1,
+            "zone_high":    session_low + 10,
+            "zone_low":     session_low - 10,
+            "valid_from":   valid_from,
+            "valid_to":     valid_to,
+            "source_bar_date": src_date,
+            "status":       "ACTIVE",
+        })
+
+    return zones
+
+

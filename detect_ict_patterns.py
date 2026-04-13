@@ -304,13 +304,15 @@ def get_mtf_context(
     Determine MTF context by checking if current spot sits inside
     an active HTF zone in the same direction.
 
-    Returns (context_label, htf_zone_id):
-      HIGH:   spot inside active weekly zone (same direction)
-      MEDIUM: spot inside active daily zone (same direction)
-      LOW:    no confluence
+    MTF Hierarchy (zone age = institutional significance):
+      VERY_HIGH: spot inside weekly zone  (multi-session, proven)
+      HIGH:      spot inside daily zone   (session-proven, pre-market)
+      MEDIUM:    spot inside 1H zone      (nascent, same-session)
+      LOW:       no confluence
     """
     weekly_match = None
     daily_match  = None
+    hourly_match = None
 
     for zone in htf_zones:
         if zone.status != "ACTIVE":
@@ -322,11 +324,15 @@ def get_mtf_context(
                 weekly_match = zone
             elif zone.timeframe == "D":
                 daily_match = zone
+            elif zone.timeframe == "H":
+                hourly_match = zone
 
     if weekly_match:
-        return "HIGH", weekly_match.id
+        return "VERY_HIGH", weekly_match.id
     if daily_match:
-        return "MEDIUM", daily_match.id
+        return "HIGH", daily_match.id
+    if hourly_match:
+        return "MEDIUM", hourly_match.id
     return "LOW", None
 
 

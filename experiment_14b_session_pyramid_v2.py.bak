@@ -1,0 +1,758 @@
+#!/usr/bin/env python3
+"""
+experiment_14b_session_pyramid_v2.py
+MERDIAN Experiment 14b — Session Pyramid v2: Confirmed Reversal Entry
+
+PROBLEM WITH EXPERIMENT 14:
+  The v1 session pyramid entered new positions mid-bounce — as soon as the
+  contra bounce reached CONTRA_MIN_PCT. This meant entering while the bounce
+  was still potentially extending, causing immediate adverse movement and
+  trail stop hits.
+
+  Example (April 8 SENSEX BEAR session):
+    Primary trend: falling
+    Contra bounce develops: +0.25% rally
+    v1 entry: triggered at +0.20% (mid-bounce)
+    Bounce continues to +0.45% THEN reverses
+    New PE position entered at wrong price — immediately underwater
+    Trail stop hits before primary trend resumes
+
+V2 FIX — CONFIRMED REVERSAL ENTRY:
+  Wait for the contra bounce to peak AND show a confirmed reversal bar
+  before entering. Same logic as the OB T2 confirmation used in Exp 2c:
+    - Bounce reaches CONTRA_MIN_PCT (bounce is happening)
+    - Bounce then pulls back CONFIRM_MIN_PCT from its peak (reversal confirmed)
+    - Enter on the FIRST bar after confirmation — not at the peak
+
+  This gives up some premium (entering later = slightly higher PE cost on a
+  bear day) but avoids being immediately onside of an extending bounce.
+
+ADDITIONAL CHANGES FROM v1:
+  1. Confirmation required: CONFIRM_MIN_PCT = 0.10% pullback from bounce peak
+  2. Trail stop widened: 50% of peak (was 40%) — more room to breathe
+  3. Minimum trend strength raised: 0.30% in first 45 min (was 0.20%)
+     — focus on genuinely trending sessions not marginal ones
+  4. Bounce window extended: bounce must complete within 30 min (was unlimited)
+     — avoid entering on long slow grinds that aren't real bounces
+  5. Direction-specific reporting: bull and bear treated separately
+
+METRICS:
+  For each trending session:
+  A) Session Pyramid v2 (confirmed entry)    — new
+  B) Session Pyramid v1 (mid-bounce entry)   — from Exp 14
+  C) Single trade T+30m exit                 — benchmark
+  D) Hold P1 to session close                — benchmark
+
+  Key question: does waiting for confirmation improve P&L enough to justify
+  the later (worse) entry price?
+
+Read-only. Runtime: ~25-35 minutes.
+
+Usage:
+    python experiment_14b_session_pyramid_v2.py
+"""
+
+import os
+import bisect
+import time
+from datetime import datetime, timedelta, date, time as dtime
+from collections import defaultdict
+from itertools import groupby
+
+from dotenv import load_dotenv
+from supabase import create_client
+
+load_dotenv()
+
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+
+PAGE_SIZE = 1_000
+
+# ── Strategy parameters ───────────────────────────────────────────────
+TREND_MIN_PCT      = 0.30   # % move in first 45 min — raised from 0.20
+TREND_WINDOW_MIN   = 45
+CONTRA_MIN_PCT     = 0.20   # % bounce needed before watching for reversal
+CONFIRM_MIN_PCT    = 0.10   # % pullback from bounce peak = confirmed reversal
+CONTRA_MAX_PCT     = 0.60   # % bounce = trend reversal, close all
+BOUNCE_MAX_MIN     = 30     # max minutes a bounce can last before ignored
+TRAIL_STOP_PCT     = 0.50   # widened from 0.40
+MAX_POSITIONS      = 3
+SESSION_CLOSE_TIME = dtime(15, 15)
+SESSION_END        = dtime(15, 30)
+OB_MIN_MOVE_PCT    = 0.40
+MIN_OPTION_PRICE   = 5.0
+ATM_RADIUS         = 3
+MAX_GAP_MIN        = 5
+
+STRIKE_STEP = {"NIFTY": 50, "SENSEX": 100}
+EXPIRY_WD   = {"NIFTY": 3, "SENSEX": 1}
+LOT_SIZE    = {"NIFTY": 25, "SENSEX": 15}
+
+MONTH_NAMES = {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",
+               7:"Jul",8:"Aug",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
+
+
+# ── Utilities ─────────────────────────────────────────────────────────
+
+def log(msg):
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+
+def pct(a, b):
+    return 100.0 * (b - a) / a if a else 0.0
+
+def atm_strike(spot, symbol):
+    s = STRIKE_STEP[symbol]
+    return round(spot / s) * s
+
+def nearest_expiry(td, symbol):
+    wd = EXPIRY_WD[symbol]
+    return td + timedelta(days=(wd - td.weekday()) % 7)
+
+def month_label(td):
+    return f"{MONTH_NAMES[td.month]} {td.year}"
+
+
+# ── Data loading ──────────────────────────────────────────────────────
+
+def fetch_paginated(sb, table, filters, select, order="bar_ts"):
+    all_rows, offset = [], 0
+    while True:
+        q = sb.table(table).select(select).order(order).range(offset, offset+PAGE_SIZE-1)
+        for method, *args in filters:
+            q = getattr(q, method)(*args)
+        rows = None
+        for attempt in range(4):
+            try:
+                rows = q.execute().data
+                break
+            except Exception:
+                if attempt == 3: raise
+                time.sleep(2**attempt)
+        all_rows.extend(rows)
+        if len(rows) < PAGE_SIZE:
+            break
+        offset += PAGE_SIZE
+        if offset % 20_000 == 0:
+            log(f"    {offset:,} rows...")
+    return all_rows
+
+
+def sessions_from_bars(bars):
+    result = {}
+    for k, g in groupby(bars, key=lambda b: b["trade_date"]):
+        result[k] = list(g)
+    return result
+
+
+def fetch_option_day(sb, inst_id, td, ed, strikes, opt_types):
+    strike_strs = [f"{float(s):.2f}" for s in strikes]
+    all_rows, offset = [], 0
+    while True:
+        rows = (
+            sb.table("hist_option_bars_1m")
+            .select("bar_ts, strike, option_type, close")
+            .eq("instrument_id", str(inst_id))
+            .eq("trade_date", str(td))
+            .eq("expiry_date", str(ed))
+            .in_("strike", strike_strs)
+            .in_("option_type", list(opt_types))
+            .order("bar_ts")
+            .range(offset, offset+PAGE_SIZE-1)
+            .execute().data
+        )
+        all_rows.extend(rows)
+        if len(rows) < PAGE_SIZE:
+            break
+        offset += PAGE_SIZE
+    lookup = defaultdict(list)
+    for r in all_rows:
+        ts  = datetime.fromisoformat(r["bar_ts"])
+        stk = float(r["strike"])
+        ot  = r["option_type"]
+        cl  = float(r["close"])
+        if cl >= MIN_OPTION_PRICE:
+            lookup[(stk, ot)].append((ts, cl))
+    for key in lookup:
+        lookup[key].sort(key=lambda x: x[0])
+    return lookup
+
+
+def get_option_price_at(lookup, strike, ot, target_ts, symbol):
+    step = STRIKE_STEP[symbol]
+    candidates = [strike + i*step for i in range(-ATM_RADIUS, ATM_RADIUS+1)]
+    best_p, best_g, best_stk = None, timedelta(minutes=MAX_GAP_MIN+1), None
+    for stk in candidates:
+        bars = lookup.get((stk, ot), [])
+        if not bars:
+            continue
+        tss = [b[0] for b in bars]
+        idx = bisect.bisect_left(tss, target_ts)
+        for i in (idx-1, idx):
+            if 0 <= i < len(bars):
+                gap = abs(bars[i][0] - target_ts)
+                if gap < best_g:
+                    best_g, best_p, best_stk = gap, bars[i][1], stk
+    return (best_p, best_stk) if best_g <= timedelta(minutes=MAX_GAP_MIN) else (None, None)
+
+
+# ── Pattern detection ─────────────────────────────────────────────────
+
+def detect_first_ob(bars, window_minutes=90):
+    if not bars:
+        return None
+    open_ts = bars[0]["bar_ts"]
+    cutoff  = open_ts + timedelta(minutes=window_minutes)
+    window  = [b for b in bars if b["bar_ts"] <= cutoff]
+    n = len(window)
+    for i in range(n - 6):
+        mv = pct(window[i]["close"], window[min(i+5, n-1)]["close"])
+        if mv <= -OB_MIN_MOVE_PCT:
+            for j in range(i, max(i-6, -1), -1):
+                if window[j]["close"] > window[j]["open"]:
+                    return {"bar": window[j], "direction": -1}
+        elif mv >= OB_MIN_MOVE_PCT:
+            for j in range(i, max(i-6, -1), -1):
+                if window[j]["close"] < window[j]["open"]:
+                    return {"bar": window[j], "direction": +1}
+    return None
+
+
+# ── V2 Confirmed Reversal Detection ──────────────────────────────────
+
+def detect_confirmed_reversals(bars, trend_direction, primary_entry_ts):
+    """
+    V2: Wait for bounce to peak then confirm reversal before entering.
+
+    States:
+      WATCHING  — looking for contra bounce to develop
+      IN_BOUNCE — bounce underway, tracking peak
+      CONFIRMED — reversal confirmed, emit entry signal
+
+    Returns list of confirmed entry events:
+      {entry_ts, entry_spot, bounce_peak_pct, bounce_peak_ts,
+       bounce_peak_spot, confirm_pct}
+    """
+    entries = []
+    tss = [b["bar_ts"] for b in bars]
+    start_idx = bisect.bisect_right(tss, primary_entry_ts)
+
+    if start_idx >= len(bars):
+        return entries
+
+    reference_spot   = bars[start_idx]["close"]
+    state            = "WATCHING"
+    bounce_peak_pct  = 0.0
+    bounce_peak_ts   = None
+    bounce_peak_spot = None
+    bounce_start_ts  = None
+
+    for i in range(start_idx, len(bars)):
+        bar  = bars[i]
+        ts   = bar["bar_ts"]
+        spot = bar["close"]
+
+        if ts.time() >= SESSION_CLOSE_TIME:
+            break
+
+        # Measure contra move from reference
+        contra_move = pct(reference_spot, spot) * (-trend_direction)
+
+        if state == "WATCHING":
+            if contra_move >= CONTRA_MIN_PCT:
+                # Bounce starting
+                state            = "IN_BOUNCE"
+                bounce_peak_pct  = contra_move
+                bounce_peak_ts   = ts
+                bounce_peak_spot = spot
+                bounce_start_ts  = ts
+
+        elif state == "IN_BOUNCE":
+            # Check bounce hasn't gone too long
+            bounce_duration = (ts - bounce_start_ts).total_seconds() / 60
+            if bounce_duration > BOUNCE_MAX_MIN:
+                # Bounce lasted too long — reset, not a clean reversal setup
+                state          = "WATCHING"
+                reference_spot = spot
+                bounce_peak_pct = 0.0
+                continue
+
+            # Check if bounce exceeded reversal threshold (trend reversed)
+            if contra_move >= CONTRA_MAX_PCT:
+                # This is a full trend reversal, not a bounce — close all
+                break
+
+            if contra_move > bounce_peak_pct:
+                # Bounce still extending
+                bounce_peak_pct  = contra_move
+                bounce_peak_ts   = ts
+                bounce_peak_spot = spot
+            else:
+                # Bounce has pulled back from peak
+                pullback_from_peak = bounce_peak_pct - contra_move
+                if pullback_from_peak >= CONFIRM_MIN_PCT:
+                    # V2 KEY: Confirmed reversal — enter HERE not at bounce peak
+                    entries.append({
+                        "entry_ts":        ts,
+                        "entry_spot":      spot,
+                        "bounce_peak_pct": bounce_peak_pct,
+                        "bounce_peak_ts":  bounce_peak_ts,
+                        "bounce_peak_spot": bounce_peak_spot,
+                        "confirm_pct":     pullback_from_peak,
+                    })
+                    # Reset for next bounce
+                    state          = "WATCHING"
+                    reference_spot = spot
+                    bounce_peak_pct = 0.0
+
+    return entries
+
+
+def detect_v1_bounces(bars, trend_direction, primary_entry_ts):
+    """V1 logic for comparison: enter at CONTRA_MIN_PCT without waiting for confirmation."""
+    bounces = []
+    tss = [b["bar_ts"] for b in bars]
+    start_idx = bisect.bisect_right(tss, primary_entry_ts)
+    if start_idx >= len(bars):
+        return bounces
+
+    reference_spot = bars[start_idx]["close"]
+    in_contra      = False
+    contra_peak    = 0.0
+    contra_peak_spot = None
+
+    for i in range(start_idx, len(bars)):
+        bar  = bars[i]
+        ts   = bar["bar_ts"]
+        spot = bar["close"]
+        if ts.time() >= SESSION_CLOSE_TIME:
+            break
+        contra_move = pct(reference_spot, spot) * (-trend_direction)
+        if not in_contra:
+            if contra_move >= CONTRA_MIN_PCT:
+                in_contra        = True
+                contra_peak      = contra_move
+                contra_peak_spot = spot
+                # V1: enter immediately at first bar crossing threshold
+                bounces.append({"entry_ts": ts, "entry_spot": spot,
+                                "contra_pct": contra_move})
+        else:
+            if contra_move > contra_peak:
+                contra_peak      = contra_move
+                contra_peak_spot = spot
+            else:
+                move_back = contra_peak - contra_move
+                if move_back >= 0.10:
+                    in_contra      = False
+                    reference_spot = spot
+                    contra_peak    = 0.0
+    return bounces
+
+
+# ── Position ──────────────────────────────────────────────────────────
+
+class Position:
+    def __init__(self, entry_ts, entry_spot, entry_price, strike, ot,
+                 direction, lot_size, pos_num):
+        self.entry_ts    = entry_ts
+        self.entry_spot  = entry_spot
+        self.entry_price = entry_price
+        self.strike      = strike
+        self.ot          = ot
+        self.direction   = direction
+        self.lot_size    = lot_size
+        self.pos_num     = pos_num
+        self.peak_price  = entry_price
+        self.exit_ts     = None
+        self.exit_price  = None
+        self.exit_reason = None
+        self.pnl_rupees  = None
+
+    def update_peak(self, p):
+        if p > self.peak_price:
+            self.peak_price = p
+
+    def check_trail(self, p):
+        if self.peak_price <= self.entry_price:
+            return False
+        trail = self.entry_price + (self.peak_price - self.entry_price) * TRAIL_STOP_PCT
+        return p <= trail
+
+    def close(self, ts, price, reason):
+        self.exit_ts     = ts
+        self.exit_price  = price
+        self.exit_reason = reason
+        self.pnl_rupees  = (price - self.entry_price) * self.lot_size
+
+
+# ── Session simulator ─────────────────────────────────────────────────
+
+def simulate_session_v2(bars, lookup, symbol, td):
+    lot_size = LOT_SIZE[symbol]
+    result = {
+        "td": td, "symbol": symbol,
+        "trend_direction": 0,
+        "n_positions_v2": 0, "n_positions_v1": 0,
+        "pnl_v2": 0, "pnl_v1": 0,
+        "pnl_t30": 0, "pnl_hold": 0,
+        "v2_entries": [], "v1_entries": [],
+        "skipped": False, "skip_reason": "",
+    }
+
+    if len(bars) < 30:
+        result["skipped"] = True
+        result["skip_reason"] = "too few bars"
+        return result
+
+    # Trend identification
+    open_spot     = bars[0]["open"]
+    window_end_ts = bars[0]["bar_ts"] + timedelta(minutes=TREND_WINDOW_MIN)
+    window_bars   = [b for b in bars if b["bar_ts"] <= window_end_ts]
+    if not window_bars:
+        result["skipped"] = True
+        result["skip_reason"] = "no window bars"
+        return result
+
+    window_return = pct(open_spot, window_bars[-1]["close"])
+
+    if abs(window_return) < TREND_MIN_PCT:
+        result["skipped"] = True
+        result["skip_reason"] = f"trend too weak ({window_return:.2f}% < {TREND_MIN_PCT}%)"
+        return result
+
+    direction = +1 if window_return > 0 else -1
+    result["trend_direction"] = direction
+    ot = "CE" if direction == +1 else "PE"
+    ed = nearest_expiry(td, symbol)
+
+    # First OB
+    first_ob = detect_first_ob(bars, window_minutes=90)
+    if first_ob is None:
+        result["skipped"] = True
+        result["skip_reason"] = "no OB in first 90 min"
+        return result
+
+    if first_ob["direction"] != direction:
+        result["skipped"] = True
+        result["skip_reason"] = "OB direction mismatch"
+        return result
+
+    ob_bar  = first_ob["bar"]
+    ob_ts   = ob_bar["bar_ts"]
+    ob_spot = ob_bar["close"]
+
+    # P1 entry
+    p1_strike = atm_strike(ob_spot, symbol)
+    p1_price, p1_stk = get_option_price_at(lookup, p1_strike, ot, ob_ts, symbol)
+    if p1_price is None:
+        result["skipped"] = True
+        result["skip_reason"] = "no option data at P1"
+        return result
+
+    # T+30m benchmark
+    t30_price, _ = get_option_price_at(
+        lookup, p1_stk, ot, ob_ts + timedelta(minutes=30), symbol)
+    result["pnl_t30"] = (t30_price - p1_price) * lot_size if t30_price else 0
+
+    # Hold to close benchmark
+    close_ts    = ob_ts.replace(hour=15, minute=14)
+    close_price, _ = get_option_price_at(lookup, p1_stk, ot, close_ts, symbol)
+    result["pnl_hold"] = (close_price - p1_price) * lot_size if close_price else 0
+
+    # ── V2 pyramid (confirmed reversal) ──────────────────────────────
+    confirmed_entries = detect_confirmed_reversals(bars, direction, ob_ts)
+    v2_positions = [Position(ob_ts, ob_spot, p1_price, p1_stk, ot, direction, lot_size, 1)]
+
+    for ev in confirmed_entries:
+        if len(v2_positions) >= MAX_POSITIONS:
+            break
+        if ev["entry_ts"].time() >= SESSION_CLOSE_TIME:
+            break
+        stk  = atm_strike(ev["entry_spot"], symbol)
+        p, s = get_option_price_at(lookup, stk, ot, ev["entry_ts"], symbol)
+        if p is None:
+            continue
+        v2_positions.append(
+            Position(ev["entry_ts"], ev["entry_spot"], p, s or stk,
+                     ot, direction, lot_size, len(v2_positions)+1))
+
+    result["v2_entries"] = confirmed_entries
+    result["n_positions_v2"] = len(v2_positions)
+
+    # Run v2 positions through session
+    tss = [b["bar_ts"] for b in bars]
+    for pos in v2_positions:
+        idx = bisect.bisect_right(tss, pos.entry_ts)
+        for i in range(idx, len(bars)):
+            bar_ts = bars[i]["bar_ts"]
+            if bar_ts.time() >= SESSION_CLOSE_TIME:
+                cp, _ = get_option_price_at(lookup, pos.strike, ot, bar_ts, symbol)
+                if cp:
+                    pos.close(bar_ts, cp, "session_close")
+                break
+            cp, _ = get_option_price_at(lookup, pos.strike, ot, bar_ts, symbol)
+            if cp is None:
+                continue
+            pos.update_peak(cp)
+            if pos.check_trail(cp):
+                pos.close(bar_ts, cp, "trail_stop")
+                break
+        if pos.exit_ts is None and bars:
+            last_ts = bars[-1]["bar_ts"]
+            cp, _   = get_option_price_at(lookup, pos.strike, ot, last_ts, symbol)
+            if cp:
+                pos.close(last_ts, cp, "end_of_data")
+
+    result["pnl_v2"] = sum(
+        p.pnl_rupees for p in v2_positions if p.pnl_rupees is not None)
+    result["_v2_positions"] = v2_positions
+
+    # ── V1 pyramid (mid-bounce) for comparison ────────────────────────
+    v1_bounces = detect_v1_bounces(bars, direction, ob_ts)
+    v1_positions = [Position(ob_ts, ob_spot, p1_price, p1_stk, ot, direction, lot_size, 1)]
+
+    for ev in v1_bounces:
+        if len(v1_positions) >= MAX_POSITIONS:
+            break
+        stk  = atm_strike(ev["entry_spot"], symbol)
+        p, s = get_option_price_at(lookup, stk, ot, ev["entry_ts"], symbol)
+        if p is None:
+            continue
+        v1_positions.append(
+            Position(ev["entry_ts"], ev["entry_spot"], p, s or stk,
+                     ot, direction, lot_size, len(v1_positions)+1))
+
+    result["v1_entries"] = v1_bounces
+    result["n_positions_v1"] = len(v1_positions)
+
+    for pos in v1_positions:
+        idx = bisect.bisect_right(tss, pos.entry_ts)
+        for i in range(idx, len(bars)):
+            bar_ts = bars[i]["bar_ts"]
+            if bar_ts.time() >= SESSION_CLOSE_TIME:
+                cp, _ = get_option_price_at(lookup, pos.strike, ot, bar_ts, symbol)
+                if cp:
+                    pos.close(bar_ts, cp, "session_close")
+                break
+            cp, _ = get_option_price_at(lookup, pos.strike, ot, bar_ts, symbol)
+            if cp is None:
+                continue
+            pos.update_peak(cp)
+            if pos.check_trail(cp):
+                pos.close(bar_ts, cp, "trail_stop")
+                break
+        if pos.exit_ts is None and bars:
+            last_ts = bars[-1]["bar_ts"]
+            cp, _   = get_option_price_at(lookup, pos.strike, ot, last_ts, symbol)
+            if cp:
+                pos.close(last_ts, cp, "end_of_data")
+
+    result["pnl_v1"] = sum(
+        p.pnl_rupees for p in v1_positions if p.pnl_rupees is not None)
+    result["_v1_positions"] = v1_positions
+
+    return result
+
+
+# ── Main ──────────────────────────────────────────────────────────────
+
+def main():
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    log("Fetching instrument IDs...")
+    inst = {r["symbol"]: r["id"] for r in
+            sb.table("instruments").select("id, symbol").execute().data}
+
+    all_results = []
+
+    for symbol in ["NIFTY", "SENSEX"]:
+        log(f"\n── {symbol} ─────────────────────────────────────────────")
+        log("  Loading spot bars...")
+        raw = fetch_paginated(
+            sb, "hist_spot_bars_1m",
+            [("eq","instrument_id",inst[symbol]),("eq","is_pre_market",False)],
+            "bar_ts, trade_date, open, high, low, close"
+        )
+        for r in raw:
+            r["bar_ts"]     = datetime.fromisoformat(r["bar_ts"])
+            r["trade_date"] = date.fromisoformat(r["trade_date"])
+            for k in ("open","high","low","close"):
+                r[k] = float(r[k])
+        spot_sessions = sessions_from_bars(raw)
+        dates = sorted(spot_sessions.keys())
+        log(f"  {len(raw):,} bars | {len(dates)} sessions")
+
+        scored = skipped = 0
+        skip_reasons = defaultdict(int)
+
+        for i, td in enumerate(dates):
+            bars = spot_sessions[td]
+            ed   = nearest_expiry(td, symbol)
+            step = STRIKE_STEP[symbol]
+
+            if not bars:
+                continue
+
+            spots = [b["close"] for b in bars]
+            strikes = set()
+            s = atm_strike(min(spots), symbol) - step*(ATM_RADIUS+5)
+            while s <= atm_strike(max(spots), symbol) + step*(ATM_RADIUS+5):
+                strikes.add(s)
+                s += step
+
+            try:
+                lookup = fetch_option_day(
+                    sb, inst[symbol], td, ed, sorted(strikes), ["CE","PE"])
+            except Exception:
+                skipped += 1
+                skip_reasons["option fetch error"] += 1
+                continue
+
+            if not lookup:
+                skipped += 1
+                skip_reasons["no option data"] += 1
+                continue
+
+            result = simulate_session_v2(bars, lookup, symbol, td)
+            result["symbol"] = symbol
+
+            if result["skipped"]:
+                skipped += 1
+                skip_reasons[result["skip_reason"]] += 1
+            else:
+                scored += 1
+                all_results.append(result)
+
+            if i % 20 == 0:
+                log(f"    {i}/{len(dates)} | scored={scored} skipped={skipped}")
+
+        log(f"  Complete — {scored} sessions scored, {skipped} skipped")
+        for reason, count in sorted(skip_reasons.items(), key=lambda x: -x[1]):
+            log(f"    skip: {reason} → {count}")
+
+    trending = [r for r in all_results if not r["skipped"]]
+
+    if not trending:
+        print("\n  No trending sessions scored.")
+        return
+
+    print("\n" + "=" * 115)
+    print("  MERDIAN EXPERIMENT 14b — SESSION PYRAMID v2: CONFIRMED REVERSAL ENTRY")
+    print(f"  Trend threshold: {TREND_MIN_PCT}% | Contra: {CONTRA_MIN_PCT}% | "
+          f"Confirm: {CONFIRM_MIN_PCT}% pullback from peak | Trail: {TRAIL_STOP_PCT*100:.0f}%")
+    print(f"  v1 entered mid-bounce. v2 waits for {CONFIRM_MIN_PCT}% reversal confirmation.")
+    print("=" * 115)
+
+    # Section 1 — Session detail
+    print(f"\n{'='*115}")
+    print("  SECTION 1 — ALL TRENDING SESSIONS")
+    print(f"  {'Date':<12} {'Sym':<7} {'Dir':<5} {'v2 Pos':>6} {'v1 Pos':>6} "
+          f"{'v2 P&L':>10} {'v1 P&L':>10} {'T+30':>9} {'Hold':>9}  v2 vs v1")
+    print(f"  {'-'*105}")
+
+    for r in sorted(trending, key=lambda x: x["td"]):
+        d     = r["trend_direction"]
+        dir_s = "BULL" if d == +1 else "BEAR"
+        flag  = "v2 BETTER ◄" if r["pnl_v2"] > r["pnl_v1"] else \
+                ("EQUAL" if r["pnl_v2"] == r["pnl_v1"] else "v1 better")
+        print(f"  {str(r['td']):<12} {r['symbol']:<7} {dir_s:<5} "
+              f"{r['n_positions_v2']:>6} {r['n_positions_v1']:>6} "
+              f"₹{r['pnl_v2']:>+9,.0f} ₹{r['pnl_v1']:>+9,.0f} "
+              f"₹{r['pnl_t30']:>+8,.0f} ₹{r['pnl_hold']:>+8,.0f}  {flag}")
+
+    # Section 2 — Summary
+    print(f"\n{'='*115}")
+    print("  SECTION 2 — SUMMARY STATISTICS")
+    print(f"{'='*115}")
+
+    def stats(vals, label):
+        if not vals: return
+        wins = sum(1 for v in vals if v > 0)
+        print(f"  {label:<35} N={len(vals):>4}  WR={100*wins/len(vals):>4.0f}%  "
+              f"Avg=₹{sum(vals)/len(vals):>+8,.0f}  Total=₹{sum(vals):>+10,.0f}  "
+              f"Best=₹{max(vals):>+8,.0f}  Worst=₹{min(vals):>+8,.0f}")
+
+    stats([r["pnl_v2"]  for r in trending], "v2 Pyramid (confirmed entry)")
+    stats([r["pnl_v1"]  for r in trending], "v1 Pyramid (mid-bounce entry)")
+    stats([r["pnl_t30"] for r in trending], "Single Trade T+30m exit")
+    stats([r["pnl_hold"]for r in trending], "Hold P1 to Close")
+
+    print(f"\n  Avg v2 positions: {sum(r['n_positions_v2'] for r in trending)/len(trending):.1f}")
+    print(f"  Avg v1 positions: {sum(r['n_positions_v1'] for r in trending)/len(trending):.1f}")
+    print(f"  Sessions v2 > v1: {sum(1 for r in trending if r['pnl_v2'] > r['pnl_v1'])}")
+    print(f"  Sessions v1 > v2: {sum(1 for r in trending if r['pnl_v1'] > r['pnl_v2'])}")
+
+    # Section 3 — Position detail on best sessions
+    print(f"\n{'='*115}")
+    print("  SECTION 3 — POSITION DETAIL (top 5 sessions by v2 P&L)")
+    print(f"{'='*115}")
+
+    top5 = sorted(trending, key=lambda r: r["pnl_v2"], reverse=True)[:5]
+    for r in top5:
+        dir_s = "BULL" if r["trend_direction"] == +1 else "BEAR"
+        print(f"\n  {r['td']} {r['symbol']} {dir_s} — "
+              f"v2=₹{r['pnl_v2']:+,.0f} | v1=₹{r['pnl_v1']:+,.0f} | "
+              f"T+30=₹{r['pnl_t30']:+,.0f}")
+        print(f"  {'Pos':>4} {'Version':>7} {'Entry':>6} {'Strike':>7} "
+              f"{'In ₹':>8} {'Out ₹':>8} {'P&L ₹':>9} {'Exit reason'}")
+        print(f"  {'-'*75}")
+        for pos in r.get("_v2_positions", []):
+            ep = pos.exit_price or 0
+            pnl = pos.pnl_rupees or 0
+            print(f"  {pos.pos_num:>4} {'v2':>7} "
+                  f"{pos.entry_ts.strftime('%H:%M'):>6} {pos.strike:>7.0f} "
+                  f"₹{pos.entry_price:>7.1f} ₹{ep:>7.1f} "
+                  f"₹{pnl:>+8,.0f} {pos.exit_reason or '?'}")
+
+    # Section 4 — Confirmation improvement analysis
+    print(f"\n{'='*115}")
+    print("  SECTION 4 — V2 vs V1 IMPROVEMENT ANALYSIS")
+    print("  Key question: does waiting for confirmation actually help?")
+    print(f"{'='*115}")
+
+    v2_wins  = sum(r["pnl_v2"] for r in trending if r["pnl_v2"] > 0)
+    v2_loss  = sum(r["pnl_v2"] for r in trending if r["pnl_v2"] <= 0)
+    v1_wins  = sum(r["pnl_v1"] for r in trending if r["pnl_v1"] > 0)
+    v1_loss  = sum(r["pnl_v1"] for r in trending if r["pnl_v1"] <= 0)
+
+    print(f"\n  v2 gross wins: ₹{v2_wins:+,.0f}   gross losses: ₹{v2_loss:+,.0f}")
+    print(f"  v1 gross wins: ₹{v1_wins:+,.0f}   gross losses: ₹{v1_loss:+,.0f}")
+
+    t30_total = sum(r["pnl_t30"] for r in trending)
+    v2_total  = sum(r["pnl_v2"]  for r in trending)
+    v1_total  = sum(r["pnl_v1"]  for r in trending)
+
+    print(f"\n  v2 vs T+30m:  ₹{v2_total-t30_total:+,.0f} "
+          f"({'better' if v2_total > t30_total else 'worse'} than single trade)")
+    print(f"  v1 vs T+30m:  ₹{v1_total-t30_total:+,.0f} "
+          f"({'better' if v1_total > t30_total else 'worse'} than single trade)")
+
+    # Section 5 — Verdict
+    print(f"\n{'='*115}")
+    print("  SECTION 5 — VERDICT")
+    print(f"{'='*115}")
+    print()
+
+    if v2_total > v1_total and v2_total > t30_total:
+        print("  CONFIRMED: v2 (confirmed reversal entry) outperforms both v1 and")
+        print("  single T+30m exit. Session pyramid with confirmation is viable.")
+        print("  Recommendation: implement v2 as an optional session mode when")
+        print("  trend conditions are met (breadth strongly aligned, atm_iv > 18%).")
+    elif v2_total > v1_total and v2_total <= t30_total:
+        print("  PARTIAL: v2 outperforms v1 (confirmation helps avoid bad entries)")
+        print("  but still does not beat the simple T+30m single trade exit.")
+        print("  The session pyramid adds complexity without sufficient reward.")
+        print("  Recommendation: do not implement. Single T+30m exit remains optimal.")
+    elif v2_total <= v1_total:
+        print("  NOT CONFIRMED: Waiting for confirmation (v2) does not improve over")
+        print("  entering mid-bounce (v1). The fundamental issue is not entry timing.")
+        print("  The session pyramid concept requires more data or different conditions.")
+        print("  Recommendation: do not implement in current form.")
+
+    print(f"\n  Best outcome remains: single T+30m exit on first OB of session.")
+    print(f"  Total T+30m across all scored sessions: ₹{t30_total:+,.0f}")
+    print(f"{'='*115}\n")
+
+
+if __name__ == "__main__":
+    main()

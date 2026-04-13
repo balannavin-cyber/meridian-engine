@@ -538,17 +538,13 @@ def main():
             bars = spot_sessions[td]
             ed   = nearest_expiry_db(td, expiry_idx)
 
-            # Collect all strikes we might need (broad range for session)
-            if not bars: continue
-            spots = [b["close"] for b in bars]
-            min_spot = min(spots)
-            max_spot = max(spots)
-            step = STRIKE_STEP[symbol]
-            strikes = set()
-            s = atm_strike(min_spot, symbol) - step * (ATM_RADIUS + 5)
-            while s <= atm_strike(max_spot, symbol) + step * (ATM_RADIUS + 5):
-                strikes.add(s)
-                s += step
+            # ATM +/- 10 strikes from opening spot only
+            step      = STRIKE_STEP[symbol]
+            open_spot = bars[0]["open"]
+            base_atm  = atm_strike(open_spot, symbol)
+            strikes   = set()
+            for offset in range(-10, 11):
+                strikes.add(base_atm + offset * step)
 
             try:
                 lookup = fetch_option_day(
@@ -760,6 +756,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
 
 
 

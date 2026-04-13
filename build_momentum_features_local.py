@@ -230,10 +230,10 @@ def get_session_open_spot(symbol: str, current_ts: datetime) -> float | None:
         if ts.astimezone(timezone.utc).date() != current_date:
             continue
 
-        # 09:15 IST ~= 03:45 UTC
+        # 09:05 IST ~= 03:35 UTC (accepts pre-open capture from MERDIAN_PreOpen task)
         hh = ts.astimezone(timezone.utc).hour
         mm = ts.astimezone(timezone.utc).minute
-        if (hh > 3) or (hh == 3 and mm >= 45):
+        if (hh > 3) or (hh == 3 and mm >= 35):
             chosen = spot
             break
 

@@ -37,6 +37,10 @@ from detect_ict_patterns import (
     enrich_signal_with_ict,
 )
 from build_ict_htf_zones import detect_1h_zones, upsert_zones
+from merdian_utils import (  # ENH-38v2
+    effective_sizing_capital, compute_kelly_lots,
+    build_expiry_index_simple, nearest_expiry_db, LOT_SIZES,
+)
 
 load_dotenv()
 
@@ -288,6 +292,21 @@ def main(symbol: str) -> int:
         log(f"ERROR: instrument not found for {symbol}")
         return 1
     inst_id = inst_rows[0]["id"]
+    # -- ENH-38: read current capital from capital_tracker -----------------
+    try:
+        _cap_resp = fetch_with_retry(lambda: (
+            sb.table('capital_tracker')
+            .select('capital')
+            .eq('symbol', symbol)
+            .limit(1)
+            .execute()
+        ))
+        _current_capital = float(_cap_resp.data[0]['capital']) if _cap_resp.data else 200_000.0
+    except Exception as _cap_err:
+        log(f'  Warning: capital_tracker read failed: {_cap_err} -- using floor')
+        _current_capital = 200_000.0
+    # -- ENH-38 end --------------------------------------------------------
+
 
     # ── Session start: expire prior zones ─────────────────────────────
     # Only do this once per session (first cycle after 09:15)
@@ -348,6 +367,129 @@ def main(symbol: str) -> int:
             log(f"  1H zones: {n} written ({len(h_zones)} detected)")
         except Exception as e:
             log(f"  Warning: 1H zone build failed (non-blocking): {e}")
+
+    # -- ENH-38v2: write Kelly lots to active ict_zones (real lot cost) -------
+    try:
+        # Get days to next expiry for lot cost estimation
+        try:
+            _expiry_idx = build_expiry_index_simple(sb, inst_id)
+            _next_exp   = nearest_expiry_db(trade_date, _expiry_idx)
+            _dte_days   = (_next_exp - trade_date).days if _next_exp else 2
+        except Exception:
+            _dte_days = 2   # conservative fallback
+        _atm_iv_pct = atm_iv if atm_iv else 0.0   # None -> 0 triggers fallback
+
+        _lots_t1 = compute_kelly_lots(_current_capital, 'TIER1', symbol,
+                                      current_spot, _atm_iv_pct, _dte_days)
+        _lots_t2 = compute_kelly_lots(_current_capital, 'TIER2', symbol,
+                                      current_spot, _atm_iv_pct, _dte_days)
+        _lots_t3 = compute_kelly_lots(_current_capital, 'TIER3', symbol,
+                                      current_spot, _atm_iv_pct, _dte_days)
+
+        fetch_with_retry(lambda: (
+            sb.table('ict_zones')
+            .update({
+                'ict_lots_t1': _lots_t1,
+                'ict_lots_t2': _lots_t2,
+                'ict_lots_t3': _lots_t3,
+            })
+            .eq('symbol', symbol)
+            .eq('trade_date', str(trade_date))
+            .eq('status', 'ACTIVE')
+            .execute()
+        ))
+        _lot_size = LOT_SIZES.get(symbol, 65)
+        log(f'  Kelly lots (lot_size={_lot_size}, dte={_dte_days}d, '
+            f'iv={_atm_iv_pct:.1f}%, spot={current_spot:,.0f}) '
+            f'T1:{_lots_t1} T2:{_lots_t2} T3:{_lots_t3} '
+            f'(capital=INR {_current_capital:,.0f})')
+    except Exception as _kelly_err:
+        log(f'  Warning: Kelly lots write failed (non-blocking): {_kelly_err}')
+    # -- ENH-38v2 end ----------------------------------------------------------
+
+
+    # ── Session start: expire prior zones ─────────────────────────────
+    # Only do this once per session (first cycle after 09:15)
+    if now.hour == 9 and now.minute < 20:
+        expire_prior_session_zones(sb, symbol, trade_date)
+        log(f"  Expired prior session zones for {symbol}")
+
+    # ── Load data ─────────────────────────────────────────────────────
+    bars = load_today_spot_bars(sb, inst_id, trade_date)
+    if len(bars) < 10:
+        log(f"  Insufficient bars ({len(bars)}) — skipping detection")
+        return 0
+
+    prior_high, prior_low = load_prior_session_hl(sb, inst_id, trade_date)
+    htf_zones  = load_active_htf_zones(sb, symbol, trade_date)
+    active_zones = load_active_intraday_zones(sb, symbol, trade_date)
+    atm_iv     = load_atm_iv(sb, symbol)
+    current_spot = bars[-1].close
+
+    log(f"  {len(bars)} bars | {len(htf_zones)} HTF zones | "
+        f"{len(active_zones)} active zones | "
+        f"spot={current_spot:,.1f} | iv={atm_iv:.1f}%" if atm_iv else
+        f"  {len(bars)} bars | {len(htf_zones)} HTF zones | "
+        f"{len(active_zones)} active zones | spot={current_spot:,.1f}")
+
+    # ── Zone breach checking ──────────────────────────────────────────
+    detector     = ICTDetector(symbol=symbol)
+    broken_ids   = detector.check_zone_breaches(active_zones, current_spot)
+    if broken_ids:
+        n = mark_zones_broken(sb, broken_ids, current_spot)
+        log(f"  Marked {n} zones BROKEN at {current_spot:,.1f}")
+
+    # ── Pattern detection (last 10 bars) ──────────────────────────────
+    patterns = detector.detect(
+        bars=bars,
+        atm_iv=atm_iv,
+        htf_zones=htf_zones,
+        prior_high=prior_high,
+        prior_low=prior_low,
+    )
+
+    if patterns:
+        n = write_new_zones(sb, patterns)
+        for p in patterns:
+            log(f"  NEW ZONE: {p.pattern_type} {p.ict_tier} "
+                f"mtf={p.mtf_context} zone={p.zone_low:,.0f}-{p.zone_high:,.0f} "
+                f"size={p.ict_size_mult}x")
+        log(f"  Written {n} new zones")
+    else:
+        log(f"  No new patterns detected")
+
+    # ── 1H zone builder (hourly) ──────────────────────────────────────
+    if is_hour_boundary():
+        log(f"  Hour boundary — building 1H HTF zones...")
+        try:
+            h_zones = detect_1h_zones(sb, inst_id, symbol, trade_date)
+            n = upsert_zones(sb, h_zones, dry_run=False)
+            log(f"  1H zones: {n} written ({len(h_zones)} detected)")
+        except Exception as e:
+            log(f"  Warning: 1H zone build failed (non-blocking): {e}")
+
+    # -- ENH-38: write Kelly lots to active ict_zones --------------------
+    try:
+        _lots_t1 = compute_kelly_lots(_current_capital, 'TIER1')
+        _lots_t2 = compute_kelly_lots(_current_capital, 'TIER2')
+        _lots_t3 = compute_kelly_lots(_current_capital, 'TIER3')
+        fetch_with_retry(lambda: (
+            sb.table('ict_zones')
+            .update({
+                'ict_lots_t1': _lots_t1,
+                'ict_lots_t2': _lots_t2,
+                'ict_lots_t3': _lots_t3,
+            })
+            .eq('symbol', symbol)
+            .eq('trade_date', str(trade_date))
+            .eq('status', 'ACTIVE')
+            .execute()
+        ))
+        log(f'  Kelly lots -- T1:{_lots_t1} T2:{_lots_t2} T3:{_lots_t3} '
+            f'(capital=INR {_current_capital:,.0f})')
+    except Exception as _kelly_err:
+        log(f'  Warning: Kelly lots write failed (non-blocking): {_kelly_err}')
+    # -- ENH-38 end --------------------------------------------------------
 
     log(f"ICT detector complete [{symbol}]")
     return 0

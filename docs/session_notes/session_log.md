@@ -1,3 +1,68 @@
+## 2026-04-13 — engineering / documentation — ENH-38 Full Build + Dashboard + Registers
+
+**Goal:** Close all open items from research session: Kelly sizing end-to-end, signal dashboard, backfill, Signal Rule Book v1.1, register updates.
+
+**Session type:** engineering / documentation
+
+**Completed:**
+
+OI-09 — capital_tracker table:
+- CREATE TABLE public.capital_tracker (symbol PK, capital numeric, updated_at timestamptz)
+- Seeded NIFTY + SENSEX at INR 2L each
+- Capital floor lowered to INR 10K for trial runs
+
+OI-08 / ENH-38 — Live Kelly tiered sizing (end-to-end):
+- merdian_utils.py: LOT_SIZES (NIFTY=65, SENSEX=20), effective_sizing_capital(), estimate_lot_cost() (spot × IV × √DTE × 0.4), compute_kelly_lots(). ACTIVE_KELLY single-line strategy switch.
+- detect_ict_patterns_runner.py: reads capital_tracker each cycle, fetches DTE via nearest_expiry_db, computes _lots_t1/t2/t3 with real lot cost, writes to ict_zones. Log: "Kelly lots (lot_size=65, dte=2d, iv=16.3%) T1:x T2:x T3:x"
+- build_trade_signal_local.py: reads lots from active ict_zones row, forwards to signal_snapshots.ict_lots_t1/t2/t3
+- Supabase: ict_zones +3 cols, signal_snapshots +3 cols
+- Lot sizes corrected: NIFTY=65 (Jan 2026), SENSEX=20. Live patchers: patch_kelly_sizing.py → patch_kelly_lot_cost.py → patch_signal_kelly_lots.py
+
+OI-07 — experiment_15b:
+- Date type fix: _daily_str = {str(k): v for k, v in daily_ohlcv.items()} passed to detect_daily_zones
+- LOT_SIZE corrected: NIFTY=75 (majority of backtest year), SENSEX=20
+- Run complete. Results: Strategy C +6,764% combined, Strategy D +16,249% combined. MERDIAN-filtered universe (Exp 16) outperforms pure ICT (Exp 15b) — regime filter confirmed additive.
+
+ENH-43 — Signal dashboard (merdian_signal_dashboard.py, port 8766):
+- Action, confidence, ICT pattern/tier/WR/MTF, execution block (strike, expiry, DTE, live premium, lot cost, deployed capital), exit countdown timer (⚡ EXIT NOW at T+30m), active-pattern-only WR legend per card, regime pills, BLOCKED/TRADE ALLOWED badge, hard rules banner. Auto-refresh 5min.
+
+ENH-44 — Capital management:
+- set_capital.py: CLI setter supporting NIFTY/SENSEX/BOTH, ceiling notes, show command
+- Dashboard: per-symbol number input + SET button, POST /set_capital, instant feedback without page reload
+
+ENH-45 — hist_spot_bars_1m backfill (Apr 7–10):
+- Zerodha Kite 1-min historical API via MeridianAlpha AWS instance (same Supabase)
+- backfill_spot_zerodha.py: 4 dates × 2 symbols × 375 bars = 3,000 rows
+- Upserts on (instrument_id, bar_ts). Verified: all 8 pairs at exactly 375 bars, 09:15–15:29 IST (UTC 03:45–09:59 confirmed)
+- Enables correct daily zone pre-building for Apr 7–10 sessions
+
+OI-10 / ENH-40 — Signal Rule Book v1.1:
+- docs/research/MERDIAN_Signal_RuleBook_v1.1.md written
+- 13 rule changes from v1.0: 4 NEW, 3 CHANGED, 5 CONFIRMED, 1 CLOSED
+- Covers all patterns, MTF hierarchy, exit rules, signal engine gates, capital/sizing, quick reference card
+
+**Open after session:**
+- Shadow gate sessions 9 and 10 (today Monday, Tuesday)
+- C-07b: pre-open capture gap — architectural fix pending
+- ENH-41: BEAR_OB DTE combined structure — documented in Rule Book, code pending execution layer
+- capital_tracker auto-update after T+30m trade close (requires execution layer)
+
+**Files changed:** merdian_utils.py (Kelly sizing + lot cost), detect_ict_patterns_runner.py (Kelly block), build_trade_signal_local.py (lots passthrough), merdian_signal_dashboard.py (NEW — port 8766), set_capital.py (NEW), backfill_spot_zerodha.py (NEW — MeridianAlpha AWS)
+
+**Schema changes:** capital_tracker (NEW — 3 cols), ict_zones (+ict_lots_t1/t2/t3), signal_snapshots (+ict_lots_t1/t2/t3)
+
+**Open items closed:** OI-07, OI-08, OI-09, OI-10
+
+**Open items added:** None
+
+**Git commit hash:** [pending commit]
+
+**Next session goal:** Shadow gate session 9 today (live market). Pre-market: python build_ict_htf_zones.py --timeframe D. Start merdian_signal_dashboard.py on port 8766.
+
+**docs_updated:** yes
+
+---
+
 ## 2026-04-12 — research — Full Experiment Series + Sizing Architecture + Documentation
 
 **Goal:** Complete all 11 overnight experiments, analyse results, establish sizing architecture, document everything.

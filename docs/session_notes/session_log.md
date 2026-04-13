@@ -1,3 +1,63 @@
+## 2026-04-13 (late evening) — engineering — Phase 4A + ENH-02/04/06/07 + Signal Engine
+
+**Goal:** Wire options flow into signal engine, build Phase 4A execution layer, close remaining Tier 1 ENH items.
+
+**Session type:** engineering
+
+**Completed:**
+
+ENH-02/04/07 — Options flow wired into confidence scoring:
+- `build_trade_signal_local.py`: fetches `options_flow_snapshots` each cycle
+- PCR BEARISH+BUY_PE → +5, PCR BULLISH+BUY_CE → +5, contra → -4
+- SKEW FEAR+BUY_PE → +4, SKEW GREED+BUY_CE → +4
+- FLOW PE_ACTIVE+BUY_PE → +3, FLOW CE_ACTIVE+BUY_CE → +3
+- ENH-07: basis_pct note added (futures premium/discount vs spot)
+- Max lift on aligned signal: +12 confidence
+- All stored in raw JSONB (no DDL needed)
+
+ENH-06 — Pre-trade cost filter:
+- `build_trade_signal_local.py`: validates lot sizing against capital at signal time
+- Reads capital_tracker, estimates lot cost via estimate_lot_cost()
+- If deployed > allocated × 1.10: reduces to 1 lot, adds caution
+- Stores enh06_capital_ok, enh06_allocated, enh06_lot_cost in raw JSONB
+
+Phase 4A — Manual execution layer:
+- `merdian_trade_logger.py`: CLI trade logger. Reads latest signal, prompts entry price, writes trade_log + exit_alerts rows. Also handles --show (open trades) and --close (exit + PnL)
+- `merdian_exit_monitor.py`: polls exit_alerts every 30s, fires console + Telegram alert at T+30m
+- `merdian_signal_dashboard.py`: LOG TRADE button (green, appears when action ≠ DO_NOTHING), CLOSE TRADE button (always visible), modal dialogs, POST /log_trade + /close_trade endpoints
+- `merdian_pm.py`: exit_monitor added to PROCESSES dict
+- `merdian_start.py`: exit_monitor added to startup sequence
+- Process manager fix: DETACHED_PROCESS removed (breaks supabase client), single file handle passed to Popen
+
+Phase 4 architecture decisions:
+- Option A (manual) now live
+- Option B (semi-auto): merdian_order_placer.py + position monitor — after 2-4 weeks 4A data
+- Option C (full auto): auto executor + risk gate — after 4B proven stable
+- trade_log + exit_alerts tables confirmed existing and empty
+
+**Open after session:**
+- Telegram credentials not in .env — exit_monitor alerts console-only until configured
+- Phase 4B: merdian_order_placer.py (Dhan API order placement)
+- ENH-08: vega bucketing — deferred (weekly options only, low value)
+- ENH-30: SMDM — deferred post-Phase 4
+- Shadow gate session 10 tomorrow (Tue 2026-04-15) — then Phase 4 full promotion decision
+
+**Files changed:** build_trade_signal_local.py (ENH-02/04/06/07), merdian_signal_dashboard.py (LOG TRADE button + endpoints), merdian_pm.py (exit_monitor + loghandle fix), merdian_start.py (exit_monitor in start order), merdian_trade_logger.py (NEW), merdian_exit_monitor.py (NEW)
+
+**Schema changes:** None (trade_log + exit_alerts already existed)
+
+**Open items closed:** ENH-02 (PCR), ENH-04 (IV skew/flow), ENH-06 (pre-trade cost filter), ENH-07 (basis note)
+
+**Open items added:** None
+
+**Git commit hash:** 54272e1
+
+**Next session goal:** Shadow gate session 10. Pre-market: python merdian_start.py then python run_preflight.py. If session clean → Phase 4 promotion decision.
+
+**docs_updated:** yes
+
+---
+
 ## 2026-04-13 (evening) — engineering — Process Manager, ENH-36 Live Spot, ENH-01 ret_session, Bug Fixes
 
 **Goal:** Post-market engineering. Process manager, live 1-min spot capture, ICT backfill, signal timestamp fix, AWS status writer fix, ret_session fix.

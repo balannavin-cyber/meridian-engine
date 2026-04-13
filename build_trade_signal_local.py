@@ -262,6 +262,26 @@ def build_signal(symbol: str) -> dict[str, Any]:
         vol_features.get("vix_context_regime"),
     )
 
+    # --- Options flow context (ENH-02/04) ---
+    def _fetch_options_flow(sym: str) -> dict:
+        try:
+            rows = (SUPABASE.table("options_flow_snapshots")
+                    .select("pcr_regime,skew_regime,flow_regime,"
+                            "put_call_ratio,chain_iv_skew,ce_vol_oi_ratio,pe_vol_oi_ratio")
+                    .eq("symbol", sym)
+                    .order("ts", desc=True)
+                    .limit(1)
+                    .execute().data)
+            return rows[0] if rows else {}
+        except Exception:
+            return {}
+    _flow = _fetch_options_flow(symbol)
+    pcr_regime   = _flow.get("pcr_regime")
+    skew_regime  = _flow.get("skew_regime")
+    flow_regime  = _flow.get("flow_regime")
+    put_call_ratio = to_float(_flow.get("put_call_ratio"))
+    chain_iv_skew  = to_float(_flow.get("chain_iv_skew"))
+
     # --- WCB fields ---
     wcb_regime = breadth_features.get("wcb_regime")
     wcb_score = to_float(breadth_features.get("wcb_score"))
@@ -378,6 +398,53 @@ def build_signal(symbol: str) -> dict[str, Any]:
         cautions.append("ret_15m shows premium compression")
     if ret_30m is not None and ret_30m < 0:
         cautions.append("ret_30m shows premium compression")
+
+    # Options flow confidence modifiers (ENH-02/04)
+    if pcr_regime and action in ("BUY_PE", "BUY_CE"):
+        if (pcr_regime == "BEARISH" and action == "BUY_PE"):
+            confidence += 5.0
+            reasons.append(f"PCR confirms bearish bias (pcr_regime={pcr_regime})")
+        elif (pcr_regime == "BULLISH" and action == "BUY_CE"):
+            confidence += 5.0
+            reasons.append(f"PCR confirms bullish bias (pcr_regime={pcr_regime})")
+        elif (pcr_regime == "BEARISH" and action == "BUY_CE"):
+            confidence -= 4.0
+            cautions.append(f"PCR contradicts bullish bias (pcr_regime={pcr_regime})")
+        elif (pcr_regime == "BULLISH" and action == "BUY_PE"):
+            confidence -= 4.0
+            cautions.append(f"PCR contradicts bearish bias (pcr_regime={pcr_regime})")
+
+    if skew_regime and action in ("BUY_PE", "BUY_CE"):
+        if skew_regime == "FEAR" and action == "BUY_PE":
+            confidence += 4.0
+            reasons.append("IV skew shows FEAR — confirms PE setup")
+        elif skew_regime == "GREED" and action == "BUY_CE":
+            confidence += 4.0
+            reasons.append("IV skew shows GREED — confirms CE setup")
+        elif skew_regime == "FEAR" and action == "BUY_CE":
+            cautions.append("IV skew FEAR contradicts CE setup")
+        elif skew_regime == "GREED" and action == "BUY_PE":
+            cautions.append("IV skew GREED contradicts PE setup")
+
+    if flow_regime and action in ("BUY_PE", "BUY_CE"):
+        if flow_regime == "PE_ACTIVE" and action == "BUY_PE":
+            confidence += 3.0
+            reasons.append("Options flow PE_ACTIVE confirms bearish setup")
+        elif flow_regime == "CE_ACTIVE" and action == "BUY_CE":
+            confidence += 3.0
+            reasons.append("Options flow CE_ACTIVE confirms bullish setup")
+        elif flow_regime == "PE_ACTIVE" and action == "BUY_CE":
+            cautions.append("Options flow PE_ACTIVE contradicts CE setup")
+        elif flow_regime == "CE_ACTIVE" and action == "BUY_PE":
+            cautions.append("Options flow CE_ACTIVE contradicts PE setup")
+
+    # ENH-07: Basis note (futures basis already in gamma_features)
+    basis_pct = to_float(gamma_features.get("basis_pct"))
+    if basis_pct is not None:
+        if basis_pct > 0.5:
+            cautions.append(f"Futures in premium vs spot (basis_pct={basis_pct:.2f}%)")
+        elif basis_pct < -0.5:
+            cautions.append(f"Futures in discount vs spot (basis_pct={basis_pct:.2f}%)")
 
     # DTE gating
     trade_allowed = True
@@ -497,6 +564,18 @@ def build_signal(symbol: str) -> dict[str, Any]:
         "reasons": reasons,
         "cautions": cautions,
     }
+
+    # Add options flow fields to raw JSONB
+    if "raw" not in out:
+        out["raw"] = {}
+    out["raw"].update({
+        "pcr_regime":     pcr_regime,
+        "skew_regime":    skew_regime,
+        "flow_regime":    flow_regime,
+        "put_call_ratio": put_call_ratio,
+        "chain_iv_skew":  chain_iv_skew,
+        "basis_pct":      basis_pct,
+    })
 
     # ENH-37: Enrich signal with ICT pattern context
     # Reads active ict_zones written by detect_ict_patterns_runner.py

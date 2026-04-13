@@ -1,3 +1,70 @@
+## 2026-04-13 (evening) — engineering — Process Manager, ENH-36 Live Spot, ENH-01 ret_session, Bug Fixes
+
+**Goal:** Post-market engineering. Process manager, live 1-min spot capture, ICT backfill, signal timestamp fix, AWS status writer fix, ret_session fix.
+
+**Session type:** engineering
+
+**Completed:**
+
+ENH-46 — Process Manager:
+- `merdian_pm.py` — core library: start processes in background (no terminal), PID registry at `runtime/merdian_pids.json`, stop/status/duplicate detection, port conflict check
+- `merdian_start.py` — single morning startup command: Step 0 auto-inserts trading_calendar row (permanent V18A-03 fix), Step 1 kills all, Step 2 starts health_monitor + signal_dashboard + supervisor in background
+- `merdian_stop.py` — kills all registered + unregistered MERDIAN processes
+- `merdian_status.py` — shows all processes with PID, uptime, port, duplicate warnings. `--watch` mode (5s refresh)
+- Health monitor: process status panel added (MERDIAN Processes card with PID/status/port per process)
+- Zero terminal windows needed — all processes log to `logs/pm_<n>.log`
+
+ENH-36 / ENH-47 — Live 1-min spot capture:
+- `capture_spot_1m.py` — calls Dhan IDX_I, writes to `market_spot_snapshots` AND `hist_spot_bars_1m` (synthetic bar O=H=L=C=spot, truncated to minute)
+- Task: `MERDIAN_Spot_1M` — every 1 minute, 09:14–15:31 IST Mon–Fri
+- Task: `MERDIAN_PreOpen` — fires 09:05 IST Mon–Fri (closes C-07b permanently)
+- Dashboard refresh: 60s (was 300s)
+
+C-07b CLOSED — MERDIAN_PreOpen task fires at 09:05 IST Mon–Fri, before supervisor starts at 09:14. Pre-open spot now captured reliably.
+
+ENH-01 — ret_session fix:
+- `build_momentum_features_local.py` line ~224: threshold changed from `03:45 UTC` to `03:35 UTC` so MERDIAN_PreOpen capture at 09:05 IST (03:35 UTC) is accepted as session open price
+- `ret_session` was computing but returning None because `market_spot_snapshots` had no rows after 03:45 UTC
+- From tomorrow: `ret_session` will be non-null, feeding into momentum_regime (2.5x weight)
+
+hist_spot_bars_1m backfill (today's session):
+- 750 rows backfilled via Zerodha Kite on MeridianAlpha AWS (375 bars × 2 symbols)
+- Confirmed: both instruments at 376 bars (375 + 1 test bar from capture_spot_1m test)
+
+Signal dashboard fixes:
+- Spot source changed from `market_spot_snapshots` to `signal_snapshots` (updates every 5-min cycle)
+- Signal timestamp UTC→IST conversion fixed (was showing 03:55 IST instead of 09:25 IST)
+
+AWS shadow runner fix:
+- `write_cycle_status_to_supabase`: `json=payload` → `json=[payload]`, added `on_conflict=config_key`, removed `"updated_at": "now()"` string, added error logging
+- Health monitor STALE 80h display will clear from tomorrow's first cycle
+- Git: ab87044 (AWS) + c78b6ea (Local)
+
+Capital floor lowered:
+- `merdian_utils.py` + dashboard: CAPITAL_FLOOR 200,000 → 10,000 for trial runs
+
+**Open after session:**
+- Shadow gate session 10 tomorrow (Tue 2026-04-15)
+- ENH-41 code: BEAR_OB DTE=0/1 combined structure (rule documented, code pending execution layer)
+- capital_tracker auto-update after T+30m trade close (needs execution layer)
+- ENH-02 PCR signal, ENH-04 IV skew (in progress)
+
+**Files changed:** merdian_pm.py (NEW), merdian_start.py (NEW), merdian_stop.py (NEW), merdian_status.py (NEW), capture_spot_1m.py (NEW), set_capital.py (NEW), backfill_spot_zerodha.py (NEW), merdian_signal_dashboard.py (NEW), merdian_live_dashboard.py (process panel), build_momentum_features_local.py (ret_session threshold), run_merdian_shadow_runner.py (AWS — cycle status writer fix), merdian_utils.py (capital floor)
+
+**Schema changes:** None
+
+**Open items closed:** C-07b (MERDIAN_PreOpen task), ENH-01 (ret_session threshold fix)
+
+**Open items added:** None
+
+**Git commit hash:** c78b6ea (Local) | ab87044 (AWS runner fix)
+
+**Next session goal:** Shadow gate session 10 (tomorrow). Pre-market: `python merdian_start.py` then `python run_preflight.py`.
+
+**docs_updated:** yes
+
+---
+
 ## 2026-04-13 — engineering / documentation — ENH-38 Full Build + Dashboard + Registers
 
 **Goal:** Close all open items from research session: Kelly sizing end-to-end, signal dashboard, backfill, Signal Rule Book v1.1, register updates.

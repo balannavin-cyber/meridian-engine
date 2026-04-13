@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 merdian_start.py  --  MERDIAN Morning Startup
 ==============================================
@@ -39,7 +39,7 @@ def ensure_calendar_row():
     Auto-inserts today's trading_calendar row using rule-based logic.
     Mon-Fri = open. Sat-Sun = closed.
     NSE holidays: manually maintained in trading_calendar module.
-    Upserts — safe to call every morning regardless.
+    Upserts â€” safe to call every morning regardless.
     """
     today   = date.today()
     is_open = today.weekday() < 5  # weekday rule as fallback
@@ -70,7 +70,7 @@ def ensure_calendar_row():
         )
         if r.status_code < 300:
             day_type = "TRADING DAY" if is_open else "HOLIDAY/WEEKEND"
-            return True, f"{today} → {day_type} (is_open={is_open}) upserted"
+            return True, f"{today} â†’ {day_type} (is_open={is_open}) upserted"
         return False, f"Supabase {r.status_code}: {r.text[:80]}"
     except Exception as e:
         return False, f"Failed: {e}"
@@ -78,57 +78,58 @@ def ensure_calendar_row():
 
 def main():
     print()
-    print('  ╔══════════════════════════════════════════════════╗')
-    print('  ║  MERDIAN Morning Startup                         ║')
-    print(f'  ║  {datetime.now().strftime("%Y-%m-%d %H:%M:%S"):<46}║')
-    print('  ╚══════════════════════════════════════════════════╝')
+    print('  â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—')
+    print('  â•‘  MERDIAN Morning Startup                         â•‘')
+    print(f'  â•‘  {datetime.now().strftime("%Y-%m-%d %H:%M:%S"):<46}â•‘')
+    print('  â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•')
 
     if STATUS_ONLY:
         pm.print_status()
         return
 
-    # ── Step 0: Calendar ──────────────────────────────────────────────────────
+    # â”€â”€ Step 0: Calendar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     print('\n  [Step 0] Trading calendar auto-insert...')
     ok, msg = ensure_calendar_row()
-    print(f'    {"✓" if ok else "⚠"}  {msg}')
+    print(f'    {"âœ“" if ok else "âš "}  {msg}')
     if not ok:
         print('    WARNING: Calendar insert failed. Preflight may show V18A-03 error.')
         print('    Manually run in Supabase:')
         print(f'    INSERT INTO trading_calendar (trade_date, is_open)')
         print(f'    VALUES (\'{date.today()}\', true) ON CONFLICT (trade_date) DO UPDATE SET is_open=true;')
 
-    # ── Step 1: Clean slate ───────────────────────────────────────────────────
+    # â”€â”€ Step 1: Clean slate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     print('\n  [Step 1] Stopping all existing MERDIAN processes...')
     results = pm.stop_all()
     for name, msg in results:
-        print(f'    • {name}: {msg}')
+        print(f'    â€¢ {name}: {msg}')
     time.sleep(1.0)
 
-    # ── Step 2: Start ─────────────────────────────────────────────────────────
+    # â”€â”€ Step 2: Start â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     print('\n  [Step 2] Starting processes...')
     all_ok = True
-    for name in ['health_monitor', 'signal_dashboard', 'supervisor']:
+    for name in ['health_monitor', 'signal_dashboard', 'supervisor', 'exit_monitor']:
         ok, msg = pm.start(name)
-        print(f'    {"✓" if ok else "✗"}  {name}: {msg}')
+        print(f'    {"âœ“" if ok else "âœ—"}  {name}: {msg}')
         if not ok:
             all_ok = False
         time.sleep(0.5)
 
-    # ── Step 3: Status ────────────────────────────────────────────────────────
+    # â”€â”€ Step 3: Status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     print('\n  [Step 3] Status:')
     time.sleep(1.5)
     pm.print_status()
 
     print('  Quick reference:')
-    print('    http://localhost:8765  — Health Monitor')
-    print('    http://localhost:8766  — Signal Dashboard')
+    print('    http://localhost:8765  â€” Health Monitor')
+    print('    http://localhost:8766  â€” Signal Dashboard')
     print()
-    print('    python merdian_status.py   — check processes')
-    print('    python merdian_stop.py     — stop everything')
+    print('    python merdian_status.py   â€” check processes')
+    print('    python merdian_stop.py     â€” stop everything')
     print()
     if not all_ok:
-        print('  ⚠ Some processes failed. Check logs/ directory.')
+        print('  âš  Some processes failed. Check logs/ directory.')
     print()
 
 if __name__ == '__main__':
     main()
+

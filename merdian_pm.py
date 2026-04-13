@@ -31,6 +31,7 @@ PROCESSES = {
     'health_monitor':   {'script': 'merdian_live_dashboard.py', 'args': ['--no-browser'], 'port': 8765, 'desc': 'Health Monitor'},
     'signal_dashboard': {'script': 'merdian_signal_dashboard.py', 'port': 8766, 'desc': 'Signal Dashboard'},
     'supervisor':       {'script': 'gamma_engine_supervisor.py',  'port': None, 'desc': 'Supervisor'},
+    'exit_monitor':     {'script': 'merdian_exit_monitor.py',     'port': None, 'desc': 'Exit Monitor'},
 }
 
 # ── Registry ──────────────────────────────────────────────────────────────────
@@ -124,15 +125,17 @@ def start(name, force=False):
     CREATE_NO_WINDOW = 0x08000000
     DETACHED_PROCESS = 0x00000008
 
-    with open(log_file, 'a', encoding='utf-8') as lf:
-        lf.write(f"\n{'='*50}\nStarted {datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')}\n{'='*50}\n")
+    _log_header = f"\n{'='*50}\nStarted {datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')}\n{'='*50}\n"
+    _lf = open(str(log_file), 'a', encoding='utf-8')
+    _lf.write(_log_header)
+    _lf.flush()
 
     proc = subprocess.Popen(
-        [str(PYTHON), str(script_path)] + cfg.get('args', []),
+        [str(PYTHON), '-u', str(script_path)] + cfg.get('args', []),
         cwd=str(BASE),
-        stdout=open(log_file, 'a', encoding='utf-8'),
+        stdout=_lf,
         stderr=subprocess.STDOUT,
-        creationflags=CREATE_NO_WINDOW | DETACHED_PROCESS,
+        creationflags=CREATE_NO_WINDOW,
     )
     time.sleep(1.5)
 

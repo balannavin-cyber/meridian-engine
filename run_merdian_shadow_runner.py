@@ -534,15 +534,17 @@ def write_cycle_status_to_supabase(cycle_ok: bool, breadth_coverage, per_symbol:
         payload = {
             "config_key": "aws_shadow_cycle_status",
             "config_value": payload_value,
-            "updated_at": "now()",
             "updated_by": "aws_shadow_runner",
         }
-        requests.post(
+        r = requests.post(
             f"{supabase_url}/rest/v1/system_config",
             headers=headers,
-            json=payload,
+            json=[payload],
+            params={"on_conflict": "config_key"},
             timeout=10,
         )
+        if r.status_code >= 300:
+            log(f"WARNING: cycle status write HTTP {r.status_code}: {r.text[:100]}")
     except Exception as e:
         log(f"WARNING: Failed to write cycle status to Supabase (non-fatal): {e}")
 

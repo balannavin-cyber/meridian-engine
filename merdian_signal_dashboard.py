@@ -355,7 +355,13 @@ def card(d):
         f'<button class="csb" id="csb-{sym}" onclick="setCap(\'{sym}\')">SET</button>'
         f'<span class="csm" id="csm-{sym}"></span>'
         f'</div>'
-        f'<div class="st">Signal: {sig_ts[11:16]} IST</div>'
+        f'<div class="trade-bar">' +
+          (f'<button class="log-btn" onclick="showLogTrade(\'{sym}\')">'
+           '&#128203; LOG TRADE</button>'
+           if action not in ("DO_NOTHING","NO DATA","ERROR") else '') +
+          f'<button class="close-btn" onclick="showCloseForm(\'{sym}\')">'
+          '&#10060; CLOSE</button></div>' +
+          f'<div class="st">Signal: {sig_ts[11:16]} IST</div>'
         f'</div>'
     )
 
@@ -452,6 +458,30 @@ body{background:#080b0f;color:#c9d5e0;font-family:'Barlow Condensed',sans-serif;
 .csb:disabled{opacity:.4;cursor:not-allowed}
 .csm{font-size:13px;font-family:'Space Mono',monospace;font-weight:700}
 .csm.ok{color:#00ff88}.csm.err{color:#ff3b5c}
+.trade-bar{display:flex;gap:8px;padding:8px 16px;border-bottom:1px solid #1e2a38;flex-wrap:wrap}
+.log-btn{padding:6px 16px;background:#00ff88;border:none;color:#080b0f;font-family:"Barlow Condensed",sans-serif;
+  font-size:13px;font-weight:700;letter-spacing:1px;cursor:pointer;border-radius:2px}
+.log-btn:hover{opacity:.85}
+.close-btn{padding:6px 16px;background:transparent;border:1px solid #ff3b5c;color:#ff3b5c;
+  font-family:"Barlow Condensed",sans-serif;font-size:13px;font-weight:700;cursor:pointer;border-radius:2px}
+.close-btn:hover{background:rgba(255,59,92,.1)}
+.modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;
+  background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center}
+.modal.open{display:flex}
+.modal-box{background:#0d1117;border:1px solid #00ccff;border-radius:4px;padding:24px;
+  min-width:320px;max-width:500px}
+.modal-title{font-size:14px;font-weight:700;letter-spacing:2px;color:#00ccff;margin-bottom:16px}
+.modal-row{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.modal-lbl{font-size:11px;color:#64748b;letter-spacing:1px;text-transform:uppercase}
+.modal-inp{background:#080b0f;border:1px solid #1e2a38;color:#c9d5e0;padding:8px;
+  border-radius:2px;font-family:"Space Mono",monospace;font-size:14px}
+.modal-inp:focus{outline:none;border-color:#00ccff}
+.modal-actions{display:flex;gap:8px;margin-top:16px}
+.modal-ok{flex:1;padding:8px;background:#00ccff;border:none;color:#080b0f;
+  font-weight:700;cursor:pointer;border-radius:2px}
+.modal-cancel{padding:8px 16px;background:transparent;border:1px solid #64748b;
+  color:#64748b;cursor:pointer;border-radius:2px}
+.modal-msg{margin-top:8px;font-size:12px;font-family:"Space Mono",monospace}
 .st{padding:6px 16px;font-size:11px;color:#64748b;font-family:'Space Mono',monospace}
 .rules{background:rgba(255,59,92,.08);border:1px solid rgba(255,59,92,.25);
   border-radius:4px;padding:10px 16px;grid-column:1/-1;display:flex;gap:24px;flex-wrap:wrap}
@@ -480,6 +510,52 @@ function updateCountdowns(){
 }
 updateCountdowns();setInterval(updateCountdowns,1000);
 
+function showLogTrade(sym){
+  document.getElementById('lt-sym').value=sym;
+  document.getElementById('lt-price').value='';
+  document.getElementById('lt-msg').textContent='';
+  document.getElementById('modal-log').classList.add('open');
+  setTimeout(function(){document.getElementById('lt-price').focus();},100);
+}
+function submitLogTrade(){
+  var sym=document.getElementById('lt-sym').value;
+  var price=parseFloat(document.getElementById('lt-price').value);
+  var msg=document.getElementById('lt-msg');
+  if(!price||price<=0){msg.textContent='Enter a valid premium price';msg.style.color='#ff3b5c';return;}
+  msg.textContent='Logging...';msg.style.color='#64748b';
+  fetch('/log_trade?symbol='+sym+'&entry_price='+price,{method:'POST'})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.ok){msg.textContent='Logged! Exit at '+d.exit_ts_ist;msg.style.color='#00ff88';
+        setTimeout(function(){document.getElementById('modal-log').classList.remove('open');},2000);}
+      else{msg.textContent='Error: '+d.error;msg.style.color='#ff3b5c';}
+    }).catch(function(){msg.textContent='Failed';msg.style.color='#ff3b5c';});
+}
+function showCloseForm(sym){
+  document.getElementById('cl-sym').value=sym;
+  document.getElementById('cl-id').value='';
+  document.getElementById('cl-price').value='';
+  document.getElementById('cl-msg').textContent='';
+  document.getElementById('modal-close').classList.add('open');
+  setTimeout(function(){document.getElementById('cl-id').focus();},100);
+}
+function submitClose(){
+  var sym=document.getElementById('cl-sym').value;
+  var tid=document.getElementById('cl-id').value.trim();
+  var price=parseFloat(document.getElementById('cl-price').value);
+  var msg=document.getElementById('cl-msg');
+  if(!tid){msg.textContent='Enter trade ID';msg.style.color='#ff3b5c';return;}
+  if(!price||price<=0){msg.textContent='Enter exit price';msg.style.color='#ff3b5c';return;}
+  msg.textContent='Closing...';msg.style.color='#64748b';
+  fetch('/close_trade?trade_id='+tid+'&exit_price='+price,{method:'POST'})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.ok){msg.textContent='Closed! PnL: '+d.pnl_str;msg.style.color='#00ff88';
+        setTimeout(function(){document.getElementById('modal-close').classList.remove('open');},2000);}
+      else{msg.textContent='Error: '+d.error;msg.style.color='#ff3b5c';}
+    }).catch(function(){msg.textContent='Failed';msg.style.color='#ff3b5c';});
+}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
 function setCap(sym){
   var inp=document.getElementById("csi-"+sym);
   var msg=document.getElementById("csm-"+sym);
@@ -542,6 +618,46 @@ def render():
   </div>
 </div>
 <div class="footer">MERDIAN &middot; git cfba66e &middot; Kelly C (Half Kelly) &middot; Port {PORT}</div>
+<!-- Phase 4A: Log Trade Modal -->
+<div class="modal" id="modal-log">
+  <div class="modal-box">
+    <div class="modal-title">&#128203; LOG TRADE</div>
+    <input type="hidden" id="lt-sym">
+    <div class="modal-row">
+      <span class="modal-lbl">Symbol</span>
+      <span style="font-family:monospace;color:#00ccff" id="lt-sym-disp"></span>
+    </div>
+    <div class="modal-row">
+      <label class="modal-lbl" for="lt-price">Premium paid per unit (INR)</label>
+      <input class="modal-inp" id="lt-price" type="number" min="0.5" step="0.5" placeholder="e.g. 85.50">
+    </div>
+    <div class="modal-msg" id="lt-msg"></div>
+    <div class="modal-actions">
+      <button class="modal-ok" onclick="submitLogTrade()">LOG TRADE</button>
+      <button class="modal-cancel" onclick="closeModal('modal-log')">Cancel</button>
+    </div>
+  </div>
+</div>
+<!-- Phase 4A: Close Trade Modal -->
+<div class="modal" id="modal-close">
+  <div class="modal-box">
+    <div class="modal-title">&#10060; CLOSE TRADE</div>
+    <input type="hidden" id="cl-sym">
+    <div class="modal-row">
+      <label class="modal-lbl" for="cl-id">Trade ID (first 8 chars)</label>
+      <input class="modal-inp" id="cl-id" type="text" placeholder="e.g. a1b2c3d4">
+    </div>
+    <div class="modal-row">
+      <label class="modal-lbl" for="cl-price">Exit price per unit (INR)</label>
+      <input class="modal-inp" id="cl-price" type="number" min="0" step="0.5" placeholder="e.g. 120.00">
+    </div>
+    <div class="modal-msg" id="cl-msg"></div>
+    <div class="modal-actions">
+      <button class="modal-ok" onclick="submitClose()">CLOSE &amp; LOG PnL</button>
+      <button class="modal-cancel" onclick="closeModal('modal-close')">Cancel</button>
+    </div>
+  </div>
+</div>
 <script>{JS}</script>
 </body>
 </html>"""

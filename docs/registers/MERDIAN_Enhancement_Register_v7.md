@@ -241,3 +241,118 @@ Apr 7–10 + Apr 13: 3,750 rows total. ICT detector has full backtest coverage.
 
 *MERDIAN Enhancement Register v7 — 2026-04-13 (evening) — Living document, commit to Git after every update*
 *Supersedes v6 (2026-04-13 morning). Commit alongside Open Items Register v8 and session log update.*
+
+---
+
+### ENH-51: WebSocket Feed + AWS Cloud Migration
+**Status: PROPOSED**
+**Added: 2026-04-13**
+
+#### Architecture Decision
+
+Dhan WebSocket (`wss://api-feed.dhan.co`) replaces 5-min REST option chain polling.
+AWS becomes primary compute. Local becomes dashboard-only.
+Zerodha evaluated and rejected — no SENSEX F&O coverage.
+
+#### Why Dhan WebSocket over Zerodha KiteTicker
+
+| Dimension | Dhan | Zerodha |
+|---|---|---|
+| Subscription limit | 100 instruments | 3,000 instruments |
+| NIFTY options | ✅ | ✅ |
+| SENSEX options | ✅ | ❌ Not available |
+| Authentication | Existing token (no change) | Separate API subscription INR 2K/month |
+| Integration effort | Low (already integrated) | High (new broker API) |
+
+SENSEX is non-negotiable for MERDIAN. Dhan is the only option.
+
+#### Instrument Subscription Strategy
+
+Subscribe at session open via one REST call to get security_ids, then maintain WebSocket connection:
+
+| Instrument | Count |
+|---|---|
+| NIFTY spot (security_id 13) | 1 |
+| SENSEX spot (security_id 51) | 1 |
+| NIFTY ATM ±15 strikes CE+PE | 30 |
+| SENSEX ATM ±15 strikes CE+PE | 30 |
+| Buffer | 38 |
+| **Total** | **62 of 100 limit** |
+
+±15 strikes covers ~750 NIFTY points intraday — handles 99% of sessions without resubscription.
+GEX accuracy: ~75-80% vs 100% with full chain. Acceptable for directional signals.
+Flip_level computation: slightly less precise but directionally correct.
+
+#### Migration Phases
+
+**ENH-51a — ws_feed.py on AWS (1 session)**
+- `ws_feed.py`: connects to Dhan WebSocket at 09:14 IST
+- Startup: one REST call to get current expiry security_ids for ATM ±15 strikes
+- Subscribes 62 instruments
+- Writes ticks to `atm_option_ticks` Supabase table (new)
+- Reconnects automatically on drop (exponential backoff)
+- Replaces `capture_spot_1m.py` for spot (writes hist_spot_bars_1m from ticks)
+
+**ENH-51b — Promote AWS runner to full pipeline (1 session)**
+- Modify `run_merdian_shadow_runner.py` to read from `atm_option_ticks` instead of REST option chain
+- AWS runs full pipeline: ingest → gamma → vol → momentum → signal
+- Local still runs in parallel (validation phase)
+- Gate: 5 sessions where AWS signal matches local within 2 confidence points
+
+**ENH-51c — AWS as primary, local as shadow (2 weeks validation)**
+- Flip: AWS writes to live tables, local writes to shadow tables
+- Monitor divergence daily
+- Gate: 10 clean sessions as primary
+
+**ENH-51d — Local cutover (1 session)**
+- Turn off local runner, local breadth ingest, local capture tasks
+- Local machine: dashboards only (reads Supabase — already works)
+- AWS: full pipeline + WebSocket feed
+
+#### New Table Required
+
+```sql
+CREATE TABLE atm_option_ticks (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  ts           timestamptz NOT NULL DEFAULT now(),
+  symbol       text NOT NULL,
+  security_id  int NOT NULL,
+  instrument   text NOT NULL,   -- SPOT / CE / PE
+  strike       int,
+  expiry_date  date,
+  ltp          numeric NOT NULL,
+  volume       bigint,
+  oi           bigint,
+  bid          numeric,
+  ask          numeric
+);
+CREATE INDEX idx_atm_ticks_symbol_ts ON atm_option_ticks (symbol, ts DESC);
+```
+
+#### TOTP / Token Impact
+
+No change. WebSocket authenticates with the same daily Dhan token.
+Token refresh: existing cron at 08:15 IST (Local) + 08:35 IST (AWS pull) unchanged.
+One WebSocket connection per session — no per-call token overhead.
+
+#### Benefits vs Current Architecture
+
+| Metric | Current (REST) | With WebSocket |
+|---|---|---|
+| Data freshness | 5-min snapshots | Real-time ticks |
+| Spot update | 5-min (capture_spot_1m) | Every tick |
+| Premium at signal time | Estimated or 5-min stale | Live |
+| ICT detector input | 1-min synthetic bars | Real 1-min bars from ticks |
+| 429 rate limit risk | Yes | No |
+| AWS dependency on Local | Full (all data comes from Local) | None |
+| Local machine required | Yes (runner + data) | Dashboards only |
+
+#### Dependencies
+
+- ENH-48 Phase 4A stable (live trade data to validate signal quality)
+- Phase 4B (ENH-49) ideally live before cutover (need live fills to validate)
+- Estimated start: after 2-4 weeks of Phase 4A data
+
+---
+
+*ENH-51 added 2026-04-13 — WebSocket + AWS migration*

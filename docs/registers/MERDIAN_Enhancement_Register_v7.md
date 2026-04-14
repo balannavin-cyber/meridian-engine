@@ -356,3 +356,58 @@ One WebSocket connection per session — no per-call token overhead.
 ---
 
 *ENH-51 added 2026-04-13 — WebSocket + AWS migration*
+
+
+---
+
+### ENH-51 Revision — 2026-04-13 (post-MeridianAlpha review)
+
+**Architecture updated after reviewing MeridianAlpha state.**
+
+#### Revised Scope
+
+| Component | Decision | Rationale |
+|---|---|---|
+| Zerodha KiteTicker | NIFTY full chain only | 3,000 instrument limit, 100% GEX accuracy |
+| Dhan REST | SENSEX only (unchanged) | Zerodha has no SENSEX F&O |
+| MeridianAlpha WebSocket | NOT NOW | EOD pipeline working, G-01 corporate actions blocks signal accuracy first |
+| Shared Supabase | YES | Both systems already share DB. G-01 (market gate) already reads MERDIAN breadth. |
+
+#### Why Not Zerodha for SENSEX
+
+Zerodha does not list BSE F&O (SENSEX options). Dhan is the only broker covering both
+NIFTY and SENSEX F&O. Architecture: Zerodha = data feed for NIFTY, Dhan = execution
+broker + SENSEX data. Clean separation by symbol.
+
+#### MeridianAlpha Integration Timeline
+
+MeridianAlpha current state (as of 2026-04-13):
+- EOD pipeline live: 2,132 stocks, 3.6M price rows, RS rank, trend template, watchlist ✅
+- G-01 corporate action adjustment: CRITICAL — blocks signal accuracy. Must fix first.
+- Delivery data: Windows-only (jugaad-data). AWS blocked by NSE bot detection.
+- No intraday data yet.
+
+**MeridianAlpha does NOT need WebSocket until:**
+1. G-01 corporate actions fixed (signal accuracy restored)
+2. Intraday strategy defined (currently EOD-only)
+3. Stock F&O signals designed (180 stocks, Phase 3+)
+
+**Shared infrastructure convergence point:**
+Both systems already share Supabase. G-01 (market gate) reads MERDIAN breadth.
+Portfolio management layer (future) will allocate capital across both systems.
+No premature integration until MeridianAlpha signal layer is clean.
+
+#### Revised ENH-51 Sub-items
+
+| Sub-item | What | Dependency |
+|---|---|---|
+| ENH-51a | ws_feed_zerodha.py on AWS — NIFTY full chain | Phase 4B stable |
+| ENH-51b | Dhan REST stays for SENSEX — no change | Already done |
+| ENH-51c | AWS runner reads from Zerodha ticks (NIFTY) | ENH-51a |
+| ENH-51d | AWS primary, local dashboards-only | ENH-51c + 10 sessions validated |
+| ENH-51e | MeridianAlpha intraday WebSocket | After G-01 fixed + intraday strategy defined |
+| ENH-51f | Unified portfolio management layer | Both systems stable, Phase 5 |
+
+---
+
+*ENH-51 revised 2026-04-13*

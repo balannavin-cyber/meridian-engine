@@ -129,3 +129,41 @@ Post-gate: Phase 4 promotion decision → ENH-41 code build → Execution layer 
 
 *MERDIAN Open Items Register v7 — 2026-04-13*
 *Supersedes v6 (2026-04-12).*
+
+
+### OI-11 — HTF Zone Rebuild Not Automated on AWS
+| Field | Value |
+|---|---|
+| Priority | MEDIUM |
+| Opened | 2026-04-14 |
+| Blocking | ENH-51c (AWS primary) — if runner migrates to AWS but HTF zones not rebuilt, ICT detector uses stale zones |
+| Description | build_ict_htf_zones.py --timeframe D is currently MANUAL pre-market only. Must be added as AWS cron before AWS becomes primary compute. |
+| Fix | Add to MERDIAN AWS crontab: 30 3 * * 1-5 cd /home/ssm-user/meridian-engine && /bin/bash -lc 'set -a; . .env; set +a; python3 build_ict_htf_zones.py --timeframe D >> logs/htf_zones.log 2>&1' |
+| Build when | Before ENH-51c (AWS primary promotion) |
+
+---
+
+### OI-12 — market_ticks Retention Cron Not Set
+| Field | Value |
+|---|---|
+| Priority | MEDIUM |
+| Opened | 2026-04-14 |
+| Blocking | Storage growth — market_ticks grows ~1,007 rows per tick event during market hours |
+| Description | market_ticks table has no retention policy. During live market hours at full tick frequency, table will grow rapidly. 2-day retention recommended. |
+| Fix | Add Supabase pg_cron job: SELECT cron.schedule('delete-old-ticks', '0 20 * * 1-5', $$DELETE FROM market_ticks WHERE ts < now() - interval ''2 days''$$); OR add to AWS post-market cron. |
+| Build when | Before ENH-51b (pipeline reads market_ticks) |
+
+---
+
+### OI-13 — Telegram Credentials Not in .env
+| Field | Value |
+|---|---|
+| Priority | MEDIUM |
+| Opened | 2026-04-14 |
+| Blocking | merdian_exit_monitor.py Telegram alerts — currently console-only |
+| Description | TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID missing from local .env. Exit monitor runs and polls correctly but cannot send Telegram alerts at T+30m. |
+| Fix | Add to C:\GammaEnginePython\.env: TELEGRAM_BOT_TOKEN=<token> and TELEGRAM_CHAT_ID=<chat_id>. Create bot via @BotFather if not already done. |
+| Build when | Next session |
+
+---
+

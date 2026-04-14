@@ -411,3 +411,57 @@ No premature integration until MeridianAlpha signal layer is clean.
 ---
 
 *ENH-51 revised 2026-04-13*
+
+
+---
+
+### ENH-51 Update — Late Night 2026-04-13/14
+
+**ENH-51a: ws_feed_zerodha.py — STATUS: COMPLETE**
+**Updated: 2026-04-14 02:30 IST**
+
+Deployed on MERDIAN AWS (i-0878c118835386ec2, eu-north-1).
+
+| Validation | Result |
+|---|---|
+| Instrument load | 45,712 NFO rows → 998 options + 6 futures + 3 spots = 1,007 total |
+| Spot dry run | NIFTY 50: 23,842.65 &#124; NIFTY BANK: 55,605.05 &#124; INDIA VIX: 20.50 |
+| Live write | 3 rows in market_ticks at 2026-04-14 02:25:44 UTC ✅ |
+| market_ticks DDL | Applied to MERDIAN Supabase ✅ |
+| AWS cron | 44 3 * * 1-5 (start) &#124; 02 10 * * 1-5 (stop) ✅ |
+| Git | beb8709 → a215049 (--ddl fix) |
+
+**Instrument subscriptions (1,007 total, within 3,000 limit):**
+- 3 spots: NIFTY 50 (token 256265), NIFTY BANK (260105), INDIA VIX (264969)
+- 998 NFO options: NIFTY + BANKNIFTY, current + next weekly expiry, CE+PE
+- 6 futures: NIFTY + BANKNIFTY front month
+
+**Token refresh:** ZERODHA_ACCESS_TOKEN in MERDIAN AWS .env. Refreshed daily via MeridianAlpha AWS browser login (core/refresh_kite_token.py — semi-manual, token expires 06:00 IST).
+
+**Pre-market note:** Zerodha WebSocket does NOT serve pre-market (09:00–09:08 call auction). Connection closes outside 09:15–15:30 IST. MERDIAN_PreOpen (Dhan IDX_I) covers pre-open capture.
+
+**Known issue — instrument_token INT overflow risk:** instrument_token column is INT (signed 32-bit, max ~2.1B). Zerodha tokens are 32-bit unsigned (max ~4.2B). Monitor — convert to BIGINT if any token exceeds 2.1B.
+
+---
+
+**ENH-51 Sub-item Status (revised after MeridianAlpha architecture review):**
+
+| Sub-item | What | Status |
+|---|---|---|
+| ENH-51a | ws_feed_zerodha.py on MERDIAN AWS — NIFTY full chain | **COMPLETE** |
+| ENH-51b | Promote AWS runner to read from market_ticks (not Dhan REST option chain) | PROPOSED — after Phase 4B stable |
+| ENH-51c | AWS as primary compute, local dashboards-only | PROPOSED — after ENH-51b + 10 sessions validated |
+| ENH-51d | Local runner cutover — turn off local runner | PROPOSED — after ENH-51c gate |
+| ENH-51e | MeridianAlpha intraday WebSocket | DEFERRED — after MeridianAlpha G-01 fixed + intraday strategy defined |
+| ENH-51f | Unified portfolio management layer | DEFERRED — both systems stable, Phase 5 |
+
+**Conflicts between WebSocket and current REST pipeline (documented for ENH-51b planning):**
+
+1. Duplicate spot writes: capture_spot_1m.py → market_spot_snapshots (local). ws_feed_zerodha.py → market_ticks (AWS). No conflict today — separate tables. Resolution: runner switches to market_ticks in ENH-51b.
+2. Option chain REST vs WebSocket ticks: option_chain_snapshots (local REST) vs market_ticks (AWS WS). Pipeline reads option_chain_snapshots. No conflict today. Resolution: ENH-51b migrates gamma/vol scripts to market_ticks.
+3. Token synchronisation: Zerodha token in MERDIAN AWS .env + Dhan token in local .env + system_config. No conflict — separate flows. Pre-market checklist: both tokens must refresh before 09:14.
+4. Breadth ingest: stays local (Dhan LTP for 1,385 tickers, 429 risk on AWS). Path to AWS: subscribe breadth stocks to Zerodha WebSocket (1,007 + 1,385 = 2,392 — within 3,000 limit). Deferred to ENH-51c.
+
+---
+
+*ENH-51 late-night update 2026-04-13/14 — ENH-51a COMPLETE*

@@ -1,3 +1,62 @@
+## 2026-04-13 (late night) — engineering / documentation — WebSocket deployment, Phase 4A completion, V18G audit + v2
+
+**Goal:** Deploy Zerodha WebSocket feed on MERDIAN AWS, complete remaining Phase 4A wiring, build AppendixV18G rebuild-grade documentation, conduct independent audit, produce v2.
+
+**Session type:** engineering / documentation
+
+**Completed:**
+
+ENH-51a — Zerodha WebSocket Feed:
+- `ws_feed_zerodha.py` deployed on MERDIAN AWS (i-0878c118835386ec2)
+- kiteconnect installed on MERDIAN AWS. ZERODHA_API_KEY + ZERODHA_ACCESS_TOKEN added to MERDIAN AWS .env
+- market_ticks DDL applied to MERDIAN Supabase (bigserial PK, 3 indexes, 19 columns)
+- Instrument load: 45,712 NFO rows → 998 options + 6 futures + 3 spots = 1,007 total (within 3,000 limit)
+- Spot-only dry run: NIFTY 50 23,842.65 | NIFTY BANK 55,605.05 | INDIA VIX 20.50 — all 3 ticks fired
+- Live write test: 3 rows in market_ticks confirmed (2026-04-14 02:25:44 UTC)
+- AWS cron added: 44 3 * * 1-5 (start 09:14 IST), 02 10 * * 1-5 (stop 15:32 IST)
+- --ddl flag bug fixed (was inside __main__ block, hung on WebSocket load). fix_ws_ddl.py applied. Committed a215049.
+- Git: beb8709 (ws_feed_zerodha.py) → a215049 (--ddl fix)
+
+Phase 4 architecture design:
+- Option A (manual, NOW) → B (semi-auto, after 2-4wk live data) → C (full auto, after 4B stable)
+- Option B: merdian_order_placer.py + position monitor via Dhan API
+- Option C: merdian_auto_executor.py + merdian_risk_gate.py
+- Execution architecture documented in Enhancement Register v7 (ENH-49/50)
+
+WebSocket broker architecture finalised:
+- Zerodha KiteTicker: NIFTY full chain (3,000 limit, 100% GEX accuracy, 1,007 instruments)
+- Dhan REST: SENSEX only (Zerodha has no BSE F&O) — unchanged
+- MeridianAlpha: stays EOD via Zerodha Kite REST. Same Supabase. Integration deferred pending G-01.
+- ENH-51 revised architecture documented and committed (355d5cf → 173a63f)
+
+Pre-market and scheduler gap documented:
+- Zerodha WebSocket does NOT serve pre-market (09:00–09:08 call auction). MERDIAN_PreOpen (Dhan) covers this.
+- HTF zone rebuild (build_ict_htf_zones.py --timeframe D) is MANUAL — unresolved scheduler gap. Needs cron on AWS.
+- systemd service documented as the correct supervisor pattern for AWS primary (not Python supervisor)
+
+AppendixV18G:
+- V18G v1 written (756 paragraphs, validated)
+- Independent audit conducted: 19 findings (6 HIGH, 8 MEDIUM, 5 LOW)
+- Key HIGH findings: F-02 fix_dashboard_v2 regex damage missing, F-03 three CAPITAL_FLOOR locations, F-05 options_flow_snapshots absent, F-09 ict_zones/ict_htf_zones/momentum_snapshots absent, F-14 Dhan option chain API missing
+- V18G v2 rewritten incorporating all 19 findings (1,017 paragraphs, validated)
+- All registers and JSON updated per protocol
+
+**Files changed:** ws_feed_zerodha.py (NEW on MERDIAN AWS), fix_ws_ddl.py, Enhancement Register v7 (ENH-51a/b/c/d/e/f revised), session_log.md (this prepend)
+
+**Schema changes:** market_ticks (NEW in MERDIAN Supabase — DDL applied)
+
+**Open items closed:** ENH-51a (ws_feed_zerodha.py deployed and validated)
+
+**Open items added:** OI-11 (HTF zone cron on AWS), OI-12 (market_ticks retention cron), OI-13 (Telegram credentials)
+
+**Git commit hash:** a215049 (Local + MERDIAN AWS)
+
+**Next session goal:** First live session with all systems (session 10). Pre-market: build_ict_htf_zones.py --timeframe D, python merdian_start.py, python run_preflight.py. Verify: AWS write_cycle_status, ret_session non-null, ICT zones ~09:30, market_ticks populating.
+
+**docs_updated:** yes
+
+---
+
 ## 2026-04-13 (late evening) — engineering — Phase 4A + ENH-02/04/06/07 + Signal Engine
 
 **Goal:** Wire options flow into signal engine, build Phase 4A execution layer, close remaining Tier 1 ENH items.

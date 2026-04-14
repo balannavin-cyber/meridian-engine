@@ -382,10 +382,11 @@ CREATE INDEX IF NOT EXISTS idx_mt_token_ts  ON market_ticks (instrument_token, t
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
+if "--ddl" in sys.argv:
+    print(DDL)
+    sys.exit(0)
+
 if __name__ == "__main__":
-    if "--ddl" in sys.argv:
-        print(DDL)
-        sys.exit(0)
 
     try:
         runner = FeedRunner()

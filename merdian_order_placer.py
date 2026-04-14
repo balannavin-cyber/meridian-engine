@@ -71,16 +71,23 @@ SCRIP_CACHE_AGE = 86400  # refresh daily
 
 LOT_SIZE        = {"NIFTY": 75, "SENSEX": 20}
 
-# Dhan exchange segment by symbol
+# Dhan exchange ID and segment by symbol (from scrip master inspection)
+# Segment is 'D' for derivatives. Exchange is NSE/BSE.
+EXCHANGE_ID = {
+    "NIFTY":  "NSE",
+    "SENSEX": "BSE",
+}
+
+# Trading symbol prefix in SEM_TRADING_SYMBOL column
+TRADING_SYMBOL_PREFIX = {
+    "NIFTY":  "NIFTY-",
+    "SENSEX": "SENSEX-",
+}
+
+# Keep for backward compat with place_order payload
 EXCHANGE_SEGMENT = {
     "NIFTY":  "NSE_FNO",
     "SENSEX": "BSE_FNO",
-}
-
-# Dhan symbol name in scrip master
-SCRIP_SYMBOL = {
-    "NIFTY":  "NIFTY",
-    "SENSEX": "SENSEX",
 }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -108,24 +115,26 @@ def _scrip_is_stale() -> bool:
     return age > SCRIP_CACHE_AGE
 
 def load_scrip_master(force: bool = False) -> list[dict]:
-    """Download and cache Dhan scrip master. Returns list of rows."""
+    """Download and cache Dhan scrip master. Streams to disk — does NOT load into memory."""
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
 
     if not force and not _scrip_is_stale():
         log(f"Scrip master cache hit: {SCRIP_CACHE}")
-        with SCRIP_CACHE.open(encoding="utf-8") as f:
-            return list(csv.DictReader(f))
+        return []  # streaming used in find_security — no need to return rows
 
-    log("Downloading Dhan scrip master...")
-    r = requests.get(DHAN_SCRIP_URL, timeout=60)
+    log("Downloading Dhan scrip master (streaming)...")
+    r = requests.get(DHAN_SCRIP_URL, timeout=60, stream=True)
     if r.status_code != 200:
         raise RuntimeError(f"Scrip master download failed: {r.status_code}")
 
-    SCRIP_CACHE.write_bytes(r.content)
-    log(f"Scrip master cached: {SCRIP_CACHE} ({len(r.content):,} bytes)")
+    size = 0
+    with SCRIP_CACHE.open("wb") as f:
+        for chunk in r.iter_content(chunk_size=65536):
+            f.write(chunk)
+            size += len(chunk)
 
-    content = r.content.decode("utf-8", errors="replace")
-    return list(csv.DictReader(io.StringIO(content)))
+    log(f"Scrip master cached: {SCRIP_CACHE} ({size:,} bytes)")
+    return []
 
 def find_security(
     symbol: str,
@@ -135,6 +144,17 @@ def find_security(
 ) -> dict:
     """
     Find Dhan security_id and trading_symbol for an options contract.
+    Streams the CSV row by row — no full load into memory.
+
+    Scrip master format (verified 2026-04-14):
+      SEM_EXM_EXCH_ID: NSE | BSE
+      SEM_SEGMENT:     D  (derivatives)
+      SEM_INSTRUMENT_NAME: OPTIDX
+      SEM_TRADING_SYMBOL:  NIFTY-Apr2026-23800-CE
+      SEM_EXPIRY_DATE:     2026-04-17 14:30:00  (includes time)
+      SEM_STRIKE_PRICE:    23800.00000
+      SEM_OPTION_TYPE:     CE | PE
+      SM_SYMBOL_NAME:      blank for options
 
     Args:
         symbol:      'NIFTY' or 'SENSEX'
@@ -144,65 +164,71 @@ def find_security(
 
     Returns:
         {'security_id': '...', 'trading_symbol': '...', 'lot_size': int}
-
-    Raises:
-        RuntimeError if not found.
     """
     symbol      = symbol.upper()
     option_type = option_type.upper()
-    segment     = EXCHANGE_SEGMENT[symbol]
-    scrip_sym   = SCRIP_SYMBOL[symbol]
+    exch_id     = EXCHANGE_ID[symbol]
+    sym_prefix  = TRADING_SYMBOL_PREFIX[symbol]
+    target_strike = int(strike)
 
-    rows = load_scrip_master()
+    # Ensure cache exists
+    load_scrip_master()
 
-    matches = []
-    for row in rows:
-        # Filter by segment, symbol name, instrument type, option type
-        if row.get("SEM_SEGMENT", "").strip() != segment:
-            continue
-        if row.get("SM_SYMBOL_NAME", "").strip().upper() != scrip_sym:
-            continue
-        if row.get("SEM_INSTRUMENT_NAME", "").strip() != "OPTIDX":
-            continue
-        if row.get("SEM_OPTION_TYPE", "").strip().upper() != option_type:
-            continue
+    if not SCRIP_CACHE.exists():
+        raise RuntimeError("Scrip master cache not found. Run load_scrip_master() first.")
 
-        # Match expiry date (stored as YYYY-MM-DD in scrip master)
-        row_expiry = row.get("SEM_EXPIRY_DATE", "").strip()[:10]
-        if row_expiry != expiry_date:
-            continue
+    log(f"Searching scrip master: {symbol} {strike} {option_type} expiry={expiry_date}")
 
-        # Match strike (stored as float e.g. "23800.0")
-        try:
-            row_strike = int(float(row.get("SEM_STRIKE_PRICE", "0")))
-        except (ValueError, TypeError):
-            continue
-        if row_strike != int(strike):
-            continue
+    with SCRIP_CACHE.open(encoding="utf-8", errors="replace") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            # Exchange filter
+            if row.get("SEM_EXM_EXCH_ID", "").strip() != exch_id:
+                continue
+            # Segment must be D (derivatives)
+            if row.get("SEM_SEGMENT", "").strip() != "D":
+                continue
+            # Instrument type
+            if row.get("SEM_INSTRUMENT_NAME", "").strip() != "OPTIDX":
+                continue
+            # Option type
+            if row.get("SEM_OPTION_TYPE", "").strip().upper() != option_type:
+                continue
+            # Symbol prefix in trading symbol
+            ts = row.get("SEM_TRADING_SYMBOL", "").strip()
+            if not ts.startswith(sym_prefix):
+                continue
+            # Expiry date (stored as 'YYYY-MM-DD HH:MM:SS')
+            row_expiry = row.get("SEM_EXPIRY_DATE", "").strip()[:10]
+            if row_expiry != expiry_date:
+                continue
+            # Strike price
+            try:
+                row_strike = int(float(row.get("SEM_STRIKE_PRICE", "0")))
+            except (ValueError, TypeError):
+                continue
+            if row_strike != target_strike:
+                continue
 
-        matches.append(row)
+            # Match found
+            security_id = row.get("SEM_SMST_SECURITY_ID", "").strip()
+            try:
+                lot_size = int(float(row.get("SEM_LOT_UNITS", LOT_SIZE.get(symbol, 75))))
+            except (ValueError, TypeError):
+                lot_size = LOT_SIZE.get(symbol, 75)
 
-    if not matches:
-        raise RuntimeError(
-            f"Security not found: {symbol} {strike} {option_type} expiry={expiry_date}. "
-            f"Check scrip master or expiry date format."
-        )
+            log(f"Found: {ts} | security_id={security_id} | lot_size={lot_size}")
+            return {
+                "security_id":    security_id,
+                "trading_symbol": ts,
+                "lot_size":       lot_size,
+            }
 
-    row = matches[0]
-    security_id    = row.get("SEM_SMST_SECURITY_ID", "").strip()
-    trading_symbol = row.get("SEM_TRADING_SYMBOL", "").strip()
-
-    try:
-        lot_size = int(float(row.get("SEM_LOT_UNITS", LOT_SIZE.get(symbol, 75))))
-    except (ValueError, TypeError):
-        lot_size = LOT_SIZE.get(symbol, 75)
-
-    log(f"Found: {trading_symbol} | security_id={security_id} | lot_size={lot_size}")
-    return {
-        "security_id":    security_id,
-        "trading_symbol": trading_symbol,
-        "lot_size":       lot_size,
-    }
+    raise RuntimeError(
+        f"Security not found: {symbol} {strike} {option_type} expiry={expiry_date}. "
+        f"Checked scrip master: {SCRIP_CACHE}. "
+        f"Verify expiry date format (YYYY-MM-DD) and that contract is in scrip master."
+    )
 
 # ── Order Placement ───────────────────────────────────────────────────────────
 
@@ -663,24 +689,44 @@ def _test_mode() -> None:
     _check_env()
     # Test: find NIFTY ATM CE for nearest expiry
     # Get today's signal to find actual strike/expiry
-    if SUPABASE:
-        rows = (SUPABASE.table("signal_snapshots")
-                .select("symbol,atm_strike,expiry_date,dte")
-                .eq("symbol", "NIFTY")
-                .order("ts", desc=True)
-                .limit(1)
-                .execute().data)
-        if rows:
-            sig = rows[0]
-            strike = int(sig["atm_strike"])
-            expiry = sig["expiry_date"][:10]
-            log(f"Testing with live signal: NIFTY {strike} CE expiry={expiry}")
-            result = find_security("NIFTY", strike, expiry, "CE")
-            log(f"Result: {result}")
-        else:
-            log("No signal found — testing with placeholder")
+    # Find first available NIFTY option in scrip master for test
+    load_scrip_master()
+    test_row = None
+    if SCRIP_CACHE.exists():
+        import csv as _csv
+        with SCRIP_CACHE.open(encoding="utf-8", errors="replace") as f:
+            for row in _csv.DictReader(f):
+                if (row.get("SEM_EXM_EXCH_ID","").strip() == "NSE"
+                        and row.get("SEM_SEGMENT","").strip() == "D"
+                        and row.get("SEM_INSTRUMENT_NAME","").strip() == "OPTIDX"
+                        and row.get("SEM_TRADING_SYMBOL","").startswith("NIFTY-")
+                        and row.get("SEM_OPTION_TYPE","").strip() == "CE"):
+                    test_row = row
+                    break
+
+    if test_row:
+        strike = int(float(test_row["SEM_STRIKE_PRICE"]))
+        expiry = test_row["SEM_EXPIRY_DATE"].strip()[:10]
+        log(f"Testing with first available NIFTY CE: strike={strike} expiry={expiry}")
+        result = find_security("NIFTY", strike, expiry, "CE")
+        log(f"Result: {result}")
+
+        # Also test SENSEX
+        with SCRIP_CACHE.open(encoding="utf-8", errors="replace") as f:
+            for row in _csv.DictReader(f):
+                if (row.get("SEM_EXM_EXCH_ID","").strip() == "BSE"
+                        and row.get("SEM_SEGMENT","").strip() == "D"
+                        and row.get("SEM_INSTRUMENT_NAME","").strip() == "OPTIDX"
+                        and row.get("SEM_TRADING_SYMBOL","").startswith("SENSEX-")
+                        and row.get("SEM_OPTION_TYPE","").strip() == "CE"):
+                    s_strike = int(float(row["SEM_STRIKE_PRICE"]))
+                    s_expiry = row["SEM_EXPIRY_DATE"].strip()[:10]
+                    log(f"Testing SENSEX CE: strike={s_strike} expiry={s_expiry}")
+                    s_result = find_security("SENSEX", s_strike, s_expiry, "CE")
+                    log(f"SENSEX Result: {s_result}")
+                    break
     else:
-        log("Supabase not available — skipping signal fetch")
+        log("No NIFTY options found in scrip master")
 
     log("=== TEST COMPLETE ===")
 

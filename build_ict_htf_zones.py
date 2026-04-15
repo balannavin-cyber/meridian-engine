@@ -54,8 +54,8 @@ FVG_MIN_PCT     = 0.15  # % gap size for weekly FVG (larger than intraday)
 EXPIRY_WD = {"NIFTY": 1, "SENSEX": 1}  # both Tuesday post-Sep 2025
 
 # How many weeks/days back to build zones for
-WEEKLY_LOOKBACK = 8   # 8 weeks of weekly zones
-DAILY_LOOKBACK  = 5   # 5 days of daily zones
+WEEKLY_LOOKBACK = 52   # 8 weeks of weekly zones
+DAILY_LOOKBACK  = 60   # 5 days of daily zones
 
 
 # â”€â”€ Utilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -346,6 +346,73 @@ def detect_daily_zones(daily_ohlcv, symbol, target_date):
 
 # â”€â”€ DB write â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+
+# ── Breach detection ──────────────────────────────────────────────────────────
+
+def filter_breached_zones(zones: list, daily_ohlcv: dict, as_of: str) -> list:
+    """
+    ICT-aligned zone filter. Two rules:
+
+    1. OBs and FVGs — keep if unmitigated relative to current price:
+         BULL_OB / BULL_FVG: current_spot > zone_high  (support below price)
+         BEAR_OB / BEAR_FVG: current_spot < zone_low   (resistance above price)
+
+    2. PDH / PDL — keep nearest 2 above + 2 below current price only.
+         ICT: most recent unmitigated PDH/PDL is highest priority.
+         Older ones are superseded by newer structure.
+    """
+    sorted_dates = sorted(k for k in daily_ohlcv.keys() if k <= as_of)
+    if not sorted_dates:
+        return zones
+    current_spot = daily_ohlcv[sorted_dates[-1]]["close"]
+
+    ob_fvg = []
+    pdh_above = []  # resistance PDH/PDL above current price
+    pdl_below = []  # support PDH/PDL below current price
+
+    for zone in zones:
+        zone_high = float(zone["zone_high"])
+        zone_low  = float(zone["zone_low"])
+        pattern   = zone.get("pattern_type", "")
+        direction = zone.get("direction", 0)
+
+        if pattern in ("BULL_OB", "BULL_FVG"):
+            # Support: valid if current price is above the zone
+            if current_spot > zone_high:
+                ob_fvg.append(zone)
+
+        elif pattern in ("BEAR_OB", "BEAR_FVG"):
+            # Resistance: valid if current price is below the zone
+            if current_spot < zone_low:
+                ob_fvg.append(zone)
+
+        elif pattern == "PDH":
+            # PDH = resistance level
+            if current_spot < zone_low:
+                # Above current price — potential overhead resistance
+                pdh_above.append((zone_low, zone))
+            # PDH below current price = already surpassed, skip
+
+        elif pattern == "PDL":
+            # PDL = support level
+            if current_spot > zone_high:
+                # Below current price — potential support
+                pdl_below.append((zone_high, zone))
+            # PDL above current price = doesn't make sense, skip
+
+        else:
+            # Unknown pattern type — keep
+            ob_fvg.append(zone)
+
+    # Sort PDH by proximity to current price (nearest first) — take top 2
+    pdh_above.sort(key=lambda x: x[0])          # ascending = nearest first
+    nearest_pdh = [z for _, z in pdh_above[:2]]
+
+    # Sort PDL by proximity to current price (nearest first = highest PDL) — take top 2
+    pdl_below.sort(key=lambda x: x[0], reverse=True)  # descending = nearest first
+    nearest_pdl = [z for _, z in pdl_below[:2]]
+
+    return ob_fvg + nearest_pdh + nearest_pdl
 def upsert_zones(sb, zones, dry_run=False):
     """
     Upsert zones into ict_htf_zones.
@@ -459,7 +526,8 @@ def main():
             weekly_bars = build_weekly_bars(daily_ohlcv)
             weekly_bars = weekly_bars[-WEEKLY_LOOKBACK:]
             w_zones = detect_weekly_zones(weekly_bars, symbol)
-            log(f"  Detected {len(w_zones)} weekly zones")
+            w_zones = filter_breached_zones(w_zones, daily_ohlcv, str(target_date))
+            log(f"  Detected {len(w_zones)} weekly zones (after breach filter)")
             n = upsert_zones(sb, w_zones, dry_run)
             log(f"  Written {n} weekly zones")
             total_written += n
@@ -467,7 +535,8 @@ def main():
         if do_daily:
             log("  Building daily zones...")
             d_zones = detect_daily_zones(daily_ohlcv, symbol, target_date)
-            log(f"  Detected {len(d_zones)} daily zones")
+            d_zones = filter_breached_zones(d_zones, daily_ohlcv, str(target_date))
+            log(f"  Detected {len(d_zones)} daily zones (after breach filter)")
             n = upsert_zones(sb, d_zones, dry_run)
             log(f"  Written {n} daily zones")
             total_written += n

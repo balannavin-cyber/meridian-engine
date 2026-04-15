@@ -658,6 +658,11 @@ def upsert_gamma_metrics(result: GammaMetricsResult) -> dict[str, Any]:
         "symbol": result.symbol,
         "ts": result.ts,
         "expiry_date": result.expiry_date,
+        "dte": (
+            (__import__("datetime").date.fromisoformat(result.expiry_date) -
+             __import__("datetime").date.today()).days
+            if result.expiry_date else None
+        ),
         "spot": result.spot,
         "net_gex": result.net_gex,
         "gamma_concentration": result.gamma_concentration,

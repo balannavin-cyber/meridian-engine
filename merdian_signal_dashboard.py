@@ -69,7 +69,7 @@ def fetch_zone(sym):
         .select("pattern_type,ict_tier,mtf_context,zone_high,zone_low,"
                 "opt_type,ict_lots_t1,ict_lots_t2,ict_lots_t3")
         .eq("symbol", sym).eq("trade_date", str(date.today()))
-        .eq("status", "ACTIVE").order("detected_at", desc=True).limit(1).execute().data)
+        .eq("status", "ACTIVE").order("detected_at_ts", desc=True).limit(1).execute().data)
     return r[0] if r else None
 
 def fetch_capital(sym):

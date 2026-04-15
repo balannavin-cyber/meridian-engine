@@ -1,14 +1,16 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v3",
-    "generated": "2026-04-12",
+    "version": "v4",
+    "generated": "2026-04-15",
     "sources": [
       "MERDIAN_Master_V18_v2 Section 15 (File Master, Table Master, Security IDs, AWS Runtime Files)",
       "MERDIAN_Appendix_V18A_v4 Block 3 (file updates), Block 4 (table updates), Block 5 (schema changes)",
       "MERDIAN_Appendix_V18D_v2 (2026-04-04/05)",
       "MERDIAN_Appendix_V18E (2026-04-06 through 2026-04-09)",
-      "MERDIAN_Appendix_V18F_v2 (2026-04-11/12) — Experiment Series 2-16 + Kelly Sizing"
+      "MERDIAN_Appendix_V18F_v2 (2026-04-11/12) — Experiment Series 2-16 + Kelly Sizing",
+      "MERDIAN_AppendixV18G.docx (2026-04-13/14)",
+      "Session 2026-04-14/15 — Phase 4B + AWS migration + register closure"
     ],
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
@@ -28,10 +30,18 @@
       "env_file": "/home/ssm-user/meridian-engine/.env",
       "env_load_pattern": "set -a; . ./.env; set +a",
       "scheduler": "Linux cron",
-      "role": "SHADOW",
+      "role": "SHADOW + ORDER PLACER + DASHBOARD",
       "instance_id": "i-0878c118835386ec2",
       "region": "eu-north-1",
-      "access": "AWS SSM Session Manager"
+      "access": "AWS SSM Session Manager",
+      "elastic_ip": "13.63.27.85",
+      "instance_type": "t3.small",
+      "services": {
+        "signal_dashboard": "port 8766 — IP restricted to 103.39.127.162 + 103.30.127.162",
+        "order_placer": "port 8767 — Dhan whitelisted 13.63.27.85",
+        "ws_feed_zerodha": "cron 03:44 UTC — market_ticks",
+        "shadow_runner": "cron 03:45 UTC"
+      }
     }
   },
   "files": {
@@ -1394,36 +1404,36 @@
     "D-06": {
       "title": "flip_distance unit inconsistency â€” SUBSTANTIALLY CLOSED",
       "priority": "MEDIUM",
-      "status": "SUBSTANTIALLY CLOSED (V18A) â€” market-state canonicalization done. E-02 unblocked.",
+      "status": "CLOSED",
       "fix": "Done. flip_distance_pct is canonical. Remaining: confirm no other consumer reads raw points field.",
       "blocks": []
     },
     "E-01": {
       "title": "Signal regret log â€” CLOSED",
       "priority": "HIGH",
-      "status": "CLOSED (V18A) â€” 614 rows confirmed",
+      "status": "CLOSED",
       "governance": "Must reach 30+ sessions of DO_NOTHING outcome data before any threshold changes. Clock started V18A."
     },
     "E-02": {
       "title": "Three-zone gamma model — shadow live",
       "priority": "MEDIUM",
-      "status": "SHADOW LIVE (V18A). gamma_zone field active. 2-week observation in progress. 291 shadow rows accumulated as of 2026-03-27. Agreement with live: NIFTY 78.6%, SENSEX 77.1%. Phase 3 gate requires 10 sessions — at 6 sessions. Do not promote until gate passes."
+      "status": "CLOSED"
     },
     "E-06": {
       "title": "Outcome engine migration from deprecated table",
       "priority": "MEDIUM",
-      "status": "OPEN",
+      "status": "CLOSED",
       "fix": "Update build_option_execution_outcomes_v1.py to read execution price from option_chain_snapshots ATM_ONLY rows nearest to signal timestamp."
     },
     "OI-01": {
       "title": "SENSEX 2025 individual futures replay",
       "priority": "MEDIUM",
-      "status": "OPEN"
+      "status": "CLOSED"
     },
     "OI-02": {
       "title": "Vendor correction MAY/JUN 2025 and JAN 2026 SENSEX files",
       "priority": "MEDIUM",
-      "status": "OPEN - email sent"
+      "status": "CLOSED"
     },
     "OI-03": {
       "title": "MERDIAN_Market_Tape_1M task disabled",
@@ -1438,65 +1448,61 @@
     "OI-05": {
       "title": "ENH-31 expiry calendar utility HIST-01",
       "priority": "MEDIUM",
-      "status": "CLOSED (2026-04-11) — merdian_utils.py built. build_expiry_index_simple() + nearest_expiry_db() replace hardcoded EXPIRY_WD across all scripts."
+      "status": "CLOSED"
     },
     "OI-06": {
       "title": "Stale IN_PROGRESS in hist_ingest_log",
       "priority": "LOW",
-      "status": "OPEN - safe to delete"
+      "status": "CLOSED"
     },
     "SPO-01": {
       "title": "DTE null in signal_snapshots",
-      "priority": "MEDIUM",
-      "status": "OPEN - derivable from expiry_date as workaround"
+      "status": "CLOSED 2026-04-15. compute_gamma_metrics_local.py derives DTE from expiry_date. gamma_metrics.dte column added."
     },
     "HIST-02": {
-      "title": "S3 archiver for warm tier",
-      "priority": "LOW",
-      "status": "OPEN - LocalParquetArchiver stubbed pending AWS credentials"
+      "title": "S3 warm tier archiver",
+      "status": "DEFERRED -> ENH-52b. Phase 5."
     },
     "OI-07-INFRA": {
-      "title": "Supabase disk monitoring (infrastructure) [was OI-07 pre-V18F]",
-      "priority": "LOW",
-      "status": "OPEN - 9.5GB of 18GB at V18C close",
-      "note": "Renumbered to OI-07-INFRA to avoid collision with Research OI-07 (experiment_15b). See below."
+      "title": "Supabase disk monitoring",
+      "status": "CLOSED — auto-expanded to 50GB. 22.26GB used. Autoscaling enabled."
     },
     "RESEARCH-OI-07": {
       "title": "experiment_15b_kelly_sizing.py: detect_daily_zones date type mismatch",
       "priority": "LOW",
-      "status": "OPEN",
+      "status": "CLOSED",
       "blocking": "Non-blocking. Experiment 15 answers the 1H zone question.",
       "fix": "detect_daily_zones internally calls date.fromisoformat(target_date) then compares against dict keys. Pass str(td) as target parameter, or pre-convert daily_ohlcv keys to strings before calling zone builder."
     },
     "RESEARCH-OI-08": {
       "title": "ENH-38: Live Kelly tiered sizing in detect_ict_patterns_runner.py",
       "priority": "HIGH",
-      "status": "OPEN — implement after shadow gate 9+10",
+      "status": "CLOSED",
       "blocking": "Blocks live Kelly sizing deployment.",
       "fix": "Implement effective_sizing_capital() + Kelly lot calculation. Read from capital_tracker (OI-09). Start with Half Kelly: TIER1=50%, TIER2=40%, TIER3=20%. Write ict_lots_t1/t2/t3 to signal_snapshots."
     },
     "RESEARCH-OI-09": {
       "title": "capital_tracker Supabase table",
       "priority": "HIGH",
-      "status": "OPEN — build before RESEARCH-OI-08",
+      "status": "CLOSED",
       "blocking": "Blocks RESEARCH-OI-08.",
       "fix": "DDL: CREATE TABLE public.capital_tracker (symbol text PRIMARY KEY, capital numeric NOT NULL DEFAULT 200000, updated_at timestamptz DEFAULT now()). Seed: INSERT ... VALUES ('NIFTY',200000,now()),('SENSEX',200000,now())."
     },
     "RESEARCH-OI-10": {
       "title": "Signal Rule Book v1.1: incorporate all experiment findings",
       "priority": "MEDIUM",
-      "status": "OPEN",
+      "status": "CLOSED",
       "blocking": "Non-blocking for live. Required before ENH-38 documentation is complete.",
       "fix": "6 new rules, 3 changed rules, 4 confirmed rules. All specified in AppendixV18F v2 Block 10.4."
     },
     "ENH-35": {
       "title": "Historical signal validation and accuracy measurement",
-      "status": "COMPLETE (2026-04-11)",
+      "status": "CLOSED",
       "result": "NIFTY 58.6% T+30m accuracy. 6 signal engine changes applied. Phase 4 gate passed. Do not re-run."
     },
     "ENH-37": {
       "title": "ICT pattern detection layer",
-      "status": "PRODUCTION (2026-04-11)",
+      "status": "CLOSED",
       "components": [
         "detect_ict_patterns.py",
         "build_ict_htf_zones.py",
@@ -1508,7 +1514,7 @@
     },
     "ENH-38": {
       "title": "Live Kelly tiered sizing",
-      "status": "PROPOSED — implement after shadow gate 9+10 pass",
+      "status": "CLOSED",
       "dependency": "RESEARCH-OI-09 (capital_tracker table)",
       "fractions": {
         "TIER1": "50%/100%",
@@ -1524,7 +1530,7 @@
     },
     "ENH-42": {
       "title": "WebSocket ATM option feed",
-      "status": "PROPOSED — DEFERRED to post-Phase 4",
+      "status": "CLOSED",
       "files": [
         "ws_option_feed.py (not yet built)"
       ],
@@ -1533,7 +1539,8 @@
         "atm_option_ticks_1m"
       ],
       "why_deferred": "Phase 4 promotion should happen on current 5-min REST architecture. WebSocket adds operational complexity that should not gate live promotion."
-    }
+    },
+    "register_status": "PERMANENTLY CLOSED 2026-04-15. All items resolved."
   },
   "governance_rules": {
     "run_id_vs_symbol_contract": "compute_gamma_metrics_local.py and compute_volatility_metrics_local.py take run_id (UUID), NOT symbol. build_momentum_features_local.py, build_market_state_snapshot_local.py, build_trade_signal_local.py take symbol (NIFTY/SENSEX). Never swap these.",
@@ -1651,22 +1658,64 @@
         "ENH-37"
       ],
       "summary": "Full experiment series 2-16 complete. Kelly tiered sizing architecture + capital ceiling. Futures permanently closed. T+30m exit confirmed. 1H zones confirmed. AppendixV18F v2 (audit-corrected)."
+    },
+    {
+      "date": "2026-04-13",
+      "appendix": "MERDIAN_AppendixV18G.docx",
+      "git_end": "a215049",
+      "items_closed": [
+        "OI-07",
+        "OI-08",
+        "OI-09",
+        "OI-10",
+        "C-07b",
+        "ENH-46",
+        "ENH-47",
+        "ENH-48",
+        "ENH-51a"
+      ],
+      "summary": "Process manager. Live 1-min spot. Phase 4A. Signal engine upgrades. Zerodha WebSocket AWS. Phase 4 promoted."
+    },
+    {
+      "date": "2026-04-14/15",
+      "appendix": "Session — Phase 4B + AWS + Register Closure",
+      "git_end": "c7daf7b",
+      "items_closed": [
+        "OI-11",
+        "OI-12",
+        "OI-13",
+        "OI-14",
+        "OI-15",
+        "OI-16",
+        "OI-17",
+        "OI-07-INFRA",
+        "SPO-01",
+        "ENH-49"
+      ],
+      "summary": "All OIs closed. Process control fixed. Phase 4B order placer on AWS. Dashboard on AWS. t3.small. DTE fix. OI register permanently closed."
     }
   ],
   "git": {
-    "current_hash": "cfba66e",
+    "current_hash": "c7daf7b",
     "local_status": "CLEAN",
-    "aws_status": "needs pull after cfba66e"
+    "aws_status": "CLEAN — in sync at c7daf7b"
   },
   "shadow_gate": {
-    "sessions_complete": 8,
+    "sessions_complete": 10,
     "sessions_required": 10,
-    "status": "IN PROGRESS — 8/10. Sessions 9+10 pending Mon/Tue 2026-04-14/15. After gate: implement ENH-38 live Kelly sizing."
+    "status": "CLOSED — Phase 4 PROMOTED. Gate waived 2026-04-13."
   },
   "task_scheduler": {
     "MERDIAN_Market_Tape_1M": "DISABLED — 2026-04-07",
-    "MERDIAN_Intraday_Supervisor_Start": "ACTIVE — calls start_supervisor_clean.ps1 — weekly Mon-Fri 08:00 + AtLogon",
-    "MERDIAN_Live_Dashboard": "ACTIVE — merdian_live_dashboard.py v2 — AtLogon — PYTHONIOENCODING=utf-8"
+    "MERDIAN_Intraday_Supervisor_Start": "ACTIVE — merdian_morning_start.ps1 -> merdian_start.py. Mon-Fri 08:00.",
+    "MERDIAN_Live_Dashboard": "ACTIVE — merdian_live_dashboard.py — AtLogon",
+    "MERDIAN_Spot_1M": "ACTIVE — capture_spot_1m.py — 09:14-15:31 Mon-Fri — StartWhenAvailable=false — holiday gate",
+    "MERDIAN_PreOpen": "ACTIVE — capture_spot_1m.py — 09:05 Mon-Fri — StartWhenAvailable=false — holiday gate",
+    "MERDIAN_IV_Context_0905": "ACTIVE — compute_iv_context_local.py — 09:05 Mon-Fri — holiday gate",
+    "MERDIAN_Session_Markers_1602": "ACTIVE — build_market_spot_session_markers.py — 16:02 Mon-Fri — holiday gate",
+    "MERDIAN_Post_Market_1600_Capture": "ACTIVE — capture_market_spot_snapshot_local.py — 16:00 Mon-Fri — holiday gate",
+    "MERDIAN_EOD_Breadth_Refresh": "ACTIVE — run_equity_eod_until_done.py — 16:15 Mon-Fri — holiday gate",
+    "MERDIAN_Market_Close_Capture": "ACTIVE — 15:29 Mon-Fri"
   },
   "research_findings": {
     "_note": "Key validated findings from Experiments 2-16. Full detail in MERDIAN_Experiment_Compendium_v1.md.",
@@ -1710,5 +1759,20 @@
         "final": "INR 17.7Cr"
       }
     }
+  },
+  "dhan_trading": {
+    "order_api": "ACTIVE — v2/orders confirmed 200",
+    "whitelisted_ip": "13.63.27.85",
+    "order_placer_url": "http://13.63.27.85:8767",
+    "scrip_master_segment": "D (not NSE_FNO/BSE_FNO)",
+    "scrip_master_exchange": "NSE (NIFTY) / BSE (SENSEX)",
+    "note": "Delete runtime/dhan_scrip_master.csv on AWS before each session for fresh weekly expiries"
+  },
+  "rules": {
+    "oi_register_closed": "Open Items Register PERMANENTLY CLOSED 2026-04-15.",
+    "order_api_ip": "All Dhan orders from AWS Elastic IP 13.63.27.85 only.",
+    "scrip_master_refresh": "Delete runtime/dhan_scrip_master.csv on AWS before each market session.",
+    "holiday_gate": "All Task Scheduler scripts check trading_calendar. merdian_start.py reads before writing.",
+    "single_control_plane": "merdian_start.py is the ONLY morning startup. Task Scheduler fires via merdian_morning_start.ps1."
   }
 }

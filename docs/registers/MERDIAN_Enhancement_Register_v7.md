@@ -465,3 +465,152 @@ Deployed on MERDIAN AWS (i-0878c118835386ec2, eu-north-1).
 ---
 
 *ENH-51 late-night update 2026-04-13/14 — ENH-51a COMPLETE*
+
+
+---
+
+## v8 Changes — Session 2026-04-14/15
+
+| Change | Detail |
+|---|---|
+| ENH-48 | **COMPLETE** — Phase 4A execution layer: merdian_trade_logger.py + merdian_exit_monitor.py + dashboard LOG TRADE/CLOSE buttons |
+| ENH-49 | **COMPLETE** — Phase 4B: merdian_order_placer.py on AWS (port 8767). Dhan order API confirmed. Elastic IP 13.63.27.85 whitelisted. Scrip master streaming. |
+| ENH-50 | **PROPOSED** — Phase 4C full auto. Gate: Phase 4B stable + real slippage data. |
+| ENH-51a | **COMPLETE** (confirmed) — ws_feed_zerodha.py on MERDIAN AWS. 1,007 instruments. Cron 03:44 UTC. |
+| ENH-51b | **PROPOSED** — Pipeline reads market_ticks instead of REST. Gate: tomorrow's live session confirms market_ticks options data quality. |
+| ENH-51c/d | **PROPOSED** — AWS primary, local dashboards-only. Gate: ENH-51b + 10 sessions validated. |
+| ENH-52 NEW | **PROPOSED** — Dhan expired options 5-year backfill. ATM-relative strikes. Batch 30-day chunks. Gate: Phase 4B stable. |
+| ENH-52b NEW | **DEFERRED (Phase 5)** — S3 warm tier archiver. Was HIST-02 in open items. LocalParquetArchiver stubbed. S3ParquetArchiver pending. Not blocking anything. |
+| Shadow gate | **CLOSED** — Phase 4 promoted. Gate waived (full year backtest evidence sufficient). Session 9 passed 2026-04-13. |
+| OI register | **PERMANENTLY CLOSED** — all items resolved 2026-04-15. |
+
+---
+
+### ENH-48: Phase 4A Execution Layer
+
+| Field | Detail |
+|---|---|
+| Status | **COMPLETE** |
+| Updated | 2026-04-13 |
+| Files | merdian_trade_logger.py · merdian_exit_monitor.py |
+
+Manual execution layer. Signal fires → operator clicks LOG TRADE on dashboard → enters premium → trade_log + exit_alerts written. Exit monitor polls every 30s, fires Telegram at T+30m. CLOSE TRADE updates PnL and capital_tracker.
+
+---
+
+### ENH-49: Phase 4B — Semi-Auto Order Placement
+
+| Field | Detail |
+|---|---|
+| Status | **COMPLETE** |
+| Updated | 2026-04-15 |
+| Files | merdian_order_placer.py (AWS port 8767) |
+| Dhan IP | 13.63.27.85 (Elastic IP, permanent, whitelisted in Dhan) |
+
+merdian_order_placer.py on MERDIAN AWS. Endpoints: POST /place_order, POST /square_off, GET /margin, GET /health. Downloads Dhan scrip master (streaming, no OOM). Finds security_id by streaming CSV match on exchange=NSE/BSE, segment=D, OPTIDX, trading_symbol prefix, expiry_date, strike, option_type. Places MARKET INTRADAY order. Polls fill. Writes trade_log + exit_alerts. Updates capital_tracker on square off. Dashboard PLACE ORDER button (yellow) routes to AWS order placer via AWS_ORDER_PLACER_URL. Dashboard SQUARE OFF button routes to /square_off. Scrip master refreshed daily (delete runtime/dhan_scrip_master.csv before market open).
+
+---
+
+### ENH-50: Phase 4C — Full Auto
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED** |
+| Gate | Phase 4B stable + 2–4 weeks real fill data + slippage analysis |
+
+Full automated execution without operator confirmation. Signal fires → order placed → exit at T+30m automatically.
+
+---
+
+### ENH-52: Dhan Expired Options 5-Year Backfill
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED** |
+| Added | 2026-04-14 |
+| Gate | Phase 4B stable |
+
+Use Dhan Data API expired options endpoint to extend hist_option_bars_1m back to 2021. Provides 1-min OHLCV + IV + OI for NIFTY/SENSEX expired contracts. Constraint: ATM-relative strikes (ATM±10 for indices). Requires mapping ATM-relative → absolute strike using hist_spot_bars_1m spot prices. 30-day chunks. Current dataset is 1 year (Apr 2025–Mar 2026). 5-year extension adds COVID recovery, rate cycle, and multiple volatility regime data.
+
+---
+
+### ENH-52b: S3 Warm Tier Archiver (was HIST-02)
+
+| Field | Detail |
+|---|---|
+| Status | **DEFERRED — Phase 5** |
+| Added | 2026-04-15 (moved from OI register HIST-02) |
+
+LocalParquetArchiver stubbed at C:\GammaEnginePython\data\warm_tier\. S3ParquetArchiver pending AWS credentials and bucket setup. Not blocking any current pipeline. DuckDB backtest harness on S3 Parquet also deferred. Build after Phase 4C stable.
+
+---
+
+### Infrastructure Changes (2026-04-14/15)
+
+| Item | Detail |
+|---|---|
+| t3.micro → t3.small | AWS instance upgraded. 2GB RAM. Required for scrip master parsing (32MB CSV). |
+| Elastic IP | 13.63.27.85 allocated + associated to i-0878c118835386ec2. Permanent. |
+| Dhan IP whitelist | 13.63.27.85 added to Dhan Static IP Setting (IP Address 1). |
+| AWS signal dashboard | merdian_signal_dashboard.py running on AWS port 8766. Bound to 0.0.0.0. IP-restricted to 103.39.127.162 + 103.30.127.162. |
+| AWS @reboot crons | signal_dashboard + order_placer auto-start on reboot via crontab @reboot. |
+| Task Scheduler fix | MERDIAN_Intraday_Supervisor_Start → merdian_morning_start.ps1 → merdian_start.py. Single control plane. StartWhenAvailable=false on Spot_1M + PreOpen. |
+| Holiday gates | 4 scripts patched: build_market_spot_session_markers.py, capture_market_spot_snapshot_local.py, compute_iv_context_local.py, run_equity_eod_until_done.py. Calendar check before any API call. |
+| merdian_start.py | ensure_calendar_row() read-before-write. Holidays never overwritten. |
+| SPO-01 fix | compute_gamma_metrics_local.py derives DTE from expiry_date. gamma_metrics.dte column added. Flows to market_state_snapshots → signal_snapshots. |
+| ict_zones fix | Dashboard order column detected_at → detected_at_ts. Eliminates 391 daily 400 errors. |
+| Supabase disk | Auto-expanded to 50GB. 22.26GB used. Autoscaling enabled. |
+| market_ticks retention | pg_cron job 45: DELETE WHERE ts < now() - interval '2 days'. Daily 20:00 IST weekdays. |
+| HTF zone cron AWS | 30 3 * * 1-5 build_ict_htf_zones.py --timeframe D on MERDIAN AWS. |
+| Telegram | TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in .env. Exit monitor alerts confirmed working. |
+
+---
+
+## Updated Summary Table
+
+| ID | Title | Tier | Status |
+|---|---|---|---|
+| ENH-01 | ret_session momentum | 1 | **COMPLETE** |
+| ENH-02 | Put/Call Ratio signal | 1 | **COMPLETE** |
+| ENH-03 | Volume/OI ratio signal | 1 | **COMPLETE** |
+| ENH-04 | Chain-wide IV skew signal | 1 | **COMPLETE** |
+| ENH-05 | CONFLICT resolution logic | 1 | SUPERSEDED by SE-01 (ENH-35) |
+| ENH-06 | Pre-trade cost filter | 1 | **COMPLETE** |
+| ENH-07 | Basis-implied risk-free rate | 1 | **COMPLETE** |
+| ENH-08 | Vega bucketing by expiry | 1 | DEFERRED |
+| ENH-28 | Historical data ingest pipeline | 1 | **COMPLETE** |
+| ENH-29 | Signal premium outcome measurement | 1 | PIVOTED |
+| ENH-30 | SMDM infrastructure | 1 | PARTIAL — non-blocking shadow steps running |
+| ENH-31 | Expiry calendar utility | 1 | **COMPLETE** — merdian_utils.py |
+| ENH-32 | S3 warm tier archiver | 1 | STUBBED — see ENH-52b |
+| ENH-33 | Pure-Python BS IV engine | 1 | **PRODUCTION** |
+| ENH-34 | Live monitoring dashboard | 1 | **PRODUCTION** |
+| ENH-35 | Historical signal validation | 1 | **COMPLETE** |
+| ENH-36 | hist_* to live 1-min spot | 1 | **COMPLETE** |
+| ENH-37 | ICT pattern detection layer | 1 | **COMPLETE** |
+| ENH-38 | Live Kelly tiered sizing | 1 | **COMPLETE** |
+| ENH-39 | Capital ceiling enforcement | 1 | **COMPLETE** |
+| ENH-40 | Signal Rule Book v1.1 | 1 | **COMPLETE** |
+| ENH-41 | BEAR_OB DTE gate — combined structure | 1 | DOCUMENTED — code pending execution layer |
+| ENH-42 | Session pyramid | 2 | DEFERRED — post Phase 4B |
+| ENH-43 | Signal dashboard | 1 | **COMPLETE** |
+| ENH-44 | Capital management | 1 | **COMPLETE** |
+| ENH-45 | hist_spot_bars_1m Zerodha backfill | 1 | **COMPLETE** |
+| ENH-46 | Process Manager | 1 | **COMPLETE** |
+| ENH-47 | MERDIAN_PreOpen task | 1 | **COMPLETE** |
+| ENH-48 | Phase 4A execution layer | 1 | **COMPLETE** |
+| ENH-49 | Phase 4B semi-auto order placement | 1 | **COMPLETE** |
+| ENH-50 | Phase 4C full auto | 2 | PROPOSED |
+| ENH-51a | ws_feed_zerodha.py on AWS | 1 | **COMPLETE** |
+| ENH-51b | Pipeline reads market_ticks | 1 | PROPOSED — gate: live tick data confirmed |
+| ENH-51c | AWS primary, local dashboards-only | 1 | PROPOSED — gate: ENH-51b + 10 sessions |
+| ENH-51d | Local runner cutover | 1 | PROPOSED |
+| ENH-51e | MeridianAlpha intraday WebSocket | 3 | DEFERRED — G-01 must fix first |
+| ENH-51f | Unified portfolio management | 4 | DEFERRED — Phase 5 |
+| ENH-52 | Dhan expired options 5-year backfill | 2 | PROPOSED |
+| ENH-52b | S3 warm tier archiver | 3 | DEFERRED — Phase 5 |
+| ENH-09 | Heston calibration layer | 2 | PROPOSED |
+| ENH-10 to ENH-27 | Downstream of Heston | 2-4 | PROPOSED |
+
+*MERDIAN Enhancement Register — v8 appended 2026-04-15*
+*Base document: Enhancement Register v7 (2026-04-13 evening)*

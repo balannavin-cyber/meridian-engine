@@ -167,3 +167,50 @@ Post-gate: Phase 4 promotion decision → ENH-41 code build → Execution layer 
 
 ---
 
+
+---
+
+## ⛔ REGISTER PERMANENTLY CLOSED — 2026-04-15
+
+All open items resolved. This register is closed and will not be updated further.
+New operational issues will be tracked in the Enhancement Register or session appendices.
+
+### Session Changes (2026-04-14 — Holiday session + engineering)
+
+**Closed this session:**
+- OI-11 CLOSED — HTF zone rebuild cron added to MERDIAN AWS crontab (30 3 * * 1-5)
+- OI-12 CLOSED — market_ticks retention: pg_cron job 45 (30 14 * * 1-5, 2-day TTL)
+- OI-13 CLOSED — Telegram credentials added to .env. Exit monitor alerts confirmed.
+- OI-14 CLOSED — Holiday gate added to 4 Task Scheduler scripts (fix_process_control_final.py)
+- OI-15 CLOSED — Dual supervisor: MERDIAN_Intraday_Supervisor_Start → merdian_morning_start.ps1 → merdian_start.py
+- OI-16 CLOSED — StartWhenAvailable=false on MERDIAN_Spot_1M + MERDIAN_PreOpen (fix_task_scheduler.ps1)
+- OI-17 CLOSED — merdian_start.py: ensure_calendar_row() now read-before-write. Holidays preserved.
+- OI-07-INFRA CLOSED — Supabase auto-expanded to 50GB (22.26 GB used). Autoscaling enabled.
+- SPO-01 CLOSED — DTE fix: compute_gamma_metrics_local.py now derives DTE from expiry_date. Flows to market_state_snapshots → signal_snapshots. gamma_metrics.dte column added.
+- HIST-02 DEFERRED → moved to Enhancement Register as ENH-52b (S3 warm tier archiver, Phase 5)
+
+**Also completed this session:**
+- Phase 4B order placer: merdian_order_placer.py on AWS (port 8767). Dhan Trading API confirmed. Elastic IP 13.63.27.85 whitelisted.
+- Signal dashboard on AWS (port 8766). IP-restricted to dev + trading machines.
+- AWS @reboot crons for signal_dashboard + order_placer.
+- ict_zones detected_at → detected_at_ts dashboard fix (400 error eliminated).
+- Dashboard bound to 0.0.0.0 for AWS hosting.
+- t3.micro → t3.small upgrade (OOM fix for scrip master parsing).
+- merdian_order_placer.py scrip master format fix (segment D, streaming CSV).
+
+### Final Open Items Status
+
+| ID | Description | Status |
+|---|---|---|
+| All C-series | Critical fixes | ✅ ALL CLOSED |
+| All V18A items | Auth/calendar/circuit-breaker | ✅ ALL CLOSED |
+| All A-series | AWS readiness | ✅ ALL CLOSED |
+| OI-01 through OI-17 | Main OI series | ✅ ALL CLOSED |
+| OI-07-INFRA | Supabase disk | ✅ CLOSED — auto-expanded 50GB |
+| SPO-01 | DTE null in signal_snapshots | ✅ CLOSED — 2026-04-15 |
+| HIST-02 | S3 warm tier archiver | 🔵 MOVED TO ENH-52b (deferred Phase 5) |
+
+**ZERO OPEN ITEMS REMAIN.**
+
+*MERDIAN Open Items Register — PERMANENTLY CLOSED 2026-04-15*
+*Superseded by operational monitoring. Future items tracked in Enhancement Register or session appendices.*

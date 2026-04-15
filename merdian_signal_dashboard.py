@@ -870,7 +870,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 
 def main():
-    svr = HTTPServer(("localhost", PORT), Handler)
+    svr = HTTPServer(("0.0.0.0", PORT), Handler)
     now = datetime.now(tz=timezone.utc).astimezone(IST)
     print(f"[{now.strftime('%H:%M:%S IST')}] MERDIAN Signal Dashboard  http://localhost:{PORT}")
     try: svr.serve_forever()
@@ -878,3 +878,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -228,12 +228,29 @@ def load_breadth_universe(kite) -> dict:
             "Authorization": f"Bearer {SUPABASE_KEY}",
         }
         url = f"{SUPABASE_URL}/rest/v1/breadth_universe_members"
-        params = {"select": "symbol,exchange", "is_active": "eq.true", "active": "eq.true", "limit": "2000"}
-        r = _req.get(url, headers=headers, params=params, timeout=15)
-        if r.status_code != 200:
-            log.warning(f"  Breadth universe fetch failed: {r.status_code}")
-            return {}
-        members = r.json()
+        # Paginate to get all members past Supabase 1000-row limit
+        members = []
+        page_size = 1000
+        offset = 0
+        while True:
+            params = {
+                "select": "symbol,exchange",
+                "is_active": "eq.true",
+                "active": "eq.true",
+                "limit": str(page_size),
+                "offset": str(offset),
+            }
+            r = _req.get(url, headers=headers, params=params, timeout=15)
+            if r.status_code != 200:
+                log.warning(f"  Breadth universe fetch failed: {r.status_code}")
+                break
+            page = r.json()
+            if not page:
+                break
+            members.extend(page)
+            if len(page) < page_size:
+                break
+            offset += page_size
         breadth_symbols = {row["symbol"] for row in members if row.get("exchange") == "NSE"}
         log.info(f"  Breadth universe: {len(breadth_symbols)} NSE symbols")
     except Exception as e:

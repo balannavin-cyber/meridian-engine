@@ -489,13 +489,11 @@ def run_full_cycle() -> None:
     log("CYCLE START")
     log("==================================================")
 
-    run_with_fallbacks(
-        "ingest_breadth_intraday_local.py",
-        [[]],
-        timeout=TIMEOUT_BREADTH,
-        step_name="ingest_breadth_intraday",
-        non_blocking=True,
-    )
+        # DHAN BREADTH INGEST RETIRED 2026-04-16
+        # Failure rate ~100% across 30+ sessions (Dhan 429 rate limiting).
+        # Replaced by Zerodha WebSocket (ws_feed_zerodha.py) which subscribes
+        # 1,385 NSE EQ breadth stocks. Breadth computed from market_ticks
+        # by ingest_breadth_from_ticks.py (non-blocking, every 5 min cycle).
 
     for wcb_symbol in SYMBOLS:
         run_with_fallbacks(

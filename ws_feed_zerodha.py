@@ -193,18 +193,83 @@ def load_instruments(kite: KiteConnect) -> dict:
     log.info(f"  Options: {nifty_count} | Futures: {fut_count} | "
              f"Total: {len(instruments)} instruments")
 
-    if len(instruments) > 3000:
-        log.warning(f"  WARNING: {len(instruments)} > 3000 Zerodha limit. Trimming to ATM ±50.")
-        # If over limit, keep spot + futures + options sorted by proximity to round numbers
-        opts = {t: v for t, v in instruments.items() if v["instrument_type"] in ("CE","PE")}
-        futs = {t: v for t, v in instruments.items() if v["instrument_type"] == "FUT"}
-        spots = {t: v for t, v in instruments.items() if v["instrument_type"] == "SPOT"}
-        # Keep all futures + spots, trim options to 2990 slots
-        max_opts = 3000 - len(spots) - len(futs)
-        opt_items = sorted(opts.items(), key=lambda x: x[1].get("strike") or 0)
-        instruments = {**spots, **futs, **dict(opt_items[:max_opts])}
+    # Load breadth universe (NSE EQ stocks)
+    breadth = load_breadth_universe(kite)
+    instruments.update(breadth)
+    log.info(f"  After breadth: {len(instruments)} total instruments")
 
+    # Trim to Zerodha 3000 limit — priority: spots > futures > EQ breadth > options
+    if len(instruments) > 3000:
+        log.warning(f"  {len(instruments)} > 3000 limit — trimming options to fit")
+        opts  = {t: v for t, v in instruments.items() if v["instrument_type"] in ("CE", "PE")}
+        futs  = {t: v for t, v in instruments.items() if v["instrument_type"] == "FUT"}
+        spots = {t: v for t, v in instruments.items() if v["instrument_type"] == "SPOT"}
+        eq    = {t: v for t, v in instruments.items() if v["instrument_type"] == "EQ"}
+        max_opts = max(0, 3000 - len(spots) - len(futs) - len(eq))
+        opt_items = sorted(opts.items(), key=lambda x: x[1].get("strike") or 0)
+        instruments = {**spots, **futs, **eq, **dict(opt_items[:max_opts])}
+        log.info(f"  After trim: {len(instruments)} "
+                 f"(spots={len(spots)}, fut={len(futs)}, eq={len(eq)}, opts={min(max_opts,len(opts))})")
     return instruments
+
+
+def load_breadth_universe(kite) -> dict:
+    """
+    Load NSE EQ breadth universe from Supabase and match to Zerodha instrument tokens.
+    Returns: {instrument_token: {symbol, instrument_type, tradingsymbol}}
+    """
+    import requests as _req
+    log.info("Loading NSE EQ breadth universe from Supabase...")
+
+    # Fetch breadth symbols from Supabase
+    try:
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+        }
+        url = f"{SUPABASE_URL}/rest/v1/breadth_universe_members"
+        params = {"select": "symbol,exchange", "is_active": "eq.true", "active": "eq.true", "limit": "2000"}
+        r = _req.get(url, headers=headers, params=params, timeout=15)
+        if r.status_code != 200:
+            log.warning(f"  Breadth universe fetch failed: {r.status_code}")
+            return {}
+        members = r.json()
+        breadth_symbols = {row["symbol"] for row in members if row.get("exchange") == "NSE"}
+        log.info(f"  Breadth universe: {len(breadth_symbols)} NSE symbols")
+    except Exception as e:
+        log.warning(f"  Breadth universe fetch error: {e}")
+        return {}
+
+    # Download NSE EQ instruments from Zerodha
+    try:
+        nse = kite.instruments("NSE")
+        log.info(f"  NSE instruments downloaded: {len(nse)} rows")
+    except Exception as e:
+        log.warning(f"  NSE instruments download failed: {e}")
+        return {}
+
+    # Match symbols
+    breadth_instruments = {}
+    for inst in nse:
+        sym = inst.get("tradingsymbol", "")
+        if sym not in breadth_symbols:
+            continue
+        if inst.get("instrument_type") != "EQ":
+            continue
+        token = inst.get("instrument_token")
+        if not token:
+            continue
+        breadth_instruments[token] = {
+            "exchange":        "NSE",
+            "symbol":          sym,
+            "instrument_type": "EQ",
+            "tradingsymbol":   sym,
+            "expiry_date":     None,
+            "strike":          None,
+        }
+
+    log.info(f"  Breadth matched: {len(breadth_instruments)}/{len(breadth_symbols)} symbols")
+    return breadth_instruments
 
 # ── Tick processor ────────────────────────────────────────────────────────────
 

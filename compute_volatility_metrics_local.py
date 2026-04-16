@@ -28,7 +28,12 @@ def parse_iso_dt(value: Any) -> Optional[datetime]:
     if isinstance(value, datetime):
         return value
     try:
-        dt = datetime.fromisoformat(str(value))
+        s = str(value).strip()
+        # Pad fractional seconds to 6 digits for Python 3.10 compatibility
+        import re
+        s = re.sub(r'(\.\d{1,5})([+-]|Z|$)', lambda m: m.group(1).ljust(7, '0') + m.group(2), s)
+        s = s.replace('Z', '+00:00')
+        dt = datetime.fromisoformat(s)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt

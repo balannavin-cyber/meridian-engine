@@ -711,7 +711,7 @@ def render():
         _breadth_html = ""
 
 
-    return f"""<!DOCTYPE html>
+    _page = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -732,7 +732,7 @@ def render():
 </div>
 <div class="main">
   {cards}
-  ' + _breadth_html + '
+  %%BREADTH_PANEL%%
   <div class="rules">
     <div class="ri"><span class="rl">HARD SKIP</span>BEAR_OB 13:00&ndash;14:30 IST &middot; 17% WR</div>
     <div class="ri"><span class="rl">NO SIGNAL</span>After 15:00 IST &middot; Power hour</div>
@@ -805,6 +805,9 @@ def render():
 <script>{JS}</script>
 </body>
 </html>"""
+
+    _page = _page.replace("%%BREADTH_PANEL%%", _breadth_html)
+    return _page
 
 # ---------------------------------------------------------------------------
 # HTTP server

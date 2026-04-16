@@ -614,3 +614,61 @@ LocalParquetArchiver stubbed at C:\GammaEnginePython\data\warm_tier\. S3ParquetA
 
 *MERDIAN Enhancement Register — v8 appended 2026-04-15*
 *Base document: Enhancement Register v7 (2026-04-13 evening)*
+
+
+---
+
+### ENH-54: HTF Sweep Reversal Trade Mode
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED — experiment required before build** |
+| Added | 2026-04-15 |
+| Priority | Tier 2 — post Phase 4B stable |
+| Gate | Experiment 17 (backtest) must validate edge before any build |
+| Depends on | ENH-49 (Phase 4B live), hist_ict_htf_zones (breach-filtered, live) |
+
+**Observation:**
+The Apr 7-8 2026 tariff shock produced a textbook weekly JUDAS_BEAR — price swept below W BULL_OB at 71,948 (SENSEX) to ~71,500, grabbed sell-side liquidity, reversed sharply and rallied 6,600 points to 78,111 over 5 sessions. MERDIAN's T+30m exit would have captured only the first 30 minutes of a multi-session expansion. Current-week options at DTE≤2 are inappropriate for multi-session holds due to theta acceleration.
+
+**What changes:**
+
+1. **Weekly sweep detection** — new logic in detect_ict_patterns_runner.py:
+   - If today's session low < W BULL_OB zone_low AND session close > zone midpoint → flag WEEKLY_SWEEP_REVERSAL (bullish)
+   - If today's session high > W BEAR_OB zone_high AND session close < zone midpoint → flag WEEKLY_SWEEP_REVERSAL (bearish)
+   - Requires hist_ict_htf_zones (already live) for zone lookup
+
+2. **DTE-aware option selection** — modify option selection in order placer:
+   - DTE ≥ 4: current week expiry (current behaviour)
+   - DTE < 4 OR WEEKLY_SWEEP_REVERSAL: next week expiry (DTE ~8-10)
+   - Scrip master streaming already supports next-week lookup
+
+3. **Zone-based exit** — replace T+30m for sweep reversal entries:
+   - Primary exit: first opposing HTF zone (BEAR_OB/PDH above for longs)
+   - Secondary exit: T+2 sessions if no zone reached
+   - Hard stop: if price re-enters the sweep zone (reversal failed)
+
+4. **Sizing** — TIER1 (highest conviction) for confirmed weekly sweeps
+
+**Confirmation hierarchy (all preferred, minimum 2 of 4):**
+1. Price closes back inside W BULL_OB/BEAR_OB (primary — required)
+2. JUDAS_BEAR/BULL confirmed at T+15m intraday (secondary)
+3. WCB transitioning BEARISH→TRANSITION or NEUTRAL→BULLISH (tertiary)
+4. VIX declining intraday after sweep (context)
+
+**Experiment 17 required before build:**
+- Dataset: full year hist_spot_bars_1m + hist_ict_htf_zones
+- Identify all sessions where price swept a W BULL_OB or BEAR_OB and closed back inside
+- Score with next-week ATM CE/PE using hist_option_bars_1m
+- Exit rules: first opposing HTF zone OR T+2 sessions
+- Compare vs current T+30m same-week option
+- Hypothesis: HTF sweep reversals with zone-based exit significantly outperform T+30m
+
+**What we are NOT doing until Experiment 17 validates:**
+- No code changes to detect_ict_patterns_runner.py
+- No changes to option selection logic
+- No changes to exit monitor
+- No execution layer changes
+
+**Expected edge (hypothesis only — unvalidated):**
+The Apr 7-8 move suggests sweep reversals from W zones are high-conviction multi-session trades. If Experiment 17 confirms this across the full year, the edge could be substantially larger than standard ICT pattern trades (+58-107% validated in Experiments 2-16).

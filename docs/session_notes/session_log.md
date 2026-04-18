@@ -1,3 +1,45 @@
+## 2026-04-17/18 — Research + Infrastructure — MTF OHLCV Build + Experiments 17-27b
+
+**Goal:** Build 5m/15m OHLCV infrastructure and run experiment series to validate/reject LONG_GAMMA gate, breadth gate, momentum gate, and sweep reversal signal.
+**Session type:** architecture + research
+
+**Completed:**
+  - Zerodha + Dhan tokens refreshed, 36 ICT zones built, Pine Script updated to v7
+  - Fixed IndentationError in run_option_snapshot_intraday_runner.py (breadth block wrong indent)
+  - Live NIFTY trade: BUY_CE manual ICT sweep reversal — PDL sweep 24,136 ? W PDH rejection ? +25%
+  - Built hist_spot_bars_5m (41,248 rows) and hist_spot_bars_15m (14,072 rows)
+  - Built hist_atm_option_bars_5m (27,082 rows) and hist_atm_option_bars_15m (9,601 rows) with wick metrics
+  - Built hist_pattern_signals (6,318 rows) backfilled on 5m bars with option premium outcomes
+  - Confirmed: all ICT pattern detection on 5m bars. 1m = execution only.
+  - Exp 17: LONG_GAMMA gate confirmed correct (54.6% WR on BEAR_OB)
+  - Exp 18: OI walls and ICT zones independent — OI synthesis REJECTED
+  - Exp 19 (5m): No LONG_GAMMA asymmetry — symmetric gate correct
+  - Exp 20 (5m): Momentum alignment +22.6pp — ALIGNED 60.9% vs OPPOSED 38.3% — hard gate confirmed
+  - Exp 23/23b/23c: Sweep reversal 17-19% WR — discretionary only, ENH-54 REJECTED
+  - Exp 25 (5m): Breadth 1.0pp spread — noise — ENH-43 remove hard gate
+  - Exp 26: Option wick 1.7pp — no edge. SHORT_GAMMA PE wick 76.9% (N=13) — monitor
+  - Exp 27: ICT in premium space — 37K signals too loose — no broad edge
+  - Exp 27b: Small PE premium sweep <1% = 64.5% WR (N=107) — ENH-45 PROPOSED
+  - ENH register v6 and Open Items register v7 written and committed
+
+**Open after session:**
+  - C-08: latest_market_breadth_intraday is VIEW not TABLE — upsert silently fails
+  - OI-11: Remove breadth hard gate (ENH-43) — build pending
+  - OI-12: Add momentum opposition hard block (ENH-44) — build pending
+  - OI-13: Patch script syntax validation standard — add to Change Protocol
+  - OI-14: Shadow gate sessions 9 and 10 (Apr 14/15) — verify pass/fail
+  - OI-15: Premium sweep monitoring — log live PE sweeps <1%, target 50 occurrences
+  - AWS Shadow Runner: FAILED since Apr 15 — investigate
+
+**Files changed:** build_spot_bars_mtf.py, build_atm_option_bars_mtf.py, build_hist_pattern_signals.py, build_hist_pattern_signals_5m.py, fix_atm_option_build.py, fix_expiry_lookup.py, fix_runner_indent.py, experiment_17-27b scripts, run_option_snapshot_intraday_runner.py, MERDIAN_Enhancement_Register_v6.md, MERDIAN_OpenItems_Register_v7.md
+**Schema changes:** NEW hist_spot_bars_5m, hist_spot_bars_15m, hist_atm_option_bars_5m, hist_atm_option_bars_15m, hist_pattern_signals
+**Open items closed:** none
+**Open items added:** OI-11, OI-12, OI-13, OI-14, OI-15, C-08
+**Git commit hash:** d9e8293 (scripts) / 20abef9 (session log)
+**Next session goal:** Implement OI-11 + OI-12 — remove breadth gate and add momentum opposition block in build_signal_v3.py, shadow test 5 sessions.
+**docs_updated:** yes
+
+---
 
 
 ## 2026-04-13 (late night) â€” engineering / documentation â€” WebSocket deployment, Phase 4A completion, V18G audit + v2

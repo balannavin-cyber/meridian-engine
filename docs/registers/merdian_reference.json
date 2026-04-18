@@ -2,15 +2,14 @@
   "_meta": {
     "document": "merdian_reference.json",
     "version": "v4",
-    "generated": "2026-04-15",
+    "generated": "2026-04-18",
     "sources": [
       "MERDIAN_Master_V18_v2 Section 15 (File Master, Table Master, Security IDs, AWS Runtime Files)",
       "MERDIAN_Appendix_V18A_v4 Block 3 (file updates), Block 4 (table updates), Block 5 (schema changes)",
       "MERDIAN_Appendix_V18D_v2 (2026-04-04/05)",
       "MERDIAN_Appendix_V18E (2026-04-06 through 2026-04-09)",
       "MERDIAN_Appendix_V18F_v2 (2026-04-11/12) — Experiment Series 2-16 + Kelly Sizing",
-      "MERDIAN_AppendixV18G.docx (2026-04-13/14)",
-      "Session 2026-04-14/15 — Phase 4B + AWS migration + register closure"
+      "MERDIAN_Appendix_Research_Sessions_4_5 (2026-04-17/18) — Experiments 17-27b + MTF OHLCV + hist_pattern_signals"
     ],
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
@@ -30,18 +29,10 @@
       "env_file": "/home/ssm-user/meridian-engine/.env",
       "env_load_pattern": "set -a; . ./.env; set +a",
       "scheduler": "Linux cron",
-      "role": "SHADOW + ORDER PLACER + DASHBOARD",
+      "role": "SHADOW",
       "instance_id": "i-0878c118835386ec2",
       "region": "eu-north-1",
-      "access": "AWS SSM Session Manager",
-      "elastic_ip": "13.63.27.85",
-      "instance_type": "t3.small",
-      "services": {
-        "signal_dashboard": "port 8766 — IP restricted to 103.39.127.162 + 103.30.127.162",
-        "order_placer": "port 8767 — Dhan whitelisted 13.63.27.85",
-        "ws_feed_zerodha": "cron 03:44 UTC — market_ticks",
-        "shadow_runner": "cron 03:45 UTC"
-      }
+      "access": "AWS SSM Session Manager"
     }
   },
   "files": {
@@ -724,6 +715,52 @@
       "status": "STABLE — rebuilt clean (prior version corrupted by PowerShell). CHILD_ENV with PYTHONIOENCODING=utf-8 required.",
       "critical_note": "ALWAYS set $env:PYTHONIOENCODING=\"utf-8\" or use CHILD_ENV before running. INR symbol breaks cp1252 consoles.",
       "open_items": []
+    },
+    "build_spot_bars_mtf.py": {
+      "local_path": "C:\\GammaEnginePython\\build_spot_bars_mtf.py",
+      "reads": [
+        "hist_spot_bars_1m"
+      ],
+      "writes": [
+        "hist_spot_bars_5m",
+        "hist_spot_bars_15m"
+      ],
+      "call_signature": "python build_spot_bars_mtf.py",
+      "cadence": "Manual — run once after major data updates",
+      "status": "STABLE — 41,248 5m rows + 14,072 15m rows written. Runtime ~5min.",
+      "open_items": []
+    },
+    "build_atm_option_bars_mtf.py": {
+      "local_path": "C:\\GammaEnginePython\\build_atm_option_bars_mtf.py",
+      "reads": [
+        "hist_spot_bars_5m",
+        "hist_option_bars_1m"
+      ],
+      "writes": [
+        "hist_atm_option_bars_5m",
+        "hist_atm_option_bars_15m"
+      ],
+      "call_signature": "python build_atm_option_bars_mtf.py",
+      "cadence": "Manual — run once. Runtime ~45min.",
+      "status": "STABLE — 27,082 5m rows + 9,601 15m rows. Expiry loaded per-date (not upfront). Timestamp flooring applied for option bar_ts seconds.",
+      "critical_note": "IV columns NULL in output — hist_option_bars_1m vendor data does not store greeks. Wick analysis uses OHLC only.",
+      "open_items": []
+    },
+    "build_hist_pattern_signals_5m.py": {
+      "local_path": "C:\\GammaEnginePython\\build_hist_pattern_signals_5m.py",
+      "reads": [
+        "hist_ict_htf_zones",
+        "hist_market_state",
+        "hist_atm_option_bars_5m",
+        "hist_spot_bars_5m"
+      ],
+      "writes": [
+        "hist_pattern_signals"
+      ],
+      "call_signature": "python build_hist_pattern_signals_5m.py",
+      "cadence": "Manual — rebuild after major zone or bar data updates",
+      "status": "STABLE — 6,318 rows. Clears source=backfill before writing source=backfill_5m. 52 sweep reversals detected.",
+      "open_items": []
     }
   },
   "tables": {
@@ -983,8 +1020,10 @@
         "build_market_state_snapshot_local.py for breadth_features block"
       ],
       "constraint": "None confirmed",
-      "status": "ACTIVE â€” may be a view over market_breadth_intraday. Verify in Supabase before querying directly.",
-      "open_items": []
+      "status": "BUG — C-08 OPEN. This is a VIEW not a TABLE. Upserts from ingest_breadth_from_ticks.py silently fail. Breadth data is computed correctly but never persisted. Dashboard shows stale breadth. Fix: convert to materialised table.",
+      "open_items": [
+        "C-08"
+      ]
     },
     "breadth_universe_members": {
       "written_by": [
@@ -1152,6 +1191,104 @@
       "status": "NOT BUILT — OI-09. Required before ENH-38.",
       "ddl": "CREATE TABLE public.capital_tracker (symbol text PRIMARY KEY, capital numeric NOT NULL DEFAULT 200000, updated_at timestamptz DEFAULT now());",
       "seed": "INSERT INTO capital_tracker VALUES ('NIFTY', 200000, now()), ('SENSEX', 200000, now());"
+    },
+    "hist_spot_bars_5m": {
+      "schema": "public",
+      "written_by": [
+        "build_spot_bars_mtf.py"
+      ],
+      "read_by": [
+        "build_hist_pattern_signals_5m.py",
+        "experiment scripts",
+        "build_atm_option_bars_mtf.py"
+      ],
+      "constraint": "UNIQUE INDEX (instrument_id, bar_ts)",
+      "status": "ACTIVE — 41,248 rows. NIFTY + SENSEX full year. Aggregated from hist_spot_bars_1m.",
+      "key_columns": {
+        "instrument_id": "uuid — NIFTY: 9992f600-51b3-4009-b487-f878692a0bc5, SENSEX: 73a1390a-30c9-46d6-9d3f-5f03c3f5ad71",
+        "symbol": "NIFTY | SENSEX",
+        "bar_ts": "IST stored as +00:00 label. Floor to 5-min boundary.",
+        "open": "bar open price",
+        "high": "bar high",
+        "low": "bar low",
+        "close": "bar close"
+      },
+      "critical_rule": "5m bars are the canonical timeframe for ALL ICT pattern detection. 1m bars are execution granularity only. Never detect patterns on 1m."
+    },
+    "hist_spot_bars_15m": {
+      "schema": "public",
+      "written_by": [
+        "build_spot_bars_mtf.py"
+      ],
+      "read_by": [
+        "experiment scripts",
+        "HTF context analysis"
+      ],
+      "constraint": "UNIQUE INDEX (instrument_id, bar_ts)",
+      "status": "ACTIVE — 14,072 rows. NIFTY + SENSEX full year.",
+      "critical_rule": "15m bars = HTF context for ICT zone validation."
+    },
+    "hist_atm_option_bars_5m": {
+      "schema": "public",
+      "written_by": [
+        "build_atm_option_bars_mtf.py"
+      ],
+      "read_by": [
+        "build_hist_pattern_signals_5m.py",
+        "experiment_26_option_wick_reversal.py",
+        "experiment_27_premium_ict.py",
+        "experiment_27b_premium_small_sweep.py"
+      ],
+      "constraint": "UNIQUE INDEX (instrument_id, bar_ts, expiry_date)",
+      "status": "ACTIVE — 27,082 rows. ATM PE+CE OHLC per 5m bar. Full year.",
+      "key_columns": {
+        "atm_strike": "nearest ATM strike at bar open (NIFTY: nearest 50, SENSEX: nearest 100)",
+        "pe_open/high/low/close": "ATM PE premium OHLC",
+        "ce_open/high/low/close": "ATM CE premium OHLC",
+        "pe_upper_wick_ratio": "(high - max(open,close)) / (high - low) — pre-computed",
+        "pe_lower_wick_ratio": "(min(open,close) - low) / (high - low) — pre-computed",
+        "pe_reversal_wick": "boolean — upper wick >= 40% AND close below midpoint",
+        "ce_reversal_wick": "boolean — symmetric CE reversal signal",
+        "pe_iv_high/low/close": "IV OHLC — NULL in backfill (greeks not in vendor data)",
+        "pcr_5m": "pe_volume / ce_volume for this 5m bar"
+      },
+      "critical_rule": "IV columns are NULL in historical backfill — vendor hist_option_bars_1m does not store greeks. Wick analysis uses OHLC premium only. IV available in live data only."
+    },
+    "hist_atm_option_bars_15m": {
+      "schema": "public",
+      "written_by": [
+        "build_atm_option_bars_mtf.py"
+      ],
+      "read_by": [
+        "experiment scripts"
+      ],
+      "constraint": "UNIQUE INDEX (instrument_id, bar_ts, expiry_date)",
+      "status": "ACTIVE — 9,601 rows. Aggregated from hist_atm_option_bars_5m.",
+      "critical_rule": "15m option bars = HTF premium context. Same wick metrics as 5m."
+    },
+    "hist_pattern_signals": {
+      "schema": "public",
+      "written_by": [
+        "build_hist_pattern_signals_5m.py (backfill)",
+        "detect_ict_patterns_runner.py (live — pending)"
+      ],
+      "read_by": [
+        "all experiment scripts (Exp 19-27)"
+      ],
+      "constraint": "UNIQUE INDEX (trade_date, symbol, bar_ts, pattern_type, zone_high, zone_low)",
+      "status": "ACTIVE — 6,318 rows. Source=backfill_5m. 5m bar pattern detection.",
+      "key_columns": {
+        "pattern_type": "BEAR_OB | BULL_OB | BULL_FVG | BEAR_FVG | SWEEP_REVERSAL",
+        "direction": "BUY_CE | BUY_PE",
+        "session": "MORNING | MIDDAY | AFTERNOON | PRECLOSE",
+        "gamma_regime": "at signal time",
+        "breadth_regime": "at signal time",
+        "ret_session": "session return % at signal time (momentum)",
+        "ret_30m": "T+30m spot return %",
+        "win_30m": "boolean — spot direction correct at T+30m",
+        "source": "backfill_5m | live"
+      },
+      "critical_rule": "All backfill rows are source=backfill_5m (5m bar detection). Old source=backfill (1m) rows were deleted before rebuild. Live writes will use source=live."
     }
   },
   "security_ids": {
@@ -1342,13 +1479,12 @@
       ]
     },
     "C-08": {
-      "title": "Intermittent SENSEX volatility RuntimeError (ts missing)",
+      "title": "latest_market_breadth_intraday VIEW → TABLE conversion",
       "priority": "MEDIUM",
-      "status": "CLOSED",
-      "fix": "Investigate compute_volatility_metrics_local.py SENSEX ts missing error. Add defensive ts check.",
-      "blocks": [
-        "SENSEX volatility reliability"
-      ]
+      "status": "OPEN",
+      "fix": "DROP VIEW latest_market_breadth_intraday; CREATE TABLE latest_market_breadth_intraday (symbol text PRIMARY KEY, advances integer, declines integer, regime text, score integer, updated_at timestamptz DEFAULT now()); Then verify ingest_breadth_from_ticks.py upsert syntax.",
+      "impact": "Breadth reads stale in signal engine and dashboard. Signal engine incorrectly shows BEARISH breadth when market is BULLISH. Confirmed 2026-04-17 — showed stale data 23h+ stale.",
+      "blocking": "OI-11 (remove breadth gate) — fix C-08 first to confirm breadth reads correctly before changing gate logic."
     },
     "V18A-01": {
       "title": "Windows token refresh task unattended execution not yet proven",
@@ -1404,36 +1540,36 @@
     "D-06": {
       "title": "flip_distance unit inconsistency â€” SUBSTANTIALLY CLOSED",
       "priority": "MEDIUM",
-      "status": "CLOSED",
+      "status": "SUBSTANTIALLY CLOSED (V18A) â€” market-state canonicalization done. E-02 unblocked.",
       "fix": "Done. flip_distance_pct is canonical. Remaining: confirm no other consumer reads raw points field.",
       "blocks": []
     },
     "E-01": {
       "title": "Signal regret log â€” CLOSED",
       "priority": "HIGH",
-      "status": "CLOSED",
+      "status": "CLOSED (V18A) â€” 614 rows confirmed",
       "governance": "Must reach 30+ sessions of DO_NOTHING outcome data before any threshold changes. Clock started V18A."
     },
     "E-02": {
       "title": "Three-zone gamma model — shadow live",
       "priority": "MEDIUM",
-      "status": "CLOSED"
+      "status": "SHADOW LIVE (V18A). gamma_zone field active. 2-week observation in progress. 291 shadow rows accumulated as of 2026-03-27. Agreement with live: NIFTY 78.6%, SENSEX 77.1%. Phase 3 gate requires 10 sessions — at 6 sessions. Do not promote until gate passes."
     },
     "E-06": {
       "title": "Outcome engine migration from deprecated table",
       "priority": "MEDIUM",
-      "status": "CLOSED",
+      "status": "OPEN",
       "fix": "Update build_option_execution_outcomes_v1.py to read execution price from option_chain_snapshots ATM_ONLY rows nearest to signal timestamp."
     },
     "OI-01": {
       "title": "SENSEX 2025 individual futures replay",
       "priority": "MEDIUM",
-      "status": "CLOSED"
+      "status": "OPEN"
     },
     "OI-02": {
       "title": "Vendor correction MAY/JUN 2025 and JAN 2026 SENSEX files",
       "priority": "MEDIUM",
-      "status": "CLOSED"
+      "status": "OPEN - email sent"
     },
     "OI-03": {
       "title": "MERDIAN_Market_Tape_1M task disabled",
@@ -1448,61 +1584,65 @@
     "OI-05": {
       "title": "ENH-31 expiry calendar utility HIST-01",
       "priority": "MEDIUM",
-      "status": "CLOSED"
+      "status": "CLOSED (2026-04-11) — merdian_utils.py built. build_expiry_index_simple() + nearest_expiry_db() replace hardcoded EXPIRY_WD across all scripts."
     },
     "OI-06": {
       "title": "Stale IN_PROGRESS in hist_ingest_log",
       "priority": "LOW",
-      "status": "CLOSED"
+      "status": "OPEN - safe to delete"
     },
     "SPO-01": {
       "title": "DTE null in signal_snapshots",
-      "status": "CLOSED 2026-04-15. compute_gamma_metrics_local.py derives DTE from expiry_date. gamma_metrics.dte column added."
+      "priority": "MEDIUM",
+      "status": "OPEN - derivable from expiry_date as workaround"
     },
     "HIST-02": {
-      "title": "S3 warm tier archiver",
-      "status": "DEFERRED -> ENH-52b. Phase 5."
+      "title": "S3 archiver for warm tier",
+      "priority": "LOW",
+      "status": "OPEN - LocalParquetArchiver stubbed pending AWS credentials"
     },
     "OI-07-INFRA": {
-      "title": "Supabase disk monitoring",
-      "status": "CLOSED — auto-expanded to 50GB. 22.26GB used. Autoscaling enabled."
+      "title": "Supabase disk monitoring (infrastructure) [was OI-07 pre-V18F]",
+      "priority": "LOW",
+      "status": "OPEN - 9.5GB of 18GB at V18C close",
+      "note": "Renumbered to OI-07-INFRA to avoid collision with Research OI-07 (experiment_15b). See below."
     },
     "RESEARCH-OI-07": {
       "title": "experiment_15b_kelly_sizing.py: detect_daily_zones date type mismatch",
       "priority": "LOW",
-      "status": "CLOSED",
+      "status": "OPEN",
       "blocking": "Non-blocking. Experiment 15 answers the 1H zone question.",
       "fix": "detect_daily_zones internally calls date.fromisoformat(target_date) then compares against dict keys. Pass str(td) as target parameter, or pre-convert daily_ohlcv keys to strings before calling zone builder."
     },
     "RESEARCH-OI-08": {
       "title": "ENH-38: Live Kelly tiered sizing in detect_ict_patterns_runner.py",
       "priority": "HIGH",
-      "status": "CLOSED",
+      "status": "OPEN — implement after shadow gate 9+10",
       "blocking": "Blocks live Kelly sizing deployment.",
       "fix": "Implement effective_sizing_capital() + Kelly lot calculation. Read from capital_tracker (OI-09). Start with Half Kelly: TIER1=50%, TIER2=40%, TIER3=20%. Write ict_lots_t1/t2/t3 to signal_snapshots."
     },
     "RESEARCH-OI-09": {
       "title": "capital_tracker Supabase table",
       "priority": "HIGH",
-      "status": "CLOSED",
+      "status": "OPEN — build before RESEARCH-OI-08",
       "blocking": "Blocks RESEARCH-OI-08.",
       "fix": "DDL: CREATE TABLE public.capital_tracker (symbol text PRIMARY KEY, capital numeric NOT NULL DEFAULT 200000, updated_at timestamptz DEFAULT now()). Seed: INSERT ... VALUES ('NIFTY',200000,now()),('SENSEX',200000,now())."
     },
     "RESEARCH-OI-10": {
       "title": "Signal Rule Book v1.1: incorporate all experiment findings",
       "priority": "MEDIUM",
-      "status": "CLOSED",
+      "status": "OPEN",
       "blocking": "Non-blocking for live. Required before ENH-38 documentation is complete.",
       "fix": "6 new rules, 3 changed rules, 4 confirmed rules. All specified in AppendixV18F v2 Block 10.4."
     },
     "ENH-35": {
       "title": "Historical signal validation and accuracy measurement",
-      "status": "CLOSED",
+      "status": "COMPLETE (2026-04-11)",
       "result": "NIFTY 58.6% T+30m accuracy. 6 signal engine changes applied. Phase 4 gate passed. Do not re-run."
     },
     "ENH-37": {
       "title": "ICT pattern detection layer",
-      "status": "CLOSED",
+      "status": "PRODUCTION (2026-04-11)",
       "components": [
         "detect_ict_patterns.py",
         "build_ict_htf_zones.py",
@@ -1514,7 +1654,7 @@
     },
     "ENH-38": {
       "title": "Live Kelly tiered sizing",
-      "status": "CLOSED",
+      "status": "PROPOSED — implement after shadow gate 9+10 pass",
       "dependency": "RESEARCH-OI-09 (capital_tracker table)",
       "fractions": {
         "TIER1": "50%/100%",
@@ -1530,7 +1670,7 @@
     },
     "ENH-42": {
       "title": "WebSocket ATM option feed",
-      "status": "CLOSED",
+      "status": "PROPOSED — DEFERRED to post-Phase 4",
       "files": [
         "ws_option_feed.py (not yet built)"
       ],
@@ -1540,7 +1680,80 @@
       ],
       "why_deferred": "Phase 4 promotion should happen on current 5-min REST architecture. WebSocket adds operational complexity that should not gate live promotion."
     },
-    "register_status": "PERMANENTLY CLOSED 2026-04-15. All items resolved."
+    "RESEARCH-OI-11": {
+      "title": "ENH-43: Remove breadth regime as hard gate in signal engine",
+      "priority": "HIGH",
+      "status": "OPEN — build pending",
+      "blocking": "Depends on C-08 (breadth must read correctly before changing gate logic)",
+      "evidence": "Experiment 25 (5m): WR spread = 1.0pp across BULLISH/BEARISH/NEUTRAL regimes. Pure noise.",
+      "fix": "In build_signal_v3.py: (1) Remove breadth_regime from hard gate / DO_NOTHING logic. (2) Demote to confidence modifier: BULLISH+BUY_CE = +5pts, BEARISH+BUY_PE = +5pts, opposing = 0pts. (3) Remove from DO_NOTHING reasons. Shadow test 5 sessions before promoting live."
+    },
+    "RESEARCH-OI-12": {
+      "title": "ENH-44: Add momentum opposition as hard block in signal engine",
+      "priority": "HIGH",
+      "status": "OPEN — build pending",
+      "blocking": "None — can build standalone",
+      "evidence": "Experiment 20 (5m): ALIGNED 60.9% WR vs OPPOSED 38.3% WR. +22.6pp lift. Consistent across BEAR_OB, BULL_OB, BULL_FVG.",
+      "fix": "In build_signal_v3.py: if abs(ret_session) > 0.0005 and direction opposes ret_session → DO_NOTHING. Threshold: |ret_session| < 0.05% = neutral (allow). Remove current momentum_regime confidence modifier (superseded). Add momentum aligned = +10 confidence points.",
+      "note": "Implement alongside RESEARCH-OI-11. Both are build_signal_v3.py changes — do in one build."
+    },
+    "RESEARCH-OI-13": {
+      "title": "Patch script syntax validation standard",
+      "priority": "MEDIUM",
+      "status": "OPEN — process rule, add to Change Protocol",
+      "evidence": "Incident 2026-04-16: force_wire_breadth.py inserted breadth block at 8-space indent. IndentationError discovered at market open 2026-04-17 — runner failed to start.",
+      "fix": "All fix_*.py patch scripts must end with: import ast; ast.parse(Path(TARGET).read_text(encoding='utf-8')); sys.exit(1) if SyntaxError. Add to MERDIAN_Change_Protocol_v1.md as mandatory rule."
+    },
+    "RESEARCH-OI-14": {
+      "title": "Shadow gate sessions 9 and 10 verification",
+      "priority": "HIGH",
+      "status": "OPEN — verify",
+      "fix": "Confirm pass/fail for sessions 9 (2026-04-14 Mon) and 10 (2026-04-15 Tue). If both passed, gate is complete. Proceed to RESEARCH-OI-09 (capital tracker) then RESEARCH-OI-08 (Kelly sizing)."
+    },
+    "RESEARCH-OI-15": {
+      "title": "ENH-45: Premium sweep signal monitoring",
+      "priority": "MEDIUM",
+      "status": "OPEN — monitoring phase, do not build yet",
+      "evidence": "Experiment 27b: PE premium sweep 0.2-1.0% = 64.5% WR (N=107). CE + NO_FLIP = 68.4% WR (N=57).",
+      "fix": "Log each morning PE/CE premium sweep <1% from live hist_atm_option_bars_5m. Target 50 live occurrences before building ENH-45. Threshold for build: sustained 60%+ WR on live data.",
+      "signal_definition": "Morning session. ATM PE bar high > prior morning high by 0.2-1.0%. Close back below prior high. First sweep of session only."
+    },
+    "ENH-43": {
+      "title": "Remove breadth regime as hard gate",
+      "status": "PROPOSED (2026-04-17) — Experiment 25 confirmed",
+      "see": "RESEARCH-OI-11"
+    },
+    "ENH-44": {
+      "title": "Momentum opposition hard block",
+      "status": "PROPOSED (2026-04-17) — Experiment 20 confirmed",
+      "see": "RESEARCH-OI-12"
+    },
+    "ENH-45": {
+      "title": "Premium sweep detector",
+      "status": "PROPOSED (2026-04-18) — monitor first",
+      "see": "RESEARCH-OI-15"
+    },
+    "ENH-46": {
+      "title": "MTF OHLCV infrastructure",
+      "status": "COMPLETE (2026-04-17)",
+      "components": [
+        "hist_spot_bars_5m",
+        "hist_spot_bars_15m",
+        "hist_atm_option_bars_5m",
+        "hist_atm_option_bars_15m"
+      ],
+      "build_scripts": [
+        "build_spot_bars_mtf.py",
+        "build_atm_option_bars_mtf.py"
+      ]
+    },
+    "ENH-47": {
+      "title": "hist_pattern_signals table",
+      "status": "COMPLETE (2026-04-17)",
+      "rows": 6318,
+      "source": "backfill_5m",
+      "build_script": "build_hist_pattern_signals_5m.py"
+    }
   },
   "governance_rules": {
     "run_id_vs_symbol_contract": "compute_gamma_metrics_local.py and compute_volatility_metrics_local.py take run_id (UUID), NOT symbol. build_momentum_features_local.py, build_market_state_snapshot_local.py, build_trade_signal_local.py take symbol (NIFTY/SENSEX). Never swap these.",
@@ -1566,7 +1779,9 @@
     "futures_permanently_closed": "Futures experiments are permanently closed. Options only. Experiment 2b: options beat futures on every pattern/DTE combination. BEAR_OB DTE=0/1 exception uses combined structure (futures + CE insurance), not pure futures. Established V18F.",
     "capital_ceiling": "Live trading capital ceiling: INR 50L hard cap, INR 25L sizing freeze, INR 2L floor. Lots stop growing at INR 25L. No lot calculation uses more than INR 50L equivalent. Implemented via effective_sizing_capital() function. Final. Established V18F.",
     "kelly_sizing_strategy": "Start live with Half Kelly (Strategy C). Upgrade to Full Kelly (Strategy D) after 3-6 months experience. Kelly fractions: TIER1=50%/100%, TIER2=40%/80%, TIER3=20%/40% (Half/Full). Established V18F. Validated by Experiment 16.",
-    "ict_1h_zone_confirmed": "1H zones (MEDIUM context) are confirmed to add edge and must remain in ENH-37 hierarchy. Experiment 15: MEDIUM 77.3% WR vs HIGH 46.7%. BULL_OB inside 1H zone avg +INR 18,938 vs +INR 9,774 without. Do not remove 1H layer. Established V18F."
+    "ict_1h_zone_confirmed": "1H zones (MEDIUM context) are confirmed to add edge and must remain in ENH-37 hierarchy. Experiment 15: MEDIUM 77.3% WR vs HIGH 46.7%. BULL_OB inside 1H zone avg +INR 18,938 vs +INR 9,774 without. Do not remove 1H layer. Established V18F.",
+    "1m_bars_execution_only": "1m bars (hist_spot_bars_1m, hist_option_bars_1m) are EXECUTION GRANULARITY ONLY. All ICT pattern detection (OBs, FVGs, sweeps, CHoCH) MUST operate on 5m bars (hist_spot_bars_5m). 1m bars are only used for precise entry after HTF pattern is confirmed. Established Research Sessions 4-5 (2026-04-17).",
+    "patch_script_syntax_validation": "All fix_*.py patch scripts MUST end with ast.parse() validation before writing the target file. If SyntaxError: print error and sys.exit(1) — do NOT write a broken file. Incident: force_wire_breadth.py wrote invalid indent 2026-04-16, IndentationError discovered at market open 2026-04-17. Established Research Session 4 (2026-04-17)."
   },
   "session_resume_template": {
     "description": "Paste this structure at the start of every new dev session, filled in for the specific goal.",
@@ -1660,62 +1875,35 @@
       "summary": "Full experiment series 2-16 complete. Kelly tiered sizing architecture + capital ceiling. Futures permanently closed. T+30m exit confirmed. 1H zones confirmed. AppendixV18F v2 (audit-corrected)."
     },
     {
-      "date": "2026-04-13",
-      "appendix": "MERDIAN_AppendixV18G.docx",
-      "git_end": "a215049",
-      "items_closed": [
-        "OI-07",
-        "OI-08",
-        "OI-09",
-        "OI-10",
-        "C-07b",
-        "ENH-46",
-        "ENH-47",
-        "ENH-48",
-        "ENH-51a"
+      "date": "2026-04-17/18",
+      "appendix": "Research Sessions 4-5",
+      "git_end": "4675745",
+      "items_closed": [],
+      "items_added": [
+        "RESEARCH-OI-11",
+        "RESEARCH-OI-12",
+        "RESEARCH-OI-13",
+        "RESEARCH-OI-14",
+        "RESEARCH-OI-15",
+        "C-08"
       ],
-      "summary": "Process manager. Live 1-min spot. Phase 4A. Signal engine upgrades. Zerodha WebSocket AWS. Phase 4 promoted."
-    },
-    {
-      "date": "2026-04-14/15",
-      "appendix": "Session — Phase 4B + AWS + Register Closure",
-      "git_end": "c7daf7b",
-      "items_closed": [
-        "OI-11",
-        "OI-12",
-        "OI-13",
-        "OI-14",
-        "OI-15",
-        "OI-16",
-        "OI-17",
-        "OI-07-INFRA",
-        "SPO-01",
-        "ENH-49"
-      ],
-      "summary": "All OIs closed. Process control fixed. Phase 4B order placer on AWS. Dashboard on AWS. t3.small. DTE fix. OI register permanently closed."
+      "summary": "MTF OHLCV infrastructure built (hist_spot_bars_5m/15m, hist_atm_option_bars_5m/15m, hist_pattern_signals). Experiments 17-27b run. Key decisions: LONG_GAMMA gate confirmed symmetric (Exp 17/19), breadth independent 1.0pp (Exp 25) → ENH-43 remove gate, momentum alignment +22.6pp (Exp 20) → ENH-44 add hard block, sweep reversal no mechanical edge (Exp 23/23b/23c), small PE premium sweep <1% = 64.5% WR (Exp 27b) → ENH-45 proposed. 1m bars = execution only. All ICT pattern detection on 5m bars. Live NIFTY BUY_CE +25% (discretionary ICT)."
     }
   ],
   "git": {
-    "current_hash": "c7daf7b",
+    "current_hash": "4675745",
     "local_status": "CLEAN",
-    "aws_status": "CLEAN — in sync at c7daf7b"
+    "aws_status": "FAILED — shadow runner down since 2026-04-15. Needs investigation."
   },
   "shadow_gate": {
-    "sessions_complete": 10,
+    "sessions_complete": 8,
     "sessions_required": 10,
-    "status": "CLOSED — Phase 4 PROMOTED. Gate waived 2026-04-13."
+    "status": "VERIFY — sessions 9+10 scheduled for 2026-04-14/15. Status unconfirmed. Verify before implementing ENH-38."
   },
   "task_scheduler": {
     "MERDIAN_Market_Tape_1M": "DISABLED — 2026-04-07",
-    "MERDIAN_Intraday_Supervisor_Start": "ACTIVE — merdian_morning_start.ps1 -> merdian_start.py. Mon-Fri 08:00.",
-    "MERDIAN_Live_Dashboard": "ACTIVE — merdian_live_dashboard.py — AtLogon",
-    "MERDIAN_Spot_1M": "ACTIVE — capture_spot_1m.py — 09:14-15:31 Mon-Fri — StartWhenAvailable=false — holiday gate",
-    "MERDIAN_PreOpen": "ACTIVE — capture_spot_1m.py — 09:05 Mon-Fri — StartWhenAvailable=false — holiday gate",
-    "MERDIAN_IV_Context_0905": "ACTIVE — compute_iv_context_local.py — 09:05 Mon-Fri — holiday gate",
-    "MERDIAN_Session_Markers_1602": "ACTIVE — build_market_spot_session_markers.py — 16:02 Mon-Fri — holiday gate",
-    "MERDIAN_Post_Market_1600_Capture": "ACTIVE — capture_market_spot_snapshot_local.py — 16:00 Mon-Fri — holiday gate",
-    "MERDIAN_EOD_Breadth_Refresh": "ACTIVE — run_equity_eod_until_done.py — 16:15 Mon-Fri — holiday gate",
-    "MERDIAN_Market_Close_Capture": "ACTIVE — 15:29 Mon-Fri"
+    "MERDIAN_Intraday_Supervisor_Start": "ACTIVE — calls start_supervisor_clean.ps1 — weekly Mon-Fri 08:00 + AtLogon",
+    "MERDIAN_Live_Dashboard": "ACTIVE — merdian_live_dashboard.py v2 — AtLogon — PYTHONIOENCODING=utf-8"
   },
   "research_findings": {
     "_note": "Key validated findings from Experiments 2-16. Full detail in MERDIAN_Experiment_Compendium_v1.md.",
@@ -1744,7 +1932,7 @@
       "wr": "83.3%",
       "expectancy": "+11.6% T+30m"
     },
-    "MOM_YES": "strongest single filter (+21.6pp lift on BEAR_OB)",
+    "MOM_YES": "Strongest single filter. Experiment 20 (5m): momentum alignment +22.6pp lift. ALIGNED=60.9% WR (N=2138), OPPOSED=38.3% WR (N=2275), NEUTRAL=47.6% (N=311). Consistent across BEAR_OB, BULL_OB, BULL_FVG. ENH-44: implement as hard gate (not just confidence modifier). Alignment: BUY_PE + ret_session<-0.05% = aligned; BUY_CE + ret_session>+0.05% = aligned.",
     "experiment_16_results": {
       "strategy_C_half_kelly": {
         "combined_return": "+18,585%",
@@ -1758,21 +1946,12 @@
         "ret_dd": "1785x",
         "final": "INR 17.7Cr"
       }
-    }
-  },
-  "dhan_trading": {
-    "order_api": "ACTIVE — v2/orders confirmed 200",
-    "whitelisted_ip": "13.63.27.85",
-    "order_placer_url": "http://13.63.27.85:8767",
-    "scrip_master_segment": "D (not NSE_FNO/BSE_FNO)",
-    "scrip_master_exchange": "NSE (NIFTY) / BSE (SENSEX)",
-    "note": "Delete runtime/dhan_scrip_master.csv on AWS before each session for fresh weekly expiries"
-  },
-  "rules": {
-    "oi_register_closed": "Open Items Register PERMANENTLY CLOSED 2026-04-15.",
-    "order_api_ip": "All Dhan orders from AWS Elastic IP 13.63.27.85 only.",
-    "scrip_master_refresh": "Delete runtime/dhan_scrip_master.csv on AWS before each market session.",
-    "holiday_gate": "All Task Scheduler scripts check trading_calendar. merdian_start.py reads before writing.",
-    "single_control_plane": "merdian_start.py is the ONLY morning startup. Task Scheduler fires via merdian_morning_start.ps1."
+    },
+    "breadth_independence": "Experiment 25 (5m): breadth_regime WR spread = 1.0pp across BULLISH/BEARISH/NEUTRAL. Pure noise. BEAR_OB performs BETTER on BULLISH days (51.0% vs 45.0% BEARISH). Breadth gate is wrong — remove as hard gate (ENH-43). Keep as confidence modifier ±5pts only.",
+    "long_gamma_gate": "Experiments 17 + 19 (5m): LONG_GAMMA gate confirmed symmetric. BEAR_OB LONG_GAMMA = 49.7% WR, BULL_OB LONG_GAMMA = 50.5% WR — both coin flips. No asymmetry. Current symmetric block correct for all patterns. Today's live trade was discretionary SWEEP_REVERSAL not BULL_OB zone entry.",
+    "oi_wall_ict_independence": "Experiment 18: OI walls and ICT zones are statistically independent. CE wall ICT lift = +4.5pp (noise). PE wall ICT lift = -2.1pp (negative). OI synthesis signal rejected.",
+    "sweep_reversal_no_edge": "Experiments 23/23b/23c: Sweep reversal has NO mechanical edge. Naked = 17.8% WR, with W zone confluence = 19.5% WR, with quality filters = 33.3% (N=3, insufficient). Pattern requires unmitigated zone tracking + 5m/15m wick quality + discretionary CHoCH judgment. ENH-54 sweep reversal mode REJECTED.",
+    "premium_small_sweep": "Experiment 27b: ATM PE premium small sweep (0.2-1.0% above prior high, close back below, morning only) = 64.5% WR (N=107). CE + NO_FLIP = 68.4% WR (N=57). Premium sweep is MOMENTUM-INDEPENDENT (unlike spot ICT which needs alignment). ENH-45 PROPOSED — monitor 50 live occurrences before building.",
+    "5m_bars_canonical": "All ICT experiments must use 5m bars for pattern detection. 1m bar experiments produce unreliable results — wick quality, sweep detection, and displacement are all noise on 1m. Exp 23c confirmed: wick quality on 1m = 0% WR (wrong timeframe). Established Research Sessions 4-5."
   }
 }

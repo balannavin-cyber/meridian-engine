@@ -1,3 +1,5 @@
+
+
 ## 2026-04-13 (late night) — engineering / documentation — WebSocket deployment, Phase 4A completion, V18G audit + v2
 
 **Goal:** Deploy Zerodha WebSocket feed on MERDIAN AWS, complete remaining Phase 4A wiring, build AppendixV18G rebuild-grade documentation, conduct independent audit, produce v2.
@@ -691,3 +693,4 @@ Copy this template and prepend to the top of this file (newest first):
 ---
 
 *MERDIAN Session Log — started 2026-03-31 — append newest entry at top*
+

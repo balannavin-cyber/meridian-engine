@@ -489,14 +489,14 @@ def run_full_cycle() -> None:
     log("CYCLE START")
     log("==================================================")
 
-        # Breadth from Zerodha WebSocket ticks (Dhan REST retired 2026-04-16)
-        run_with_fallbacks(
-            "ingest_breadth_from_ticks.py",
-            [[]],
-            timeout=TIMEOUT_BREADTH,
-            step_name="ingest_breadth_from_ticks",
-            non_blocking=True,
-        )
+    # Breadth from Zerodha WebSocket ticks (Dhan REST retired 2026-04-16)
+    run_with_fallbacks(
+        "ingest_breadth_from_ticks.py",
+        [[]],
+        timeout=TIMEOUT_BREADTH,
+        step_name="ingest_breadth_from_ticks",
+        non_blocking=True,
+    )
 
     for wcb_symbol in SYMBOLS:
         run_with_fallbacks(

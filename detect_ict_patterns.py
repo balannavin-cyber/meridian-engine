@@ -274,6 +274,11 @@ def assign_tier(
     mom_yes = seq["mom_aligned"]
 
     if pattern_type == "BEAR_OB":
+        # ENH-64 sub-rule 2: BEAR_OB AFTNOON hard skip.
+        # -24.7% exp, 17% WR (Exp 8 / Signal Rule Book v1.1 Rule 1).
+        # Time-based skip takes precedence over impulse-based tiering.
+        if tz_label == "AFTNOON":
+            return "SKIP"
         if imp_str:
             return "SKIP"
         if mom_yes and tz_label == "MORNING":
@@ -290,6 +295,10 @@ def assign_tier(
         return "TIER2"
 
     # BULL_FVG and JUDAS_BULL
+    # ENH-64 sub-rule 3: BULL_FVG LOW_IV skip.
+    # 0% WR N=23, -14.3% exp (Exp 5).
+    if pattern_type == "BULL_FVG" and atm_iv is not None and atm_iv < LOW_IV_THRESHOLD:
+        return "SKIP"
     return "TIER2"
 
 

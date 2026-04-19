@@ -62,7 +62,7 @@ from supabase import Client, create_client
 # Feature flag (read once at import)
 # -----------------------------
 load_dotenv()
-SIGNAL_V4_ENABLED: bool = os.getenv("MERDIAN_SIGNAL_V4", "0").strip() == "1"
+SIGNAL_V4_ENABLED: bool = os.getenv("MERDIAN_SIGNAL_V4", "1").strip() == "1"
 
 
 # -----------------------------

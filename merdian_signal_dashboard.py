@@ -61,7 +61,7 @@ def fetch_signal(sym):
                 "expiry_date,dte,atm_iv_avg,gamma_regime,breadth_regime,"
                 "india_vix,ict_pattern,ict_tier,ict_mtf_context,"
                 "ict_lots_t1,ict_lots_t2,ict_lots_t3")
-        .eq("symbol", sym).order("ts", desc=True).limit(1).execute().data)
+        .eq("symbol", sym).order("ts", desc=True).order("created_at", desc=True).limit(1).execute().data)
     return r[0] if r else None
 
 def fetch_zone(sym):
@@ -80,7 +80,7 @@ def fetch_capital(sym):
 def fetch_spot(sym):
     r = _q(lambda: sb.table("signal_snapshots")
         .select("spot,ts").eq("symbol", sym)
-        .order("ts", desc=True).limit(1).execute().data)
+        .order("ts", desc=True).order("created_at", desc=True).limit(1).execute().data)
     return r[0] if r else None
 
 def fetch_premium(sym, strike, expiry, ot):

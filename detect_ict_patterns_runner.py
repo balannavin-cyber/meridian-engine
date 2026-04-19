@@ -56,6 +56,12 @@ DETECTION_LOOKBACK = 90   # last 90 1-min bars (~1.5 hours of context)
 # Hour boundary check: run 1H zone builder if within first 3 minutes of hour
 HOURLY_ZONE_WINDOW_MINUTES = 3
 
+# ENH-63: process-lifetime cache for expiry index.
+# build_expiry_index_simple issues 12 paginated Supabase queries per call.
+# Expiry dates are near-static -- per-process caching (vs per-cycle rebuild)
+# cuts daily query volume from ~1,728 to 1 per symbol.
+_EXPIRY_INDEX_CACHE: dict = {}
+
 
 def log(msg: str) -> None:
     ts = datetime.now(tz=timezone.utc).astimezone(IST).strftime("%H:%M:%S IST")
@@ -372,9 +378,12 @@ def main(symbol: str) -> int:
     try:
         # Get days to next expiry for lot cost estimation
         try:
-            _expiry_idx = build_expiry_index_simple(sb, inst_id)
-            _next_exp   = nearest_expiry_db(trade_date, _expiry_idx)
-            _dte_days   = (_next_exp - trade_date).days if _next_exp else 2
+            _expiry_idx = _EXPIRY_INDEX_CACHE.get(inst_id)
+            if _expiry_idx is None:
+                _expiry_idx = build_expiry_index_simple(sb, inst_id)
+                _EXPIRY_INDEX_CACHE[inst_id] = _expiry_idx
+            _next_exp = nearest_expiry_db(trade_date, _expiry_idx)
+            _dte_days = (_next_exp - trade_date).days if _next_exp else 2
         except Exception:
             _dte_days = 2   # conservative fallback
         _atm_iv_pct = atm_iv if atm_iv else 0.0   # None -> 0 triggers fallback
@@ -406,90 +415,6 @@ def main(symbol: str) -> int:
     except Exception as _kelly_err:
         log(f'  Warning: Kelly lots write failed (non-blocking): {_kelly_err}')
     # -- ENH-38v2 end ----------------------------------------------------------
-
-
-    # ── Session start: expire prior zones ─────────────────────────────
-    # Only do this once per session (first cycle after 09:15)
-    if now.hour == 9 and now.minute < 20:
-        expire_prior_session_zones(sb, symbol, trade_date)
-        log(f"  Expired prior session zones for {symbol}")
-
-    # ── Load data ─────────────────────────────────────────────────────
-    bars = load_today_spot_bars(sb, inst_id, trade_date)
-    if len(bars) < 10:
-        log(f"  Insufficient bars ({len(bars)}) — skipping detection")
-        return 0
-
-    prior_high, prior_low = load_prior_session_hl(sb, inst_id, trade_date)
-    htf_zones  = load_active_htf_zones(sb, symbol, trade_date)
-    active_zones = load_active_intraday_zones(sb, symbol, trade_date)
-    atm_iv     = load_atm_iv(sb, symbol)
-    current_spot = bars[-1].close
-
-    log(f"  {len(bars)} bars | {len(htf_zones)} HTF zones | "
-        f"{len(active_zones)} active zones | "
-        f"spot={current_spot:,.1f} | iv={atm_iv:.1f}%" if atm_iv else
-        f"  {len(bars)} bars | {len(htf_zones)} HTF zones | "
-        f"{len(active_zones)} active zones | spot={current_spot:,.1f}")
-
-    # ── Zone breach checking ──────────────────────────────────────────
-    detector     = ICTDetector(symbol=symbol)
-    broken_ids   = detector.check_zone_breaches(active_zones, current_spot)
-    if broken_ids:
-        n = mark_zones_broken(sb, broken_ids, current_spot)
-        log(f"  Marked {n} zones BROKEN at {current_spot:,.1f}")
-
-    # ── Pattern detection (last 10 bars) ──────────────────────────────
-    patterns = detector.detect(
-        bars=bars,
-        atm_iv=atm_iv,
-        htf_zones=htf_zones,
-        prior_high=prior_high,
-        prior_low=prior_low,
-    )
-
-    if patterns:
-        n = write_new_zones(sb, patterns)
-        for p in patterns:
-            log(f"  NEW ZONE: {p.pattern_type} {p.ict_tier} "
-                f"mtf={p.mtf_context} zone={p.zone_low:,.0f}-{p.zone_high:,.0f} "
-                f"size={p.ict_size_mult}x")
-        log(f"  Written {n} new zones")
-    else:
-        log(f"  No new patterns detected")
-
-    # ── 1H zone builder (hourly) ──────────────────────────────────────
-    if is_hour_boundary():
-        log(f"  Hour boundary — building 1H HTF zones...")
-        try:
-            h_zones = detect_1h_zones(sb, inst_id, symbol, trade_date)
-            n = upsert_zones(sb, h_zones, dry_run=False)
-            log(f"  1H zones: {n} written ({len(h_zones)} detected)")
-        except Exception as e:
-            log(f"  Warning: 1H zone build failed (non-blocking): {e}")
-
-    # -- ENH-38: write Kelly lots to active ict_zones --------------------
-    try:
-        _lots_t1 = compute_kelly_lots(_current_capital, 'TIER1')
-        _lots_t2 = compute_kelly_lots(_current_capital, 'TIER2')
-        _lots_t3 = compute_kelly_lots(_current_capital, 'TIER3')
-        fetch_with_retry(lambda: (
-            sb.table('ict_zones')
-            .update({
-                'ict_lots_t1': _lots_t1,
-                'ict_lots_t2': _lots_t2,
-                'ict_lots_t3': _lots_t3,
-            })
-            .eq('symbol', symbol)
-            .eq('trade_date', str(trade_date))
-            .eq('status', 'ACTIVE')
-            .execute()
-        ))
-        log(f'  Kelly lots -- T1:{_lots_t1} T2:{_lots_t2} T3:{_lots_t3} '
-            f'(capital=INR {_current_capital:,.0f})')
-    except Exception as _kelly_err:
-        log(f'  Warning: Kelly lots write failed (non-blocking): {_kelly_err}')
-    # -- ENH-38 end --------------------------------------------------------
 
     log(f"ICT detector complete [{symbol}]")
     return 0

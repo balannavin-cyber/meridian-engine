@@ -11,8 +11,8 @@ Algorithm:
   2. Fetch prior day close from equity_intraday_last (prev session)
   3. Compute: advance if LTP > prev_close, decline if LTP < prev_close
   4. Write to:
-     - latest_market_breadth_intraday (single row upsert)
-     - breadth_intraday_history (append — time series for dashboard graph)
+     - market_breadth_intraday (append — view latest_market_breadth_intraday auto-reflects newest row)
+     - breadth_intraday_history (append — dashboard graph, separate schema)
 
 Run: called by run_option_snapshot_intraday_runner.py every 5 min cycle (non-blocking)
 """
@@ -196,14 +196,14 @@ def main() -> int:
             "breadth_regime": regime,
         }
         try:
-            sb.table("latest_market_breadth_intraday").upsert(
-                payload, on_conflict="universe_id"
+            sb.table("market_breadth_intraday").upsert(
+                payload, on_conflict="ts,universe_id"
             ).execute()
-            log(f"  Written to latest_market_breadth_intraday: {regime}")
+            log(f"  Written to market_breadth_intraday: {regime} (view auto-reflects latest)")
         except Exception as e:
-            log(f"  WARNING: latest_market_breadth_intraday write failed: {e}")
+            log(f"  WARNING: market_breadth_intraday write failed: {e}")
     else:
-        log(f"  Coverage {coverage_pct:.1f}% < {MIN_COVERAGE_PCT}% — skipping latest upsert")
+        log(f"  Coverage {coverage_pct:.1f}% < {MIN_COVERAGE_PCT}% — skipping market_breadth_intraday upsert")
 
     log("Done.")
     return 0

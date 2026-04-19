@@ -859,7 +859,11 @@ NOT modified.
 
 | Field | Detail |
 |---|---|
-| Status | **PROPOSED** |
+| Status | **COMPLETE** — 2026-04-19 |
+| Completed | 2026-04-19 (commit 3362b8f, code); sub-rule 1 pre-existing |
+| Sub-rule 1 | COMPLETE — compute_sequence_features + assign_tier already live in detect_ict_patterns.py before this session. |
+| Sub-rule 2 | COMPLETE — BEAR_OB AFTNOON -> SKIP (commit 3362b8f). |
+| Sub-rule 3 | COMPLETE — BULL_FVG + atm_iv < LOW_IV_THRESHOLD -> SKIP (commit 3362b8f). Register said TIER3 downgrade; adjusted to SKIP at build time (tier vocabulary is TIER1/TIER2/SKIP; 0% WR N=23 warrants hard skip). |
 | Added | 2026-04-19 |
 | Priority | MEDIUM-HIGH — tier classifier becomes evidence-driven |
 | Scope | Three composable refinements to the ICT tier-classification pipeline. Bundled because all feed `ict_zones.ict_tier` / `ict_size_mult` in `detect_ict_patterns_runner.py`. |

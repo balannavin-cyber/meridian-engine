@@ -385,6 +385,18 @@ def build_signal(symbol: str) -> dict[str, Any]:
         if direction_bias in {"BULLISH", "BEARISH"}:
             confidence += 20.0
 
+    # ENH-60: pre-init action = "DO_NOTHING" so the options-flow
+    #   confidence-modifier block below can reference `action` safely
+    #   even on SHORT_GAMMA / UNKNOWN paths where the gamma-treatment
+    #   block below does not assign it. Without this, ~0.3% of rows
+    #   raise UnboundLocalError when pcr_regime / skew_regime /
+    #   flow_regime are populated.
+    # ENH-61: pre-init trade_allowed = True here (moved up from the
+    #   DTE block) so LONG_GAMMA / NO_FLIP gated rows correctly retain
+    #   trade_allowed=False through to signal_snapshots.
+    action: str = "DO_NOTHING"
+    trade_allowed: bool = True
+
     # Gamma treatment
     if gamma_regime == "SHORT_GAMMA":
         reasons.append("Short gamma can amplify directional moves")
@@ -511,11 +523,10 @@ def build_signal(symbol: str) -> dict[str, Any]:
             cautions.append(f"Futures in discount vs spot (basis_pct={basis_pct:.2f}%)")
 
     # DTE gating
-    # NOTE: V3 legacy. `trade_allowed = True` here overrides any
-    # False set by LONG_GAMMA/NO_FLIP above. Harmless because
-    # action is already DO_NOTHING for those paths. Preserved for
-    # V3 bit-identical behaviour.
-    trade_allowed = True
+    # ENH-61: `trade_allowed` is initialised True at function top and
+    # only ever transitions downward. LONG_GAMMA / NO_FLIP gated paths
+    # now correctly retain trade_allowed=False; previously the
+    # unconditional `trade_allowed = True` here overrode them.
     if dte is not None:
         if dte <= 0:
             cautions.append("Market state uses already-expired contract context")

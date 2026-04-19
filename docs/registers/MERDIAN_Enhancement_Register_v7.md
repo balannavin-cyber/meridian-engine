@@ -622,10 +622,13 @@ LocalParquetArchiver stubbed at C:\GammaEnginePython\data\warm_tier\. S3ParquetA
 
 | Field | Detail |
 |---|---|
-| Status | **PROPOSED — experiment required before build** |
+| Status | **REJECTED** — 2026-04-19 |
+| Rejected | 2026-04-19 (closing this session; decided 2026-04-17/18 per V18H_v2) |
 | Added | 2026-04-15 |
-| Priority | Tier 2 — post Phase 4B stable |
-| Gate | Experiment 17 (backtest) must validate edge before any build |
+| Priority | Tier 2 — was post Phase 4B stable |
+| Original gate | Experiment 17 (backtest) must validate edge before any build |
+| Reason for rejection | Experiments 23 / 23b / 23c (2026-04-17/18 V18H_v2 session) tested sweep reversal across the full year. Baseline 17-19% WR. 23b HTF confluence filter: no lift. 23c quality filter: no lift. Hypothesis rejected. Discretionary trades remain possible (the 2026-04-17 live NIFTY BUY_CE sweep reversal was a manual call), but the pattern does not generalize into an automated signal. |
+| Do not revisit without | New evidence and a distinct experimental setup; simple variants already tested. |
 | Depends on | ENH-49 (Phase 4B live), hist_ict_htf_zones (breach-filtered, live) |
 
 **Observation:**
@@ -774,13 +777,14 @@ NOT modified.
 
 | Field | Detail |
 |---|---|
-| Status | **PROPOSED -- process rule** (was V18H_v2 OI-13) |
+| Status | **COMPLETE** — 2026-04-19 |
+| Completed | 2026-04-19 |
 | Added | 2026-04-17 |
 | Priority | MEDIUM |
 | Trigger | force_wire_breadth.py (2026-04-16 session) inserted a code block at wrong indent depth in run_option_snapshot_intraday_runner.py. Script exited cleanly at market close; IndentationError only surfaced at next session restart, would have disabled the entire pipeline. |
-| Rule | Every `fix_*.py` patch script MUST call `ast.parse(target_file.read_text())` before writing the target file. If SyntaxError: print error and `sys.exit(1)`. |
-| Build | Add to MERDIAN_Change_Protocol.md as new STEP 1.6 (Patch script syntax gate) at next protocol increment. |
-| Applied informally | fix_runner_indent.py (2026-04-17), fix_atm_option_build.py, fix_expiry_lookup.py all already include `ast.parse()` validation. Rule is enforced in practice; formal protocol inclusion pending. |
+| Rule | Every `fix_*.py` / `patch_*.py` / `update_*.py` script MUST call `ast.parse(patched_text)` on the in-memory result before writing the target file. If SyntaxError: print error to stderr and `sys.exit(non-zero)`. Script must also validate its own AST on startup. |
+| Resolution | Added to MERDIAN_Change_Protocol_v1.md as STEP 1.6 (Patch Script Syntax Gate). Enforced for all patch scripts from 2026-04-19 forward. |
+| Reference implementations | fix_enh6061.py, update_registers_enh5355.py, fix_runner_indent.py, fix_atm_option_build.py, fix_expiry_lookup.py. |
 
 ---
 

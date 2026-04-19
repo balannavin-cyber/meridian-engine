@@ -100,6 +100,29 @@ Before committing, confirm all four:
 
 ---
 
+### STEP 1.6 — Patch Script Syntax Gate (ENH-59) — Track A only
+
+Any `fix_*.py` / `patch_*.py` / `update_*.py` script that rewrites another
+.py file on disk MUST validate the result's AST before writing. This is
+non-optional.
+
+```
+☐ Script reads target file
+☐ Script applies edits in memory
+☐ Script calls ast.parse(patched_text) BEFORE writing
+☐ If SyntaxError: print error to stderr and sys.exit(non-zero) — do NOT write
+☐ Script also validates its OWN AST on startup (ast.parse(__file__))
+```
+
+**Why:** force_wire_breadth.py (2026-04-16) inserted code at wrong indent
+depth. Script exited cleanly; IndentationError surfaced only at next
+restart, would have disabled the entire pipeline.
+
+**Reference implementations:** fix_enh6061.py, update_registers_enh5355.py,
+fix_runner_indent.py, fix_atm_option_build.py, fix_expiry_lookup.py.
+
+---
+
 ### STEP 2 — Commit Format (MANDATORY)
 
 ```

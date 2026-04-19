@@ -672,3 +672,115 @@ The Apr 7-8 2026 tariff shock produced a textbook weekly JUDAS_BEAR — price sw
 
 **Expected edge (hypothesis only — unvalidated):**
 The Apr 7-8 move suggests sweep reversals from W zones are high-conviction multi-session trades. If Experiment 17 confirms this across the full year, the edge could be substantially larger than standard ICT pattern trades (+58-107% validated in Experiments 2-16).
+
+---
+
+## v8 Appended 2026-04-19 -- V18H_v2 ENH + OI migration
+
+V18H_v2 (2026-04-17/18) proposed ENH-43..47 and OI-11..15. These collided
+with existing COMPLETE items in v7 and with the permanently-closed
+OpenItems Register (closed 2026-04-15). Per new numbering convention
+(Documentation Protocol v2): ENH IDs are monotonic in this register; no
+new OI-* series may be created. V18H_v2 items are renumbered and OI
+content is folded into the matching ENH entries below.
+
+| V18H_v2 label | Canonical | Disposition |
+|---|---|---|
+| ENH-43 + OI-11 | **ENH-53** | folded; OI-11 content is ENH-53 Build field |
+| ENH-44 + OI-12 | **ENH-55** | folded; OI-12 content is ENH-55 Build field |
+| ENH-45 + OI-15 | **ENH-56** | folded; OI-15 content is ENH-56 Monitoring field |
+| ENH-46 | **ENH-57** | COMPLETE record only |
+| ENH-47 | **ENH-58** | COMPLETE record only |
+| OI-13 | **ENH-59** | promoted to full ENH (patch script syntax rule) |
+| OI-14 | (none) | session task, tracked in session_log only |
+
+Errata: `docs/appendices/V18H_v2_RENUMBERING_NOTE.md`. V18H_v2.docx is
+NOT modified.
+
+---
+
+### ENH-53: Remove breadth regime as hard gate
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED** (was V18H_v2 ENH-43) |
+| Added | 2026-04-17 |
+| Priority | HIGH |
+| Evidence | Experiment 25 (5m): WR spread = 1.0pp across BULLISH/BEARISH/NEUTRAL regimes. Pure noise. BEAR_OB on BULLISH days: 51.0% (better than BEARISH 45.0%). Gate directionally backwards. |
+| Gate | C-08 closed 2026-04-19 -- breadth now reads fresh from market_breadth_intraday via the view |
+| Build (was OI-11) | `build_trade_signal_local.py`: (1) remove breadth_regime from hard-gate / DO_NOTHING logic; (2) demote to confidence modifier: BULLISH+BUY_CE = +5 pts, BEARISH+BUY_PE = +5 pts, opposing = 0 pts; (3) remove from DO_NOTHING reasons. |
+| Gate for live promotion | Shadow test 5 sessions before promoting live. |
+| Depends on | ENH-55 (implement in same session -- both are build_trade_signal_local.py edits) |
+
+---
+
+### ENH-55: Momentum opposition hard block
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED** (was V18H_v2 ENH-44) |
+| Added | 2026-04-17 |
+| Priority | HIGH |
+| Evidence | Experiment 20 (5m): ALIGNED 60.9% WR (N=2,138) vs OPPOSED 38.3% WR (N=2,275). Lift +22.6pp. Consistent across BEAR_OB (63.1/40.4), BULL_OB (59.3/35.9), BULL_FVG (58.6/36.9). |
+| Definition | BUY_PE + ret_session < -0.05% = ALIGNED. BUY_CE + ret_session > +0.05% = ALIGNED. \|ret_session\| < 0.05% = NEUTRAL (allow). Mismatch = OPPOSED -> block. |
+| Build (was OI-12) | `build_trade_signal_local.py`: (1) if `abs(ret_session) > 0.0005` and direction opposes ret_session -> DO_NOTHING; (2) remove current momentum_regime confidence modifier (superseded); (3) add +10 confidence points when aligned. |
+| Gate for live promotion | Shadow test 5 sessions alongside ENH-53. |
+| Depends on | None -- can build standalone, but bundled with ENH-53 in single session |
+
+---
+
+### ENH-56: Premium sweep detector (monitor phase)
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED -- MONITOR ONLY, DO NOT BUILD** (was V18H_v2 ENH-45) |
+| Added | 2026-04-18 |
+| Priority | MEDIUM |
+| Evidence | Experiment 27b: PE sweep 0.2-1.0% = 64.5% WR (N=107). Size boundary is critical: large sweeps (>3%) = 49.1% (coin flip); small (<1%) = 64.5%. Momentum-independent (aligned vs opposed: 56.4% vs 57.5% -- no difference). |
+| Key insight | Premium sweeps behave differently from spot ICT patterns -- momentum-independent. A separate signal class. |
+| Monitoring (was OI-15) | Log live morning PE/CE sweeps <1% from hist_atm_option_bars_5m. Target: 50 live occurrences. Review threshold: build if 60%+ WR sustained. |
+| Build gate | 50 live occurrences + 60%+ WR. Not before. |
+
+---
+
+### ENH-57: MTF OHLCV infrastructure
+
+| Field | Detail |
+|---|---|
+| Status | **COMPLETE** (was V18H_v2 ENH-46) |
+| Completed | 2026-04-17 |
+| Tables | hist_spot_bars_5m (41,248 rows), hist_spot_bars_15m (14,072), hist_atm_option_bars_5m (27,082 with pre-computed wick metrics), hist_atm_option_bars_15m (9,601) |
+| Scripts | build_spot_bars_mtf.py, build_atm_option_bars_mtf.py, fix_atm_option_build.py, fix_expiry_lookup.py |
+| Runtime | ~50 minutes total for full year backfill |
+| Key decision | 1m bars are execution-granularity only. All ICT pattern detection uses 5m bars going forward. Evidence: Experiment 23 sweep detection found 0 events on 1m vs 52 on 5m. |
+
+---
+
+### ENH-58: hist_pattern_signals table
+
+| Field | Detail |
+|---|---|
+| Status | **COMPLETE** (was V18H_v2 ENH-47) |
+| Completed | 2026-04-17 |
+| Table | hist_pattern_signals (6,318 rows, source=backfill_5m) |
+| Script | build_hist_pattern_signals_5m.py |
+| Key outcome | 52 sweep reversals detected on 5m vs 0 on 1m -- validates timeframe architectural decision. |
+| Downstream impact | All future experiments run in <2 minutes vs hours. Experiment 20 ran in 90s vs prior 3.5h baseline (Exp 18 OI wall rebuild). |
+
+---
+
+### ENH-59: Patch script syntax validation rule
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED -- process rule** (was V18H_v2 OI-13) |
+| Added | 2026-04-17 |
+| Priority | MEDIUM |
+| Trigger | force_wire_breadth.py (2026-04-16 session) inserted a code block at wrong indent depth in run_option_snapshot_intraday_runner.py. Script exited cleanly at market close; IndentationError only surfaced at next session restart, would have disabled the entire pipeline. |
+| Rule | Every `fix_*.py` patch script MUST call `ast.parse(target_file.read_text())` before writing the target file. If SyntaxError: print error and `sys.exit(1)`. |
+| Build | Add to MERDIAN_Change_Protocol.md as new STEP 1.6 (Patch script syntax gate) at next protocol increment. |
+| Applied informally | fix_runner_indent.py (2026-04-17), fix_atm_option_build.py, fix_expiry_lookup.py all already include `ast.parse()` validation. Rule is enforced in practice; formal protocol inclusion pending. |
+
+---
+
+*End of v8 section.*

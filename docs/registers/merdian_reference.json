@@ -1505,7 +1505,7 @@
       "priority": "MEDIUM",
       "status": "CLOSED",
       "closed_date": "2026-04-19",
-      "closed_commit": "(pending  --  this session)",
+      "closed_commit": "6c6b566",
       "root_cause": "Commit 4599bb8 (2026-04-16) retired ingest_breadth_intraday_local.py and introduced ingest_breadth_from_ticks.py. New writer upserts to latest_market_breadth_intraday which is a VIEW of market_breadth_intraday; Supabase silently ignores upserts to views. market_breadth_intraday stopped receiving rows at 2026-04-16 05:08:48 UTC. Signal engine read stale BEARISH data all day 2026-04-17 despite actual BULLISH market (1,269 ADV / 50 DEC).",
       "fix_applied": "ingest_breadth_from_ticks.py: changed .table('latest_market_breadth_intraday').upsert(payload, on_conflict='universe_id') to .table('market_breadth_intraday').upsert(payload, on_conflict='ts,universe_id'). View auto-reflects latest row via ORDER BY ts DESC LIMIT 1.",
       "verification": "Saturday 2026-04-19: direct upsert test passed; test row with universe_id=excel_v1 appeared in view within 30 seconds; cleanup confirmed. View refresh semantics proven end-to-end.",

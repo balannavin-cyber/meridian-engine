@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 import sys
@@ -27,10 +27,42 @@ from supabase import Client, create_client
 #   - Restores spot, atm_strike, expiry_date, dte, atm_call_iv,
 #     atm_put_iv, atm_iv_avg, iv_skew, entry_quality, source_run_id,
 #     india_vix, vix_change, vix_regime, wcb_* fields to output dict.
-#     These were present in early signals (IDs 23-35) but dropped
-#     during a full-file replacement. Required for premium outcome
-#     measurement layer.
+#
+# ENH-53 + ENH-55 (feature-flagged via MERDIAN_SIGNAL_V4=1):
+#   ENH-53 — Remove breadth regime as hard gate.
+#     Evidence: Experiment 25 (5m) WR spread = 1.0pp across
+#     BULLISH/BEARISH/NEUTRAL regimes — pure noise.
+#     Under V4: breadth no longer drives direction_bias nor
+#     produces a NEUTRAL gate. Demoted to confidence modifier:
+#     +5 when breadth_regime aligns with chosen action, 0 otherwise.
+#
+#   ENH-55 — Momentum opposition hard block.
+#     Evidence: Experiment 20 (5m) ALIGNED 60.9% WR vs
+#     OPPOSED 38.3% WR = +22.6pp lift.
+#     Under V4:
+#       - If abs(ret_session) > 0.0005 AND action opposes sign of
+#         ret_session, force action = DO_NOTHING, trade_allowed = False.
+#       - If abs(ret_session) > 0.0005 AND action aligned with
+#         ret_session sign, add +10 confidence.
+#       - If abs(ret_session) <= 0.0005, treat as NEUTRAL (no
+#         bonus, no block).
+#       - Old +20 "direction_bias != NEUTRAL" bonus (implicit
+#         breadth+momentum alignment) is removed under V4.
+#
+# Flag: MERDIAN_SIGNAL_V4
+#   "1"        -> V4 logic (ENH-53 + ENH-55)
+#   unset / 0  -> V3 legacy (bit-identical to prior behaviour,
+#                including known quirks)
+# Default is off. Enable explicitly for shadow sessions. Flip
+# default only after 5 clean shadow sessions per Change Protocol.
 # ============================================================
+
+
+# -----------------------------
+# Feature flag (read once at import)
+# -----------------------------
+load_dotenv()
+SIGNAL_V4_ENABLED: bool = os.getenv("MERDIAN_SIGNAL_V4", "0").strip() == "1"
 
 
 # -----------------------------
@@ -194,6 +226,8 @@ def get_momentum_direction(momentum_features: dict[str, Any]) -> str:
 
 
 def infer_direction_bias(breadth_regime: str, momentum_direction: str) -> str:
+    # V3 legacy path. DO NOT MODIFY — this is the bit-identical
+    # fallback when MERDIAN_SIGNAL_V4 is off.
     # ENH-35 validated 2026-04-11:
     # BEARISH+BEARISH aligned ? BEARISH (core signal)
     if breadth_regime == "BEARISH" and momentum_direction == "BEARISH":
@@ -211,6 +245,18 @@ def infer_direction_bias(breadth_regime: str, momentum_direction: str) -> str:
         return "NEUTRAL"
     if breadth_regime == "TRANSITION":
         return "NEUTRAL"
+    return "NEUTRAL"
+
+
+def infer_direction_bias_v4(momentum_direction: str) -> str:
+    # ENH-53: breadth removed as hard gate. Direction comes from
+    # momentum_direction alone. Breadth is applied later as a
+    # ±5 confidence modifier on the chosen action.
+    # Evidence: Experiment 25 (5m) 1.0pp spread across breadth regimes.
+    if momentum_direction == "BULLISH":
+        return "BULLISH"
+    if momentum_direction == "BEARISH":
+        return "BEARISH"
     return "NEUTRAL"
 
 
@@ -299,6 +345,9 @@ def build_signal(symbol: str) -> dict[str, Any]:
     straddle_atm = to_float(gamma_features.get("straddle_atm"))
     straddle_slope = to_float(gamma_features.get("straddle_slope"))
 
+    # --- ret_session (consumed by get_momentum_direction AND ENH-55) ---
+    ret_session = to_float(momentum_features.get("ret_session"))
+
     gamma_regime = get_gamma_regime(gamma_features)
     breadth_regime = get_breadth_regime(breadth_features)
     volatility_regime = get_volatility_regime(vol_features)
@@ -311,7 +360,13 @@ def build_signal(symbol: str) -> dict[str, Any]:
     reasons.append(f"Breadth regime is {breadth_regime}")
     reasons.append(f"Momentum direction is {momentum_direction}")
 
-    direction_bias = infer_direction_bias(breadth_regime, momentum_direction)
+    # ENH-53 branch. Under V4, breadth is not used to compute
+    # direction_bias and there is no NEUTRAL gate from breadth.
+    if SIGNAL_V4_ENABLED:
+        direction_bias = infer_direction_bias_v4(momentum_direction)
+        reasons.append("ENH-53: direction_bias from momentum only (V4)")
+    else:
+        direction_bias = infer_direction_bias(breadth_regime, momentum_direction)
 
     if direction_bias == "BEARISH":
         reasons.append("Breadth and momentum are aligned bearish")
@@ -322,9 +377,13 @@ def build_signal(symbol: str) -> dict[str, Any]:
 
     confidence = 40.0
 
-    # Breadth + momentum alignment
-    if direction_bias in {"BULLISH", "BEARISH"}:
-        confidence += 20.0
+    # V3: +20 bonus whenever direction_bias is non-NEUTRAL (implicit
+    #     breadth+momentum alignment via infer_direction_bias).
+    # V4: removed — replaced by ENH-53 (+5 breadth) and ENH-55 (+10
+    #     momentum) applied post-action below.
+    if not SIGNAL_V4_ENABLED:
+        if direction_bias in {"BULLISH", "BEARISH"}:
+            confidence += 20.0
 
     # Gamma treatment
     if gamma_regime == "SHORT_GAMMA":
@@ -400,6 +459,11 @@ def build_signal(symbol: str) -> dict[str, Any]:
         cautions.append("ret_30m shows premium compression")
 
     # Options flow confidence modifiers (ENH-02/04)
+    # NOTE: V3 legacy preserved. `action` is referenced here before
+    # its unconditional assignment below — this relies on pcr_regime/
+    # skew_regime/flow_regime being None in SHORT_GAMMA paths where
+    # `action` has not yet been set by the gamma block. Pre-existing
+    # behaviour; out of scope for this session.
     if pcr_regime and action in ("BUY_PE", "BUY_CE"):
         if (pcr_regime == "BEARISH" and action == "BUY_PE"):
             confidence += 5.0
@@ -447,6 +511,10 @@ def build_signal(symbol: str) -> dict[str, Any]:
             cautions.append(f"Futures in discount vs spot (basis_pct={basis_pct:.2f}%)")
 
     # DTE gating
+    # NOTE: V3 legacy. `trade_allowed = True` here overrides any
+    # False set by LONG_GAMMA/NO_FLIP above. Harmless because
+    # action is already DO_NOTHING for those paths. Preserved for
+    # V3 bit-identical behaviour.
     trade_allowed = True
     if dte is not None:
         if dte <= 0:
@@ -466,6 +534,8 @@ def build_signal(symbol: str) -> dict[str, Any]:
     confidence = max(0.0, min(100.0, confidence))
 
     # Decide action independent of trade_allowed
+    # (LONG_GAMMA/NO_FLIP paths already set direction_bias=NEUTRAL
+    # above, so this branch produces action=DO_NOTHING for them.)
     if direction_bias == "BEARISH":
         action = "BUY_PE"
         reasons.append("Direction bias is BEARISH")
@@ -475,6 +545,55 @@ def build_signal(symbol: str) -> dict[str, Any]:
     else:
         action = "DO_NOTHING"
         cautions.append("No directional bias available")
+
+    # ========================================================
+    # V4-ONLY BLOCK (ENH-53 + ENH-55)
+    # Runs only when MERDIAN_SIGNAL_V4=1. V3 path unchanged.
+    # Runs AFTER action is decided from direction_bias so the
+    # opposition check, alignment bonus, and breadth modifier
+    # act on the final chosen action.
+    # ========================================================
+    if SIGNAL_V4_ENABLED and action in ("BUY_CE", "BUY_PE"):
+        # ENH-55: Momentum opposition hard block
+        # Threshold: abs(ret_session) > 0.0005 (= 0.05%).
+        # Below threshold: NEUTRAL — no block, no bonus.
+        if ret_session is not None and abs(ret_session) > 0.0005:
+            opposed = (
+                (action == "BUY_CE" and ret_session < -0.0005)
+                or (action == "BUY_PE" and ret_session > 0.0005)
+            )
+            aligned = (
+                (action == "BUY_CE" and ret_session > 0.0005)
+                or (action == "BUY_PE" and ret_session < -0.0005)
+            )
+            if opposed:
+                cautions.append(
+                    f"ENH-55: Momentum opposition block — {action} "
+                    f"opposes ret_session={ret_session:.4f}"
+                )
+                action = "DO_NOTHING"
+                trade_allowed = False
+                direction_bias = "NEUTRAL"
+            elif aligned:
+                confidence += 10.0
+                reasons.append(
+                    f"ENH-55: Momentum aligned (+10) — "
+                    f"ret_session={ret_session:.4f}"
+                )
+
+        # ENH-53: Breadth demoted to ±5 confidence modifier.
+        # Apply only if the opposition block above did not fire.
+        if action in ("BUY_CE", "BUY_PE"):
+            if breadth_regime == "BULLISH" and action == "BUY_CE":
+                confidence += 5.0
+                reasons.append("ENH-53: Breadth aligned (+5) — BULLISH breadth, BUY_CE")
+            elif breadth_regime == "BEARISH" and action == "BUY_PE":
+                confidence += 5.0
+                reasons.append("ENH-53: Breadth aligned (+5) — BEARISH breadth, BUY_PE")
+            # Opposing / NEUTRAL / TRANSITION / UNKNOWN: 0pts
+
+        # Re-clamp after V4 modifiers
+        confidence = max(0.0, min(100.0, confidence))
 
     # Final trade gate
     if action != "DO_NOTHING" and confidence < 40.0:
@@ -575,6 +694,8 @@ def build_signal(symbol: str) -> dict[str, Any]:
         "put_call_ratio": put_call_ratio,
         "chain_iv_skew":  chain_iv_skew,
         "basis_pct":      basis_pct,
+        "signal_v4":      SIGNAL_V4_ENABLED,
+        "ret_session":    ret_session,
     })
 
     # ENH-37: Enrich signal with ICT pattern context
@@ -594,7 +715,6 @@ def build_signal(symbol: str) -> dict[str, Any]:
                      .execute().data)
         out = enrich_signal_with_ict(out, _ict_rows, float(spot or 0))
         # ENH-38: forward Kelly lots from active zone to signal_snapshots
-        # All active zones carry the same lots (same capital/IV/DTE per cycle)
         if _ict_rows:
             out['ict_lots_t1'] = _ict_rows[0].get('ict_lots_t1')
             out['ict_lots_t2'] = _ict_rows[0].get('ict_lots_t2')
@@ -604,7 +724,7 @@ def build_signal(symbol: str) -> dict[str, Any]:
             out['ict_lots_t2'] = None
             out['ict_lots_t3'] = None
     except Exception as _ict_err:
-        # Non-blocking -- ICT enrichment failure never halts signal
+        # Non-blocking — ICT enrichment failure never halts signal
         out["ict_pattern"]     = "NONE"
         out["ict_tier"]        = "NONE"
         out["ict_size_mult"]   = 1.0
@@ -669,6 +789,8 @@ def build_signal(symbol: str) -> dict[str, Any]:
         cautions.append(f"ENH-06: Capital check skipped ({_e06})")
 
     return out
+
+
 def insert_signal(row: dict[str, Any]) -> None:
     SUPABASE.table("signal_snapshots").insert(row).execute()
 
@@ -683,6 +805,7 @@ def main() -> None:
     insert_signal(row)
 
     print("Signal snapshot insert complete.")
+    print(f"signal_v4={SIGNAL_V4_ENABLED}")
     print(f"symbol={row.get('symbol')}")
     print(f"ts={row.get('ts')}")
     print(f"action={row.get('action')}")
@@ -698,12 +821,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-

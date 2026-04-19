@@ -1,3 +1,39 @@
+## 2026-04-19 — code_build — ENH-53 + ENH-55 build, validate, promote
+
+**Goal:** Implement ENH-53 (breadth hard-gate removal) + ENH-55 (momentum opposition block) in build_trade_signal_local.py behind MERDIAN_SIGNAL_V4 feature flag, validate via historical replay, promote to default.
+
+**Session type:** code_build
+
+**Completed:**
+  - Built V4 logic in build_trade_signal_local.py: new `infer_direction_bias_v4(momentum_direction)` helper; ENH-53 post-action +5 breadth modifier (0 when opposing); ENH-55 post-action opposition block (abs(ret_session) > 0.0005 AND action opposes sign → DO_NOTHING, trade_allowed=False) and alignment bonus (+10 when aligned); old implicit +20 breadth+momentum alignment bonus removed under V4.
+  - V3 path preserved bit-identical including known latent quirks: flow-modifier block action-reference, trade_allowed=True DTE override.
+  - Feature flag MERDIAN_SIGNAL_V4 read once at module import. Commit 8f70822 (default "0"), commit e986cbb (default "1" post-validation).
+  - ast.parse validation passed (ENH-59 compliance) on both build_trade_signal_local.py and backtest_signal_v4.py.
+  - Built backtest_signal_v4.py — replays each market_state_snapshots row through build_signal twice (flag off/on), writes side-by-side CSV. Patched wrapper intercepts options_flow_snapshots Supabase queries to return empty, neutralizing the pre-existing UnboundLocalError without modifying the production file. Preserves V3↔V4 delta isolation.
+  - NIFTY 2026-03-16/20/24/25 replay: 171 rows, 0 errors, 170 SAME, 1 V4_OPENED, 0 V4_BLOCKED, 0 DIRECTION_FLIP, 0 OTHER. Mean Δ confidence -4.64. Window LONG_GAMMA-dominated.
+  - SENSEX 2026-03-16/20/24/25 replay: 169 rows, 0 errors, 144 SAME, 25 V4_OPENED, 0 V4_BLOCKED, 0 DIRECTION_FLIP, 0 OTHER. Mean Δ confidence -4.80.
+  - Spot-check of all 25 SENSEX V4_OPENED rows: every row BEARISH breadth + BULLISH momentum + SHORT_GAMMA, ret_session 0.86%-1.4%, V3=DO_NOTHING → V4=BUY_CE. Confidence distribution 40/44/50/54 traces cleanly to modifier stack. No anomalies.
+  - Trade_allowed-flip check (action same but trade_allowed differs) empty on both symbols.
+  - SQL audit of 60-day history: 0 rows where momentum_regime field explicitly opposes ret_session. ENH-55 opposition block confirmed as safety rail with no historical fire cases. Aligned +10 bonus fires on V4_OPENED and aligned-SAME paths where |ret_session| > 0.0005.
+  - Promotion: source default flipped "0" → "1". .env updated locally (gitignored). Confirmation run: `signal_v4=True` with no env var set.
+
+**Open after session:**
+  - ENH-60 (NEW): UnboundLocalError pre-init in build_trade_signal_local flow-modifier block
+  - ENH-61 (NEW): V3 trade_allowed=True unconditional reset at DTE block (cosmetic)
+  - ENH-62 (NEW): Shadow runner dead since 2026-04-15 (unblocks shadow-required validations)
+  - Post-promotion monitoring: first live trading day confirm V4_OPENED fires on BEARISH+BULLISH+SHORT_GAMMA in live cycle
+
+**Files changed:** build_trade_signal_local.py (V4 build + default flip), .env (local, gitignored)
+**Files added:** backtest_signal_v4.py (dev/shadow tool, uncommitted)
+**Schema changes:** none — signal_snapshots raw JSONB gains two observability keys (signal_v4, ret_session); no DDL change required
+**Open items closed:** ENH-53, ENH-55 (promoted)
+**Open items added:** ENH-60, ENH-61, ENH-62
+**Git commit hashes:** 8f70822 (feature-flagged build), e986cbb (default flip)
+**Next session goal:** Fix ENH-60 (single-line `action = "DO_NOTHING"` pre-init). Track A commit, Default-safe.
+**docs_updated:** yes
+
+---
+
 ## 2026-04-19 — code_debug — C-08 breadth writer fix (closes VIEW-upsert bug)
 
 **Goal:** Diagnose and fix stale latest_market_breadth_intraday data, validate V18H_v2's proposed DDL before applying.

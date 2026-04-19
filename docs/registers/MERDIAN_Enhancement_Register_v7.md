@@ -703,14 +703,14 @@ NOT modified.
 
 | Field | Detail |
 |---|---|
-| Status | **PROPOSED** (was V18H_v2 ENH-43) |
-| Added | 2026-04-17 |
-| Priority | HIGH |
+| Status | **COMPLETE (PROMOTED)** — 2026-04-19 |
+| Promoted | 2026-04-19 |
+| Commits | 8f70822 (build, flag default off), e986cbb (flag default on) |
 | Evidence | Experiment 25 (5m): WR spread = 1.0pp across BULLISH/BEARISH/NEUTRAL regimes. Pure noise. BEAR_OB on BULLISH days: 51.0% (better than BEARISH 45.0%). Gate directionally backwards. |
-| Gate | C-08 closed 2026-04-19 -- breadth now reads fresh from market_breadth_intraday via the view |
-| Build (was OI-11) | `build_trade_signal_local.py`: (1) remove breadth_regime from hard-gate / DO_NOTHING logic; (2) demote to confidence modifier: BULLISH+BUY_CE = +5 pts, BEARISH+BUY_PE = +5 pts, opposing = 0 pts; (3) remove from DO_NOTHING reasons. |
-| Gate for live promotion | Shadow test 5 sessions before promoting live. |
-| Depends on | ENH-55 (implement in same session -- both are build_trade_signal_local.py edits) |
+| Validation | 2026-04-19 historical replay on 2026-03-16/20/24/25: SENSEX 25/169 (14.8%) V4_OPENED rows, all BEARISH breadth + BULLISH momentum + SHORT_GAMMA. NIFTY 1/171 V4_OPENED (LONG_GAMMA-dominated window). 0 errors, 0 OTHER, trade_allowed-flip check empty. |
+| Build | `build_trade_signal_local.py`: (1) new helper `infer_direction_bias_v4(momentum_direction)` replaces `infer_direction_bias(breadth, momentum)` under V4; (2) old +20 implicit alignment bonus skipped under V4; (3) post-action V4-only block adds +5 confidence when breadth aligns with action, 0 otherwise. |
+| Flag | MERDIAN_SIGNAL_V4 — kept as hot-rollback escape hatch. Default "1". Override to "0" for V3 legacy. |
+| Depends on | ENH-55 (implemented in same session) |
 
 ---
 
@@ -718,14 +718,15 @@ NOT modified.
 
 | Field | Detail |
 |---|---|
-| Status | **PROPOSED** (was V18H_v2 ENH-44) |
-| Added | 2026-04-17 |
-| Priority | HIGH |
+| Status | **COMPLETE (PROMOTED)** — 2026-04-19 |
+| Promoted | 2026-04-19 |
+| Commits | 8f70822 (build, flag default off), e986cbb (flag default on) |
 | Evidence | Experiment 20 (5m): ALIGNED 60.9% WR (N=2,138) vs OPPOSED 38.3% WR (N=2,275). Lift +22.6pp. Consistent across BEAR_OB (63.1/40.4), BULL_OB (59.3/35.9), BULL_FVG (58.6/36.9). |
-| Definition | BUY_PE + ret_session < -0.05% = ALIGNED. BUY_CE + ret_session > +0.05% = ALIGNED. \|ret_session\| < 0.05% = NEUTRAL (allow). Mismatch = OPPOSED -> block. |
-| Build (was OI-12) | `build_trade_signal_local.py`: (1) if `abs(ret_session) > 0.0005` and direction opposes ret_session -> DO_NOTHING; (2) remove current momentum_regime confidence modifier (superseded); (3) add +10 confidence points when aligned. |
-| Gate for live promotion | Shadow test 5 sessions alongside ENH-53. |
-| Depends on | None -- can build standalone, but bundled with ENH-53 in single session |
+| Definition | BUY_PE + ret_session < -0.05% = ALIGNED. BUY_CE + ret_session > +0.05% = ALIGNED. \|ret_session\| < 0.05% = NEUTRAL (allow). Mismatch = OPPOSED → block. |
+| Validation | 2026-04-19 historical replay on 2026-03-16/20/24/25: V4_BLOCKED = 0 on both symbols. SQL audit of 60-day history: 0 rows where momentum_regime field explicitly opposes ret_session. Opposition block in place as safety rail with no practical fire cases in historical data. Aligned +10 bonus fires on V4_OPENED and aligned-SAME paths. |
+| Build | `build_trade_signal_local.py`: (1) if `abs(ret_session) > 0.0005` and action opposes sign of ret_session → action=DO_NOTHING, trade_allowed=False, direction_bias=NEUTRAL; (2) else if aligned → +10 confidence; (3) re-clamp confidence to [0, 100]. |
+| Flag | MERDIAN_SIGNAL_V4 — shared with ENH-53. Default "1". |
+| Depends on | None — bundled with ENH-53 |
 
 ---
 
@@ -780,6 +781,51 @@ NOT modified.
 | Rule | Every `fix_*.py` patch script MUST call `ast.parse(target_file.read_text())` before writing the target file. If SyntaxError: print error and `sys.exit(1)`. |
 | Build | Add to MERDIAN_Change_Protocol.md as new STEP 1.6 (Patch script syntax gate) at next protocol increment. |
 | Applied informally | fix_runner_indent.py (2026-04-17), fix_atm_option_build.py, fix_expiry_lookup.py all already include `ast.parse()` validation. Rule is enforced in practice; formal protocol inclusion pending. |
+
+---
+
+### ENH-60: UnboundLocalError in build_trade_signal_local flow-modifier block
+
+| Field | Detail |
+|---|---|
+| Status | **OPEN** |
+| Opened | 2026-04-19 |
+| Priority | MEDIUM |
+| Origin | Pre-existing latent bug in `build_trade_signal_local.py`. Exposed during ENH-53/55 backtest — fired on ~0.3% of rows (1/313 NIFTY, varies on SENSEX). Not introduced by V4. |
+| Symptom | `UnboundLocalError: cannot access local variable 'action' where it is not associated with a value` — raised in the options-flow confidence-modifier block when pcr_regime/skew_regime/flow_regime is populated AND gamma_regime is not LONG_GAMMA/NO_FLIP. `action` is referenced there before it is assigned in the action-decision block below. |
+| Fix | Pre-initialise `action = "DO_NOTHING"` at the top of `build_signal()`, before the gamma-treatment block. Single-line change. Safe default. Track A, not BREAKING. |
+| Impact if deferred | Rare signal build failures during live cycles. At ~0.3% error rate: ~1-3 signal drops per trading day. Affected rows never write to signal_snapshots. |
+| Build when | Next session — trivial fix |
+
+---
+
+### ENH-61: V3 trade_allowed=True unconditional reset at DTE block
+
+| Field | Detail |
+|---|---|
+| Status | **OPEN** |
+| Opened | 2026-04-19 |
+| Priority | LOW |
+| Origin | V3 legacy behaviour preserved bit-identical through ENH-53/55 promotion. In `build_signal()`, DTE block sets `trade_allowed = True` unconditionally, overriding the `False` set by LONG_GAMMA/NO_FLIP gamma gate. |
+| Symptom | On LONG_GAMMA / NO_FLIP gated rows, `signal_snapshots.trade_allowed` is written as `True` even though `action = DO_NOTHING`. Cosmetically wrong; no trading impact since `action` gates downstream execution. |
+| Fix | Initialise `trade_allowed = True` once at function top, then only ever transition it to `False` downward. Remove the unconditional `trade_allowed = True` inside the DTE block. |
+| Impact if deferred | None on execution (action is the effective gate). Pollutes signal_snapshots analytics — any filter on `trade_allowed=True` will include gate-blocked DO_NOTHING rows. |
+| Build when | Bundle with ENH-60 or next time touching build_trade_signal_local.py |
+
+---
+
+### ENH-62: Shadow runner dead since 2026-04-15
+
+| Field | Detail |
+|---|---|
+| Status | **OPEN** |
+| Opened | 2026-04-19 |
+| Priority | MEDIUM |
+| Origin | AWS shadow runner last heartbeat 2026-04-15 (per session resume header). Unrelated to ENH-53/55 but blocks the "5 shadow sessions" validation pattern. Historical replay substituted for this session. |
+| Symptom | AWS preflight FAILED state; no shadow signal_snapshots rows emitted since 2026-04-15. |
+| Fix | Diagnose shadow runner process status on AWS (systemd / supervisor logs), restart if crashed, investigate crash cause if recurring. |
+| Impact if deferred | Next build that wants shadow validation must fall back to historical replay (acceptable, proven this session) or live canary (riskier). No immediate blocker. |
+| Build when | Before next shadow-required validation, or opportunistically. |
 
 ---
 

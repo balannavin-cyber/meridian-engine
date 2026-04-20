@@ -36,45 +36,58 @@ SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 def ensure_calendar_row():
     """
     Permanent fix for preflight V18A-03.
-    Auto-inserts today's trading_calendar row using rule-based logic.
-    Mon-Fri = open. Sat-Sun = closed.
-    NSE holidays: manually maintained in trading_calendar module.
-    Upserts â€” safe to call every morning regardless.
+    Read-before-write: never overwrite a pre-loaded holiday row.
+    OI-17 fix: TradingCalendar class did not exist in trading_calendar
+    module — import was failing silently, falling back to weekday rule,
+    overwriting holidays as is_open=True.
     """
-    today   = date.today()
-    is_open = today.weekday() < 5  # weekday rule as fallback
-
-    # Use trading_calendar module if available (handles NSE holidays)
-    try:
-        from trading_calendar import TradingCalendar
-        cal     = TradingCalendar()
-        is_open = cal.is_trading_day(today)
-    except Exception:
-        pass
+    today = date.today()
 
     if not SUPABASE_URL or not SUPABASE_KEY:
         return False, "Supabase credentials missing"
 
+    headers = {
+        "apikey":        SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type":  "application/json",
+    }
+
     try:
+        # Step 1: Read existing row first
+        r = requests.get(
+            f"{SUPABASE_URL}/rest/v1/trading_calendar",
+            headers=headers,
+            params={"trade_date": f"eq.{today}", "select": "trade_date,is_open,holiday_name"},
+            timeout=10,
+        )
+        if r.status_code < 300:
+            rows = r.json()
+            if rows:
+                row = rows[0]
+                if not row.get("is_open", True):
+                    # Pre-loaded holiday - do not overwrite
+                    name = row.get("holiday_name") or "Market holiday"
+                    return True, f"{today} -> HOLIDAY ({name}) -- row preserved, not overwritten"
+                else:
+                    # Row exists and is_open=True - already correct
+                    return True, f"{today} -> TRADING DAY -- row exists, no change"
+
+        # Step 2: No row exists - insert using weekday rule
+        is_open = today.weekday() < 5   # Mon-Fri open, Sat-Sun closed
         r = requests.post(
             f"{SUPABASE_URL}/rest/v1/trading_calendar",
-            headers={
-                "apikey":        SUPABASE_KEY,
-                "Authorization": f"Bearer {SUPABASE_KEY}",
-                "Content-Type":  "application/json",
-                "Prefer":        "resolution=merge-duplicates",
-            },
+            headers={**headers, "Prefer": "resolution=merge-duplicates"},
             params={"on_conflict": "trade_date"},
             json=[{"trade_date": str(today), "is_open": is_open}],
             timeout=10,
         )
         if r.status_code < 300:
-            day_type = "TRADING DAY" if is_open else "HOLIDAY/WEEKEND"
-            return True, f"{today} â†’ {day_type} (is_open={is_open}) upserted"
+            day_type = "TRADING DAY" if is_open else "WEEKEND"
+            return True, f"{today} -> {day_type} (is_open={is_open}) inserted (new row)"
         return False, f"Supabase {r.status_code}: {r.text[:80]}"
+
     except Exception as e:
         return False, f"Failed: {e}"
-
 
 def main():
     print()

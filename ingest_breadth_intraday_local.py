@@ -42,7 +42,7 @@ DHAN_LTP_URL = "https://api.dhan.co/v2/marketfeed/ltp"
 UNIVERSE_PAGE_SIZE = 1000
 
 # Reduced from 50 → 25 to reduce per-request payload size and 429 pressure
-LTP_BATCH_SIZE = 25
+LTP_BATCH_SIZE = 1000
 
 # Inter-chunk sleep to stay within Dhan rate limits (seconds)
 # At 25 per chunk, ~500 tickers = 20 chunks. 0.5s sleep = ~10s total overhead.

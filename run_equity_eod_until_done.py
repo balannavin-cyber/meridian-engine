@@ -45,11 +45,51 @@ def run_script(script_path: Path) -> tuple[int, str]:
     return proc.returncode, "".join(combined)
 
 
+def _is_market_open_today() -> bool:
+    """Holiday gate: check trading_calendar. Fail-open on any error."""
+    try:
+        import os as _os
+        try:
+            from dotenv import load_dotenv as _lde
+            _lde()
+        except ImportError:
+            pass
+        import requests as _req
+        from datetime import datetime as _dt, timezone as _tz
+        from zoneinfo import ZoneInfo as _ZI
+        _url = _os.getenv("SUPABASE_URL", "").rstrip("/")
+        _key = _os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+        if not _url or not _key:
+            return True  # can't check — allow run
+        _today = _dt.now(_tz.utc).astimezone(_ZI("Asia/Kolkata")).date().isoformat()
+        _r = _req.get(
+            f"{_url}/rest/v1/trading_calendar",
+            headers={"apikey": _key, "Authorization": f"Bearer {_key}"},
+            params={"trade_date": f"eq.{_today}", "select": "is_open,open_time"},
+            timeout=10,
+        )
+        if _r.status_code == 200:
+            _rows = _r.json()
+            if _rows:
+                _row = _rows[0]
+                return bool(_row.get("is_open", True)) and _row.get("open_time") is not None
+        return True  # no row — allow run
+    except Exception:
+        return True  # error — allow run
+
 def main():
     print("=" * 72)
     print("Gamma Engine - Full Sweep Loop Runner")
     print("Manual catch-up mode (not trading-day gated)")
     print("=" * 72)
+
+    # ── Holiday gate ───────────────────────────────────────────────────────
+    # Task Scheduler fires Mon-Fri regardless. Gate prevents holiday runs.
+    # For manual catch-up on non-trading days, call ingest scripts directly.
+    if not _is_market_open_today():
+        print("[HOLIDAY GATE] Market closed — run_equity_eod_until_done exiting.")
+        return
+    # ────────────────────────────────────────────────────────────────────────
 
     session_id = now_stamp()
     session_log = LOG_DIR / f"loop_runner_full_sweep_{session_id}.log"

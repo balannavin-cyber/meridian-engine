@@ -154,6 +154,32 @@ def main() -> int:
 
     print(f"[{now_utc.strftime('%H:%M:%S UTC')}] capture_spot_1m.py")
 
+    # ── Holiday gate (ENH-36 fix) ─────────────────────────────────────────────
+    # Check trading_calendar before hitting Dhan API.
+    # Exit 0 cleanly on holidays — no data written, no error logged.
+    try:
+        from zoneinfo import ZoneInfo as _ZI
+        _today = str(datetime.now(timezone.utc).astimezone(_ZI("Asia/Kolkata")).date())
+        _cal_url = f"{SUPABASE_URL}/rest/v1/trading_calendar"
+        _cal_r = requests.get(
+            _cal_url,
+            headers=sb_headers(),
+            params={"trade_date": f"eq.{_today}", "select": "is_open,open_time"},
+            timeout=10,
+        )
+        if _cal_r.status_code == 200:
+            _rows = _cal_r.json()
+            if _rows:
+                _row = _rows[0]
+                if not _row.get("is_open", True) or _row.get("open_time") is None:
+                    print(f"[{_today}] Market holiday — capture_spot_1m exiting cleanly.")
+                    return 0
+            # No row in calendar: allow run (merdian_start.py will upsert later)
+    except Exception as _e:
+        print(f"  [WARN] Calendar check failed (proceeding): {_e}")
+    # ── End holiday gate ───────────────────────────────────────────────────────
+
+
     try:
         spots = fetch_spots()
     except Exception as e:

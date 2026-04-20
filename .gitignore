@@ -62,3 +62,8 @@ tmp_*.sql
 *.bak_*
 # Patch scripts save these automatically; audit trail lives in git history,
 # not on disk.
+.env.save*
+*.pre_*
+trading_calendar.json.bak*
+diagnose_*.py
+"C:\\gammaenginepython\\"

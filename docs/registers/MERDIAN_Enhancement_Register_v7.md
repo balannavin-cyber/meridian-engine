@@ -840,7 +840,8 @@ NOT modified.
 
 | Field | Detail |
 |---|---|
-| Status | **PROPOSED** |
+| Status | **REJECTED** -- 2026-04-19 |
+| Rejection rationale | `compute_kelly_lots()` in `merdian_utils.py` (ENH-38v2, 2026-04-13) already applies IV scaling via `estimate_lot_cost(spot, atm_iv_pct, dte_days)`. Higher IV -> higher per-lot premium estimate -> fewer lots. Proposed layered multiplier would double-count IV. Today's commit `b2e8078` was a silent-bug repair (duplicate V1 block clobbering V2 output for 6 days) -- filed separately as ENH-65. |
 | Added | 2026-04-19 |
 | Priority | HIGH — direct execution-layer edge |
 | Evidence | Experiment 5 (full year options P&L): BEAR_OB\|HIGH_IV +174.6% exp 86% WR (N=22) vs BEAR_OB\|MED_IV +84.8% exp 100% WR (N=11). BULL_FVG\|LOW_IV -14.3% exp 0% WR (N=23). BULL_OB\|HIGH +67.3% vs BULL_OB\|MED +49.3%. HIGH_IV environments carry MORE edge, not less. |
@@ -878,6 +879,27 @@ NOT modified.
 | Validation | Historical replay against hist_pattern_signals.signal_v4 = true rows. Compare tier distribution pre-/post-change. Expected: 5-10% of BEAR_OB/BULL_OB rows promote to TIER1 (+300% sizing). 100% of afternoon BEAR_OB rows get SKIP (was TIER3 min). BULL_FVG LOW_IV rows — sparse in live data, cosmetic for now. |
 | Depends on | ENH-37 (ICT detector — live), ENH-38 (Kelly sizing — live). |
 | Could unblock | Refined Signal Rule Book v2.0 once this and ENH-63 ship. |
+
+---
+
+### ENH-65: Remove duplicate Kelly-write block + cache expiry index
+
+| Field | Detail |
+|---|---|
+| Status | **COMPLETE** -- 2026-04-19 |
+| Completed | 2026-04-19 (commit `b2e8078`) |
+| Priority | HIGH -- silent bug in production signal path |
+| Discovery | Session 2026-04-19 investigation of ENH-63 scope. `detect_ict_patterns_runner.py` (436 lines) contained two Kelly-write blocks back-to-back. V2 block (ENH-38v2, commit `c78b6ea` 2026-04-13): IV-aware, calls `compute_kelly_lots(capital, tier, symbol, spot, atm_iv_pct, dte_days)`. V1 block (ENH-38, commit `26c5e72` 2026-04-11): IV-blind, calls `compute_kelly_lots(capital, tier)` positional -- triggers `CAPITAL_PER_LOT=100000` fallback. Both executed each cycle; V1 ran second and overwrote V2's lot counts. IV-scaled sizing had been dead code for 6 days. |
+| Root cause | Commit `c78b6ea` (2026-04-13 session) added the V2 block by prepending without deleting V1. Dual-block layout went unnoticed because both executed without error -- result always round-number lots from V1's `CAPITAL_PER_LOT` fallback. |
+| Secondary finding | V2 block called `build_expiry_index_simple(sb, inst_id)` every 5-min cycle. That helper issues 12 paginated Supabase queries per call. Runtime impact: ~1,728 queries/day/symbol for a near-static dataset (expiry calendar changes weekly, not every 5 minutes). |
+| Build | Single patch `fix_enh63.py` applied to `detect_ict_patterns_runner.py`: (1) delete 85-line duplicate region (2nd Session-start block through V1 end marker); (2) add `_EXPIRY_INDEX_CACHE: dict = {}` at module scope; (3) wrap `build_expiry_index_simple` call with cache lookup keyed by `inst_id`. |
+| File delta | 436 -> 370 lines (-75), 18,361 -> 15,262 bytes (-3,099). |
+| Schema change | None. |
+| Flag gate | None -- straight bug fix, not a toggleable feature. |
+| Validation | Pre-commit: `ast.parse()` on patched file passes. Post-commit structural: 1 Session-start block (was 2), 1 V2 end marker, 0 V1 Kelly header, 3 `_EXPIRY_INDEX_CACHE` references (decl + get + set). Runtime verification: Monday 2026-04-21 09:15+ IST -- confirm `ict_zones.ict_lots_t1/t2/t3` values vary with `atm_iv_at_detection` across cycles (was constant under V1 fallback). |
+| Environment | Local only. AWS shadow runner has been FAILED since 2026-04-15 -- not DEGRADED gate because AWS never ran this file in the affected window. AWS `git pull` needed before AWS shadow recovery. |
+| Depends on | None. |
+| Supersedes | ENH-63 (REJECTED -- the IV-scaled multiplier it proposed would have double-counted IV given ENH-38v2's existing IV-aware cost model). |
 
 ---
 

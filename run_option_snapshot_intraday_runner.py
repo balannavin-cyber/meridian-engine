@@ -12,6 +12,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+try:
+    # ENH-68 tactical: per-cycle env reload. See run_full_cycle().
+    from dotenv import load_dotenv as _load_dotenv
+except ImportError:
+    _load_dotenv = None  # Graceful degradation; we warn once at first use.
+
 from trading_calendar import (
     MissingSessionConfigError,
     TradingCalendarError,
@@ -485,6 +491,23 @@ def run_live_cycle_for_symbol(symbol: str) -> None:
 
 def run_full_cycle() -> None:
     cycle_started = now_ist()
+
+    # ── ENH-68 tactical: reload .env at the top of every cycle ──────────────
+    # Root cause of 2026-04-20 11:26-12:26 outage: runner process held a
+    # stale DHAN_API_TOKEN snapshot after refresh_dhan_token.py rewrote .env
+    # mid-session. Reloading here picks up any rotated credentials / flags
+    # within <=5 minutes of the .env change, with no runner restart needed.
+    # Strategic replacement (Session 5): core/live_config.py. Remove then.
+    if _load_dotenv is not None:
+        try:
+            _load_dotenv(dotenv_path=str(BASE_DIR / ".env"), override=True)
+            log("ENH-68: .env reloaded for this cycle (override=True)")
+        except Exception as _reload_exc:
+            log(f"ENH-68: .env reload failed (non-blocking): {_reload_exc}")
+    else:
+        log("ENH-68: python-dotenv not installed; .env reload skipped")
+    # ── End ENH-68 reload ───────────────────────────────────────────────────
+
     log("==================================================")
     log("CYCLE START")
     log("==================================================")

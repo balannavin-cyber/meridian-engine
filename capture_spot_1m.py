@@ -37,6 +37,11 @@ try:
 except ImportError:
     pass
 
+# ENH-71 write-contract layer. ExecutionLog records every invocation to
+# script_execution_log with expected vs actual writes, exit_reason, and
+# contract_met. See docs/MERDIAN_Master_V19.docx Session 2.
+from core.execution_log import ExecutionLog
+
 # ── Config ────────────────────────────────────────────────────────────────────
 
 SUPABASE_URL     = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
@@ -140,11 +145,31 @@ def bar_ts_minute(ts: datetime) -> str:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> int:
+    # ── ENH-71 write-contract declaration ────────────────────────────────────
+    # Every invocation of this script is expected to write exactly 2 rows to
+    # each of market_spot_snapshots and hist_spot_bars_1m (NIFTY + SENSEX).
+    # Any lower count = contract violation, surfaced in dashboard.
+    log = ExecutionLog(
+        script_name="capture_spot_1m.py",
+        expected_writes={
+            "market_spot_snapshots": 2,
+            "hist_spot_bars_1m":     2,
+        },
+        notes="minute spot capture NIFTY+SENSEX",
+    )
+
+    missing_vars = []
     for var, val in [("SUPABASE_URL", SUPABASE_URL), ("SUPABASE_SERVICE_ROLE_KEY", SUPABASE_KEY),
                      ("DHAN_CLIENT_ID", DHAN_CLIENT_ID), ("DHAN_API_TOKEN", DHAN_API_TOKEN)]:
         if not val:
             print(f"[ERROR] Missing {var}", file=sys.stderr)
-            return 1
+            missing_vars.append(var)
+    if missing_vars:
+        return log.exit_with_reason(
+            "DEPENDENCY_MISSING",
+            exit_code=1,
+            error_message=f"Missing env vars: {', '.join(missing_vars)}",
+        )
 
     now_utc    = datetime.now(timezone.utc)
     bar_ts     = bar_ts_minute(now_utc)
@@ -173,7 +198,12 @@ def main() -> int:
                 _row = _rows[0]
                 if not _row.get("is_open", True) or _row.get("open_time") is None:
                     print(f"[{_today}] Market holiday — capture_spot_1m exiting cleanly.")
-                    return 0
+                    # ENH-71: explicit HOLIDAY_GATE exit. Contract_met will be
+                    # False because expected_writes was declared but we exited
+                    # without writing -- exactly what we want for today's bug
+                    # class (holiday gate firing on a trading day is now
+                    # surfaced, not silent).
+                    return log.exit_with_reason("HOLIDAY_GATE", notes=f"trading_calendar says closed for {_today}")
             # No row in calendar: allow run (merdian_start.py will upsert later)
     except Exception as _e:
         print(f"  [WARN] Calendar check failed (proceeding): {_e}")
@@ -184,7 +214,12 @@ def main() -> int:
         spots = fetch_spots()
     except Exception as e:
         print(f"  [ERROR] Dhan fetch failed: {e}", file=sys.stderr)
-        return 1
+        # ENH-71: classify the failure. 401/auth hints -> TOKEN_EXPIRED so
+        # alert daemon can distinguish "token needs refresh" from "Dhan down".
+        _err = str(e)
+        _auth_hint = ("401" in _err) or ("Authentication" in _err) or ("token invalid" in _err.lower())
+        _reason = "TOKEN_EXPIRED" if _auth_hint else "DATA_ERROR"
+        return log.exit_with_reason(_reason, exit_code=1, error_message=_err[:2000])
 
     # ── 1. Write to market_spot_snapshots ─────────────────────────────────────
     snap_rows = []
@@ -207,6 +242,7 @@ def main() -> int:
     try:
         sb_insert("market_spot_snapshots", snap_rows)
         print(f"  market_spot_snapshots: {len(snap_rows)} rows inserted")
+        log.record_write("market_spot_snapshots", len(snap_rows))  # ENH-71
     except Exception as e:
         print(f"  [WARN] market_spot_snapshots write failed: {e}", file=sys.stderr)
 
@@ -227,11 +263,14 @@ def main() -> int:
     try:
         sb_upsert("hist_spot_bars_1m", bar_rows, on_conflict="instrument_id,bar_ts")
         print(f"  hist_spot_bars_1m:     {len(bar_rows)} rows upserted (bar_ts={bar_ts[:16]})")
+        log.record_write("hist_spot_bars_1m", len(bar_rows))  # ENH-71
     except Exception as e:
         print(f"  [WARN] hist_spot_bars_1m write failed: {e}", file=sys.stderr)
 
     print(f"  Done.")
-    return 0
+    # ENH-71: complete() computes contract_met and writes the final audit
+    # row. Returns exit_code (0) for the script to propagate via sys.exit.
+    return log.complete()
 
 
 if __name__ == "__main__":

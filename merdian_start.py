@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 merdian_start.py  --  MERDIAN Morning Startup
 ==============================================
@@ -69,16 +69,43 @@ def ensure_calendar_row():
                     name = row.get("holiday_name") or "Market holiday"
                     return True, f"{today} -> HOLIDAY ({name}) -- row preserved, not overwritten"
                 else:
-                    # Row exists and is_open=True - already correct
+                    # Row exists and is_open=True. Ensure open_time/close_time
+                    # are populated -- ENH-66: gate-reading scripts treat
+                    # open_time=NULL as "market closed" and exit silently.
+                    needs_patch = (
+                        row.get("open_time") is None
+                        or row.get("close_time") is None
+                    )
+                    if needs_patch:
+                        pr = requests.patch(
+                            f"{SUPABASE_URL}/rest/v1/trading_calendar",
+                            headers=headers,
+                            params={"trade_date": f"eq.{today}"},
+                            json={
+                                "open_time": "09:15:00",
+                                "close_time": "15:30:00",
+                            },
+                            timeout=10,
+                        )
+                        if pr.status_code < 300:
+                            return True, f"{today} -> TRADING DAY -- open_time/close_time backfilled (ENH-66)"
+                        return False, f"ENH-66 backfill failed: Supabase {pr.status_code}: {pr.text[:80]}"
                     return True, f"{today} -> TRADING DAY -- row exists, no change"
 
-        # Step 2: No row exists - insert using weekday rule
+        # Step 2: No row exists - insert using weekday rule.
+        # ENH-66: populate open_time/close_time for trading days. Gate-reading
+        # scripts (capture_spot_1m, ingest_breadth_intraday, compute_iv_context,
+        # etc) treat open_time=NULL as "market closed" and exit silently.
         is_open = today.weekday() < 5   # Mon-Fri open, Sat-Sun closed
+        payload = {"trade_date": str(today), "is_open": is_open}
+        if is_open:
+            payload["open_time"] = "09:15:00"
+            payload["close_time"] = "15:30:00"
         r = requests.post(
             f"{SUPABASE_URL}/rest/v1/trading_calendar",
             headers={**headers, "Prefer": "resolution=merge-duplicates"},
             params={"on_conflict": "trade_date"},
-            json=[{"trade_date": str(today), "is_open": is_open}],
+            json=[payload],
             timeout=10,
         )
         if r.status_code < 300:

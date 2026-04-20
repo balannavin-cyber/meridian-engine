@@ -49,3 +49,16 @@ powershell
 # Runtime generated
 runtime/
 tmp_*.sql
+
+# --- Modern backup patterns (added 2026-04-20 working-tree cleanup) ---
+# Covers all .pre_<enh>.bak files from fix_*.py patch scripts and
+# auto-backups from editor/dashboard patches.
+*.bak
+*.bak2
+*.bak3
+*.pre_*.bak
+*.ict.bak
+*.step*.bak
+*.bak_*
+# Patch scripts save these automatically; audit trail lives in git history,
+# not on disk.

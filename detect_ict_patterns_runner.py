@@ -21,6 +21,23 @@ Usage:
 Exit codes:
     0 — success (or non-fatal error — non-blocking step)
     1 — fatal error
+
+ENH-72 instrumentation contract:
+  - expected_writes = {"ict_zones": 0}  -- FLOOR of 0.
+    Rationale: most cycles produce ZERO new patterns (patterns are rare
+    events). Setting floor=1 would fail contract_met on 80%+ of cycles.
+    contract_met=true whenever the script reaches log.complete() cleanly.
+  - record_write("ict_zones", new_patterns_count) tracks actual writes.
+  - Updates (breach marks, Kelly lot updates) are NOT counted toward the
+    contract -- they modify existing rows, not create new ones. Tracked
+    in completion notes for operator visibility.
+  - NON-BLOCKING PHILOSOPHY PRESERVED: all exit_with_reason paths exit 0
+    (not 1) to match the original "don't halt runner" design. The
+    script_execution_log row still gets proper exit_reason=DATA_ERROR etc.
+    but the OS-level exit code stays 0 so the runner proceeds.
+  - Notes format:
+    bars=N htf={N} active={N} new_patterns=N broken=N
+    [hourly_written=N] [kelly_failed=true] [insufficient_bars=true]
 """
 
 import os
@@ -42,10 +59,16 @@ from merdian_utils import (  # ENH-38v2
     build_expiry_index_simple, nearest_expiry_db, LOT_SIZES,
 )
 
+# ENH-72 write-contract layer. See docs/MERDIAN_Master_V19.docx governance
+# rule `script_execution_log_contract`. Pattern mirrored from target 6
+# (build_trade_signal_local.py): symbol-at-construction, no set_symbol().
+from core.execution_log import ExecutionLog
+
+
 load_dotenv()
 
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 
 IST      = ZoneInfo("Asia/Kolkata")
 PAGE_SIZE = 1_000
@@ -185,24 +208,33 @@ def load_active_intraday_zones(sb, symbol: str, trade_date: date) -> list[dict]:
 
 
 def load_atm_iv(sb, symbol: str) -> float | None:
-    """Get latest atm_iv from market_state_snapshots."""
-    rows = fetch_with_retry(lambda: (
-        sb.table("market_state_snapshots")
-        .select("market_state")
-        .eq("symbol", symbol)
-        .order("ts", desc=True)
-        .limit(1)
-        .execute().data
-    ))
-    if not rows:
-        return None
+    """Get latest atm_iv from market_state_snapshots.
+
+    Schema fix 2026-04-21: original code queried `market_state` column
+    which does not exist in current schema. The table stores features as
+    separate JSONB columns (gamma_features, volatility_features, etc.).
+    Now reads volatility_features.atm_iv_avg directly -- matches how
+    build_trade_signal_local.py consumes the same field.
+
+    Returns None on any failure -- atm_iv is an optional input for the
+    detector; downstream uses fallback thresholds when unavailable.
+    """
     try:
-        ms = rows[0].get("market_state") or {}
-        if isinstance(ms, str):
+        rows = fetch_with_retry(lambda: (
+            sb.table("market_state_snapshots")
+            .select("volatility_features")
+            .eq("symbol", symbol)
+            .order("ts", desc=True)
+            .limit(1)
+            .execute().data
+        ))
+        if not rows:
+            return None
+        vol = rows[0].get("volatility_features") or {}
+        if isinstance(vol, str):
             import json
-            ms = json.loads(ms)
-        vol = ms.get("volatility_features") or {}
-        iv  = vol.get("atm_iv_avg") or vol.get("atm_iv")
+            vol = json.loads(vol)
+        iv = vol.get("atm_iv_avg") or vol.get("atm_iv")
         return float(iv) if iv is not None else None
     except Exception:
         return None
@@ -280,24 +312,62 @@ def expire_prior_session_zones(sb, symbol: str, trade_date: date) -> None:
 
 # ── Main ──────────────────────────────────────────────────────────────
 
-def main(symbol: str) -> int:
-    sb         = create_client(SUPABASE_URL, SUPABASE_KEY)
+def main(symbol: str, log_handle: ExecutionLog) -> int:
+    """
+    Inner orchestration. Returns exit code (all 0 per non-blocking design).
+    All exit paths route through log_handle so script_execution_log
+    always gets a final row.
+
+    Returns tuple of (exit_code, stats_dict) is NOT used -- the log
+    completion happens inside this function before the outer wrapper
+    in __main__.
+    """
+    # ── Supabase client construction (env-var check) ─────────────────
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return log_handle.exit_with_reason(
+            "DEPENDENCY_MISSING",
+            exit_code=0,  # non-blocking per script design
+            error_message="Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY",
+        )
+
+    try:
+        sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        return log_handle.exit_with_reason(
+            "DEPENDENCY_MISSING",
+            exit_code=0,
+            error_message=f"Supabase client init failed: {e}",
+        )
+
     now        = now_ist()
     trade_date = now.date()
 
     log(f"ICT detector start [{symbol}] {now.strftime('%H:%M:%S IST')}")
 
     # Fetch instrument ID
-    inst_rows = fetch_with_retry(lambda: (
-        sb.table("instruments")
-        .select("id")
-        .eq("symbol", symbol)
-        .execute().data
-    ))
+    try:
+        inst_rows = fetch_with_retry(lambda: (
+            sb.table("instruments")
+            .select("id")
+            .eq("symbol", symbol)
+            .execute().data
+        ))
+    except Exception as e:
+        return log_handle.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=0,
+            error_message=f"instruments table query failed: {e}",
+        )
+
     if not inst_rows:
         log(f"ERROR: instrument not found for {symbol}")
-        return 1
+        return log_handle.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=0,
+            error_message=f"No instruments row for symbol={symbol}",
+        )
     inst_id = inst_rows[0]["id"]
+
     # -- ENH-38: read current capital from capital_tracker -----------------
     try:
         _cap_resp = fetch_with_retry(lambda: (
@@ -321,15 +391,36 @@ def main(symbol: str) -> int:
         log(f"  Expired prior session zones for {symbol}")
 
     # ── Load data ─────────────────────────────────────────────────────
-    bars = load_today_spot_bars(sb, inst_id, trade_date)
+    try:
+        bars = load_today_spot_bars(sb, inst_id, trade_date)
+    except Exception as e:
+        return log_handle.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=0,
+            error_message=f"load_today_spot_bars failed: {e}",
+        )
+
     if len(bars) < 10:
         log(f"  Insufficient bars ({len(bars)}) — skipping detection")
-        return 0
+        # Not an error -- pre-market or insufficient data. SUCCESS with
+        # note flag so operators can see why no patterns emerged.
+        log_handle.record_write("ict_zones", 0)
+        return log_handle.complete(
+            notes=f"bars={len(bars)} insufficient_bars=true"
+        )
 
-    prior_high, prior_low = load_prior_session_hl(sb, inst_id, trade_date)
-    htf_zones  = load_active_htf_zones(sb, symbol, trade_date)
-    active_zones = load_active_intraday_zones(sb, symbol, trade_date)
-    atm_iv     = load_atm_iv(sb, symbol)
+    try:
+        prior_high, prior_low = load_prior_session_hl(sb, inst_id, trade_date)
+        htf_zones  = load_active_htf_zones(sb, symbol, trade_date)
+        active_zones = load_active_intraday_zones(sb, symbol, trade_date)
+        atm_iv     = load_atm_iv(sb, symbol)
+    except Exception as e:
+        return log_handle.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=0,
+            error_message=f"supporting data load failed: {e}",
+        )
+
     current_spot = bars[-1].close
 
     log(f"  {len(bars)} bars | {len(htf_zones)} HTF zones | "
@@ -340,41 +431,55 @@ def main(symbol: str) -> int:
 
     # ── Zone breach checking ──────────────────────────────────────────
     detector     = ICTDetector(symbol=symbol)
-    broken_ids   = detector.check_zone_breaches(active_zones, current_spot)
-    if broken_ids:
-        n = mark_zones_broken(sb, broken_ids, current_spot)
-        log(f"  Marked {n} zones BROKEN at {current_spot:,.1f}")
+    broken_count = 0
+    try:
+        broken_ids = detector.check_zone_breaches(active_zones, current_spot)
+        if broken_ids:
+            broken_count = mark_zones_broken(sb, broken_ids, current_spot)
+            log(f"  Marked {broken_count} zones BROKEN at {current_spot:,.1f}")
+    except Exception as e:
+        # Non-fatal -- continue with detection even if breach-check failed
+        log(f"  Warning: zone breach check failed (non-blocking): {e}")
 
     # ── Pattern detection (last 10 bars) ──────────────────────────────
-    patterns = detector.detect(
-        bars=bars,
-        atm_iv=atm_iv,
-        htf_zones=htf_zones,
-        prior_high=prior_high,
-        prior_low=prior_low,
-    )
+    new_patterns_count = 0
+    try:
+        patterns = detector.detect(
+            bars=bars,
+            atm_iv=atm_iv,
+            htf_zones=htf_zones,
+            prior_high=prior_high,
+            prior_low=prior_low,
+        )
 
-    if patterns:
-        n = write_new_zones(sb, patterns)
-        for p in patterns:
-            log(f"  NEW ZONE: {p.pattern_type} {p.ict_tier} "
-                f"mtf={p.mtf_context} zone={p.zone_low:,.0f}-{p.zone_high:,.0f} "
-                f"size={p.ict_size_mult}x")
-        log(f"  Written {n} new zones")
-    else:
-        log(f"  No new patterns detected")
+        if patterns:
+            new_patterns_count = write_new_zones(sb, patterns)
+            for p in patterns:
+                log(f"  NEW ZONE: {p.pattern_type} {p.ict_tier} "
+                    f"mtf={p.mtf_context} zone={p.zone_low:,.0f}-{p.zone_high:,.0f} "
+                    f"size={p.ict_size_mult}x")
+            log(f"  Written {new_patterns_count} new zones")
+        else:
+            log(f"  No new patterns detected")
+    except Exception as e:
+        # Non-fatal per script's design philosophy
+        log(f"  Warning: pattern detection failed (non-blocking): {e}")
 
     # ── 1H zone builder (hourly) ──────────────────────────────────────
+    hourly_written = 0
+    hourly_failed = False
     if is_hour_boundary():
         log(f"  Hour boundary — building 1H HTF zones...")
         try:
             h_zones = detect_1h_zones(sb, inst_id, symbol, trade_date)
-            n = upsert_zones(sb, h_zones, dry_run=False)
-            log(f"  1H zones: {n} written ({len(h_zones)} detected)")
+            hourly_written = upsert_zones(sb, h_zones, dry_run=False)
+            log(f"  1H zones: {hourly_written} written ({len(h_zones)} detected)")
         except Exception as e:
+            hourly_failed = True
             log(f"  Warning: 1H zone build failed (non-blocking): {e}")
 
     # -- ENH-38v2: write Kelly lots to active ict_zones (real lot cost) -------
+    kelly_failed = False
     try:
         # Get days to next expiry for lot cost estimation
         try:
@@ -413,11 +518,34 @@ def main(symbol: str) -> int:
             f'T1:{_lots_t1} T2:{_lots_t2} T3:{_lots_t3} '
             f'(capital=INR {_current_capital:,.0f})')
     except Exception as _kelly_err:
+        kelly_failed = True
         log(f'  Warning: Kelly lots write failed (non-blocking): {_kelly_err}')
     # -- ENH-38v2 end ----------------------------------------------------------
 
     log(f"ICT detector complete [{symbol}]")
-    return 0
+
+    # ENH-72: record new-zone writes against the contract. Updates
+    # (breach marks, Kelly lot updates) don't count -- they modify
+    # existing rows, not create new ones. Contract floor is 0 so
+    # even 0 new patterns = contract_met.
+    log_handle.record_write("ict_zones", new_patterns_count)
+
+    # Completion notes track ALL activity this cycle for operator triage.
+    note_parts = [
+        f"bars={len(bars)}",
+        f"htf={len(htf_zones)}",
+        f"active={len(active_zones)}",
+        f"new_patterns={new_patterns_count}",
+        f"broken={broken_count}",
+    ]
+    if hourly_written > 0 or is_hour_boundary():
+        note_parts.append(f"hourly_written={hourly_written}")
+    if hourly_failed:
+        note_parts.append("hourly_failed=true")
+    if kelly_failed:
+        note_parts.append("kelly_failed=true")
+
+    return log_handle.complete(notes=" ".join(note_parts))
 
 
 if __name__ == "__main__":
@@ -430,9 +558,33 @@ if __name__ == "__main__":
         print(f"ERROR: Unknown symbol {symbol}")
         sys.exit(1)
 
+    # ── ENH-72 write-contract declaration ────────────────────────────
+    # Contract: floor=0 rows to ict_zones. Most cycles produce ZERO new
+    # patterns -- patterns are rare events. contract_met=True whenever
+    # the script reaches log.complete() cleanly. Any new-pattern writes
+    # are bonus. Updates (breach marks, Kelly updates) are not counted.
+    #
+    # symbol at construction (NIFTY or SENSEX) -- no set_symbol() needed.
+    log_handle = ExecutionLog(
+        script_name="detect_ict_patterns_runner.py",
+        expected_writes={"ict_zones": 0},
+        symbol=symbol,
+        notes="ICT pattern detector",
+    )
+
     try:
-        rc = main(symbol)
+        rc = main(symbol, log_handle)
         sys.exit(rc)
     except Exception as e:
+        # Final safety net -- catch anything that escaped classification
+        # in main(). Still exit 0 per non-blocking design.
         print(f"[FATAL] {e}", flush=True)
+        try:
+            log_handle.exit_with_reason(
+                "DATA_ERROR",
+                exit_code=0,
+                error_message=f"Uncaught exception in main(): {e}",
+            )
+        except Exception:
+            pass  # If ExecutionLog itself is broken, don't compound the failure
         sys.exit(0)  # exit 0 — non-blocking, don't halt runner

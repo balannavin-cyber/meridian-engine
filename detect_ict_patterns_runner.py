@@ -54,9 +54,9 @@ from detect_ict_patterns import (
     enrich_signal_with_ict,
 )
 from build_ict_htf_zones import detect_1h_zones, upsert_zones
-from merdian_utils import (  # ENH-38v2
+from merdian_utils import (  # ENH-38v2, OI-26 fix
     effective_sizing_capital, compute_kelly_lots,
-    build_expiry_index_simple, nearest_expiry_db, LOT_SIZES,
+    get_nearest_expiry, LOT_SIZES,
 )
 
 # ENH-72 write-contract layer. See docs/MERDIAN_Master_V19.docx governance
@@ -79,11 +79,10 @@ DETECTION_LOOKBACK = 90   # last 90 1-min bars (~1.5 hours of context)
 # Hour boundary check: run 1H zone builder if within first 3 minutes of hour
 HOURLY_ZONE_WINDOW_MINUTES = 3
 
-# ENH-63: process-lifetime cache for expiry index.
-# build_expiry_index_simple issues 12 paginated Supabase queries per call.
-# Expiry dates are near-static -- per-process caching (vs per-cycle rebuild)
-# cuts daily query volume from ~1,728 to 1 per symbol.
-_EXPIRY_INDEX_CACHE: dict = {}
+# ENH-63 expiry index cache REMOVED 2026-04-21 (OI-26). Superseded by
+# get_nearest_expiry() which reads option_chain_snapshots directly. The
+# Dhan-sourced expiry is already cached server-side per-run; no need for
+# a client-side index.
 
 
 def log(msg: str) -> None:
@@ -479,16 +478,23 @@ def main(symbol: str, log_handle: ExecutionLog) -> int:
             log(f"  Warning: 1H zone build failed (non-blocking): {e}")
 
     # -- ENH-38v2: write Kelly lots to active ict_zones (real lot cost) -------
+    # OI-26 fix (2026-04-21): Replaced build_expiry_index_simple /
+    # nearest_expiry_db (which sampled hist_option_bars_1m with hardcoded
+    # 2025-2026 date windows) with get_nearest_expiry which reads
+    # option_chain_snapshots.expiry_date -- the authoritative value that
+    # Dhan already computes including NSE holiday-driven expiry shifts.
     kelly_failed = False
     try:
         # Get days to next expiry for lot cost estimation
         try:
-            _expiry_idx = _EXPIRY_INDEX_CACHE.get(inst_id)
-            if _expiry_idx is None:
-                _expiry_idx = build_expiry_index_simple(sb, inst_id)
-                _EXPIRY_INDEX_CACHE[inst_id] = _expiry_idx
-            _next_exp = nearest_expiry_db(trade_date, _expiry_idx)
+            _next_exp = get_nearest_expiry(sb, symbol)
             _dte_days = (_next_exp - trade_date).days if _next_exp else 2
+            # Safety floor: if for any reason DTE came back negative
+            # (e.g. stale option_chain_snapshots row from a past expiry),
+            # fall back to the conservative 2-day default rather than
+            # propagate bad math into Kelly sizing.
+            if _dte_days < 0:
+                _dte_days = 2
         except Exception:
             _dte_days = 2   # conservative fallback
         _atm_iv_pct = atm_iv if atm_iv else 0.0   # None -> 0 triggers fallback

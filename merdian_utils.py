@@ -1,15 +1,29 @@
 """
-merdian_utils.py  v3
-MERDIAN Shared Utilities — data-driven expiry date lookup.
+merdian_utils.py  v5
+MERDIAN Shared Utilities.
 
-Replaces hardcoded nearest_expiry(td, symbol) which broke when
-NIFTY switched from Thursday to Tuesday expiry in September 2025.
+v5 change (OI-26, 2026-04-21):
+  Added get_nearest_expiry(sb, symbol). Reads the authoritative expiry
+  from option_chain_snapshots, which is populated every 5 minutes by
+  ingest_option_chain_local.py from live Dhan data. Dhan itself handles
+  NSE holiday-driven expiry shifts (e.g. Thursday holiday -> Wednesday
+  expiry), so this is always correct without needing calendar logic.
 
-Usage:
-    from merdian_utils import build_expiry_index_simple, nearest_expiry_db
+  Retired (kept for audit trail, no callers as of 2026-04-21):
+    - build_expiry_index_simple()  -- was hardcoded to 2025-04..2026-03
+                                      sample dates, producing stale/empty
+                                      index on 2026-04-21. Even a fixed
+                                      version would be re-implementing
+                                      NSE calendar logic that Dhan does
+                                      for us correctly.
+    - nearest_expiry_db()          -- bisect over a locally-computed index.
 
-    expiry_idx = build_expiry_index_simple(sb, inst[symbol])
-    ed = nearest_expiry_db(td, expiry_idx)
+  These stay in the file with DEPRECATED markers so anyone searching git
+  blame sees the migration trail. Do not re-introduce callers.
+
+Usage (v5 replacement):
+    from merdian_utils import get_nearest_expiry
+    ed = get_nearest_expiry(sb, "NIFTY")   # returns date or None
 """
 
 import bisect
@@ -17,20 +31,82 @@ import time
 from datetime import date
 
 
+# =============================================================================
+# Authoritative expiry lookup (v5, OI-26 fix)
+# =============================================================================
+
+def get_nearest_expiry(sb, symbol: str):
+    """
+    Return the nearest weekly expiry for `symbol` from the latest
+    option_chain_snapshots row.
+
+    option_chain_snapshots.expiry_date is written every 5-min cycle by
+    ingest_option_chain_local.py from Dhan's option chain response.
+    Dhan returns the nearest-expiry chain and handles NSE holiday
+    rollforwards (e.g. Thursday holiday -> Wednesday expiry) natively,
+    so this value is always correct without needing a local calendar.
+
+    Args:
+        sb:     supabase client
+        symbol: "NIFTY" or "SENSEX"
+
+    Returns:
+        date: the nearest expiry as a datetime.date, OR
+        None: if option_chain_snapshots has no rows for this symbol yet
+              (pre-market startup, or ingest failure). Callers should
+              fall back to a safe default (e.g. dte_days=2 for Kelly
+              sizing).
+    """
+    try:
+        rows = (
+            sb.table("option_chain_snapshots")
+            .select("expiry_date")
+            .eq("symbol", symbol)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if not rows:
+            return None
+        exp_str = rows[0].get("expiry_date")
+        if not exp_str:
+            return None
+        return date.fromisoformat(exp_str)
+    except Exception:
+        return None
+
+
+# =============================================================================
+# DEPRECATED (2026-04-21, OI-26)
+# =============================================================================
+# These functions are retired. They were called only by
+# detect_ict_patterns_runner.py, which now uses get_nearest_expiry() above.
+#
+# Why retired:
+#   build_expiry_index_simple had hardcoded sample_dates covering only
+#   Apr 2025 - Mar 2026. After Mar 2026 it returned a stale historical
+#   index. nearest_expiry_db would then fall through to expiry_index[-1]
+#   (a historical expiry), producing impossible DTEs observed on
+#   2026-04-21 (SENSEX dte=-54d, NIFTY dte=252d).
+#
+#   Even with dynamic sample_dates, this approach re-implements NSE
+#   calendar logic (holiday-driven expiry shifts) that Dhan already
+#   handles correctly in the option chain response itself. The right
+#   source is option_chain_snapshots.expiry_date.
+#
+# Do not add new callers. Use get_nearest_expiry() instead.
+# =============================================================================
+
 def build_expiry_index_simple(sb, inst_id, page_size=1000):
     """
-    Fetch all distinct weekly expiry dates for this instrument.
+    DEPRECATED 2026-04-21 (OI-26). Use get_nearest_expiry() instead.
 
-    Queries one row per month across the full date range to avoid
-    scanning 54M rows. Fetches expiry_date from one sample row per
-    calendar month — fast and avoids statement timeout.
-
-    Returns sorted list of date objects (weekly expiries only).
+    Had hardcoded sample_dates; returned stale index after Mar 2026.
+    Retained only for audit trail.
     """
     all_dates = set()
 
-    # Sample one trade_date per month across Apr 2025 – Mar 2026
-    # Fetch expiry dates for that sample date only — fast indexed query
     sample_dates = [
         "2025-04-03", "2025-05-02", "2025-06-02",
         "2025-07-01", "2025-08-01", "2025-09-01",
@@ -67,7 +143,6 @@ def build_expiry_index_simple(sb, inst_id, page_size=1000):
     if not all_dates:
         return []
 
-    # Filter to weekly expiries only (gap <= 10 days between consecutive dates)
     sorted_dates = sorted(all_dates)
     weekly = []
     for i, d in enumerate(sorted_dates):
@@ -81,14 +156,9 @@ def build_expiry_index_simple(sb, inst_id, page_size=1000):
 
 def nearest_expiry_db(td, expiry_index):
     """
-    Find the nearest weekly expiry on or after trade_date td.
+    DEPRECATED 2026-04-21 (OI-26). Use get_nearest_expiry() instead.
 
-    Args:
-        td:           date — trading date
-        expiry_index: sorted list of dates from build_expiry_index_simple()
-
-    Returns:
-        date — nearest expiry >= td
+    Retained only for audit trail.
     """
     if not expiry_index:
         return None

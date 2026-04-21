@@ -16,6 +16,29 @@ try:
 except Exception:
     pass
 
+# ENH-72 write-contract layer. See docs/MERDIAN_Master_V19.docx governance
+# rule `script_execution_log_contract`.
+#
+# UNIQUE CONTRACT SHAPE FOR THIS SCRIPT:
+# Unlike gamma/vol (run_id-contract) or momentum/state/signal (symbol-
+# contract), this script takes NO CLI args. It discovers both NIFTY and
+# SENSEX latest runs via fetch_latest_runs_per_symbol() and writes one
+# row per symbol to options_flow_snapshots.
+#
+# Contract:
+#   expected_writes = {"options_flow_snapshots": 1}  -- FLOOR, not typical
+#   Typical = 2 rows (both symbols). Partial (1 row) is acceptable
+#   degraded mode -- other symbol will backfill on next cycle. Signal
+#   engine has silent try/except fallback when options_flow missing, so
+#   one-symbol degradation does not block signal generation.
+#
+# Symbol tracking:
+#   Invocation covers both symbols, so ExecutionLog.symbol stays null
+#   (same pattern as capture_spot_1m.py reference implementation).
+#   Completion notes surface 'symbols=NIFTY+SENSEX' or 'symbols=NIFTY'
+#   so operators can filter by coverage.
+from core.execution_log import ExecutionLog
+
 
 UTC = timezone.utc
 
@@ -337,10 +360,55 @@ def main() -> int:
     print("MERDIAN - compute_options_flow_local")
     print("========================================================================")
 
-    latest_runs = fetch_latest_runs_per_symbol(["NIFTY", "SENSEX"])
+    # ── ENH-72 write-contract declaration ────────────────────────────────────
+    # Contract: floor=1 row to options_flow_snapshots. Typical=2 (both symbols).
+    # Partial success (1 row) acceptable -- signal engine tolerates missing
+    # options_flow via silent try/except fallback. symbol=null because this
+    # invocation covers both NIFTY and SENSEX in one call.
+    log = ExecutionLog(
+        script_name="compute_options_flow_local.py",
+        expected_writes={"options_flow_snapshots": 1},
+        symbol=None,
+        notes="options flow NIFTY+SENSEX batch",
+    )
+
+    # Classification tracking for completion notes
+    per_symbol_status: Dict[str, str] = {}  # symbol -> 'ok' | 'no_run' | 'no_rows' | 'compute_failed'
+    low_usable_symbols: List[str] = []      # symbols where usable_rows < 5
+
+    try:
+        latest_runs = fetch_latest_runs_per_symbol(["NIFTY", "SENSEX"])
+    except RuntimeError as e:
+        msg = str(e)
+        # Classify env-missing vs Supabase errors
+        if "Missing environment variable" in msg or "Missing SUPABASE" in msg:
+            return log.exit_with_reason(
+                "DEPENDENCY_MISSING",
+                exit_code=1,
+                error_message=msg,
+            )
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"fetch_latest_runs failed: {msg}",
+        )
+    except Exception as e:
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"fetch_latest_runs unexpected: {e}",
+        )
+
     if not latest_runs:
+        # No latest runs for EITHER symbol -- upstream ingest failed for both.
+        # Distinct from "fetched but got empty rows". SKIPPED_NO_INPUT.
         print("No latest runs found.")
-        return 1
+        return log.exit_with_reason(
+            "SKIPPED_NO_INPUT",
+            exit_code=1,
+            error_message="No option_chain_snapshots rows exist for NIFTY or SENSEX. "
+                          "Upstream ingest_option_chain_local has not produced any data.",
+        )
 
     out_rows: List[Dict[str, Any]] = []
 
@@ -348,34 +416,92 @@ def main() -> int:
         run_row = latest_runs.get(symbol)
         if not run_row:
             print(f"Skipping {symbol}: no latest run found.")
+            per_symbol_status[symbol] = "no_run"
             continue
 
         run_id = str(run_row["run_id"])
         print("------------------------------------------------------------------------")
         print(f"Fetching option-chain rows for {symbol} | run_id={run_id}")
-        rows = fetch_rows_for_run_id(run_id)
-        print(f"Fetched rows: {len(rows)}")
 
-        out = compute_for_run(run_row, rows)
-        if out is None:
-            print(f"Could not compute options flow row for {symbol}")
+        try:
+            rows = fetch_rows_for_run_id(run_id)
+        except Exception as e:
+            # Per-symbol fetch failure is logged but doesn't kill the whole
+            # invocation -- the other symbol might still succeed. Classify
+            # at end based on total rows written.
+            print(f"[ERR] Fetch failed for {symbol}: {e}")
+            per_symbol_status[symbol] = "fetch_failed"
             continue
 
+        print(f"Fetched rows: {len(rows)}")
+
+        try:
+            out = compute_for_run(run_row, rows)
+        except Exception as e:
+            print(f"[ERR] Compute failed for {symbol}: {e}")
+            per_symbol_status[symbol] = "compute_failed"
+            continue
+
+        if out is None:
+            print(f"Could not compute options flow row for {symbol}")
+            per_symbol_status[symbol] = "no_rows"
+            continue
+
+        # Track low-data cycles (usable_rows < 5 means degraded compute)
+        if out.get("usable_rows", 0) < 5:
+            low_usable_symbols.append(symbol)
+
         out_rows.append(out)
+        per_symbol_status[symbol] = "ok"
         print(f"Prepared options flow row for {symbol}")
         for k, v in out.items():
             print(f"{k}={v}")
 
     if not out_rows:
+        # All symbols attempted but none produced output -- compute failed
+        # across the board. Use DATA_ERROR (compute/data issue), not
+        # SKIPPED_NO_INPUT (because we did find runs, just couldn't compute).
         print("No output rows prepared. Exiting with code 1.")
-        return 1
+        failed_symbols = ",".join(
+            s for s, status in per_symbol_status.items() if status != "ok"
+        )
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"Found runs but produced no output rows. "
+                          f"Symbol statuses: {per_symbol_status}",
+        )
 
     print("------------------------------------------------------------------------")
     print("Upserting rows to public.options_flow_snapshots ...")
-    inserted = supabase_upsert("options_flow_snapshots", out_rows, on_conflict="symbol,ts")
+
+    try:
+        inserted = supabase_upsert("options_flow_snapshots", out_rows, on_conflict="symbol,ts")
+    except Exception as e:
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"options_flow_snapshots upsert failed: {e}",
+        )
+
     print(f"Rows returned by Supabase: {len(inserted)}")
     print("COMPUTE OPTIONS FLOW COMPLETED")
-    return 0
+
+    # Record actual writes. Use len(out_rows) not len(inserted) -- Supabase
+    # may return empty on successful upsert with some Prefer configurations.
+    log.record_write("options_flow_snapshots", len(out_rows))
+
+    # Build completion notes surfacing coverage + data quality
+    ok_symbols = [s for s, status in per_symbol_status.items() if status == "ok"]
+    note_parts = [f"symbols={'+'.join(ok_symbols)}"]
+    if low_usable_symbols:
+        note_parts.append(f"low_usable={'+'.join(low_usable_symbols)}")
+    # Flag partial runs so operators can query coverage gaps
+    if len(ok_symbols) < 2:
+        missing = [s for s in ["NIFTY", "SENSEX"] if s not in ok_symbols]
+        note_parts.append(f"missing={'+'.join(missing)}")
+
+    return log.complete(notes=" ".join(note_parts))
 
 
 if __name__ == "__main__":

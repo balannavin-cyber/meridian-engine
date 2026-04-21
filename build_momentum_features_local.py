@@ -9,6 +9,12 @@ from dotenv import load_dotenv
 from postgrest.exceptions import APIError
 from supabase import Client, create_client
 
+# ENH-72 write-contract layer. See docs/MERDIAN_Master_V19.docx governance
+# rule `script_execution_log_contract`. Pattern mirrored from
+# ingest_option_chain_local.py: symbol is known at CLI parse time, so
+# ExecutionLog gets it at construction. No set_symbol() needed.
+from core.execution_log import ExecutionLog
+
 
 # ============================================================
 # MERDIAN - build_momentum_features_local.py
@@ -46,10 +52,23 @@ from supabase import Client, create_client
 #   atm_straddle_change
 #   session_vwap
 #   momentum_regime
+#
+# NULL fallback semantics (NOT failure):
+#   - ret_session is NULL before MERDIAN_PreOpen fires at 09:05 IST.
+#   - ret_60m is NULL during the first hour of session (no t-60m bar).
+#   - breadth_score_change is NULL while C-08 is open (latest_market_breadth_intraday
+#     is a VIEW per V19 sec 4.1 -- breadth writes silently fail).
+#   - momentum_regime is NULL only if ALL ret_* and price_vs_vwap_pct are NULL.
+#   The script writes the row with whatever fields are computable. contract_met
+#   stays True. Operators investigate degraded data via the row contents, not
+#   via script_execution_log.
 # ============================================================
 
 
 def fail(msg: str, code: int = 1) -> None:
+    """Pre-construction failure path. Used ONLY for missing env vars before
+    ExecutionLog can be instantiated. All in-main() failures route through
+    _fail_with_log() instead so script_execution_log gets the right reason."""
     print(msg, file=sys.stderr)
     sys.exit(code)
 
@@ -117,7 +136,12 @@ def supabase_select(
     return data
 
 
-def get_latest_spot_row(symbol: str) -> dict[str, Any]:
+def get_latest_spot_row(symbol: str) -> dict[str, Any] | None:
+    """Returns the most recent market_spot_snapshots row for symbol.
+
+    NOTE: changed from raising on empty to returning None. Caller decides
+    whether absence is DATA_ERROR (in main flow) or just None (defensive).
+    """
     rows = supabase_select(
         "market_spot_snapshots",
         "symbol, ts, spot",
@@ -127,7 +151,7 @@ def get_latest_spot_row(symbol: str) -> dict[str, Any]:
         limit=1,
     )
     if not rows:
-        fail(f"No market_spot_snapshots rows found for {symbol}")
+        return None
     return rows[0]
 
 
@@ -174,9 +198,10 @@ def choose_cycle_ts(symbol: str) -> datetime:
             return ts
 
     spot_row = get_latest_spot_row(symbol)
-    ts = parse_ts(spot_row.get("ts"))
-    if ts:
-        return ts
+    if spot_row is not None:
+        ts = parse_ts(spot_row.get("ts"))
+        if ts:
+            return ts
 
     return now_utc()
 
@@ -231,6 +256,8 @@ def get_session_open_spot(symbol: str, current_ts: datetime) -> float | None:
             continue
 
         # 09:05 IST ~= 03:35 UTC (accepts pre-open capture from MERDIAN_PreOpen task)
+        # ENH-01 fix per V18G. Threshold MUST stay at 03:35 UTC; reverting to
+        # 03:45 would cause ret_session to be NULL all session (regression).
         hh = ts.astimezone(timezone.utc).hour
         mm = ts.astimezone(timezone.utc).minute
         if (hh > 3) or (hh == 3 and mm >= 35):
@@ -363,9 +390,18 @@ def derive_momentum_regime(
     return "NEUTRAL"
 
 
-def build_row(symbol: str) -> dict[str, Any]:
+def build_row(symbol: str) -> dict[str, Any] | None:
+    """Build the momentum row. Returns None if no spot data exists at all
+    (a hard failure -- caller must route to DATA_ERROR). All other field-
+    level NULLs are by design and represented in the row."""
     cycle_ts = choose_cycle_ts(symbol)
     spot_row = get_latest_spot_row(symbol)
+
+    # Hard failure: no spot data means no momentum can be computed at all.
+    # Caller routes to DATA_ERROR.
+    if spot_row is None:
+        return None
+
     current_spot = to_float(spot_row.get("spot"))
 
     spot_5m = find_spot_before(symbol, cycle_ts, 5)
@@ -421,7 +457,9 @@ def build_row(symbol: str) -> dict[str, Any]:
     }
 
 
-def insert_momentum(row: dict[str, Any]) -> None:
+def insert_momentum(row: dict[str, Any]) -> bool:
+    """Returns True on successful upsert OR on duplicate-key (treated as
+    success per restart-safe semantics). Returns False on any other error."""
     try:
         (
             SUPABASE
@@ -441,27 +479,87 @@ def insert_momentum(row: dict[str, Any]) -> None:
         print(f"price_vs_vwap_pct={row.get('price_vs_vwap_pct')}")
         print(f"vwap_slope={row.get('vwap_slope')}")
         print(f"momentum_regime={row.get('momentum_regime')}")
+        return True
     except APIError as e:
         msg = str(e)
         if "uq_momentum_snapshots_symbol_ts" in msg or "duplicate key value violates unique constraint" in msg:
             print("Momentum snapshot already exists for (symbol, ts). Treating as success.")
             print(f"symbol={row.get('symbol')}")
             print(f"ts={row.get('ts')}")
-            return
-        raise
+            return True
+        # Any other APIError is a real failure.
+        print(f"[ERROR] momentum_snapshots upsert APIError: {e}", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"[ERROR] momentum_snapshots upsert exception: {e}", file=sys.stderr)
+        return False
 
 
-def main() -> None:
+def main() -> int:
+    # CLI parse before ExecutionLog. Usage error -> exit 2, no log row.
     if len(sys.argv) != 2:
-        fail("Usage: python .\\build_momentum_features_local.py <NIFTY|SENSEX>")
+        print(
+            "Usage: python .\\build_momentum_features_local.py <NIFTY|SENSEX>",
+            file=sys.stderr,
+        )
+        return 2
 
     symbol = sys.argv[1].strip().upper()
     if symbol not in {"NIFTY", "SENSEX"}:
-        fail("Usage: python .\\build_momentum_features_local.py <NIFTY|SENSEX>")
+        print(
+            "Usage: python .\\build_momentum_features_local.py <NIFTY|SENSEX>",
+            file=sys.stderr,
+        )
+        return 2
 
-    row = build_row(symbol)
-    insert_momentum(row)
+    # ── ENH-72 write-contract declaration ────────────────────────────────────
+    # Contract: this invocation writes exactly 1 row to momentum_snapshots
+    # via UPSERT on (symbol, ts). Floor = expected = 1. Symbol known at
+    # construction (CLI arg).
+    #
+    # Restart-safe: if (symbol, ts) already exists, the duplicate is treated
+    # as success and we still record_write(1). This matches the existing
+    # script semantics and prevents false contract_met=False rows on operator
+    # restart inside the same 5-min boundary.
+    log = ExecutionLog(
+        script_name="build_momentum_features_local.py",
+        expected_writes={"momentum_snapshots": 1},
+        symbol=symbol,
+        notes="momentum 8-field write",
+    )
+
+    try:
+        row = build_row(symbol)
+    except Exception as e:
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"build_row failed: {e}",
+        )
+
+    if row is None:
+        # No spot data at all -- the upstream capture_spot_1m hasn't fired
+        # for this symbol today (or trading_calendar is misconfigured).
+        # Distinct from "stale spot data" -- here we have nothing.
+        return log.exit_with_reason(
+            "SKIPPED_NO_INPUT",
+            exit_code=1,
+            error_message=f"No market_spot_snapshots rows found for {symbol}. "
+                          "Upstream capture_spot_1m has not produced any data.",
+        )
+
+    success = insert_momentum(row)
+
+    if not success:
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message="momentum_snapshots upsert failed (see stderr above)",
+        )
+
+    log.record_write("momentum_snapshots", 1)
+    return log.complete()
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -16,6 +16,12 @@ try:
 except ImportError:
     load_dotenv = None
 
+# ENH-72 write-contract layer. See docs/MERDIAN_Master_V19.docx governance
+# rule `script_execution_log_contract`. Pattern mirrored from
+# build_momentum_features_local.py: symbol known at CLI parse time,
+# no set_symbol() needed.
+from core.execution_log import ExecutionLog
+
 
 def load_environment() -> None:
     if load_dotenv is not None:
@@ -233,35 +239,124 @@ def build_wcb_features(symbol: str, wcb_row: Optional[Dict[str, Any]]) -> Option
     }
 
 
-def main() -> None:
+def main() -> int:
     load_environment()
 
+    # CLI parse before ExecutionLog. Usage error -> exit 2, no log row.
     if len(sys.argv) != 2:
-        raise RuntimeError("Usage: python build_market_state_snapshot_local.py NIFTY|SENSEX")
+        print(
+            "Usage: python build_market_state_snapshot_local.py NIFTY|SENSEX",
+            file=sys.stderr,
+        )
+        return 2
 
     symbol = sys.argv[1].strip().upper()
     if symbol not in {"NIFTY", "SENSEX"}:
-        raise RuntimeError("Usage: python build_market_state_snapshot_local.py NIFTY|SENSEX")
+        print(
+            "Usage: python build_market_state_snapshot_local.py NIFTY|SENSEX",
+            file=sys.stderr,
+        )
+        return 2
 
-    supabase_url = require_env("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip() or os.getenv("SUPABASE_ANON_KEY", "").strip()
+    # ── ENH-72 write-contract declaration ────────────────────────────────────
+    # Contract: 1 row to market_state_snapshots via UPSERT on (symbol, ts).
+    # Symbol known at construction.
+    #
+    # NOTE on V19 doc/code drift: V19 sec 6.5 lists C-01 (UPSERT pending)
+    # against this script. The actual code uses .upsert() with on_conflict.
+    # C-01 may be CLOSED in code but not yet in the doc. Verification is
+    # a separate task -- this commit instruments as-is and does not touch
+    # the upsert/insert decision.
+    #
+    # NOTE on degraded inputs: 4 of 6 source tables (volatility, momentum,
+    # breadth, wcb) tolerate missing rows -- features written as NULL.
+    # Only gamma_metrics is REQUIRED. Stale breadth (C-08 open per V19
+    # sec 4.1) is documented and NOT classified as failure.
+    log = ExecutionLog(
+        script_name="build_market_state_snapshot_local.py",
+        expected_writes={"market_state_snapshots": 1},
+        symbol=symbol,
+        notes="6-component JSONB state",
+    )
+
+    # SUPABASE_URL / KEY are checked here (not at module import) so that
+    # missing env vars route to DEPENDENCY_MISSING rather than dying at
+    # `import` before ExecutionLog can record it. Inverts the original
+    # require_env() pattern.
+    supabase_url = os.getenv("SUPABASE_URL", "").strip()
+    supabase_key = (
+        os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        or os.getenv("SUPABASE_ANON_KEY", "").strip()
+    )
+
+    if not supabase_url:
+        return log.exit_with_reason(
+            "DEPENDENCY_MISSING",
+            exit_code=1,
+            error_message="SUPABASE_URL missing from environment",
+        )
     if not supabase_key:
-        raise RuntimeError("Missing SUPABASE_SERVICE_ROLE_KEY and SUPABASE_ANON_KEY")
+        return log.exit_with_reason(
+            "DEPENDENCY_MISSING",
+            exit_code=1,
+            error_message="SUPABASE_SERVICE_ROLE_KEY and SUPABASE_ANON_KEY both missing",
+        )
 
-    client = SupabaseRestClient(supabase_url, supabase_key)
+    try:
+        client = SupabaseRestClient(supabase_url, supabase_key)
+    except Exception as e:
+        return log.exit_with_reason(
+            "DEPENDENCY_MISSING",
+            exit_code=1,
+            error_message=f"SupabaseRestClient init failed: {e}",
+        )
 
-    gamma_row = fetch_symbol_row(client, "gamma_metrics", symbol)
+    # gamma_metrics is the REQUIRED upstream. If gamma is missing, this
+    # symbol's pipeline upstream of state has not produced output yet --
+    # SKIPPED_NO_INPUT, not DATA_ERROR.
+    try:
+        gamma_row = fetch_symbol_row(client, "gamma_metrics", symbol)
+    except Exception as e:
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"gamma_metrics fetch failed: {e}",
+        )
+
     if not gamma_row:
-        raise RuntimeError(f"No gamma row found for {symbol}")
+        return log.exit_with_reason(
+            "SKIPPED_NO_INPUT",
+            exit_code=1,
+            error_message=f"No gamma_metrics row found for {symbol}. "
+                          "Upstream compute_gamma_metrics has not produced output.",
+        )
 
+    # Optional sources -- silently None if missing. The script writes the
+    # row regardless and the relevant features block becomes NULL. This is
+    # intentional per V19 sec 4.1: market_state must always emit a row even
+    # if some inputs are stale (signal engine downstream handles NULL).
     volatility_row = fetch_symbol_row(client, "volatility_snapshots", symbol)
     momentum_row = fetch_symbol_row(client, "momentum_snapshots", symbol)
 
     breadth_row = fetch_global_row(client, "latest_market_breadth_intraday")
     if not breadth_row:
+        # Fallback to underlying table when the VIEW is empty/stale (C-08).
         breadth_row = fetch_global_row(client, "market_breadth_intraday")
 
     wcb_row = fetch_wcb_row(client, symbol)
+
+    # Detect degraded-input conditions for completion notes. None of these
+    # downgrade contract_met -- the contract is "1 row written to
+    # market_state_snapshots", not "all upstream data present".
+    degraded_inputs = []
+    if not volatility_row:
+        degraded_inputs.append("vol")
+    if not momentum_row:
+        degraded_inputs.append("mom")
+    if not breadth_row:
+        degraded_inputs.append("breadth")
+    if not wcb_row:
+        degraded_inputs.append("wcb")
 
     payload = {
         "ts": gamma_row.get("ts"),
@@ -296,7 +391,14 @@ def main() -> None:
         },
     }
 
-    upserted = client.upsert("market_state_snapshots", payload, on_conflict="symbol,ts")
+    try:
+        upserted = client.upsert("market_state_snapshots", payload, on_conflict="symbol,ts")
+    except Exception as e:
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"market_state_snapshots upsert failed: {e}",
+        )
 
     print("=" * 72)
     print("MERDIAN - Local Python build_market_state_snapshot")
@@ -320,6 +422,17 @@ def main() -> None:
     print(f"WCB matched weight pct:   {wcb_features.get('matched_weight_pct')}")
     print("=" * 72)
 
+    log.record_write("market_state_snapshots", 1)
+
+    # Surface degraded-input state in notes for dashboard filtering.
+    # Operators can triage: WHERE notes LIKE '%degraded=%' to find rows
+    # written with stale or missing optional inputs.
+    completion_notes = None
+    if degraded_inputs:
+        completion_notes = f"6-component JSONB state degraded={','.join(degraded_inputs)}"
+
+    return log.complete(notes=completion_notes)
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

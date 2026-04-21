@@ -1,3 +1,60 @@
+## 2026-04-20 — live_canary / code_debug / architecture — Outage + re-engineering programme Sessions 1+2
+
+**Goal:** Diagnose and fix the morning's 3-hour silent pipeline outage; ship the architectural foundation (ENH-66 holiday-gate root cause + ENH-68 tactical runner env reload + ENH-71 write-contract layer) to prevent a recurrence of the bug class.
+
+**Session type:** live_canary / code_debug / architecture
+
+**Completed:**
+  - **Morning outage diagnosed end-to-end.** 09:15 IST: seven production scripts silently exited "Market holiday" on a trading day. Root cause: V18G holiday-gate logic treats `open_time IS NULL` as "market closed"; `trading_calendar` row auto-inserted by `merdian_start.py` carried `{trade_date, is_open=True}` only — `open_time` and `close_time` NULL. Scripts exited cleanly with code 0. Dashboard, Task Scheduler, supervisor all green. Pipeline flowing zero rows for 3 hours until 11:39 IST when the row was patched live via direct Supabase PATCH.
+  - **Second compounding bug surfaced at 11:26 IST.** Dhan token expired ~10:06 IST (OPTION_AUTH_BREAK Telegram alert fired). `refresh_dhan_token.py` updated `.env` at 11:00:10 IST successfully, but the runner process (PID 18036, started 09:15:34) held the stale in-memory token from its startup `load_dotenv()` call. Every cycle 401 from 11:26 to 12:26 IST. Only `merdian_stop.py` + `merdian_start.py` fixed it. 60 additional minutes lost.
+  - **Pipeline recovered 12:26+ IST.** NIFTY NO_FLIP DO_NOTHING conf=16, SENSEX NO_FLIP DO_NOTHING conf=28. No bad trades taken during the outage window.
+  - **Post-mortem conducted honestly.** Central insight: every symptom traces to ONE absence — MERDIAN has no write-contract enforcement. Scripts declare success by exit code 0; nothing verifies they did their actual job. Preflight probe-tests pass while pipeline is already broken. Dashboard green lights based on "last row wrote recently," not "expected rows wrote this cycle."
+  - **6-session re-engineering programme approved.** Sessions 1 through 6 sequenced: stop the bleeding, write-contract layer, propagate, preflight rewrite, live config, dashboard truth + alerts. Each session produces own commit chain, register entry, replay-validation. No merges without validation paste in chat transcript.
+  - **Session 1 shipped (ENH-66, ENH-68 tactical).** Two patches, two commits:
+    - Commit `8f83859` — ENH-66: `ensure_calendar_row()` in `merdian_start.py` patched at INSERT path (include open_time/close_time for weekday rows) and existing-row PATCH path (backfill NULL times). UTF-8 BOM stripped as side effect. Validation: DELETE calendar row → re-creates with times populated; `capture_spot_1m.py` writes rows instead of silent-exit; regression test `is_open=False` → correct holiday exit.
+    - Commit `b195499` — ENH-68 tactical: guarded `load_dotenv(override=True)` at top of `run_full_cycle()` in `run_option_snapshot_intraday_runner.py`. One reload per 5-minute cycle. Log line per cycle for audit trail. Graceful degradation if python-dotenv unavailable. Strategic replacement filed as ENH-74 for Session 5.
+  - **Session 2 shipped (ENH-71 write-contract layer foundation).** Commit `260c7d0`. Three deliverables:
+    - SQL: `public.script_execution_log` table with closed-set CHECK constraint on `exit_reason` (11 values). Partial indexes on `contract_met=false` and non-SUCCESS rows. View `public.v_script_execution_health_30m` for dashboard/alert consumption. RLS policies.
+    - Code: `core.execution_log.ExecutionLog` helper class. API: `record_write(table, n)`, `exit_with_reason(reason, ...)`, `complete(notes)`. Opening row INSERT at construction. Finalise PATCH with computed `contract_met`. `atexit` hook catches crashes → `exit_reason='CRASH'` with traceback. Invalid reasons coerced to CRASH. Best-effort writes; never raises into caller.
+    - Reference implementation: `capture_spot_1m.py` converted. Declares `expected_writes={market_spot_snapshots: 2, hist_spot_bars_1m: 2}`. Six exit paths classified.
+  - **ENH-71 validated live against Supabase (6 tests).** Empty table + accessible view + CHECK constraint rejected INVALID_REASON; smoke SUCCESS met=True; contract violation (1 of 3) met=False; atexit crash path CRASH; HOLIDAY_GATE early exit met=False; live run of converted `capture_spot_1m.py` SUCCESS met=True 2+2 writes 1114ms. **Replay of today's exact outage**: flipped `is_open=False`, row recorded `reason=HOLIDAY_GATE met=False expected={...: 2, ...: 2} actual={} notes='trading_calendar says closed'`. Today's silent exit is now a dashboard-visible, alertable row.
+  - **Enhancement Register updated (commit `7174690`).** Previous commit `ccaa418` had compressed many ENH-01..65 entry blocks when adding ENH-66..74. Recovered via `git checkout HEAD~1 -- ...` to restore full 88107-byte / 1737-line original. Applied `append_enh66_to_74.py` — strictly-additive patch with 7 anchor-validated edits, uniqueness-checked, size-must-grow guard. Net: 1737 → 2049 lines (+312), all ENH-01..65 prose untouched. Added 9 new entry blocks (ENH-66..74), MERDIAN Re-engineering Programme section, 2026-04-20 change log row, trailer update.
+  - **AWS synced.** `git pull` on i-0878c118835386ec2 after stash/merge of AWS-local gitignore extensions (commit `22334fb`). Zerodha token patched on MeridianAlpha and pushed to AWS via ssh+sed.
+
+**Open after session:**
+  - **ENH-67** (NEW, PROPOSED): `latest_market_breadth_intraday` is a VIEW — dashboard shows stale BULLISH counter while WCB aggregate correctly shows BEARISH. Cosmetic; signal engine uses `wcb_regime` which is correct. Session 6 of programme.
+  - **ENH-69** (NEW, PROPOSED): Supervisor staleness threshold (60s) < observed cycle duration (146.6s) → false "Runner not healthy" restart loop. Recommend option 3: richer heartbeat signal. Session 6.
+  - **ENH-70** (NEW, PROPOSED): Preflight rewrite — replace import/connectivity probes with dry-run write-contract enforcement. `capture_spot_1m.py --dry-run` would have caught today's bug at 08:53 IST. Session 4. Depends on ENH-71 + ENH-72.
+  - **ENH-72** (NEW, PROPOSED): Propagate ExecutionLog to 9 remaining critical scripts (ingest_option_chain, ingest_breadth_intraday, capture_market_spot_snapshot_local, compute_iv_context_local, build_market_spot_session_markers, run_equity_eod_until_done, refresh_dhan_token, build_ict_htf_zones, detect_ict_patterns_runner, build_trade_signal_local). Session 3. ~20 min per conversion once pattern established.
+  - **ENH-73** (NEW, PROPOSED): Dashboard truth + alert daemon contract-violation rules. Per-stage RED/AMBER/GREEN from `v_script_execution_health_30m`. Alert rules on `contract_met=FALSE`, `HOLIDAY_GATE` during market hours, cascade detection, freshness. Session 6.
+  - **ENH-74** (NEW, PROPOSED): Live config layer — `core/live_config.py` with 30s-TTL-cached function-based accessors replacing all `os.environ[...]` / `os.getenv(...)` reads. Strategic replacement of ENH-68 tactical. Eliminates stale-in-memory bug class. Session 5.
+  - **Working tree hygiene**: ~45 untracked scratch scripts (`fix_*.py`, `check_*.py`, `debug_*.py`, `experiment_*.py`, `*.ps1`) accumulated in repo root. Today's patches (`fix_enh66.py`, `fix_enh68.py`, `fix_capture_spot_1m_exec_log.py`, `append_enh66_to_74.py`) joined the graveyard. Candidate ENH-75. Weekend cleanup.
+  - **Tomorrow morning verification (≥ 09:00 IST 2026-04-21)**: (1) `merdian_start.py` prints `2026-04-21 -> TRADING DAY (is_open=True) inserted (new row)` with both times populated; (2) runner log shows `ENH-68: .env reloaded for this cycle (override=True)` every 5 min; (3) `script_execution_log` accumulates one `capture_spot_1m.py` row per minute with `exit_reason='SUCCESS'`, `contract_met=True`.
+
+**Files changed:**
+  - `merdian_start.py` (ENH-66: ensure_calendar_row() at 2 sites; BOM strip)
+  - `run_option_snapshot_intraday_runner.py` (ENH-68: dotenv import + per-cycle reload)
+  - `capture_spot_1m.py` (ENH-71: ExecutionLog integration as reference implementation)
+  - `docs/registers/MERDIAN_Enhancement_Register.md` (appended ENH-66..74 entries + Programme section)
+  - `.gitignore` (AWS-local merge, commit 22334fb)
+
+**Files added:**
+  - `core/execution_log.py` (ENH-71: ExecutionLog helper class)
+  - `sql/20260420_script_execution_log.sql` (ENH-71: table + view + RLS DDL)
+
+**Schema changes:**
+  - NEW TABLE `public.script_execution_log` (15 columns including exit_reason CHECK constraint, expected_writes/actual_writes jsonb, contract_met boolean).
+  - NEW VIEW `public.v_script_execution_health_30m` (per-script 30-min rollup).
+  - `trading_calendar` row behaviour: auto-inserted weekday rows now carry `open_time='09:15:00'` and `close_time='15:30:00'` (ENH-66).
+
+**Open items closed:** none (existing items)
+**Open items added:** ENH-66, ENH-67, ENH-68, ENH-69, ENH-70, ENH-71, ENH-72, ENH-73, ENH-74
+**Git commit hash:** 7174690 (HEAD of origin/main after all four commits: 8f83859 → b195499 → 260c7d0 → ccaa418 (superseded) → 7174690)
+**Next session goal:** Session 3 of programme — propagate ExecutionLog to `ingest_option_chain_local.py` first (highest write volume; converts today's Dhan 401 failures from log spam to TOKEN_EXPIRED-classified audit rows), then remaining 8 critical scripts in priority order.
+**docs_updated:** yes
+
+---
+
 ## 2026-04-19 — code_build — ENH-53 + ENH-55 build, validate, promote
 
 **Goal:** Implement ENH-53 (breadth hard-gate removal) + ENH-55 (momentum opposition block) in build_trade_signal_local.py behind MERDIAN_SIGNAL_V4 feature flag, validate via historical replay, promote to default.

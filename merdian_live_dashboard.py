@@ -243,18 +243,35 @@ def get_token_status() -> Dict:
 
 
 def get_preopen_status() -> Dict:
-    rows = sb_get("market_spot_snapshots", "select=ts,spot,symbol&order=ts.asc&limit=10")
-    today = now_ist().strftime("%Y-%m-%d")
+    # OI-18 fix 2026-04-22: prior query `order=ts.asc&limit=10`
+    # returned the 10 oldest rows in market_spot_snapshots (table
+    # grows forever) and always failed the today-filter after day
+    # one. Also the old window was hour==9 and minute<9 which
+    # missed the 09:14 bar. Pre-open is 09:00 up to but not
+    # including 09:15 (market open). Query today's rows directly
+    # using an IST start-of-day lower bound rendered as UTC ISO.
+    today_ist = now_ist().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc = today_ist.astimezone(timezone.utc).isoformat()
+    rows = sb_get(
+        "market_spot_snapshots",
+        f"select=ts,spot,symbol&ts=gte.{today_start_utc}&order=ts.asc&limit=200",
+    )
+    today_str = now_ist().strftime("%Y-%m-%d")
     captured = []
     for row in rows:
         dt = parse_ist_dt(row.get("ts", ""))
-        if dt and dt.strftime("%Y-%m-%d") == today and dt.hour == 9 and dt.minute < 9:
+        if (
+            dt
+            and dt.strftime("%Y-%m-%d") == today_str
+            and dt.hour == 9
+            and dt.minute < 15
+        ):
             captured.append({
                 "ts": dt.strftime("%H:%M:%S"),
                 "spot": row.get("spot"),
                 "symbol": row.get("symbol"),
             })
-    return {"captured": len(captured) > 0, "count": len(captured), "rows": captured[:3]}
+    return {"captured": len(captured) > 0, "count": len(captured), "rows": captured[:6]}
 
 
 def get_pipeline_stages() -> Dict:

@@ -57,11 +57,15 @@ from core.execution_log import ExecutionLog
 #         breadth+momentum alignment) is removed under V4.
 #
 # Flag: MERDIAN_SIGNAL_V4
-#   "1"        -> V4 logic (ENH-53 + ENH-55)
-#   unset / 0  -> V3 legacy (bit-identical to prior behaviour,
-#                including known quirks)
-# Default is off. Enable explicitly for shadow sessions. Flip
-# default only after 5 clean shadow sessions per Change Protocol.
+#   "1" (default) -> V4 logic (ENH-53 + ENH-55)
+#   "0"           -> V3 legacy (bit-identical to prior behaviour,
+#                    including known quirks) -- hot-rollback escape hatch
+# Default flipped to "1" post-validation (commit e986cbb) after V4
+# cleared the 5-session shadow gate per Change Protocol. V3 path
+# retained for emergency rollback; set MERDIAN_SIGNAL_V4=0 in .env
+# and restart the runner to revert without a code change.
+# OI-23 closed 2026-04-22: prior docstring said default was "off";
+# code has defaulted to "1" since e986cbb. Comment now matches code.
 #
 # ENH-72 instrumentation contract:
 #   - expected_writes = {signal_snapshots: 1}

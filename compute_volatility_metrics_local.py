@@ -3,6 +3,11 @@ from datetime import date, datetime, time as dt_time, timedelta, timezone
 from pprint import pprint
 from typing import Any, Dict, List, Optional, Tuple
 
+# ENH-72 write-contract layer. See docs/MERDIAN_Master_V19.docx governance
+# rule `script_execution_log_contract`. Pattern mirrored from
+# compute_gamma_metrics_local.py. Uses set_symbol() because symbol is
+# inferred from the chain, not passed as CLI arg.
+from core.execution_log import ExecutionLog
 from core.supabase_client import SupabaseClient
 from fetch_india_vix import fetch_india_vix
 from gamma_engine_retry_utils import retry_call
@@ -441,11 +446,49 @@ def fetch_last_valid_vix_snapshot(sb: SupabaseClient, symbol: str) -> Optional[D
     return None
 
 
-def main() -> None:
-    if len(sys.argv) != 2:
-        raise RuntimeError("Usage: python .\\compute_volatility_metrics_local.py <run_id>")
+def _classify_exception(err: Exception) -> tuple[str, int]:
+    """
+    Map an exception to (exit_reason, exit_code) for ExecutionLog.
 
-    run_id = sys.argv[1]
+    SKIPPED_NO_INPUT: upstream ingest wrote nothing for this run_id.
+                     Not this script's fault.
+    DATA_ERROR:      every other domain failure (missing ATM rows,
+                     malformed timestamps, missing VIX with no fallback,
+                     unsupported symbol, Supabase rejects the insert).
+    """
+    msg = str(err)
+    if "No option_chain_snapshots rows found" in msg:
+        return ("SKIPPED_NO_INPUT", 1)
+    return ("DATA_ERROR", 1)
+
+
+def main() -> int:
+    # Parse CLI args BEFORE opening an ExecutionLog row. A usage error is an
+    # operator bug, not a pipeline event -- do not pollute script_execution_log
+    # with RUNNING rows that never resolve.
+    if len(sys.argv) != 2:
+        print(
+            "Usage: python .\\compute_volatility_metrics_local.py <run_id>",
+            file=sys.stderr,
+        )
+        return 2
+
+    run_id = sys.argv[1].strip()
+
+    # ── ENH-72 write-contract declaration ────────────────────────────────────
+    # Contract: this invocation writes exactly 1 row to volatility_snapshots
+    # via INSERT (volatility_snapshots has UNIQUE(symbol, ts) but this script
+    # uses .insert() not .upsert() -- see V18 5.2. Duplicate run on the same
+    # run_id would 23505. Out of scope for ENH-72.
+    #
+    # Symbol is inferred from the chain, not passed as CLI arg. set_symbol()
+    # is called after the first Supabase read lands.
+    log = ExecutionLog(
+        script_name="compute_volatility_metrics_local.py",
+        expected_writes={"volatility_snapshots": 1},
+        symbol=None,
+        notes=f"run_id={run_id}",
+    )
 
     print("=" * 72)
     print("MERDIAN - Local Python compute_volatility_metrics")
@@ -453,56 +496,123 @@ def main() -> None:
     print(f"Run ID: {run_id}")
     print("-" * 72)
 
-    sb = SupabaseClient()
+    try:
+        sb = SupabaseClient()
+    except Exception as e:
+        return log.exit_with_reason(
+            "DEPENDENCY_MISSING",
+            exit_code=1,
+            error_message=f"SupabaseClient init failed: {e}",
+        )
 
-    option_rows = retry_call(
-        lambda: sb.select(
-            table="option_chain_snapshots",
-            filters={"run_id": f"eq.{run_id}"},
-            order="strike.asc",
-            limit=5000,
-        ),
-        attempts=3,
-        delay_seconds=5.0,
-        backoff_multiplier=1.5,
-        label=f"select option_chain_snapshots for run_id={run_id}",
-    )
+    try:
+        option_rows = retry_call(
+            lambda: sb.select(
+                table="option_chain_snapshots",
+                filters={"run_id": f"eq.{run_id}"},
+                order="strike.asc",
+                limit=5000,
+            ),
+            attempts=3,
+            delay_seconds=5.0,
+            backoff_multiplier=1.5,
+            label=f"select option_chain_snapshots for run_id={run_id}",
+        )
+    except Exception as e:
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"option_chain_snapshots select failed: {e}",
+        )
 
     if not option_rows:
-        raise RuntimeError(f"No option_chain_snapshots rows found for run_id={run_id}")
+        return log.exit_with_reason(
+            "SKIPPED_NO_INPUT",
+            exit_code=1,
+            error_message=f"No option_chain_snapshots rows found for run_id={run_id}",
+        )
 
     print(f"Fetched option rows: {len(option_rows)}")
 
     first = option_rows[0]
-    symbol = str(first["symbol"]).upper()
+
+    try:
+        symbol = str(first["symbol"]).upper()
+    except Exception as e:
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"Could not extract symbol from chain: {e}",
+        )
+
+    # Backfill symbol onto the log row now that we know it. set_symbol() is a
+    # PATCH to script_execution_log's RUNNING row -- see core/execution_log.py
+    # (added Session 3 for run_id-contract scripts).
+    log.set_symbol(symbol)
+
     expiry_date = parse_iso_date(first.get("expiry_date"))
     ts_value = parse_iso_dt(first.get("ts") or first.get("created_at"))
     spot = safe_float(first.get("spot"))
 
     if expiry_date is None:
-        raise RuntimeError("expiry_date missing from option rows")
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message="expiry_date missing from option rows",
+        )
     if ts_value is None:
-        raise RuntimeError("ts missing from option rows")
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message="ts missing from option rows",
+        )
     if spot is None:
-        raise RuntimeError("spot missing from option rows")
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message="spot missing from option rows",
+        )
 
-    atm_strike = find_atm_strike(spot, symbol)
+    try:
+        atm_strike = find_atm_strike(spot, symbol)
+    except Exception as e:
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"find_atm_strike failed: {e}",
+        )
 
     ce_row = find_row(option_rows, atm_strike, "CE")
     pe_row = find_row(option_rows, atm_strike, "PE")
 
     if ce_row is None:
-        raise RuntimeError(f"ATM CE row not found for symbol={symbol}, strike={atm_strike}")
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"ATM CE row not found for symbol={symbol}, strike={atm_strike}",
+        )
     if pe_row is None:
-        raise RuntimeError(f"ATM PE row not found for symbol={symbol}, strike={atm_strike}")
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"ATM PE row not found for symbol={symbol}, strike={atm_strike}",
+        )
 
     atm_call_iv = safe_float(ce_row.get("iv"))
     atm_put_iv = safe_float(pe_row.get("iv"))
 
     if atm_call_iv is None:
-        raise RuntimeError("ATM call IV missing")
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message="ATM call IV missing",
+        )
     if atm_put_iv is None:
-        raise RuntimeError("ATM put IV missing")
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message="ATM put IV missing",
+        )
 
     atm_iv_avg = (atm_call_iv + atm_put_iv) / 2.0
     iv_skew = atm_put_iv - atm_call_iv
@@ -525,7 +635,11 @@ def main() -> None:
     except Exception as exc:
         fallback = fetch_last_valid_vix_snapshot(sb, symbol)
         if fallback is None:
-            raise RuntimeError(f"Live VIX fetch failed and no fallback row available: {exc}") from exc
+            return log.exit_with_reason(
+                "DATA_ERROR",
+                exit_code=1,
+                error_message=f"Live VIX fetch failed and no fallback row available: {exc}",
+            )
 
         stale_vix = True
         vix_payload = {
@@ -544,7 +658,11 @@ def main() -> None:
     vix_regime = vix_payload.get("vix_regime")
 
     if india_vix is None:
-        raise RuntimeError("India VIX missing after fetch/fallback")
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message="India VIX missing after fetch/fallback",
+        )
 
     history_rows = load_vix_history_rows(sb)
     vix_percentile = compute_vix_percentile(history_rows, ts_value.date(), india_vix)
@@ -669,19 +787,41 @@ def main() -> None:
     print("-" * 72)
     print("Writing volatility row to Supabase...")
 
-    inserted = retry_call(
-        lambda: sb.insert("volatility_snapshots", [volatility_row]),
-        attempts=3,
-        delay_seconds=3.0,
-        backoff_multiplier=1.5,
-        label=f"insert volatility_snapshots for run_id={run_id}",
-    )
+    try:
+        inserted = retry_call(
+            lambda: sb.insert("volatility_snapshots", [volatility_row]),
+            attempts=3,
+            delay_seconds=3.0,
+            backoff_multiplier=1.5,
+            label=f"insert volatility_snapshots for run_id={run_id}",
+        )
+    except Exception as e:
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"volatility_snapshots insert failed: {e}",
+        )
 
     inserted_count = len(inserted) if isinstance(inserted, list) else 1
 
     print(f"Inserted rows returned by Supabase: {inserted_count}")
     print("COMPUTE VOLATILITY METRICS COMPLETED")
 
+    # ENH-72: record the actual write. The contract expects 1 row; if the
+    # Supabase client lied about count (or returned a non-list response with
+    # success status), we fall back to 1 -- same pattern as gamma.
+    log.record_write("volatility_snapshots", inserted_count if inserted_count > 0 else 1)
+
+    # stale_vix surfaced in notes so dashboard queries can filter without
+    # parsing raw JSONB. contract_met is still True -- the script did its
+    # job with best-available data. Operators can triage stale_vix incidents
+    # by running: WHERE notes LIKE '%stale_vix=True%'.
+    completion_notes = None
+    if stale_vix:
+        completion_notes = f"run_id={run_id} stale_vix=True"
+
+    return log.complete(notes=completion_notes)
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

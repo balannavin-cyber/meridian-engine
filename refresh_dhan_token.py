@@ -99,8 +99,43 @@ def write_token_status(success: bool, expiry_time: str, error: str = "") -> None
     tmp.replace(TOKEN_STATUS_FILE)
 
 
+def _idempotency_skip() -> bool:
+    """OI-21 guard: if token_status.json shows a success less than 90
+    seconds old, skip. Protects against any caller double-invoking
+    (Task Scheduler + dashboard button + TOTP retry + preflight).
+    90s is under Dhan's 120s rate-limit window but comfortably above
+    the normal end-to-end refresh duration (~1-2s)."""
+    if not TOKEN_STATUS_FILE.exists():
+        return False
+    try:
+        status = json.loads(TOKEN_STATUS_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    if not status.get("success"):
+        return False
+    iso = status.get("refreshed_at_iso", "")
+    if not iso:
+        return False
+    try:
+        last = datetime.fromisoformat(iso)
+    except ValueError:
+        return False
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=IST)
+    age_s = (datetime.now(IST) - last).total_seconds()
+    if 0 <= age_s < 90:
+        print(f"[IDEMPOTENT] Token refreshed {age_s:.1f}s ago (< 90s). "
+              f"Skipping Dhan call; .env is current.")
+        return True
+    return False
+
+
 def main() -> int:
     load_dotenv(dotenv_path=ENV_PATH)
+
+    # OI-21 fix 2026-04-22: idempotency guard.
+    if _idempotency_skip():
+        return 0
 
     client_id = require_env("DHAN_CLIENT_ID")
     pin = require_env("DHAN_PIN")
@@ -115,10 +150,37 @@ def main() -> int:
         # If Invalid TOTP, try next code window
         if "Invalid TOTP" in error_msg:
             import time as _time
-            print(f"WARNING: Invalid TOTP on first attempt. Waiting 30s for next window...")
-            _time.sleep(120)
+            # OI-21 fix 2026-04-22: was sleep(120) which matched
+            # Dhan's 2-minute rate-limit window exactly and caused
+            # the retry to fail with "Token can be generated once
+            # every 2 minutes". TOTP windows are 30 seconds wide;
+            # one window is sufficient.
+            print("WARNING: Invalid TOTP on first attempt. Waiting 30s for next window...")
+            _time.sleep(30)
             totp_code = generate_totp(totp_seed)
-            token_response = request_dhan_token(client_id, pin, totp_code)
+            try:
+                token_response = request_dhan_token(client_id, pin, totp_code)
+            except RuntimeError as retry_e:
+                retry_msg = str(retry_e)
+                if "once every 2 minutes" in retry_msg:
+                    # Another caller (or a prior invocation of ours)
+                    # refreshed within 2 minutes. Dhan rejected our
+                    # retry but the live token is already valid.
+                    # Not a real failure.
+                    print(f"INFO: rate-limit hit on retry; token was refreshed elsewhere within 2min. "
+                          f"Exiting cleanly. ({retry_msg})")
+                    write_token_status(False, "", f"rate_limited_after_totp_retry: {retry_msg}")
+                    return 2
+                write_token_status(False, "", retry_msg)
+                raise
+        elif "once every 2 minutes" in error_msg:
+            # OI-21 fix: first-attempt rate-limit means someone
+            # else just refreshed (likely us within the last 2 min
+            # from a concurrent invocation). Token in .env is good.
+            print(f"INFO: rate-limit hit on first attempt; token refreshed elsewhere within 2min. "
+                  f"Exiting cleanly. ({error_msg})")
+            write_token_status(False, "", f"rate_limited: {error_msg}")
+            return 2
         else:
             write_token_status(False, "", error_msg)
             raise

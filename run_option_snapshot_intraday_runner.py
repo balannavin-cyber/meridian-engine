@@ -52,12 +52,27 @@ SHADOW_FAILURE_IS_NON_BLOCKING = True
 LOCK_STALE_SECONDS = 900
 LOCK_HEARTBEAT_UPDATE_SECONDS = 15
 
-# V18A-02: Auth failure patterns that trigger circuit-breaker
+# V18A-02 / OI-22: Auth failure = 401/token invalid ONLY.
+# "accessToken" substring removed 2026-04-22 -- matched transient
+# timeout traces that printed request headers, producing false
+# OPTION_AUTH_BREAK alerts on pure network failures.
 AUTH_FAILURE_PATTERNS = [
     "401",
     "Authentication Failed",
     "Client ID or Token invalid",
-    "accessToken",
+]
+
+# OI-22: Transient network/timeout patterns -- distinct from auth.
+# Issue a DIFFERENT alert so operator does not waste a token refresh
+# on a problem that resolves on next cycle.
+TRANSIENT_FAILURE_PATTERNS = [
+    "ReadTimeout",
+    "ConnectTimeout",
+    "ConnectionError",
+    "Max retries exceeded",
+    "HTTPSConnectionPool",
+    "Read timed out",
+    "Connection aborted",
 ]
 
 UUID_RE = re.compile(
@@ -337,6 +352,13 @@ def _is_auth_failure(text: str) -> bool:
     return any(pattern in text for pattern in AUTH_FAILURE_PATTERNS)
 
 
+def _is_transient_failure(text: str) -> bool:
+    """OI-22: Return True if text looks like a transient network/timeout
+    failure as opposed to auth. Checked BEFORE auth so ambiguous traces
+    that mention both are classified as transient (refresh will not help)."""
+    return any(pattern in text for pattern in TRANSIENT_FAILURE_PATTERNS)
+
+
 def _send_circuit_breaker_alert(message: str) -> None:
     """Send Telegram alert for circuit-breaker events. Non-blocking."""
     try:
@@ -378,10 +400,24 @@ def run_live_cycle_for_symbol(symbol: str) -> None:
     # Check ingest output for 401 / auth failure before proceeding downstream.
     # If auth is broken: log, alert, and return early — do NOT run gamma/state/signal.
     # This prevents the system from appearing alive while producing invalid outputs.
+    # OI-22: transient check FIRST -- network/timeout errors must not
+    # trigger an auth refresh. They self-resolve on next cycle.
+    if _is_transient_failure(ingest_out):
+        msg = (
+            f"OPTION_TRANSIENT_FAIL [{symbol}] — ingest_option_chain hit a "
+            f"network/timeout error (not auth). "
+            f"Halting downstream pipeline this cycle; expect auto-recovery next cycle. "
+            f"Do NOT refresh token. If this persists >3 cycles, investigate Dhan upstream."
+        )
+        log(f"CIRCUIT-BREAKER (transient): {msg}")
+        _send_circuit_breaker_alert(msg)
+        log(f"========== LIVE PIPELINE HALTED [{symbol}] — transient failure ==========")
+        return
+
     if _is_auth_failure(ingest_out):
         msg = (
-            f"OPTION_AUTH_BREAK [{symbol}] — ingest_option_chain returned a Dhan "
-            f"authentication failure (401 / token invalid). "
+            f"OPTION_AUTH_BREAK [{symbol}] — ingest_option_chain returned Dhan 401 / "
+            f"token invalid. "
             f"Halting downstream pipeline (gamma / volatility / state / signal) "
             f"for this symbol this cycle. "
             f"Run refresh_dhan_token.py to restore. "

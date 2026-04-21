@@ -8,6 +8,13 @@ from typing import Any
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
+# ENH-72 write-contract layer. See docs/MERDIAN_Master_V19.docx governance
+# rule `script_execution_log_contract`. Pattern mirrored from
+# build_market_state_snapshot_local.py: symbol known at CLI parse time,
+# no set_symbol() needed. Optional-source-tolerant via completion notes
+# (ict_failed, enh06_failed flags).
+from core.execution_log import ExecutionLog
+
 
 # ============================================================
 # MERDIAN - build_trade_signal_local.py
@@ -55,6 +62,20 @@ from supabase import Client, create_client
 #                including known quirks)
 # Default is off. Enable explicitly for shadow sessions. Flip
 # default only after 5 clean shadow sessions per Change Protocol.
+#
+# ENH-72 instrumentation contract:
+#   - expected_writes = {signal_snapshots: 1}
+#   - action=DO_NOTHING is NOT a failure — the script successfully
+#     produced a reasoned decision. contract_met=True.
+#   - trade_allowed=False is NOT a failure — it's a gate firing.
+#     contract_met=True.
+#   - SKIPPED_NO_INPUT if no market_state row exists for symbol.
+#   - DATA_ERROR if market_state fetch fails or insert fails.
+#   - DEPENDENCY_MISSING if SUPABASE_URL/KEY missing at main() entry.
+#   - ict_failed=true surfaces in notes when ENH-37 ICT enrichment
+#     try/except fires (does NOT downgrade contract_met).
+#   - enh06_failed=true surfaces similarly for ENH-06 capital check.
+#   - signal_v4={true|false} surfaces in notes for logic-version filter.
 # ============================================================
 
 
@@ -68,6 +89,14 @@ SIGNAL_V4_ENABLED: bool = os.getenv("MERDIAN_SIGNAL_V4", "1").strip() == "1"
 # -----------------------------
 # Environment / Supabase client
 # -----------------------------
+# ENH-72: deferred initialisation. Module-scope import no longer dies on
+# missing env vars -- main() checks and routes through ExecutionLog as
+# DEPENDENCY_MISSING. Preserves backward compatibility (SUPABASE global
+# still populated before any build_signal() call).
+SUPABASE: Client | None = None
+_SUPABASE_INIT_ERROR: Exception | None = None
+
+
 def _load_env() -> Client:
     load_dotenv()
 
@@ -88,7 +117,27 @@ def _load_env() -> Client:
     return create_client(supabase_url, service_role_key)
 
 
-SUPABASE: Client = _load_env()
+def _ensure_supabase() -> Client:
+    """Initialise SUPABASE global on first use. Idempotent. Caches
+    any initialisation error so main() can classify it properly."""
+    global SUPABASE, _SUPABASE_INIT_ERROR
+    if SUPABASE is not None:
+        return SUPABASE
+    if _SUPABASE_INIT_ERROR is not None:
+        raise _SUPABASE_INIT_ERROR
+    try:
+        SUPABASE = _load_env()
+        return SUPABASE
+    except Exception as e:
+        _SUPABASE_INIT_ERROR = e
+        raise
+
+
+# Try-init at import time, but don't raise. main() decides what to do.
+try:
+    SUPABASE = _load_env()
+except Exception as e:
+    _SUPABASE_INIT_ERROR = e
 
 
 # -----------------------------
@@ -274,7 +323,12 @@ def derive_entry_quality(confidence: float, direction_bias: str, gamma_regime: s
 # -----------------------------
 # Scoring
 # -----------------------------
-def build_signal(symbol: str) -> dict[str, Any]:
+def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
+    """Build the signal row. Returns (row, flags) tuple where flags
+    tracks subsystem degradation (ict_failed, enh06_failed) for
+    ExecutionLog completion notes."""
+    flags = {"ict_failed": False, "enh06_failed": False}
+
     symbol = symbol.upper()
     state = latest_market_state(symbol)
 
@@ -735,7 +789,10 @@ def build_signal(symbol: str) -> dict[str, Any]:
             out['ict_lots_t2'] = None
             out['ict_lots_t3'] = None
     except Exception as _ict_err:
-        # Non-blocking — ICT enrichment failure never halts signal
+        # Non-blocking — ICT enrichment failure never halts signal.
+        # ENH-72: surface in completion notes so operators can track
+        # ICT subsystem health without parsing raw JSONB.
+        flags["ict_failed"] = True
         out["ict_pattern"]     = "NONE"
         out["ict_tier"]        = "NONE"
         out["ict_size_mult"]   = 1.0
@@ -797,23 +854,94 @@ def build_signal(symbol: str) -> dict[str, Any]:
             "enh06_capital_ok":  _capital_ok,
         })
     except Exception as _e06:
+        # ENH-72: ENH-06 capital check failure is non-blocking.
+        # Surface in completion notes to track capital subsystem health.
+        flags["enh06_failed"] = True
         cautions.append(f"ENH-06: Capital check skipped ({_e06})")
 
-    return out
+    return out, flags
 
 
 def insert_signal(row: dict[str, Any]) -> None:
     SUPABASE.table("signal_snapshots").insert(row).execute()
 
 
-def main() -> None:
+def main() -> int:
+    # CLI parse before ExecutionLog. Usage error -> exit 2, no log row.
     if len(sys.argv) != 2:
-        print("Usage: python build_trade_signal_local.py <symbol>")
-        sys.exit(1)
+        print(
+            "Usage: python build_trade_signal_local.py <symbol>",
+            file=sys.stderr,
+        )
+        return 2
 
-    symbol = sys.argv[1].upper()
-    row = build_signal(symbol)
-    insert_signal(row)
+    symbol = sys.argv[1].strip().upper()
+    if symbol not in {"NIFTY", "SENSEX"}:
+        print(
+            "Usage: python build_trade_signal_local.py <NIFTY|SENSEX>",
+            file=sys.stderr,
+        )
+        return 2
+
+    # ── ENH-72 write-contract declaration ────────────────────────────────────
+    # Contract: 1 row to signal_snapshots via INSERT (not UPSERT).
+    # Same latent idempotency hazard as volatility_snapshots: same run
+    # called twice would 23505. Pre-existing, out of scope for ENH-72.
+    #
+    # Notes track the signal logic version (V3/V4) and subsystem health
+    # (ict_failed, enh06_failed) for operator triage via
+    # WHERE notes LIKE '%ict_failed=true%' or similar.
+    notes_prefix = f"signal_v4={SIGNAL_V4_ENABLED}"
+    log = ExecutionLog(
+        script_name="build_trade_signal_local.py",
+        expected_writes={"signal_snapshots": 1},
+        symbol=symbol,
+        notes=notes_prefix,
+    )
+
+    # ENH-72: env check via _ensure_supabase() routes through
+    # ExecutionLog instead of dying at import with unhandled traceback.
+    try:
+        _ensure_supabase()
+    except Exception as e:
+        return log.exit_with_reason(
+            "DEPENDENCY_MISSING",
+            exit_code=1,
+            error_message=f"Supabase init failed: {e}",
+        )
+
+    try:
+        row, flags = build_signal(symbol)
+    except RuntimeError as e:
+        # latest_market_state raises RuntimeError with specific message
+        # when no market_state_snapshots row exists for this symbol.
+        msg = str(e)
+        if "No market_state_snapshots row found" in msg:
+            return log.exit_with_reason(
+                "SKIPPED_NO_INPUT",
+                exit_code=1,
+                error_message=msg,
+            )
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"build_signal RuntimeError: {msg}",
+        )
+    except Exception as e:
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"build_signal unexpected error: {e}",
+        )
+
+    try:
+        insert_signal(row)
+    except Exception as e:
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"signal_snapshots insert failed: {e}",
+        )
 
     print("Signal snapshot insert complete.")
     print(f"signal_v4={SIGNAL_V4_ENABLED}")
@@ -829,6 +957,21 @@ def main() -> None:
     print(f"entry_quality={row.get('entry_quality')}")
     print(f"gamma_regime={row.get('gamma_regime')}")
 
+    log.record_write("signal_snapshots", 1)
+
+    # ENH-72: completion notes track logic version + subsystem degradation
+    # flags. Operators filter signal_execution_log by WHERE notes LIKE
+    # '%ict_failed=true%' to find signals where ICT subsystem was down,
+    # or '%signal_v4=False%' to filter legacy-logic runs.
+    completion_parts = [notes_prefix]
+    if flags.get("ict_failed"):
+        completion_parts.append("ict_failed=true")
+    if flags.get("enh06_failed"):
+        completion_parts.append("enh06_failed=true")
+    completion_parts.append(f"action={row.get('action')}")
+
+    return log.complete(notes=" ".join(completion_parts))
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

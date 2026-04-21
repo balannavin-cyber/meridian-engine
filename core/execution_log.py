@@ -184,6 +184,44 @@ class ExecutionLog:
             raise ValueError(f"record_write: n_rows must be >=0, got {n_rows}")
         self.actual[table] = self.actual.get(table, 0) + int(n_rows)
 
+    def set_symbol(self, symbol: str | None) -> None:
+        """
+        Update the symbol on this invocation's log row.
+
+        For run_id-contract scripts (compute_gamma_metrics_local.py,
+        compute_volatility_metrics_local.py, build_momentum_features_local.py)
+        that only discover symbol after the first Supabase read. Best-effort:
+        failures are logged to stderr but never raised -- the instrumentation
+        layer must not break the calling script.
+
+        Safe to call multiple times. Safe to call with None (no-op).
+        Post-finalise calls are silently ignored.
+        """
+        if self._finalised:
+            return
+        if symbol is None:
+            return
+        self.symbol = symbol
+
+        if not _SUPABASE_URL or not _SUPABASE_KEY:
+            return
+
+        try:
+            r = requests.patch(
+                f"{_SUPABASE_URL}/rest/v1/script_execution_log",
+                headers=self._headers,
+                params={"invocation_id": f"eq.{self.invocation_id}"},
+                json={"symbol": symbol},
+                timeout=10,
+            )
+            if r.status_code >= 300:
+                self._warn(
+                    f"set_symbol PATCH failed: status={r.status_code} "
+                    f"body={r.text[:200]}"
+                )
+        except Exception as e:
+            self._warn(f"set_symbol PATCH exception: {e}")
+
     def complete(self, notes: Optional[str] = None) -> int:
         """Normal completion path. Computes contract_met, writes final row,
         returns exit code (0). Caller typically does: sys.exit(log.complete())."""

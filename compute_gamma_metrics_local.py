@@ -10,6 +10,11 @@ from typing import Any, Optional
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
+# ENH-72 write-contract layer. See docs/MERDIAN_Master_V19.docx governance
+# rule `script_execution_log_contract`. Pattern mirrored from
+# ingest_option_chain_local.py and capture_spot_1m.py.
+from core.execution_log import ExecutionLog
+
 
 # ============================================================
 # MERDIAN - compute_gamma_metrics_local.py
@@ -739,11 +744,84 @@ def parse_args(argv: list[str]) -> tuple[str, Optional[str], str]:
     raise RuntimeError("Could not determine run_id from arguments")
 
 
-def main() -> None:
-    run_id, expected_symbol, run_type = parse_args(sys.argv)
+def _classify_exception(err: Exception) -> tuple[str, int]:
+    """
+    Map an exception to (exit_reason, exit_code) for ExecutionLog.
 
-    result = compute_gamma_metrics(run_id, expected_symbol=expected_symbol, run_type=run_type)
-    upserted = upsert_gamma_metrics(result)
+    SKIPPED_NO_INPUT: the upstream ingest wrote nothing for this run_id.
+                     This is NOT this script's fault -- surface it as a
+                     different failure class so dashboards don't flag it
+                     against compute_gamma_metrics.
+    DATA_ERROR:      every other domain-level failure (empty usable rows,
+                     no spot, symbol mismatch, Supabase rejects the upsert).
+    """
+    msg = str(err)
+    if "No option_chain_snapshots rows found" in msg:
+        return ("SKIPPED_NO_INPUT", 1)
+    return ("DATA_ERROR", 1)
+
+
+def main() -> int:
+    # Parse CLI args BEFORE opening an ExecutionLog row. A usage error is
+    # an operator/integration bug, not a pipeline failure, and should not
+    # pollute script_execution_log with RUNNING rows that never resolve.
+    try:
+        run_id, expected_symbol, run_type = parse_args(sys.argv)
+    except Exception as e:
+        print(f"[ERROR] {e}", file=sys.stderr)
+        return 2
+
+    # ── ENH-72 write-contract declaration ────────────────────────────────────
+    # Contract: this invocation writes exactly 1 row to gamma_metrics via
+    # UPSERT on (symbol, ts). Floor = expected = 1.
+    #
+    # Symbol is set to expected_symbol if provided by the caller; otherwise
+    # None until inferred from the chain rows inside compute_gamma_metrics.
+    # We update log.symbol in-place after inference so the final PATCH row
+    # carries the real symbol. Opening RUNNING row may have symbol=null for
+    # ~500ms in the one-arg case -- acceptable; atexit crash coverage takes
+    # priority over opening-row completeness.
+    log = ExecutionLog(
+        script_name="compute_gamma_metrics_local.py",
+        expected_writes={"gamma_metrics": 1},
+        symbol=expected_symbol,
+        notes=f"run_id={run_id} run_type={run_type}",
+    )
+
+    try:
+        result = compute_gamma_metrics(
+            run_id,
+            expected_symbol=expected_symbol,
+            run_type=run_type,
+        )
+    except Exception as e:
+        reason, code = _classify_exception(e)
+        return log.exit_with_reason(
+            reason,
+            exit_code=code,
+            error_message=f"compute_gamma_metrics failed: {e}",
+        )
+
+    # Backfill the symbol onto the log row now that we know it. set_symbol()
+    # issues a PATCH to script_execution_log updating the symbol column on
+    # the RUNNING row before the final complete()/exit_with_reason() PATCH
+    # lands. Added to ExecutionLog in Session 3 for run_id-contract scripts
+    # (gamma, volatility, momentum) that discover symbol after the first
+    # Supabase read rather than at CLI parse time.
+    log.set_symbol(result.symbol)
+
+    try:
+        upserted = upsert_gamma_metrics(result)
+    except Exception as e:
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"upsert_gamma_metrics failed: {e}",
+        )
+
+    # The upsert returns the row (or at minimum the payload we sent).
+    # Either way, one row landed in gamma_metrics.
+    log.record_write("gamma_metrics", 1)
 
     print("=" * 72)
     print("MERDIAN - Local Python compute_gamma_metrics")
@@ -767,6 +845,8 @@ def main() -> None:
     print(f"expansion_probability={result.expansion_probability}")
     print("=" * 72)
 
+    return log.complete()
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

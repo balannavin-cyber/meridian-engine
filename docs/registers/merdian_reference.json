@@ -1,8 +1,8 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v7",
-    "generated": "2026-04-20",
+    "version": "v8",
+    "generated": "2026-04-22",
     "sources": [
       "MERDIAN_Master_V18_v2 Section 15 (File Master, Table Master, Security IDs, AWS Runtime Files)",
       "MERDIAN_Appendix_V18A_v4 Block 3 (file updates), Block 4 (table updates), Block 5 (schema changes)",
@@ -12,7 +12,9 @@
       "MERDIAN_Appendix_Research_Sessions_4_5 (2026-04-17/18)  --  Experiments 17-27b + MTF OHLCV + hist_pattern_signals",
       "Session 2026-04-19 (C-08 breadth writer fix)",
       "Session 2026-04-19 (ENH renumber + OI migration to Enhancement Register)",
-      "Session 2026-04-20 (outage + re-engineering programme Sessions 1+2; ENH-66/68 tactical/71 COMPLETE; ENH-67/69/70/72/73/74 PROPOSED)"
+      "Session 2026-04-20 (outage + re-engineering programme Sessions 1+2; ENH-66/68 tactical/71 COMPLETE; ENH-67/69/70/72/73/74 PROPOSED)",
+      "Session 2026-04-21 (Sessions 3+4)  --  ENH-72 propagation 9 of 9 COMPLETE + OI-24/26/27 fixes + Phase 1/2/3 ops (spot backfill, ICT HTF rebuild, Task Scheduler repair)",
+      "Session 2026-04-22 (Session 5)  --  OI series permanent closure: OI-18/19/20/21/22/23 CLOSED + PS 5.1 UTF-8 BOM fix forward"
     ],
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
@@ -1773,7 +1775,7 @@
     "ENH-72": {
       "title": "Propagate ExecutionLog to 9 remaining critical scripts",
       "priority": "HIGH",
-      "status": "PROPOSED",
+      "status": "CLOSED",
       "opened_date": "2026-04-20",
       "targets": "Session 3 of re-engineering programme",
       "scope": [
@@ -1789,7 +1791,10 @@
         "10. build_trade_signal_local.py (signal producer)"
       ],
       "effort_estimate": "~20 min per conversion once ENH-71 pattern is established. Total ~3-4 hours.",
-      "depends_on": "ENH-71"
+      "depends_on": "ENH-71",
+      "closed_date": "2026-04-21",
+      "closed_commit_chain": "3a22735 -> d676a73 -> 2173002 -> 74e15a0 -> 70df409 -> b3d88fa -> 1e75a74 -> dd66076 -> f121fca",
+      "closure_note": "All 9 critical pipeline scripts instrumented with ExecutionLog write-contract. Live production validation during 2026-04-21 trading day: 1,871 invocations, 5 failures, ~99.7% clean rate. Session 3+4 log entry has full per-target detail."
     },
     "ENH-73": {
       "title": "Dashboard truth + alert daemon contract-violation rules",
@@ -1976,10 +1981,46 @@
         "7174690"
       ],
       "summary": "Morning 3-hour silent pipeline outage (holiday-gate treated NULL open_time as 'closed') + compounding stale-token-in-memory bug (runner held pre-rotation token). Post-mortem exposed absence of write-contract enforcement as root architectural gap. 6-session re-engineering programme approved. Session 1 shipped: ENH-66 (holiday-gate root cause) + ENH-68 tactical (runner .env reload per cycle). Session 2 shipped: ENH-71 (write-contract layer foundation: script_execution_log + ExecutionLog helper + capture_spot_1m reference). Pipeline recovered 12:26 IST; no bad trades taken. Register updated via strictly-additive patch append_enh66_to_74.py after a failed 'merge' attempt (ccaa418) was superseded by 7174690."
+    },
+    {
+      "date": "2026-04-21",
+      "appendix": "V19B (pending)",
+      "git_end": "7bfa6f3",
+      "items_closed": [
+        "ENH-72"
+      ],
+      "items_added": [],
+      "session_local_oi_closed": [
+        "OI-16 (session_log label: MERDIAN_Dhan_Token_Refresh task config)",
+        "OI-17 (session_log label: hist_spot_bars_1m backfill 04-16/17/20)",
+        "OI-24 (session_log label: detect_ict_patterns_runner load_atm_iv schema bug)",
+        "OI-26 (session_log label: nearest_expiry_db broken DTE)",
+        "OI-27 (session_log label: 1H zone detection never triggered)"
+      ],
+      "session_local_oi_diagnosed": [
+        "OI-25 (session_log label: NIFTY atm_iv=2.5% observed - DIAGNOSED as expiry-day BS-solver IV degeneracy, not a bug; V19 15:00 IST session gate prevents any trade decision on degenerate values)"
+      ],
+      "summary": "Sessions 3+4. ENH-72 ExecutionLog propagation completed to all 9 pipeline scripts (ingest_option_chain, compute_gamma_metrics, compute_volatility_metrics, build_momentum_features, build_market_state_snapshot, build_trade_signal, compute_options_flow, ingest_breadth_intraday, detect_ict_patterns_runner). Parallel: hist_spot_bars_1m backfill via Zerodha Kite (2,250 rows for 04-16/17/20), ICT HTF zone rebuild (35 zones, 10 active per symbol), Pine Script regeneration, MERDIAN_Dhan_Token_Refresh task config fix (absolute Python path via Set-ScheduledTask), dashboard NOT CAPTURED diagnosis. Late-session fixes surfaced by working ExecutionLog instrumentation: OI-24 load_atm_iv schema mismatch (was reading non-existent market_state_snapshots.market_state column); OI-26 nearest_expiry_db stale hardcoded expiry index replaced with get_nearest_expiry() reading option_chain_snapshots.expiry_date authoritatively (ENH-63 retired); OI-27 1H zone detection two-bug fix (is_hour_boundary gate + CLI __main__ position) -- first 1H zones ever written to ict_htf_zones. OI-25 diagnosed not-a-bug. Session-local OI labels were NOT added to open_items per governance rule no_new_oi_register."
+    },
+    {
+      "date": "2026-04-22",
+      "appendix": "V19C (pending)",
+      "git_end": "f7b9366",
+      "items_closed": [],
+      "items_added": [],
+      "session_local_oi_closed": [
+        "OI-18 (session_log label: dashboard preopen false-negative; actual root cause was get_preopen_status() query order=ts.asc&limit=10 returning oldest rows + minute<9 window missing 09:14 bar, NOT capture_spot_1m writer)",
+        "OI-19 (session_log label: MeridianAlpha kernel reboot; CLOSED OUT-OF-SCOPE -- MeridianAlpha is a separate system from MERDIAN, its host maintenance is not tracked in MERDIAN register)",
+        "OI-20 (session_log label: PS 5.1 UTF-8 BOM in Session 3+4 commits; CLOSED FIX-FORWARD -- history NOT rewritten, PowerShell profile + git i18n config prevent future BOMs)",
+        "OI-21 (session_log label: refresh_dhan_token Task Scheduler silent fail; actual root cause was retry sleep 120s matching Dhan rate-limit 2-min window exactly + no idempotency guard; post-OI-16 task config was already functional)",
+        "OI-22 (session_log label: Telegram alert wording for transient timeouts; split AUTH_FAILURE_PATTERNS from TRANSIENT_FAILURE_PATTERNS with separate OPTION_TRANSIENT_FAIL alert)",
+        "OI-23 (session_log label: MERDIAN_SIGNAL_V4 docstring/code drift; comment block realigned to current default=1 state, no code change)"
+      ],
+      "summary": "Session 5. All 6 remaining OI items from Session 3+4 resume prompt CLOSED. OI-* namespace permanently retired per Documentation Protocol v2 Rule 5 (no_new_oi_register). Code changes: run_option_snapshot_intraday_runner.py (OI-22 transient vs auth split), build_trade_signal_local.py (OI-23 docstring align, no code change), merdian_live_dashboard.py (OI-18 get_preopen_status rewrite), refresh_dhan_token.py (OI-21 retry sleep 120s->30s + idempotency guard on token_status.json age + rate-limit handling returning exit 2). Environment: PowerShell profile created at C:\\\\Users\\\\balan\\\\Documents\\\\WindowsPowerShell\\\\Microsoft.PowerShell_profile.ps1 forcing UTF-8 without BOM; git i18n.commitEncoding and i18n.logOutputEncoding set to utf-8. Disposition notes written for OI-19 (out-of-scope) and OI-20 (fix-forward). Commit chain: 2b6e2bb -> d130044 -> 873a866 -> 93d2d80 -> 7a4bae5 -> 6917094 -> f7b9366. No schema changes. No register-level open_items additions per Rule 5."
     }
   ],
   "git": {
-    "current_hash": "7174690",
+    "current_hash": "f7b9366",
     "local_status": "CLEAN",
     "aws_status": "FAILED  --  shadow runner down since 2026-04-15. Needs investigation."
   },

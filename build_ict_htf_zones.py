@@ -556,9 +556,6 @@ def main():
                     f"{float(r['zone_low']):,.0f}-{float(r['zone_high']):,.0f}")
 
 
-if __name__ == "__main__":
-
-    main()
 
 
 # â”€â”€ 1H Zone Detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -725,4 +722,12 @@ def detect_1h_zones(sb, inst_id, symbol, trade_date):
 
     return zones
 
-
+# OI-27 fix (2026-04-21): __main__ guard moved from mid-file to end.
+# Previously the guard ran main() before detect_1h_zones / aggregate_to_hourly
+# were defined (they appear below the original guard position), causing
+# `python build_ict_htf_zones.py --timeframe H` to fail with NameError.
+# Moving to end ensures all module-scope functions are defined before
+# main() executes. Import path via `from build_ict_htf_zones import ...`
+# was unaffected since imports don't trigger __main__ block.
+if __name__ == "__main__":
+    main()

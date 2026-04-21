@@ -76,8 +76,13 @@ PAGE_SIZE = 1_000
 # How many bars to look back for sub-cycle detection
 DETECTION_LOOKBACK = 90   # last 90 1-min bars (~1.5 hours of context)
 
-# Hour boundary check: run 1H zone builder if within first 3 minutes of hour
-HOURLY_ZONE_WINDOW_MINUTES = 3
+# OI-27 fix (2026-04-21): HOURLY_ZONE_WINDOW_MINUTES / is_hour_boundary()
+# replaced with should_rebuild_1h_zones() (defined below). The time-window
+# check fired only when minute-of-hour was 0-2, but the production runner
+# cycle schedule (every 5 min offset from 09:14 start) rarely landed in
+# that window. Result: zero 1H zones in ict_htf_zones ever.
+# Data-driven replacement works for any cycle schedule: rebuild once per
+# hour per symbol, no-op if already done.
 
 # ENH-63 expiry index cache REMOVED 2026-04-21 (OI-26). Superseded by
 # get_nearest_expiry() which reads option_chain_snapshots directly. The
@@ -94,10 +99,50 @@ def now_ist() -> datetime:
     return datetime.now(tz=timezone.utc).astimezone(IST)
 
 
-def is_hour_boundary() -> bool:
-    """True if we're in the first HOURLY_ZONE_WINDOW_MINUTES of a new hour."""
-    n = now_ist()
-    return n.minute < HOURLY_ZONE_WINDOW_MINUTES
+def should_rebuild_1h_zones(sb, symbol: str) -> bool:
+    """
+    True if no 1H zones have been written for this symbol in the current
+    hour yet. Data-driven replacement for the old time-window
+    is_hour_boundary() check (OI-27).
+
+    Why:
+      Old logic (minute < 3) required the cycle to land in minutes 0-2
+      of each hour. Production runner schedule offset from 09:14 never
+      hits that window -- result: zero 1H zones in ict_htf_zones ever.
+
+    Benefits of this approach:
+      - Works for any cycle schedule (:00/:05/:10 or :14/:19/:24 etc)
+      - Still fires at most once per hour per symbol (idempotent upsert
+        means re-firing is harmless, but wasting work has no benefit)
+      - Fails open on query error: when in doubt, rebuild
+
+    Args:
+        sb:     supabase client
+        symbol: "NIFTY" or "SENSEX"
+
+    Returns:
+        True  if we should build 1H zones this cycle
+        False if 1H zones for current hour already exist
+    """
+    ist_now = now_ist()
+    hour_start_ist = ist_now.replace(minute=0, second=0, microsecond=0)
+    # Convert to UTC for Supabase created_at filter (stored UTC by convention)
+    hour_start_utc = hour_start_ist.astimezone(timezone.utc).isoformat()
+    try:
+        rows = fetch_with_retry(lambda: (
+            sb.table("ict_htf_zones")
+            .select("id")
+            .eq("symbol", symbol)
+            .eq("timeframe", "H")
+            .gte("created_at", hour_start_utc)
+            .limit(1)
+            .execute().data
+        ))
+        return not rows  # True = no 1H rows yet this hour -> rebuild
+    except Exception:
+        # On query error, default to rebuilding (fail-open). Better to
+        # redundantly build once than silently skip the hourly rebuild.
+        return True
 
 
 def fetch_with_retry(query_fn, max_attempts=4):
@@ -464,11 +509,14 @@ def main(symbol: str, log_handle: ExecutionLog) -> int:
         # Non-fatal per script's design philosophy
         log(f"  Warning: pattern detection failed (non-blocking): {e}")
 
-    # ── 1H zone builder (hourly) ──────────────────────────────────────
+    # ── 1H zone builder (data-driven, once per hour per symbol) ──────
+    # OI-27 fix: check ict_htf_zones directly rather than time-window.
     hourly_written = 0
     hourly_failed = False
-    if is_hour_boundary():
-        log(f"  Hour boundary — building 1H HTF zones...")
+    hourly_triggered = False
+    if should_rebuild_1h_zones(sb, symbol):
+        hourly_triggered = True
+        log(f"  Hour rollover detected — building 1H HTF zones...")
         try:
             h_zones = detect_1h_zones(sb, inst_id, symbol, trade_date)
             hourly_written = upsert_zones(sb, h_zones, dry_run=False)
@@ -544,7 +592,7 @@ def main(symbol: str, log_handle: ExecutionLog) -> int:
         f"new_patterns={new_patterns_count}",
         f"broken={broken_count}",
     ]
-    if hourly_written > 0 or is_hour_boundary():
+    if hourly_triggered:
         note_parts.append(f"hourly_written={hourly_written}")
     if hourly_failed:
         note_parts.append("hourly_failed=true")

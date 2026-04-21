@@ -17,6 +17,31 @@ try:
 except Exception:
     load_dotenv = None
 
+# ENH-72 write-contract layer. See docs/MERDIAN_Master_V19.docx governance
+# rule `script_execution_log_contract`.
+#
+# UNIQUE CONTRACT SHAPE FOR THIS SCRIPT:
+# No CLI args. Ingests entire NSE universe (~495 tickers) in one invocation
+# via Dhan LTP API, upserts to equity_intraday_last, then triggers RPC
+# build_market_breadth_intraday.
+#
+# 4-layer guard preserved as-is:
+#   Guard 1: calendar_open
+#   Guard 2: market_hours_window (09:15-15:30 IST)
+#   Guard 3: coverage >= 95% (per-cycle Dhan LTP availability)
+#   Guard 4: staleness < 20 min on equity_intraday_last pre-write
+#
+# Contract: floor=100 rows to equity_intraday_last.
+#   Typical ~495. Guard 3 enforces 95% coverage (~470 min), so any SUCCESS
+#   cycle should easily clear 100. A successful cycle with <100 rows would
+#   indicate the universe shrunk drastically (unlikely) or a guard bug.
+#
+# CalendarSkip (holiday or outside session hours) -> HOLIDAY_GATE exit.
+#   Inherits SystemExit(0). Must be caught EXPLICITLY before propagation
+#   so ExecutionLog records the skip cleanly. Without the catch, Python's
+#   SystemExit bypasses ordinary exception handling.
+from core.execution_log import ExecutionLog
+
 
 # =============================================================================
 # Paths / env bootstrap
@@ -61,6 +86,9 @@ MARKET_OPEN_MINUTE = 15
 MARKET_CLOSE_HOUR = 15
 MARKET_CLOSE_MINUTE = 30
 
+# ENH-72 contract floor (see comment at top of file)
+EXPECTED_FLOOR_ROWS = 100
+
 
 # =============================================================================
 # Exceptions / data classes
@@ -85,6 +113,10 @@ class CalendarSkip(SystemExit):
     Raised when the calendar or session guard determines we should not run.
     Inherits from SystemExit so it exits with code 0 — a SKIP is not an error.
     The runner must not treat this as a cycle failure.
+
+    ENH-72: main() catches this BEFORE the SystemExit propagates so
+    ExecutionLog records a HOLIDAY_GATE row rather than Python-default
+    swallowing the skip silently.
     """
     def __init__(self, reason: str) -> None:
         super().__init__(0)
@@ -476,6 +508,21 @@ def fetch_ltp_with_retry(
     return {}
 
 
+def _classify_dhan_error(err: Exception) -> str:
+    """
+    Map a Dhan-side exception to an ExecutionLog reason. Same pattern as
+    ingest_option_chain_local.py's _classify_dhan_error.
+    """
+    msg = str(err)
+    auth_hint = (
+        "401" in msg
+        or "Unauthorized" in msg
+        or "Authentication" in msg
+        or ("token" in msg.lower() and "invalid" in msg.lower())
+    )
+    return "TOKEN_EXPIRED" if auth_hint else "DATA_ERROR"
+
+
 # =============================================================================
 # Staleness guard
 # =============================================================================
@@ -571,21 +618,53 @@ def call_build_market_breadth_intraday() -> None:
 # Main
 # =============================================================================
 
-def main() -> int:
+def _run_ingest(log_handle: ExecutionLog) -> int:
+    """
+    Inner ingest function. Returns exit code. All exit paths route
+    through log_handle. Extracted from main() so main() can cleanly
+    catch CalendarSkip (SystemExit-based) before it propagates.
+    """
     print("=" * 72)
     print("MERDIAN - Local Python ingest_breadth_intraday")
     print("=" * 72)
 
-    require_env("SUPABASE_URL", SUPABASE_URL)
-    require_env("SUPABASE_SERVICE_ROLE_KEY", SUPABASE_SERVICE_ROLE_KEY)
-    require_env("DHAN_CLIENT_ID", DHAN_CLIENT_ID)
-    require_env("DHAN_API_TOKEN", DHAN_API_TOKEN)
+    # Env-var check -> DEPENDENCY_MISSING
+    try:
+        require_env("SUPABASE_URL", SUPABASE_URL)
+        require_env("SUPABASE_SERVICE_ROLE_KEY", SUPABASE_SERVICE_ROLE_KEY)
+        require_env("DHAN_CLIENT_ID", DHAN_CLIENT_ID)
+        require_env("DHAN_API_TOKEN", DHAN_API_TOKEN)
+    except ConfigurationError as e:
+        return log_handle.exit_with_reason(
+            "DEPENDENCY_MISSING",
+            exit_code=1,
+            error_message=str(e),
+        )
 
-    # Guard 1 + Guard 2
-    enforce_calendar_and_session_guards()
+    # Guard 1 + Guard 2 (calendar + session window)
+    # Note: CalendarSkip is NOT caught here -- it bubbles up to main() which
+    # catches it explicitly. This keeps the classification logic in one place.
+    try:
+        enforce_calendar_and_session_guards()
+    except CalendarSkip:
+        raise  # re-raise to main() for HOLIDAY_GATE classification
+    except Exception as e:
+        return log_handle.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"Calendar/session guard failed: {e}",
+        )
 
-    # Load universe
-    universe_rows = load_active_mapped_nse_universe()
+    # Universe load
+    try:
+        universe_rows = load_active_mapped_nse_universe()
+    except Exception as e:
+        return log_handle.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"Universe load failed: {e}",
+        )
+
     stats = FetchStats()
     stats.universe_count = len(universe_rows)
 
@@ -595,9 +674,12 @@ def main() -> int:
     log(f"Active mapped NSE tickers: {stats.universe_count}")
     log(f"LTP batch size: {LTP_BATCH_SIZE} | inter-chunk sleep: {INTER_CHUNK_SLEEP_SEC}s")
 
-    # Fetch in chunks
+    # Fetch in chunks. Per-chunk errors are logged but non-fatal: we
+    # proceed with whatever we got and let Guard 3 (coverage) decide if
+    # the cycle is viable. This matches the original script's behavior.
     all_prices: Dict[str, float] = {}
     total_chunks = math.ceil(len(unique_ids) / LTP_BATCH_SIZE)
+    last_chunk_error: Optional[Exception] = None
 
     for i in range(total_chunks):
         start = i * LTP_BATCH_SIZE
@@ -609,11 +691,13 @@ def main() -> int:
             prices = fetch_ltp_with_retry(chunk_ids, stats)
             all_prices.update(prices)
         except LtpHttpError as exc:
+            last_chunk_error = exc
             log(
                 f"Chunk failed hard | chunk={i + 1}/{total_chunks} | "
                 f"status={exc.status_code} | detail={exc}"
             )
         except Exception as exc:
+            last_chunk_error = exc
             stats.batch_other_error_count += 1
             log(f"Chunk failed hard | chunk={i + 1}/{total_chunks} | detail={exc}")
 
@@ -631,7 +715,12 @@ def main() -> int:
 
     if stats.coverage_pct < MIN_COVERAGE_PCT:
         log("Prepared rows for upsert: 0")
-        call_build_market_breadth_intraday()
+        # Trigger the RPC even on coverage failure -- the old rows may
+        # still be valid enough for a recompute. Preserves original behavior.
+        try:
+            call_build_market_breadth_intraday()
+        except Exception as e:
+            log(f"RPC build_market_breadth_intraday failed during coverage-skip path: {e}")
         log("-" * 72)
         log(f"Universe count:      {stats.universe_count}")
         log(f"Unique security IDs: {stats.unique_security_ids}")
@@ -643,9 +732,25 @@ def main() -> int:
         log(f"429 batch count:     {stats.batch_429_count}")
         log(f"Other error count:   {stats.batch_other_error_count}")
         print("=" * 72)
-        raise RuntimeError(
-            f"ERROR: Coverage below threshold | coverage={stats.coverage_pct:.2f}% | "
-            f"required={MIN_COVERAGE_PCT:.2f}%"
+
+        # Classify: if all chunks errored with auth hints, this is
+        # TOKEN_EXPIRED. Otherwise DATA_ERROR (Dhan rate-limited,
+        # universe growth exceeded retry budget, etc).
+        reason = (
+            _classify_dhan_error(last_chunk_error)
+            if last_chunk_error is not None
+            else "DATA_ERROR"
+        )
+        return log_handle.exit_with_reason(
+            reason,
+            exit_code=1,
+            error_message=(
+                f"Coverage below threshold | coverage={stats.coverage_pct:.2f}% | "
+                f"required={MIN_COVERAGE_PCT:.2f}% | "
+                f"universe={stats.universe_count} received={stats.received_ids} "
+                f"429s={stats.batch_429_count} 400s={stats.batch_400_count} "
+                f"other_errors={stats.batch_other_error_count}"
+            ),
         )
 
     # Build rows
@@ -653,14 +758,37 @@ def main() -> int:
     log(f"Prepared rows for upsert: {len(rows)}")
 
     # Guard 4 — stale existing snapshot
-    enforce_staleness_guard_before_write()
+    try:
+        enforce_staleness_guard_before_write()
+    except RuntimeError as e:
+        return log_handle.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=str(e),
+        )
 
-    # Upsert + RPC
-    rows_upserted = upsert_equity_intraday_last(rows)
+    # Upsert
+    try:
+        rows_upserted = upsert_equity_intraday_last(rows)
+    except Exception as e:
+        return log_handle.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"equity_intraday_last upsert failed: {e}",
+        )
     stats.rows_upserted = rows_upserted
 
-    call_build_market_breadth_intraday()
-    log("RPC executed: build_market_breadth_intraday")
+    # RPC — non-fatal. If this fails the materialized breadth table won't
+    # refresh but the upsert already wrote the primary data. Log as
+    # degraded-but-contract-met.
+    rpc_failed = False
+    try:
+        call_build_market_breadth_intraday()
+        log("RPC executed: build_market_breadth_intraday")
+    except Exception as e:
+        rpc_failed = True
+        log(f"[WARN] RPC build_market_breadth_intraday failed: {e}")
+
     log("-" * 72)
     log(f"Universe count:      {stats.universe_count}")
     log(f"Unique security IDs: {stats.unique_security_ids}")
@@ -674,10 +802,62 @@ def main() -> int:
     print("=" * 72)
 
     if stats.rows_upserted == 0:
-        raise RuntimeError("ERROR: No rows were upserted into equity_intraday_last")
+        return log_handle.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message="No rows were upserted into equity_intraday_last",
+        )
 
-    return 0
+    # Record the write count. ExecutionLog compares against EXPECTED_FLOOR_ROWS.
+    log_handle.record_write("equity_intraday_last", stats.rows_upserted)
+
+    # Completion notes carry per-cycle stats + degradation flags for
+    # operator triage via WHERE notes LIKE '%rpc_failed=true%' etc.
+    note_parts = [
+        f"universe={stats.universe_count}",
+        f"upserted={stats.rows_upserted}",
+        f"coverage={stats.coverage_pct:.1f}%",
+    ]
+    if stats.batch_429_count > 0:
+        note_parts.append(f"429s={stats.batch_429_count}")
+    if rpc_failed:
+        note_parts.append("rpc_failed=true")
+
+    return log_handle.complete(notes=" ".join(note_parts))
+
+
+def main() -> int:
+    # ── ENH-72 write-contract declaration ────────────────────────────────────
+    # Contract: floor=100 rows to equity_intraday_last. Typical ~495.
+    # symbol=null (batch ingest covers entire NSE universe).
+    # HOLIDAY_GATE branch catches CalendarSkip before SystemExit propagates.
+    log_handle = ExecutionLog(
+        script_name="ingest_breadth_intraday_local.py",
+        expected_writes={"equity_intraday_last": EXPECTED_FLOOR_ROWS},
+        symbol=None,
+        notes="breadth NSE universe batch",
+    )
+
+    try:
+        return _run_ingest(log_handle)
+    except CalendarSkip as skip:
+        # Guard 1 or Guard 2 fired. Clean skip, exit 0, NOT a failure.
+        # ExecutionLog records HOLIDAY_GATE so operators can distinguish
+        # "didn't run because holiday" from "ran and succeeded".
+        return log_handle.exit_with_reason(
+            "HOLIDAY_GATE",
+            notes=f"skipped: {skip.reason}",
+        )
+    except Exception as e:
+        # Any uncaught exception -> unexpected-error path. All expected
+        # failures route through log_handle.exit_with_reason() inside
+        # _run_ingest; this catches bugs that escaped classification.
+        return log_handle.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"Uncaught exception in ingest: {e}",
+        )
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

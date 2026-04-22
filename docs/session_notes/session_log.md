@@ -1,3 +1,101 @@
+## Session log — v3 canonical one-liners (newest first)
+
+2026-04-22 · `90b8c2d` · close 6 OIs + v1.1 adoption + tech_debt TD-007/008/009 + ENH-72 register fix shipped · PASS · docs_updated:yes
+2026-04-21 · `7bfa6f3` · ENH-72 propagation 9/9 + OI-24/26/27 fixes + Phase 1/2/3 ops (spot backfill, ICT HTF rebuild, Task Scheduler repair) · PASS · docs_updated:yes
+2026-04-20 · `e95002b` · outage root cause + ENH-66/68/71 + ENH register unification + 7-script holiday-gate propagation · PASS · docs_updated:yes
+
+---
+
+*Entries above this line follow Documentation Protocol v3 one-liner format. Entries below are legacy v2-protocol block entries retained as audit detail. For new sessions, add a one-liner above; do not add new block entries.*
+
+---
+
+## 2026-04-22 — engineering / operations — Session 5: OI series permanent closure (6 OIs closed) + PS 5.1 encoding fix
+
+**Goal:** Close all 6 open OI items (18, 19, 20, 21, 22, 23) carried forward from Session 3+4 resume prompt, so the OI-* namespace can be permanently retired per Documentation Protocol v2 Rule 5 (`no_new_oi_register`). Each closure to be surgical, single-purpose, with ast.parse() validated patch scripts per V18H governance.
+
+**Session type:** engineering / operations
+
+**Completed:**
+
+OI-22 CLOSED — Dhan transient-failure vs auth-failure alert routing (commit d130044, preceded by 2b6e2bb short commit):
+- Root cause: `AUTH_FAILURE_PATTERNS` in `run_option_snapshot_intraday_runner.py` included the substring `"accessToken"`, which matched any ingest stdout/stderr that printed request headers during transient network timeouts. Result: transient timeouts produced `OPTION_AUTH_BREAK` Telegram alerts, falsely suggesting a token refresh was required.
+- Fix: removed `"accessToken"` from `AUTH_FAILURE_PATTERNS`. Added new `TRANSIENT_FAILURE_PATTERNS` list (ReadTimeout, ConnectTimeout, ConnectionError, Max retries exceeded, HTTPSConnectionPool, Read timed out, Connection aborted) and `_is_transient_failure()` helper. Dispatcher now checks transient first; issues distinct `OPTION_TRANSIENT_FAIL` alert that explicitly tells the operator NOT to refresh the token. Auth path retightened to "Dhan 401 / token invalid" wording.
+- Patch script: `fix_oi22_transient_vs_auth.py` with ast.parse() guard.
+
+OI-23 CLOSED — MERDIAN_SIGNAL_V4 docstring/code default drift (commit 873a866):
+- Code default is `"1"` (V4 on) since commit e986cbb post-ENH-53/55 validation. Docstring block in `build_trade_signal_local.py` lines 59-64 still said "Default is off. Enable explicitly for shadow sessions. Flip default only after 5 clean shadow sessions per Change Protocol."
+- Fix: rewrote the Flag comment block to document current state (default "1", V3 escape hatch via `MERDIAN_SIGNAL_V4=0`). No code change.
+- Patch script: `fix_oi23_signal_v4_docstring.py`.
+
+OI-20 CLOSED — PS 5.1 UTF-8 BOM injection into git commit subjects (commit 93d2d80, disposition note at `docs/session_notes/20260422_oi20_encoding_disposition.md`):
+- Finding: commits 3a22735 through d15c494 (9 Session 3+4 commits) carry literal UTF-8 BOM (`EF BB BF`) bytes embedded in commit subjects, confirmed via `git log --format="%s" | Format-Hex`. Not a display artifact.
+- Root cause: PowerShell 5.1 default console encoding is cp850 / cp1252 (WindowsCodePage=1252). When `git commit -m "..."` received a message containing non-ASCII (em-dash —), PS 5.1's pipeline transcoding emitted UTF-8-WITH-BOM and git stored the bytes verbatim. `i18n.commitEncoding` was unset.
+- Disposition: history NOT rewritten. Force-push cost across Local + MERDIAN AWS + MeridianAlpha consumer exceeds benefit for cosmetic BOMs. Commit hashes preserved as audit trail.
+- Fix forward: PowerShell `$PROFILE` created at `C:\Users\balan\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1` forcing `$OutputEncoding`, `Console.OutputEncoding`, `Console.InputEncoding` to `UTF8Encoding::new($false)` — UTF-8 without BOM. Git global config: `i18n.commitEncoding=utf-8`, `i18n.logOutputEncoding=utf-8`. Verification commit confirmed no BOM (subject starts at byte `4F`, not `EF BB BF`).
+- Residual limitation documented: PS 5.1 still cannot pass non-ASCII characters through `-m "..."` argv serialization (em-dash degraded to `?`). Going-forward discipline: ASCII only in commit subjects, or use `git commit -F message.txt` for non-ASCII.
+
+OI-19 CLOSED — Out of scope (commit 7a4bae5, disposition note at `docs/session_notes/20260422_oi19_out_of_scope.md`):
+- Resume prompt carried OI-19 as "MeridianAlpha kernel reboot (non-urgent)".
+- Disposition: MeridianAlpha is a separate system from MERDIAN (separate repo, scope limited to corporate actions data and Zerodha token refresh per V19 §3.1). Its host-level maintenance is not tracked in the MERDIAN register. No action required; item should not have been filed under MERDIAN OI.
+
+OI-18 CLOSED — Dashboard preopen false-negative (commit 6917094):
+- Investigation disproved the resume-prompt framing ("capture_spot_1m doesn't set is_pre_market=true on pre-open bars"). Live SQL confirmed pre-open bars at 09:05 and 09:14 IST are written correctly to `hist_spot_bars_1m` with `is_pre_market=false`. Every consumer across the codebase (ICT detection, MTF bars, HTF zones, experiments) queries `.eq("is_pre_market", False)`. The `is_pre_market` column is effectively vestigial — always False writer-side, always filtered on False consumer-side.
+- Actual root cause (two bugs in `merdian_live_dashboard.get_preopen_status()`): (a) `sb_get("market_spot_snapshots", "select=ts,spot,symbol&order=ts.asc&limit=10")` returned the 10 oldest rows in an ever-growing table, not today's rows — permanent NOT CAPTURED after day one; (b) window filter `dt.hour == 9 and dt.minute < 9` covered 09:00-09:08 only, missed the 09:14 bar.
+- Fix: query today's rows via `ts>=start-of-IST-day UTC ISO` lower bound, widen window to `dt.minute < 15` (pre-open closes at market open 09:15), return up to 6 rows instead of 3.
+- Not fixed (deliberate): the vestigial `is_pre_market` column. Deferred as a separate cleanup opportunity outside this OI closure.
+- Patch script: `fix_oi18_dashboard_preopen.py`.
+
+OI-21 CLOSED — refresh_dhan_token hardening (commit f7b9366):
+- Investigation disproved the resume-prompt framing ("silent fail when invoked by Task Scheduler"). Post-OI-16 scheduled task runs succeed: LastTaskResult=0 at 2026-04-21 18:15:06, `runtime/token_status.json` shows `success: true, refreshed_at_iso: 2026-04-21T18:15:07.661476+05:30`. Historical `'python' is not recognized` entries in `logs/dhan_token_refresh.log` are pre-OI-16 ghosts already resolved by absolute Python path fix.
+- Residual real bug in `refresh_dhan_token.py` main() retry path: line showed `print("...Waiting 30s...")` but `_time.sleep(120)`. The 120-second sleep matched Dhan's 2-minute token-generation rate-limit window exactly; the retry landed on the boundary and frequently tripped the `"Token can be generated once every 2 minutes"` error. This internal cascade accounted for the rate-limit entries observed in the log.
+- Three fixes applied: (1) retry sleep 120s → 30s (one TOTP window, well under rate-limit boundary); (2) idempotency guard at main() entry — reads `token_status.json`, if last success < 90s old prints `[IDEMPOTENT]` and returns 0 without calling Dhan, protects against any double-caller (scheduled task + dashboard button at line 57 of `merdian_live_dashboard.py` + TOTP retry self-fire + preflight stages); (3) explicit rate-limit handling in both first-attempt and retry paths — writes `token_status.json` with error, returns distinct exit code 2 (recently-refreshed-elsewhere, not a failure).
+- Patch script: `fix_oi21_token_refresh_hardening.py`.
+
+**Governance outcome:**
+
+- All 6 OIs (OI-18 through OI-23) from Session 3+4 resume prompt are now CLOSED. The OI-* namespace is permanently retired per Documentation Protocol v2 Rule 5 (`no_new_oi_register`, governance rules line 1664 of `merdian_reference.json`). Future operational issues route to Enhancement Register (ENH-N, persistent) or `merdian_reference.json` `open_items` C-N (critical production) only.
+- Confirmed during this session: Session 3+4 OI-16/17/24/25/26/27 entries in session_log were never formally added to `merdian_reference.json` `open_items` — consistent with Rule 5. They functioned as session-local labels for tracked work, not persistent register entries. Same disposition applies to OI-18/19/20/21/22/23: session-local labels, closed within the same session, no register entry required.
+
+**Open after session:**
+- Documentation debt closeout (this session's primary next step):
+  - V19A appendix — consolidated coverage of Session 1+2 (2026-04-20: ENH-66/68/71 outage + architecture) + Session 3+4 (2026-04-21: ENH-72 + OI-24/26/27 fixes + backfill + ICT rebuild + Task Scheduler repair) + Session 5 (2026-04-22: 6 OI closures + PS 5.1 encoding fix). Per user direction, post-V19 appendices use V19A / V19B / V19C naming, not V18I/J/K.
+  - Enhancement Register overhaul (on-disk v7 stops at ENH-59, missing ENH-60 through ENH-74+). New version to reconcile.
+- Session 6 (ENH-74): live config rebuild — NOT STARTED
+- Session 7 (ENH-67/69/73): dashboard + alerts — downstream
+
+**Files changed (core/):**
+- `run_option_snapshot_intraday_runner.py` (OI-22: transient vs auth split)
+- `build_trade_signal_local.py` (OI-23: docstring alignment, no code change)
+- `merdian_live_dashboard.py` (OI-18: get_preopen_status rewrite)
+- `refresh_dhan_token.py` (OI-21: retry sleep, idempotency guard, rate-limit handling)
+
+**Files added (patch scripts + disposition notes):**
+- `fix_oi22_transient_vs_auth.py`
+- `fix_oi23_signal_v4_docstring.py`
+- `fix_oi18_dashboard_preopen.py`
+- `fix_oi21_token_refresh_hardening.py`
+- `docs/session_notes/20260422_oi20_encoding_disposition.md`
+- `docs/session_notes/20260422_oi19_out_of_scope.md`
+
+**Environment changes:**
+- PowerShell profile created: `C:\Users\balan\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1` — enforces UTF-8 without BOM on all three encoding channels.
+- Git global config: `i18n.commitEncoding=utf-8`, `i18n.logOutputEncoding=utf-8`.
+
+**Schema changes:** none
+
+**Open items closed (6):** OI-18, OI-19, OI-20, OI-21, OI-22, OI-23
+
+**Open items added / diagnosed:** none (OI namespace retired)
+
+**Git commit chain (Session 5):** `2b6e2bb` → `d130044` → `873a866` → `93d2d80` → `7a4bae5` → `6917094` → `f7b9366`
+
+**Next session goal:** Write V19A appendix consolidating all post-V19 work (three sessions: 2026-04-20, 2026-04-21, 2026-04-22) per 13-block structure + attached session-documentation checklist. Self-review for completeness across sessions before commit.
+
+**docs_updated:** yes (this entry + `docs/session_notes/20260422_oi19_out_of_scope.md` + `docs/session_notes/20260422_oi20_encoding_disposition.md`)
+
+---
+
 ## 2026-04-21 — engineering / operations — Session 3+4: ENH-72 propagation (9 of 9) + backfill + ICT rebuild + Task Scheduler repair + ICT pipeline cleanup
 
 **Goal:** Complete ENH-72 (ExecutionLog write-contract) propagation to all 9 critical pipeline scripts. In parallel: backfill missing spot bars (04-16/17/20), rebuild ICT HTF zones, regenerate Pine Script, fix MERDIAN_Dhan_Token_Refresh task config, diagnose dashboard "NOT CAPTURED" false negative. Late-session pivot: close three high-value bug fixes surfaced by working ExecutionLog instrumentation (OI-24 ICT schema mismatch, OI-26 broken expiry lookup, OI-27 1H zones never triggering).

@@ -67,3 +67,21 @@ tmp_*.sql
 trading_calendar.json.bak*
 diagnose_*.py
 "C:\\gammaenginepython\\"
+
+# Session 6 - at-root scratchpad/patch/experiment/debug debris
+# Kept on disk, out of git. Per triage 2026-04-22, commit 48fbf24.
+/add_*.py
+/append_*.py
+/backtest_*.py
+/check_*.py
+/debug_*.py
+/experiment_*.py
+/fix_*.py
+/fix_*.ps1
+/patch_*.py
+/update_*.py
+/create_preopen_task.ps1
+/merdian_morning_start.ps1
+/watchdog_task.xml
+/watchdog_task_fixed.xml
+/enhancement_register_entries_20260420.md

@@ -232,3 +232,44 @@ If any of these need to change, that is itself an architectural session — writ
 ---
 
 *CLAUDE.md v1.2 — 2026-04-22 (PM). Added Rule 12 (project knowledge != git working tree; mandatory re-upload at session end) plus matching session-end checklist line and two anti-patterns. Trigger: Session 6 -> Session 7 stale-cache failure mode where new chat read pre-Session-6 CURRENT.md from project knowledge and refused to proceed (correct behaviour given the file it had access to). v1.1 (2026-04-22 AM) added runbook layer (rule 11). Update version any time read order, non-negotiable rules, session contract, or common operations list changes.*
+
+
+## Rule 13 - Data contamination registry (added Session 7, 2026-04-23)
+
+MERDIAN tracks known data-integrity incidents in the Supabase table `public.data_contamination_ranges`. Before running ANY research query, experiment analysis, or model training that reads fields listed in `field_scope` from tables listed in `affected_tables`, check whether the query time window overlaps with a registered contamination range.
+
+**Standard check - SQL helper:**
+
+```sql
+SELECT public.is_breadth_contaminated(ts) FROM your_query;
+-- Or filter:
+WHERE NOT public.is_breadth_contaminated(ts)
+```
+
+**For non-breadth fields:**
+
+```sql
+SELECT * FROM public.data_contamination_ranges 
+WHERE field_scope ILIKE '%your_field%';
+```
+
+**When to add a new entry:**
+
+Whenever a new data-integrity incident is diagnosed, INSERT a row into `data_contamination_ranges` with:
+- Unique `contamination_id` (pattern: `SCOPE-DESCRIPTION-YYYY-MM-DD`)
+- `field_scope` (comma-separated list of affected column/field names)
+- `contamination_start` and `contamination_end` (timestamptz, IST)
+- `affected_tables` (array of table names, including views' underlying tables)
+- `root_cause` (what broke)
+- `remediation` (how it was fixed)
+- `created_session`
+
+**Current registered contamination ranges (2026-04-23):**
+- `BREADTH-STALE-REF-2026-03-27`: 27-day breadth cascade (Session 7). See `merdian_reference.json` TD-NNN for context.
+
+**Anti-pattern:** Running experiments on historical data without first checking `data_contamination_ranges`. Research conclusions drawn on tainted data are worse than no conclusions.
+
+
+---
+
+*CLAUDE.md v1.3 - 2026-04-23. Added Rule 13 (data contamination registry). Trigger: Session 7 discovered 27-day breadth contamination spanning 29 tables; without a registry, future researchers would train/analyze against tainted rows. v1.2 added Rule 12 (doc-sync). v1.1 added Rule 11 (runbooks).*

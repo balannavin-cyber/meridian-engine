@@ -148,6 +148,7 @@
 [ ] Enhancement Register updated if architectural thinking happened
 [ ] Local + AWS hash match confirmed if code changed
 [ ] All commits prefixed correctly: MERDIAN: [ENV|DATA|SIGNAL|OPS] <scope> — <intent>
+[ ] Re-upload to project knowledge any of CURRENT.md / session_log.md / merdian_reference.json / tech_debt.md / Enhancement_Register / CLAUDE.md / docs/operational/* that changed this session (per CLAUDE.md Rule 12)
 [ ] Phase boundary check: do we trigger a Master/Appendix .docx generation? (rare — see Doc Protocol v3 Rule 6)
 [ ] Runbook review: any operation explained to Claude for the SECOND time? If yes, create runbook from RUNBOOK_TEMPLATE.md
 ```

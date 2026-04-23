@@ -359,6 +359,19 @@ If `session_log.md` shows three consecutive entries with `docs_updated: no`, the
 
 ---
 
+### Cross-layer sync (project knowledge vs git working tree)
+
+Local git commits do NOT auto-sync to Claude.ai project knowledge. The two layers drift independently:
+
+- `git commit` updates the local working tree and (after `git push`) origin
+- Project knowledge upload is a separate manual step in the Claude.ai UI
+
+A session is not closed until both destinations have the new state. If only git is updated, the next session's Claude reads stale project knowledge and either invents a different goal (bad) or correctly flags the discrepancy and refuses to proceed (acceptable but loses session time). See CLAUDE.md Rule 12 for the mandatory re-upload list.
+
+This was first observed Session 6 -> Session 7 (2026-04-22). Codified as Rule 12 + checklist line + this principle.
+
+---
+
 ## What "rebuild-grade" means (UNCHANGED)
 
 A document is rebuild-grade when:

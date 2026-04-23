@@ -78,6 +78,7 @@ These are hard rules. Do not propose violations. Do not ask "what if we…".
 9. **OpenItems Register is permanently closed (2026-04-15).** Do not create new `OI-*`, `RESEARCH-OI-*`, or `SPO-*` IDs. Persistent items go to Enhancement Register (ENH-N) or tech_debt.md. Critical production bugs use C-N in `merdian_reference.json`.
 10. **No new ID prefix without updating the numbering convention** in `MERDIAN_Documentation_Protocol_v3.md` Rule 5.
 11. **Do not ask Navin for file paths or routine operational procedures.** File locations live in `merdian_reference.json` → `files` (keyed by filename). Recurring procedures live in `docs/runbooks/`. If the answer isn't in either, say so explicitly and ask ONCE — then capture the answer as a new runbook using `docs/runbooks/RUNBOOK_TEMPLATE.md` before the end of the session. Next session, it will be there.
+12. **Project knowledge is not the git working tree.** Local commits to git do NOT auto-sync to Claude.ai project knowledge. Any session that modifies `CURRENT.md`, `session_log.md`, `merdian_reference.json`, `tech_debt.md`, `MERDIAN_Enhancement_Register.md`, this file (`CLAUDE.md`), or any `docs/operational/*` file MUST re-upload those files to project knowledge before the session is considered closed. Failure to do so causes the next session's Claude to read stale state and either invent a different goal or refuse to proceed (failure mode observed Session 6 → Session 7, 2026-04-22). Treat git commit and project knowledge upload as two separate destinations both required for session close.
 
 ---
 
@@ -108,6 +109,7 @@ Before saying "done":
 ☐ Append a one-line entry to session_log.md (date · git hash · concern · outcome)
 ☐ Commit all documentation changes with prefix MERDIAN: [OPS] ...
 ☐ Confirm Local + AWS hash match if any code changed
+☐ Re-upload to project knowledge any of the files modified above (per Rule 12). Without this, next session's Claude reads stale state.
 ```
 
 If three consecutive `session_log.md` entries show `docs_updated: no`, **stop and address documentation debt** before any new code work.
@@ -139,6 +141,8 @@ When generating: assemble from the markdown layer. The markdown is the source. T
 - ❌ "Where is file X?" without first checking `merdian_reference.json` files keys
 - ❌ Asking Navin how to do a recurring operation without first checking `docs/runbooks/`
 - ❌ Asking the same operational question twice across sessions — if asked once, it becomes a runbook
+- ❌ "I committed CURRENT.md, that's enough" — git commit and project knowledge upload are two separate destinations, both required for session close per Rule 12
+- ❌ Inventing a session goal because the one in CURRENT.md feels stale — flag the discrepancy and ask, do NOT silently swap goals (the file is the contract; if it's stale, fix the file, don't fabricate intent)
 
 ---
 
@@ -227,4 +231,4 @@ If any of these need to change, that is itself an architectural session — writ
 
 ---
 
-*CLAUDE.md v1.1 — 2026-04-22. Added runbook layer (rule 11, common operations table, anti-patterns for operational questions). Update version any time read order, non-negotiable rules, session contract, or common operations list changes.*
+*CLAUDE.md v1.2 — 2026-04-22 (PM). Added Rule 12 (project knowledge != git working tree; mandatory re-upload at session end) plus matching session-end checklist line and two anti-patterns. Trigger: Session 6 -> Session 7 stale-cache failure mode where new chat read pre-Session-6 CURRENT.md from project knowledge and refused to proceed (correct behaviour given the file it had access to). v1.1 (2026-04-22 AM) added runbook layer (rule 11). Update version any time read order, non-negotiable rules, session contract, or common operations list changes.*

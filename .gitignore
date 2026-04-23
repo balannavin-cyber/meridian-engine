@@ -85,3 +85,5 @@ diagnose_*.py
 /watchdog_task.xml
 /watchdog_task_fixed.xml
 /enhancement_register_entries_20260420.md
+# Session 6 close apply scripts (one-shot patches)
+/apply_*.py

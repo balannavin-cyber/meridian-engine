@@ -1,3 +1,35 @@
+## 2026-04-22 (PM) -- documentation / hygiene -- Session 6: untracked-files triage
+
+**Goal:** Categorize ~50 untracked files in the repo working tree into TRACK / GITIGNORE buckets and commit the result. User preference overrode original TRACK/GITIGNORE/ARCHIVE 3-wave plan into 2-wave (keep on disk, out of git).
+
+**Session type:** documentation / hygiene
+
+**Completed:**
+- Wave 1 TRACK: 6 files committed at `48fbf24` -- Documentation Protocol v3, Testing Protocol v1, Master V19, AppendixV18G, AppendixV18H_v2, misplaced session note
+- Wave 2 GITIGNORE: 45 at-root debris files covered by 15 leading-slash anchored patterns at `f8a3888` -- /add_*.py /append_*.py /backtest_*.py /check_*.py /debug_*.py /experiment_*.py /fix_*.py /fix_*.ps1 /patch_*.py /update_*.py /create_preopen_task.ps1 /merdian_morning_start.ps1 /watchdog_task.xml /watchdog_task_fixed.xml /enhancement_register_entries_20260420.md
+- Final `git status --porcelain` empty -- working tree clean, 2 commits ahead of origin
+- First live NIFTY signal captured mid-session at 10:55 IST -- BULL_FVG BLOCKED CONF 32; not acted on during triage session per Rule 3 (one concern)
+- Pine Script v20260421 inspected post-upload -- confirmed omits H-timeframe zones despite OI-27 landing them in DB; flagged as candidate TD-011 for Session 7+
+
+**Open after session:**
+- Missed-signal investigation (10:55 NIFTY BULL_FVG CONF 32 with breadth COV 0%) -- Session 7 goal
+- AWS shadow runner FAILED since 2026-04-15 -- Session 8 candidate
+- TD-011 Pine generator 1H zone omission -- Session 7 intake
+- V19B appendix for Sessions 3+4 -- deferred to dedicated session
+- ENH-60 single-line pre-init fix -- deferred
+- Push to origin -- deferred
+
+**Files changed:** `.gitignore` (+18 lines)
+**Files added (tracked):** `docs/operational/MERDIAN_Documentation_Protocol_v3.md`, `docs/operational/MERDIAN_Testing_Protocol_v1.md`, `docs/masters/MERDIAN_Master_V19.docx`, `docs/appendices/MERDIAN_AppendixV18G.docx`, `docs/appendices/MERDIAN_AppendixV18H_v2.docx`, `docs/session_notes/session_log_entry_20260417_18.md`
+**Schema changes:** none
+**Open items closed:** none (hygiene session)
+**Open items added:** candidate TD-011 (Pine 1H omission) -- not yet in tech_debt.md, intake deferred
+**Git commit hashes:** `48fbf24` (Wave 1), `f8a3888` (Wave 2)
+**Next session goal:** Investigate missed NIFTY signal at 10:55 IST -- determine if CONF 32 block was legitimate or breadth-coverage artifact
+**docs_updated:** yes
+
+---
+
 ## Session log — v3 canonical one-liners (newest first)
 
 2026-04-22 · `90b8c2d` · close 6 OIs + v1.1 adoption + tech_debt TD-007/008/009 + ENH-72 register fix shipped · PASS · docs_updated:yes

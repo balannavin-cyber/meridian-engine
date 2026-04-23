@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v8",
+    "version": "v9",
     "generated": "2026-04-22",
     "sources": [
       "MERDIAN_Master_V18_v2 Section 15 (File Master, Table Master, Security IDs, AWS Runtime Files)",
@@ -14,7 +14,8 @@
       "Session 2026-04-19 (ENH renumber + OI migration to Enhancement Register)",
       "Session 2026-04-20 (outage + re-engineering programme Sessions 1+2; ENH-66/68 tactical/71 COMPLETE; ENH-67/69/70/72/73/74 PROPOSED)",
       "Session 2026-04-21 (Sessions 3+4)  --  ENH-72 propagation 9 of 9 COMPLETE + OI-24/26/27 fixes + Phase 1/2/3 ops (spot backfill, ICT HTF rebuild, Task Scheduler repair)",
-      "Session 2026-04-22 (Session 5)  --  OI series permanent closure: OI-18/19/20/21/22/23 CLOSED + PS 5.1 UTF-8 BOM fix forward"
+      "Session 2026-04-22 (Session 5)  --  OI series permanent closure: OI-18/19/20/21/22/23 CLOSED + PS 5.1 UTF-8 BOM fix forward",
+      "Session 2026-04-22 PM (Session 6 -- untracked-files triage; tracked Doc Protocol v3 + Testing Protocol v1; gitignore sweep)"
     ],
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
@@ -774,6 +775,26 @@
       "open_items": [],
       "introduced_in_commit": "4599bb8 (2026-04-16)",
       "governance_note": "This file was not registered in merdian_reference.json at introduction. Added 2026-04-19 as part of C-08 closure. Prompts a broader file-registry audit (see RESEARCH-OI-16 proposed)."
+    },
+    "MERDIAN_Documentation_Protocol_v3.md": {
+      "local_path": "C:\\GammaEnginePython\\docs\\operational\\MERDIAN_Documentation_Protocol_v3.md",
+      "aws_path": "/home/ssm-user/meridian-engine/docs/operational/MERDIAN_Documentation_Protocol_v3.md",
+      "reads": [],
+      "writes": [],
+      "call_signature": "n/a (markdown protocol document)",
+      "cadence": "n/a",
+      "status": "ACTIVE  --  authoritative rule document for when appendices, session notes, runbooks are written. Referenced in CLAUDE.md lookup table. Supersedes v2.",
+      "open_items": []
+    },
+    "MERDIAN_Testing_Protocol_v1.md": {
+      "local_path": "C:\\GammaEnginePython\\docs\\operational\\MERDIAN_Testing_Protocol_v1.md",
+      "aws_path": "/home/ssm-user/meridian-engine/docs/operational/MERDIAN_Testing_Protocol_v1.md",
+      "reads": [],
+      "writes": [],
+      "call_signature": "n/a (markdown protocol document)",
+      "cadence": "n/a",
+      "status": "ACTIVE  --  consolidated preflight / canary / replay procedures. Referenced in CLAUDE.md lookup table.",
+      "open_items": []
     }
   },
   "tables": {
@@ -2020,7 +2041,7 @@
     }
   ],
   "git": {
-    "current_hash": "f7b9366",
+    "current_hash": "f8a3888",
     "local_status": "CLEAN",
     "aws_status": "FAILED  --  shadow runner down since 2026-04-15. Needs investigation."
   },

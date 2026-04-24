@@ -1,8 +1,8 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v9",
-    "generated": "2026-04-22",
+    "version": "v10",
+    "generated": "2026-04-23",
     "sources": [
       "MERDIAN_Master_V18_v2 Section 15 (File Master, Table Master, Security IDs, AWS Runtime Files)",
       "MERDIAN_Appendix_V18A_v4 Block 3 (file updates), Block 4 (table updates), Block 5 (schema changes)",
@@ -15,7 +15,8 @@
       "Session 2026-04-20 (outage + re-engineering programme Sessions 1+2; ENH-66/68 tactical/71 COMPLETE; ENH-67/69/70/72/73/74 PROPOSED)",
       "Session 2026-04-21 (Sessions 3+4)  --  ENH-72 propagation 9 of 9 COMPLETE + OI-24/26/27 fixes + Phase 1/2/3 ops (spot backfill, ICT HTF rebuild, Task Scheduler repair)",
       "Session 2026-04-22 (Session 5)  --  OI series permanent closure: OI-18/19/20/21/22/23 CLOSED + PS 5.1 UTF-8 BOM fix forward",
-      "Session 2026-04-22 PM (Session 6 -- untracked-files triage; tracked Doc Protocol v3 + Testing Protocol v1; gitignore sweep)"
+      "Session 2026-04-22 PM (Session 6 -- untracked-files triage; tracked Doc Protocol v3 + Testing Protocol v1; gitignore sweep)",
+      "Session 2026-04-23 (Session 7) - breadth cascade root cause (C-09) + Kite token propagation gap (C-10 OPEN) + breadth writer instrumentation (TD-014) + runbook_update_kite_flow.md + data_contamination_ranges registry + CLAUDE.md v1.3"
     ],
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
@@ -1840,6 +1841,57 @@
       "validation_plan": "Runner up, edit .env to rotate token, wait 30s, next cycle uses new token. Flag-flip test: change MERDIAN_SIGNAL_V4 in .env, takes effect within 30s with no restart. ExecutionLog records of refresh_dhan_token.py serve as audit trail.",
       "effort_estimate": "4-6 hours, repo-wide",
       "replaces": "ENH-68 tactical"
+    },
+    "C-09": {
+      "title": "Breadth cascade root cause - equity_intraday_last stale since 2026-03-27",
+      "priority": "CRITICAL",
+      "status": "CLOSED",
+      "closed_date": "2026-04-23",
+      "closed_commit": "2c130bb",
+      "root_cause": "C-08 fix on 2026-04-16 retired ingest_breadth_intraday_local.py (Dhan REST) and replaced it with ingest_breadth_from_ticks.py (Zerodha WebSocket). The retired writer had TWO responsibilities: (1) compute breadth and (2) maintain equity_intraday_last reference prices. C-08 replaced only (1). Nothing maintained equity_intraday_last after 2026-03-27 15:30 IST (last row written by the retired Dhan writer). Consumer ingest_breadth_from_ticks.py then computed breadth by comparing live ticks against a frozen month-old reference, producing fabricated BULLISH values on objectively bearish days. 27 trading days of contamination spanning 29 downstream tables.",
+      "fix_applied": "Created refresh_equity_intraday_last.py on MERDIAN AWS. Fetches prev-session close via Kite REST ohlc() for ~1,330 NSE breadth universe symbols in chunks of 250. UPSERTs to equity_intraday_last with ticker as conflict key. Scheduled via cron '35 3 * * 1-5' (09:05 IST pre-market). Instrumented with script_execution_log telemetry.",
+      "verification": "Manual test 2026-04-23 18:02 IST wrote 1,330 rows in 4.5s. Simulated breadth compute against late-day ticks (15:25 IST) with fresh reference produced 429 adv / 875 dec = 32/68 ratio, matching NSE NIFTY 500 authoritative 158/342 = 32/68 ratio. Pre-fix 15:25 IST live row showed 1,264 adv / 61 dec on stale reference - directionally inverted from reality. Fix validated end-to-end.",
+      "blocks": [
+        "All downstream signal reliability via breadth_regime and breadth_score fields",
+        "Any research query reading breadth fields within 2026-03-27 to 2026-04-23"
+      ],
+      "related": [
+        "C-08 (predecessor fix that introduced the orphaned responsibility)",
+        "C-10 (Kite token propagation - upstream dependency of the fix cron)",
+        "TD-014 (write-contract instrumentation on breadth writer)",
+        "data_contamination_ranges.BREADTH-STALE-REF-2026-03-27 (registry entry)"
+      ],
+      "session": "Session 7 (2026-04-23)"
+    },
+    "C-10": {
+      "title": "Kite token propagation MeridianAlpha -> MERDIAN AWS is fully manual",
+      "priority": "HIGH",
+      "status": "OPEN",
+      "root_cause": "Documented in AppendixV18H_v2 Section 7.1 and Master V19 Section 5.1 as Step 2 of the daily pre-market sequence: SSH to MERDIAN AWS and sed patch .env with new Zerodha token. Fully MANUAL. No automation, no verification gate. Full-day silent outage on 2026-04-22 when Step 2 was forgotten - ws_feed_zerodha.py auth-looped all day writing zero rows to market_ticks, breadth cascade on stale reference was fabricated bullish, multiple blocked signals later traced to this as upstream dependency.",
+      "fix_proposed": "Session 9 candidate. Two options under consideration: (a) automate SSH+sed via Local Windows post-hook that fires after refresh_kite_token.py completes on MeridianAlpha; (b) add pre-flight check on MERDIAN AWS at ~09:10 IST that calls kite.profile() and alerts via Telegram on auth failure. (b) is lower-effort and catches more failure modes (including future variants like token revoked or API contract change); (a) solves the specific forgotten-step failure but not the class.",
+      "interim_mitigation": "runbook_update_kite_flow.md filled with explicit 3-step procedure including mandatory profile() verification as Step 3 (committed befe721).",
+      "blocks": [
+        "All market_ticks ingestion on MERDIAN AWS when Step 2 skipped",
+        "refresh_equity_intraday_last.py cron (same token dependency)",
+        "Breadth cascade correctness (indirect via upstream dependency chain)"
+      ],
+      "session": "Session 7 (2026-04-23) - surfaced during root-cause diagnosis of 2026-04-22 outage"
+    },
+    "TD-014": {
+      "title": "ingest_breadth_from_ticks.py write-contract instrumentation",
+      "priority": "MEDIUM",
+      "status": "CLOSED",
+      "closed_date": "2026-04-23",
+      "closed_commit": "1630726",
+      "fix_applied": "Added _write_exec_log() helper and instrumentation at all exit paths of main(). Writes one row to script_execution_log per invocation with host='local', exit_code, exit_reason from chk_exit_reason_valid enum (SUCCESS, SKIPPED_NO_INPUT, DATA_ERROR), contract_met flag, actual_writes JSONB. contract_met is True iff coverage_pct >= 50 percent AND market_breadth_intraday write succeeded. Telemetry write wrapped in try/except so failure cannot crash the pipeline (preserves write-path correctness regardless of telemetry state).",
+      "verification": "Tested on 2026-04-23 19:09 IST: SKIPPED_NO_INPUT path exercised (market closed, no ticks in 10-min window). Row written to script_execution_log with host='local', exit_code=1, contract_met=false, actual_writes {market_breadth_intraday:0, breadth_intraday_history:1}. First Monday cycle will exercise SUCCESS path.",
+      "blocks": [],
+      "related": [
+        "ENH-71 (ExecutionLog write-contract foundation)",
+        "ENH-72 (propagation to 9 critical scripts - this is the 10th)",
+        "C-09 (root-cause fix; instrumentation here would have caught the 27-day cascade earlier)"
+      ],
+      "session": "Session 7 (2026-04-23)"
     }
   },
   "governance_rules": {
@@ -2038,6 +2090,19 @@
         "OI-23 (session_log label: MERDIAN_SIGNAL_V4 docstring/code drift; comment block realigned to current default=1 state, no code change)"
       ],
       "summary": "Session 5. All 6 remaining OI items from Session 3+4 resume prompt CLOSED. OI-* namespace permanently retired per Documentation Protocol v2 Rule 5 (no_new_oi_register). Code changes: run_option_snapshot_intraday_runner.py (OI-22 transient vs auth split), build_trade_signal_local.py (OI-23 docstring align, no code change), merdian_live_dashboard.py (OI-18 get_preopen_status rewrite), refresh_dhan_token.py (OI-21 retry sleep 120s->30s + idempotency guard on token_status.json age + rate-limit handling returning exit 2). Environment: PowerShell profile created at C:\\\\Users\\\\balan\\\\Documents\\\\WindowsPowerShell\\\\Microsoft.PowerShell_profile.ps1 forcing UTF-8 without BOM; git i18n.commitEncoding and i18n.logOutputEncoding set to utf-8. Disposition notes written for OI-19 (out-of-scope) and OI-20 (fix-forward). Commit chain: 2b6e2bb -> d130044 -> 873a866 -> 93d2d80 -> 7a4bae5 -> 6917094 -> f7b9366. No schema changes. No register-level open_items additions per Rule 5."
+    },
+    {
+      "date": "2026-04-23",
+      "appendix": "V19 Session 7 (pending appendix)",
+      "git_end": "04d91a0",
+      "items_closed": [
+        "C-09",
+        "TD-014"
+      ],
+      "items_added": [
+        "C-10"
+      ],
+      "summary": "Session 7 - breadth cascade diagnosis and fix-for-good. Root cause identified: equity_intraday_last frozen at 2026-03-27 15:30 IST after C-08 retired the Dhan writer without replacing its reference-price responsibility. 27 trading days of fabricated breadth in signal_snapshots and 28 downstream tables. Fix deployed: refresh_equity_intraday_last.py on MERDIAN AWS pulling prev_close via Kite REST ohlc() at 09:05 IST daily cron; simulated compute matches NSE authoritative 32/68 adv-dec ratio end-to-end (C-09 CLOSED commit 2c130bb). Instrumentation added to ingest_breadth_from_ticks.py via script_execution_log with contract_met enforcement (TD-014 CLOSED commit 1630726). Runbook runbook_update_kite_flow.md filled from Appendix V18H_v2 Section 7.1 plus Session 7 live incident experience; documents the manual SSH+sed Step 2 that caused silent full-day outage on 2026-04-22 (commit befe721). Data contamination registry table created in Supabase (data_contamination_ranges with is_breadth_contaminated() SQL helper); BREADTH-STALE-REF-2026-03-27 entry logged spanning 29 affected tables. CLAUDE.md v1.3 adds Rule 13 (registry check before breadth research) - commit 04d91a0. Kite token propagation mechanism documented in runbook but formal fix deferred as C-10 OPEN (Session 9 candidate). Governance lesson from session: N-session duration shadow gates cannot detect stable lies; validity requires cross-reference against external source or internal consistency check. To be captured as ADR in Session 8. Commit chain: 2c130bb -> 1630726 -> befe721 -> 04d91a0."
     }
   ],
   "git": {

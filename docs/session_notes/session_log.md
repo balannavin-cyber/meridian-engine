@@ -32,6 +32,7 @@
 
 ## Session log — v3 canonical one-liners (newest first)
 
+2026-04-23 · `48d1b6e` · Session 7: breadth cascade root cause CLOSED (C-09 equity_intraday_last stale 27 days -> refresh_equity_intraday_last.py on AWS 09:05 IST cron) + TD-014 breadth writer instrumentation + runbook_update_kite_flow filled + CLAUDE.md v1.3 Rule 13 data contamination registry + C-10 OPEN Kite token propagation manual (Session 9 candidate) · PASS · docs_updated:yes
 2026-04-22 · `90b8c2d` · close 6 OIs + v1.1 adoption + tech_debt TD-007/008/009 + ENH-72 register fix shipped · PASS · docs_updated:yes
 2026-04-21 · `7bfa6f3` · ENH-72 propagation 9/9 + OI-24/26/27 fixes + Phase 1/2/3 ops (spot backfill, ICT HTF rebuild, Task Scheduler repair) · PASS · docs_updated:yes
 2026-04-20 · `e95002b` · outage root cause + ENH-66/68/71 + ENH register unification + 7-script holiday-gate propagation · PASS · docs_updated:yes

@@ -32,6 +32,7 @@ PROCESSES = {
     'signal_dashboard': {'script': 'merdian_signal_dashboard.py', 'port': 8766, 'desc': 'Signal Dashboard'},
     'supervisor':       {'script': 'gamma_engine_supervisor.py',  'port': None, 'desc': 'Supervisor'},
     'exit_monitor':     {'script': 'merdian_exit_monitor.py',     'port': None, 'desc': 'Exit Monitor'},
+    'pipeline_alert':   {'script': 'merdian_pipeline_alert_daemon.py', 'port': None, 'desc': 'Pipeline Alert Daemon (ENH-73)'},
 }
 
 # ── Registry ──────────────────────────────────────────────────────────────────

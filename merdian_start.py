@@ -66,8 +66,8 @@ def ensure_calendar_row():
                 row = rows[0]
                 if not row.get("is_open", True):
                     # Pre-loaded holiday - do not overwrite
-                    name = row.get("holiday_name") or "Market holiday"
-                    return True, f"{today} -> HOLIDAY ({name}) -- row preserved, not overwritten"
+                    nm = row.get("holiday_name") or "Market holiday"
+                    return True, f"{today} -> HOLIDAY ({nm}) -- row preserved, not overwritten"
                 else:
                     # Row exists and is_open=True. Ensure open_time/close_time
                     # are populated -- ENH-66: gate-reading scripts treat
@@ -118,58 +118,57 @@ def ensure_calendar_row():
 
 def main():
     print()
-    print('  â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—')
-    print('  â•‘  MERDIAN Morning Startup                         â•‘')
-    print(f'  â•‘  {datetime.now().strftime("%Y-%m-%d %H:%M:%S"):<46}â•‘')
-    print('  â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•')
+    print('  ' + '=' * 50)
+    print('  |  MERDIAN Morning Startup' + ' ' * 24 + '|')
+    print(f'  |  {datetime.now().strftime("%Y-%m-%d %H:%M:%S"):<48}|')
+    print('  ' + '=' * 50)
 
     if STATUS_ONLY:
         pm.print_status()
         return
 
-    # â”€â”€ Step 0: Calendar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ---- Step 0: Calendar ----
     print('\n  [Step 0] Trading calendar auto-insert...')
     ok, msg = ensure_calendar_row()
-    print(f'    {"âœ“" if ok else "âš "}  {msg}')
+    print(f'    {"[OK]" if ok else "[!!]"}  {msg}')
     if not ok:
         print('    WARNING: Calendar insert failed. Preflight may show V18A-03 error.')
         print('    Manually run in Supabase:')
         print(f'    INSERT INTO trading_calendar (trade_date, is_open)')
         print(f'    VALUES (\'{date.today()}\', true) ON CONFLICT (trade_date) DO UPDATE SET is_open=true;')
 
-    # â”€â”€ Step 1: Clean slate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ---- Step 1: Clean slate ----
     print('\n  [Step 1] Stopping all existing MERDIAN processes...')
     results = pm.stop_all()
     for name, msg in results:
-        print(f'    â€¢ {name}: {msg}')
+        print(f'    * {name}: {msg}')
     time.sleep(1.0)
 
-    # â”€â”€ Step 2: Start â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ---- Step 2: Start ----
     print('\n  [Step 2] Starting processes...')
     all_ok = True
-    for name in ['health_monitor', 'signal_dashboard', 'supervisor', 'exit_monitor']:
+    for name in ['health_monitor', 'signal_dashboard', 'supervisor', 'exit_monitor', 'pipeline_alert']:
         ok, msg = pm.start(name)
-        print(f'    {"âœ“" if ok else "âœ—"}  {name}: {msg}')
+        print(f'    {"[OK]" if ok else "[FAIL]"}  {name}: {msg}')
         if not ok:
             all_ok = False
         time.sleep(0.5)
 
-    # â”€â”€ Step 3: Status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ---- Step 3: Status ----
     print('\n  [Step 3] Status:')
     time.sleep(1.5)
     pm.print_status()
 
     print('  Quick reference:')
-    print('    http://localhost:8765  â€” Health Monitor')
-    print('    http://localhost:8766  â€” Signal Dashboard')
+    print('    http://localhost:8765  -- Health Monitor')
+    print('    http://localhost:8766  -- Signal Dashboard')
     print()
-    print('    python merdian_status.py   â€” check processes')
-    print('    python merdian_stop.py     â€” stop everything')
+    print('    python merdian_status.py   -- check processes')
+    print('    python merdian_stop.py     -- stop everything')
     print()
     if not all_ok:
-        print('  âš  Some processes failed. Check logs/ directory.')
+        print('  [!!] Some processes failed. Check logs/ directory.')
     print()
 
 if __name__ == '__main__':
     main()
-

@@ -9,161 +9,120 @@
 
 | Field | Value |
 |---|---|
-| **Date** | 2026-04-23 (Session 7 — diagnosis + close) and 2026-04-24 (Friday post-market — verification + research backlog) |
-| **Concern** | Session 7 closed yesterday (breadth cascade root cause). Today's work was Friday-equivalent verification (first trading day after Session 7 closed) plus translating today's market observation into a research backlog. |
-| **Type** | Production verification + research backlog formation. No code change. |
-| **Outcome** | DONE — Session 7's fix proven in production. 7 experiments queued. 3 new TDs surfaced for Session 8. |
-| **Git start → end** | `31970d1` → `6ea2829` → `ce89ca4` |
-| **Local + AWS hash match** | Local at `ce89ca4`. AWS still at `2c130bb` (no AWS-side commits today). Drift is intentional — AWS doesn't need today's research/docs commits. |
-| **Files changed (code)** | None |
-| **Files modified (docs)** | `MERDIAN_Experiment_Compendium_v1.md` (+197 lines, Exp 17-23 backlog section) |
-| **Files added (tracked)** | None |
-| **Files added (untracked, gitignored)** | `preflight_20260424.py` (one-off scratch; proper preflight system already exists at `run_preflight.py` — see TD-015 below) |
+| **Date** | 2026-04-25 (Saturday — Session 8) |
+| **Concern** | Candidate B from Session 7's CURRENT.md — Experiment 17 backtest (BULL Zone Break-Below as Rejection Cascade). Plus filing TD-015..018 from 2026-04-24 backlog at session start. |
+| **Type** | Research / experiment + register maintenance. |
+| **Outcome** | DONE — Exp 17 ran to FAIL verdict with composition diagnostic. Two new TDs surfaced (TD-019 stale spot pipeline, TD-020 LONG_GAMMA-on-directional-day diagnosis required before ADR-002). Session 9 priority reshuffled. |
+| **Git start → end** | `9e94824` → `<commit hash this session>` |
+| **Local + AWS hash match** | Local advancing; AWS still at `2c130bb` (no AWS-side commits — research session, no operational code changes). |
+| **Files changed (code)** | `experiment_17_bull_zone_break_cascade.py` (new, ~280 lines) |
+| **Files modified (docs)** | `tech_debt.md` (TD-015..020 filed), `CURRENT.md` (this rewrite), `MERDIAN_Experiment_Compendium_v1.md` (Exp 17 verdict block), `merdian_reference.json` (v10→v11), `session_log.md` (one-liner), `CLAUDE.md` (python path fix) |
+| **Files added (tracked)** | `experiment_17_bull_zone_break_cascade.py` |
+| **Files added (untracked, gitignored)** | `experiment_17_events.csv`, `experiment_17_baseline_buckets.csv` |
 | **Tables changed** | None |
 | **Cron added/changed** | None |
 | **`docs_updated`** | YES |
 
 ### What today did, in 6 bullets
 
-- **Production verification: Session 7 fix works end-to-end.** First post-open cycle 09:31 IST showed `291 ADV / 983 DEC / BEARISH (-52)` — directionally correct against the actual market tape (NIFTY -106 pts at 09:31 → -275 pts EOD at 23,898). The 27-day "1,270 ADV / 50 DEC / BULLISH 92" pattern is gone. `equity_intraday_last` populated fresh at 09:05 IST cron; `ws_feed_zerodha.py` connected at 09:14 IST; `ingest_breadth_from_ticks.py` computed against fresh reference. Every layer of the fix observed working.
-- **Pre-market token chaos resolved.** Kite token: AUTH FAILED on both boxes despite identical token strings; fresh `refresh_kite_token.py` returned the SAME token but server-side state re-activated it. Dhan token: scheduled 08:15 IST task fired and produced `Invalid TOTP`; manual `refresh_dhan_token.py` at 09:03 IST succeeded. AWS Dhan pulled via `pull_token_from_supabase.py`. Both tokens validated before market open.
-- **ICT HTF zones rebuilt for 2026-04-24.** `python build_ict_htf_zones.py --timeframe D` produced 4 NIFTY (1 D + 3 W) and 5 SENSEX (2 D + 3 W) active zones. `--timeframe H` returned 0 zones for both — investigation showed this is structurally correct (1H builder requires ≥ 2 completed hours of today's session; pre-market run is a no-op).
-- **TradingView Pine script regenerated.** `MERDIAN_ICT_HTF_Zones_v20260424.pine` (98 lines) replaces v20260421. Down from 22 NIFTY zones / 18 SENSEX zones to 4/5 — historical 2025-era BEAR_OBs expired via breach filter. Captures NIFTY's price-INSIDE-W-BULL_FVG-24,074-24,241 positioning that proved critical post-open.
-- **Today's market observation captured as research backlog.** NIFTY opened inside W BULL_FVG, broke below the lower edge, cascaded through unprotected territory to -275 pts EOD. `MERDIAN_Experiment_Compendium_v1.md` extended with 7 proposed experiments (Exp 17-23) covering: BULL zone break-below cascade, BEAR zone break-above confirmation, liquidity sweeps, open range breaks, gap behavior, zone confluence, and (most importantly per ADR-001) local-vs-net gamma divergence. Commit `6ea2829`.
-- **Three new TDs surfaced, not yet filed.** (1) Existing `run_preflight.py` 4-stage system was unknown to today's chat — wasted effort writing `preflight_20260424.py` from scratch. (2) Dhan TOTP root cause unknown — task fired and failed; manual succeeded with same seed. Worth diagnosing before it recurs. (3) 1H ICT zone builder needs a post-market cron sibling (currently only `--timeframe D` is in cron; H must be run manually post-15:30).
+- **TD-015..018 filed at session open.** Spec from Session 7's CURRENT.md applied verbatim into `tech_debt.md` (preflight runbook gap, Dhan TOTP scheduled-vs-manual asymmetry, missing 1H ICT zone post-market cron, datetime.utcnow deprecation). Now properly tracked.
+- **Experiment 17 ran end-to-end. FAIL on all four Pass criteria.** N=13 (target ≥30; underpowered). Mean T+EOD return on events +0.158% vs baseline -0.014% — direction OPPOSITE to hypothesis. Composition diagnostic shows 54% of events are 09:15 gap-down opens (Exp 21 territory), 31% are late-day breaks (degenerate T+EOD horizon), 31% have same-day zone creation. Only 2 of 13 events are clean intraday rejections; N=2 distinguishes nothing.
+- **Look-ahead audit revealed all 13 zones retrospectively created.** 11 of 13 in single batch 2026-04-15 10:04 IST; 2 of 13 at 2026-04-11 19:19 IST. Live ICT zone tracking effectively did not exist in production before 2026-04-15. Exp 17 remains valid as a structural backtest because zones are geometrically deterministic from completed weekly candles, but no event in the sample was live-detectable. The 2026-04-24 cascade is plausibly MERDIAN's first-ever "live zone, live break-below" instance.
+- **Stale spot bar pipeline discovered.** `hist_spot_bars_5m` last bar 2026-04-15 09:55 IST. 10-day gap, including the 2026-04-24 cascade event. Compounded by ~2.5 hour laptop-shutdown hole on 2026-04-24 11:30-14:00 IST. Filed as TD-019 (S2). Fix sequence: diagnose broken component first, repair, then Kite REST backfill via the repaired pipeline path.
+- **LONG_GAMMA-on-directional-day concern surfaced.** Charts confirm 2026-04-24 was the strongest bearish intraday day of the recent month (NIFTY -1.6%, SENSEX -1.4%). CURRENT.md from Session 7 records BULL_FVG signals blocked by LONG_GAMMA gate. Whether BEAR signals were generated AND blocked is unknown; that question materially affects ADR-002's framing. Filed as TD-020 (S2). ADR-002 drafting paused until TD-020 resolves.
+- **CLAUDE.md python path correction.** "Quick environment reference" listed Local Python as `Python312\python.exe` which doesn't exist on Navin's box. Bare `python` works. One-line fix in CLAUDE.md env table.
 
 ---
 
 ## This session
 
-> Session 8. Pick ONE primary path from below at session start.
+> Session 9. Pick ONE primary path from below at session start.
 
-### Candidate A (recommended) — Phase 4A posture ADR + verify Monday 09:15 IST cascade still works
-
-| Field | Value |
-|---|---|
-| **Goal** | (1) Verify Monday 2026-04-27 09:15 IST cron + breadth pipeline still produce correct output (was Friday a one-off?). (2) Write `ADR-002-phase-4a-breadth-corruption-acknowledgement.md` formalizing: "27-day breadth corruption did not reach trading P&L because of LONG_GAMMA gating; continuing Phase 4A with override monitoring." |
-| **Type** | Live verification + governance documentation. |
-| **Success criterion** | Three queries from this CURRENT.md verification block PASS, then ADR-002 committed. |
-| **Time budget** | ~20 exchanges. |
-
-### Candidate B — Experiment 17 backfill (BULL zone break-below cascade)
+### Candidate A (recommended) — TD-020 LONG_GAMMA-on-2026-04-24 diagnosis
 
 | Field | Value |
 |---|---|
-| **Goal** | Build `experiment_17_bull_zone_break_cascade.py` per spec in Compendium §Experiment 17. Direct test of yesterday's NIFTY observation: does breaking below an active W BULL_FVG/BULL_OB produce statistically more bearish T+30/60/EOD returns? |
-| **Type** | Backtest research script. Pure read against `ict_htf_zones` (incl. EXPIRED) joined with `hist_spot_bars_5m`. |
-| **Success criterion** | Sample size ≥ 30 events; result table written; verdict block added to Compendium Exp 17 entry; if PASS criteria met, ENH candidate proposed. |
-| **Time budget** | ~30-40 exchanges. |
+| **Goal** | Discriminate the three sub-hypotheses in TD-020: (a) regime correct, local-vs-net divergence; (b) regime classification wrong; (c) regime correct and gate worked as designed. Read-only DB queries. Output: TD-020 disposition note (which sub-hypothesis is supported), and a clear "ADR-002 unblocked" or "ADR-002 needs revision" verdict. |
+| **Type** | Read-only diagnosis. No code change. |
+| **Success criterion** | TD-020 marked "diagnosed: <a/b/c>" with evidence; ADR-002 disposition stated; if a code fix is required, scoped to a Session 10 successor. |
+| **Time budget** | ~25-35 exchanges. |
 
-### Candidate C — Kite token propagation automation (C-10)
-
-| Field | Value |
-|---|---|
-| **Goal** | Implement either (a) Local Windows post-hook that propagates new token to MERDIAN AWS via SSH+sed after `refresh_kite_token.py`, or (b) pre-flight `kite.profile()` check on MERDIAN AWS at 09:10 IST with Telegram alert on failure. Closes C-10. |
-| **Type** | Code change (operational automation). |
-| **Success criterion** | Chosen path lands with a test run, runbook updated, C-10 marked CLOSED in `merdian_reference.json` (v10 → v11). |
-| **Time budget** | ~30 exchanges. |
-
-### Candidate D — TD-NNN-B source_ts freshness check across 6 JSONB blocks
+### Candidate B — TD-019 Step 1: diagnose stale spot pipeline (do not backfill yet)
 
 | Field | Value |
 |---|---|
-| **Goal** | Add staleness gating to `build_market_state_snapshot_local.py` so every JSONB block (breadth, gamma, volatility, momentum, WCB, futures) validates `source_ts` against `now()` and rejects/downgrades if > N minutes old. Generalizes Session 7's lesson. |
-| **Type** | Architectural code change — touches signal pipeline heart. |
-| **Success criterion** | `validate_feature_freshness(block, max_age_secs)` helper exists, applied to all 6 blocks, configurable thresholds. Canary run shows expected behaviour. |
-| **Time budget** | ~40-50 exchanges. Touches live signal generation; careful testing required. |
+| **Goal** | Step 1 of TD-019's three-step fix: identify which component broke and when. Check `MERDIAN_Spot_1M` Task Scheduler history, `script_execution_log` for last SUCCESS rows on `capture_spot_1m.py` and `build_spot_bars_mtf.py`, recent log files. Do NOT attempt repair or backfill in this session — that's Session 10/11. |
+| **Type** | Diagnostic. No code change. |
+| **Success criterion** | TD-019 updated with root cause; repair plan written; backfill SQL/script outline drafted (not run). |
+| **Time budget** | ~15-25 exchanges. |
+
+### Candidate C — Original Candidate A from Session 7's CURRENT.md (ADR-002 phase-4a-posture)
+
+| Field | Value |
+|---|---|
+| **Goal** | Originally recommended for Session 8 but deferred. Now BLOCKED on TD-020 — ADR-002 cannot ratify until LONG_GAMMA gate behaviour on 2026-04-24 is understood. Do NOT pick this candidate before TD-020 is resolved. Listed here as a placeholder to make the dependency explicit. |
+| **Type** | Governance documentation. |
+| **Success criterion** | Blocked. |
+| **Time budget** | N/A this session. |
+
+### Candidate D — Kite token propagation automation (C-10) — deferred
+
+| Field | Value |
+|---|---|
+| **Goal** | Originally Candidate C from Session 7's CURRENT.md. Still valid work but lower priority than TD-020. Deferred to Session 10+. |
+| **Type** | Operational automation. |
+| **Time budget** | N/A this session. |
 
 ### DO_NOT_REOPEN
 
-- Capital ceiling values (₹50L / ₹25L / ₹2L)
-- Strategy choice (Half Kelly C for live start)
-- T+30m exit timing
-- 5m vs 1m for ICT — 5m is the rule
-- OI-* namespace — permanently closed
-- ENH-72 scope — permanently closed
-- V19A/V19B/V19C as per-session canonical outputs — under v3, routine sessions don't produce appendices
-- Em-dashes in git commit subjects — ASCII-only
-- PS 5.1 `Get-Content` display corruption — known (TD-010)
-- `python -c` for multi-line string replacement in PowerShell — always write a `fix_*.py` script instead
-- Breadth cascade root cause (C-09 CLOSED) — fix proven in production 2026-04-24 09:31 IST. Do not re-diagnose.
-- Contamination registry approach (Path D) — chosen over per-table flags / recomputation.
-- **NEW: 1H ICT zone builder pre-market silence** — investigated 2026-04-24. Code is correct; pre-market `--timeframe H` is structurally a no-op (needs ≥ 2 completed session hours). Not a bug. Filed as TD for post-market cron sibling.
-- **NEW: Kite "AUTH FAILED then AUTH OK with identical token"** — known Zerodha behaviour. Do fresh `refresh_kite_token.py` even if returned token is identical; the act of running re-activates server-side session state. Captured in runbook failure-modes (Session 8 to add row).
+- All items from Session 7's CURRENT.md DO_NOT_REOPEN list (capital ceiling, strategy choice, T+30m exit, 5m vs 1m for ICT, OI-* namespace, ENH-72, V19A/B/C as per-session, em-dashes in commits, PS 5.1 Get-Content, `python -c` for multi-line replace in PS, breadth cascade root cause, contamination registry approach, 1H ICT pre-market silence, Kite "AUTH FAILED then AUTH OK")
+- **NEW: Experiment 17 hypothesis as written** — closed FAIL 2026-04-25. Structural backtest is valid; data does not support bearish cascade. Do not re-litigate the question. Exp 17b is a different experiment (composition-cleaned + D-zone universe), not a re-run.
+- **NEW: 02-06-2025 events as outliers** — they are NOT outliers. They are the cleanest tests in the Exp 17 sample and they reject the hypothesis with conviction. Do not strip them in any future analysis.
+- **NEW: ADR-002 unconditional ratification** — pending TD-020 disposition. If TD-020 lands as sub-hypothesis (c), ADR-002 ratifies as drafted. If (a) or (b), ADR-002 needs language acknowledging the gate's behaviour on directional days and the local-vs-net concern.
 
-### Watch-outs for Candidate A
+### Watch-outs for Candidate A (TD-020 diagnosis)
 
-- Don't expand scope. If Monday's verification PASSES, write the ADR. If it FAILS, that's a new C-NN (investigate), NOT a Session 8 redirect.
-- ADR-002 is a decision document, not an apology. Frame in terms of evidence: 27-day wrong-breadth did not reach P&L because LONG_GAMMA gating was orthogonal. State the posture and move on.
+- The diagnosis is read-only. Resist any urge to also fix what gets diagnosed in the same session — split into Session 10 successor.
+- 2026-04-24 spot 5m bars are missing (TD-019); use options snapshots and tick data instead. Sufficient for GEX time series and signal-generation introspection.
+- ADR-002 is in-flight; do not draft its content this session — only state which way TD-020 unblocks it.
 
-### Watch-outs for Candidate B
+### Watch-outs for Candidate B (TD-019 diagnosis)
 
-- The script `build_ict_htf_zones.py` reads `hist_spot_bars_1m` (NOT `hist_spot_bars_5m` for daily zones). Today's check confirmed `bar_ts` is the timestamp column. Use the same conventions in Exp 17 script — don't fight the codebase.
-- Status filter is `status = 'ACTIVE'`. Pattern column is `pattern_type`. Confirmed 2026-04-24.
-- **Sample for "active at break time":** zone may have `status = 'EXPIRED'` now but was `'ACTIVE'` when the break occurred. Need to query `ict_htf_zones` history including EXPIRED rows, then filter by `valid_from <= bar_ts AND valid_to >= bar_ts AND (broken_at_date IS NULL OR broken_at_date >= bar_ts)`. The exact lifecycle column logic needs verification by inspecting one EXPIRED row carefully.
-
-### Watch-outs for Candidate C
-
-- MeridianAlpha is NOT out-of-scope from MERDIAN — cross-system diagnosis is fine. But code changes belong in whichever repo owns the file.
-- Pre-flight check (Option b) must not fail-open. Test all four branches: token valid, token stale, Kite API down, network failure.
-
-### Watch-outs for Candidate D
-
-- Each JSONB block has its own `source_ts` field name. No universal schema. Helper must accept a per-block lookup function.
-- Don't block signals on first-5-minute staleness. ICT needs 3 bars minimum; threshold per block, not global.
-- Strongly recommend doing Candidate A's verification step (5 min, just three SQL queries) before this; otherwise we're blind to whether Session 7's fix still works.
+- Step 1 only. Do not repair, do not backfill. Backfill before diagnosis = repeat-failure risk.
+- `script_execution_log` is the cleanest single source for finding the last SUCCESS row of each producer.
 
 ---
 
-## New TDs to file at Session 8 start
+## New TDs to file at Session 9 start
 
-These surfaced today but were not formally entered into `tech_debt.md`. First 2 minutes of Session 8 should add them:
-
-| ID (proposed) | Severity | Description | Origin |
-|---|---|---|---|
-| TD-015 | S3 | Existing `run_preflight.py` 4-stage system (env / auth / db / runner_drystart) is undocumented; not in any runbook; today's session re-invented it as `preflight_20260424.py` (now untracked). Action: write runbook explaining stages and triggers; retire the one-off. | 2026-04-24 morning preflight |
-| TD-016 | S3 | Dhan TOTP root cause unknown. 08:15 IST scheduled task fired and returned `Invalid TOTP`; manual `refresh_dhan_token.py` at 09:03 IST succeeded with same seed. Possible causes: clock drift not surfaced by `w32tm`, seed cache, Dhan-side rate-limit. Action: 30-min diagnosis next time it recurs; capture exact error context. | 2026-04-24 08:15 IST task |
-| TD-017 | S3 | `build_ict_htf_zones.py --timeframe H` has no scheduled invocation. Daily `--timeframe D` runs at 09:00 IST cron; H requires post-market data and currently only runs manually. Action: add post-market cron at 16:15 IST (after EOD ingest) for `--timeframe H`. Possibly closes OI-11. | 2026-04-24 pre-market H run returned 0 |
-| TD-018 (minor) | S4 | `build_ict_htf_zones.py:468` uses deprecated `datetime.utcnow()`. Migrate to `datetime.now(datetime.UTC)`. | 2026-04-24 D build deprecation warning |
-
-### Re-upload to project knowledge (CLAUDE.md Rule 12)
-
-Files changed across Session 7 close + 2026-04-24 work that should be re-uploaded to project knowledge for future `project_knowledge_search`:
-
-- `CLAUDE.md` (v1.3) — Session 7 added Rule 13
-- `docs/session_notes/CURRENT.md` (THIS file) — Session 7 close + Friday post-market
-- `docs/session_notes/session_log.md` — Session 7 one-liner
-- `docs/registers/merdian_reference.json` (v10)
-- `docs/registers/MERDIAN_Experiment_Compendium_v1.md` (v1 with Proposed section)
-- `docs/runbooks/runbook_update_kite_flow.md` (filled)
-- `docs/decisions/ADR-001-stable-lies-defeat-duration-gates.md` (new)
-
-Total 7 files. Bundle re-upload as one operation.
+None. TD-019 and TD-020 already filed in Session 8 close batch.
 
 ---
 
-## Live state snapshot (at Session 8 start)
+## Live state snapshot (at Session 9 start)
 
 | Component | State |
 |---|---|
-| **Live trading** | Phase 4A — manual execution. 2026-04-24 trading day produced BULL_FVG TIER2 signals on both NIFTY and SENSEX intraday, all BLOCKED by LONG_GAMMA gate. No manual trades reported. |
-| **Shadow gate** | All 10 sessions PASSED (closed 2026-04-15) — caveat: ran on corrupted breadth. ADR-002 (Candidate A) formalizes posture. |
-| **Breadth pipeline** | FIXED and verified in production 2026-04-24 09:31 IST. `refresh_equity_intraday_last.py` cron 09:05 IST daily. |
+| **Live trading** | Phase 4A — manual execution. 2026-04-24 was the strongest bearish day of the recent month; LONG_GAMMA gate blocked all BULL_FVG TIER2 signals. Whether BEAR signals were also generated/blocked is the TD-020 question. |
+| **Shadow gate** | All 10 sessions PASSED (closed 2026-04-15) — corrupted breadth caveat. ADR-002 BLOCKED on TD-020 disposition. |
+| **Breadth pipeline** | FIXED and verified in production 2026-04-24 09:31 IST. Independent of TD-019 spot pipeline staleness. |
+| **Spot bar pipeline (`hist_spot_bars_5m`)** | STALE since 2026-04-15. 10-day gap. TD-019 OPEN. |
 | **Local env** | Windows Task Scheduler. PS 5.1 with UTF-8 profile. Git CRLF auto-conversion (cosmetic). |
 | **AWS env** | MERDIAN AWS `i-0878c118835386ec2` (eu-north-1). 11 cron jobs total. Shadow runner FAILED since 2026-04-15 (pre-existing). |
-| **MeridianAlpha AWS** | `13.51.242.119`. `refresh_kite_token.py` ~06:00 IST manual browser login. Token propagation to MERDIAN AWS still manual SSH+sed (C-10 OPEN). |
-| **Local git HEAD** | `ce89ca4` (in sync with origin/main) |
-| **Last canary tag** | none — Friday was research/observation only |
+| **MeridianAlpha AWS** | `13.51.242.119`. C-10 OPEN. |
+| **Local git HEAD** | `<commit hash from this session>` (in sync with origin/main) |
+| **Last canary tag** | none — no live canary in Session 8 |
 | **Open C-N (critical)** | C-10 HIGH OPEN (Kite token propagation manual) |
 | **Open TD S1** | none |
-| **Open TD S2** | TD-002 (breadth_regime backfill) — scope reduced by C-09 fix; reassess in Session 8 |
+| **Open TD S2** | TD-002 (breadth_regime backfill), TD-019 (spot pipeline stale), TD-020 (LONG_GAMMA diagnosis) |
 | **Open TD S3** | TD-001, TD-004, TD-005, TD-006, TD-007, TD-015, TD-016, TD-017 |
 | **Open TD S4** | TD-009, TD-010, TD-018 |
 | **Closed in Session 7** | C-09, TD-014 |
-| **Open from Session 7** | ADR-002 phase-4a-posture (Candidate A this session) |
-| **Active research backlog** | Exp 17-23 in Compendium (NEW). Exp 17 = Candidate B this session. |
+| **Closed in Session 8** | none — Exp 17 ran but no item closed |
+| **Open from Session 7** | ADR-002 phase-4a-posture (NOW BLOCKED on TD-020) |
+| **Active research backlog** | Exp 17 closed FAIL. Exp 17b proposed (composition-cleaned). Exp 18-23 in Compendium backlog. |
 | **Active ENH in flight** | none |
-| **Data contamination** | `BREADTH-STALE-REF-2026-03-27` registered. 27-day window 2026-03-27 → 2026-04-23. Guard with `WHERE NOT public.is_breadth_contaminated(ts)`. |
+| **Data contamination** | `BREADTH-STALE-REF-2026-03-27` registered. 27-day window 2026-03-27 → 2026-04-23. |
 
 ---
 
@@ -185,20 +144,6 @@ Total 7 files. Bundle re-upload as one operation.
 - Changed:
 - Next:
 
-### Checkpoint 3 (~60 exchanges)
-- Fixed:
-- Confirmed:
-- Open:
-- Changed:
-- Next:
-
-### Checkpoint 4 (~80 exchanges)
-- Fixed:
-- Confirmed:
-- Open:
-- Changed:
-- Next:
-
 ---
 
 ## Session-end checklist (before commit)
@@ -210,7 +155,7 @@ Total 7 files. Bundle re-upload as one operation.
 [ ] tech_debt.md updated if any TD added, mitigated, or closed
 [ ] Enhancement Register updated if architectural thinking happened
 [ ] Local + AWS hash match confirmed if code changed
-[ ] All commits prefixed: MERDIAN: [ENV|DATA|SIGNAL|OPS|RESEARCH] <scope> — <intent>
+[ ] All commits prefixed: MERDIAN: [ENV|DATA|SIGNAL|OPS|RESEARCH] <scope> -- <intent>
 [ ] Re-upload to project knowledge any of CURRENT.md / session_log.md / merdian_reference.json / tech_debt.md / Enhancement_Register / CLAUDE.md / docs/operational/* that changed (Rule 12)
 [ ] Phase boundary check: any Master/Appendix .docx generation triggered? (rare)
 [ ] Runbook review: any operation explained for 2nd time? Create runbook from RUNBOOK_TEMPLATE.md
@@ -219,41 +164,47 @@ Total 7 files. Bundle re-upload as one operation.
 
 ---
 
-## Monday 2026-04-27 09:15 IST verification queries (Candidate A first step)
+## TD-020 starter queries (Candidate A first step)
 
 ```sql
--- 1. Confirm 09:05 cron fired and wrote fresh reference for Monday
-SELECT
-    (MAX(ts) AT TIME ZONE 'Asia/Kolkata')::timestamp AS latest_ref_ist,
-    COUNT(DISTINCT ticker) AS distinct_tickers
-FROM public.equity_intraday_last;
--- Expected: ~09:05 IST Monday, ~1,330+ tickers
-
--- 2. First breadth cycle Monday post-09:15 reads realistic
+-- 1. Net GEX time series for 2026-04-24, both indices
 SELECT
     (ts AT TIME ZONE 'Asia/Kolkata')::timestamp AS ts_ist,
-    advances, declines, universe_count, breadth_score, breadth_regime
-FROM public.market_breadth_intraday
-WHERE ts >= '2026-04-27 09:15:00+05:30'
-ORDER BY ts
-LIMIT 3;
--- Expected: realistic adv/dec, NOT 1,270/50
+    symbol,
+    net_gex,
+    gamma_regime,
+    source_ts
+FROM public.options_flow_snapshots
+WHERE ts >= '2026-04-24 09:00:00+05:30'
+  AND ts < '2026-04-24 16:00:00+05:30'
+ORDER BY symbol, ts;
 
--- 3. Instrumentation firing SUCCESS rows
+-- 2. All signals generated 2026-04-24, every direction and tier
 SELECT
-    (started_at AT TIME ZONE 'Asia/Kolkata')::timestamp AS started_ist,
-    exit_code, exit_reason, contract_met, actual_writes
-FROM public.script_execution_log
-WHERE script_name = 'ingest_breadth_from_ticks.py'
-  AND started_at >= '2026-04-27 09:00:00+05:30'
-ORDER BY started_at
-LIMIT 5;
--- Expected: exit_reason='SUCCESS', contract_met=true
+    (created_at AT TIME ZONE 'Asia/Kolkata')::timestamp AS created_ist,
+    symbol, direction, pattern_type, tier,
+    gate_disposition, gate_reason
+FROM public.trade_signals  -- adjust table name if different
+WHERE created_at >= '2026-04-24 09:00:00+05:30'
+  AND created_at < '2026-04-24 16:00:00+05:30'
+ORDER BY created_at;
+
+-- 3. Source-ts freshness check on gamma block during 2026-04-24
+SELECT
+    (ts AT TIME ZONE 'Asia/Kolkata')::timestamp AS ts_ist,
+    symbol,
+    source_ts,
+    EXTRACT(EPOCH FROM (ts - source_ts)) AS staleness_secs
+FROM public.options_flow_snapshots
+WHERE ts >= '2026-04-24 09:00:00+05:30'
+  AND ts < '2026-04-24 16:00:00+05:30'
+ORDER BY staleness_secs DESC
+LIMIT 10;
 ```
 
-These queries are identical to the 2026-04-24 verification (just date-shifted). The 2026-04-24 results are recorded in this CURRENT.md "What today did" block — first cycle 09:31 IST returned 291/983 BEARISH, fully clean.
+If sub-hypothesis (a) — local-vs-net divergence — is suspected, the local GEX query is more involved and will be drafted in-session.
 
 ---
 
 *CURRENT.md — overwrite each session. Never branch this file. Never archive (the session_log is the archive).*
-*Last updated 2026-04-24 16:30 IST (Friday post-market — Session 7 close + research backlog formation).*
+*Last updated 2026-04-25 (end of Session 8 — Exp 17 FAIL, TD-019 + TD-020 filed, Session 9 priority reshuffled to LONG_GAMMA diagnosis primary).*

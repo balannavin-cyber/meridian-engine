@@ -1081,4 +1081,4 @@ Copy this template and prepend to the top of this file (newest first):
 ---
 
 *MERDIAN Session Log — started 2026-03-31 — append newest entry at top*
-
+2026-04-25 · Session 8 · <commit hash> · Candidate B (Exp 17 backtest) · DONE FAIL — N=13 underpowered, hypothesis not supported, composition diagnostic surfaced gap-down dominance. TD-015..018 filed at open per Session 7 spec. TD-019 (stale spot pipeline 10-day gap) and TD-020 (LONG_GAMMA-on-directional-day diagnosis required before ADR-002) filed at close. CLAUDE.md python path corrected. Session 9 priority reshuffled: TD-020 primary; ADR-002 blocked on TD-020. docs_updated: yes

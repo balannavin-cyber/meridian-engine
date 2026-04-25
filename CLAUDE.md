@@ -203,7 +203,7 @@ C:\GammaEnginePython\                 (Windows local, PRIMARY LIVE)
 | Field | Local | AWS |
 |---|---|---|
 | Base path | `C:\GammaEnginePython` | `/home/ssm-user/meridian-engine` |
-| Python | `Python312\python.exe` | `python3` |
+| Python | `python` (on PATH; use `py` as fallback) | `python3` |
 | Scheduler | Windows Task Scheduler | Linux cron |
 | Role | PRIMARY LIVE | SHADOW |
 | Instance | — | `i-0878c118835386ec2` (eu-north-1) |
@@ -273,3 +273,7 @@ Whenever a new data-integrity incident is diagnosed, INSERT a row into `data_con
 ---
 
 *CLAUDE.md v1.3 - 2026-04-23. Added Rule 13 (data contamination registry). Trigger: Session 7 discovered 27-day breadth contamination spanning 29 tables; without a registry, future researchers would train/analyze against tainted rows. v1.2 added Rule 12 (doc-sync). v1.1 added Rule 11 (runbooks).*
+
+
+*CLAUDE.md v1.4 — 2026-04-25 (corrected Local Python path in env table; the previously listed `Python312\python.exe` path doesn't exist on Navin's box; surfaced when running experiment_17). v1.3 added Rule 13 (data contamination registry). v1.2 added Rule 12 (doc-sync). v1.1 added Rule 11 (runbooks).*
+

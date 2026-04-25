@@ -18,7 +18,7 @@
 | **Files changed (code)** | None |
 | **Files modified (docs)** | `MERDIAN_Experiment_Compendium_v1.md` (+197 lines, Exp 17-23 backlog section) |
 | **Files added (tracked)** | None |
-| **Files added (untracked, gitignored)** | `preflight_20260424.py` (one-off scratch; proper preflight system already exists at `run_preflight.py` — see TD-NNN below) |
+| **Files added (untracked, gitignored)** | `preflight_20260424.py` (one-off scratch; proper preflight system already exists at `run_preflight.py` — see TD-015 below) |
 | **Tables changed** | None |
 | **Cron added/changed** | None |
 | **`docs_updated`** | YES |
@@ -157,8 +157,8 @@ Total 7 files. Bundle re-upload as one operation.
 | **Open C-N (critical)** | C-10 HIGH OPEN (Kite token propagation manual) |
 | **Open TD S1** | none |
 | **Open TD S2** | TD-002 (breadth_regime backfill) — scope reduced by C-09 fix; reassess in Session 8 |
-| **Open TD S3** | TD-001, TD-004, TD-005, TD-006, TD-007 (existing) + TD-015, TD-016, TD-017 (new from 2026-04-24, not yet filed) |
-| **Open TD S4** | TD-009, TD-010 (existing) + TD-018 (new minor, datetime.utcnow deprecation) |
+| **Open TD S3** | TD-001, TD-004, TD-005, TD-006, TD-007, TD-015, TD-016, TD-017 |
+| **Open TD S4** | TD-009, TD-010, TD-018 |
 | **Closed in Session 7** | C-09, TD-014 |
 | **Open from Session 7** | ADR-002 phase-4a-posture (Candidate A this session) |
 | **Active research backlog** | Exp 17-23 in Compendium (NEW). Exp 17 = Candidate B this session. |
@@ -207,7 +207,7 @@ Total 7 files. Bundle re-upload as one operation.
 [ ] CURRENT.md updated — "Last session" reflects THIS session, "This session" reset for next
 [ ] session_log.md appended (one line)
 [ ] merdian_reference.json updated for any file/table/item status change
-[ ] tech_debt.md updated if any TD added, mitigated, or closed (TD-015 through TD-018 from 2026-04-24 still need filing)
+[ ] tech_debt.md updated if any TD added, mitigated, or closed
 [ ] Enhancement Register updated if architectural thinking happened
 [ ] Local + AWS hash match confirmed if code changed
 [ ] All commits prefixed: MERDIAN: [ENV|DATA|SIGNAL|OPS|RESEARCH] <scope> — <intent>

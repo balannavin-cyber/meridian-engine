@@ -796,6 +796,21 @@
       "cadence": "n/a",
       "status": "ACTIVE  --  consolidated preflight / canary / replay procedures. Referenced in CLAUDE.md lookup table.",
       "open_items": []
+    },
+    "experiment_17_bull_zone_break_cascade.py": {
+      "purpose": "Experiment 17 backtest -- BULL Zone Break-Below as Rejection Cascade. Reads ict_htf_zones (W timeframe, BULL_FVG/BULL_OB) and hist_spot_bars_5m. Writes events CSV + baseline buckets CSV.",
+      "type": "research/experiment",
+      "writes_to": [
+        "experiment_17_events.csv",
+        "experiment_17_baseline_buckets.csv"
+      ],
+      "reads_from": [
+        "ict_htf_zones",
+        "hist_spot_bars_5m"
+      ],
+      "added_session": 8,
+      "verdict": "FAIL 2026-04-25 (N=13 underpowered)",
+      "status": "RUN COMPLETE -- kept as reproducibility artifact for Exp 17 closure"
     }
   },
   "tables": {
@@ -1892,6 +1907,11 @@
         "C-09 (root-cause fix; instrumentation here would have caught the 27-day cascade earlier)"
       ],
       "session": "Session 7 (2026-04-23)"
+    },
+    "adr_002_phase_4a_posture": {
+      "status": "DRAFTING -- BLOCKED",
+      "blocked_by": "TD-020",
+      "blocking_reason": "Cannot ratify gate-protected posture without diagnosis of gate behaviour on 2026-04-24 directional day"
     }
   },
   "governance_rules": {
@@ -2168,5 +2188,7 @@
     "sweep_reversal_no_edge": "Experiments 23/23b/23c: Sweep reversal has NO mechanical edge. Naked = 17.8% WR, with W zone confluence = 19.5% WR, with quality filters = 33.3% (N=3, insufficient). Pattern requires unmitigated zone tracking + 5m/15m wick quality + discretionary CHoCH judgment. ENH-54 sweep reversal mode REJECTED.",
     "premium_small_sweep": "Experiment 27b: ATM PE premium small sweep (0.2-1.0% above prior high, close back below, morning only) = 64.5% WR (N=107). CE + NO_FLIP = 68.4% WR (N=57). Premium sweep is MOMENTUM-INDEPENDENT (unlike spot ICT which needs alignment). ENH-45 PROPOSED  --  monitor 50 live occurrences before building.",
     "5m_bars_canonical": "All ICT experiments must use 5m bars for pattern detection. 1m bar experiments produce unreliable results  --  wick quality, sweep detection, and displacement are all noise on 1m. Exp 23c confirmed: wick quality on 1m = 0% WR (wrong timeframe). Established Research Sessions 4-5."
-  }
+  },
+  "version": "v11",
+  "updated_at": "2026-04-25"
 }

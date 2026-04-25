@@ -273,6 +273,40 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 
 ---
 
+### TD-019 — `hist_spot_bars_5m` pipeline stale since 2026-04-15; blocks forward research validation
+
+| | |
+|---|---|
+| **Severity** | S2 |
+| **Discovered** | 2026-04-25 (Session 8 — Exp 17 backtest discovered last bar 2026-04-15 09:55) |
+| **Component** | `hist_spot_bars_5m`, `hist_spot_bars_1m`, `build_spot_bars_mtf.py`, `capture_spot_1m.py`, `MERDIAN_Spot_1M` Task Scheduler task |
+| **Symptom** | `hist_spot_bars_5m` last bar 2026-04-15 09:55 IST for both NIFTY and SENSEX. 10 trading-day gap as of 2026-04-25. The 2026-04-24 NIFTY -393 / SENSEX -1,100 cascade event — the motivating event for Experiment 17 — is missing from the dataset, blocking forward overlay validation of any current research. Compounding cause: local laptop was shut down ~11:30-14:00 IST on 2026-04-24, which would have created a 2.5-hour intraday hole even if the pipeline were healthy. |
+| **Root cause** | Unknown — diagnosis pending. Possible: (a) `MERDIAN_Spot_1M` Task Scheduler task silently failing since 2026-04-15, (b) `build_spot_bars_mtf.py` aggregator cron broken, (c) `capture_spot_1m.py` writer-side error. The local-laptop-only architecture for spot capture is a contributing structural weakness — AWS `ws_feed_zerodha.py` to `market_ticks` was unaffected by the laptop shutdown. Eventual ENH candidate: move spot capture to AWS to remove the laptop SPOF (Phase 4B+). |
+| **Workaround** | Forward research overlays against post-2026-04-15 events are not currently possible. Charts (TradingView) confirm visually but cannot be substituted for tabular data in scripts. |
+| **Proper fix** | Three steps in order: (1) Diagnose which component broke and when — check `MERDIAN_Spot_1M` last successful run via Task Scheduler history, `build_spot_bars_mtf.py` log, `capture_spot_1m.py` log, `script_execution_log` table for last SUCCESS row. (2) Repair the broken component. (3) Kite historic REST backfill from 2026-04-16 09:15 IST through the day the repaired pipeline first writes successfully, including the 2026-04-24 11:30-14:00 IST laptop-shutdown hole. Backfill should write through the same `build_spot_bars_mtf.py` path that normal capture uses, not a one-off — provenance matters. |
+| **Cost to fix** | 2 sessions (1 diagnosis, 1 repair + backfill). |
+| **Blocked by** | nothing — direct work. |
+| **Owner check-in** | 2026-04-25 |
+
+---
+
+### TD-020 — LONG_GAMMA gate on 2026-04-24 strongly directional day — diagnosis required before ADR-002 ratification
+
+| | |
+|---|---|
+| **Severity** | S2 |
+| **Discovered** | 2026-04-25 (Session 8 — chart review of 2026-04-24 NIFTY -393 / SENSEX -1,100 intraday cascade) |
+| **Component** | `build_market_state_snapshot_local.py` (gamma regime classification), gating logic in `build_trade_signal_local.py`, `options_flow_snapshots`, ADR-002 (in-flight) |
+| **Symptom** | 2026-04-24 was the strongest directionally-bearish intraday day of the recent month: NIFTY -393 pts H-L (-1.6%), SENSEX -1,100 pts H-L (-1.4%). CURRENT.md "Live trading" block records BULL_FVG TIER2 signals on both indices BLOCKED by LONG_GAMMA gate. LONG_GAMMA classification implies dealer-driven mean reversion expected; the actual price action was strongly trending. Concern: if BEAR setups were also generated and also blocked, the gate left a high-conviction directional opportunity on the table; if BEAR setups were NOT generated despite the bearish breadth context, that is a separate signal-generation question. ADR-002 is currently being drafted around the assumption that the gate "did its job" by blocking trades — that framing is not yet evidence-supported for the strongest test case in recent history. |
+| **Root cause** | Unknown. Three sub-hypotheses to discriminate: (a) **Regime classification was correct** but local positioning differed from net (Exp 23 territory — net GEX positive but local-near-spot GEX negative); gate fired correctly given the data it had, but the data was the wrong granularity for the regime question. (b) **Regime classification was wrong** — net GEX was actually negative all day but classifier returned LONG_GAMMA due to bug, stale source_ts, or threshold miscalibration. (c) **Regime classification was correct AND positioning was correct** — gamma did try to hedge, but other forces (breadth-driven momentum, news flow, FII positioning) dominated; gate is doing what it's designed to do, ADR-002 framing stands. |
+| **Workaround** | None operationally — Phase 4A live trading continues. ADR-002 drafting paused until diagnosis completes. |
+| **Proper fix** | Session 9 diagnosis (sub-hypotheses to discriminate): (1) Pull `options_flow_snapshots` for 2026-04-24 09:15-15:30 IST, both indices, every snapshot. Plot net GEX time series. Confirm regime classification matches the reported LONG_GAMMA state at each cycle. (2) Pull all signals generated 2026-04-24 from signal pipeline output — every direction (bull AND bear), every tier. Confirm whether BEAR signals were generated and what gate dispositioned them. (3) Compute local-vs-net gamma divergence (Exp 23 framework — strikes within ±0.5% of spot vs full chain). If they diverge significantly, this is the smoking gun for sub-hypothesis (a). (4) Check `source_ts` freshness on the gamma JSONB block during 2026-04-24 — Candidate D's concern. If the gamma block was reading stale data, that's sub-hypothesis (b). |
+| **Cost to fix** | 1 session for diagnosis (read-only DB queries, no code change). Outcome determines whether Session 10 needs a code fix or ADR-002 can ratify as-is. |
+| **Blocked by** | TD-019 partially — the spot bar gap on 2026-04-24 means we have GEX/options data for that day but not 5m spot bars. GEX time-series + tick data should be sufficient for the diagnosis without 5m spot bars. |
+| **Owner check-in** | 2026-04-25 |
+
+---
+
 ## Anti-patterns to avoid (the "don't add new tech debt" list)
 
 | Anti-pattern | Why it's bad | What to do instead |

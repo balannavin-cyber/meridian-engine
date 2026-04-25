@@ -28,6 +28,203 @@ Experiments are ordered by number. Most recent changes prepended to the top of t
 
 ---
 
+## Proposed Experiments — Backlog
+
+> **PROPOSED** = experiment designed but not yet run. Setup, universe, and pass criteria are specified to the level needed for execution. Once run, the entry is moved out of this section into the main numbered list with Findings and Verdict added.
+
+### Experiment 17 (PROPOSED) — BULL Zone Break-Below as Rejection Cascade
+
+**Date proposed:** 2026-04-24
+**Origin:** 2026-04-24 NIFTY price action (open inside W BULL_FVG 24,074-24,241, broke below, cascaded -275 pts to 23,898). Navin observation: "breaking below a green zone considered a rejection?"
+
+**Question:** When NIFTY/SENSEX 5m close prints below the lower edge of an active W BULL_FVG or W BULL_OB by ≥ 0.1%, is the subsequent return statistically more bearish than baseline?
+
+**Setup:**
+- **Universe:** all instances 2024-01 → 2026-04 in `hist_spot_bars_5m` where active W BULL_FVG / W BULL_OB existed in `ict_htf_zones` AND a 5m bar's `close` < `zone_low * 0.999` (0.1% below)
+- **Active zone filter:** zone `status = 'ACTIVE'` at the bar timestamp; not yet broken/expired
+- **Direction filter:** require price came from inside or above the zone, not from already-below
+- **Outcome metrics:** spot return at T+30m, T+60m, T+EOD relative to break bar close
+- **Baseline:** distribution of same metrics over all 5m bars in same time-of-day buckets (no break)
+- **Sample target:** ≥ 30 events across NIFTY + SENSEX
+
+**Pass criteria (any of):**
+- T+30min mean return ≤ -0.3% (vs ~0% baseline)
+- T+60min mean return ≤ -0.5%
+- T+EOD mean return ≤ -0.6%
+- T+EOD return < 0 in ≥ 65% of cases
+
+**Estimated effort:** Medium. Backfillable from existing data — no new instrumentation. Script likely 200-300 lines.
+
+---
+
+### Experiment 18 (PROPOSED) — BEAR Zone Break-Above as Confirmation
+
+**Date proposed:** 2026-04-24
+**Origin:** Mirror hypothesis to Experiment 17.
+
+**Question:** When 5m close prints above the upper edge of an active W BEAR_OB or W BEAR_FVG by ≥ 0.1%, is the subsequent return statistically more bullish than baseline?
+
+**Setup:** Mirror of Experiment 17 with reversed conditions.
+- Filter: 5m `close` > `zone_high * 1.001` while zone `status = 'ACTIVE'`
+- Outcome: T+30m, T+60m, T+EOD spot return
+- Sample target: ≥ 30 events
+
+**Pass criteria:** T+30m mean ≥ +0.3%, T+EOD mean ≥ +0.5%, T+EOD return > 0 in ≥ 65% of cases.
+
+**Note:** Currently no active BEAR_OB / BEAR_FVG zones in MERDIAN system as of 2026-04-24 (all expired post-2025 rally). Backfill must run on historical zone state from `ict_htf_zones` history including EXPIRED entries — capturing each zone during its ACTIVE lifetime.
+
+**Estimated effort:** Medium (same scope as Exp 17, joined script).
+
+---
+
+### Experiment 19 (PROPOSED) — Liquidity Sweep + Rejection (PDH/PDL Stop Run)
+
+**Date proposed:** 2026-04-24
+**Origin:** Classic ICT mechanic. Worth quantifying for Indian indices.
+
+**Question:** When price breaks above PDH or below PDL by ≥ 0.05% but reverses within N bars (defined below), does the reversal then move materially in the opposite direction within 60 min?
+
+**Setup:**
+- Universe: all sessions 2024-01 → 2026-04 with `ict_htf_zones` D PDH and D PDL records
+- **PDH-then-rejection event:** 5m bar high ≥ PDH × 1.0005 AND within next 6 bars (30 min) close drops back below PDH × 0.999
+- **PDL-then-rejection event:** symmetric with PDL
+- Outcome: spot move from rejection bar low (PDH case) or high (PDL case) over next 60 min
+- Test sub-buckets: by time-of-day (morning/midday/afternoon), by VIX regime (HIGH/LOW)
+
+**Pass criteria:**
+- PDH-rejection: ≥ 60% of events show 60-min move ≥ -0.4% (down move from rejection)
+- PDL-rejection: ≥ 60% show 60-min move ≥ +0.4% (up move from rejection)
+- Sample size ≥ 40 per side
+
+**Builds (if pass):** ENH candidate — add `LIQUIDITY_SWEEP_DETECTED` boolean to market state; allow it to override BLOCKED status when combined with BULL_OB or BEAR_OB pattern.
+
+**Estimated effort:** Medium-large. Requires more careful 5m bar windowing logic than Exp 17/18.
+
+---
+
+### Experiment 20 (PROPOSED) — Open Range Break-and-Go
+
+**Date proposed:** 2026-04-24
+**Origin:** Indian market often chops in mornings. Worth knowing if first-15-min HOD/LOD breaks have edge.
+
+**Question:** Does breaking the first 15-min HOD/LOD after 09:30 IST, without recapturing within 30 min, lead to continuation in the break direction?
+
+**Setup:**
+- Universe: all sessions 2024-01 → 2026-04
+- **Open range:** spot bars 09:15-09:30 IST (first 3 × 5m bars). `OR_high` = max high. `OR_low` = min low.
+- **Break event (up):** any 5m close > OR_high after 09:30; "no recapture" = no 5m close < OR_high in next 6 bars (30 min)
+- **Break event (down):** symmetric below OR_low
+- Outcome: spot move from break confirmation bar to EOD
+- Sub-bucket: by VIX regime, by gamma regime, by breadth regime
+
+**Pass criteria:**
+- Up-break + no recapture: ≥ 65% positive EOD return, mean ≥ +0.5%
+- Down-break + no recapture: ≥ 65% negative EOD return, mean ≤ -0.5%
+- Asymmetry note: India morning bias may produce different up vs down statistics
+
+**Builds (if pass):** New TIER candidate — `OR_BREAK_CONFIRMED` as additive context multiplier on existing patterns.
+
+**Estimated effort:** Small-medium.
+
+---
+
+### Experiment 21 (PROPOSED) — Gap-and-Go vs Gap-Fill
+
+**Date proposed:** 2026-04-24
+**Origin:** Common observation — gap behavior varies. Quantify.
+
+**Question:** When NIFTY/SENSEX opens with a gap > 0.3% from prior close, does the same-day fill probability differ materially from continuation probability?
+
+**Setup:**
+- Universe: all sessions 2024-01 → 2026-04 with `abs(today_open - prev_close) / prev_close > 0.003`
+- **Gap up:** today_open > prev_close × 1.003
+- **Gap down:** today_open < prev_close × 0.997
+- **Filled:** any 5m bar in regular session traded through prev_close
+- **Time-to-fill:** minutes from open to fill
+- Outcome variables: fill rate, time-to-fill distribution, EOD return conditional on fill vs not-fill
+- Sub-bucket: by gap size (0.3-0.5%, 0.5-1.0%, >1.0%), by VIX regime, by direction
+
+**Pass criteria:** No fixed pass/fail — this is descriptive. Useful even as null result. Output: a 2D table (gap size × direction) showing fill rate and EOD return distributions.
+
+**Builds (if interesting result):** Gap context block in market state — `GAP_REGIME = {NONE, FILL_LIKELY, CONTINUATION_LIKELY}` as additive signal modifier.
+
+**Estimated effort:** Small. Mostly aggregation queries.
+
+---
+
+### Experiment 22 (PROPOSED) — Zone Confluence vs Single Zone
+
+**Date proposed:** 2026-04-24
+**Origin:** Hypothesis that overlapping HTF zones (e.g., D PDL + W BULL_OB at same level) create stronger reactions than isolated zones.
+
+**Question:** When ≥ 2 active HTF zones overlap (zone ranges intersect), does price behavior at that level differ from single-zone behavior?
+
+**Setup:**
+- Universe: all `ict_htf_zones` records 2024-01 → 2026-04 where zone ranges overlap with another active zone of same direction (BULL/BULL or BEAR/BEAR)
+- **Overlap definition:** `zone_low_A ≤ zone_high_B AND zone_high_A ≥ zone_low_B`
+- **Single-zone control:** zones with no overlap during their active lifetime
+- **Test event:** 5m bar low touches zone (within 0.1% of `zone_low`)
+- Outcome: probability of holding (no break of `zone_low - 0.2%` in next 60 min) and bounce magnitude
+- Compare: confluence holds vs single-zone holds
+
+**Pass criteria:**
+- Confluence hold rate ≥ 1.2× single-zone hold rate
+- Bounce magnitude (from low to next 60-min high) ≥ 1.3× single-zone bounce
+- Sample size ≥ 25 confluence events
+
+**Builds (if pass):** New scoring rule — confluence multiplier in tier classification. BULL_FVG inside zone confluence → upgrade tier.
+
+**Estimated effort:** Medium. Requires careful zone-overlap windowing.
+
+---
+
+### Experiment 23 (PROPOSED) — Local vs Net Gamma Divergence
+
+**Date proposed:** 2026-04-24
+**Origin:** 2026-04-24 NIFTY -275 pts move while regime classified as LONG_GAMMA. Hypothesis: local gamma profile (at spot ±0.5%) diverged from net GEX, making the LONG_GAMMA label misleading.
+
+**Question:** When net GEX and local-spot GEX disagree directionally or in magnitude, does subsequent realized vol exceed what LONG_GAMMA regime predicts?
+
+**Setup:**
+- Universe: all `gamma_metrics` snapshots 2024-01 → 2026-04 (1m or 5m frequency)
+- **Net GEX:** sum of GEX across all strikes (existing field)
+- **Local GEX:** sum of GEX for strikes within `spot ± 0.5%` (NEW computation — derive from `historical_option_chain_snapshots`)
+- **Divergence regime:** `sign(net_GEX) != sign(local_GEX)` OR `abs(local_GEX) < 0.2 × abs(net_GEX)`
+- Outcome: realized 30-min spot range vs implied vol-based expected range
+- Compare: divergence regime vs aligned regime
+
+**Pass criteria:**
+- Divergence regime shows realized 30-min range ≥ 1.5× aligned regime
+- Sample size ≥ 50 divergence events
+- Effect persists after controlling for VIX level
+
+**Builds (if pass):**
+- New regime label: `REGIME_UNCERTAIN` when divergence detected
+- ENH-35 LONG_GAMMA hard block does not apply during `REGIME_UNCERTAIN` — pattern signals can fire
+- Validity check (per ADR-001): GEX label is cross-checked against local-vs-net every cycle
+
+**Estimated effort:** Large. Requires re-deriving local GEX from option chain snapshots — new helper function.
+
+**Architectural note:** This experiment directly tests ADR-001's premise. The LONG_GAMMA label may have been a "stable lie" — internally consistent but not capturing the true risk profile. If this experiment passes, it justifies adding regime validity checks to the architecture, not just freshness checks.
+
+---
+
+### Backlog summary
+
+| # | Title | Effort | Backfillable | Dependency |
+|---|---|---|---|---|
+| 17 | BULL zone break-below cascade | Medium | Yes | None |
+| 18 | BEAR zone break-above confirmation | Medium | Yes | None |
+| 19 | Liquidity sweep + rejection | Med-large | Yes | None |
+| 20 | Open range break-and-go | Small-med | Yes | None |
+| 21 | Gap-and-go vs gap-fill | Small | Yes | None |
+| 22 | Zone confluence vs single | Medium | Yes | None |
+| 23 | Local vs net gamma divergence | Large | Partially | Local-GEX helper function |
+
+**Recommended order:** 17 → 21 → 20 → 19 → 22 → 18 → 23. Reasoning: 17 is the freshest hypothesis with direct trigger evidence (yesterday's NIFTY action). 21 is small/cheap and gives broad context. 20 and 19 build the intraday-pattern library. 22 deepens existing zone work. 18 mirrors 17. 23 is largest and tests architecture itself — last because it depends on confidence in the simpler patterns first.
+
+---
+
 ## Experiment 16 — Kelly Tiered Sizing with Compounding Capital
 
 **Date:** 2026-04-12

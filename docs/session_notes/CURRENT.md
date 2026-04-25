@@ -1,4 +1,4 @@
-# CURRENT.md — MERDIAN Live Session State
+﻿# CURRENT.md — MERDIAN Live Session State
 
 > **Living file.** Overwritten at the end of every session to reflect what just happened and what the next session is for.
 > Claude reads this immediately after `CLAUDE.md` at session start. It replaces the practice of manually pasting a "session resume block."
@@ -13,7 +13,7 @@
 | **Concern** | Candidate B from Session 7's CURRENT.md — Experiment 17 backtest (BULL Zone Break-Below as Rejection Cascade). Plus filing TD-015..018 from 2026-04-24 backlog at session start. |
 | **Type** | Research / experiment + register maintenance. |
 | **Outcome** | DONE — Exp 17 ran to FAIL verdict with composition diagnostic. Two new TDs surfaced (TD-019 stale spot pipeline, TD-020 LONG_GAMMA-on-directional-day diagnosis required before ADR-002). Session 9 priority reshuffled. |
-| **Git start → end** | `9e94824` → `<commit hash this session>` |
+| **Git start → end** | `9e94824` → `b317458c5058222b9c88e285eb9639c4ad00aec3` |
 | **Local + AWS hash match** | Local advancing; AWS still at `2c130bb` (no AWS-side commits — research session, no operational code changes). |
 | **Files changed (code)** | `experiment_17_bull_zone_break_cascade.py` (new, ~280 lines) |
 | **Files modified (docs)** | `tech_debt.md` (TD-015..020 filed), `CURRENT.md` (this rewrite), `MERDIAN_Experiment_Compendium_v1.md` (Exp 17 verdict block), `merdian_reference.json` (v10→v11), `session_log.md` (one-liner), `CLAUDE.md` (python path fix) |
@@ -110,7 +110,7 @@ None. TD-019 and TD-020 already filed in Session 8 close batch.
 | **Local env** | Windows Task Scheduler. PS 5.1 with UTF-8 profile. Git CRLF auto-conversion (cosmetic). |
 | **AWS env** | MERDIAN AWS `i-0878c118835386ec2` (eu-north-1). 11 cron jobs total. Shadow runner FAILED since 2026-04-15 (pre-existing). |
 | **MeridianAlpha AWS** | `13.51.242.119`. C-10 OPEN. |
-| **Local git HEAD** | `<commit hash from this session>` (in sync with origin/main) |
+| **Local git HEAD** | `b317458c5058222b9c88e285eb9639c4ad00aec3` (in sync with origin/main) |
 | **Last canary tag** | none — no live canary in Session 8 |
 | **Open C-N (critical)** | C-10 HIGH OPEN (Kite token propagation manual) |
 | **Open TD S1** | none |

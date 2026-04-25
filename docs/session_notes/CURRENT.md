@@ -38,14 +38,14 @@
 
 > Session 9. Pick ONE primary path from below at session start.
 
-### Candidate A (recommended) — TD-020 LONG_GAMMA-on-2026-04-24 diagnosis
+### Candidate A (recommended) -- TD-022 ICT detector silence diagnosis
 
 | Field | Value |
 |---|---|
-| **Goal** | Discriminate the three sub-hypotheses in TD-020: (a) regime correct, local-vs-net divergence; (b) regime classification wrong; (c) regime correct and gate worked as designed. Read-only DB queries. Output: TD-020 disposition note (which sub-hypothesis is supported), and a clear "ADR-002 unblocked" or "ADR-002 needs revision" verdict. |
-| **Type** | Read-only diagnosis. No code change. |
-| **Success criterion** | TD-020 marked "diagnosed: <a/b/c>" with evidence; ADR-002 disposition stated; if a code fix is required, scoped to a Session 10 successor. |
-| **Time budget** | ~25-35 exchanges. |
+| **Goal** | Diagnose why ICT pattern detector produced zero setups on 2026-04-24 despite the chart-visible W BULL_FVG break and -393pt cascade. Three sub-hypotheses to discriminate: (1) lookback/window mismatch -- detector requires status='ACTIVE' but the zone became BREACHED early in the day; (2) detector silently failing on TD-019 stale 5m bar feed; (3) pattern-coverage gap -- the cascade structure is not a pattern type the detector knows about. Code-reading + targeted replay. |
+| **Type** | Code review + data replay. Read-only relative to production tables. |
+| **Success criterion** | TD-022 marked diagnosed (one of 1/2/3 supported with evidence); ADR-002 disposition stated based on whether the silence is a bug or expected behaviour; if a code fix is required, scoped to a Session 10 successor ENH. |
+| **Time budget** | ~25-40 exchanges. |
 
 ### Candidate B — TD-019 Step 1: diagnose stale spot pipeline (do not backfill yet)
 
@@ -80,7 +80,10 @@
 - **NEW: 02-06-2025 events as outliers** — they are NOT outliers. They are the cleanest tests in the Exp 17 sample and they reject the hypothesis with conviction. Do not strip them in any future analysis.
 - **NEW: ADR-002 unconditional ratification** — pending TD-020 disposition. If TD-020 lands as sub-hypothesis (c), ADR-002 ratifies as drafted. If (a) or (b), ADR-002 needs language acknowledging the gate's behaviour on directional days and the local-vs-net concern.
 
-### Watch-outs for Candidate A (TD-020 diagnosis)
+- **NEW: TD-020 LONG_GAMMA gate question** -- closed 2026-04-25 in Session 8 extended diagnosis. Gate was not the cause of trade absence on 2026-04-24; ICT detector produced zero signals all day. Do not re-open the gate-blocking framing -- the real question is now TD-022.
+- **NEW: ADR-002 ratification dependency** -- now BLOCKED on TD-022, not TD-020. If TD-022 finds the silence is intentional, ADR-002 ratifies with that framing. If TD-022 finds a detector bug or a TD-019 dependency, ADR-002 waits for the fix.
+
+### Watch-outs for Candidate A (TD-022 diagnosis)
 
 - The diagnosis is read-only. Resist any urge to also fix what gets diagnosed in the same session — split into Session 10 successor.
 - 2026-04-24 spot 5m bars are missing (TD-019); use options snapshots and tick data instead. Sufficient for GEX time series and signal-generation introspection.
@@ -114,12 +117,12 @@ None. TD-019 and TD-020 already filed in Session 8 close batch.
 | **Last canary tag** | none — no live canary in Session 8 |
 | **Open C-N (critical)** | C-10 HIGH OPEN (Kite token propagation manual) |
 | **Open TD S1** | none |
-| **Open TD S2** | TD-002 (breadth_regime backfill), TD-019 (spot pipeline stale), TD-020 (LONG_GAMMA diagnosis) |
+| **Open TD S2** | TD-002 (breadth_regime backfill), TD-019 (spot pipeline stale), TD-022 (ICT detector silent on cascade days) |
 | **Open TD S3** | TD-001, TD-004, TD-005, TD-006, TD-007, TD-015, TD-016, TD-017 |
-| **Open TD S4** | TD-009, TD-010, TD-018 |
+| **Open TD S4** | TD-009, TD-010, TD-018, TD-021 |
 | **Closed in Session 7** | C-09, TD-014 |
-| **Closed in Session 8** | none — Exp 17 ran but no item closed |
-| **Open from Session 7** | ADR-002 phase-4a-posture (NOW BLOCKED on TD-020) |
+| **Closed in Session 8** | TD-020 (LONG_GAMMA gate question diagnosed -- not the cause; gate had no signals to filter; replaced by TD-022) |
+| **Open from Session 7** | ADR-002 phase-4a-posture (NOW BLOCKED on TD-022) |
 | **Active research backlog** | Exp 17 closed FAIL. Exp 17b proposed (composition-cleaned). Exp 18-23 in Compendium backlog. |
 | **Active ENH in flight** | none |
 | **Data contamination** | `BREADTH-STALE-REF-2026-03-27` registered. 27-day window 2026-03-27 → 2026-04-23. |
@@ -164,7 +167,7 @@ None. TD-019 and TD-020 already filed in Session 8 close batch.
 
 ---
 
-## TD-020 starter queries (Candidate A first step)
+## TD-022 starter approach (Candidate A first step)
 
 ```sql
 -- 1. Net GEX time series for 2026-04-24, both indices

@@ -32,7 +32,7 @@ Experiments are ordered by number. Most recent changes prepended to the top of t
 
 > **PROPOSED** = experiment designed but not yet run. Setup, universe, and pass criteria are specified to the level needed for execution. Once run, the entry is moved out of this section into the main numbered list with Findings and Verdict added.
 
-### Experiment 17 (PROPOSED) — BULL Zone Break-Below as Rejection Cascade
+### Experiment 17 (RUN 2026-04-25, FAIL) — BULL Zone Break-Below as Rejection Cascade
 
 **Date proposed:** 2026-04-24
 **Origin:** 2026-04-24 NIFTY price action (open inside W BULL_FVG 24,074-24,241, broke below, cascaded -275 pts to 23,898). Navin observation: "breaking below a green zone considered a rejection?"
@@ -54,6 +54,64 @@ Experiments are ordered by number. Most recent changes prepended to the top of t
 - T+EOD return < 0 in ≥ 65% of cases
 
 **Estimated effort:** Medium. Backfillable from existing data — no new instrumentation. Script likely 200-300 lines.
+
+---
+
+
+**Verdict (run 2026-04-25 09:54 IST):** FAIL on all four pass criteria. Filed as negative result. Hypothesis as written, not supported.
+
+**Sample:** 13 events (target ≥ 30). Underpowered.
+
+| Metric | Events (N=13) | Baseline | Delta | Pass criterion | Result |
+|---|---|---|---|---|---|
+| Mean ret T+30m | +0.034% | +0.003% | +0.031% | ≤ -0.300% | FAIL |
+| Mean ret T+60m | +0.042% | +0.004% | +0.038% | ≤ -0.500% | FAIL |
+| Mean ret T+EOD | +0.158% | -0.014% | +0.171% | ≤ -0.600% | FAIL |
+| % EOD < 0      | 30.8%   | —        | —     | ≥ 65%      | FAIL |
+
+The hypothesised direction (bearish cascade after break-below) is not present in the sample. The mean drift is mildly POSITIVE — opposite of the spec's prediction — but the sample composition makes any directional claim weak.
+
+**Composition diagnostic (all 13 events inspected manually):**
+
+| Issue | Events | Effect |
+|---|---|---|
+| 09:15 IST gap-down opens | 7 (54%) | `prev_close` is prior day's 15:25 close. Tests overnight gap behaviour, not intraday rejection. Distinct hypothesis (Exp 21 territory). |
+| 14:00 IST or later breaks | 4 (31%) | T+EOD horizon collapses to 1-6 bars. Degenerate horizon. |
+| `valid_from == bar_date` | 4 (31%) | Zone created same trading day it broke. Live-tradability concern (see look-ahead note below). |
+| `prev_close == zone_low` exactly | 2 | BULL_OB structural artifact — zone is anchored to that candle's range, direction filter is trivially satisfied. |
+| **Truly clean intraday rejection events** | **2** | NIFTY 2025-09-05 10:10 (+0.250% EOD) and SENSEX 2026-02-25 12:30 (-0.262% EOD). N=2 says nothing. |
+
+**On the 02-06-2025 events (NIFTY +0.60% EOD, SENSEX +0.72% EOD):** These are NOT outliers to discount. Both indices gapped down on Monday 02-06-2025 against fresh W BULL_OB zones (`valid_from = 2025-06-02`), broke decisively below by ~0.7%, then closed strongly positive. Textbook "Monday open stop-hunt below fresh weekly support, then V-shape". They are the cleanest tests in the sample and they reject the hypothesis with conviction. Remove them and you remove the strongest evidence against the spec, not anomalies.
+
+**Look-ahead audit (run 2026-04-25 against `created_at`):** All 13 zones in the sample were created retrospectively. 11 of 13 created in one batch at 2026-04-15 10:04 IST; the other 2 at 2026-04-11 19:19 IST (54-day creation lag from `valid_from`). Implication:
+- Exp 17 is a **structural** backtest — the zones are geometrically deterministic from completed weekly candles, so the data validly tests the structural break-below pattern hypothesis. The look-ahead does not invalidate the FAIL.
+- However, none of the 13 events was **live-detectable** in MERDIAN's operational history. Live ICT zone tracking effectively did not exist before 2026-04-15 10:04 IST. The retrospective backfill on that timestamp was the system's first comprehensive zone population.
+- The 2026-04-24 NIFTY cascade event (W BULL_FVG 24,074-24,241 anchored to Apr 17 weekly candle, broke 09:30+, cascaded to 23,840 lows) is the system's first credible "live zone, live break-below" instance. It is currently missing from `hist_spot_bars_5m` (TD-019, 10-day pipeline staleness) and cannot be scored yet.
+
+**Distributional finding worth recording (independent of FAIL/PASS):** 54% of detected break-below events are 09:15 IST gap-downs. **W BULL zones in this dataset are violated by overnight gap, not by intraday selling.** This has implications for Phase 4A:
+- Live "intraday break of zone" alerts will fire much less often than a naive view assumes.
+- The dominant risk to a long position protected by a W BULL zone is overnight, not intraday.
+- Stop placement should account for this asymmetry — overnight stops more critical than intraday.
+
+**Universe shrinkage from spec:**
+- Spec assumed 2024-01..2026-04 (28 months); actual `hist_spot_bars_5m` coverage is 2025-04-01..2026-04-15 (12.5 months). Pipeline staleness extends the gap further (TD-019).
+- Only 37 W BULL_FVG/BULL_OB zones existed in this window (15 BULL_FVG + 22 BULL_OB).
+
+**Disposition:** Hypothesis as written, not supported by structural data. Closed as FAIL. No ENH proposed.
+
+**Follow-ups (queued, not promoted):**
+
+| Follow-up | Type | Trigger |
+|---|---|---|
+| **Exp 17b** — same script, intraday-only filter (drop gap-down opens, drop late-day breaks, drop same-day-zone events) plus add D-timeframe zones for sample boost. Target N ≥ 30 cleanly. | New experiment | After TD-019 pipeline repair. |
+| **2026-04-24 forward overlay** — single-event overlay of the live cascade against this run's rules. The motivating anecdote becomes a single forward data point. | One-off scoring | After TD-019 backfill of 2026-04-16..present. |
+| **Exp 19** (already in backlog) — Liquidity Sweep + Rejection. The mild positive-drift finding here is mechanically what Exp 19 is designed to test with proper framing. | Existing backlog | When prioritised. |
+
+**Run artifacts:**
+- `experiment_17_bull_zone_break_cascade.py` (script, committed Session 8)
+- `experiment_17_events.csv` (13 rows; gitignored)
+- `experiment_17_baseline_buckets.csv` (41,248 rows; gitignored)
+- Run: 2026-04-25 09:54 IST against `hist_spot_bars_5m` 2025-04-01..2026-04-15
 
 ---
 

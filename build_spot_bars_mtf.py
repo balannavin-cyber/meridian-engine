@@ -10,12 +10,21 @@ Runtime: ~5-10 minutes (pure in-memory grouping, no heavy DB queries)
 from __future__ import annotations
 
 import os
+import sys
 import time
 from collections import defaultdict
 from datetime import datetime
 
 from dotenv import load_dotenv
 from supabase import create_client
+
+# ENH-71 write-contract layer. ExecutionLog records every invocation to
+# script_execution_log with expected vs actual writes, exit_reason, and
+# contract_met. See core/execution_log.py for the API contract.
+# TD-019/TD-023 closure 2026-04-26: previously uninstrumented; silent
+# 7-trading-day stall (2026-04-15 -> 2026-04-24) discovered only by
+# downstream observation. Instrumented now so the next silence surfaces.
+from core.execution_log import ExecutionLog
 
 load_dotenv()
 
@@ -121,7 +130,8 @@ def upsert_batch(sb, table, rows, conflict_cols):
     return 0
 
 
-def main():
+def _run(exec_log: ExecutionLog) -> None:
+    """Original main() body. Records writes to exec_log as they land."""
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     log("=" * 65)
@@ -173,6 +183,7 @@ def main():
                 "instrument_id,bar_ts"
             )
         log(f"  Written {written_5m:,} 5m bars")
+        exec_log.record_write("hist_spot_bars_5m", written_5m)
 
         # ── 15m bars ─────────────────────────────────────────────────────
         log(f"  Aggregating to 15m...")
@@ -201,6 +212,7 @@ def main():
                 "instrument_id,bar_ts"
             )
         log(f"  Written {written_15m:,} 15m bars")
+        exec_log.record_write("hist_spot_bars_15m", written_15m)
 
     # Verify
     log("\n" + "=" * 65)
@@ -214,5 +226,35 @@ def main():
     log("Next: python build_atm_option_bars_mtf.py")
 
 
+def main() -> int:
+    """ENH-71 instrumented entry point. Returns shell exit code."""
+    # expected_writes = 1 per output table is "minimum-1 row" semantics: a
+    # zero-row run trips contract_met=False even if exit_code=0. Catches
+    # "ran cleanly but wrote nothing" — the failure mode that hid TD-019
+    # for 10 days. Actual write counts will be in the thousands per run.
+    exec_log = ExecutionLog(
+        script_name="build_spot_bars_mtf.py",
+        expected_writes={
+            "hist_spot_bars_5m":  1,
+            "hist_spot_bars_15m": 1,
+        },
+        notes="full-history rebuild of 5m/15m spot bars from hist_spot_bars_1m",
+    )
+    try:
+        _run(exec_log)
+    except SystemExit:
+        # Allow callees to raise SystemExit cleanly. ExecutionLog atexit
+        # hook handles non-zero exits via CRASH path.
+        raise
+    except Exception as e:
+        import traceback
+        return exec_log.exit_with_reason(
+            "CRASH",
+            exit_code=1,
+            error_message="".join(traceback.format_exception(type(e), e, e.__traceback__)),
+        )
+    return exec_log.complete()
+
+
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

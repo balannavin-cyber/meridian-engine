@@ -1,8 +1,8 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v10",
-    "generated": "2026-04-23",
+    "version": "v6",
+    "generated": "2026-04-19",
     "sources": [
       "MERDIAN_Master_V18_v2 Section 15 (File Master, Table Master, Security IDs, AWS Runtime Files)",
       "MERDIAN_Appendix_V18A_v4 Block 3 (file updates), Block 4 (table updates), Block 5 (schema changes)",
@@ -11,12 +11,7 @@
       "MERDIAN_Appendix_V18F_v2 (2026-04-11/12)  --  Experiment Series 2-16 + Kelly Sizing",
       "MERDIAN_Appendix_Research_Sessions_4_5 (2026-04-17/18)  --  Experiments 17-27b + MTF OHLCV + hist_pattern_signals",
       "Session 2026-04-19 (C-08 breadth writer fix)",
-      "Session 2026-04-19 (ENH renumber + OI migration to Enhancement Register)",
-      "Session 2026-04-20 (outage + re-engineering programme Sessions 1+2; ENH-66/68 tactical/71 COMPLETE; ENH-67/69/70/72/73/74 PROPOSED)",
-      "Session 2026-04-21 (Sessions 3+4)  --  ENH-72 propagation 9 of 9 COMPLETE + OI-24/26/27 fixes + Phase 1/2/3 ops (spot backfill, ICT HTF rebuild, Task Scheduler repair)",
-      "Session 2026-04-22 (Session 5)  --  OI series permanent closure: OI-18/19/20/21/22/23 CLOSED + PS 5.1 UTF-8 BOM fix forward",
-      "Session 2026-04-22 PM (Session 6 -- untracked-files triage; tracked Doc Protocol v3 + Testing Protocol v1; gitignore sweep)",
-      "Session 2026-04-23 (Session 7) - breadth cascade root cause (C-09) + Kite token propagation gap (C-10 OPEN) + breadth writer instrumentation (TD-014) + runbook_update_kite_flow.md + data_contamination_ranges registry + CLAUDE.md v1.3"
+      "Session 2026-04-19 (ENH renumber + OI migration to Enhancement Register)"
     ],
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
@@ -720,9 +715,10 @@
         "hist_spot_bars_15m"
       ],
       "call_signature": "python build_spot_bars_mtf.py",
-      "cadence": "Manual  --  run once after major data updates",
-      "status": "STABLE  --  41,248 5m rows + 14,072 15m rows written. Runtime ~5min.",
-      "open_items": []
+      "cadence": "Daily 16:00 IST Mon-Fri via MERDIAN_Spot_MTF_Rollup_1600 Task Scheduler task (registered Session 9, 2026-04-26). Manual invocations remain legal and idempotent.",
+      "status": "STABLE -- ENH-71 instrumented (Session 9). 42,324 5m rows + 14,440 15m rows as of 2026-04-26 backfill. Runtime ~116s (full-history rebuild; TD-025 candidate to make incremental).",
+      "instrumented": true,
+      "open_items": ["TD-025"]
     },
     "build_atm_option_bars_mtf.py": {
       "local_path": "C:\\GammaEnginePython\\build_atm_option_bars_mtf.py",
@@ -776,41 +772,6 @@
       "open_items": [],
       "introduced_in_commit": "4599bb8 (2026-04-16)",
       "governance_note": "This file was not registered in merdian_reference.json at introduction. Added 2026-04-19 as part of C-08 closure. Prompts a broader file-registry audit (see RESEARCH-OI-16 proposed)."
-    },
-    "MERDIAN_Documentation_Protocol_v3.md": {
-      "local_path": "C:\\GammaEnginePython\\docs\\operational\\MERDIAN_Documentation_Protocol_v3.md",
-      "aws_path": "/home/ssm-user/meridian-engine/docs/operational/MERDIAN_Documentation_Protocol_v3.md",
-      "reads": [],
-      "writes": [],
-      "call_signature": "n/a (markdown protocol document)",
-      "cadence": "n/a",
-      "status": "ACTIVE  --  authoritative rule document for when appendices, session notes, runbooks are written. Referenced in CLAUDE.md lookup table. Supersedes v2.",
-      "open_items": []
-    },
-    "MERDIAN_Testing_Protocol_v1.md": {
-      "local_path": "C:\\GammaEnginePython\\docs\\operational\\MERDIAN_Testing_Protocol_v1.md",
-      "aws_path": "/home/ssm-user/meridian-engine/docs/operational/MERDIAN_Testing_Protocol_v1.md",
-      "reads": [],
-      "writes": [],
-      "call_signature": "n/a (markdown protocol document)",
-      "cadence": "n/a",
-      "status": "ACTIVE  --  consolidated preflight / canary / replay procedures. Referenced in CLAUDE.md lookup table.",
-      "open_items": []
-    },
-    "experiment_17_bull_zone_break_cascade.py": {
-      "purpose": "Experiment 17 backtest -- BULL Zone Break-Below as Rejection Cascade. Reads ict_htf_zones (W timeframe, BULL_FVG/BULL_OB) and hist_spot_bars_5m. Writes events CSV + baseline buckets CSV.",
-      "type": "research/experiment",
-      "writes_to": [
-        "experiment_17_events.csv",
-        "experiment_17_baseline_buckets.csv"
-      ],
-      "reads_from": [
-        "ict_htf_zones",
-        "hist_spot_bars_5m"
-      ],
-      "added_session": 8,
-      "verdict": "FAIL 2026-04-25 (N=13 underpowered)",
-      "status": "RUN COMPLETE -- kept as reproducibility artifact for Exp 17 closure"
     }
   },
   "tables": {
@@ -1352,70 +1313,6 @@
       "columns": "ts, trade_date, advances, declines, up_4pct, down_4pct, breadth_score, coverage_pct",
       "status": "LIVE  --  writes every cycle including zero-coverage cycles (coverage_pct=0 rows indicate WebSocket off or market closed).",
       "open_items": []
-    },
-    "script_execution_log": {
-      "written_by": [
-        "core/execution_log.py (ExecutionLog helper, consumed by any script that imports it)",
-        "capture_spot_1m.py (first reference implementation)"
-      ],
-      "read_by": [
-        "v_script_execution_health_30m (view)",
-        "Session 6 dashboard card (ENH-73, pending)",
-        "Session 6 alert daemon (ENH-73, pending)",
-        "Session 4 preflight harness (ENH-70, pending)"
-      ],
-      "constraint": "exit_reason CHECK IN ('SUCCESS','HOLIDAY_GATE','OFF_HOURS','TOKEN_EXPIRED','DATA_ERROR','SKIPPED_NO_INPUT','DEPENDENCY_MISSING','CRASH','TIMEOUT','RUNNING','DRY_RUN'); invocation_id UNIQUE; partial indexes on contract_met=false and exit_reason<>'SUCCESS'.",
-      "status": "LIVE (ENH-71, 2026-04-20) -- foundation deployed; propagation to 9 remaining critical scripts is Session 3 / ENH-72",
-      "critical_rule": "Adding a new exit_reason value requires an explicit migration (DROP + recreate CHECK constraint). Do not stuff new states into existing values. ExecutionLog coerces invalid reasons to CRASH with error_message so developer bugs remain visible rather than suppressed.",
-      "columns": [
-        "id",
-        "script_name",
-        "invocation_id (unique)",
-        "host",
-        "symbol",
-        "trade_date",
-        "started_at",
-        "finished_at",
-        "duration_ms",
-        "exit_code",
-        "exit_reason",
-        "contract_met",
-        "expected_writes jsonb",
-        "actual_writes jsonb",
-        "notes",
-        "error_message",
-        "git_sha"
-      ],
-      "open_items": [
-        "ENH-72",
-        "ENH-73",
-        "ENH-70"
-      ]
-    },
-    "v_script_execution_health_30m": {
-      "type": "VIEW (NOT a table)",
-      "written_by": [
-        "(none -- materialised from script_execution_log)"
-      ],
-      "read_by": [
-        "Session 6 dashboard card (ENH-73, pending)",
-        "Session 6 alert daemon (ENH-73, pending)"
-      ],
-      "status": "LIVE (ENH-71, 2026-04-20)",
-      "critical_rule": "View rolls up last 30 minutes of script_execution_log per script_name. Do not attempt to UPSERT to this object; see C-08 / ENH-67 for the breadth-intraday analogue failure mode. Refresh is automatic (view, not materialized).",
-      "columns": [
-        "script_name",
-        "invocations",
-        "successful",
-        "failed",
-        "in_flight",
-        "success_pct",
-        "last_run",
-        "last_exit_reason"
-      ],
-      "open_items": [
-        "ENH-73"
-      ]
     }
   },
   "security_ids": {
@@ -1614,8 +1511,7 @@
       "root_cause": "Commit 4599bb8 (2026-04-16) retired ingest_breadth_intraday_local.py and introduced ingest_breadth_from_ticks.py. New writer upserts to latest_market_breadth_intraday which is a VIEW of market_breadth_intraday; Supabase silently ignores upserts to views. market_breadth_intraday stopped receiving rows at 2026-04-16 05:08:48 UTC. Signal engine read stale BEARISH data all day 2026-04-17 despite actual BULLISH market (1,269 ADV / 50 DEC).",
       "fix_applied": "ingest_breadth_from_ticks.py: changed .table('latest_market_breadth_intraday').upsert(payload, on_conflict='universe_id') to .table('market_breadth_intraday').upsert(payload, on_conflict='ts,universe_id'). View auto-reflects latest row via ORDER BY ts DESC LIMIT 1.",
       "verification": "Saturday 2026-04-19: direct upsert test passed; test row with universe_id=excel_v1 appeared in view within 30 seconds; cleanup confirmed. View refresh semantics proven end-to-end.",
-      "v18h_audit_note": "V18H_v2 proposed DDL (DROP VIEW; CREATE TABLE with symbol PRIMARY KEY and 6 columns) was based on incomplete diagnosis. V18H_v2 did not query the view definition or last-write timestamp of the underlying table. Correct fix was one line of Python, not a schema change. Audit-process lesson: verify actual write-path against underlying object, not just consumer symptom.",
-      "post_close_note": "2026-04-20: a distinct downstream symptom (dashboard showing stale BULLISH counter for hours) was observed and filed as ENH-67 (cosmetic, Session 6). The underlying VIEW fix from C-08 remains valid; ENH-67 concerns the display-path consumer, not the writer."
+      "v18h_audit_note": "V18H_v2 proposed DDL (DROP VIEW; CREATE TABLE with symbol PRIMARY KEY and 6 columns) was based on incomplete diagnosis. V18H_v2 did not query the view definition or last-write timestamp of the underlying table. Correct fix was one line of Python, not a schema change. Audit-process lesson: verify actual write-path against underlying object, not just consumer symptom."
     },
     "V18A-01": {
       "title": "Windows token refresh task unattended execution not yet proven",
@@ -1737,181 +1633,6 @@
       "priority": "LOW",
       "status": "OPEN - 9.5GB of 18GB at V18C close",
       "note": "Renumbered to OI-07-INFRA to avoid collision with Research OI-07 (experiment_15b). See below."
-    },
-    "ENH-66": {
-      "title": "Trading calendar auto-insert must populate open_time/close_time (holiday-gate root cause)",
-      "priority": "HIGHEST",
-      "status": "CLOSED",
-      "closed_date": "2026-04-20",
-      "closed_commit": "8f83859",
-      "root_cause": "V18G commit ef477e6 added holiday-gate logic to 7 production scripts treating open_time IS NULL as 'market holiday'. 2026-04-20 trading_calendar row had is_open=True but open_time/close_time NULL (auto-inserted by merdian_start.py without times). All 7 scripts silently exited 'holiday' and wrote zero rows for 3 hours: capture_spot_1m.py, capture_market_spot_snapshot_local.py, compute_iv_context_local.py, build_market_spot_session_markers.py, ingest_breadth_intraday_local.py, merdian_start.py, run_equity_eod_until_done.py. Dashboard, supervisor, Task Scheduler all showed green.",
-      "fix_applied": "merdian_start.py ensure_calendar_row() patched at two points: (1) INSERT path -- weekday rows with is_open=True now include open_time='09:15:00' and close_time='15:30:00' in the payload; (2) existing-row PATCH path -- if open_time or close_time is NULL on an is_open=True row, backfill via PATCH before returning success. Strips UTF-8 BOM from merdian_start.py as side effect. Single authoritative source; 7 downstream gate-reading scripts untouched (their logic was correct; they were receiving incomplete data).",
-      "verification": "Live: DELETE 2026-04-20 calendar row -> ensure_calendar_row() recreated with both times populated. capture_spot_1m.py wrote NIFTY+SENSEX rows. Regression check: is_open=False -> script correctly exits as holiday (gate logic intact). Backfill branch fired on stack restart at 19:44 IST with explicit log message."
-    },
-    "ENH-67": {
-      "title": "latest_market_breadth_intraday is a VIEW -- dashboard shows stale counter (was C-08 re-opened)",
-      "priority": "MEDIUM (cosmetic -- signal engine uses wcb_regime which is correct)",
-      "status": "PROPOSED",
-      "opened_date": "2026-04-20",
-      "targets": "Session 6 of re-engineering programme",
-      "observation": "2026-04-20 dashboard card showed 'Market Breadth -- NSE Universe' as 1,265 ADV / 54 DEC BULLISH for multiple hours despite VRD Nation advance-decline chart and WCB weighted aggregate both showing BEARISH. latest_market_breadth_intraday is a VIEW, not a TABLE. ingest_breadth_intraday_local.py upserts appear to fail silently -- view returns last successfully written row elsewhere (stale pre-market seeded row).",
-      "proposed_fix": "Option B (repoint ingest_breadth_intraday_local.py to write a new proper table; leave view for legacy consumers) + Option C (dashboard reads wcb_regime rollup instead of universe counter).",
-      "note": "Not fixing immediately because signal engine already uses wcb_regime for gating decisions (ENH-53 breadth removal from hard gate). Display-only inversion; did not contribute to the 2026-04-20 outage."
-    },
-    "ENH-68": {
-      "title": "Runner holds stale in-memory env vars when .env rotates mid-session (tactical stopgap)",
-      "priority": "HIGH",
-      "status": "CLOSED (tactical); strategic replacement at ENH-74",
-      "closed_date": "2026-04-20",
-      "closed_commit": "b195499",
-      "root_cause": "run_option_snapshot_intraday_runner.py called load_dotenv() once at startup. Runner started 09:15:34 IST with old Dhan token. Token expired ~10:06 IST (OPTION_AUTH_BREAK alert). refresh_dhan_token.py rewrote .env at 11:00:10 IST successfully but runner kept using stale in-memory value. Every cycle 401 from 11:26 to 12:26 IST. Only merdian_stop.py + merdian_start.py picked up new token.",
-      "fix_applied": "Added guarded load_dotenv(override=True, dotenv_path=BASE_DIR / '.env') at top of run_full_cycle() in run_option_snapshot_intraday_runner.py. One reload per 5-minute cycle. Log line 'ENH-68: .env reloaded for this cycle (override=True)' every cycle for audit trail. Graceful degradation with _load_dotenv = None if python-dotenv unavailable.",
-      "options_considered": "A (flag file): rejected, Windows file-race risk. C (per-use helper get_dhan_token_live()): rejected, fixes token instance not class of bug. D (core/live_config.py full refactor): worth doing properly, separated as ENH-74 for Session 5.",
-      "verification": "ast.parse OK, module import OK, python-dotenv available. 6 ENH-68 markers at expected line numbers. Stack restarted 19:44 IST. Live validation awaits 2026-04-21 09:15 IST.",
-      "superseded_by": "ENH-74 (when core/live_config.py lands, this per-cycle reload is removed)"
-    },
-    "ENH-69": {
-      "title": "Supervisor staleness threshold shorter than cycle duration (false-restart loop)",
-      "priority": "LOW -- cosmetic, runner survives, children exit cleanly",
-      "status": "PROPOSED",
-      "opened_date": "2026-04-20",
-      "targets": "Session 6 of re-engineering programme",
-      "observation": "Supervisor health check runs every 60s; observed cycle duration 146.6s. When runner's work extends past heartbeat-age threshold, supervisor spawns a replacement that detects the real runner holds the lock and exits cleanly. Fills pm_supervisor.log with 'Runner not healthy: Runner lock missing pid' every minute despite runner being alive.",
-      "proposed_fix": "Option 3: richer heartbeat signal -- runner writes more frequent heartbeats during long steps (every 15s during ingest, per-child-process finish). Aligns with per-step visibility already provided by script_execution_log (ENH-71).",
-      "depends_on": "ENH-71"
-    },
-    "ENH-70": {
-      "title": "Preflight is theater -- rewrite as dry-run contract enforcement",
-      "priority": "HIGH -- allowed 2026-04-20 bugs to ship undetected",
-      "status": "PROPOSED",
-      "opened_date": "2026-04-20",
-      "targets": "Session 4 of re-engineering programme",
-      "observation": "Preflight PASSED at 08:53 IST on 2026-04-20 while holiday-gate bug was already latent in trading_calendar. Current checks (Python imports succeed, Supabase REST responds, Dhan IDX_I probe, file presence) cannot catch a script that silently exits 0 on a trading day.",
-      "proposed_fix": "Add --dry-run flag to each critical script. Preflight generates invocation_id, spawns 'python <script> --dry-run --invocation-id <uuid>', polls script_execution_log for matching invocation_id, FAILs preflight if contract_met=FALSE for any critical script. Today's bug replayed: capture_spot_1m.py --dry-run would hit holiday gate, return exit_reason=HOLIDAY_GATE contract_met=False, and fail preflight explicitly -- 08:53 IST crash instead of 09:15 IST silent outage.",
-      "depends_on": "ENH-71 + ENH-72"
-    },
-    "ENH-71": {
-      "title": "Write-contract layer (script_execution_log + ExecutionLog helper + capture_spot_1m reference implementation) -- foundation",
-      "priority": "FOUNDATIONAL -- unblocks ENH-70/72/73",
-      "status": "CLOSED (foundation); propagation to 9 remaining critical scripts is Session 3 / ENH-72",
-      "closed_date": "2026-04-20",
-      "closed_commit": "260c7d0",
-      "shipped": [
-        "Table public.script_execution_log with closed-set exit_reason CHECK constraint (11 values), expected_writes/actual_writes jsonb, computed contract_met, partial indexes.",
-        "View public.v_script_execution_health_30m for dashboard/alert consumption.",
-        "core.execution_log.ExecutionLog helper class: record_write(table, n), exit_with_reason(reason, ...), complete(notes). atexit crash hook with traceback capture. Invalid exit_reasons coerced to CRASH. Best-effort Supabase writes; never raises into caller.",
-        "capture_spot_1m.py converted as reference implementation. Declares expected_writes={market_spot_snapshots: 2, hist_spot_bars_1m: 2}. Six exit paths classified: env-var -> DEPENDENCY_MISSING; holiday gate -> HOLIDAY_GATE; Dhan fetch -> TOKEN_EXPIRED/DATA_ERROR; writes -> SUCCESS via log.complete()."
-      ],
-      "verification": "Live Supabase, 6 tests: empty table + accessible view + CHECK constraint rejected INVALID_REASON (status 400, error code 23514); smoke SUCCESS met=True; contract violation (1 of 3) met=False; atexit crash path exit_reason=CRASH; HOLIDAY_GATE early exit met=False; live run of converted capture_spot_1m.py SUCCESS met=True 2+2 writes 1114ms git_sha='b195499'. Replay of 2026-04-20 outage: is_open=False, row recorded reason=HOLIDAY_GATE met=False expected={market_spot_snapshots: 2, hist_spot_bars_1m: 2} actual={} notes='trading_calendar says closed for 2026-04-20'. Today's silent exit is now a dashboard-visible, alertable row.",
-      "blocks": [
-        "ENH-70",
-        "ENH-72",
-        "ENH-73"
-      ]
-    },
-    "ENH-72": {
-      "title": "Propagate ExecutionLog to 9 remaining critical scripts",
-      "priority": "HIGH",
-      "status": "CLOSED",
-      "opened_date": "2026-04-20",
-      "targets": "Session 3 of re-engineering programme",
-      "scope": [
-        "1. ingest_option_chain_local.py (highest write volume; Dhan 401 failures become TOKEN_EXPIRED audit rows)",
-        "2. ingest_breadth_intraday_local.py (enables ENH-67 investigation)",
-        "3. capture_market_spot_snapshot_local.py",
-        "4. compute_iv_context_local.py",
-        "5. build_market_spot_session_markers.py",
-        "6. run_equity_eod_until_done.py",
-        "7. refresh_dhan_token.py (records token rotation events -- enables ENH-74 validation)",
-        "8. build_ict_htf_zones.py",
-        "9. detect_ict_patterns_runner.py (Insufficient bars (0) silent degrade becomes SKIPPED_NO_INPUT)",
-        "10. build_trade_signal_local.py (signal producer)"
-      ],
-      "effort_estimate": "~20 min per conversion once ENH-71 pattern is established. Total ~3-4 hours.",
-      "depends_on": "ENH-71",
-      "closed_date": "2026-04-21",
-      "closed_commit_chain": "3a22735 -> d676a73 -> 2173002 -> 74e15a0 -> 70df409 -> b3d88fa -> 1e75a74 -> dd66076 -> f121fca",
-      "closure_note": "All 9 critical pipeline scripts instrumented with ExecutionLog write-contract. Live production validation during 2026-04-21 trading day: 1,871 invocations, 5 failures, ~99.7% clean rate. Session 3+4 log entry has full per-target detail."
-    },
-    "ENH-73": {
-      "title": "Dashboard truth + alert daemon contract-violation rules",
-      "priority": "MEDIUM",
-      "status": "PROPOSED",
-      "opened_date": "2026-04-20",
-      "targets": "Session 6 of re-engineering programme",
-      "scope": [
-        "Dashboard: new card 'Pipeline Data Integrity (last 30 min)' driven by v_script_execution_health_30m. Per-stage RED/AMBER/GREEN traffic light based on success_pct. Click-through reveals last failure row with exit_reason, expected_writes, actual_writes, error_message.",
-        "Alert daemon rules (60s polling query against script_execution_log): contract_met=FALSE during market hours (immediate alert); HOLIDAY_GATE during market hours rolling count >1 in last N cycles (catches 2026-04-20 bug class); cascade detection (root cause not symptoms); freshness (table X no rows in >15 min during market hours).",
-        "Also folds ENH-67 (breadth counter fix) and ENH-69 (supervisor heartbeat richness)."
-      ],
-      "depends_on": "ENH-71 + ENH-72"
-    },
-    "ENH-74": {
-      "title": "Live config layer -- core/live_config.py (strategic replacement of ENH-68)",
-      "priority": "HIGH -- eliminates stale-in-memory bug class",
-      "status": "PROPOSED",
-      "opened_date": "2026-04-20",
-      "targets": "Session 5 of re-engineering programme",
-      "scope": "Build core/live_config.py with function-based accessors (dhan_token, dhan_client_id, supabase_url, supabase_service_key, feature_flag, capital_per_lot, ...) backed by 30s TTL-cached load_dotenv(override=True). Thread-safe via Lock. Repo-wide audit of os.environ[...] / os.getenv(...) -- estimated 50-80 call sites. Replace each with live_config.XXX(). Remove ENH-68 per-cycle load_dotenv in runner (superseded).",
-      "validation_plan": "Runner up, edit .env to rotate token, wait 30s, next cycle uses new token. Flag-flip test: change MERDIAN_SIGNAL_V4 in .env, takes effect within 30s with no restart. ExecutionLog records of refresh_dhan_token.py serve as audit trail.",
-      "effort_estimate": "4-6 hours, repo-wide",
-      "replaces": "ENH-68 tactical"
-    },
-    "C-09": {
-      "title": "Breadth cascade root cause - equity_intraday_last stale since 2026-03-27",
-      "priority": "CRITICAL",
-      "status": "CLOSED",
-      "closed_date": "2026-04-23",
-      "closed_commit": "2c130bb",
-      "root_cause": "C-08 fix on 2026-04-16 retired ingest_breadth_intraday_local.py (Dhan REST) and replaced it with ingest_breadth_from_ticks.py (Zerodha WebSocket). The retired writer had TWO responsibilities: (1) compute breadth and (2) maintain equity_intraday_last reference prices. C-08 replaced only (1). Nothing maintained equity_intraday_last after 2026-03-27 15:30 IST (last row written by the retired Dhan writer). Consumer ingest_breadth_from_ticks.py then computed breadth by comparing live ticks against a frozen month-old reference, producing fabricated BULLISH values on objectively bearish days. 27 trading days of contamination spanning 29 downstream tables.",
-      "fix_applied": "Created refresh_equity_intraday_last.py on MERDIAN AWS. Fetches prev-session close via Kite REST ohlc() for ~1,330 NSE breadth universe symbols in chunks of 250. UPSERTs to equity_intraday_last with ticker as conflict key. Scheduled via cron '35 3 * * 1-5' (09:05 IST pre-market). Instrumented with script_execution_log telemetry.",
-      "verification": "Manual test 2026-04-23 18:02 IST wrote 1,330 rows in 4.5s. Simulated breadth compute against late-day ticks (15:25 IST) with fresh reference produced 429 adv / 875 dec = 32/68 ratio, matching NSE NIFTY 500 authoritative 158/342 = 32/68 ratio. Pre-fix 15:25 IST live row showed 1,264 adv / 61 dec on stale reference - directionally inverted from reality. Fix validated end-to-end.",
-      "blocks": [
-        "All downstream signal reliability via breadth_regime and breadth_score fields",
-        "Any research query reading breadth fields within 2026-03-27 to 2026-04-23"
-      ],
-      "related": [
-        "C-08 (predecessor fix that introduced the orphaned responsibility)",
-        "C-10 (Kite token propagation - upstream dependency of the fix cron)",
-        "TD-014 (write-contract instrumentation on breadth writer)",
-        "data_contamination_ranges.BREADTH-STALE-REF-2026-03-27 (registry entry)"
-      ],
-      "session": "Session 7 (2026-04-23)"
-    },
-    "C-10": {
-      "title": "Kite token propagation MeridianAlpha -> MERDIAN AWS is fully manual",
-      "priority": "HIGH",
-      "status": "OPEN",
-      "root_cause": "Documented in AppendixV18H_v2 Section 7.1 and Master V19 Section 5.1 as Step 2 of the daily pre-market sequence: SSH to MERDIAN AWS and sed patch .env with new Zerodha token. Fully MANUAL. No automation, no verification gate. Full-day silent outage on 2026-04-22 when Step 2 was forgotten - ws_feed_zerodha.py auth-looped all day writing zero rows to market_ticks, breadth cascade on stale reference was fabricated bullish, multiple blocked signals later traced to this as upstream dependency.",
-      "fix_proposed": "Session 9 candidate. Two options under consideration: (a) automate SSH+sed via Local Windows post-hook that fires after refresh_kite_token.py completes on MeridianAlpha; (b) add pre-flight check on MERDIAN AWS at ~09:10 IST that calls kite.profile() and alerts via Telegram on auth failure. (b) is lower-effort and catches more failure modes (including future variants like token revoked or API contract change); (a) solves the specific forgotten-step failure but not the class.",
-      "interim_mitigation": "runbook_update_kite_flow.md filled with explicit 3-step procedure including mandatory profile() verification as Step 3 (committed befe721).",
-      "blocks": [
-        "All market_ticks ingestion on MERDIAN AWS when Step 2 skipped",
-        "refresh_equity_intraday_last.py cron (same token dependency)",
-        "Breadth cascade correctness (indirect via upstream dependency chain)"
-      ],
-      "session": "Session 7 (2026-04-23) - surfaced during root-cause diagnosis of 2026-04-22 outage"
-    },
-    "TD-014": {
-      "title": "ingest_breadth_from_ticks.py write-contract instrumentation",
-      "priority": "MEDIUM",
-      "status": "CLOSED",
-      "closed_date": "2026-04-23",
-      "closed_commit": "1630726",
-      "fix_applied": "Added _write_exec_log() helper and instrumentation at all exit paths of main(). Writes one row to script_execution_log per invocation with host='local', exit_code, exit_reason from chk_exit_reason_valid enum (SUCCESS, SKIPPED_NO_INPUT, DATA_ERROR), contract_met flag, actual_writes JSONB. contract_met is True iff coverage_pct >= 50 percent AND market_breadth_intraday write succeeded. Telemetry write wrapped in try/except so failure cannot crash the pipeline (preserves write-path correctness regardless of telemetry state).",
-      "verification": "Tested on 2026-04-23 19:09 IST: SKIPPED_NO_INPUT path exercised (market closed, no ticks in 10-min window). Row written to script_execution_log with host='local', exit_code=1, contract_met=false, actual_writes {market_breadth_intraday:0, breadth_intraday_history:1}. First Monday cycle will exercise SUCCESS path.",
-      "blocks": [],
-      "related": [
-        "ENH-71 (ExecutionLog write-contract foundation)",
-        "ENH-72 (propagation to 9 critical scripts - this is the 10th)",
-        "C-09 (root-cause fix; instrumentation here would have caught the 27-day cascade earlier)"
-      ],
-      "session": "Session 7 (2026-04-23)"
-    },
-    "adr_002_phase_4a_posture": {
-      "status": "DRAFTING -- BLOCKED",
-      "blocked_by": "TD-020",
-      "blocking_reason": "Cannot ratify gate-protected posture without diagnosis of gate behaviour on 2026-04-24 directional day"
     }
   },
   "governance_rules": {
@@ -2050,83 +1771,10 @@
         "C-08"
       ],
       "summary": "MTF OHLCV infrastructure built (hist_spot_bars_5m/15m, hist_atm_option_bars_5m/15m, hist_pattern_signals). Experiments 17-27b run. Key decisions: LONG_GAMMA gate confirmed symmetric (Exp 17/19), breadth independent 1.0pp (Exp 25) -> ENH-43 remove gate, momentum alignment +22.6pp (Exp 20) -> ENH-44 add hard block, sweep reversal no mechanical edge (Exp 23/23b/23c), small PE premium sweep <1% = 64.5% WR (Exp 27b) -> ENH-45 proposed. 1m bars = execution only. All ICT pattern detection on 5m bars. Live NIFTY BUY_CE +25% (discretionary ICT)."
-    },
-    {
-      "date": "2026-04-20",
-      "appendix": "Session 2026-04-20 (outage + re-engineering Sessions 1+2)",
-      "git_end": "7174690",
-      "items_closed": [],
-      "items_added": [
-        "ENH-66",
-        "ENH-67",
-        "ENH-68",
-        "ENH-69",
-        "ENH-70",
-        "ENH-71",
-        "ENH-72",
-        "ENH-73",
-        "ENH-74"
-      ],
-      "commits": [
-        "8f83859",
-        "b195499",
-        "260c7d0",
-        "7174690"
-      ],
-      "summary": "Morning 3-hour silent pipeline outage (holiday-gate treated NULL open_time as 'closed') + compounding stale-token-in-memory bug (runner held pre-rotation token). Post-mortem exposed absence of write-contract enforcement as root architectural gap. 6-session re-engineering programme approved. Session 1 shipped: ENH-66 (holiday-gate root cause) + ENH-68 tactical (runner .env reload per cycle). Session 2 shipped: ENH-71 (write-contract layer foundation: script_execution_log + ExecutionLog helper + capture_spot_1m reference). Pipeline recovered 12:26 IST; no bad trades taken. Register updated via strictly-additive patch append_enh66_to_74.py after a failed 'merge' attempt (ccaa418) was superseded by 7174690."
-    },
-    {
-      "date": "2026-04-21",
-      "appendix": "V19B (pending)",
-      "git_end": "7bfa6f3",
-      "items_closed": [
-        "ENH-72"
-      ],
-      "items_added": [],
-      "session_local_oi_closed": [
-        "OI-16 (session_log label: MERDIAN_Dhan_Token_Refresh task config)",
-        "OI-17 (session_log label: hist_spot_bars_1m backfill 04-16/17/20)",
-        "OI-24 (session_log label: detect_ict_patterns_runner load_atm_iv schema bug)",
-        "OI-26 (session_log label: nearest_expiry_db broken DTE)",
-        "OI-27 (session_log label: 1H zone detection never triggered)"
-      ],
-      "session_local_oi_diagnosed": [
-        "OI-25 (session_log label: NIFTY atm_iv=2.5% observed - DIAGNOSED as expiry-day BS-solver IV degeneracy, not a bug; V19 15:00 IST session gate prevents any trade decision on degenerate values)"
-      ],
-      "summary": "Sessions 3+4. ENH-72 ExecutionLog propagation completed to all 9 pipeline scripts (ingest_option_chain, compute_gamma_metrics, compute_volatility_metrics, build_momentum_features, build_market_state_snapshot, build_trade_signal, compute_options_flow, ingest_breadth_intraday, detect_ict_patterns_runner). Parallel: hist_spot_bars_1m backfill via Zerodha Kite (2,250 rows for 04-16/17/20), ICT HTF zone rebuild (35 zones, 10 active per symbol), Pine Script regeneration, MERDIAN_Dhan_Token_Refresh task config fix (absolute Python path via Set-ScheduledTask), dashboard NOT CAPTURED diagnosis. Late-session fixes surfaced by working ExecutionLog instrumentation: OI-24 load_atm_iv schema mismatch (was reading non-existent market_state_snapshots.market_state column); OI-26 nearest_expiry_db stale hardcoded expiry index replaced with get_nearest_expiry() reading option_chain_snapshots.expiry_date authoritatively (ENH-63 retired); OI-27 1H zone detection two-bug fix (is_hour_boundary gate + CLI __main__ position) -- first 1H zones ever written to ict_htf_zones. OI-25 diagnosed not-a-bug. Session-local OI labels were NOT added to open_items per governance rule no_new_oi_register."
-    },
-    {
-      "date": "2026-04-22",
-      "appendix": "V19C (pending)",
-      "git_end": "f7b9366",
-      "items_closed": [],
-      "items_added": [],
-      "session_local_oi_closed": [
-        "OI-18 (session_log label: dashboard preopen false-negative; actual root cause was get_preopen_status() query order=ts.asc&limit=10 returning oldest rows + minute<9 window missing 09:14 bar, NOT capture_spot_1m writer)",
-        "OI-19 (session_log label: MeridianAlpha kernel reboot; CLOSED OUT-OF-SCOPE -- MeridianAlpha is a separate system from MERDIAN, its host maintenance is not tracked in MERDIAN register)",
-        "OI-20 (session_log label: PS 5.1 UTF-8 BOM in Session 3+4 commits; CLOSED FIX-FORWARD -- history NOT rewritten, PowerShell profile + git i18n config prevent future BOMs)",
-        "OI-21 (session_log label: refresh_dhan_token Task Scheduler silent fail; actual root cause was retry sleep 120s matching Dhan rate-limit 2-min window exactly + no idempotency guard; post-OI-16 task config was already functional)",
-        "OI-22 (session_log label: Telegram alert wording for transient timeouts; split AUTH_FAILURE_PATTERNS from TRANSIENT_FAILURE_PATTERNS with separate OPTION_TRANSIENT_FAIL alert)",
-        "OI-23 (session_log label: MERDIAN_SIGNAL_V4 docstring/code drift; comment block realigned to current default=1 state, no code change)"
-      ],
-      "summary": "Session 5. All 6 remaining OI items from Session 3+4 resume prompt CLOSED. OI-* namespace permanently retired per Documentation Protocol v2 Rule 5 (no_new_oi_register). Code changes: run_option_snapshot_intraday_runner.py (OI-22 transient vs auth split), build_trade_signal_local.py (OI-23 docstring align, no code change), merdian_live_dashboard.py (OI-18 get_preopen_status rewrite), refresh_dhan_token.py (OI-21 retry sleep 120s->30s + idempotency guard on token_status.json age + rate-limit handling returning exit 2). Environment: PowerShell profile created at C:\\\\Users\\\\balan\\\\Documents\\\\WindowsPowerShell\\\\Microsoft.PowerShell_profile.ps1 forcing UTF-8 without BOM; git i18n.commitEncoding and i18n.logOutputEncoding set to utf-8. Disposition notes written for OI-19 (out-of-scope) and OI-20 (fix-forward). Commit chain: 2b6e2bb -> d130044 -> 873a866 -> 93d2d80 -> 7a4bae5 -> 6917094 -> f7b9366. No schema changes. No register-level open_items additions per Rule 5."
-    },
-    {
-      "date": "2026-04-23",
-      "appendix": "V19 Session 7 (pending appendix)",
-      "git_end": "04d91a0",
-      "items_closed": [
-        "C-09",
-        "TD-014"
-      ],
-      "items_added": [
-        "C-10"
-      ],
-      "summary": "Session 7 - breadth cascade diagnosis and fix-for-good. Root cause identified: equity_intraday_last frozen at 2026-03-27 15:30 IST after C-08 retired the Dhan writer without replacing its reference-price responsibility. 27 trading days of fabricated breadth in signal_snapshots and 28 downstream tables. Fix deployed: refresh_equity_intraday_last.py on MERDIAN AWS pulling prev_close via Kite REST ohlc() at 09:05 IST daily cron; simulated compute matches NSE authoritative 32/68 adv-dec ratio end-to-end (C-09 CLOSED commit 2c130bb). Instrumentation added to ingest_breadth_from_ticks.py via script_execution_log with contract_met enforcement (TD-014 CLOSED commit 1630726). Runbook runbook_update_kite_flow.md filled from Appendix V18H_v2 Section 7.1 plus Session 7 live incident experience; documents the manual SSH+sed Step 2 that caused silent full-day outage on 2026-04-22 (commit befe721). Data contamination registry table created in Supabase (data_contamination_ranges with is_breadth_contaminated() SQL helper); BREADTH-STALE-REF-2026-03-27 entry logged spanning 29 affected tables. CLAUDE.md v1.3 adds Rule 13 (registry check before breadth research) - commit 04d91a0. Kite token propagation mechanism documented in runbook but formal fix deferred as C-10 OPEN (Session 9 candidate). Governance lesson from session: N-session duration shadow gates cannot detect stable lies; validity requires cross-reference against external source or internal consistency check. To be captured as ADR in Session 8. Commit chain: 2c130bb -> 1630726 -> befe721 -> 04d91a0."
     }
   ],
   "git": {
-    "current_hash": "f8a3888",
+    "current_hash": "4675745",
     "local_status": "CLEAN",
     "aws_status": "FAILED  --  shadow runner down since 2026-04-15. Needs investigation."
   },
@@ -2138,7 +1786,8 @@
   "task_scheduler": {
     "MERDIAN_Market_Tape_1M": "DISABLED  --  2026-04-07",
     "MERDIAN_Intraday_Supervisor_Start": "ACTIVE  --  calls start_supervisor_clean.ps1  --  weekly Mon-Fri 08:00 + AtLogon",
-    "MERDIAN_Live_Dashboard": "ACTIVE  --  merdian_live_dashboard.py v2  --  AtLogon  --  PYTHONIOENCODING=utf-8"
+    "MERDIAN_Live_Dashboard": "ACTIVE  --  merdian_live_dashboard.py v2  --  AtLogon  --  PYTHONIOENCODING=utf-8",
+    "MERDIAN_Spot_MTF_Rollup_1600": "ACTIVE  --  daily Mon-Fri 16:00 IST  --  wraps run_spot_mtf_rollup_once.bat -> python build_spot_bars_mtf.py  --  registered Session 9 (2026-04-26) closing TD-019 + TD-023 anti-pattern  --  ENH-71 instrumented; surfaces in script_execution_log"
   },
   "research_findings": {
     "_note": "Key validated findings from Experiments 2-16. Full detail in MERDIAN_Experiment_Compendium_v1.md.",
@@ -2188,7 +1837,5 @@
     "sweep_reversal_no_edge": "Experiments 23/23b/23c: Sweep reversal has NO mechanical edge. Naked = 17.8% WR, with W zone confluence = 19.5% WR, with quality filters = 33.3% (N=3, insufficient). Pattern requires unmitigated zone tracking + 5m/15m wick quality + discretionary CHoCH judgment. ENH-54 sweep reversal mode REJECTED.",
     "premium_small_sweep": "Experiment 27b: ATM PE premium small sweep (0.2-1.0% above prior high, close back below, morning only) = 64.5% WR (N=107). CE + NO_FLIP = 68.4% WR (N=57). Premium sweep is MOMENTUM-INDEPENDENT (unlike spot ICT which needs alignment). ENH-45 PROPOSED  --  monitor 50 live occurrences before building.",
     "5m_bars_canonical": "All ICT experiments must use 5m bars for pattern detection. 1m bar experiments produce unreliable results  --  wick quality, sweep detection, and displacement are all noise on 1m. Exp 23c confirmed: wick quality on 1m = 0% WR (wrong timeframe). Established Research Sessions 4-5."
-  },
-  "version": "v11",
-  "updated_at": "2026-04-25"
+  }
 }

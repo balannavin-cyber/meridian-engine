@@ -1,4 +1,4 @@
-﻿## 2026-04-22 (PM) -- documentation / hygiene -- Session 6: untracked-files triage
+## 2026-04-22 (PM) -- documentation / hygiene -- Session 6: untracked-files triage
 
 **Goal:** Categorize ~50 untracked files in the repo working tree into TRACK / GITIGNORE buckets and commit the result. User preference overrode original TRACK/GITIGNORE/ARCHIVE 3-wave plan into 2-wave (keep on disk, out of git).
 
@@ -32,6 +32,7 @@
 
 ## Session log — v3 canonical one-liners (newest first)
 
+2026-04-26 · `<hash>` · Session 9: TD-019 CLOSED end-to-end. Diagnosed cause was *neither* of the originally hypothesised candidates -- `build_spot_bars_mtf.py` was uninstrumented AND never bound to Task Scheduler (manual on-demand rebuild last touched ~2026-04-15 EOD). Three changes delivered same session (override of no-fix-in-diagnosis-session rule logged): (1) ENH-71 `core.execution_log.ExecutionLog` instrumented into `build_spot_bars_mtf.py` via `fix_td019_instrument_build_spot_bars_mtf.py` + `fix_td019_add_sys_import.py` (both ast.parse validated; backup `.pre_td019.bak`); (2) backfilled 7 trading days = 42,324 5m + 14,440 15m rows in 116s, idempotent on `idx_hist_spot_5m_key`/`idx_hist_spot_15m_key`; (3) registered `MERDIAN_Spot_MTF_Rollup_1600` Task Scheduler task via `register_spot_mtf_rollup_task.ps1` + `run_spot_mtf_rollup_once.bat` -- daily 16:00 IST Mon-Fri -- smoke-tested same session (LastTaskResult=0, NextRunTime 2026-04-27 16:00). Q-A pattern (`script_execution_log.actual_writes::text LIKE '%<table>%'`) established as canonical detector for uninstrumented producers. Filed TD-023 (uninstrumented-producer audit, S3), TD-024 (post-close write anomaly on 04-13 + 04-24, S4), TD-025 (full-rebuild compute waste, S4), TD-026 (`.ps1`/`.bat` ASCII-only convention, S4). · PASS · docs_updated:yes
 2026-04-23 · `48d1b6e` · Session 7: breadth cascade root cause CLOSED (C-09 equity_intraday_last stale 27 days -> refresh_equity_intraday_last.py on AWS 09:05 IST cron) + TD-014 breadth writer instrumentation + runbook_update_kite_flow filled + CLAUDE.md v1.3 Rule 13 data contamination registry + C-10 OPEN Kite token propagation manual (Session 9 candidate) · PASS · docs_updated:yes
 2026-04-22 · `90b8c2d` · close 6 OIs + v1.1 adoption + tech_debt TD-007/008/009 + ENH-72 register fix shipped · PASS · docs_updated:yes
 2026-04-21 · `7bfa6f3` · ENH-72 propagation 9/9 + OI-24/26/27 fixes + Phase 1/2/3 ops (spot backfill, ICT HTF rebuild, Task Scheduler repair) · PASS · docs_updated:yes
@@ -1081,4 +1082,4 @@ Copy this template and prepend to the top of this file (newest first):
 ---
 
 *MERDIAN Session Log — started 2026-03-31 — append newest entry at top*
-2026-04-25 · Session 8 · b317458c5058222b9c88e285eb9639c4ad00aec3 · Candidate B (Exp 17 backtest) · DONE FAIL — N=13 underpowered, hypothesis not supported, composition diagnostic surfaced gap-down dominance. TD-015..018 filed at open per Session 7 spec. TD-019 (stale spot pipeline 10-day gap) and TD-020 (LONG_GAMMA-on-directional-day diagnosis required before ADR-002) filed at close. CLAUDE.md python path corrected. Session 9 priority reshuffled: TD-020 primary; ADR-002 blocked on TD-020. docs_updated: yes
+

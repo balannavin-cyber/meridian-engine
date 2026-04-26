@@ -9,7 +9,7 @@
 | Document | `docs/registers/MERDIAN_Enhancement_Register.md` |
 | Scope | Living register of all proposed and delivered MERDIAN enhancements, ENH-01 through ENH-74 |
 | Lineage | Unified from v1 (2026-03-31) through v7 (2026-04-19 v8-appended). Prior versioned files archived at `docs/registers/archive/`. |
-| Last updated | 2026-04-20 |
+| Last updated | 2026-04-26 (Session 9 wave 2 — ENH-73a SHIPPED, ENH-73b PROPOSED-deferred) |
 | Purpose | Forward-looking and historical register of all enhancement proposals, their status, evidence, and delivery. |
 | Authority | Current operational state of each ENH. Session appendices win on session-specific rationale; this register wins on current status. |
 | Update rule | Update in-place (append or edit). Do NOT create a new versioned file. |
@@ -114,6 +114,8 @@ Sortable table of all 72 IDs. For full detail see Part 4.
 | ENH-72 | Propagate ExecutionLog to 9 remaining critical scripts | 1 | **CLOSED 2026-04-21** |
 | ENH-73 | Dashboard truth + alert daemon contract-violation rules (Session 6) | 1 | **PROPOSED** |
 | ENH-74 | Live config layer — core/live_config.py (Session 5, strategic replacement of ENH-68) | 1 | **PROPOSED** |
+| ENH-73a | Tradable signal alerts via existing pipeline alert daemon (Session 9 wave 2) | 1 | **SHIPPED 2026-04-26** |
+| ENH-73b | Dashboard latched-signal panel (Session 9 wave 2, deferred) | 1 | **PROPOSED-DEFERRED** |
 
 ---
 
@@ -152,6 +154,8 @@ Sortable table of all 72 IDs. For full detail see Part 4.
 | ENH-72 | Propagate ExecutionLog to 9 critical scripts | **CLOSED 2026-04-21** |
 | ENH-73 | Dashboard truth + alert daemon | **PROPOSED** |
 | ENH-74 | Live config layer (core/live_config.py) | **PROPOSED** |
+| ENH-73a | Tradable signal alerts (extends ENH-73) | **SHIPPED 2026-04-26** |
+| ENH-73b | Dashboard latched-signal panel | **PROPOSED-DEFERRED** |
 
 
 ---
@@ -2196,3 +2200,65 @@ Original purpose: cache `build_expiry_index_simple()` output across cycles to av
 ---
 
 *Delta document 2026-04-21 — to merge into Enhancement Register v8 at next full documentation update.*
+
+---
+
+### ENH-73a: Tradable signal alerts via existing pipeline alert daemon (extends ENH-73)
+
+| Field | Detail |
+|---|---|
+| Status | **SHIPPED 2026-04-26 (Session 9 wave 2)** |
+| Type | Operational extension of ENH-73 |
+| Parent | ENH-73 (Dashboard truth + alert daemon contract-violation rules) |
+| Area | OPS / Observability |
+| Session | 9 wave 2 |
+| Commit | `<hash>` (Session 9 wave 2 commit batch) |
+
+**Context.** ENH-73 deployed Session 8 with name "pipeline alert daemon" but implementation alerted only on infrastructure failures from script_execution_log (TOKEN_EXPIRED, DATA_ERROR, DEPENDENCY_MISSING, RUNNING, contract-violated SUCCESS). It did not poll signal_snapshots. Empirical evidence Session 9: 1,017 BUY_PE rows + 1 BUY_CE row produced over 21 trade days; only 3 PE rows had trade_allowed=true; operator reported never having seen any of them surface in real time. Combined with merdian_live_dashboard.py overwriting any displayed signal every ~3 minutes (limit=1, latest-cycle query), zero operator-facing surface existed for "actionable signal just occurred."
+
+**Implementation.** Two-step patch on `merdian_pipeline_alert_daemon.py`:
+
+1. `fix_enh46a_signal_alerts.py` — added SIGNAL_ALERT_ACTIONS constant, fetch_new_tradable_signals(), format_signal_alert(), run_signal_cycle() with own watermark (`last_alerted_signal_ts`). Hooked into both cmd_daemon main loop and cmd_once for testability.
+2. `fix_enh46a_init_bug.py` — discovered post-deploy that the original patch placed signal-watermark init INSIDE init_watermark_if_missing() AFTER the early-return-on-existing-state guard. Result: warm restarts silently skipped signal-watermark init. Refactored into separate `init_signal_watermark_if_missing()` called independently from cmd_daemon, cmd_once.
+
+**Note on naming.** Filed in working notes as "ENH-46-A" because the working filename `fix_enh46a_signal_alerts.py` predated the ID resolution. Live register ID is **ENH-73a** because semantically this extends ENH-73's scope. Patch script filenames retained for git history continuity.
+
+**Verified live.** Synthetic INSERT into signal_snapshots with action='BUY_PE', trade_allowed=true → Telegram delivered within poll cycle. Watermark advanced. signal_alerts_sent_total counter incremented. Daemon PID 19636 (relaunched after patch).
+
+**Files changed.**
+
+- `merdian_pipeline_alert_daemon.py`: +5,566 bytes (across both patches).
+- `runtime/pipeline_alert_state.json`: schema extended with `last_alerted_signal_ts`, `signal_alerts_sent_total`, `last_signal_alert_at`.
+- Backups preserved at `.pre_enh46a.bak` and `.pre_enh46a_initbug.bak`.
+
+**Caveats.**
+
+- Surfaces every trade_allowed=true cycle, not just transitions. In a SHORT_GAMMA window producing 38 PE cycles in 2 hours, operator receives 38 alerts. Rate-limiting / dedup not yet implemented; may add if alert fatigue becomes an issue.
+- BUY_PE trade_allowed=false rows (1,014 of 1,017 historical) NOT alerted. By design — those are gated downstream and not actionable.
+
+**Related TDs filed Session 9 wave 2:**
+
+- TD-027 (S4): Alert daemon scope drift — file is named for one job, now does two.
+- TD-028 (S3): `merdian_pm.py` silent fail on unknown name — discovered during ENH-73a daemon restart.
+
+**History:** 2026-04-26=SHIPPED end-to-end with synthetic verification.
+
+---
+
+### ENH-73b: Dashboard latched-signal panel (DEFERRED)
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED 2026-04-26 (Session 9 wave 2). Deferred pending ENH-73a live evaluation.** |
+| Type | Operational; alternative surface to ENH-73a |
+| Parent | ENH-73 (Dashboard truth + alert daemon contract-violation rules) |
+| Area | OPS / Dashboard |
+| Session | 9 wave 2 (filed) |
+
+**Context.** merdian_live_dashboard.py displays only the latest signal_snapshots row per symbol (limit=1 query, no trade_allowed filter). Tradable signals overwrite within ~3 minutes per cycle. Operator looking at dashboard during a SHORT_GAMMA window may still miss the alert.
+
+**Why deferred.** ENH-73a's Telegram path push-notifies the operator's phone. If A meets operational need in practice, B may be unnecessary entirely. Re-evaluate after first live SHORT_GAMMA window with ENH-73a in production.
+
+**If proceeded later.** Add a second panel ("Latest Tradable Signal") that latches the most recent action != DO_NOTHING AND trade_allowed=true row per symbol with T+30m retention (matches documented exit horizon). ~50-100 lines HTML/JS in merdian_live_dashboard.py.
+
+**History:** 2026-04-26=PROPOSED, deferred.

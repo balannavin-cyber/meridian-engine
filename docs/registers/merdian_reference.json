@@ -16,9 +16,10 @@
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
     "update_cadence": "Update this file in the same session as any meaningful change to file status, table schema, or open item status. Commit to Git immediately after update.",
-    "last_updated": "2026-04-27T07:35:00+05:30",
-    "last_updated_by_session": "Session 10",
+    "last_updated": "2026-04-27T18:50:00+05:30",
+    "last_updated_by_session": "Session 10 extension",
     "change_log": [
+      "2026-04-27 (Session 10 extension, post-market): Live verification of F0 (multi-cycle BEARISH on LONG_GAMMA) and F1 (OPEN + MORNING buckets confirmed). ENH-46-A daemon caught real contract violation on capture_spot_1m 10:25 IST cycle (Telegram-alerted within 2 min, first-day production value). Dashboard ↔ DB inconsistency observed live across multiple cycles - filed TD-032 as BLOCKER for ENH-46-C ship. Experiment 33 designed and run: inside-bar-before-expiry breakout thesis tested across N=14, 93% break rate, 71% next-day continuation, ENH-47 PROPOSED (next-week ATM trade structure). ENH-46-D PROPOSED (Pine HTF zones live JSON feed). Filed TD-032, TD-033, TD-034, TD-035, TD-036, TD-037.",
       "2026-04-27 (Session 10): F0 + F1 patches shipped (build_trade_signal_local.py, detect_ict_patterns.py); Exp 15 re-validation confirmed compendium replicates (+193.4% combined return); F2 REJECTED via Exp 29 v2; ENH-46-C PROPOSED (conditional gate lift); TD-029, TD-030, TD-031 filed; runbook_update_kite_flow updated; AWS check_kite_auth.py persisted.",
       "2026-04-26 (Session 9 wave 2): Added daemon + fix scripts; ENH-46-A shipped; TD-027 + TD-028 filed."
     ]
@@ -1833,23 +1834,34 @@
     },
     {
       "date": "2026-04-26 to 2026-04-27",
-      "appendix": "Session 10 (Exp 15 revalidation + F0/F1 ship)",
-      "git_end": "<hash>",
+      "appendix": "Session 10 (Exp 15 revalidation + F0/F1 ship + extension: live verification + Exp 33 + dashboard discovery)",
+      "git_end": "15720d6 + extension uncommitted",
       "items_closed": [
-        "F2 (REJECTED via Exp 29 v2)"
+        "F2 (REJECTED via Exp 29 v2)",
+        "F0 (SHIPPED + verified live multi-cycle 2026-04-27 morning)",
+        "F1 (SHIPPED + verified live across OPEN and MORNING buckets 2026-04-27)"
       ],
       "items_added": [
         "TD-029",
         "TD-030",
         "TD-031",
-        "ENH-46-C (PROPOSED)"
+        "TD-032 (BLOCKER for ENH-46-C ship)",
+        "TD-033",
+        "TD-034",
+        "TD-035",
+        "TD-036",
+        "TD-037",
+        "ENH-46-C (PROPOSED, BLOCKED on TD-032)",
+        "ENH-46-D (PROPOSED)",
+        "ENH-47 (PROPOSED, sourced from Exp 33)",
+        "Experiment 33 (inside-bar-before-expiry, N=14, 93% break, 71% next-day continuation)"
       ],
-      "summary": "F0 + F1 patches shipped (gate visibility unclobber + ICT detector TZ classification fix); Exp 15 re-validated compendium (+193.4% combined return; BEAR_OB 92%, BULL_OB 84%, MEDIUM 77%); conditional gate lift proposed (ENH-46-C, design + 10-session shadow before live); three TDs filed (hist_spot_bars TZ era, build_ict_htf_zones doesn't re-eval breach, D BEAR detection underactive); runbook_update_kite_flow.md updated with heredoc-corruption + SSM TTY hang failure modes; AWS /home/ssm-user/meridian-engine/check_kite_auth.py persisted. Earlier Exp 31 + Exp 32 false-negative results explicitly retracted."
+      "summary": "F0 + F1 patches shipped (gate visibility unclobber + ICT detector TZ classification fix); both verified live 2026-04-27 morning. Exp 15 re-validated compendium (+193.4% combined return; BEAR_OB 92%, BULL_OB 84%, MEDIUM 77%). ENH-46-A daemon caught real contract violation 10:25 IST and Telegram-alerted within 2 min - first-day production value demonstrated. Conditional gate lift proposed (ENH-46-C, design + 10-session shadow before live, BLOCKED on TD-032 fix). Six TDs filed for main session and three for extension (TD-029 hist_spot_bars TZ era, TD-030 build_ict_htf_zones doesn't re-eval breach, TD-031 D BEAR detection underactive, TD-032 dashboard reliability BLOCKER, TD-033 dashboard label conflation, TD-034 hist_atm undersampling, TD-035 wcb_regime NULL, TD-036 confidence flat-line, TD-037 schema column-name inconsistency). Runbook updated with heredoc-corruption + SSM TTY hang failure modes. AWS check_kite_auth.py persisted. Earlier Exp 31/32 false-negative results explicitly retracted. Extension produced Experiment 33 (inside-bar-before-expiry breakout thesis, N=14, 93% break rate, 71% next-day continuation, ENH-47 next-week ATM trade structure proposed). Dashboard ↔ DB ground truth inconsistency observed live during trading day - filed as TD-032 BLOCKER FOR ENH-46-C SHIP."
     }
   ],
   "git": {
-    "current_hash": "4675745",
-    "local_status": "CLEAN",
+    "current_hash": "15720d6",
+    "local_status": "CLEAN at 15720d6 (extension docs uncommitted)",
     "aws_status": "FAILED  --  shadow runner down since 2026-04-15. Needs investigation."
   },
   "shadow_gate": {

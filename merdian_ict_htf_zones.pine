@@ -1,0 +1,102 @@
+//@version=6
+// MERDIAN ICT HTF Zones — with zone behaviour labels
+// Generated: 2026-04-27 07:35 IST | Pre-open Session 10
+// Data source: ict_htf_zones (status='ACTIVE'), 8 zones total (4 NIFTY + 4 SENSEX)
+// Context: NIFTY closed 2026-04-24 at 23,897.95 (sat below all W structural zones at week's end).
+//          SENSEX closed 2026-04-24 at 76,664.21 (sat above W BULL_FVG 73,164-75,868, below D PDL 76,563).
+//          Last week's W BULL_FVG zones (NIFTY 24,074-24,241, SENSEX 77,636-78,203) were BREACHED on Friday's selloff.
+//          Both marked BREACHED 2026-04-27 — no longer providing MTF context.
+//          Realistic MTF context for today: D PDL bounce = HIGH context; W zones distant — VERY_HIGH unreachable from current spot.
+indicator("MERDIAN ICT HTF Zones", overlay=true, max_boxes_count=100, max_labels_count=100)
+
+// ── Inputs ──────────────────────────────────────────────────────────────────
+show_nifty   = input.bool(true,  "Show NIFTY Zones")
+show_sensex  = input.bool(false, "Show SENSEX Zones")
+show_bear    = input.bool(true,  "Show Supply Zones (above price)")
+show_bull    = input.bool(true,  "Show Demand Zones (below price)")
+zone_extend  = input.int(50,     "Extend zones right (bars)", minval=10, maxval=500)
+show_labels  = input.bool(true,  "Show zone labels")
+verbose_lbl  = input.bool(true,  "Show behaviour hint in label")
+
+// ── Colors ───────────────────────────────────────────────────────────────────
+col_bear_ob  = input.color(color.new(color.red,    70), "Weekly BEAR_OB (Supply OB)")
+col_bear_pdh = input.color(color.new(color.orange, 75), "Weekly PDH (Prior High)")
+col_bull_ob  = input.color(color.new(color.green,  70), "Weekly BULL_OB / FVG (Demand)")
+col_bull_pdl = input.color(color.new(color.teal,   75), "Weekly PDL (Prior Low)")
+col_daily_ob = input.color(color.new(color.blue,   65), "Daily OB (Intraday key)")
+col_daily_pd = input.color(color.new(color.purple, 75), "Daily PDH/PDL")
+
+// ── Zone drawing ─────────────────────────────────────────────────────────────
+drawZone(hi, lo, fill_col, border_col, short_lbl, hint) =>
+    box.new(bar_index - 200, hi, bar_index + zone_extend, lo, border_color=border_col, border_width=1, bgcolor=fill_col)
+    if show_labels
+        full_lbl = verbose_lbl ? short_lbl + "  |  " + hint : short_lbl
+        label.new(bar_index, math.avg(hi, lo), full_lbl, style=label.style_none, textcolor=border_col, size=size.small)
+
+if barstate.islast
+
+    // ════════════════════════════════════════════════════════════════════════
+    // NIFTY — 2026-04-27 | Spot 23,898 | D PDH 24,150 | D PDL 23,867
+    // Price BELOW yesterday's mid-range. 30 pts above PDL = first support.
+    // 252 pts below PDH = first resistance.
+    // W BULL_FVG 24,074 (formed 04-20) was BREACHED Friday 04-24 — removed from active set.
+    // Closest live W structural zone: BULL_FVG 22,714-23,556 (~340 pts below = ~1.4%).
+    // VERY_HIGH MTF context not reachable from current price unless NIFTY drops to W zones.
+    // HIGH context only reachable via bullish reversal at D PDL.
+    // ════════════════════════════════════════════════════════════════════════
+    if show_nifty
+
+        // ── SUPPLY (resistance above current price) ───────────────────────
+        if show_bear
+
+            drawZone(24160, 24140, col_daily_pd, color.purple,
+                 "D PDH 24,150 ⚡ NEAREST RESIST",
+                 "Friday (Apr 24) high. ~252 pts above current. Break = trend recovery up.")
+
+        // ── DEMAND (support below current price) ─────────────────────────
+        if show_bull
+
+            drawZone(23877, 23857, col_daily_pd, color.purple,
+                 "D PDL 23,867 ⚡ NEAREST SUPPORT",
+                 "Friday (Apr 24) low. ~30 pts below current. Bounce here = HIGH MTF context candidate. Break = sell-side sweep, watch reversal.")
+
+            drawZone(23556, 22714, col_bull_ob, color.green,
+                 "W BULL_FVG 22,714 [Apr 10]",
+                 "Weekly imbalance from tariff recovery rally. Deep demand on pullback (~340 pts / 1.4% below). Currently above this zone.")
+
+            drawZone(22575, 22331, col_bull_ob, color.green,
+                 "W BULL_OB 22,331 ★ TARIFF LOW [Apr 3]",
+                 "Demand block formed at tariff panic low. Institutional buying proved here Apr 7. Strongest floor (~6.6% below).")
+
+
+    // ════════════════════════════════════════════════════════════════════════
+    // SENSEX — 2026-04-27 | Spot 76,664 | D PDH 77,553 | D PDL 76,573
+    // Price below yesterday's range. ~91 pts above PDL = first support test likely at open.
+    // ~889 pts below PDH = first resistance.
+    // W BULL_FVG 77,636 (formed 04-20) was BREACHED Friday 04-24 — removed from active set.
+    // Closest live W structural zone: BULL_FVG 73,164-75,868 (~796 pts below = ~1.0%).
+    // VERY_HIGH MTF not reachable; HIGH possible via bullish reversal at D PDL.
+    // ════════════════════════════════════════════════════════════════════════
+    if show_sensex
+
+        // ── SUPPLY (resistance above current price) ──────────────────────
+        if show_bear
+
+            drawZone(77563, 77543, col_daily_pd, color.purple,
+                 "D PDH 77,553 ⚡ NEAREST RESIST",
+                 "Friday (Apr 24) high. ~889 pts above current. Break = trend recovery up.")
+
+        // ── DEMAND (support below current price) ─────────────────────────
+        if show_bull
+
+            drawZone(76583, 76563, col_daily_pd, color.purple,
+                 "D PDL 76,573 ⚡ NEAREST SUPPORT",
+                 "Friday (Apr 24) low. ~91 pts below current. Bounce here = HIGH MTF context candidate. Break = sweep, watch reversal.")
+
+            drawZone(75868, 73164, col_bull_ob, color.green,
+                 "W BULL_FVG 73,164 [Apr 10]",
+                 "Tariff panic imbalance. Strong demand on deep pullback (~796 pts / 1.0% below). Wide zone — major support if tested.")
+
+            drawZone(72822, 71948, col_bull_ob, color.green,
+                 "W BULL_OB 71,948 ★ TARIFF LOW [Apr 3]",
+                 "Institutional demand at panic low. Liquidity sweep Apr 7. Strongest floor (~6.2% below).")

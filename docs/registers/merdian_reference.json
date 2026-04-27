@@ -15,7 +15,13 @@
     ],
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
-    "update_cadence": "Update this file in the same session as any meaningful change to file status, table schema, or open item status. Commit to Git immediately after update."
+    "update_cadence": "Update this file in the same session as any meaningful change to file status, table schema, or open item status. Commit to Git immediately after update.",
+    "last_updated": "2026-04-27T07:35:00+05:30",
+    "last_updated_by_session": "Session 10",
+    "change_log": [
+      "2026-04-27 (Session 10): F0 + F1 patches shipped (build_trade_signal_local.py, detect_ict_patterns.py); Exp 15 re-validation confirmed compendium replicates (+193.4% combined return); F2 REJECTED via Exp 29 v2; ENH-46-C PROPOSED (conditional gate lift); TD-029, TD-030, TD-031 filed; runbook_update_kite_flow updated; AWS check_kite_auth.py persisted.",
+      "2026-04-26 (Session 9 wave 2): Added daemon + fix scripts; ENH-46-A shipped; TD-027 + TD-028 filed."
+    ]
   },
   "environments": {
     "local": {
@@ -718,7 +724,9 @@
       "cadence": "Daily 16:00 IST Mon-Fri via MERDIAN_Spot_MTF_Rollup_1600 Task Scheduler task (registered Session 9, 2026-04-26). Manual invocations remain legal and idempotent.",
       "status": "STABLE -- ENH-71 instrumented (Session 9). 42,324 5m rows + 14,440 15m rows as of 2026-04-26 backfill. Runtime ~116s (full-history rebuild; TD-025 candidate to make incremental).",
       "instrumented": true,
-      "open_items": ["TD-025"]
+      "open_items": [
+        "TD-025"
+      ]
     },
     "build_atm_option_bars_mtf.py": {
       "local_path": "C:\\GammaEnginePython\\build_atm_option_bars_mtf.py",
@@ -772,6 +780,57 @@
       "open_items": [],
       "introduced_in_commit": "4599bb8 (2026-04-16)",
       "governance_note": "This file was not registered in merdian_reference.json at introduction. Added 2026-04-19 as part of C-08 closure. Prompts a broader file-registry audit (see RESEARCH-OI-16 proposed)."
+    },
+    "merdian_pipeline_alert_daemon.py": {
+      "local_path": "C:\\GammaEnginePython\\merdian_pipeline_alert_daemon.py",
+      "aws_path": null,
+      "reads": [
+        "script_execution_log",
+        "signal_snapshots",
+        ".env"
+      ],
+      "writes": [
+        "script_execution_log (ENH-73 self-heartbeat row every 600s)",
+        "Telegram chat (infrastructure alerts on TOKEN_EXPIRED/DATA_ERROR/etc + ENH-46-A signal alerts on action!=DO_NOTHING AND trade_allowed=true)",
+        "runtime/pipeline_alert_state.json"
+      ],
+      "call_signature": "python merdian_pipeline_alert_daemon.py [--test|--once] (default = daemon mode)",
+      "cadence": "long-running daemon, 60s poll loop, 600s heartbeat",
+      "status": "RUNNING (PID 19636 as of 2026-04-26 14:17 IST). ENH-73 + ENH-46-A both live. Verified end-to-end with synthetic INSERT.",
+      "open_items": [
+        "TD-027",
+        "TD-028"
+      ]
+    },
+    "fix_enh46a_signal_alerts.py": {
+      "local_path": "C:\\GammaEnginePython\\fix_enh46a_signal_alerts.py",
+      "aws_path": null,
+      "reads": [
+        "merdian_pipeline_alert_daemon.py"
+      ],
+      "writes": [
+        "merdian_pipeline_alert_daemon.py (in-place patch)",
+        "merdian_pipeline_alert_daemon.py.pre_enh46a.bak"
+      ],
+      "call_signature": "python fix_enh46a_signal_alerts.py",
+      "cadence": "one-shot, idempotent (no-ops if already applied)",
+      "status": "APPLIED 2026-04-26 (Session 9 wave 2). ast.parse + py_compile validated.",
+      "open_items": []
+    },
+    "fix_enh46a_init_bug.py": {
+      "local_path": "C:\\GammaEnginePython\\fix_enh46a_init_bug.py",
+      "aws_path": null,
+      "reads": [
+        "merdian_pipeline_alert_daemon.py"
+      ],
+      "writes": [
+        "merdian_pipeline_alert_daemon.py (in-place patch)",
+        "merdian_pipeline_alert_daemon.py.pre_enh46a_initbug.bak"
+      ],
+      "call_signature": "python fix_enh46a_init_bug.py",
+      "cadence": "one-shot, idempotent",
+      "status": "APPLIED 2026-04-26 (Session 9 wave 2). Follow-up to fix_enh46a_signal_alerts.py -- the original patch placed signal-watermark init inside init_watermark_if_missing() AFTER the early-return-on-existing-state guard, making it unreachable on warm starts. Refactored into separate init_signal_watermark_if_missing() called independently from cmd_daemon, cmd_once.",
+      "open_items": []
     }
   },
   "tables": {
@@ -1771,6 +1830,21 @@
         "C-08"
       ],
       "summary": "MTF OHLCV infrastructure built (hist_spot_bars_5m/15m, hist_atm_option_bars_5m/15m, hist_pattern_signals). Experiments 17-27b run. Key decisions: LONG_GAMMA gate confirmed symmetric (Exp 17/19), breadth independent 1.0pp (Exp 25) -> ENH-43 remove gate, momentum alignment +22.6pp (Exp 20) -> ENH-44 add hard block, sweep reversal no mechanical edge (Exp 23/23b/23c), small PE premium sweep <1% = 64.5% WR (Exp 27b) -> ENH-45 proposed. 1m bars = execution only. All ICT pattern detection on 5m bars. Live NIFTY BUY_CE +25% (discretionary ICT)."
+    },
+    {
+      "date": "2026-04-26 to 2026-04-27",
+      "appendix": "Session 10 (Exp 15 revalidation + F0/F1 ship)",
+      "git_end": "<hash>",
+      "items_closed": [
+        "F2 (REJECTED via Exp 29 v2)"
+      ],
+      "items_added": [
+        "TD-029",
+        "TD-030",
+        "TD-031",
+        "ENH-46-C (PROPOSED)"
+      ],
+      "summary": "F0 + F1 patches shipped (gate visibility unclobber + ICT detector TZ classification fix); Exp 15 re-validated compendium (+193.4% combined return; BEAR_OB 92%, BULL_OB 84%, MEDIUM 77%); conditional gate lift proposed (ENH-46-C, design + 10-session shadow before live); three TDs filed (hist_spot_bars TZ era, build_ict_htf_zones doesn't re-eval breach, D BEAR detection underactive); runbook_update_kite_flow.md updated with heredoc-corruption + SSM TTY hang failure modes; AWS /home/ssm-user/meridian-engine/check_kite_auth.py persisted. Earlier Exp 31 + Exp 32 false-negative results explicitly retracted."
     }
   ],
   "git": {
@@ -1836,6 +1910,34 @@
     "oi_wall_ict_independence": "Experiment 18: OI walls and ICT zones are statistically independent. CE wall ICT lift = +4.5pp (noise). PE wall ICT lift = -2.1pp (negative). OI synthesis signal rejected.",
     "sweep_reversal_no_edge": "Experiments 23/23b/23c: Sweep reversal has NO mechanical edge. Naked = 17.8% WR, with W zone confluence = 19.5% WR, with quality filters = 33.3% (N=3, insufficient). Pattern requires unmitigated zone tracking + 5m/15m wick quality + discretionary CHoCH judgment. ENH-54 sweep reversal mode REJECTED.",
     "premium_small_sweep": "Experiment 27b: ATM PE premium small sweep (0.2-1.0% above prior high, close back below, morning only) = 64.5% WR (N=107). CE + NO_FLIP = 68.4% WR (N=57). Premium sweep is MOMENTUM-INDEPENDENT (unlike spot ICT which needs alignment). ENH-45 PROPOSED  --  monitor 50 live occurrences before building.",
-    "5m_bars_canonical": "All ICT experiments must use 5m bars for pattern detection. 1m bar experiments produce unreliable results  --  wick quality, sweep detection, and displacement are all noise on 1m. Exp 23c confirmed: wick quality on 1m = 0% WR (wrong timeframe). Established Research Sessions 4-5."
+    "5m_bars_canonical": "All ICT experiments must use 5m bars for pattern detection. 1m bar experiments produce unreliable results  --  wick quality, sweep detection, and displacement are all noise on 1m. Exp 23c confirmed: wick quality on 1m = 0% WR (wrong timeframe). Established Research Sessions 4-5.",
+    "Exp_28_LONG_GAMMA_decile_accuracy": {
+      "ran": "2026-04-26 (Session 9 wave 2)",
+      "verdict": "BUCKET-DEPENDENT. Gate correct ~90% (deciles 1-9 ~50% direction split). Mis-calibrated on 8 (date,symbol) pairs across 5 trading dates with cleanly directional EOD moves > 0.5%.",
+      "directional_dates": {
+        "down": [
+          "2026-03-11",
+          "2026-04-09",
+          "2026-04-16",
+          "2026-04-20",
+          "2026-04-24"
+        ],
+        "up": [
+          "2026-04-07",
+          "2026-04-13",
+          "2026-04-21"
+        ]
+      },
+      "next_step": "Exp 28b (forward-feature discrimination) -- ran same session, see below."
+    },
+    "Exp_28b_forward_feature_discrimination": {
+      "ran": "2026-04-26 (Session 9 wave 2)",
+      "verdict": "PROMISING but UNDERPOWERED. or_range_pct >= 0.55% catches 8/14 DIRECTIONAL with 0/10 false positives on cleaned NOISE set (N=24 total). Other features (iv_skew, atm_iv_avg, breadth_score, gap_pct) do not discriminate.",
+      "discriminator": "or_range_pct = (max_high - min_low) / open across 09:15-09:29 IST 5m bars",
+      "threshold": "0.55%",
+      "tp_rate": "57% (8/14)",
+      "fp_rate": "0% (0/10)",
+      "next_step": "Out-of-sample validation against wider historical window. If clean -> ENH-46 design spec. If breaks -> close as no-action."
+    }
   }
 }

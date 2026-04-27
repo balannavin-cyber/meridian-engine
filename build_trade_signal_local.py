@@ -462,18 +462,18 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
             confidence += 8.0
     elif gamma_regime == "LONG_GAMMA":
         # ENH-35 validated 2026-04-11: LONG_GAMMA signals 47.7% accuracy
-        # at N=24,579 — structurally below random. Gate to DO_NOTHING.
+        # at N=24,579 — structurally below random. Gate to trade_allowed=False.
+        # Session 10 2026-04-26: clobber of direction_bias and action removed
+        # to restore operator visibility. Policy unchanged: trade_allowed=False.
         cautions.append("LONG_GAMMA gated — historical accuracy below random (ENH-35)")
-        action = "DO_NOTHING"
         trade_allowed = False
-        direction_bias = "NEUTRAL"
     elif gamma_regime == "NO_FLIP":
         # ENH-35 v2: NO_FLIP signals 45-48% accuracy — below random
-        # No flip level = no institutional reference point
+        # No flip level = no institutional reference point.
+        # Session 10 2026-04-26: clobber of direction_bias and action removed
+        # to restore operator visibility. Policy unchanged: trade_allowed=False.
         cautions.append("NO_FLIP gated — no gamma flip reference (ENH-35)")
-        action = "DO_NOTHING"
         trade_allowed = False
-        direction_bias = "NEUTRAL"
     else:
         cautions.append("Gamma regime is unavailable or unknown")
 

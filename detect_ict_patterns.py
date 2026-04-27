@@ -169,7 +169,18 @@ def pct(a: float, b: float) -> float:
     return 100.0 * (b - a) / a if a else 0.0
 
 def time_zone_label(ts: datetime) -> str:
-    t = ts.time()
+    # Session 10 2026-04-26 fix: bar_ts arrives as UTC timestamptz from
+    # hist_spot_bars_1m. Comparing UTC clock-time against IST constants
+    # (OPEN_START=09:15 etc.) caused 100% of detections to fall through
+    # to "OTHER" -- killing all TIER1 promotion paths.
+    # Convert to IST before extracting time-of-day.
+    from zoneinfo import ZoneInfo
+    if ts.tzinfo is not None:
+        ts_ist = ts.astimezone(ZoneInfo("Asia/Kolkata"))
+    else:
+        # Naive datetime: assume already IST (legacy callers).
+        ts_ist = ts
+    t = ts_ist.time()
     if OPEN_START <= t < MORNING_START:
         return "OPEN"
     if MORNING_START <= t < MIDDAY_START:

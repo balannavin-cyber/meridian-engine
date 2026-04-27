@@ -76,6 +76,13 @@ SUPPRESS_EXIT_REASONS = (
     "RUNNING",
 )
 
+# ENH-46-A: tradable-signal alerts. signal_snapshots rows matching
+# action IN SIGNAL_ALERT_ACTIONS AND trade_allowed=true generate a
+# Telegram alert distinct from the infrastructure-alert path.
+SIGNAL_ALERT_ACTIONS = ("BUY_CE", "BUY_PE")
+SIGNAL_LOOKBACK_MINUTES = 15
+SIGNAL_MAX_BATCH = 20
+
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 DAEMON_SCRIPT_NAME = "merdian_pipeline_alert_daemon"
 
@@ -162,6 +169,39 @@ def init_watermark_if_missing(state: dict) -> dict:
     state["started_at"] = datetime.now(timezone.utc).isoformat()
     state.setdefault("alerts_sent_total", 0)
     state.setdefault("heartbeats_sent_total", 0)
+    save_state(state)
+    return state
+
+
+def init_signal_watermark_if_missing(state: dict) -> dict:
+    """ENH-46-A: independent of script-log watermark. Runs on every command
+    path so warm-start daemons (with existing state.json holding only the
+    script-log watermark) still pick up signal-alerting on first poll.
+
+    Initialises last_alerted_signal_ts to MAX(ts) in signal_snapshots so we
+    don't blast historical PE rows on first run.
+    """
+    state.setdefault("signal_alerts_sent_total", 0)
+    if state.get("last_alerted_signal_ts"):
+        return state
+    try:
+        res = (
+            sb.table("signal_snapshots")
+            .select("ts")
+            .order("ts", desc=True)
+            .limit(1)
+            .execute()
+        )
+        srows = res.data or []
+        if srows:
+            state["last_alerted_signal_ts"] = srows[0]["ts"]
+            log(f"[INIT] signal watermark set to {state['last_alerted_signal_ts']}")
+        else:
+            state["last_alerted_signal_ts"] = datetime.now(timezone.utc).isoformat()
+            log("[INIT] signal_snapshots empty; signal watermark set to now")
+    except Exception as e:
+        state["last_alerted_signal_ts"] = datetime.now(timezone.utc).isoformat()
+        log(f"[INIT] signal watermark fetch failed ({e}); fallback to now")
     save_state(state)
     return state
 
@@ -289,6 +329,110 @@ def fetch_new_finishes(watermark_iso: str) -> list[dict]:
     )
     return res.data or []
 
+# --- ENH-46-A: signal alerting ----------------------------------------------
+
+def fetch_new_tradable_signals(watermark_iso: str) -> list[dict]:
+    """Fetch signal_snapshots rows newer than watermark with action!=DO_NOTHING
+    AND trade_allowed=true. Bounded by SIGNAL_LOOKBACK_MINUTES on cold start."""
+    cutoff_iso = (
+        datetime.now(timezone.utc) - timedelta(minutes=SIGNAL_LOOKBACK_MINUTES)
+    ).isoformat()
+    after = max(watermark_iso, cutoff_iso)
+    res = (
+        sb.table("signal_snapshots")
+        .select(
+            "id,ts,symbol,action,trade_allowed,confidence_score,"
+            "direction_bias,gamma_regime,breadth_regime,spot,"
+            "atm_strike,dte,expiry_date"
+        )
+        .gt("ts", after)
+        .in_("action", list(SIGNAL_ALERT_ACTIONS))
+        .eq("trade_allowed", True)
+        .order("ts")
+        .limit(SIGNAL_MAX_BATCH * 4)
+        .execute()
+    )
+    return res.data or []
+
+
+def format_signal_alert(row: dict) -> str:
+    sym = row.get("symbol", "?")
+    action = row.get("action", "?")
+    ts_str = _truncate(row.get("ts"), 19).replace("T", " ")
+    conf = row.get("confidence_score")
+    spot = row.get("spot")
+    atm = row.get("atm_strike")
+    dte = row.get("dte")
+    expiry = row.get("expiry_date")
+    gamma = row.get("gamma_regime")
+    breadth = row.get("breadth_regime")
+    direction = row.get("direction_bias")
+
+    parts = [
+        f"📈 MERDIAN Trade Signal: {sym} {action}",
+        f"Time: {ts_str}",
+    ]
+    if spot is not None:
+        parts.append(f"Spot: {spot}")
+    if atm is not None:
+        parts.append(f"ATM: {atm}    DTE: {dte}    Expiry: {expiry}")
+    if conf is not None:
+        parts.append(f"Confidence: {conf}")
+    if direction:
+        parts.append(f"Direction: {direction}")
+    regime_bits = []
+    if gamma:
+        regime_bits.append(f"gamma={gamma}")
+    if breadth:
+        regime_bits.append(f"breadth={breadth}")
+    if regime_bits:
+        parts.append("Regime: " + "  ".join(regime_bits))
+    parts.append("trade_allowed=TRUE")
+    return "\n".join(parts)
+
+
+def run_signal_cycle(state: dict) -> int:
+    """Poll signal_snapshots for new tradable rows and alert. Returns count
+    of Telegram alerts sent this cycle. Fully decoupled from script-log poll."""
+    watermark = state.get("last_alerted_signal_ts") or datetime.now(timezone.utc).isoformat()
+    try:
+        rows = fetch_new_tradable_signals(watermark)
+    except Exception as e:
+        log(f"[SIG ERR] fetch failed: {e}")
+        return 0
+
+    if not rows:
+        return 0
+
+    alerts_sent = 0
+    new_watermark = watermark
+
+    for row in rows:
+        ts_val = row.get("ts")
+        if not ts_val:
+            continue
+        if ts_val > new_watermark:
+            new_watermark = ts_val
+        if alerts_sent >= SIGNAL_MAX_BATCH:
+            log(f"[SIG WARN] batch cap {SIGNAL_MAX_BATCH} hit; remaining rows alert next cycle")
+            new_watermark = ts_val
+            break
+        msg = format_signal_alert(row)
+        if send_telegram(msg):
+            alerts_sent += 1
+            log(f"[SIG ALERT] {row.get('symbol')} {row.get('action')} ts={ts_val}")
+        else:
+            log(f"[SIG RETRY-NEXT] {row.get('symbol')} {row.get('action')} ts={ts_val} (Telegram failed)")
+            return alerts_sent
+
+    state["last_alerted_signal_ts"] = new_watermark
+    if alerts_sent > 0:
+        state["signal_alerts_sent_total"] = state.get("signal_alerts_sent_total", 0) + alerts_sent
+        state["last_signal_alert_at"] = datetime.now(timezone.utc).isoformat()
+    save_state(state)
+    return alerts_sent
+
+
 # --- Cycle -------------------------------------------------------------------
 
 def run_cycle(state: dict) -> int:
@@ -348,14 +492,19 @@ def cmd_test() -> int:
 
 def cmd_once() -> int:
     state = init_watermark_if_missing(load_state())
+    state = init_signal_watermark_if_missing(state)
     n = run_cycle(state)
-    log(f"[ONCE] alerts sent: {n}")
+    log(f"[ONCE] infra alerts sent: {n}")
+    sn = run_signal_cycle(state)
+    log(f"[ONCE] signal alerts sent: {sn}")
     return 0
 
 def cmd_daemon() -> int:
     log(f"daemon starting (poll={POLL_SECS}s, heartbeat={HEARTBEAT_SECS}s, host={HOST})")
     state = init_watermark_if_missing(load_state())
+    state = init_signal_watermark_if_missing(state)
     log(f"watermark: {state.get('last_alerted_finished_at')}")
+    log(f"signal watermark: {state.get('last_alerted_signal_ts')}")
 
     # Write startup heartbeat immediately so external monitors see "alive"
     write_heartbeat_row(state)
@@ -366,6 +515,9 @@ def cmd_daemon() -> int:
             n = run_cycle(state)
             if n > 0:
                 log(f"sent {n} alert(s)")
+            sn = run_signal_cycle(state)
+            if sn > 0:
+                log(f"sent {sn} signal alert(s)")
             if time.time() - last_heartbeat >= HEARTBEAT_SECS:
                 if write_heartbeat_row(state):
                     last_heartbeat = time.time()

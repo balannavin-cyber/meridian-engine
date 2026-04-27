@@ -1,0 +1,384 @@
+// @version=5
+//
+// MERDIAN ICT Overlay v1
+//
+// Replicates detect_ict_patterns.py logic in TradingView Pine Script v5.
+// Run on 5-minute chart of NIFTY or SENSEX (cash index, not futures).
+// Provides independent visual confirmation of MERDIAN's ICT detector.
+//
+// Patterns:
+//   BULL_OB  — last bearish candle before bullish impulse (>=0.40% over 5 bars)
+//   BEAR_OB  — last bullish candle before bearish impulse
+//   BULL_FVG — gap up between bar i-1 high and bar i+1 low (>=0.10%)
+//   JUDAS_BULL — opening drop >0.25% then >50% retrace within first 30 min
+//
+// Quality tiers (mirror Python assign_tier):
+//   TIER1 (1.5x): BEAR_OB MORNING + MOM_YES + IMP_WEK
+//                  BULL_OB MORNING/AFTNOON + IMP_WEK
+//   TIER2 (1.0x): everything else that isn't SKIP
+//   SKIP  (0.0x): BEAR_OB AFTNOON, BEAR_OB IMP_STR, BULL_OB OPEN
+//
+// MTF context, ENH-06 capital filter, ENH-46-A Telegram, and MERDIAN
+// gates (ENH-35 LONG_GAMMA, etc.) are NOT implemented here — they require
+// data that lives in Supabase, not in TradingView. This script shows
+// patterns + tier; pair with MERDIAN dashboard for full decision context.
+//
+// Usage:
+//   1. Open NIFTY or SENSEX on TradingView, switch to 5-minute timeframe.
+//   2. Pine Editor -> paste this script -> Add to Chart.
+//   3. Configure inputs (defaults match Python detector constants).
+//   4. Set up alerts on "New ICT Zone" condition for live notifications.
+//
+// Author: Session 10 2026-04-26
+// Sync target: detect_ict_patterns.py constants
+
+indicator("MERDIAN ICT Overlay", shorttitle="MRD-ICT",
+     overlay=true, max_boxes_count=200, max_lines_count=200,
+     max_labels_count=200)
+
+// ===== INPUTS =================================================================
+
+ob_min_move_pct      = input.float(0.40, "OB min impulse %",
+     minval=0.10, step=0.05, group="Detection thresholds",
+     tooltip="Cumulative move over 5 bars to qualify as OB-generating impulse")
+fvg_min_pct          = input.float(0.10, "FVG min gap %",
+     minval=0.05, step=0.01, group="Detection thresholds",
+     tooltip="Gap size between bar[i-1].high and bar[i+1].low")
+judas_min_pct        = input.float(0.25, "Judas min opening drop %",
+     minval=0.10, step=0.05, group="Detection thresholds")
+sweep_min_pct        = input.float(0.10, "Prior-day sweep min %",
+     minval=0.05, step=0.01, group="Detection thresholds")
+strong_impulse_pct   = input.float(0.30, "Strong impulse threshold %",
+     minval=0.10, step=0.05, group="Detection thresholds",
+     tooltip="3-bar cumulative move >= this = IMP_STR (skip BEAR_OB)")
+
+show_obs   = input.bool(true,  "Show OBs",        group="Display")
+show_fvgs  = input.bool(true,  "Show BULL_FVGs",  group="Display")
+show_judas = input.bool(true,  "Show JUDAS_BULL", group="Display")
+show_tier1_only = input.bool(false, "TIER1 only",  group="Display")
+show_pdh_pdl    = input.bool(true,  "Show prior-day H/L", group="Display")
+
+bull_zone_color = input.color(color.new(color.green, 80),
+     "BULL zone fill", group="Colors")
+bear_zone_color = input.color(color.new(color.red, 80),
+     "BEAR zone fill", group="Colors")
+tier1_border    = input.color(color.yellow,
+     "TIER1 border", group="Colors")
+tier2_border    = input.color(color.gray,
+     "TIER2 border", group="Colors")
+
+// ===== HELPERS ================================================================
+
+// Time zone (IST) — bar timezone is "Asia/Kolkata" for Indian indices
+ist_hour() => hour(time, "Asia/Kolkata")
+ist_min()  => minute(time, "Asia/Kolkata")
+in_ist_window(h1, m1, h2, m2) =>
+    h_now = ist_hour()
+    m_now = ist_min()
+    minutes_now   = h_now * 60 + m_now
+    minutes_start = h1 * 60 + m1
+    minutes_end   = h2 * 60 + m2
+    minutes_now >= minutes_start and minutes_now < minutes_end
+
+// Time zone label (matches Python time_zone_label after F1 fix)
+tz_label() =>
+    label_ = "OTHER"
+    if in_ist_window(9, 15, 10, 0)
+        label_ := "OPEN"
+    else if in_ist_window(10, 0, 11, 30)
+        label_ := "MORNING"
+    else if in_ist_window(11, 30, 13, 30)
+        label_ := "MIDDAY"
+    else if in_ist_window(13, 30, 15, 31)  // includes 15:30 close
+        label_ := "AFTNOON"
+    label_
+
+is_in_session() =>
+    in_ist_window(9, 15, 15, 31)
+
+is_power_hour() =>
+    h_now = ist_hour()
+    m_now = ist_min()
+    h_now * 60 + m_now >= 15 * 60  // >= 15:00 IST
+
+// Percent change
+pct_chg(a, b) => a == 0 ? 0.0 : 100.0 * (b - a) / a
+
+// ===== PRIOR-DAY HIGH/LOW =====================================================
+
+// Daily timeframe references
+prior_day_high = request.security(syminfo.tickerid, "D", high[1],
+     lookahead=barmerge.lookahead_off)
+prior_day_low  = request.security(syminfo.tickerid, "D", low[1],
+     lookahead=barmerge.lookahead_off)
+
+if show_pdh_pdl and barstate.islast and not na(prior_day_high)
+    line.delete(line.new(bar_index - 50, prior_day_high, bar_index + 5,
+         prior_day_high, color=color.new(color.red, 50),
+         style=line.style_dashed, width=1)[1])
+    line.new(bar_index - 50, prior_day_high, bar_index + 5,
+         prior_day_high, color=color.new(color.red, 50),
+         style=line.style_dashed, width=1)
+    line.delete(line.new(bar_index - 50, prior_day_low, bar_index + 5,
+         prior_day_low, color=color.new(color.green, 50),
+         style=line.style_dashed, width=1)[1])
+    line.new(bar_index - 50, prior_day_low, bar_index + 5,
+         prior_day_low, color=color.new(color.green, 50),
+         style=line.style_dashed, width=1)
+
+// ===== SEQUENCE FEATURES ======================================================
+
+// Direction +1 (bull pattern) -> mom_aligned = 2+/3 prior bars are bearish
+mom_aligned_bull() =>
+    counter = 0
+    counter := counter + (close[1] < open[1] ? 1 : 0)
+    counter := counter + (close[2] < open[2] ? 1 : 0)
+    counter := counter + (close[3] < open[3] ? 1 : 0)
+    counter >= 2
+
+mom_aligned_bear() =>
+    counter = 0
+    counter := counter + (close[1] > open[1] ? 1 : 0)
+    counter := counter + (close[2] > open[2] ? 1 : 0)
+    counter := counter + (close[3] > open[3] ? 1 : 0)
+    counter >= 2
+
+impulse_strong() =>
+    total = math.abs(pct_chg(open[1], close[1]))
+        + math.abs(pct_chg(open[2], close[2]))
+        + math.abs(pct_chg(open[3], close[3]))
+    total >= strong_impulse_pct
+
+// Prior-day sweep within last 5 bars
+sweep_bull() =>
+    res = false
+    for i = 0 to 5
+        if not na(prior_day_low) and pct_chg(prior_day_low, low[i]) * -1 >= sweep_min_pct
+            res := true
+            break
+    res
+
+sweep_bear() =>
+    res = false
+    for i = 0 to 5
+        if not na(prior_day_high) and pct_chg(prior_day_high, high[i]) >= sweep_min_pct
+            res := true
+            break
+    res
+
+// ===== TIER ASSIGNMENT ========================================================
+
+assign_tier(pattern_type, tz, mom_yes, imp_str) =>
+    tier = "TIER2"
+    if pattern_type == "BEAR_OB"
+        if tz == "AFTNOON"
+            tier := "SKIP"
+        else if imp_str
+            tier := "SKIP"
+        else if mom_yes and tz == "MORNING"
+            tier := "TIER1"
+    else if pattern_type == "BULL_OB"
+        if imp_str
+            tier := "TIER2"
+        else if tz == "OPEN"
+            tier := "SKIP"
+        else if tz == "MORNING" or tz == "AFTNOON"
+            tier := "TIER1"
+    // BULL_FVG and JUDAS_BULL stay TIER2
+    tier
+
+// ===== PATTERN DETECTORS ======================================================
+
+// Bullish impulse: cumulative %change over last 5 bars >= threshold
+five_bar_move = pct_chg(close[5], close)
+
+// Order Block: look 1-5 bars back for opposing-direction bar before impulse
+detect_bull_ob() =>
+    found_idx = -1
+    if five_bar_move >= ob_min_move_pct
+        for j = 5 to 1
+            if close[j] < open[j]  // bearish bar = BULL_OB
+                found_idx := j
+                break
+    found_idx
+
+detect_bear_ob() =>
+    found_idx = -1
+    if five_bar_move <= -ob_min_move_pct
+        for j = 5 to 1
+            if close[j] > open[j]  // bullish bar = BEAR_OB
+                found_idx := j
+                break
+    found_idx
+
+// Bullish FVG: gap between bar[2].high and bar[0].low
+detect_bull_fvg() =>
+    high_2 = high[2]
+    low_0  = low
+    has_gap = high_2 < low_0 and (low_0 - high_2) / close * 100 >= fvg_min_pct
+    has_gap
+
+// JUDAS_BULL: opening drop >0.25% by 09:29 IST, then >50% recovery within 30 min
+// Approximation in PineScript: check at first bar after 09:30 IST
+is_judas_check_bar = ist_hour() == 10 and ist_min() < 5 and is_in_session()
+
+// ===== DETECTION LOGIC ========================================================
+
+var int  last_bull_ob_idx = na  // bar index of last drawn BULL_OB to dedup
+var int  last_bear_ob_idx = na
+var int  last_fvg_idx = na
+
+// Skip after 15:00 IST (power hour gate)
+detection_active = is_in_session() and not is_power_hour()
+
+// Mom_aligned (per direction) and impulse strength
+mom_yes_bull = mom_aligned_bull()
+mom_yes_bear = mom_aligned_bear()
+imp_str = impulse_strong()
+sweep_bull_now = sweep_bull()
+sweep_bear_now = sweep_bear()
+tz_now = tz_label()
+
+// ----- BULL_OB ----------------------------------------------------------------
+bull_ob_back = detect_bull_ob()
+if show_obs and detection_active and bull_ob_back >= 1
+    pattern_bar_idx = bar_index - bull_ob_back
+    if na(last_bull_ob_idx) or pattern_bar_idx > last_bull_ob_idx
+        last_bull_ob_idx := pattern_bar_idx
+        ob_open  = open[bull_ob_back]
+        ob_close = close[bull_ob_back]
+        zh = math.max(ob_open, ob_close)
+        zl = math.min(ob_open, ob_close)
+        tier = assign_tier("BULL_OB", tz_now, mom_yes_bull, imp_str)
+        if tier != "SKIP" and (not show_tier1_only or tier == "TIER1")
+            border = tier == "TIER1" ? tier1_border : tier2_border
+            box.new(left=pattern_bar_idx, top=zh,
+                 right=bar_index + 20, bottom=zl,
+                 bgcolor=bull_zone_color,
+                 border_color=border, border_width=tier == "TIER1" ? 2 : 1,
+                 extend=extend.right)
+            label.new(x=pattern_bar_idx, y=zh,
+                 text="BULL_OB " + tier + " " + tz_now,
+                 color=color.new(color.green, 70),
+                 textcolor=color.white, size=size.small,
+                 style=label.style_label_down)
+
+// ----- BEAR_OB ----------------------------------------------------------------
+bear_ob_back = detect_bear_ob()
+if show_obs and detection_active and bear_ob_back >= 1
+    pattern_bar_idx = bar_index - bear_ob_back
+    if na(last_bear_ob_idx) or pattern_bar_idx > last_bear_ob_idx
+        last_bear_ob_idx := pattern_bar_idx
+        ob_open  = open[bear_ob_back]
+        ob_close = close[bear_ob_back]
+        zh = math.max(ob_open, ob_close)
+        zl = math.min(ob_open, ob_close)
+        tier = assign_tier("BEAR_OB", tz_now, mom_yes_bear, imp_str)
+        if tier != "SKIP" and (not show_tier1_only or tier == "TIER1")
+            border = tier == "TIER1" ? tier1_border : tier2_border
+            box.new(left=pattern_bar_idx, top=zh,
+                 right=bar_index + 20, bottom=zl,
+                 bgcolor=bear_zone_color,
+                 border_color=border, border_width=tier == "TIER1" ? 2 : 1,
+                 extend=extend.right)
+            label.new(x=pattern_bar_idx, y=zh,
+                 text="BEAR_OB " + tier + " " + tz_now,
+                 color=color.new(color.red, 70),
+                 textcolor=color.white, size=size.small,
+                 style=label.style_label_up)
+
+// ----- BULL_FVG ---------------------------------------------------------------
+if show_fvgs and detection_active and detect_bull_fvg()
+    if na(last_fvg_idx) or bar_index - last_fvg_idx > 3  // 3-bar dedup
+        last_fvg_idx := bar_index
+        zh = low                // current bar low = top of gap
+        zl = high[2]            // 2 bars ago high = bottom of gap
+        tier = "TIER2"
+        if not show_tier1_only
+            box.new(left=bar_index - 1, top=zh,
+                 right=bar_index + 20, bottom=zl,
+                 bgcolor=color.new(color.aqua, 85),
+                 border_color=tier2_border, border_width=1,
+                 extend=extend.right)
+            label.new(x=bar_index, y=zh,
+                 text="BULL_FVG TIER2 " + tz_now,
+                 color=color.new(color.aqua, 70),
+                 textcolor=color.white, size=size.tiny,
+                 style=label.style_label_down)
+
+// ----- JUDAS_BULL -------------------------------------------------------------
+// Approximation: detect at 10:00 IST. Look back at session opening drop +
+// recovery between 09:15 and 10:00.
+var float session_open       = na
+var float session_lowest     = na
+var int   session_low_bar    = na
+
+is_session_open_bar = ist_hour() == 9 and ist_min() < 20  // 09:15-09:19
+if is_session_open_bar and (na(session_open) or
+     (ist_hour() == 9 and ist_min() < 20 and bar_index != nz(session_low_bar)))
+    session_open    := open
+    session_lowest  := low
+    session_low_bar := bar_index
+
+if is_in_session() and not na(session_open) and low < nz(session_lowest, 1e10)
+    session_lowest  := low
+    session_low_bar := bar_index
+
+if show_judas and is_judas_check_bar and not na(session_open) and not na(session_lowest)
+    drop_pct = pct_chg(session_open, session_lowest)
+    if drop_pct < -judas_min_pct
+        // Recovery check: highest high in 30-min window after low
+        recovery_high = high
+        for i = 0 to 5
+            recovery_high := math.max(recovery_high, high[i])
+        recovery_pct = pct_chg(session_lowest, recovery_high)
+        if recovery_pct >= math.abs(drop_pct) * 0.50 and not show_tier1_only
+            label.new(x=bar_index, y=high,
+                 text="JUDAS_BULL TIER2",
+                 color=color.new(color.purple, 60),
+                 textcolor=color.white, size=size.small,
+                 style=label.style_label_down)
+            line.new(bar_index - 9, session_lowest, bar_index, recovery_high,
+                 color=color.purple, width=2, style=line.style_dotted)
+
+// ===== ALERTS =================================================================
+
+alertcondition(detection_active and bull_ob_back >= 1,
+     title="ICT BULL_OB detected",
+     message="BULL_OB on {{ticker}} at {{close}} ({{interval}})")
+alertcondition(detection_active and bear_ob_back >= 1,
+     title="ICT BEAR_OB detected",
+     message="BEAR_OB on {{ticker}} at {{close}} ({{interval}})")
+alertcondition(detection_active and detect_bull_fvg(),
+     title="ICT BULL_FVG detected",
+     message="BULL_FVG on {{ticker}} at {{close}} ({{interval}})")
+
+// ===== STATUS PANEL ===========================================================
+
+if barstate.islast
+    var table status = table.new(position.top_right, 2, 5,
+         border_width=1, frame_color=color.gray, frame_width=1)
+    table.cell(status, 0, 0, "Time Zone",   bgcolor=color.new(color.black, 80),
+         text_color=color.white, text_size=size.small)
+    table.cell(status, 1, 0, tz_now,         bgcolor=color.new(color.black, 80),
+         text_color=color.white, text_size=size.small)
+    table.cell(status, 0, 1, "MOM Bull",     bgcolor=color.new(color.black, 80),
+         text_color=color.white, text_size=size.small)
+    table.cell(status, 1, 1, mom_yes_bull ? "YES" : "NO",
+         bgcolor=color.new(mom_yes_bull ? color.green : color.gray, 70),
+         text_color=color.white, text_size=size.small)
+    table.cell(status, 0, 2, "MOM Bear",     bgcolor=color.new(color.black, 80),
+         text_color=color.white, text_size=size.small)
+    table.cell(status, 1, 2, mom_yes_bear ? "YES" : "NO",
+         bgcolor=color.new(mom_yes_bear ? color.green : color.gray, 70),
+         text_color=color.white, text_size=size.small)
+    table.cell(status, 0, 3, "IMP Strong",   bgcolor=color.new(color.black, 80),
+         text_color=color.white, text_size=size.small)
+    table.cell(status, 1, 3, imp_str ? "YES (skips BEAR_OB)" : "NO",
+         bgcolor=color.new(imp_str ? color.orange : color.gray, 70),
+         text_color=color.white, text_size=size.small)
+    table.cell(status, 0, 4, "Power Hour",   bgcolor=color.new(color.black, 80),
+         text_color=color.white, text_size=size.small)
+    table.cell(status, 1, 4, is_power_hour() ? "GATE ACTIVE" : "open",
+         bgcolor=color.new(is_power_hour() ? color.red : color.gray, 70),
+         text_color=color.white, text_size=size.small)

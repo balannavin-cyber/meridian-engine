@@ -2262,3 +2262,46 @@ Original purpose: cache `build_expiry_index_simple()` output across cycles to av
 **If proceeded later.** Add a second panel ("Latest Tradable Signal") that latches the most recent action != DO_NOTHING AND trade_allowed=true row per symbol with T+30m retention (matches documented exit horizon). ~50-100 lines HTML/JS in merdian_live_dashboard.py.
 
 **History:** 2026-04-26=PROPOSED, deferred.
+
+---
+
+### ENH-46-C: Conditional ENH-35 LONG_GAMMA Gate Lift on MTF Context
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED 2026-04-27 (Session 10). Pending design + 10-session shadow validation.** |
+| Type | Signal-gate refinement; conditional bypass |
+| Parent | ENH-35 (LONG_GAMMA gate, validated 2026-04-11) |
+| Area | Signal generation; `build_trade_signal_local.py` |
+| Session | 10 (filed) |
+
+**Context.**
+ENH-35 unconditionally blocks signal generation when `gamma_regime IN ('LONG_GAMMA','NO_FLIP')`. Validated 2026-04-11 at N=24,579, 47.7% accuracy on raw signals — the gate is correct on average. Exp 28 (Session 9) confirmed it's correct on ~90% of cycles, mis-calibrated on ~10% (specific directional days). Exp 15 re-run (Session 10) showed the conditional sub-population where the gate is wrong: BULL_OB / BEAR_OB inside MEDIUM or VERY_HIGH MTF context. These setups show 75-86% WR in backtest vs the gate's 47.7% population baseline.
+
+**Proposal.**
+Add a conditional bypass in `build_trade_signal_local.py`: when `gamma_regime IN ('LONG_GAMMA','NO_FLIP')` AND a candidate ICT detection has `pattern_type='BULL_OB' AND mtf_context IN ('MEDIUM','VERY_HIGH')`, allow the signal through with `trade_allowed=true`. BEAR_OB initially excluded (Exp 15 evidence: BEAR_OB MEDIUM N=4, underpowered; BEAR_OB LOW shows higher WR — the lift criterion may not apply symmetrically).
+
+**Evidence (Exp 15 re-run, full year):**
+- BULL_OB MEDIUM: 85.7% WR (N=14), avg ₹+14,013/trade, total ₹+196,184
+- BULL_OB LOW: 87.1% WR (N=31) — also strong; LOW context not actually worse
+- BEAR_OB MEDIUM: 75.0% WR (N=4) — too small for lift decision
+- BEAR_OB LOW: 94.7% WR (N=19) — actually the strongest BEAR bucket
+- Combined T+30m total ₹+773,442 across 229 trades, +193.4% capital growth
+
+**Design questions to settle:**
+1. Symmetric (both directions) or asymmetric (BULL_OB only)? Recommend asymmetric Phase 1 given BEAR_OB MEDIUM N=4.
+2. Tier-conditional? E.g., only TIER1 + MEDIUM, or any tier + MEDIUM? Production tier rules surface only N=5 TIER1/year — too restrictive. Recommend any-tier + MEDIUM/VERY_HIGH.
+3. Shadow-mode vs live? Recommend shadow-mode for 10 sessions: log would-be lift events to a separate `shadow_signal_lifts` table; compare predicted WR against actual T+30m PnL post-cycle.
+
+**Shadow-test plan:**
+- Phase 1 (≥10 trading days): log all candidate-lift events to shadow table without flipping `trade_allowed`. Capture: detection bar_ts, pattern_type, mtf_context, ict_tier, spot, atm_strike, expiry_date, dte, predicted T+30m exit price.
+- Phase 2: evaluate WR + total PnL. Ship to live only if shadow WR ≥ 70% on N≥15.
+- Phase 3 (live): flip `trade_allowed=true` for matching cycles. Monitor for 5 sessions before declaring closed.
+
+**Related:**
+- F0 (gate visibility unclobber) — SHIPPED Session 10. Operator now sees direction_bias=BEARISH/BULLISH instead of NEUTRAL clobber on LONG_GAMMA cycles. Prerequisite for evaluating ENH-46-C live behaviour.
+- F1 (TZ classification fix) — SHIPPED Session 10. Required for `time_zone IN ('MORNING','AFTNOON')` to ever fire correctly, which is upstream of TIER promotion and MTF context lookup.
+- F3 (daily zone scheduling) — VALIDATED, NOT YET SHIPPED. Ensures `ict_htf_zones` is populated daily so MTF context lookups have data to query.
+- ENH-35 — Original LONG_GAMMA gate. ENH-46-C is a conditional refinement, not a replacement.
+
+**History:** 2026-04-27=PROPOSED. Pending shadow-test design + execution.

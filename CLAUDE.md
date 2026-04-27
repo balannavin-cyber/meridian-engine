@@ -33,6 +33,7 @@ For any recurring operation (token rotation, runner restart, backfill, credentia
 |---|---|
 | Rotate the Dhan access token | `docs/runbooks/runbook_update_dhan_token.md` |
 | Update the Kite broker flow | `docs/runbooks/runbook_update_kite_flow.md` |
+| Verify Kite auth before market open | `docs/runbooks/runbook_update_kite_flow.md` Step 3 — runs `/home/ssm-user/meridian-engine/check_kite_auth.py` (persisted Session 10) |
 | Restart a stuck runner (Local) | `docs/runbooks/runbook_restart_runner_local.md` |
 | Restart a stuck runner (AWS) | `docs/runbooks/runbook_restart_runner_aws.md` |
 | Backfill a missing trading day | `docs/runbooks/runbook_backfill_missing_day.md` |
@@ -143,6 +144,8 @@ When generating: assemble from the markdown layer. The markdown is the source. T
 - ❌ Asking the same operational question twice across sessions — if asked once, it becomes a runbook
 - ❌ "I committed CURRENT.md, that's enough" — git commit and project knowledge upload are two separate destinations, both required for session close per Rule 12
 - ❌ Inventing a session goal because the one in CURRENT.md feels stale — flag the discrepancy and ask, do NOT silently swap goals (the file is the contract; if it's stale, fix the file, don't fabricate intent)
+- ❌ Designing an alternative experiment to research code without first running the research code AS-IS to establish baseline replication — Session 10 Exp 31/32 burned a half-day on a false-negative loop and produced a wrong "Path A" recommendation (later retracted) because Exp 15 wasn't run as-written first. If research code replicates, alternatives may add insight; if research code doesn't replicate, that is the question to answer first, before any alternative is designed.
+- ❌ Heredoc-pasting Python scripts via SSM (`cat > file.py <<EOF ... EOF`) — invisible non-printing characters can survive nano/cat visual checks but break the Python parser silently (Session 10 morning Kite auth debug). Always nano-type Step 3 verification scripts. SSM TTY can hang silently; `echo hello` is the canary before running anything substantive.
 
 ---
 
@@ -226,6 +229,9 @@ These are decisions made and validated. Re-litigating them wastes session time.
 - ✅ ENH-42 WebSocket — DEFERRED post-Phase 4, do not build now
 - ✅ OpenItems Register closed (2026-04-15)
 - ✅ D-06 signal-consumer concerns (resolved earlier; do not rebuild regret log)
+- ✅ **Compendium replicates** (Exp 15 re-run 2026-04-27, Session 10) — BEAR_OB ~92% WR, BULL_OB ~84%, MEDIUM context ~77%, combined +193.4% return. The system has real, durable, year-validated edge. Earlier Session 10 wave-1 conclusion that "compendium does not replicate" was **measurement error in Exp 31/32**, explicitly retracted. Do not re-run Exp 31/Exp 32 as evidence of edge absence.
+- ✅ **F2 (1H OB threshold tuning) REJECTED** (Exp 29 v2, 2026-04-26, Session 10) — full-year sweep over {0.15, 0.20, 0.25, 0.30, 0.40}% confirmed current 0.40% maximises WR for NIFTY; SENSEX peaks at 0.30%. No threshold cleared the 70%/N≥30 ship bar. Threshold is not the lever for surfacing more MEDIUM-context candidates.
+- ✅ **Path A retracted** (Session 10) — the framing "stop pretending ICT is the edge" was wrong. Compendium replicates. Do not re-introduce Path A under different names.
 
 If any of these need to change, that is itself an architectural session — write a new ADR.
 
@@ -276,4 +282,8 @@ Whenever a new data-integrity incident is diagnosed, INSERT a row into `data_con
 
 
 *CLAUDE.md v1.4 — 2026-04-25 (corrected Local Python path in env table; the previously listed `Python312\python.exe` path doesn't exist on Navin's box; surfaced when running experiment_17). v1.3 added Rule 13 (data contamination registry). v1.2 added Rule 12 (doc-sync). v1.1 added Rule 11 (runbooks).*
+
+---
+
+*CLAUDE.md v1.5 — 2026-04-27 (Session 10 close). Added: (a) three settled-decisions entries to DO_NOT_REOPEN list — compendium replicates (Exp 15 re-run, Session 10), F2 (1H OB threshold) rejected via Exp 29 v2, Path A retracted; (b) two anti-patterns — designing alternative experiments before replicating research code AS-IS (Session 10 Exp 31/32 false-negative half-day burn), and heredoc-pasting Python via SSM (Session 10 Kite-auth invisible-character bug); (c) Common operations table row for "Verify Kite auth before market open" pointing at runbook_update_kite_flow.md Step 3 + persisted check_kite_auth.py at /home/ssm-user/meridian-engine/. v1.4 corrected Local Python path. v1.3 Rule 13. v1.2 Rule 12. v1.1 Rule 11.*
 

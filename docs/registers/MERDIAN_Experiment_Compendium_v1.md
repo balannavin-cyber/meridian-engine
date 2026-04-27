@@ -28,6 +28,78 @@ Experiments are ordered by number. Most recent changes prepended to the top of t
 
 ---
 
+## Experiment 33 — Inside-bar Day Before Expiry: Breakout Direction & Next-Day Continuation
+
+**Date:** 2026-04-27 (Session 10 extension, post-market analysis)
+**Scripts:** `experiment_33_inside_bar_before_expiry.py`, `experiment_33_analyse.py`, `experiment_33_analyse_stage2.py`
+
+**Question:** When trading day D-1 forms a strict inside bar (today_high < yday_high AND today_low > yday_low) and day D is a NIFTY/SENSEX expiry, what happens on day D? Two competing theses tested: (a) options-writer pin thesis (range contracts, spot pins to inside-bar mid) vs (b) breakout/breakdown thesis (one side breaks, trapped side covers, momentum continues).
+
+**Setup:**
+- Window: 2025-04-01 to 2026-04-24, both NIFTY and SENSEX, weekly + monthly expiries classified separately.
+- Strict inside-bar definition.
+- Era-aware expiry detection: NIFTY weekly = Thursday pre-2025-09-01, Tuesday post-cutover; SENSEX weekly = Tuesday pre-cutover, Thursday post. Monthly = latest weekly expiry per calendar month.
+- Validated against `hist_atm_option_bars_5m WHERE dte=0` (sparse but ground-truth where present) and `option_chain_snapshots` for recent fill-in.
+- Daily OHLC built from `hist_spot_bars_1m`, TZ-aware per TD-029.
+- Three-stage analysis: (1) candidate identification + characterisation, (2) per-case intraday journey, (3) gap analysis + post-gap moves + close-at-extreme + next-day continuation.
+
+**N: 14 candidate cases** (NIFTY 8: 6 weekly + 2 monthly; SENSEX 6: 3 weekly + 3 monthly) plus 90 expiry-day controls (without inside-bar D-1) for comparison.
+
+**Findings (load-bearing):**
+
+**Pin thesis — REJECTED.** Range expansion observed in 13 of 14 cases (mean expiry-day range = 109-192% of inside-bar range across symbol/expiry buckets). Only 1 of 14 cases (SENSEX 2025-08-05 weekly) had no break — 7% pin rate. The "writers crush the wings, suppressed vol" framing does not manifest in this data.
+
+**Breakout thesis — SUPPORTED.** 13 of 14 cases (93%) broke at least one side of the inside bar intraday on expiry day. 12 of 14 cases (86%) broke one side cleanly without the other. Of those clean-break cases, 8 sustained the break to close on the break side, 4 failed and closed back inside.
+
+**Break timing — fast and front-loaded.** 12 of 13 breaks happened before 10:00 IST. 9 of 13 broke at the 09:15 opening bar. The one mid-day break (SENSEX 2026-02-26 at 11:57) failed and reverted inside. **Decision rule: the breakout direction is decided in the first 1-15 minutes of the expiry-day session, not built up over the day.**
+
+**Gap analysis (Q1).** 6 of 14 cases (43%) opened outside the inside bar (4 GAP_UP, 2 GAP_DOWN). Of the 9 cases that broke at 09:15, 6 of them were gaps — meaning the "09:15 break" was substantively the gap, not real intraday momentum. Only 3 cases were genuine 09:15-bar intraday breakouts from inside-bar opens.
+
+**Post-gap follow-through (Q2) — asymmetric.** Of 4 GAP_UP cases: small gaps (<50 pts) modestly continued upward; large gaps (>100 pts) faded hard (mean post-gap OC = -183 pts across all 4). Of 2 GAP_DOWN cases: both continued downward (mean post-gap OC = -425 pts). **Both gap directions resolved to net-bearish or fading expiry-day prints in 5 of 6 gap cases.**
+
+**Close-at-extreme analysis (Q3) — almost never.** 1 of 14 cases (7%) closed within 25 pts of day's high. 0 closed within 25 pts of day's low. **13 of 14 (93%) closed in the middle of the day's range.** Even on sustained-break days, price retraces from the extreme by close. Trend-day-on-its-extremes patterns are essentially absent in this sample.
+
+**Next-day continuation (Q4) — strong.** 10 of 14 cases (71%) saw the next trading session gap in the same direction as expiry day's net move (close vs open). Cross-tabulations: of GAP_UP cases, 3 of 4 continued (75%); of GAP_DOWN cases, 2 of 2 continued (100%). The directional bias persists into the next session, often with amplification — e.g., SENSEX 2026-02-12 closed -347 pts intraday and gapped -759 pts the next morning.
+
+**Findings (per-symbol detail):**
+
+| Group | N | Pin | Sustained break | Failed break | Whipsaw |
+|---|---|---|---|---|---|
+| NIFTY weekly | 6 | 0 | 4 | 2 | 0 |
+| NIFTY monthly | 2 | 0 | 1 | 0 | 1 |
+| SENSEX weekly | 3 | 1 | 2 | 0 | 0 |
+| SENSEX monthly | 3 | 0 | 1 | 2 | 0 |
+
+NIFTY weekly skews break-high (3 of 4 sustained breaks were upward). SENSEX skews break-low (3 of 3 sustained breaks were downward).
+
+**Verdict — UNDERPOWERED, BREAKOUT THESIS SUPPORTED, NEXT-WEEK OPTION RECOMMENDATION.**
+
+The data supports the breakout thesis as plain-reading evidence (93% break rate, 71% next-day continuation), but N=14 is too small for statistical significance. Treat as hypothesis-generating, not predictive.
+
+The combination of three findings — (a) early break timing, (b) mid-of-range close, and (c) 71% next-day continuation — supports a structural conclusion: **next-week ATM options materially outperform same-week ATM options on inside-bar-before-expiry setups.** Same-week (DTE=0) options die at expiry close, capturing only the intraday move which Q3 shows retraces by close. Next-week (DTE≈7) options capture both the expiry-day move AND the next-session continuation gap, with modest theta drag (~5-7%). For the strongest cases (SENSEX 02-12: -347 pts intraday + -759 pts next-day gap = -1106 pts total move), next-week PE captures roughly 3x the underlying-price-move impact vs same-week PE.
+
+**Builds:**
+- ENH proposal candidate (Session 11+): inside-bar-before-expiry detector + next-week ATM long-options trade structure. Shadow-test 10 sessions before live.
+- TD-034 filed (`hist_atm_option_bars_5m` undersampled on dte=0 — limits future expiry-day option backtests).
+- Session-extension precedent: research can productively run after-hours of session-close, but findings file as compendium entry of the session in which they were produced.
+
+**Caveats:**
+- N=14 across 4 buckets. Wide confidence intervals on every percentage. The 71% continuation rate, 93% break rate, etc. all have ~±15pp uncertainty bands at this sample size.
+- Includes one massive outlier (NIFTY 2026-02-03, +1233 pts excursion above inside_high — likely a budget/election news day). Outlier handling not done.
+- TD-034 means 22-44% of expected expiry-day option data is missing — Exp 33's spot-only analysis sidesteps this, but follow-on research using option premiums will hit the wall.
+- Strict inside-bar definition; loose definitions could 2-3x the candidate pool but may dilute signal.
+- All cases pooled across volatility regimes; high-IV vs low-IV split could surface different behaviour.
+
+**Follow-ups for Session 11+:**
+- Extend to loose inside-bar definitions (today's range ≤ 60% of yesterday's, with overlap)
+- Split test group by IV-at-D-1 (above/below median) — pin thesis may apply only in high-IV environments
+- First-30-min magnitude-conditional rule (does break magnitude in first 30 min predict close magnitude?)
+- Add ATM straddle decay metrics where `hist_atm_option_bars_5m` has data — quantifies the same-week vs next-week claim
+
+**Date filed:** 2026-04-27 (Session 10 extension).
+
+---
+
 ## Experiment 15 (re-validation) — Compendium Replication on Current Data
 
 **Date:** 2026-04-27 (Session 10 — Monday morning concurrent with pre-open ops)

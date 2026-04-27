@@ -2303,5 +2303,90 @@ Add a conditional bypass in `build_trade_signal_local.py`: when `gamma_regime IN
 - F1 (TZ classification fix) — SHIPPED Session 10. Required for `time_zone IN ('MORNING','AFTNOON')` to ever fire correctly, which is upstream of TIER promotion and MTF context lookup.
 - F3 (daily zone scheduling) — VALIDATED, NOT YET SHIPPED. Ensures `ict_htf_zones` is populated daily so MTF context lookups have data to query.
 - ENH-35 — Original LONG_GAMMA gate. ENH-46-C is a conditional refinement, not a replacement.
+- **TD-032 (Dashboard execution panel inconsistent with DB ground truth) — BLOCKER FOR ENH-46-C SHIP.** Live observation 2026-04-27 (Session 10 extension) showed dashboard rendering trade-direction inconsistent with `signal_snapshots` ground truth on multiple cycles. Cannot promote any signal to live `trade_allowed=true` while operator-facing dashboard can show wrong instrument (e.g., CE label on a BUY_PE action). Filed as TD-032 in tech_debt.md. Must close TD-032 before any Phase 3 live promotion of ENH-46-C.
 
-**History:** 2026-04-27=PROPOSED. Pending shadow-test design + execution.
+**History:** 2026-04-27=PROPOSED. 2026-04-27=blocked-on-TD-032 added. Pending shadow-test design + execution + TD-032 fix.
+
+---
+
+### ENH-46-D: Pine HTF Zones Live JSON Feed (Eliminates Manual Pine Regeneration)
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED 2026-04-27 (Session 10 extension)** |
+| Type | Visualization infrastructure / TradingView integration |
+| Parent | none |
+| Area | Pine overlay maintenance, post-`build_ict_htf_zones.py` workflow |
+| Session | 10 (filed during extension) |
+
+**Context.**
+`merdian_ict_htf_zones.pine` currently hardcodes zone coordinates from a snapshot of `ict_htf_zones`. Every time the table changes materially — daily refresh from `build_ict_htf_zones.py`, zombie cleanup, new structural zones forming — the Pine overlay renders stale state until manually regenerated. Session 10 demonstrated this concretely: at 08:55 IST 2026-04-27 the operator discovered the Pine had ~5 zones per symbol while the table had 18. Three hours of trading would have run with an incomplete chart had it not been caught pre-market.
+
+**Proposal.**
+Two-part architecture replacing manual Pine regeneration with a live data feed:
+
+1. **Generator (Python, daily after `build_ict_htf_zones.py`).** Query `ict_htf_zones WHERE status='ACTIVE'`. Emit JSON to a hosted endpoint or static file. Format optimised for Pine consumption: per-symbol arrays with line-per-zone (low/high/type/date).
+2. **Pine consumer (TradingView).** Replace hardcoded `draw_zone()` calls with HTTP-fetch of the JSON at chart load. Render zones programmatically from the array.
+
+**Hosting options (Phase 1 recommendation: GitHub raw URL):**
+- **GitHub raw URL (RECOMMENDED PHASE 1):** Generator writes `ict_htf_zones_live.json` to a `tradingview-feeds/` directory in the repo, commits + pushes after every `build_ict_htf_zones.py` run. Pine fetches from `https://raw.githubusercontent.com/balannavin-cyber/meridian-engine/main/tradingview-feeds/ict_htf_zones_live.json`. Zero infra cost, lives inside existing git workflow.
+- AWS S3 bucket public-read.
+- Supabase Edge Function returning JSON.
+- Public Supabase view + REST endpoint.
+
+**Open questions to settle:**
+1. Pine v6 supports `request.security()` for symbol data but not arbitrary HTTP GET to JSON endpoints. **Verify Pine v6 HTTP fetch capability before designing further** — may require workaround like `request.seed()` (TradingView's seeding mechanism for repo-hosted indicators) or accept manual paste-in until TV adds GET support. First 10-min spike of any work on this proposal.
+2. Pine label/box count limits (~80 each). With 36 zones across both symbols + intraday markers, may hit ceiling. May need to filter to ±X% of current spot at render time.
+3. Update cadence — post-build commit-and-push will trigger every daily zone refresh. Many commits. Worth a separate branch / repo for the JSON feed?
+
+**If Pine v6 cannot fetch HTTP JSON natively:**
+Fallback design — generator writes a Pine source file (`merdian_ict_htf_zones.pine`) directly from the table, replacing manual edits. Operator pastes once per regeneration cycle. Still manual, but eliminates the data-translation step.
+
+**History:** 2026-04-27=PROPOSED. Pending Pine v6 HTTP capability check + design spec in Session 11+.
+
+---
+
+### ENH-47: Inside-Bar-Before-Expiry Long-Options Trade Structure (Next-Week ATM)
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED 2026-04-27 (Session 10 extension)** |
+| Type | New signal class + trade structure recommendation |
+| Parent | none |
+| Area | Discretionary signal augmentation (not currently auto-traded by MERDIAN) |
+| Session | 10 (filed during extension) |
+| Source | Experiment 33 |
+
+**Context.**
+Experiment 33 (Session 10 extension) tested two competing theses for inside-bar-Monday-before-expiry-Tuesday/Thursday setups: (a) options-writer pin thesis vs (b) breakout/breakdown thesis. The pin thesis was rejected (only 7% pin rate). The breakout thesis was supported (93% break rate, 86% clean-direction breaks). A novel finding was added: 71% of cases saw the next trading session gap in the same direction as expiry day's net move.
+
+**Proposal.**
+Detect inside-bar-before-expiry candidates pre-market, take ATM long option position in **next-week** (DTE≈7) rather than same-week (DTE=0) expiry. Three justifications:
+
+1. **Same-week dies at expiry close**, capturing only intraday move. Q3 of Exp 33 showed 93% of expiry-day closes are in the mid of the day's range (no trend-day-on-extreme closes). Same-week ATM options held to expiry frequently underperform the intraday peak premium.
+2. **Next-week captures next-day continuation gap.** Q4 showed 71% of cases gap in expiry-day direction the next session. Same-week option misses this entirely (already expired).
+3. **Combined directional move is materially larger.** Strongest case (SENSEX 2026-02-12): -347 pts intraday + -759 pts next-day gap = -1106 pts total. Next-week PE captures all of this; same-week PE captures only the -347 pt intraday move.
+
+**Decision tree (operational rule, not yet automated):**
+- If pre-market open shows **GAP_UP small (<50 pts)** + holding above inside_high: buy next-week ATM CE (mild continuation expected, 75% probability based on N=4)
+- If **GAP_UP large (>100 pts)**: buy next-week ATM PE (fade expected, both observed >100pt gap-ups in sample faded heavily)
+- If **GAP_DOWN any size** + holding below inside_low: buy next-week ATM PE (continuation expected, 100% probability based on N=2)
+- If **INSIDE open**: wait 09:15-09:30 IST for direction; act on first sustained break with next-week ATM in break direction
+
+**Open questions:**
+1. **Sample size constraint** — N=14 across 4 buckets, with ±15pp uncertainty bands. Cannot promote to MERDIAN auto-signal until N is meaningfully larger (TD-034 — `hist_atm_option_bars_5m` undersampling — limits historical N).
+2. **Detection timing** — inside-bar status is only confirmed at 15:30 IST close of D-1. Pre-market ATM option pricing on D may already incorporate the setup. Verify whether next-week premium pricing leaves edge after retail recognition.
+3. **Symmetry** — NIFTY weekly skewed break-high (3 of 4 sustained); SENSEX skewed break-low. Different bias per symbol may need symbol-specific direction rules.
+4. **Volatility regime** — all cases pooled. High-IV environments may favour sell-the-strangle (pin thesis); low-IV may favour buy-the-straddle (breakout thesis). Need IV-conditional split.
+
+**Path to live:**
+- Phase 1 (Session 11+): document and validate the rule on out-of-sample inside-bar-before-expiry occurrences as they happen. Track each as it occurs in `inside_bar_expiry_log` (or similar). Goal: accumulate 10+ live observations.
+- Phase 2: write detector script + integrate signal into MERDIAN pipeline (would surface in `signal_snapshots` with new pattern_type='INSIDE_BAR_EXPIRY' or similar).
+- Phase 3: ENH-46-C-style shadow test before live promotion.
+
+**Related:**
+- Exp 33 — primary evidence base.
+- TD-034 — `hist_atm_option_bars_5m` undersampling limits future expiry-day option backtests, including ENH-47 path-to-live validation.
+- ENH-46-A — Telegram alert daemon already running; could be extended to alert on inside-bar-before-expiry candidates pre-market.
+
+**History:** 2026-04-27=PROPOSED. Underpowered evidence base. Discretionary use first, automation second.

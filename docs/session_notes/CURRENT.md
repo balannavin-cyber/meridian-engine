@@ -9,6 +9,34 @@
 
 | Field | Value |
 |---|---|
+| **Date** | 2026-04-28 (Session 11 — three concerns, session-contract override logged: A+B+G in one session, mirroring Session 9 wave pattern) |
+| **Concern** | F3 (daily zone scheduling + ENH-71 instrumentation) + TD-032 dashboard opt_type fix + Candidate G gitignore audit |
+| **Type** | Code patch × 2 + Task Scheduler registration + gitignore cleanup + commit |
+| **Outcome** | ALL DONE. TD-017 CLOSED. TD-032 PATCHED (pending 10-cycle live verification at 2026-04-29 market open). gitignore cleaned. Commit `46dbdc1` (58 files: 40+ historical fix/check scripts now in git for first time, `preflight/output/` untracked, 2 garbage files deleted). |
+| **Git start → end** | `3eda58c` → `46dbdc1` |
+| **Local + AWS hash match** | Local at `46dbdc1`. Push to origin + AWS pull required at session close. |
+| **Files changed (code)** | `build_ict_htf_zones.py` (ENH-71 instrumented, backup `.pre_f3.bak`); `merdian_signal_dashboard.py` (TD-032 opt_type fix, backup `.pre_td032.bak`); `.gitignore` (audited, cleaned). |
+| **Files added** | `run_ict_htf_zones_daily.bat`, `register_ict_htf_zones_task.ps1`, `fix_f3_instrument_build_ict_htf_zones_v3.py` (+ v1/v2 audit trail); `fix_td032_dashboard_opt_type_v2.py` (+ v1 audit trail); `restore_and_rerun_v3.ps1`. 40+ historical fix/check scripts entered git for first time. |
+| **Files modified (docs)** | `tech_debt.md`, `merdian_reference.json`, `CURRENT.md`, `session_log.md`. |
+| **Tables changed** | `ict_htf_zones`: 35 zones per real run (idempotent UPSERT). `script_execution_log`: 3 rows from F3 validation. |
+| **Cron / Tasks added** | **`MERDIAN_ICT_HTF_Zones_0845`** — daily Mon-Fri 08:45 IST. Wraps `run_ict_htf_zones_daily.bat` → `python build_ict_htf_zones.py --timeframe both`. ENH-71 instrumented. |
+| **`docs_updated`** | YES |
+
+### What Session 11 did, in bullets
+
+- **F3 SHIPPED (TD-017 CLOSED).** `build_ict_htf_zones.py` instrumented with ENH-71 ExecutionLog. `MERDIAN_ICT_HTF_Zones_0845` Task Scheduler registered. 3 SUCCESS rows validated (DRY_RUN + manual 35 zones + Start-ScheduledTask smoke test 35 zones, all `contract_met=true`, ~85s). Natural 08:45 IST fire today as 4th production confirmation. TD-017 framing corrected: `--timeframe H` is already live every 5-min by `detect_ict_patterns_runner.py`; the real gap was W+D rebuild, which `--timeframe both` covers.
+- **Patch script encoding hazards surfaced.** BOM: `ast.parse` rejects U+FEFF — use `read_bytes() + decode("utf-8-sig")`. CRLF: `write_text()` on Windows translates LF→CRLF — use `write_bytes(text.encode(...))`. v3 is the canonical pattern going forward.
+- **TD-032 PATCHED.** Root cause confirmed: `build()` read `d["opt_type"]` from `ict_zones.opt_type` (ICT pattern direction BEFORE ENH-35 gate overrides). On LONG_GAMMA days gate overrides bullish ICT to `BUY_PE` — dashboard rendered CE. Fix: `opt_type` now unconditional from `signal_snapshots.action`. Render audit log added (`[DASHBOARD]` lines to stderr per render). Verified working at 06:47 IST. 10-cycle live verification required at 09:15 IST 2026-04-29 to formally close.
+- **Candidate G DONE.** `.gitignore` audited: `/fix_*.py` and `/fix_*.ps1` over-broad rules removed (same class as Session 10 `/experiment_*.py` finding). 40+ historical fix/check scripts now in git. `preflight/output/` silenced. Garbage entries removed. Flag for future: `/check_*.py` may still be too broad.
+
+---
+
+## Previous session (Session 10) — retained for orientation
+
+## Last session
+
+| Field | Value |
+|---|---|
 | **Date** | 2026-04-26 → 2026-04-27 (Session 10 — single-concern with Monday-morning operational tail and post-market research extension) |
 | **Concern** | Diagnose why MERDIAN never shows `trade_allowed=true` on trending days. Originally framed as "is the gate broken?" — landed at "the system has edge but visibility, classification, and gate-conditionality all needed work, and the dashboard layer has its own untrustworthiness." |
 | **Type** | Diagnostic + multiple patches shipped + four experiments in main session + one new full experiment (Exp 33) in post-market extension + live verification of F0/F1/ENH-46-A + dashboard reliability investigation. Single-session-rule override logged twice (Monday-morning Kite tail; post-market research extension). |
@@ -70,121 +98,98 @@
 
 ## This session
 
-> Session 11. Pick ONE primary path from below at session start.
+> Session 12. Primary goal: TD-032 live verification at market open, then ENH-46-C shadow-test design.
 
-### Candidate A (recommended) — Ship F3 (daily zone scheduling + ENH-72 wrapper)
-
-| Field | Value |
-|---|---|
-| **Goal** | Schedule `build_ict_htf_zones.py --timeframe both` to run daily at 08:45 IST Mon-Fri via Task Scheduler. Add ENH-72 ExecutionLog wrapper to instrument the script. Both small. Validated by Exp 15 re-run: MEDIUM context (1H zones) shows 77.3% WR vs 62% LOW baseline. |
-| **Type** | Code + scheduler + instrumentation. |
-| **Success criterion** | Task Scheduler entry registered + smoke-tested. ENH-72 wrapper applied. `script_execution_log` shows SUCCESS row for 08:45 IST run on next trading day. |
-| **Time budget** | ~15-25 exchanges. |
-
-### Candidate B — Address TD-032 (Dashboard ↔ DB inconsistency)
+### Candidate A (mandatory first, ~5 exchanges) — TD-032 live verification
 
 | Field | Value |
 |---|---|
-| **Goal** | Source-trace `merdian_signal_dashboard.py` rendering pipeline. Identify why dashboard renders trade direction inconsistent with `signal_snapshots` ground truth. Fix to ensure single-source-of-truth read. Add DB-vs-display consistency log line. |
-| **Type** | Diagnostic + code patch. |
-| **Success criterion** | Dashboard render demonstrably matches signal_snapshots row across 10+ test cycles spanning both BULLISH and BEARISH direction_bias. |
-| **Why this matters** | TD-032 is BLOCKER for ENH-46-C ship. Without it fixed, conditional gate lift cannot promote any signal to live trade_allowed=true while operator-facing dashboard can show wrong instrument. |
-| **Time budget** | ~20-30 exchanges. |
+| **Goal** | At 09:15 IST market open, watch terminal running `merdian_signal_dashboard.py` for `[DASHBOARD]` audit lines. Confirm `opt_type` matches `action` across 10+ cycles spanning BULLISH and BEARISH `direction_bias`. If consistent, formally close TD-032 and lift ENH-46-C BLOCKER. |
+| **Success criterion** | 10+ `[DASHBOARD]` lines with `opt_type` consistently matching `action`. TD-032 moved to Resolved. ENH-46-C BLOCKER removed. |
+| **Time** | ~5 exchanges (observation only, no code). |
 
-### Candidate C — Design ENH-46-C spec (no code) — DEFERRED until TD-032 closes
+### Candidate B (after A closes) — ENH-46-C shadow-test design
 
 | Field | Value |
 |---|---|
-| **Goal** | Spec the conditional LONG_GAMMA gate lift design. Exp 15 evidence: BULL_OB MEDIUM = 85.7% WR, BEAR_OB MEDIUM = 75% WR vs gate's 47.7% population baseline. |
-| **Type** | Design only — produce ENH-46-C document with shadow-test plan. No code. |
-| **Success criterion** | One-page spec committed. Shadow-test plan defined. |
-| **Status** | **Deferred until TD-032 closes** (per BLOCKER FOR relationship in tech_debt.md). |
+| **Goal** | Design and implement `shadow_signal_lifts` table + logging. During BULL_OB or BEAR_OB cycles inside MEDIUM/VERY_HIGH MTF context, log would-be gate-lift events without flipping `trade_allowed`. Capture: detection bar_ts, pattern_type, mtf_context, ict_tier, spot, atm_strike, expiry_date, dte. Evidence: Exp 15 BULL_OB MEDIUM = 85.7% WR, BEAR_OB MEDIUM = 75% WR vs 47.7% gate baseline. |
+| **Prerequisite** | TD-032 formally closed. |
+| **Time** | ~20-30 exchanges. |
 
-### Candidate D — TD-030 + TD-031 fix (build_ict_htf_zones.py improvements)
-
-| Field | Value |
-|---|---|
-| **Goal** | TD-030: teach `build_ict_htf_zones.py` to re-evaluate breach on existing active zones. TD-031: investigate why D BEAR_OB / D BEAR_FVG detection is underactive (0 written since 04-11). |
-| **Type** | Code investigation + patch. |
-| **Time budget** | ~20-30 exchanges. |
-
-### Candidate E — ENH-46-D design (Pine live JSON feed)
+### Candidate C — TD-030 + TD-031 (build_ict_htf_zones.py improvements)
 
 | Field | Value |
 |---|---|
-| **Goal** | First 10-min capability check: does Pine v6 support HTTP GET to JSON endpoints? If yes, design the generator + Pine consumer architecture. If no, design fallback (auto-regenerate Pine source from JSON template). |
-| **Type** | Investigation + design. |
-| **Time budget** | ~25-40 exchanges. |
+| **Goal** | TD-030: teach `build_ict_htf_zones.py` to re-evaluate breach on existing active zones. TD-031: investigate why D BEAR_OB / D BEAR_FVG detection has been 0 since 04-11. |
+| **Time** | ~20-30 exchanges. |
 
-### Candidate F — Extend Exp 33 (loose inside-bar definition + IV-conditional split)
+### Candidate D — ENH-46-D design (Pine HTF zones live JSON feed)
 
 | Field | Value |
 |---|---|
-| **Goal** | Re-run Exp 33 with loose inside-bar definition (today's range ≤ 60% of yesterday's, with overlap) to expand candidate pool from N=14 to ~30-40. Split test group by IV-at-D-1 (above/below median) — pin thesis may apply only in high-IV environments. |
-| **Type** | Research extension. |
-| **Time budget** | ~15-25 exchanges. |
+| **Goal** | First 10-min capability check: does Pine v6 support HTTP GET to JSON endpoints? If yes, design generator + Pine consumer. If no, design fallback (auto-regenerate Pine source from JSON template). |
+| **Time** | ~25-40 exchanges. |
+
+### Candidate E — Extend Exp 33 (loose inside-bar definition + IV-conditional split)
+
+| Field | Value |
+|---|---|
+| **Goal** | Re-run Exp 33 with loose inside-bar definition (today's range ≤ 60% of yesterday's, with overlap). Expand candidate pool from N=14 to ~30-40. Split by IV-at-D-1 (above/below median) — pin thesis may apply only in high-IV environments. |
+| **Time** | ~15-25 exchanges. |
 
 ### DO_NOT_REOPEN
 
-- All items from Session 9's CURRENT.md DO_NOT_REOPEN list.
-- **F2 (1H OB threshold tuning)** — REJECTED. Exp 29 v2 falsified.
-- **"Compendium doesn't replicate"** — wrong framing. Exp 15 re-run confirms BEAR_OB ~92%, BULL_OB ~84%, MEDIUM ~77%.
-- **Path A ("stop pretending ICT is the edge")** — wrong. Withdrawn 2026-04-27.
+- All prior sessions' DO_NOT_REOPEN items.
+- **F2 (1H OB threshold tuning)** — REJECTED via Exp 29 v2.
+- **"Compendium doesn't replicate"** — Exp 15 re-run confirms it does.
+- **Path A ("stop pretending ICT is the edge")** — withdrawn.
 - **Exp 31 / Exp 32 negative result** — measurement error, not finding.
 - **F1 patch correctness** — verified live across OPEN and MORNING buckets.
-- **Inside-bar before expiry pin thesis** — REJECTED via Exp 33 (only 7% pin rate).
-- **Dashboard renders direction off pattern_type** — wrong framing of TD-032. The dashboard does NOT hardcode direction off pattern. It is non-deterministic across cycles. TD-032 root cause is not "pattern hardcoding."
+- **Inside-bar before expiry pin thesis** — REJECTED via Exp 33 (7% pin rate).
+- **Dashboard renders direction off pattern_type** — wrong framing of TD-032. Root cause was `ict_zones.opt_type` override, not pattern hardcoding. PATCHED Session 11.
+- **TD-017** — CLOSED Session 11.
 
 ### Watch-outs
 
-- ENH-46-C ship is gated on TD-032. Don't try to advance ENH-46-C to shadow-test until TD-032 has closed.
-- ENH-47 (inside-bar-before-expiry trade) is N=14 evidence — discretionary use first, automation last.
-- Project knowledge re-upload per Documentation Protocol v3 Rule 12 is required after Session 10 extension closes — same 8 files as before.
-- Session 11 should NOT attempt ENH-46-C live promotion. Even with shadow data, TD-032 must close first.
+- TD-032 PATCHED but not formally closed. Do NOT advance ENH-46-C to shadow-test until 10-cycle live verification completes at 09:15 IST 2026-04-29.
+- ENH-47 (inside-bar-before-expiry trade) is N=14 — discretionary use only.
+- `/check_*.py` in .gitignore may be too broad (`check_kite_auth.py` is production). Flag for next gitignore review.
+- Project knowledge re-upload required: CURRENT.md, session_log.md, tech_debt.md, merdian_reference.json.
 
 ---
 
-## Live state snapshot (at Session 11 start)
+## Live state snapshot (at Session 12 start)
 
-**Environment:** Local Windows primary; AWS shadow runner present but down since 2026-04-13 (separate concern, pre-existing).
+**Environment:** Local Windows primary. AWS shadow runner down since 2026-04-13 (pre-existing).
 
-**Open critical items (C-N):** None new from Session 10.
+**Open critical items (C-N):** None.
 
-**Active TDs (post-extension):**
-- TD-029 (S2) — `hist_spot_bars_1m`/`5m` pre-04-07 TZ-stamping bug. Workaround documented.
+**Active TDs (post-Session 11):**
+- TD-018 (S4) — `build_ict_htf_zones.py:471` deprecated `datetime.utcnow()`.
+- TD-029 (S2) — `hist_spot_bars_1m`/`5m` pre-04-07 TZ-stamping bug.
 - TD-030 (S2) — `build_ict_htf_zones.py` doesn't re-evaluate breach on existing zones.
-- TD-031 (S2) — D BEAR_OB / D BEAR_FVG detection underactive.
-- **TD-032 (S2) — Dashboard ↔ DB inconsistency. BLOCKER for ENH-46-C ship.**
+- TD-031 (S2) — D BEAR_OB / D BEAR_FVG detection underactive (0 since 04-11).
+- **TD-032 (S2) — PATCHED 2026-04-28. Pending 10-cycle live verification. BLOCKER FOR ENH-46-C until formally closed.**
 - TD-033 (S3) — Dashboard "SELL / BUY PE" label conflation.
-- TD-034 (S2) — `hist_atm_option_bars_5m` severely undersampled on dte=0 (~22-44% coverage).
+- TD-034 (S2) — `hist_atm_option_bars_5m` severely undersampled on dte=0.
 - TD-035 (S3) — `signal_snapshots.wcb_regime` NULL but dashboard shows BULLISH.
-- TD-036 (S3) — `confidence_score` flat-lined for 90+ minutes.
-- TD-037 (S4) — Schema column-name inconsistency across timestamp-bearing tables.
+- TD-036 (S3) — `confidence_score` flat-lined for hours.
+- TD-037 (S4) — Schema column-name inconsistency across timestamp tables.
 
 **Active ENH (in flight):**
-- **ENH-46-A** — Telegram alert daemon. SHIPPED Session 9, live-verified production value 2026-04-27 morning when it caught real contract violation.
-- **ENH-46-C** — Conditional ENH-35 gate lift, BULL_OB MEDIUM/VERY_HIGH context. **BLOCKED on TD-032 fix.** Cannot ship until dashboard-DB consistency verified.
-- **ENH-46-D** — Pine HTF zones live JSON feed. PROPOSED 2026-04-27. Pending Pine v6 HTTP capability check + design.
-- **ENH-47** — Inside-bar-before-expiry next-week ATM trade structure. PROPOSED 2026-04-27 from Exp 33. Discretionary use first; automation requires larger sample.
-- **ENH-72** — Instrumentation propagation. New candidate for `build_ict_htf_zones.py` (Session 11 Candidate A).
-- **F3** — Daily zone scheduling. Validated by Exp 15. Ready to ship.
+- **ENH-46-A** — Telegram alert daemon. SHIPPED, live production value demonstrated.
+- **ENH-46-C** — Conditional ENH-35 gate lift. **BLOCKED on TD-032 formal close.** Unblocks after 10-cycle verification 2026-04-29.
+- **ENH-46-D** — Pine HTF zones live JSON feed. PROPOSED.
+- **ENH-47** — Inside-bar-before-expiry next-week ATM trade. PROPOSED, N=14.
+- **F3** — SHIPPED Session 11. `MERDIAN_ICT_HTF_Zones_0845` active, daily 08:45 IST.
 
-**Settled by Session 10 extension:**
-- F0 (gate visibility unclobber): SHIPPED + verified live multi-cycle.
-- F1 (TZ classification): SHIPPED + verified live across OPEN and MORNING buckets.
-- F2 (1H threshold): REJECTED.
-- F3 (daily zone scheduling): NOT SHIPPED, validated by Exp 15, queued for Session 11.
-- Compendium replication: confirmed.
-- Dashboard reliability: known broken on direction/strike/instrument-type rendering (TD-032).
-- Inside-bar-before-expiry breakout thesis: SUPPORTED in N=14 sample, ENH-47 filed.
-- ENH-46-A daemon: live production value demonstrated.
-
-**End-of-day 04-27 state:**
-- NIFTY closed somewhere in or near 24,012-24,098 range — needs query to confirm whether today is a strict inside bar vs Friday's 23,857-24,140. If yes, tomorrow is a NIFTY monthly expiry candidate matching ENH-47 conditions.
-- SENSEX similar geometry.
-- ENH-46-A daemon running on Local at PID 22812 (assuming continuous from morning verification).
+**Settled by Session 11:**
+- F3 (daily zone scheduling + ENH-71 instrumentation): SHIPPED + verified (3 SUCCESS rows).
+- TD-032 (dashboard opt_type): PATCHED, root cause confirmed, audit log active.
+- TD-017: CLOSED.
+- .gitignore: audited; 40+ fix/check scripts now in git; preflight/output/ silenced.
 
 ---
 
 *CURRENT.md — overwrite each session. Never branch this file. Never archive (the session_log is the archive).*
-*Last updated 2026-04-27 (end of Session 10, post-market extension closeout).*
+*Last updated 2026-04-28 (end of Session 11).*

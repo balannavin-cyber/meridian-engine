@@ -16,11 +16,9 @@
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
     "update_cadence": "Update this file in the same session as any meaningful change to file status, table schema, or open item status. Commit to Git immediately after update.",
-    "last_updated": "2026-04-27T18:50:00+05:30",
-    "last_updated_by_session": "Session 10 extension",
+    "last_updated": "2026-04-26T14:30:00+05:30",
+    "last_updated_by_session": "Session 9 wave 2",
     "change_log": [
-      "2026-04-27 (Session 10 extension, post-market): Live verification of F0 (multi-cycle BEARISH on LONG_GAMMA) and F1 (OPEN + MORNING buckets confirmed). ENH-46-A daemon caught real contract violation on capture_spot_1m 10:25 IST cycle (Telegram-alerted within 2 min, first-day production value). Dashboard ↔ DB inconsistency observed live across multiple cycles - filed TD-032 as BLOCKER for ENH-46-C ship. Experiment 33 designed and run: inside-bar-before-expiry breakout thesis tested across N=14, 93% break rate, 71% next-day continuation, ENH-47 PROPOSED (next-week ATM trade structure). ENH-46-D PROPOSED (Pine HTF zones live JSON feed). Filed TD-032, TD-033, TD-034, TD-035, TD-036, TD-037.",
-      "2026-04-27 (Session 10): F0 + F1 patches shipped (build_trade_signal_local.py, detect_ict_patterns.py); Exp 15 re-validation confirmed compendium replicates (+193.4% combined return); F2 REJECTED via Exp 29 v2; ENH-46-C PROPOSED (conditional gate lift); TD-029, TD-030, TD-031 filed; runbook_update_kite_flow updated; AWS check_kite_auth.py persisted.",
       "2026-04-26 (Session 9 wave 2): Added daemon + fix scripts; ENH-46-A shipped; TD-027 + TD-028 filed."
     ]
   },
@@ -659,10 +657,11 @@
       "writes": [
         "ict_htf_zones (39 zones on first run, persistent)"
       ],
-      "call_signature": "called by detect_ict_patterns_runner.py",
-      "cadence": "W/D zones: session start. H zones: updated each 5-min cycle",
-      "status": "PRODUCTION  --  ENH-37. Had f-string corruption at line 475 (fixed). build_weekly_bars requires 'date' field as date object (not string).",
-      "open_items": []
+      "call_signature": "called by detect_ict_patterns_runner.py for H; standalone Task Scheduler for W+D",
+      "cadence": "W+D zones: daily 08:45 IST Mon-Fri via MERDIAN_ICT_HTF_Zones_0845 (registered Session 11, 2026-04-28). H zones: updated each 5-min cycle by detect_ict_patterns_runner.py.",
+      "status": "PRODUCTION  --  ENH-37. ENH-71 instrumented Session 11 (TD-017 closed). Backup .pre_f3.bak.",
+      "instrumented": true,
+      "open_items": ["TD-018", "TD-030", "TD-031"]
     },
     "detect_ict_patterns_runner.py": {
       "local_path": "C:\\GammaEnginePython\\detect_ict_patterns_runner.py",
@@ -1831,37 +1830,11 @@
         "C-08"
       ],
       "summary": "MTF OHLCV infrastructure built (hist_spot_bars_5m/15m, hist_atm_option_bars_5m/15m, hist_pattern_signals). Experiments 17-27b run. Key decisions: LONG_GAMMA gate confirmed symmetric (Exp 17/19), breadth independent 1.0pp (Exp 25) -> ENH-43 remove gate, momentum alignment +22.6pp (Exp 20) -> ENH-44 add hard block, sweep reversal no mechanical edge (Exp 23/23b/23c), small PE premium sweep <1% = 64.5% WR (Exp 27b) -> ENH-45 proposed. 1m bars = execution only. All ICT pattern detection on 5m bars. Live NIFTY BUY_CE +25% (discretionary ICT)."
-    },
-    {
-      "date": "2026-04-26 to 2026-04-27",
-      "appendix": "Session 10 (Exp 15 revalidation + F0/F1 ship + extension: live verification + Exp 33 + dashboard discovery)",
-      "git_end": "15720d6 + extension uncommitted",
-      "items_closed": [
-        "F2 (REJECTED via Exp 29 v2)",
-        "F0 (SHIPPED + verified live multi-cycle 2026-04-27 morning)",
-        "F1 (SHIPPED + verified live across OPEN and MORNING buckets 2026-04-27)"
-      ],
-      "items_added": [
-        "TD-029",
-        "TD-030",
-        "TD-031",
-        "TD-032 (BLOCKER for ENH-46-C ship)",
-        "TD-033",
-        "TD-034",
-        "TD-035",
-        "TD-036",
-        "TD-037",
-        "ENH-46-C (PROPOSED, BLOCKED on TD-032)",
-        "ENH-46-D (PROPOSED)",
-        "ENH-47 (PROPOSED, sourced from Exp 33)",
-        "Experiment 33 (inside-bar-before-expiry, N=14, 93% break, 71% next-day continuation)"
-      ],
-      "summary": "F0 + F1 patches shipped (gate visibility unclobber + ICT detector TZ classification fix); both verified live 2026-04-27 morning. Exp 15 re-validated compendium (+193.4% combined return; BEAR_OB 92%, BULL_OB 84%, MEDIUM 77%). ENH-46-A daemon caught real contract violation 10:25 IST and Telegram-alerted within 2 min - first-day production value demonstrated. Conditional gate lift proposed (ENH-46-C, design + 10-session shadow before live, BLOCKED on TD-032 fix). Six TDs filed for main session and three for extension (TD-029 hist_spot_bars TZ era, TD-030 build_ict_htf_zones doesn't re-eval breach, TD-031 D BEAR detection underactive, TD-032 dashboard reliability BLOCKER, TD-033 dashboard label conflation, TD-034 hist_atm undersampling, TD-035 wcb_regime NULL, TD-036 confidence flat-line, TD-037 schema column-name inconsistency). Runbook updated with heredoc-corruption + SSM TTY hang failure modes. AWS check_kite_auth.py persisted. Earlier Exp 31/32 false-negative results explicitly retracted. Extension produced Experiment 33 (inside-bar-before-expiry breakout thesis, N=14, 93% break rate, 71% next-day continuation, ENH-47 next-week ATM trade structure proposed). Dashboard ↔ DB ground truth inconsistency observed live during trading day - filed as TD-032 BLOCKER FOR ENH-46-C SHIP."
     }
   ],
   "git": {
-    "current_hash": "15720d6",
-    "local_status": "CLEAN at 15720d6 (extension docs uncommitted)",
+    "current_hash": "46dbdc1",
+    "local_status": "CLEAN",
     "aws_status": "FAILED  --  shadow runner down since 2026-04-15. Needs investigation."
   },
   "shadow_gate": {
@@ -1873,6 +1846,7 @@
     "MERDIAN_Market_Tape_1M": "DISABLED  --  2026-04-07",
     "MERDIAN_Intraday_Supervisor_Start": "ACTIVE  --  calls start_supervisor_clean.ps1  --  weekly Mon-Fri 08:00 + AtLogon",
     "MERDIAN_Live_Dashboard": "ACTIVE  --  merdian_live_dashboard.py v2  --  AtLogon  --  PYTHONIOENCODING=utf-8",
+    "MERDIAN_ICT_HTF_Zones_0845": "ACTIVE  --  daily Mon-Fri 08:45 IST  --  wraps run_ict_htf_zones_daily.bat -> python build_ict_htf_zones.py --timeframe both  --  registered Session 11 (2026-04-28) closing TD-017  --  ENH-71 instrumented; surfaces in script_execution_log  --  validated 3 SUCCESS rows on 2026-04-28 (DRY_RUN + manual + smoke-test, 35 zones, ~85s)",
     "MERDIAN_Spot_MTF_Rollup_1600": "ACTIVE  --  daily Mon-Fri 16:00 IST  --  wraps run_spot_mtf_rollup_once.bat -> python build_spot_bars_mtf.py  --  registered Session 9 (2026-04-26) closing TD-019 + TD-023 anti-pattern  --  ENH-71 instrumented; surfaces in script_execution_log"
   },
   "research_findings": {

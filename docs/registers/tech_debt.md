@@ -237,20 +237,13 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 
 ---
 
-### TD-017 — `build_ict_htf_zones.py --timeframe H` has no scheduled invocation
+### TD-017 — ~~`build_ict_htf_zones.py --timeframe H` has no scheduled invocation~~
 
 | | |
 |---|---|
-| **Severity** | S3 |
-| **Discovered** | 2026-04-24 (pre-market `--timeframe H` returned 0 zones; investigation confirmed this is structurally correct but the post-market scheduled run is missing) |
-| **Component** | `build_ict_htf_zones.py`, Windows Task Scheduler + AWS cron coverage for `--timeframe H` |
-| **Symptom** | The 09:00 IST cron runs `--timeframe D` only. `--timeframe H` requires >= 2 completed 1H candles of the current session and is therefore a no-op pre-market — confirmed not a bug (added to CURRENT.md DO_NOT_REOPEN). But there is no post-market scheduled invocation, so 1H HTF zones in `ict_htf_zones` lag behind D zones whenever the operator forgets the manual run. |
-| **Root cause** | Original cron deployment included `--timeframe D` only. Post-market H requirement was identified during today's investigation but never converted into a scheduled task. Behaviour of the builder is correct; scheduling coverage is incomplete. |
-| **Workaround** | Manual post-market run by operator. Inconsistently performed — 1H zone freshness is therefore best-effort. |
-| **Proper fix** | Add Windows Task Scheduler task **and** AWS cron entry at 16:15 IST (15 min after EOD ingest) running `python build_ict_htf_zones.py --timeframe H`. Mirror logging, exit-code capture, and Telegram alert pattern of the existing 09:00 IST D-timeframe task. Update `merdian_reference.json` cron inventory. Verify whether OI-11 maps cleanly to this concern; if so, mark OI-11 as superseded by TD-017 in the historical OI register (register itself stays closed per Rule 9). |
-| **Cost to fix** | 1 session (Task Scheduler + AWS cron + JSON inventory + runbook touch in `runbook_*` if appropriate) |
-| **Blocked by** | nothing |
-| **Owner check-in** | 2026-04-24 |
+| **Severity** | ~~S3~~ → CLOSED Session 11 (2026-04-28) |
+
+*See Resolved section below for closing entry.*
 
 ---
 
@@ -550,12 +543,12 @@ gate's OUTPUT (NEUTRAL/DO_NOTHING) as if it were the gate's INPUT. See TD-020
 | **Component** | `merdian_signal_dashboard.py` execution panel rendering pipeline |
 | **Symptom** | Multiple observed inconsistencies between dashboard execution panel and `signal_snapshots` ground truth, observed live during 2026-04-27 trading session: (a) At 11:21 IST, NIFTY signal_snapshots row had `direction_bias=BEARISH, action=BUY_PE, atm_strike=24050, spot=24068.8`. Dashboard rendered: "Strike 24,100 CE / premium ₹85" — wrong instrument (CE not PE), wrong strike (24,100 not 24,050). (b) At 11:38 IST, dashboard rendered "▲ BUY CE / Strike 24,000 CE" while DB had `direction_bias=BEARISH, action=BUY_PE, atm_strike=24050` — dashboard showed BULLISH instrument while DB was BEARISH. (c) At 12:10 IST, dashboard correctly showed ▼ SELL/BUY PE / Strike 24,050 CE — strike-number now matched but instrument label still CE despite BUY_PE action. Pattern is non-deterministic across cycles. |
 | **Root cause (provisional)** | Pattern-driven hardcoding ruled out (dashboard CAN render PE on BULL_FVG patterns at other times). Most likely candidates: (a) race condition between cycle's signal_snapshots write and dashboard's multi-field render, (b) dashboard reads some fields from a different/stale source while reading other fields fresh, (c) in-memory cached state in dashboard process clobbering periodic reads. The DB is consistently correct; the dashboard is the unreliable layer. Pre-F0 the inconsistency was masked because direction_bias was clobbered to NEUTRAL on every LONG_GAMMA cycle (the F0 regression). F0's unclobber unmasked the dashboard rendering bug that has presumably existed for weeks. |
-| **Workaround** | Always validate against `signal_snapshots` directly before placing any trade. Dashboard is unreliable for direction/strike/instrument-type rendering. `SELECT direction_bias, action, atm_strike, spot FROM signal_snapshots WHERE symbol=$1 ORDER BY ts DESC LIMIT 1`. |
-| **Proper fix** | Source code audit of `merdian_signal_dashboard.py` rendering pipeline. Identify which fields come from where, ensure single-source-of-truth (DB row at render time) for the action/strike/instrument triple. Add a "DB-vs-display consistency check" log line at every render: if dashboard-computed strike/instrument differs from DB row, log warning. |
-| **Cost to fix** | 1-2 sessions for diagnosis + fix. |
-| **Blocked by** | nothing — investigation can run any time |
-| **BLOCKER FOR** | **ENH-46-C ship.** Conditional gate lift cannot promote any signal to live `trade_allowed=true` while operator cannot trust dashboard to show correct trade direction. Without TD-032 fixed, an operator looking at the dashboard could place a CE trade when the system intended PE (or vice-versa), causing a 100%-direction-wrong loss. |
-| **Owner check-in** | 2026-04-27 |
+| **Root cause (confirmed Session 11)** | `build()` in `merdian_signal_dashboard.py` read `d["opt_type"]` from `ict_zones.opt_type` when an active zone row existed for today. `ict_zones.opt_type` reflects ICT pattern direction BEFORE ENH-35 gate overrides. On LONG_GAMMA days the gate overrides a bullish ICT (opt_type='CE') to action='BUY_PE' — dashboard rendered CE for a BUY_PE signal. Non-deterministic because zone-row presence varied per cycle. When zone was absent the else-branch correctly derived opt_type from action. Secondary factor: 60-second meta-refresh staleness compounded strike discrepancy in live observations. |
+| **Fix applied (Session 11)** | Removed `d["opt_type"] = zone.get("opt_type")` from zone branch. Moved opt_type derivation outside if/else block — unconditional, always from `signal_snapshots.action`. Added server-side render audit log: `[DASHBOARD]` line to stderr per symbol per page load showing action/opt_type/atm_strike/zone-presence. Patch: `fix_td032_dashboard_opt_type_v2.py`. Commit: `46dbdc1`. |
+| **Workaround** | No longer required post-patch. |
+| **Status** | **PATCHED 2026-04-28. Pending 10-cycle live verification at 2026-04-29 market open.** TD-032 closes formally after 10+ `[DASHBOARD]` audit lines spanning BULLISH+BEARISH show `opt_type` consistently matching `action`. |
+| **BLOCKER FOR** | **ENH-46-C ship.** Blocker lifts when TD-032 closes formally after live verification. |
+| **Owner check-in** | 2026-04-28 |
 
 ---
 
@@ -727,4 +720,16 @@ gate's OUTPUT (NEUTRAL/DO_NOTHING) as if it were the gate's INPUT. See TD-020
 
 ---
 
+### TD-017 (closed) — `build_ict_htf_zones.py` had no scheduled invocation for daily W+D zone rebuild
+
+| | |
+|---|---|
+| **Closed** | 2026-04-28 (Session 11) |
+| **Closing commit** | `46dbdc1` |
+| **Fix applied** | F3 shipped in three parts: (1) `build_ict_htf_zones.py` instrumented with ENH-71 `core.execution_log.ExecutionLog` via `fix_f3_instrument_build_ict_htf_zones_v3.py`. `expected_writes={"ict_htf_zones": 1}` minimum-1 semantics; `record_write()` after each of 3 `upsert_zones()` call sites; `raise SystemExit(log_exec.complete(...))` at end of main(). (2) New `run_ict_htf_zones_daily.bat` wrapper. (3) Registered `MERDIAN_ICT_HTF_Zones_0845` Task Scheduler — daily Mon-Fri 08:45 IST. Note: original TD-017 framing was `--timeframe H` has no invocation; actual gap was W+D daily refresh. H zones refreshed live every 5-min by `detect_ict_patterns_runner.py`. `--timeframe both` covers W+D. |
+| **Validation** | Three `script_execution_log` SUCCESS rows on 2026-04-28: 06:05 IST DRY_RUN (`contract_met=true`, 81s); 06:16 IST manual real run (`contract_met=true`, `actual_writes={"ict_htf_zones":35}`, 86s); 06:23 IST `Start-ScheduledTask` smoke test (`contract_met=true`, 35 zones, 81s). `LastTaskResult=0`. |
+| **Files changed** | `build_ict_htf_zones.py` (backup `.pre_f3.bak`). New: `run_ict_htf_zones_daily.bat`, `register_ict_htf_zones_task.ps1`, `fix_f3_instrument_build_ict_htf_zones_v3.py`. |
+| **Lesson** | Patch script encoding: (a) BOM — `ast.parse` rejects U+FEFF; use `read_bytes() + decode("utf-8-sig")`. (b) CRLF — `write_text()` on Windows translates LF→CRLF; use `write_bytes(text.encode(...))`. v3 is the canonical pattern for all future patch scripts. |
+
+---
 *MERDIAN tech_debt.md v1 — created concurrent with CLAUDE.md and Documentation Protocol v3. Update inline as items are added/closed; commit with `MERDIAN: [OPS] tech_debt — <action>`.*

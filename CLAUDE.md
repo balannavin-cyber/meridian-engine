@@ -80,6 +80,10 @@ These are hard rules. Do not propose violations. Do not ask "what if we…".
 10. **No new ID prefix without updating the numbering convention** in `MERDIAN_Documentation_Protocol_v3.md` Rule 5.
 11. **Do not ask Navin for file paths or routine operational procedures.** File locations live in `merdian_reference.json` → `files` (keyed by filename). Recurring procedures live in `docs/runbooks/`. If the answer isn't in either, say so explicitly and ask ONCE — then capture the answer as a new runbook using `docs/runbooks/RUNBOOK_TEMPLATE.md` before the end of the session. Next session, it will be there.
 12. **Project knowledge is not the git working tree.** Local commits to git do NOT auto-sync to Claude.ai project knowledge. Any session that modifies `CURRENT.md`, `session_log.md`, `merdian_reference.json`, `tech_debt.md`, `MERDIAN_Enhancement_Register.md`, this file (`CLAUDE.md`), or any `docs/operational/*` file MUST re-upload those files to project knowledge before the session is considered closed. Failure to do so causes the next session's Claude to read stale state and either invent a different goal or refuse to proceed (failure mode observed Session 6 → Session 7, 2026-04-22). Treat git commit and project knowledge upload as two separate destinations both required for session close.
+13. **Data contamination registry.** Before running ANY research query or experiment that reads hist_* tables, check `public.data_contamination_ranges`. See Rule 13 section below.
+14. **`ret_30m` in `hist_pattern_signals` is stored as PERCENTAGE POINTS, not decimal fraction.** e.g., 0.1351 means 0.1351% of spot, NOT 13.51%. Divide by 100 before multiplying by spot price. Sign convention: BEAR_OB wins when `ret_30m < 0` (spot fell). BULL_OB wins when `ret_30m > 0`. Confirmed Session 11 via diagnostic query. Any script that uses this field must apply the division. (Lesson from Exp 41 which inflated E4/E5 P&L by 100x — corrected in Exp 41B.)
+15. **Supabase hard-caps at 1000 rows per request.** `range(0, 4999)` still returns only 1000. Always set `page_size = 1000` in pagination loops, and terminate when `len(batch) < 1000`. Confirmed Session 11 — Exp 34 initially fetched only 130 of 18,895 bars because page_size was 5000. (Rule added 2026-04-28.)
+16. **TD-029 timezone workaround for hist_spot_bars_5m.** `bar_ts` is stored as IST labeled as `+00:00`. Do NOT use `astimezone(IST)` — this adds 5:30 and shifts all bars. Use `dt.replace(tzinfo=None)` to treat the stored value as naive IST directly. Confirmed Session 11 — Exp 34 initial run had 3,450 bars instead of 18,895 due to this bug. (Rule added 2026-04-28.)
 
 ---
 
@@ -146,6 +150,14 @@ When generating: assemble from the markdown layer. The markdown is the source. T
 - ❌ Inventing a session goal because the one in CURRENT.md feels stale — flag the discrepancy and ask, do NOT silently swap goals (the file is the contract; if it's stale, fix the file, don't fabricate intent)
 - ❌ Designing an alternative experiment to research code without first running the research code AS-IS to establish baseline replication — Session 10 Exp 31/32 burned a half-day on a false-negative loop and produced a wrong "Path A" recommendation (later retracted) because Exp 15 wasn't run as-written first. If research code replicates, alternatives may add insight; if research code doesn't replicate, that is the question to answer first, before any alternative is designed.
 - ❌ Heredoc-pasting Python scripts via SSM (`cat > file.py <<EOF ... EOF`) — invisible non-printing characters can survive nano/cat visual checks but break the Python parser silently (Session 10 morning Kite auth debug). Always nano-type Step 3 verification scripts. SSM TTY can hang silently; `echo hello` is the canary before running anything substantive.
+- ❌ Using `is_pre_market` as a column name in `hist_spot_bars_5m` — this column does not exist. Filter by time: `09:15 ≤ bar_ts_IST ≤ 15:30`. Apply TD-029 workaround (Rule 16). (Session 11 bug B1.)
+- ❌ Setting `page_size > 1000` in Supabase pagination — Supabase hard-caps at 1000 rows per request regardless. Use `page_size = 1000` and loop. (Session 11 bug B2 / Rule 15.)
+- ❌ Using `astimezone(IST)` on `hist_spot_bars_5m.bar_ts` — bar_ts is stored as IST labeled +00:00. Converting timezone adds 5:30 and shifts all bars out of market hours. Use `replace(tzinfo=None)` instead. (Session 11 bug B3 / Rule 16.)
+- ❌ Using `ret_30m` from `hist_pattern_signals` as a decimal fraction — it is stored as percentage points. Divide by 100 first. (Session 11 Rule 14.)
+- ❌ Reading a Python source file with `Path.read_text(encoding='utf-8')` then calling `ast.parse()` on it when the file has a UTF-8 BOM — `ast.parse` rejects U+FEFF with `invalid non-printable character`. Always use `read_bytes() + decode('utf-8-sig')` in patch scripts. (Session 11 extension — v1 of F3 patch caught this correctly and aborted.)
+- ❌ Writing a patched file back with `Path.write_text(text, encoding=...)` on Windows when the original file has LF line endings — `write_text` translates `\n → \r\n` on output, silently converting the file to CRLF and producing a noisy `git diff` showing every line modified. Always use `write_bytes(text.encode(enc))` for symmetric byte handling. v3 of F3 patch is the canonical pattern. (Session 11 extension.)
+- ❌ Trusting the dashboard EXIT AT label for trade exit timing — the label slices the UTC timestamp string directly (`exit_ts[11:16]`), not the IST-converted version. On a 09:31 IST signal this shows 04:31, not 10:01. Compute exit time manually: signal IST + 30 minutes. (TD-038, Session 11 extension.)
+- ❌ Trusting `direction_bias` when `wcb_regime=NULL` in `signal_snapshots` — `wcb_regime` has been NULL since 2026-03-19 (regression, only 32/2171 rows ever populated). On BULLISH breadth days this caused `direction_bias=BEARISH` producing BUY_PE on BULL_FVG. Do not trade on `direction_bias` until TD-035 is fixed and `wcb_regime` is populated. (Session 11 extension live session.)
 
 ---
 
@@ -232,19 +244,27 @@ These are decisions made and validated. Re-litigating them wastes session time.
 - ✅ **Compendium replicates** (Exp 15 re-run 2026-04-27, Session 10) — BEAR_OB ~92% WR, BULL_OB ~84%, MEDIUM context ~77%, combined +193.4% return. The system has real, durable, year-validated edge. Earlier Session 10 wave-1 conclusion that "compendium does not replicate" was **measurement error in Exp 31/32**, explicitly retracted. Do not re-run Exp 31/Exp 32 as evidence of edge absence.
 - ✅ **F2 (1H OB threshold tuning) REJECTED** (Exp 29 v2, 2026-04-26, Session 10) — full-year sweep over {0.15, 0.20, 0.25, 0.30, 0.40}% confirmed current 0.40% maximises WR for NIFTY; SENSEX peaks at 0.30%. No threshold cleared the 70%/N≥30 ship bar. Threshold is not the lever for surfacing more MEDIUM-context candidates.
 - ✅ **Path A retracted** (Session 10) — the framing "stop pretending ICT is the edge" was wrong. Compendium replicates. Do not re-introduce Path A under different names.
+- ✅ **Naked intraday PDH/PDL sweeps have no edge** (Exp 34, Session 11) — WR=11.1% (PDH), 1.8% (PDL) at T+60m. ~0.73 events/session — normal mean reversion, not institutional. Do not retest without structural change.
+- ✅ **PDL DTE<3 next-week CE = SKIP** (Exp 35D, Session 11) — T+1D WR=42.9%. EOD bounce is mechanical expiry pinning, not institutional. Fades next day. Confirmed.
+- ✅ **BEAR_OB AFTERNOON + PO3_BEARISH = 33.3% WR** (Exp 40, Session 11) — the distribution move is already done by AFTERNOON on bearish-bias sessions. Hard skip. Do not trade.
+- ✅ **BULL_OB MIDDAY + PO3_BULLISH = 30.3% WR** (Exp 40, Session 11) — premature. Bullish accumulation doesn't resolve until AFTERNOON London open. Hard skip.
+- ✅ **NIFTY BULL_OB AFTERNOON + PO3_BULLISH = 50% WR** (Exp 40, Session 11) — no edge on NIFTY for this signal. SENSEX only (73.7%). Do not route NIFTY here.
+- ✅ **Current-week PE beats next-week PE for PDH DTE<3** (Exp 41, Session 11) — NIFTY mean +46% vs +20%, SENSEX mean +125% vs +68%. Current-week captures gamma explosion. Settled.
+- ✅ **Entry at T+0 (rejection bar close) always beats waiting** (Exp 41, Session 11) — waiting 1 bar hurts across all edges and both symbols. Never wait.
+- ✅ **TD-017 CLOSED** (Session 11 extension, 2026-04-28) — `build_ict_htf_zones.py` now scheduled daily 08:45 IST via `MERDIAN_ICT_HTF_Zones_0845` Task Scheduler. ENH-71 instrumented. Do not reopen.
+- ✅ **TD-030 CLOSED** (Session 11 extension, 2026-04-28) — `recheck_breached_zones()` added; runs after OHLCV load each day, marks mitigated ACTIVE zones BREACHED. 72 zones now written per run (was 35). Do not reopen.
+- ✅ **TD-031 CLOSED** (Session 11 extension, 2026-04-28) — OB/FVG patterns written unconditionally; breach filter retained for PDH/PDL proximity only. D BEAR_OB will appear ACTIVE at 08:45 IST on next down day regardless of overnight recovery. Do not reopen.
+- ✅ **TD-032 dashboard opt_type wrong framing SETTLED** — root cause is NOT 'dashboard hardcodes direction off pattern_type'. Root cause IS `build()` read `opt_type` from `ict_zones.opt_type` (ICT zone direction BEFORE ENH-35 gate overrides). Patched Session 11 extension. Pending 10-cycle live verification to formally close. Do not re-introduce the pattern-hardcoding framing.
 
 If any of these need to change, that is itself an architectural session — write a new ADR.
 
 ---
 
-*CLAUDE.md v1.2 — 2026-04-22 (PM). Added Rule 12 (project knowledge != git working tree; mandatory re-upload at session end) plus matching session-end checklist line and two anti-patterns. Trigger: Session 6 -> Session 7 stale-cache failure mode where new chat read pre-Session-6 CURRENT.md from project knowledge and refused to proceed (correct behaviour given the file it had access to). v1.1 (2026-04-22 AM) added runbook layer (rule 11). Update version any time read order, non-negotiable rules, session contract, or common operations list changes.*
-
-
-## Rule 13 - Data contamination registry (added Session 7, 2026-04-23)
+## Rule 13 — Data contamination registry (added Session 7, 2026-04-23)
 
 MERDIAN tracks known data-integrity incidents in the Supabase table `public.data_contamination_ranges`. Before running ANY research query, experiment analysis, or model training that reads fields listed in `field_scope` from tables listed in `affected_tables`, check whether the query time window overlaps with a registered contamination range.
 
-**Standard check - SQL helper:**
+**Standard check — SQL helper:**
 
 ```sql
 SELECT public.is_breadth_contaminated(ts) FROM your_query;
@@ -255,7 +275,7 @@ WHERE NOT public.is_breadth_contaminated(ts)
 **For non-breadth fields:**
 
 ```sql
-SELECT * FROM public.data_contamination_ranges 
+SELECT * FROM public.data_contamination_ranges
 WHERE field_scope ILIKE '%your_field%';
 ```
 
@@ -275,15 +295,36 @@ Whenever a new data-integrity incident is diagnosed, INSERT a row into `data_con
 
 **Anti-pattern:** Running experiments on historical data without first checking `data_contamination_ranges`. Research conclusions drawn on tainted data are worse than no conclusions.
 
+---
+
+## Session 11 engineering discoveries (2026-04-28) — now codified as Rules 14-16
+
+Three bugs were found and fixed across all Session 11 experiment scripts. They are now rules so future sessions don't repeat the debugging cycle:
+
+**Bug B1 → Rule 14:** `hist_pattern_signals.ret_30m` is percentage points, not decimal. Divide by 100.
+
+**Bug B2 → Rule 15:** Supabase pagination max is 1000 rows/request. Use `page_size = 1000`.
+
+**Bug B3 → Rule 16:** `hist_spot_bars_5m.bar_ts` stored as IST labeled `+00:00`. Use `replace(tzinfo=None)`, not `astimezone(IST)`.
+
+**Bug B4 (non-rule, one-time):** `hist_spot_bars_5m` has no `is_pre_market` column. Filter by `09:15 ≤ bar_ts_IST ≤ 15:30` instead.
 
 ---
 
-*CLAUDE.md v1.3 - 2026-04-23. Added Rule 13 (data contamination registry). Trigger: Session 7 discovered 27-day breadth contamination spanning 29 tables; without a registry, future researchers would train/analyze against tainted rows. v1.2 added Rule 12 (doc-sync). v1.1 added Rule 11 (runbooks).*
+## Session 11 extension engineering discoveries (2026-04-28) — operational safety
 
+Three operational findings from the Session 11 extension (engineering + live session). These are anti-patterns codified above (Rules not needed — these are one-time discoveries, not recurring schema bugs):
 
-*CLAUDE.md v1.4 — 2026-04-25 (corrected Local Python path in env table; the previously listed `Python312\python.exe` path doesn't exist on Navin's box; surfaced when running experiment_17). v1.3 added Rule 13 (data contamination registry). v1.2 added Rule 12 (doc-sync). v1.1 added Rule 11 (runbooks).*
+**Patch script encoding hazards (now anti-patterns):**
+- BOM: `ast.parse` rejects U+FEFF in string. Use `read_bytes() + decode('utf-8-sig')` in all patch scripts. v1 of F3 patch caught this correctly via abort.
+- CRLF: `write_text()` on Windows translates `\n → \r\n`. Use `write_bytes(text.encode(enc))`. v3 of F3 patch is canonical template.
+
+**Live session findings (2026-04-28, 09:15-15:30 IST):**
+- **FIRST GATE OPEN**: SENSEX `trade_allowed=true` fired at 09:16 IST (BULL_FVG TIER2 VERY_HIGH MTF). ENH-46-A Telegram delivered simultaneously. First-ever production gate open.
+- **wcb_regime regression**: `direction_bias=BEARISH` while `breadth_regime=BULLISH` all session. `wcb_regime=NULL` since 2026-03-19 (32/2171 rows ever populated). Without WCB, direction computation is unreliable on breadth-driven days. **TD-035 elevated to S2. Do not trade direction_bias signals until fixed.**
+- **EXIT AT timer shows UTC**: dashboard EXIT AT label slices UTC timestamp directly. Compute exit time manually: signal IST + 30 min. TD-038 filed. **Live trading risk until fixed.**
+- **SENSEX DTE=2 on expiry day**: expected DTE=0 on 2026-04-28 monthly expiry. TD-039 filed.
 
 ---
 
-*CLAUDE.md v1.5 — 2026-04-27 (Session 10 close). Added: (a) three settled-decisions entries to DO_NOT_REOPEN list — compendium replicates (Exp 15 re-run, Session 10), F2 (1H OB threshold) rejected via Exp 29 v2, Path A retracted; (b) two anti-patterns — designing alternative experiments before replicating research code AS-IS (Session 10 Exp 31/32 false-negative half-day burn), and heredoc-pasting Python via SSM (Session 10 Kite-auth invisible-character bug); (c) Common operations table row for "Verify Kite auth before market open" pointing at runbook_update_kite_flow.md Step 3 + persisted check_kite_auth.py at /home/ssm-user/meridian-engine/. v1.4 corrected Local Python path. v1.3 Rule 13. v1.2 Rule 12. v1.1 Rule 11.*
-
+*CLAUDE.md v1.7 — 2026-04-28 (Session 11 extension close). Added: (a) four new anti-patterns — BOM in patch scripts, CRLF write_text hazard, EXIT AT UTC display bug, wcb_regime NULL direction_bias warning; (b) five new settled-decisions — TD-017/030/031 CLOSED, TD-032 framing settled; (c) Session 11 extension engineering discoveries section documenting live session findings (first gate open, wcb regression, exit timer bug, DTE bug). v1.6 (Session 11 research close) added Rules 14/15/16 and B1-B4 engineering discoveries. v1.5 added compendium-replicates + F2-rejected + anti-patterns. v1.4 corrected Local Python path. v1.3 Rule 13. v1.2 Rule 12. v1.1 Rule 11.* Added: (a) Rules 14/15/16 — ret_30m scale (÷100), Supabase 1000-row hard cap, TD-029 timezone workaround; (b) four new anti-patterns matching B1/B2/B3/B4 bugs; (c) eight new settled-decisions entries covering Session 11 experiment conclusions; (d) Session 11 engineering discoveries section documenting B1-B4 for future sessions. v1.5 (2026-04-27) added compendium-replicates, F2-rejected, Path-A-retracted decisions + two anti-patterns + Kite-auth common-ops row. v1.4 corrected Local Python path. v1.3 Rule 13 contamination registry. v1.2 Rule 12 doc-sync. v1.1 Rule 11 runbooks.*

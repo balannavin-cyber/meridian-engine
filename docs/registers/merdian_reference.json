@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v6",
+    "version": "v7",
     "generated": "2026-04-19",
     "sources": [
       "MERDIAN_Master_V18_v2 Section 15 (File Master, Table Master, Security IDs, AWS Runtime Files)",
@@ -11,15 +11,18 @@
       "MERDIAN_Appendix_V18F_v2 (2026-04-11/12)  --  Experiment Series 2-16 + Kelly Sizing",
       "MERDIAN_Appendix_Research_Sessions_4_5 (2026-04-17/18)  --  Experiments 17-27b + MTF OHLCV + hist_pattern_signals",
       "Session 2026-04-19 (C-08 breadth writer fix)",
-      "Session 2026-04-19 (ENH renumber + OI migration to Enhancement Register)"
+      "Session 2026-04-19 (ENH renumber + OI migration to Enhancement Register)",
+      "Session 2026-04-28 (Session 12 -- ADR-002 market structure philosophy; ENH-75 through ENH-83 filed; MERDIAN_Enhancement_Register.md rewritten to unified v7+)"
     ],
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
     "update_cadence": "Update this file in the same session as any meaningful change to file status, table schema, or open item status. Commit to Git immediately after update.",
-    "last_updated": "2026-04-26T14:30:00+05:30",
-    "last_updated_by_session": "Session 9 wave 2",
+    "last_updated": "2026-04-28T20:30:00+05:30",
+    "last_updated_by_session": "Session 12",
     "change_log": [
-      "2026-04-26 (Session 9 wave 2): Added daemon + fix scripts; ENH-46-A shipped; TD-027 + TD-028 filed."
+      "2026-04-26 (Session 9 wave 2): Added daemon + fix scripts; ENH-46-A shipped; TD-027 + TD-028 filed.",
+      "2026-04-28 (Session 11): 11 experiments run (Exp 34-41B). 7 edges proven. Bugs B1-B3 fixed (is_pre_market absent, Supabase 1000-row cap, TD-029 TZ). New ENH-75 through ENH-79 filed. Session 11 findings added to research_findings. TD-029 through TD-037 (Session 10) added to open_items. Session 11 added to session_log.",
+      "2026-04-28 (Session 12): ADR-002 (market structure philosophy) authored -- 6 principles (P1 zones not points, P2 force not direction, P3 where sellers panic, P4 regime velocity, P5 local vs aggregate, P6 DTE force multiplier) + capital scaling roadmap (naked buying -> spreads -> defined-risk selling) + GEX weekly storage decision. ENH-80 (per-strike GEX time-series + zone bounds), ENH-81 (dealer flow simulator + regime velocity), ENH-82 (PINNED regime, blocked on Exp 23), ENH-83 (DTE-adjusted force multiplier, deferred Phase 1.5+) filed. MERDIAN_Enhancement_Register.md rewritten as single unified file covering ENH-01 through ENH-83. ADR-002 file created at docs/decisions/ADR-002-market-structure-philosophy.md. gex_strike_snapshots table proposed (ENH-80). gamma_metrics zone bound columns proposed (ENH-80)."
     ]
   },
   "environments": {
@@ -657,11 +660,10 @@
       "writes": [
         "ict_htf_zones (39 zones on first run, persistent)"
       ],
-      "call_signature": "called by detect_ict_patterns_runner.py for H; standalone Task Scheduler for W+D",
-      "cadence": "W+D zones: daily 08:45 IST Mon-Fri via MERDIAN_ICT_HTF_Zones_0845 (registered Session 11, 2026-04-28). H zones: updated each 5-min cycle by detect_ict_patterns_runner.py.",
-      "status": "PRODUCTION  --  ENH-37. ENH-71 instrumented Session 11 (TD-017 closed). Backup .pre_f3.bak.",
-      "instrumented": true,
-      "open_items": ["TD-018", "TD-030", "TD-031"]
+      "call_signature": "called by detect_ict_patterns_runner.py",
+      "cadence": "W/D zones: session start. H zones: updated each 5-min cycle",
+      "status": "PRODUCTION  --  ENH-37. Had f-string corruption at line 475 (fixed). build_weekly_bars requires 'date' field as date object (not string).",
+      "open_items": []
     },
     "detect_ict_patterns_runner.py": {
       "local_path": "C:\\GammaEnginePython\\detect_ict_patterns_runner.py",
@@ -831,6 +833,213 @@
       "cadence": "one-shot, idempotent",
       "status": "APPLIED 2026-04-26 (Session 9 wave 2). Follow-up to fix_enh46a_signal_alerts.py -- the original patch placed signal-watermark init inside init_watermark_if_missing() AFTER the early-return-on-existing-state guard, making it unreachable on warm starts. Refactored into separate init_signal_watermark_if_missing() called independently from cmd_daemon, cmd_once.",
       "open_items": []
+    },
+    "experiment_34_pdh_pdl_liquidity_sweep.py": {
+      "local_path": "C:\\GammaEnginePython\\experiment_34_pdh_pdl_liquidity_sweep.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_5m",
+        "hist_ict_htf_zones",
+        "hist_pattern_signals"
+      ],
+      "writes": [],
+      "call_signature": "python experiment_34_pdh_pdl_liquidity_sweep.py",
+      "cadence": "research -- run on demand",
+      "status": "RESEARCH -- Session 11",
+      "session": "11 (2026-04-28)"
+    },
+    "experiment_35_po3_first_sweep_session_bias.py": {
+      "local_path": "C:\\GammaEnginePython\\experiment_35_po3_first_sweep_session_bias.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_5m",
+        "hist_ict_htf_zones",
+        "hist_pattern_signals"
+      ],
+      "writes": [],
+      "call_signature": "python experiment_35_po3_first_sweep_session_bias.py",
+      "cadence": "research -- run on demand",
+      "status": "RESEARCH -- Session 11",
+      "session": "11 (2026-04-28)"
+    },
+    "experiment_35b_po3_first_sweep_deep_drill.py": {
+      "local_path": "C:\\GammaEnginePython\\experiment_35b_po3_first_sweep_deep_drill.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_5m",
+        "hist_ict_htf_zones",
+        "hist_pattern_signals"
+      ],
+      "writes": [],
+      "call_signature": "python experiment_35b_po3_first_sweep_deep_drill.py",
+      "cadence": "research -- run on demand",
+      "status": "RESEARCH -- Session 11",
+      "session": "11 (2026-04-28)"
+    },
+    "experiment_35c_po3_filtered_multiday.py": {
+      "local_path": "C:\\GammaEnginePython\\experiment_35c_po3_filtered_multiday.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_5m",
+        "hist_ict_htf_zones",
+        "hist_pattern_signals"
+      ],
+      "writes": [],
+      "call_signature": "python experiment_35c_po3_filtered_multiday.py",
+      "cadence": "research -- run on demand",
+      "status": "RESEARCH -- Session 11",
+      "session": "11 (2026-04-28)"
+    },
+    "experiment_35d_po3_dte_option_selection.py": {
+      "local_path": "C:\\GammaEnginePython\\experiment_35d_po3_dte_option_selection.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_5m",
+        "hist_ict_htf_zones",
+        "hist_pattern_signals"
+      ],
+      "writes": [],
+      "call_signature": "python experiment_35d_po3_dte_option_selection.py",
+      "cadence": "research -- run on demand",
+      "status": "RESEARCH -- Session 11",
+      "session": "11 (2026-04-28)"
+    },
+    "experiment_36_po3_ob_composition.py": {
+      "local_path": "C:\\GammaEnginePython\\experiment_36_po3_ob_composition.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_5m",
+        "hist_ict_htf_zones",
+        "hist_pattern_signals"
+      ],
+      "writes": [],
+      "call_signature": "python experiment_36_po3_ob_composition.py",
+      "cadence": "research -- run on demand",
+      "status": "RESEARCH -- Session 11",
+      "session": "11 (2026-04-28)"
+    },
+    "experiment_37_london_kill_zone.py": {
+      "local_path": "C:\\GammaEnginePython\\experiment_37_london_kill_zone.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_5m",
+        "hist_ict_htf_zones",
+        "hist_pattern_signals"
+      ],
+      "writes": [],
+      "call_signature": "python experiment_37_london_kill_zone.py",
+      "cadence": "research -- run on demand",
+      "status": "RESEARCH -- Session 11",
+      "session": "11 (2026-04-28)"
+    },
+    "experiment_38_po3_distribution_ob.py": {
+      "local_path": "C:\\GammaEnginePython\\experiment_38_po3_distribution_ob.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_5m",
+        "hist_ict_htf_zones",
+        "hist_pattern_signals"
+      ],
+      "writes": [],
+      "call_signature": "python experiment_38_po3_distribution_ob.py",
+      "cadence": "research -- run on demand",
+      "status": "RESEARCH -- Session 11",
+      "session": "11 (2026-04-28)"
+    },
+    "experiment_39_weekly_sweep_htf_context.py": {
+      "local_path": "C:\\GammaEnginePython\\experiment_39_weekly_sweep_htf_context.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_5m",
+        "hist_ict_htf_zones",
+        "hist_pattern_signals"
+      ],
+      "writes": [],
+      "call_signature": "python experiment_39_weekly_sweep_htf_context.py",
+      "cadence": "research -- run on demand",
+      "status": "RESEARCH -- Session 11",
+      "session": "11 (2026-04-28)"
+    },
+    "experiment_39b_weekly_sweep_refined.py": {
+      "local_path": "C:\\GammaEnginePython\\experiment_39b_weekly_sweep_refined.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_5m",
+        "hist_ict_htf_zones",
+        "hist_pattern_signals"
+      ],
+      "writes": [],
+      "call_signature": "python experiment_39b_weekly_sweep_refined.py",
+      "cadence": "research -- run on demand",
+      "status": "RESEARCH -- Session 11",
+      "session": "11 (2026-04-28)"
+    },
+    "experiment_40_po3_ob_time_asymmetry.py": {
+      "local_path": "C:\\GammaEnginePython\\experiment_40_po3_ob_time_asymmetry.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_5m",
+        "hist_ict_htf_zones",
+        "hist_pattern_signals"
+      ],
+      "writes": [],
+      "call_signature": "python experiment_40_po3_ob_time_asymmetry.py",
+      "cadence": "research -- run on demand",
+      "status": "RESEARCH -- Session 11",
+      "session": "11 (2026-04-28)"
+    },
+    "experiment_41_pnl_mae_all_edges.py": {
+      "local_path": "C:\\GammaEnginePython\\experiment_41_pnl_mae_all_edges.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_5m",
+        "hist_ict_htf_zones",
+        "hist_pattern_signals"
+      ],
+      "writes": [],
+      "call_signature": "python experiment_41_pnl_mae_all_edges.py",
+      "cadence": "research -- run on demand",
+      "status": "RESEARCH -- Session 11",
+      "session": "11 (2026-04-28)"
+    },
+    "experiment_41b_ev_corrected.py": {
+      "local_path": "C:\\GammaEnginePython\\experiment_41b_ev_corrected.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_5m",
+        "hist_ict_htf_zones",
+        "hist_pattern_signals"
+      ],
+      "writes": [],
+      "call_signature": "python experiment_41b_ev_corrected.py",
+      "cadence": "research -- run on demand",
+      "status": "RESEARCH -- Session 11",
+      "session": "11 (2026-04-28)"
+    },
+    "pull_edge_examples.py": {
+      "local_path": "C:\\GammaEnginePython\\pull_edge_examples.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_5m",
+        "hist_ict_htf_zones",
+        "hist_pattern_signals"
+      ],
+      "writes": [],
+      "call_signature": "python pull_edge_examples.py",
+      "cadence": "research -- run on demand",
+      "status": "RESEARCH -- Session 11",
+      "session": "11 (2026-04-28)"
+    },
+    "docs/decisions/ADR-002-market-structure-philosophy.md": {
+      "local_path": "C:\\GammaEnginePython\\docs\\decisions\\ADR-002-market-structure-philosophy.md",
+      "aws_path": null,
+      "reads": [],
+      "writes": [],
+      "call_signature": "N/A -- documentation file",
+      "cadence": "Static -- updated only when architectural principles change",
+      "status": "CREATED Session 12 (2026-04-28). Supersedes no prior ADR on this topic. Companion to ADR-001.",
+      "content_summary": "Six market structure principles (P1 zones not points, P2 force not direction, P3 where sellers panic, P4 regime velocity, P5 local vs aggregate, P6 DTE force multiplier). Capital scaling roadmap (Phase 1 naked buying -> Phase 2 spreads -> Phase 3 defined-risk selling). GEX weekly time-series storage decision. Build sequencing ENH-75->ENH-80->ENH-81->Exp23->ENH-82->ENH-83.",
+      "open_items": []
     }
   },
   "tables": {
@@ -901,9 +1110,27 @@
         "build_market_state_snapshot_local.py"
       ],
       "constraint": "UNIQUE INDEX uix_gamma_metrics_symbol_ts ON (symbol, ts)  --  ADDED V18A",
-      "status": "LIVE  --  updated V18A",
+      "status": "LIVE  --  updated V18A. ENH-80 will add zone bound columns.",
       "critical_rule": "Call signature: run_id (UUID) NOT symbol. regime: LONG_GAMMA | SHORT_GAMMA | NO_FLIP. gamma_zone: HIGH_GAMMA | MID_GAMMA | LOW_GAMMA | None (new V18A).",
       "v18a_changes": "ADD COLUMN gamma_zone text. ADD COLUMN raw jsonb. CREATE UNIQUE INDEX uix_gamma_metrics_symbol_ts ON (symbol, ts).",
+      "proposed_enh80_columns": [
+        "flip_zone_lower numeric",
+        "flip_zone_upper numeric",
+        "pin_zone_lower numeric",
+        "pin_zone_upper numeric",
+        "accel_zone_lower numeric",
+        "accel_zone_upper numeric",
+        "max_gamma_strike numeric",
+        "local_gex_cluster numeric"
+      ],
+      "proposed_enh81_columns": [
+        "dealer_flow_down_10 numeric",
+        "dealer_flow_down_05 numeric",
+        "dealer_flow_up_05 numeric",
+        "dealer_flow_up_10 numeric",
+        "max_gamma_strike_delta numeric",
+        "gex_velocity numeric"
+      ],
       "columns_confirmed": [
         "run_id",
         "symbol",
@@ -1355,11 +1582,11 @@
         "gamma_regime": "at signal time",
         "breadth_regime": "at signal time",
         "ret_session": "session return % at signal time (momentum)",
-        "ret_30m": "T+30m spot return %",
+        "ret_30m": "T+30m spot return %  --  STORED AS PERCENTAGE POINTS. Divide by 100 before multiplying by spot. Rule 14.",
         "win_30m": "boolean  --  spot direction correct at T+30m",
         "source": "backfill_5m | live"
       },
-      "critical_rule": "All backfill rows are source=backfill_5m (5m bar detection). Old source=backfill (1m) rows were deleted before rebuild. Live writes will use source=live."
+      "critical_rule": "All backfill rows are source=backfill_5m (5m bar detection). Old source=backfill (1m) rows were deleted before rebuild. Live writes will use source=live. ret_30m is percentage points NOT decimal fraction -- divide by 100 (Rule 14)."
     },
     "breadth_intraday_history": {
       "written_by": [
@@ -1372,6 +1599,31 @@
       "columns": "ts, trade_date, advances, declines, up_4pct, down_4pct, breadth_score, coverage_pct",
       "status": "LIVE  --  writes every cycle including zero-coverage cycles (coverage_pct=0 rows indicate WebSocket off or market closed).",
       "open_items": []
+    },
+    "gex_strike_snapshots": {
+      "schema": "public",
+      "written_by": [
+        "PROPOSED -- compute_gamma_metrics_local.py (additional compute pass after ENH-80 build)"
+      ],
+      "read_by": [
+        "PROPOSED -- gamma engine force calculations (ENH-81)",
+        "Experiment 23 (local vs net GEX divergence)",
+        "ENH-82 PINNED regime threshold calibration"
+      ],
+      "constraint": "PROPOSED -- INDEX (symbol, ts DESC); INDEX (symbol, expiry_date, ts DESC); INDEX (run_id)",
+      "status": "NOT BUILT  --  ENH-80 PROPOSED. Build after ENH-75.",
+      "proposed_ddl": "CREATE TABLE IF NOT EXISTS public.gex_strike_snapshots (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), run_id uuid NOT NULL, symbol text NOT NULL, ts timestamptz NOT NULL, expiry_date date NOT NULL, dte integer NOT NULL, strike numeric NOT NULL, gex_cr numeric, oi bigint, gamma numeric, spot numeric, is_local_max boolean, is_flip_zone boolean, created_at timestamptz NOT NULL DEFAULT now());",
+      "key_columns": {
+        "run_id": "matches gamma_metrics.run_id -- links to same 5-min cycle",
+        "gex_cr": "gamma x OI x spot^2 / 1e7 (Crore). Positive = dealers long gamma at this strike. Negative = dealers short gamma.",
+        "is_local_max": "true if this strike has highest absolute GEX in its neighbourhood (pin candidate)",
+        "is_flip_zone": "true if GEX sign changes at this or adjacent strike (flip boundary)"
+      },
+      "storage_estimate": "~100 strikes x 78 runs/day x 2 symbols = ~15,600 rows/day. Full expiry week NIFTY (Thu): ~78,000 rows. SENSEX (Tue): ~62,400 rows.",
+      "rationale": "ADR-002 P1 (zones not points), P3 (trapped seller positioning), P4 (regime velocity). Foundation for ENH-81 force calculations and Experiment 23.",
+      "open_items": [
+        "ENH-80"
+      ]
     }
   },
   "security_ids": {
@@ -1692,6 +1944,77 @@
       "priority": "LOW",
       "status": "OPEN - 9.5GB of 18GB at V18C close",
       "note": "Renumbered to OI-07-INFRA to avoid collision with Research OI-07 (experiment_15b). See below."
+    },
+    "TD-029": {
+      "title": "hist_spot_bars_5m/1m bar_ts TZ-stamping bug (pre-2026-04-07)",
+      "severity": "S2",
+      "status": "OPEN -- workaround documented",
+      "workaround": "Use replace(tzinfo=None) instead of astimezone(IST). bar_ts stored as IST labeled +00:00.",
+      "filed": "Session 10 (2026-04-27)"
+    },
+    "TD-030": {
+      "title": "build_ict_htf_zones.py didn't re-evaluate breach on existing zones",
+      "severity": "S2",
+      "status": "CLOSED Session 11 extension (2026-04-28) -- recheck_breached_zones() added",
+      "filed": "Session 10 (2026-04-27)",
+      "closed": "Session 11 extension (2026-04-28)"
+    },
+    "TD-031": {
+      "title": "D BEAR_OB / D BEAR_FVG detection underactive",
+      "severity": "S2",
+      "status": "CLOSED Session 11 extension (2026-04-28) -- OB/FVG written unconditionally; 72 zones",
+      "filed": "Session 10 (2026-04-27)",
+      "closed": "Session 11 extension (2026-04-28)"
+    },
+    "TD-032": {
+      "title": "Dashboard direction/instrument rendering inconsistent with DB ground truth",
+      "severity": "S2",
+      "status": "OPEN -- BLOCKER for ENH-46-C ship",
+      "note": "Non-deterministic across cycles. At 11:21 IST dashboard showed BUY CE while DB had BUY PE. Root cause unknown.",
+      "filed": "Session 10 (2026-04-27)"
+    },
+    "TD-033": {
+      "title": "Dashboard SELL / BUY PE label conflation",
+      "severity": "S3",
+      "status": "OPEN",
+      "filed": "Session 10 (2026-04-27)"
+    },
+    "TD-034": {
+      "title": "hist_atm_option_bars_5m severely undersampled on dte=0 (~22-44% coverage)",
+      "severity": "S2",
+      "status": "OPEN",
+      "filed": "Session 10 (2026-04-27)"
+    },
+    "TD-035": {
+      "title": "signal_snapshots.wcb_regime NULL causing wrong direction_bias",
+      "severity": "S2",
+      "status": "OPEN -- ELEVATED S3->S2. Regression confirmed 2026-03-19: 32/2171 rows non-null, same wcb_score=11.237 on all -- stale batch. Caused BEARISH direction on BULLISH breadth day during live 04-28 session.",
+      "filed": "Session 10 (2026-04-27)",
+      "investigation": "Session 11 extension (2026-04-28)"
+    },
+    "TD-036": {
+      "title": "confidence_score flat-lined for 90+ minutes",
+      "severity": "S3",
+      "status": "OPEN",
+      "filed": "Session 10 (2026-04-27)"
+    },
+    "TD-038": {
+      "title": "Dashboard EXIT AT label shows UTC not IST",
+      "severity": "S2",
+      "status": "OPEN -- live trading risk",
+      "filed": "Session 11 extension (2026-04-28)"
+    },
+    "TD-039": {
+      "title": "SENSEX DTE=2 on expiry day (expected 0)",
+      "severity": "S3",
+      "status": "OPEN",
+      "filed": "Session 11 extension (2026-04-28)"
+    },
+    "TD-037": {
+      "title": "Schema column-name inconsistency across timestamp-bearing tables",
+      "severity": "S4",
+      "status": "OPEN -- use information_schema.columns before querying new tables",
+      "filed": "Session 10 (2026-04-27)"
     }
   },
   "governance_rules": {
@@ -1723,7 +2046,13 @@
     "patch_script_syntax_validation": "All fix_*.py patch scripts MUST end with ast.parse() validation before writing the target file. If SyntaxError: print error and sys.exit(1)  --  do NOT write a broken file. Incident: force_wire_breadth.py wrote invalid indent 2026-04-16, IndentationError discovered at market open 2026-04-17. Established Research Session 4 (2026-04-17).",
     "no_new_oi_register": "OpenItems Register permanently closed 2026-04-15. Do not create new RESEARCH-OI-N, OI-N (beyond legacy), or similar open-item prefixes. New operational issues go to Enhancement Register (if persistent) or session appendix (if session-local). C-N (critical production) and HIST-/SPO- legacy prefixes retained in merdian_reference.json as lightweight in-flight tracker.",
     "numbering_convention": "ENH: monotonic integers in Enhancement Register, pick next-free, never reuse (REJECTED items keep ID as rejection record). C-N: critical fixes only, tracked in merdian_reference.json open_items. No new OI-* prefixes -- OpenItems Register closed 2026-04-15.",
-    "v18h_v2_renumbering": "V18H_v2 ENH ids renumbered 2026-04-19: ENH-43 -> ENH-53, ENH-44 -> ENH-55, ENH-45 -> ENH-56, ENH-46 -> ENH-57, ENH-47 -> ENH-58. ENH-54 (HTF Sweep Reversal) in v7 is unrelated and retained. V18H_v2 OI-11..15 migrated: OI-11 folded into ENH-53, OI-12 into ENH-55, OI-13 into new ENH-59, OI-14 retired (session task), OI-15 into ENH-56. See docs/appendices/V18H_v2_RENUMBERING_NOTE.md."
+    "v18h_v2_renumbering": "V18H_v2 ENH ids renumbered 2026-04-19: ENH-43 -> ENH-53, ENH-44 -> ENH-55, ENH-45 -> ENH-56, ENH-46 -> ENH-57, ENH-47 -> ENH-58. ENH-54 (HTF Sweep Reversal) in v7 is unrelated and retained. V18H_v2 OI-11..15 migrated: OI-11 folded into ENH-53, OI-12 into ENH-55, OI-13 into new ENH-59, OI-14 retired (session task), OI-15 into ENH-56. See docs/appendices/V18H_v2_RENUMBERING_NOTE.md.",
+    "ret_30m_percentage_points": "hist_pattern_signals.ret_30m is stored as PERCENTAGE POINTS not decimal fraction. Example: 0.1351 means 0.1351%, NOT 13.51%. Divide by 100 before multiplying by spot to get point move. Confirmed Session 11 Exp 41B. RULE 14.",
+    "supabase_1000_row_cap": "Supabase REST API hard-caps at 1000 rows per request. ALWAYS use page_size=1000 and paginate with .range(offset, offset+999) when fetching potentially large tables. Never assume a single request returns all rows. RULE 15.",
+    "bar_ts_tz_workaround": "hist_spot_bars_5m and hist_spot_bars_1m bar_ts is stored as IST time labeled as +00:00 (incorrect UTC label). Use replace(tzinfo=None) to strip the incorrect timezone label before comparing with actual IST times. Do NOT use astimezone(IST) -- it will shift by 5h30m. RULE 16.",
+    "no_is_pre_market_column": "hist_spot_bars_5m has no is_pre_market column. Filter pre-market bars by time: bar_ts.time() < time(9,15). Do not query for is_pre_market -- column does not exist. Confirmed Session 11.",
+    "adr_002_market_structure_philosophy": "Six architectural principles govern all gamma engine design decisions. P1: markets are zones not points -- every structural feature has a width, not just a level. P2: direction is minimum viable information, force (dealer Cr flow) is the actual edge. P3: know where sellers panic -- the flip zone is where short-gamma writers face cascading hedge requirements. P4: the regime has velocity not just position -- max gamma migration and GEX velocity are signals. P5: local context beats aggregate signal -- local GEX cluster around spot may be positive even when net GEX is negative (PINNED regime, Exp 23 required to define threshold). P6: DTE is a force multiplier not a risk flag -- same GEX at DTE=1 vs DTE=5 is categorically different. See docs/decisions/ADR-002-market-structure-philosophy.md. Established Session 12 (2026-04-28).",
+    "capital_scaling_roadmap": "MERDIAN strategy evolves in three phases: Phase 1 (current) = directional naked options buying, capacity ceiling ~25,000 lots before market impact. Phase 2 = debit spreads when approaching capacity ceiling. Phase 3 = defined-risk selling (credit spreads, NOT naked shorts) -- requires full P1-P5 ADR-002 implementation first. Do not attempt Phase 3 until gex_strike_snapshots is live and Experiment 23 is validated. Established Session 12 (2026-04-28)."
   },
   "session_resume_template": {
     "description": "Paste this structure at the start of every new dev session, filled in for the specific goal.",
@@ -1830,11 +2159,39 @@
         "C-08"
       ],
       "summary": "MTF OHLCV infrastructure built (hist_spot_bars_5m/15m, hist_atm_option_bars_5m/15m, hist_pattern_signals). Experiments 17-27b run. Key decisions: LONG_GAMMA gate confirmed symmetric (Exp 17/19), breadth independent 1.0pp (Exp 25) -> ENH-43 remove gate, momentum alignment +22.6pp (Exp 20) -> ENH-44 add hard block, sweep reversal no mechanical edge (Exp 23/23b/23c), small PE premium sweep <1% = 64.5% WR (Exp 27b) -> ENH-45 proposed. 1m bars = execution only. All ICT pattern detection on 5m bars. Live NIFTY BUY_CE +25% (discretionary ICT)."
+    },
+    {
+      "date": "2026-04-28",
+      "appendix": "Session 11 (research/experiment)",
+      "git_end": "pending",
+      "items_closed": [],
+      "items_added": [
+        "ENH-75",
+        "ENH-76",
+        "ENH-77",
+        "ENH-78",
+        "ENH-79"
+      ],
+      "summary": "Full ICT research session. 11 experiments (Exp 34-41B). 7 edges proven: E1=PDH first-sweep filtered (93.3% EOD WR), E2=PDL first-sweep SENSEX (84.6%), E3=PDH DTE<3 current-week PE (mean +125% SENSEX), E4=BEAR_OB MIDDAY + PO3_BEARISH (88.2% WR, +39pp lift, EV=116.5pts SENSEX), E5=BULL_OB AFT + PO3_BULLISH SENSEX (73.7% WR), E6=PWL refined weekly sweep (76.9% EOW, T+2D mean +534pts SENSEX), E7=PWL weekly + daily PDL confluence (100% EOD WR, N=5). Ruled out: naked sweeps (Exp 34 FAIL), PO3 as OB amplifier (Exp 36 FAIL), weekly sweep unrefined (Exp 39 FAIL). Core finding: PO3 sweep = session bias setter only; trade via OB in distribution leg. MAE P90: NIFTY 94pts, SENSEX 373pts -- SENSEX short-DTE options not viable at sweep entry. Current-week PE beats next-week for DTE<3 (data-confirmed). Bugs fixed: is_pre_market column absent, Supabase 1000-row cap, TD-029 TZ workaround. ret_30m stored as percentage points (divide by 100)."
+    },
+    {
+      "date": "2026-04-28",
+      "appendix": "Session 12 (documentation/philosophy -- partial, ENH-75 build pending)",
+      "git_end": "pending",
+      "items_closed": [],
+      "items_added": [
+        "ENH-80",
+        "ENH-81",
+        "ENH-82",
+        "ENH-83",
+        "ADR-002"
+      ],
+      "summary": "Gamma dashboard analysis (options writer's dashboard vs MERDIAN Gamma Engine). ADR-002 authored: six market structure principles P1-P6, capital scaling roadmap (naked buying -> spreads -> defined-risk selling, ~25k lot capacity ceiling), GEX weekly time-series storage decision. ENH-80 (per-strike GEX table + zone bounds), ENH-81 (dealer flow simulator + regime velocity), ENH-82 (PINNED gamma regime, blocked Exp 23), ENH-83 (DTE force multiplier, deferred Phase 1.5+) filed. MERDIAN_Enhancement_Register.md rewritten as unified file covering ENH-01 through ENH-83. merdian_reference.json bumped to v7. ENH-75 build (PO3 live detection) is the remaining Session 12 primary -- not yet executed."
     }
   ],
   "git": {
-    "current_hash": "46dbdc1",
-    "local_status": "CLEAN",
+    "current_hash": "15720d6 (Session 10 last commit -- Session 11 + Session 12 doc scripts pending commit)",
+    "local_status": "AHEAD -- Session 11 experiment scripts + Session 12 documentation (ADR-002, Enhancement Register rewrite, merdian_reference.json v7) not yet committed",
     "aws_status": "FAILED  --  shadow runner down since 2026-04-15. Needs investigation."
   },
   "shadow_gate": {
@@ -1846,11 +2203,10 @@
     "MERDIAN_Market_Tape_1M": "DISABLED  --  2026-04-07",
     "MERDIAN_Intraday_Supervisor_Start": "ACTIVE  --  calls start_supervisor_clean.ps1  --  weekly Mon-Fri 08:00 + AtLogon",
     "MERDIAN_Live_Dashboard": "ACTIVE  --  merdian_live_dashboard.py v2  --  AtLogon  --  PYTHONIOENCODING=utf-8",
-    "MERDIAN_ICT_HTF_Zones_0845": "ACTIVE  --  daily Mon-Fri 08:45 IST  --  wraps run_ict_htf_zones_daily.bat -> python build_ict_htf_zones.py --timeframe both  --  registered Session 11 (2026-04-28) closing TD-017  --  ENH-71 instrumented; surfaces in script_execution_log  --  validated 3 SUCCESS rows on 2026-04-28 (DRY_RUN + manual + smoke-test, 35 zones, ~85s)",
     "MERDIAN_Spot_MTF_Rollup_1600": "ACTIVE  --  daily Mon-Fri 16:00 IST  --  wraps run_spot_mtf_rollup_once.bat -> python build_spot_bars_mtf.py  --  registered Session 9 (2026-04-26) closing TD-019 + TD-023 anti-pattern  --  ENH-71 instrumented; surfaces in script_execution_log"
   },
   "research_findings": {
-    "_note": "Key validated findings from Experiments 2-16. Full detail in MERDIAN_Experiment_Compendium_v1.md.",
+    "_note": "Key validated findings from Experiments 2-16 and Session 11 (Exp 34-41B). Full detail in MERDIAN_Experiment_Compendium_v1.md.",
     "BEAR_OB": {
       "wr": "94.4% (pure ICT, no gates)",
       "morning": "100% WR TIER1",
@@ -1924,6 +2280,70 @@
       "tp_rate": "57% (8/14)",
       "fp_rate": "0% (0/10)",
       "next_step": "Out-of-sample validation against wider historical window. If clean -> ENH-46 design spec. If breaks -> close as no-action."
+    },
+    "session_11_ICT_edges": {
+      "_note": "Full detail in MERDIAN_Experiment_Compendium_v1.md Exp 34-41B. Summary here.",
+      "E1_PDH_first_sweep": {
+        "wr_eod": "93.3% (N=15, filtered config)",
+        "filters": "gap-up context, gap<0.5%, depth not 0.10-0.20%",
+        "mae_p90_nifty": "94pts -- viable with 100pt stop",
+        "mae_p90_sensex": "373pts -- NOT viable with short-DTE options on SENSEX",
+        "usage": "Session bias setter only. Enter via E4 (BEAR_OB MIDDAY).",
+        "entry_timing": "T+0 (rejection bar close) -- waiting 1 bar costs 22pts NIFTY"
+      },
+      "E2_PDL_first_sweep": {
+        "wr_eod_sensex": "84.6% (N=13, filtered)",
+        "wr_eod_nifty": "58.3% -- weaker",
+        "usage": "Session bias setter only. Enter via E5 (BULL_OB AFT SENSEX).",
+        "skip": "PDL DTE<3 = SKIP (expiry pinning, T+1D WR=42.9%)"
+      },
+      "E3_PDH_DTE_lt3": {
+        "wr_eod": "90.9% (N=11)",
+        "instrument": "Current-week ATM PE -- beats next-week (SENSEX mean +125% vs +68%)",
+        "dte1_strongest": "DTE=1 (expiry day): 75% T+1D WR, mean|wins=0.556%",
+        "stop": "40% of premium OR price re-takes PDH"
+      },
+      "E4_BEAR_OB_MIDDAY_PO3_BEARISH": {
+        "wr_t30m": "88.2% (N=17 combined)",
+        "lift_over_baseline": "+39.1pp over 49.2% baseline",
+        "ev_sensex": "116.5pts per trade (Half-Kelly 44% -- cap at 5-8% until N=30)",
+        "ev_nifty": "16.8pts per trade (Half-Kelly 41% -- cap at 5-8% until N=30)",
+        "stop": "above OB zone_high (~24-55pts -- tight and well-defined)",
+        "exit": "T+30m fixed",
+        "hard_skip": "BEAR_OB AFTERNOON + PO3_BEARISH = 33.3% WR -- move already done",
+        "requires": "ENH-75 (PO3 live detection) + ENH-76 (gate)"
+      },
+      "E5_BULL_OB_AFT_PO3_BULLISH": {
+        "wr_sensex": "73.7% (N=19) -- SENSEX only",
+        "wr_nifty": "50.0% -- DISCARD",
+        "ev_sensex": "35.5pts (Half-Kelly 22% -- cap at 5%)",
+        "exit": "15:20 IST mandatory -- no trailing",
+        "hard_skip": "BULL_OB MIDDAY + PO3_BULLISH = 30.3% WR -- premature",
+        "requires": "ENH-75 + ENH-77"
+      },
+      "E6_PWL_weekly_sweep": {
+        "wr_eow": "76.9% (N=13)",
+        "wr_t1d": "84.6%",
+        "wr_t2d": "76.9%",
+        "mean_t2d_sensex": "+534pts",
+        "instrument": "Next-week ATM CE (DTE~8)",
+        "entry": "Sweep day EOD close",
+        "stop": "If next session closes below PWL",
+        "filters": "gap-down context, close >= PWL + 15% of prior week range",
+        "requires": "ENH-79"
+      },
+      "E7_PWL_daily_confluence": {
+        "wr_conf_day_eod": "100% (N=5) -- highest conviction signal",
+        "wr_t2d": "76.9%",
+        "entry": "Daily PDL rejection bar close in OPEN window (09:15-10:00)",
+        "instrument": "Next-week ATM CE",
+        "scale_out": "50% at EOD, 50% at T+2D close",
+        "note": "All 5 events were genuine wins. Maximum size entry justified within risk limits.",
+        "requires": "ENH-79"
+      },
+      "signal_hierarchy": "E7 > E4 > E5 > E3 > E1/E2 (as standalone). Max 1 trade per symbol per session.",
+      "kelly_cap_rule": "Cap all Session 11 Kelly fractions at 5-8% until N=30 live events per edge.",
+      "ret_30m_scale_warning": "ret_30m in hist_pattern_signals is percentage points (0.1351 = 0.1351%). Divide by 100 before multiplying by spot. Confirmed Session 11 Exp 41B."
     }
   }
 }

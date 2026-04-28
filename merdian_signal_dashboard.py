@@ -167,13 +167,18 @@ def build(sym):
         d["mtf"]      = zone.get("mtf_context",  d["mtf"])
         d["zone_high"]= zone.get("zone_high")
         d["zone_low"] = zone.get("zone_low")
-        d["opt_type"] = zone.get("opt_type")
+        # TD-032 fix (Session 11): opt_type NOT read from zone.
+        # zone.opt_type = ICT pattern direction BEFORE ENH-35 gate overrides.
+        # On LONG_GAMMA days the gate overrides a bullish ICT (opt_type='CE')
+        # to action='BUY_PE'. Reading zone.opt_type here caused CE display
+        # on BUY_PE signals. signal_snapshots.action is the source of truth.
         d["lots_t1"]  = zone.get("ict_lots_t1") or d["lots_t1"]
         d["lots_t2"]  = zone.get("ict_lots_t2") or d["lots_t2"]
         d["lots_t3"]  = zone.get("ict_lots_t3") or d["lots_t3"]
     else:
         d["zone_high"] = d["zone_low"] = None
-        d["opt_type"]  = "PE" if action=="BUY_PE" else "CE" if action=="BUY_CE" else None
+    # TD-032 fix: unconditional -- zone presence cannot override action.
+    d["opt_type"] = "PE" if action == "BUY_PE" else "CE" if action == "BUY_CE" else None
 
     tier = d["tier"]
     d["active_lots"] = d.get({"TIER1":"lots_t1","TIER2":"lots_t2","TIER3":"lots_t3"}.get(tier,"lots_t3"))
@@ -200,6 +205,17 @@ def build(sym):
             d["exit_ts"] = (st + timedelta(minutes=30)).isoformat()
         except: d["exit_ts"] = None
     else: d["exit_ts"] = None
+
+    # TD-032 render audit log -- one line per symbol per page render.
+    # Verify in terminal that action/opt_type/strike match DB ground truth.
+    import sys as _sys
+    _sys.stderr.write(
+        f"[DASHBOARD] {sym}: action={d.get('action')!r} "
+        f"opt_type={d.get('opt_type')!r} "
+        f"atm_strike={d.get('atm_strike')} "
+        f"zone={'present' if zone else 'absent'} "
+        f"signal_ts={str(d.get('ts',''))[:19]}\n"
+    )
 
     return d
 

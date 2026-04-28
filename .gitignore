@@ -1,5 +1,4 @@
-﻿
-# Backup files
+# Backup files — specific patterns from patch script history
 *.BAK_*
 *.pre_C01_backup.py
 *.pre_C02_backup.py
@@ -17,6 +16,7 @@ runtime/
 
 # Temporary files
 tmp_*.sql
+
 # Environment and secrets
 .env
 
@@ -43,14 +43,6 @@ data/
 *.csv
 *.txt
 
-# PowerShell artifacts
-Get-ScheduledTask
-powershell
-
-# Runtime generated
-runtime/
-tmp_*.sql
-
 # --- Modern backup patterns (added 2026-04-20 working-tree cleanup) ---
 # Covers all .pre_<enh>.bak files from fix_*.py patch scripts and
 # auto-backups from editor/dashboard patches.
@@ -61,25 +53,21 @@ tmp_*.sql
 *.ict.bak
 *.step*.bak
 *.bak_*
-# Patch scripts save these automatically; audit trail lives in git history,
-# not on disk.
 .env.save*
 *.pre_*
 trading_calendar.json.bak*
-diagnose_*.py
-"C:\\gammaenginepython\\"
 
-# Session 6 - at-root scratchpad/patch/experiment/debug debris
+# One-shot diagnostic scripts (ephemeral, not audit trail)
+diagnose_*.py
+
+# Session 6 - at-root scratchpad/experiment/debug debris
 # Kept on disk, out of git. Per triage 2026-04-22, commit 48fbf24.
 /add_*.py
 /append_*.py
 /backtest_*.py
-/check_*.py
 /debug_*.py
 /experiment_*.py.bak
 /experiment_*.py.bak2
-/fix_*.py
-/fix_*.ps1
 /patch_*.py
 /update_*.py
 /create_preopen_task.ps1
@@ -87,8 +75,9 @@ diagnose_*.py
 /watchdog_task.xml
 /watchdog_task_fixed.xml
 /enhancement_register_entries_20260420.md
-# Session 6 close apply scripts (one-shot patches)
+
+# Session 6 close apply scripts (one-shot patches, not audit trail)
 /apply_*.py
-p r e f l i g h t _ 2 0 2 6 0 4 2 4 . p y 
- 
- session7_cleanup_patch.py
+
+# preflight output artifacts (Session 11 - show as M on every git status, mask real changes)
+preflight/output/

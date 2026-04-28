@@ -40,6 +40,9 @@ from itertools import groupby
 from dotenv import load_dotenv
 from supabase import create_client
 
+# ENH-71 instrumentation (added Session 11, F3 / TD-017 close)
+from core.execution_log import ExecutionLog
+
 load_dotenv()
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
@@ -487,6 +490,15 @@ def main():
                         help="Target date (YYYY-MM-DD)")
     args = parser.parse_args()
 
+    # ENH-71 instrumentation (added Session 11, F3 / TD-017 close)
+    log_exec = ExecutionLog(
+        script_name="build_ict_htf_zones.py",
+        expected_writes={} if args.dry_run else {"ict_htf_zones": 1},
+        symbol=None,
+        dry_run=args.dry_run,
+        notes=f"timeframe={args.timeframe} date={args.date}",
+    )
+
     target_date = date.fromisoformat(args.date)
     do_weekly   = args.timeframe in ("W", "both")
     do_daily    = args.timeframe in ("D", "both")
@@ -509,6 +521,7 @@ def main():
             h_zones = detect_1h_zones(sb, inst[symbol], symbol, target_date)
             log(f"  Detected {len(h_zones)} 1H zones")
             n = upsert_zones(sb, h_zones, dry_run)
+            log_exec.record_write("ict_htf_zones", n)
             log(f"  Written {n} 1H zones")
             total_written += n
             continue
@@ -529,6 +542,7 @@ def main():
             w_zones = filter_breached_zones(w_zones, daily_ohlcv, str(target_date))
             log(f"  Detected {len(w_zones)} weekly zones (after breach filter)")
             n = upsert_zones(sb, w_zones, dry_run)
+            log_exec.record_write("ict_htf_zones", n)
             log(f"  Written {n} weekly zones")
             total_written += n
 
@@ -538,6 +552,7 @@ def main():
             d_zones = filter_breached_zones(d_zones, daily_ohlcv, str(target_date))
             log(f"  Detected {len(d_zones)} daily zones (after breach filter)")
             n = upsert_zones(sb, d_zones, dry_run)
+            log_exec.record_write("ict_htf_zones", n)
             log(f"  Written {n} daily zones")
             total_written += n
 
@@ -554,6 +569,9 @@ def main():
             for r in rows[:5]:
                 log(f"    {r['timeframe']} {r['pattern_type']:10s} "
                     f"{float(r['zone_low']):,.0f}-{float(r['zone_high']):,.0f}")
+
+    # ENH-71 instrumentation (added Session 11, F3 / TD-017 close)
+    raise SystemExit(log_exec.complete(notes=f"{total_written} zones written"))
 
 
 

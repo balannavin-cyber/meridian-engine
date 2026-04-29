@@ -27,4 +27,7 @@ set RC=%ERRORLEVEL%
 
 echo === %DATE% %TIME% MERDIAN_ICT_HTF_Zones_0845 END (rc=%RC%) === >> logs\task_output.log
 
+python build_ict_htf_zones.py --timeframe H >> logs\task_output.log 2>&1
+
 exit /b %RC%
+

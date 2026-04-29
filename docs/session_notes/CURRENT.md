@@ -9,180 +9,158 @@
 
 | Field | Value |
 |---|---|
-| **Date** | 2026-04-28 (Session 12 — documentation / philosophy session) |
-| **Concern** | Two items competed: Item A (gamma dashboard analysis deferred from Session 11) and Item B (ENH-75 PO3 live detection build). Item A was chosen first and consumed the full session. Item B (ENH-75) was NOT built. |
-| **Type** | Documentation + philosophy + register overhaul. No code shipped. Single-session-rule override not required — this was always a valid documentation session under the backlog. |
-| **Outcome** | DONE (documentation). DEFERRED (ENH-75 build). Gamma dashboard built by a successful options writer (short-gamma seller) formally analysed against MERDIAN Gamma Engine. Six structural gaps identified. ADR-002 authored and filed at `docs/decisions/`. MERDIAN_Enhancement_Register.md rewritten as unified file ENH-01 through ENH-83. merdian_reference.json bumped to v7. session_log.md updated. ENH-75 deferred to Session 13. |
-| **Git start → end** | `15720d6` → pending commit (Session 11 experiment scripts + Session 12 documentation files both uncommitted). |
-| **Local + AWS hash match** | Local ahead of origin. AWS still at `15720d6` — shadow runner down since 2026-04-15, no AWS activity this session. |
-| **Files changed (code)** | None. |
-| **Files added / rewritten (docs)** | `docs/decisions/ADR-002-market-structure-philosophy.md` (NEW — 6 principles, capital scaling roadmap, GEX weekly storage decision); `MERDIAN_Enhancement_Register.md` (FULL REWRITE — unified ENH-01 through ENH-83, prior file had fragmented delta sections); `merdian_reference.json` (v7 — change log, ADR-002 file entry, gex_strike_snapshots PROPOSED table, gamma_metrics proposed columns, governance rules 14/15/16 + ADR-002 principles + capital scaling roadmap, Session 12 session_log entry); `session_log.md` (Session 12 one-liner prepended to v3 canonical section); `CURRENT.md` (this rewrite). |
-| **Tables changed** | None. |
-| **Cron / Tasks added** | None. |
-| **`docs_updated`** | YES — all five canonical files updated. |
+| **Date** | 2026-04-29 (Session 13 — engineering / live trading day) |
+| **Concern** | ENH-75 (PO3 Live Session Bias Detection) — required. ENH-76/77 if time. |
+| **Type** | Engineering + live operations. Full trading day. |
+| **Outcome** | DONE: ENH-75, ENH-76, ENH-77, Exp 42, ENH-84/85/86 filed, breach detection fix, WS feed task, Pine entry-band + colors + toggles. ENH-85 built then reverted (premature). |
+| **Git start → end** | `15720d6` → pending commit (Sessions 11+12+13 all uncommitted). |
+| **Local + AWS hash match** | Local ahead of origin. AWS token refreshed; preflight PASS; AWS idle (not reactivated as shadow). |
+| **Files changed (code)** | `detect_po3_session_bias.py` (NEW), `build_trade_signal_local.py` (ENH-75/76/77 patches), `build_ict_htf_zones.py` (breach recheck order fix), `generate_pine_overlay.py` (entry-band + colors + toggles), `run_ict_htf_zones_daily.bat` (hourly zones added) |
+| **Files added (scripts)** | `detect_po3_session_bias.py`, `run_po3_session_bias_once.bat`, `run_ws_feed_zerodha.bat` |
+| **Tables changed** | `po3_session_state` (NEW), `signal_snapshots` (+`po3_session_bias` column) |
+| **Cron / Tasks added** | `MERDIAN_PO3_SessionBias_1005` (Mon-Fri 10:05 IST), `MERDIAN_WS_Feed_0900` (Mon-Fri 09:00 IST) |
+| **`docs_updated`** | YES — session_log, CURRENT.md, Enhancement Register |
 
-### What Session 12 did, in bullets
+### What Session 13 did, in bullets
 
-**Gamma dashboard analysis — six structural gaps identified:**
+**ENH-75 — PO3 Live Session Bias Detection (SHIPPED):**
+- `detect_po3_session_bias.py` — reads prior session PDH/PDL from `hist_spot_bars_5m`, today's OPEN-window ticks from `market_spot_snapshots`, applies Exp 35C filters (wick ≥0.05%, close-back ≥0.10% within 6 bars, gap 0–0.5%, reversal speed ≠T+2, depth not in 0.10–0.20% ambiguous zone)
+- `po3_session_state` table created — UPSERT per symbol per day with `po3_session_bias`, `pdh_used`, `pdl_used`, `sweep_depth_pct`, `reversal_bar_idx`, `gap_open_pct_used`
+- `signal_snapshots.po3_session_bias` column added (DDL: `ENH75_DDL.sql`)
+- `build_trade_signal_local.py` patched — `_get_po3_bias()` reads from `po3_session_state` per cycle
+- `MERDIAN_PO3_SessionBias_1005` task registered — fires Mon-Fri 10:05 IST
+- Live verified 10:05:03 IST: NIFTY 46 ticks → 9 5m bars, gap_open_pct=+0.416%, BEAR wick at 09:15 no reversal → PO3_NONE. Both symbols UPSERTED. ✓
+- `market_spot_session_markers` NOT used — live column names differ from docs (`open_0915` → `open_0915_ts`). Open_0915 derived from first OPEN-window tick; gap computed from prev_close in `hist_spot_bars_5m`.
 
-- **Gap 1 — No per-strike GEX histogram.** MERDIAN stores scalar summary metrics (`net_gex`, `flip_level`, `gamma_concentration`). The options writer's dashboard shows the full GEX histogram across every strike — where the positive clusters are, where negative bars begin, the shape of the curve. Without the per-strike distribution, pin zones, acceleration zones, and local vs aggregate divergence are all invisible. All downstream ADR-002 features depend on this as the foundational data layer.
+**ENH-76 — BEAR_OB MIDDAY gate on PO3_BEARISH (SHIPPED):**
+- Window 11:30–13:30 IST. If `ict_pattern=BEAR_OB` and `action=BUY_PE` in MIDDAY: gate passes only if `po3_session_bias=PO3_BEARISH`. Otherwise → DO_NOTHING.
+- Evidence: Exp 40 — 88.2% WR T+30m (N=17 SENSEX), +39.1pp lift over baseline.
 
-- **Gap 2 — Binary regime misclassifies PINNED sessions.** MERDIAN's `LONG_GAMMA` / `SHORT_GAMMA` regime is derived from net GEX sign. The dashboard surfaced a case (Screenshot 2) where net GEX was −976 Cr (SHORT_GAMMA — MERDIAN would call this "dealers amplify moves") while local GEX around spot was deeply positive (dealers are pinning spot right where it currently lives). MERDIAN misclassifies this session type entirely. Documented in Appendix D as known gap. Experiment 23 is the empirical validation path; PINNED is the proposed third regime state (ENH-82).
+**ENH-77 — BULL_OB AFTERNOON SENSEX gate on PO3_BULLISH (SHIPPED):**
+- Window 13:30–15:00 IST. SENSEX: gate passes only if `po3_session_bias=PO3_BULLISH`. NIFTY: hard skip always (50% WR).
+- Evidence: Exp 40 — SENSEX 73.7% WR T+30m (N=19), +16.8pp lift.
 
-- **Gap 3 — No acceleration zone as first-class output.** MERDIAN knows the flip level but doesn't model what happens above it as a zone with a specific character. The dashboard explicitly marks the acceleration zone (red bars above 24,301 where dealers must sell every rally) as a named, bordered zone. MERDIAN has a point, not a zone.
+**Exp 42 — Composition rate (DONE — research):**
+- BEAR_OB MIDDAY occurs in 72.5% of all sessions (169/233 NIFTY, 166/229 SENSEX). Unfiltered WR 48%, EV negative. Pattern is abundant; PO3_BEARISH is the rare gate (~7% of sessions). Confirms ENH-76 design: the session bias is the bottleneck, not the pattern.
 
-- **Gap 4 — Direction only, no force.** The dashboard's dealer flow simulator answers: "if spot moves ±0.5% or ±1%, how many Crore of futures must dealers transact to rehedge?" MERDIAN produces a regime label (LONG/SHORT). The Crore number is what tells you whether a structural level will hold or be steamrolled. This is P2 of ADR-002.
+**Pine generator overhaul (SHIPPED):**
+- Entry-band clipping: BEAR_OB/PDH zones capped at 80pt (NIFTY) / 250pt (SENSEX), showing resistance entry band only. Dashed far-edge line with label marks original zone boundary.
+- Color scheme: BULL_OB=solid green (#1B8C3E), BULL_FVG=lime (#7EC85A), BEAR_OB=dark crimson (#8B0000), BEAR_FVG=salmon (#E05555). Opacity: T1 full, T2 medium, T3 ghost.
+- TradingView settings toggles: Show Weekly/Daily/Hourly zones, Show OBs/FVGs/PDH-PDL. All generated draw_zone calls include `show` parameter wired to correct toggle.
+- `bar_index` negative guard: `math.max(0, bar_index - look_back)` — fixes blank chart on daily TF for zones >252 trading days old.
+- Symbol detection moved before `draw_zone` function — fixes forward-reference crash.
+- Hourly zones (`--timeframe H`) added to `run_ict_htf_zones_daily.bat` — runs after W+D rebuild at 08:45 IST.
 
-- **Gap 5 — No regime velocity.** Max gamma migrated 24,600 → 24,200 between the two screenshots. Net GEX fell from −976 Cr to −14,323 Cr. MERDIAN captures point-in-time snapshots only. The direction and speed of the GEX structure's movement is itself a signal — untracked.
+**Breach detection order fix (SHIPPED):**
+- `recheck_breached_zones()` was called BEFORE `upsert_zones()`. Upsert wrote `status='ACTIVE'` on every run, overwriting BREACHED. Fix: recheck now runs AFTER all upserts for each symbol.
+- Verified: may-09 BULL_OB (24,008–24,411), aug-08 BULL_OB (24,363–24,600), apr-24 BULL_OB (23,897–24,391) all correctly BREACHED after fix.
 
-- **Gap 6 — DTE as binary gate, not force multiplier.** The same GEX Crore at DTE=1 vs DTE=5 is a categorically different force equation. MERDIAN uses `min_dte_threshold = 2` as a binary execution block. DTE should also modify the force calculations in the gamma engine.
+**WS feed task registered:**
+- `MERDIAN_WS_Feed_0900` — fires Mon-Fri 09:00 IST, starts `ws_feed_zerodha.py` as long-running process (8hr limit), logs to `logs/ws_feed_zerodha.log`.
+- Root cause: `ws_feed_zerodha.py` not started by any supervisor or task — `market_ticks` table empty all day — breadth ingest returned 0 ticks all session. Breadth regime read stale yesterday's BEARISH row. Fixed for tomorrow.
 
-**ADR-002 authored:**
+**AWS:**
+- Token refreshed via SSM. Preflight PASS (all 4 stages). `merdian_pm.py` needed two fixes for Linux: `BASE = Path('/home/ssm-user/meridian-engine')` and `creationflags=CREATE_NO_WINDOW` removed. AWS left idle — not reactivated as shadow this session.
 
-- Six principles formalised: P1 (zones not points — every structural feature has width, not just a level), P2 (force not direction — dealer Cr flow is the edge), P3 (know where sellers panic — the flip zone is where short-gamma cascades originate), P4 (regime velocity — max gamma migration and gex_velocity are signals), P5 (local beats aggregate — local GEX cluster around spot overrides net GEX sign), P6 (DTE is a force multiplier not a risk flag).
-
-- Capital scaling roadmap settled: Phase 1 = directional naked options buying (current, ~25,000 lot capacity ceiling before market impact becomes material); Phase 2 = debit spreads (at ceiling or when IV makes naked premium unfavourable); Phase 3 = defined-risk selling (credit spreads, NOT naked — requires full P1–P5 ADR-002 implementation first). Phase 3 cannot be attempted until `gex_strike_snapshots` is live and Experiment 23 is validated.
-
-- GEX weekly time-series storage decision: store per-strike GEX at the same 5-minute cadence as the existing options ingestion. Data already in `option_chain_snapshots` — this is aggregation, not new collection. ~15,600 rows/day across NIFTY + SENSEX. Manageable within Supabase budget.
-
-**New ENH filed (ENH-80 through ENH-83):**
-
-- **ENH-80** — Per-strike GEX time-series + zone bounds. New `gex_strike_snapshots` table. Zone bound columns added to `gamma_metrics`. Foundational data layer for ENH-81, ENH-82, and Experiment 23. Build immediately after ENH-75.
-- **ENH-81** — Dealer flow simulator + regime velocity. Four spot-move scenarios (±0.5%, ±1.0%) → Crore of dealer futures flow. `max_gamma_strike_delta` and `gex_velocity` derived fields. Requires ENH-80 (needs prior GEX row to diff against).
-- **ENH-82** — PINNED gamma regime state (third regime). Criteria: spot inside positive local GEX cluster of sufficient magnitude regardless of net GEX sign. Threshold must be empirically set via Experiment 23. BLOCKED until Experiment 23 run and ENH-80 data accumulated.
-- **ENH-83** — DTE-adjusted force multiplier on dealer flow Crore outputs from ENH-81. Deferred Phase 1.5+ — DTE force curve cannot be estimated without multiple expiry cycles of `gex_strike_snapshots` data.
-
-**Build sequencing locked (ADR-002):**
-```
-ENH-75 (PO3 live detection — Session 13 primary)
-  ↓
-ENH-80 (per-strike GEX table) — next gamma layer priority
-  ↓
-ENH-81 (force metrics) — requires ENH-80
-  ↓
-Experiment 23 (local vs net GEX divergence) — requires ENH-80 data
-  ↓
-ENH-82 (PINNED regime) — requires Exp 23 threshold
-  ↓
-ENH-83 (DTE multiplier) — requires ENH-80 data + multiple expiry cycles
-```
-
-**Register overhaul:**
-
-- `MERDIAN_Enhancement_Register.md` rewritten as a single unified file covering ENH-01 through ENH-83. The prior on-disk file had the original v7 body plus multiple appended delta sections (v8 appended, delta-2026-04-21, ENH-72 closure note, ENH-73a/73b). All content preserved, delta structure eliminated.
-- `merdian_reference.json` bumped to v7. Added: Session 12 change_log entry, ADR-002 file entry, `gex_strike_snapshots` PROPOSED table with full DDL and storage estimate, `gamma_metrics` proposed ENH-80/ENH-81 columns, governance rules for `ret_30m_percentage_points` (Rule 14), `supabase_1000_row_cap` (Rule 15), `bar_ts_tz_workaround` (Rule 16), `no_is_pre_market_column`, `adr_002_market_structure_philosophy`, `capital_scaling_roadmap`. Session 12 session_log entry added (marked partial — ENH-75 not yet built).
-
-**One meta-observation documented:**
-
-The options writer's system is a Phase 3 tool — built by a seller who needed the full force-structure picture to survive. MERDIAN is built for options buying (Phase 1). The two are complementary, not competing. His system is better at characterising force structure; MERDIAN is building the pipeline to act on it. The ideal future state is MERDIAN consuming his type of GEX structure data as upstream input — which is exactly what ENH-80 through ENH-82 begin to build.
+**ENH-85 built and reverted:**
+- PO3 direction lock patch written, applied, then reverted. Reason: locking direction for full session prevents legitimate intraday reversals. Needs proper experiment (Exp 43) before re-attempting. `build_trade_signal_local.pre_enh85.bak` remains on disk.
 
 ---
 
-## This session
+## What went wrong today
 
-> Session 13. Primary path: **ENH-75 — PO3 Live Session Bias Detection**.
-
-### Candidate A (required) — ENH-75: PO3 Live Session Bias Detection
-
-| Field | Value |
-|---|---|
-| **Goal** | Wire Exp 35C detection logic into the live pipeline. Detect PDH/PDL first-sweep in OPEN window (09:15–10:00 IST) with 35C filters. Write `po3_session_bias = PO3_BEARISH / PO3_BULLISH / PO3_NONE` to market state by 10:05 IST. Prerequisite for ENH-76 and ENH-77. |
-| **Type** | Code — small to medium. Reuses Exp 35C detection logic. |
-| **Time budget** | ~15–25 exchanges. |
-
-### Candidate B (if A completes quickly) — ENH-76: BEAR_OB MIDDAY gate on PO3_BEARISH
-
-| Field | Value |
-|---|---|
-| **Goal** | Gate BEAR_OB MIDDAY signals on `po3_session_bias = PO3_BEARISH`. One filter condition in signal engine. Requires ENH-75 first. |
-| **Type** | Code — small. |
-
-### Candidate C (if B completes quickly) — ENH-77: BULL_OB AFTERNOON gate on PO3_BULLISH (SENSEX)
-
-| Field | Value |
-|---|---|
-| **Goal** | Gate BULL_OB AFTERNOON (SENSEX only) on `po3_session_bias = PO3_BULLISH`. Requires ENH-75 first. |
-| **Type** | Code — small. |
-
-### Candidate D — Exp 42 composition rate
-
-| Field | Value |
-|---|---|
-| **Goal** | How often does a PDH-sweep session (E1) also produce a MIDDAY BEAR_OB (E4) in the same session? What is the mean T+30m return in points for E4? Query `hist_pattern_signals` for BEAR_OB MIDDAY on E1 session dates. |
-| **Type** | Research — small. |
-
-### DO_NOT_REOPEN
-
-- All Session 10 + Session 11 + Session 12 DO_NOT_REOPEN items.
-- ADR-002 principles (P1–P6) are settled — do not re-litigate.
-- ENH-80 through ENH-83 sequencing is settled — ENH-80 cannot be built before ENH-75 is complete and data accumulates.
-- Exp 34–41B design decisions — do not re-run with minor parameter tweaks without new evidence.
-- PDL DTE<3 next-week recommendation is SKIP — confirmed.
-- BEAR_OB AFTERNOON + PO3_BEARISH = 33.3% — hard skip.
-- NIFTY BULL_OB AFTERNOON + PO3_BULLISH WR=50% — discarded. SENSEX only.
-
-### Watch-outs
-
-- ENH-46-C still BLOCKED on TD-032. TD-032 PATCHED (Session 11 extension) but 10-cycle live verification required to formally close.
-- **TD-038 live trading risk:** EXIT AT label on dashboard shows UTC not IST. Compute exit manually until fixed.
-- ENH-46-C still BLOCKED on TD-032.
-- `hist_pattern_signals.win_60m` is NULL for most backfill signals.
-- `ret_30m` in `hist_pattern_signals` is PERCENTAGE POINTS (÷100 for decimal fraction). **Rule 14.**
-- Supabase hard-caps at 1000 rows/request. Always `page_size = 1000`. **Rule 15.**
-- `hist_spot_bars_5m.bar_ts`: stored as IST labeled +00:00. Use `replace(tzinfo=None)`. **Rule 16.**
-- `hist_spot_bars_5m` has **no** `is_pre_market` column. Filter by time: `bar_ts.time() < time(9, 15)`.
-- Kelly fractions from Exp 41B based on N=6–19. Hard cap 5-8% per trade until N=30 live events.
+| Issue | Root cause | Fixed? |
+|---|---|---|
+| Breadth = 0 all session | `ws_feed_zerodha.py` not started; `market_ticks` empty | ✅ Task registered |
+| Breadth regime BEARISH (market BULLISH) | Stale apr-28 row read all day | ✅ Will resolve tomorrow |
+| BULL_OB zones not BREACHED | `recheck_breached_zones()` ran before `upsert_zones()` | ✅ Fixed |
+| Pine zones blank on daily TF | Negative `bar_index - look_back` | ✅ Fixed |
+| NIFTY BLOCKED at open | gamma_regime=NO_FLIP → ENH-35 gate | Not a bug |
+| SENSEX BLOCKED all day | DTE=1 (expiry tomorrow) | Not a bug |
+| Signal flip-flop BUY_CE between BUY_PEs | ENH-55 `ret_session` crosses zero intraday | Deferred → Exp 43 |
+| EXIT AT showing wrong time | TD-038 UTC not IST | Carried forward |
+| AWS terminal frozen | `merdian_start.py` Windows-only script run on Linux | Resolved via reboot |
 
 ---
 
-## Live state snapshot (at Session 13 start)
+## This session → next session
 
-**Environment:** Local Windows primary; AWS shadow runner down since 2026-04-15 (pre-existing).
+> Session 14. Primary candidates:
 
-**Git state:** Local ahead of origin. Session 11 experiment scripts + Session 12 documentation files (ADR-002, Enhancement Register rewrite, merdian_reference.json v7, session_log, CURRENT.md) all pending commit. AWS at `15720d6`.
+**Candidate A (high priority) — ENH-78: DTE<3 PDH sweep → current-week PE rule**
+- Small patch to signal engine. Evidence: Exp 35D — PDH DTE<3 current-week PE = 90.9% WR (N=11), +125% SENSEX option. No prerequisite.
 
-**Active TDs (unchanged from Session 10):**
-- TD-029 (S2) — `hist_spot_bars_1m`/`5m` pre-04-07 TZ-stamping bug. Workaround: `replace(tzinfo=None)`.
-- ~~TD-030~~ — CLOSED Session 11 extension: `recheck_breached_zones()` added; zones mitigated mid-session now marked BREACHED.
-- ~~TD-031~~ — CLOSED Session 11 extension: OB/FVG written unconditionally; 72 zones (was 35).
-- TD-038 (S2) — Dashboard EXIT AT label shows UTC not IST. **Live trading risk.** Fix: apply IST conversion to `exit_ts` in `card()`.
-- TD-039 (S3) — SENSEX DTE=2 on expiry day 04-28 (expected 0). DTE computation or expiry calendar bug.
-- **TD-032 (S2) — Dashboard ↔ DB inconsistency. BLOCKER for ENH-46-C.**
-- TD-033 (S3) — Dashboard "SELL / BUY PE" label conflation.
-- TD-034 (S2) — `hist_atm_option_bars_5m` severely undersampled on dte=0.
-- TD-035 (S3) — `signal_snapshots.wcb_regime` NULL but dashboard shows BULLISH.
-- TD-036 (S3) — `confidence_score` flat-lined for 90+ minutes.
-- TD-037 (S4) — Schema column-name inconsistency across timestamp-bearing tables.
+**Candidate B — Exp 43: Signal Direction Stability**
+- Research session. Question: what is the minimum stability criterion for `direction_bias` before firing a signal? Options: persistence filter (N consecutive cycles same direction), slower momentum anchor (ret_30m not ret_session), hysteresis. Query `hist_pattern_signals` for direction flip-flop frequency and outcome correlation.
 
-**Active ENH:**
-- ENH-46-A: Telegram alert daemon. SHIPPED + live-verified.
-- ENH-46-C: Conditional gate lift. **BLOCKED on TD-032.**
-- ENH-46-D: Pine HTF zones live JSON feed. PARTIAL — `generate_pine_overlay.py` shipped with proximity tier system (T1/T2/T3); `/download_pine` dashboard endpoint + PINE OVERLAY button added Session 11 extension. TradingView paste workflow eliminated.
-- ENH-47: Inside-bar-before-expiry. PROPOSED, discretionary first.
-- **ENH-75: PO3 live detection. Session 13 primary.**
-- ENH-76: BEAR_OB MIDDAY gate on PO3_BEARISH. Requires ENH-75.
-- ENH-77: BULL_OB AFTERNOON gate on PO3_BULLISH (SENSEX). Requires ENH-75.
-- ENH-78: DTE<3 PDH sweep → current-week PE instrument rule. PROPOSED.
-- ENH-79: PWL weekly sweep → swing entry detection. PROPOSED.
-- ENH-80: Per-strike GEX time-series + zone bounds. PROPOSED. Build after ENH-75.
-- ENH-81: Dealer flow simulator + regime velocity. PROPOSED. Requires ENH-80.
-- ENH-82: PINNED gamma regime. PROPOSED. Blocked on Exp 23 (needs ENH-80 data first).
-- ENH-83: DTE-adjusted force multiplier. PROPOSED. Deferred Phase 1.5+.
-- F3: Daily zone scheduling. Validated by Exp 15. Ready to ship.
+**Candidate C — TD-038: EXIT AT shows UTC not IST**
+- Small dashboard fix. `card()` computes `exit_ts = signal_ts + 30min` — needs IST conversion. Live trading risk.
 
-**Session 11 edges proven (for reference):**
+**Candidate D — ENH-84: Dashboard "Refresh Zones + Pine" button**
+- Small. Calls `build_ict_htf_zones.py --timeframe H` + `generate_pine_overlay.py` on demand from dashboard. Returns updated `.pine` file for copy-paste.
 
-| Edge | WR | N | EV/trade | Instrument |
-|---|---|---|---|---|
-| E4 BEAR_OB MIDDAY + PO3_BEARISH | 88.2% T+30m | 17 | 116.5 pts SENSEX | ATM PE current-week |
-| E7 PWL Weekly + Daily Confluence | 100% EOD | 5 | T+2D +534 pts SENSEX | Next-week CE |
-| E1 PDH First-Sweep filtered | 93.3% EOD | 15 | ~97 pts NIFTY | Session bias → E4 |
-| E3 PDH DTE<3 | 90.9% EOD | 11 | +125% option SENSEX | Current-week ATM PE |
-| E6 PWL Refined Weekly | 76.9% EOW | 13 | +534 pts SENSEX T+2D | Next-week CE |
-| E2 PDL First-Sweep filtered | 84.6% EOD | 13 | ~255 pts SENSEX | Session bias → E5 |
-| E5 BULL_OB AFT + PO3_BULLISH | 73.7% T+30m | 19 | 35.5 pts SENSEX | ATM CE current-week |
+**Candidate E — ENH-86: Dashboard WIN RATE section redesign**
+- Medium. Separate signal quality (WR, EV, N) from execution (tier, lots, BLOCKED/ALLOWED) into two visual blocks. Remove tier from signal quality display.
+
+**DO_NOT_REOPEN for Session 14:**
+- ENH-75/76/77 design — shipped.
+- Exp 42 composition rate — answered (72.5% session frequency, PO3 is the gate).
+- ENH-85 direction lock — deferred to Exp 43. Do NOT re-implement without experiment backing.
+- Breach detection ordering — fixed.
+- Pine entry-band clipping approach — settled.
+- ADR-002 principles — settled.
+
+---
+
+## Live state snapshot (Session 14 start)
+
+**Environment:** Local Windows primary (all 5 processes running). AWS idle (token fresh, preflight clean, code 2+ weeks behind local).
+
+**Git state:** Local ahead of origin. Sessions 11+12+13 all uncommitted. Pending commit covers: Session 11 experiment scripts, Session 12 docs (ADR-002, Enhancement Register rewrite, merdian_reference.json v7), Session 13 code (ENH-75/76/77, breach fix, Pine generator, task registrations).
+
+**Active TDs:**
+- TD-029 (S2) — `hist_spot_bars` pre-04-07 TZ bug. Workaround: `replace(tzinfo=None)`.
+- TD-032 (S2) — Dashboard ↔ DB inconsistency. PATCHED Session 11 extension. Pending 10-cycle live verification. **BLOCKER for ENH-46-C.**
+- TD-034 (S2) — `hist_atm_option_bars_5m` undersampled on dte=0.
+- TD-035 (S3) — `wcb_regime` NULL since 2026-03-19. direction_bias unreliable on breadth-driven days.
+- TD-038 (S2 live risk) — EXIT AT shows UTC not IST.
+- TD-039 (S3) — SENSEX DTE=2 on expiry day (expected 0).
+- TD-NEW-A (S2) — CLOSED Session 13: breach recheck order fixed.
+- TD-NEW-B (S2) — CLOSED Session 13: WS feed task registered.
+
+**Rules (non-negotiable):**
+- Rule 14: `hist_pattern_signals.ret_30m` is PERCENTAGE POINTS — divide by 100.
+- Rule 15: Supabase hard cap 1000 rows/request — `page_size=1000`.
+- Rule 16: `hist_spot_bars_5m.bar_ts` stored IST as +00:00 — `replace(tzinfo=None)`.
+- Bug B4: `hist_spot_bars_5m` has no `is_pre_market` column — filter by time.
+- Rule 5: All patch scripts end with `ast.parse()` validation before writing.
+- Encoding: read `decode('utf-8-sig')`, write CRLF-aware.
+
+**Active ENH status:**
+- ENH-46-C: BLOCKED on TD-032.
+- ENH-46-D: SHIPPED (entry-band Pine generator + toggles + colors).
+- ENH-75: SHIPPED + live-verified.
+- ENH-76: SHIPPED.
+- ENH-77: SHIPPED.
+- ENH-78: PROPOSED — next build target.
+- ENH-79: PROPOSED.
+- ENH-80–83: PROPOSED — sequenced after ENH-75 data accumulates.
+- ENH-84: PROPOSED — dashboard Pine refresh button.
+- ENH-85: PROPOSED-DEFERRED — pending Exp 43.
+- ENH-86: PROPOSED — dashboard WIN RATE redesign.
+
+**Proven edges (live from today):**
+
+| Edge | WR | N | EV/trade | Gate | Status |
+|---|---|---|---|---|---|
+| E4 BEAR_OB MIDDAY + PO3_BEARISH | 88.2% T+30m | 17 | 116.5 pts SENSEX | ENH-76 | **LIVE** |
+| E5 BULL_OB AFT + PO3_BULLISH (SENSEX) | 73.7% T+30m | 19 | 35.5 pts SENSEX | ENH-77 | **LIVE** |
+| E1 PDH First-Sweep → PO3 bias | 93.3% EOD | 15 | ~97 pts NIFTY | ENH-75 | **LIVE** |
+| E3 PDH DTE<3 → current-week PE | 90.9% EOD | 11 | +125% option SENSEX | ENH-78 | PROPOSED |
+| E6 PWL Refined Weekly | 76.9% EOW | 13 | +534 pts SENSEX | ENH-79 | PROPOSED |
+| E7 PWL Weekly + Daily Confluence | 100% EOD | 5 | T+2D +534 pts SENSEX | ENH-79 | PROPOSED |
 
 ---
 
 *CURRENT.md — overwrite each session. Never branch this file. Never archive (the session_log is the archive).*
-*Last updated 2026-04-28 (end of Session 12).*
+*Last updated 2026-04-29 (end of Session 13).*

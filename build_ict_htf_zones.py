@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 build_ict_htf_zones.py
 ENH-37 â€” MERDIAN ICT Higher-Timeframe Zone Builder
@@ -416,6 +416,62 @@ def filter_breached_zones(zones: list, daily_ohlcv: dict, as_of: str) -> list:
     nearest_pdl = [z for _, z in pdl_below[:2]]
 
     return ob_fvg + nearest_pdh + nearest_pdl
+
+
+def recheck_breached_zones(sb, symbol, daily_ohlcv, as_of, dry_run=False):
+    """
+    TD-030 fix (Session 11): mark ACTIVE zones BREACHED when current spot
+    has passed through their price level.
+
+    Previously, only expire_old_zones() cleaned up stale zones (by valid_to
+    date). Zones mitigated mid-session stayed ACTIVE indefinitely, so
+    detect_ict_patterns_runner.py queried them as valid even after spot had
+    already traded through them.
+
+    Breach logic mirrors filter_breached_zones():
+      BULL_OB / BULL_FVG / PDL: valid if current_spot > zone_high.
+        BREACHED if current_spot <= zone_high (price inside or below zone).
+      BEAR_OB / BEAR_FVG / PDH: valid if current_spot < zone_low.
+        BREACHED if current_spot >= zone_low (price inside or above zone).
+    """
+    sorted_dates = sorted(k for k in daily_ohlcv.keys() if k <= as_of)
+    if not sorted_dates:
+        log(f"  TD-030: no OHLCV for {symbol} as_of {as_of} -- skipping breach recheck")
+        return
+
+    current_spot = daily_ohlcv[sorted_dates[-1]]["close"]
+    log(f"  Rechecking breached zones for {symbol} @ spot {current_spot:,.1f}")
+
+    if dry_run:
+        log(f"  DRY RUN -- would mark BREACHED where spot passed through zone")
+        return
+
+    try:
+        # BULL_OB / BULL_FVG / PDL: BREACHED if zone_high >= current_spot
+        # (current_spot <= zone_high means price is at or below the zone)
+        for pattern in ("BULL_OB", "BULL_FVG", "PDL"):
+            sb.table("ict_htf_zones").update({
+                "status": "BREACHED",
+                "updated_at": datetime.utcnow().isoformat()
+            }).eq("symbol", symbol).eq("status", "ACTIVE").eq(
+                "pattern_type", pattern
+            ).gte("zone_high", float(current_spot)).execute()
+
+        # BEAR_OB / BEAR_FVG / PDH: BREACHED if zone_low <= current_spot
+        # (current_spot >= zone_low means price is at or above the zone)
+        for pattern in ("BEAR_OB", "BEAR_FVG", "PDH"):
+            sb.table("ict_htf_zones").update({
+                "status": "BREACHED",
+                "updated_at": datetime.utcnow().isoformat()
+            }).eq("symbol", symbol).eq("status", "ACTIVE").eq(
+                "pattern_type", pattern
+            ).lte("zone_low", float(current_spot)).execute()
+
+        log(f"  TD-030: breach recheck done for {symbol}")
+    except Exception as e:
+        log(f"  Warning: could not recheck breached zones for {symbol}: {e}")
+
+
 def upsert_zones(sb, zones, dry_run=False):
     """
     Upsert zones into ict_htf_zones.
@@ -534,13 +590,21 @@ def main():
         daily_ohlcv = load_daily_ohlcv(sb, inst[symbol], from_date, target_date)
         log(f"  {len(daily_ohlcv)} trading days loaded")
 
+
         if do_weekly:
             log("  Building weekly zones...")
             weekly_bars = build_weekly_bars(daily_ohlcv)
             weekly_bars = weekly_bars[-WEEKLY_LOOKBACK:]
             w_zones = detect_weekly_zones(weekly_bars, symbol)
-            w_zones = filter_breached_zones(w_zones, daily_ohlcv, str(target_date))
-            log(f"  Detected {len(w_zones)} weekly zones (after breach filter)")
+            # TD-031 fix: OB/FVG written unconditionally -- fresh structure
+            # regardless of overnight recovery. PDH/PDL still proximity-filtered.
+            _w_ob  = [z for z in w_zones if z["pattern_type"] not in ("PDH", "PDL")]
+            _w_pdl = filter_breached_zones(
+                [z for z in w_zones if z["pattern_type"] in ("PDH", "PDL")],
+                daily_ohlcv, str(target_date)
+            )
+            w_zones = _w_ob + _w_pdl
+            log(f"  Detected {len(w_zones)} weekly zones ({len(_w_ob)} OB/FVG + {len(_w_pdl)} PDH/PDL)")
             n = upsert_zones(sb, w_zones, dry_run)
             log_exec.record_write("ict_htf_zones", n)
             log(f"  Written {n} weekly zones")
@@ -549,12 +613,22 @@ def main():
         if do_daily:
             log("  Building daily zones...")
             d_zones = detect_daily_zones(daily_ohlcv, symbol, target_date)
-            d_zones = filter_breached_zones(d_zones, daily_ohlcv, str(target_date))
-            log(f"  Detected {len(d_zones)} daily zones (after breach filter)")
+            # TD-031 fix: same as weekly -- OB/FVG unconditional.
+            _d_ob  = [z for z in d_zones if z["pattern_type"] not in ("PDH", "PDL")]
+            _d_pdl = filter_breached_zones(
+                [z for z in d_zones if z["pattern_type"] in ("PDH", "PDL")],
+                daily_ohlcv, str(target_date)
+            )
+            d_zones = _d_ob + _d_pdl
+            log(f"  Detected {len(d_zones)} daily zones ({len(_d_ob)} OB/FVG + {len(_d_pdl)} PDH/PDL)")
             n = upsert_zones(sb, d_zones, dry_run)
             log_exec.record_write("ict_htf_zones", n)
             log(f"  Written {n} daily zones")
             total_written += n
+
+        # TD-030 fix (reordered): recheck AFTER upserts so status=ACTIVE
+        # upsert does not overwrite BREACHED set by recheck.
+        recheck_breached_zones(sb, symbol, daily_ohlcv, str(target_date), dry_run)
 
     log(f"Done -- {total_written} total zones written to ict_htf_zones")
 

@@ -7,9 +7,9 @@
 | Field | Value |
 |---|---|
 | Document | `docs/registers/MERDIAN_Enhancement_Register.md` |
-| Scope | Living register of all proposed and delivered MERDIAN enhancements, ENH-01 through ENH-79 |
+| Scope | Living register of all proposed and delivered MERDIAN enhancements, ENH-01 through ENH-86 |
 | Lineage | Unified from v1 (2026-03-31) through v7 (2026-04-19 v8-appended). Prior versioned files archived at `docs/registers/archive/`. |
-| Last updated | 2026-04-28 (Session 11 — ENH-75 through ENH-79 added: PO3 live detection, BEAR_OB MIDDAY gate, BULL_OB AFT gate SENSEX, DTE<3 instrument rule, PWL swing detection) |
+| Last updated | 2026-04-29 (Session 13 — ENH-75/76/77 SHIPPED; ENH-84/85/86 filed; Exp 43 filed) |
 | Purpose | Forward-looking and historical register of all enhancement proposals, their status, evidence, and delivery. |
 | Authority | Current operational state of each ENH. Session appendices win on session-specific rationale; this register wins on current status. |
 | Update rule | Update in-place (append or edit). Do NOT create a new versioned file. |
@@ -29,7 +29,7 @@
 
 ## Part 1 -- Status Summary
 
-Sortable table of all 72 IDs. For full detail see Part 4.
+Sortable table of all 86 IDs. For full detail see Part 4.
 
 | ID | Title | Priority Tier | Status |
 |---|---|---|---|
@@ -116,12 +116,10 @@ Sortable table of all 72 IDs. For full detail see Part 4.
 | ENH-74 | Live config layer — core/live_config.py (Session 5, strategic replacement of ENH-68) | 1 | **PROPOSED** |
 | ENH-73a | Tradable signal alerts via existing pipeline alert daemon (Session 9 wave 2) | 1 | **SHIPPED 2026-04-26** |
 | ENH-73b | Dashboard latched-signal panel (Session 9 wave 2, deferred) | 1 | **PROPOSED-DEFERRED** |
-| ENH-75 | PO3 Live Session Bias Detection | 1 | **PROPOSED** |
-| ENH-76 | BEAR_OB MIDDAY Gate on PO3_BEARISH | 1 | **PROPOSED** |
-| ENH-77 | BULL_OB AFTERNOON Gate on PO3_BULLISH (SENSEX only) | 1 | **PROPOSED** |
-| ENH-78 | DTE<3 PDH Sweep → Current-Week PE Instrument Rule | 1 | **PROPOSED** |
-| ENH-79 | PWL Weekly Sweep → Swing Entry Detection | 1 | **PROPOSED** |
 
+| ENH-84 | Dashboard "Refresh Zones + Pine" Button (intraday) | 1 | **PROPOSED** |
+| ENH-85 | PO3 Session Direction Lock (anti-flip-flop) | 1 | **PROPOSED-DEFERRED (pending Exp 43)** |
+| ENH-86 | Dashboard WIN RATE Section Redesign | 1 | **PROPOSED** |
 ---
 
 ## Part 2 -- Active Work (not yet delivered or under monitoring)
@@ -2268,325 +2266,60 @@ Original purpose: cache `build_expiry_index_simple()` output across cycles to av
 
 **History:** 2026-04-26=PROPOSED, deferred.
 
+
 ---
 
-### ENH-46-C: Conditional ENH-35 LONG_GAMMA Gate Lift on MTF Context
+## Session 13 New ENH Entries (2026-04-29)
+
+### ENH-84 — Dashboard "Refresh Zones + Pine" Button (intraday)
 
 | Field | Detail |
 |---|---|
-| Status | **PROPOSED 2026-04-27 (Session 10). Pending design + 10-session shadow validation.** |
-| Type | Signal-gate refinement; conditional bypass |
-| Parent | ENH-35 (LONG_GAMMA gate, validated 2026-04-11) |
-| Area | Signal generation; `build_trade_signal_local.py` |
-| Session | 10 (filed) |
-
-**Context.**
-ENH-35 unconditionally blocks signal generation when `gamma_regime IN ('LONG_GAMMA','NO_FLIP')`. Validated 2026-04-11 at N=24,579, 47.7% accuracy on raw signals — the gate is correct on average. Exp 28 (Session 9) confirmed it's correct on ~90% of cycles, mis-calibrated on ~10% (specific directional days). Exp 15 re-run (Session 10) showed the conditional sub-population where the gate is wrong: BULL_OB / BEAR_OB inside MEDIUM or VERY_HIGH MTF context. These setups show 75-86% WR in backtest vs the gate's 47.7% population baseline.
-
-**Proposal.**
-Add a conditional bypass in `build_trade_signal_local.py`: when `gamma_regime IN ('LONG_GAMMA','NO_FLIP')` AND a candidate ICT detection has `pattern_type='BULL_OB' AND mtf_context IN ('MEDIUM','VERY_HIGH')`, allow the signal through with `trade_allowed=true`. BEAR_OB initially excluded (Exp 15 evidence: BEAR_OB MEDIUM N=4, underpowered; BEAR_OB LOW shows higher WR — the lift criterion may not apply symmetrically).
-
-**Evidence (Exp 15 re-run, full year):**
-- BULL_OB MEDIUM: 85.7% WR (N=14), avg ₹+14,013/trade, total ₹+196,184
-- BULL_OB LOW: 87.1% WR (N=31) — also strong; LOW context not actually worse
-- BEAR_OB MEDIUM: 75.0% WR (N=4) — too small for lift decision
-- BEAR_OB LOW: 94.7% WR (N=19) — actually the strongest BEAR bucket
-- Combined T+30m total ₹+773,442 across 229 trades, +193.4% capital growth
-
-**Design questions to settle:**
-1. Symmetric (both directions) or asymmetric (BULL_OB only)? Recommend asymmetric Phase 1 given BEAR_OB MEDIUM N=4.
-2. Tier-conditional? E.g., only TIER1 + MEDIUM, or any tier + MEDIUM? Production tier rules surface only N=5 TIER1/year — too restrictive. Recommend any-tier + MEDIUM/VERY_HIGH.
-3. Shadow-mode vs live? Recommend shadow-mode for 10 sessions: log would-be lift events to a separate `shadow_signal_lifts` table; compare predicted WR against actual T+30m PnL post-cycle.
-
-**Shadow-test plan:**
-- Phase 1 (≥10 trading days): log all candidate-lift events to shadow table without flipping `trade_allowed`. Capture: detection bar_ts, pattern_type, mtf_context, ict_tier, spot, atm_strike, expiry_date, dte, predicted T+30m exit price.
-- Phase 2: evaluate WR + total PnL. Ship to live only if shadow WR ≥ 70% on N≥15.
-- Phase 3 (live): flip `trade_allowed=true` for matching cycles. Monitor for 5 sessions before declaring closed.
-
-**Related:**
-- F0 (gate visibility unclobber) — SHIPPED Session 10. Operator now sees direction_bias=BEARISH/BULLISH instead of NEUTRAL clobber on LONG_GAMMA cycles. Prerequisite for evaluating ENH-46-C live behaviour.
-- F1 (TZ classification fix) — SHIPPED Session 10. Required for `time_zone IN ('MORNING','AFTNOON')` to ever fire correctly, which is upstream of TIER promotion and MTF context lookup.
-- F3 (daily zone scheduling) — **SHIPPED Session 11 (2026-04-28).** `MERDIAN_ICT_HTF_Zones_0845` Task Scheduler registered, daily 08:45 IST Mon-Fri. `ict_htf_zones` populated with 72 zones (NIFTY+SENSEX, W+D). MTF context lookups now have fresh data. TD-017 CLOSED.
-- ENH-35 — Original LONG_GAMMA gate. ENH-46-C is a conditional refinement, not a replacement.
-- **TD-032 (Dashboard opt_type rendering inconsistency) — BLOCKER FOR ENH-46-C SHIP.** Root cause confirmed Session 11 extension: `build()` read `opt_type` from `ict_zones.opt_type` (ICT zone direction BEFORE ENH-35 gate overrides); on LONG_GAMMA days this caused CE display for BUY_PE signals. **PATCHED Session 11 extension (2026-04-28)** — `opt_type` now unconditional from `signal_snapshots.action`; render audit log `[DASHBOARD]` lines added. **Pending 10-cycle live verification to formally close.** ENH-46-C BLOCKER lifts on formal close.
-
-**History:** 2026-04-27=PROPOSED. 2026-04-27=blocked-on-TD-032 added. 2026-04-28=F3 SHIPPED (TD-017 closed). 2026-04-28=TD-032 PATCHED (pending live verification). Shadow-test design still pending TD-032 formal close.
-
----
-
-### ENH-46-D: Pine HTF Zones Generator + Dashboard Download (Eliminates Manual Pine Regeneration)
-
-| Field | Detail |
-|---|---|
-| Status | **PARTIAL — Session 11 extension (2026-04-28). Fallback design shipped. HTTP feed deferred.** |
-| Type | Visualization infrastructure / TradingView integration |
-| Parent | none |
-| Area | Pine overlay maintenance, post-`build_ict_htf_zones.py` workflow |
-| Session | 10 (filed) · 11 extension (partial delivery) |
-
-**Context.**
-`merdian_ict_htf_zones.pine` previously hardcoded zone coordinates from a manual snapshot of `ict_htf_zones`. Session 10 demonstrated this concretely: at 08:55 IST 2026-04-27 the operator discovered the Pine had ~5 zones while the table had 18. Session 11 extension shipped the fallback design resolving this.
-
-**Capability check result (Session 11 extension).**
-Pine Script v6 does NOT support `request.http()` or arbitrary HTTP GET to external URLs. The `request.*()` family only fetches from TradingView's own data universe. GitHub raw URL and all hosted JSON endpoint options are therefore not viable. The HTTP feed path (original proposal) is permanently deferred unless TradingView adds external GET support.
-
-**What shipped (Session 11 extension, 2026-04-28).**
-
-1. **`generate_pine_overlay.py`** — standalone generator + importable function. Queries `ict_htf_zones WHERE status='ACTIVE'`, renders into Pine v6 source with `draw_zone()` calls. **Proximity tier system:** T1 (full opacity) = D zones always + W zones within 2% of current spot; T2 (medium) = W zones 2-5% from spot; T3 (ghost, no label) = W zones >5% from spot. Eliminates the 73-zone visual soup problem (T3 zones fade to near-invisible). Standalone: `python generate_pine_overlay.py`. Importable: `from generate_pine_overlay import generate_pine_content`.
-
-2. **Dashboard `/download_pine` endpoint + PINE OVERLAY button** — `fix_enh46d_dashboard_pine_download.py` patched `merdian_signal_dashboard.py`. GET `/download_pine` queries DB on demand, generates Pine, serves as file download. Button added to topbar next to REFRESH. Operator workflow: click button → browser downloads `merdian_ict_htf_zones.pine` → paste into TradingView Pine Editor. No manual zone-translation step.
-
-**Operator workflow (post-ship):**
-- At 08:45 IST after zones rebuild: click PINE OVERLAY on dashboard, paste download into TradingView. 30 seconds vs previous 10-minute manual process.
-- Or: `python generate_pine_overlay.py` from CLI for scheduled generation.
-
-**Remaining open question.**
-Box/label count limits in Pine (~250 with `max_boxes_count=250`). With 73 zones across both symbols, T3 ghost zones need no labels and minimal box overhead — current implementation should stay within limits. Monitor if TradingView throws "too many boxes" error.
-
-**What is NOT shipped.**
-- HTTP feed / GitHub raw URL / hosted JSON endpoint — permanently deferred (Pine v6 HTTP limitation).
-- Auto-regeneration hook inside `build_ict_htf_zones.py` after each zone upsert — not yet integrated; still requires manual click or CLI invocation. Future enhancement.
-
-**History:** 2026-04-27=PROPOSED. 2026-04-28=Pine v6 HTTP capability confirmed NO. 2026-04-28=fallback design shipped (generator + dashboard download button). Status=PARTIAL.
-
----
-
-### ENH-47: Inside-Bar-Before-Expiry Long-Options Trade Structure (Next-Week ATM)
-
-| Field | Detail |
-|---|---|
-| Status | **PROPOSED 2026-04-27 (Session 10 extension)** |
-| Type | New signal class + trade structure recommendation |
-| Parent | none |
-| Area | Discretionary signal augmentation (not currently auto-traded by MERDIAN) |
-| Session | 10 (filed during extension) |
-| Source | Experiment 33 |
-
-**Context.**
-Experiment 33 (Session 10 extension) tested two competing theses for inside-bar-Monday-before-expiry-Tuesday/Thursday setups: (a) options-writer pin thesis vs (b) breakout/breakdown thesis. The pin thesis was rejected (only 7% pin rate). The breakout thesis was supported (93% break rate, 86% clean-direction breaks). A novel finding was added: 71% of cases saw the next trading session gap in the same direction as expiry day's net move.
-
-**Proposal.**
-Detect inside-bar-before-expiry candidates pre-market, take ATM long option position in **next-week** (DTE≈7) rather than same-week (DTE=0) expiry. Three justifications:
-
-1. **Same-week dies at expiry close**, capturing only intraday move. Q3 of Exp 33 showed 93% of expiry-day closes are in the mid of the day's range (no trend-day-on-extreme closes). Same-week ATM options held to expiry frequently underperform the intraday peak premium.
-2. **Next-week captures next-day continuation gap.** Q4 showed 71% of cases gap in expiry-day direction the next session. Same-week option misses this entirely (already expired).
-3. **Combined directional move is materially larger.** Strongest case (SENSEX 2026-02-12): -347 pts intraday + -759 pts next-day gap = -1106 pts total. Next-week PE captures all of this; same-week PE captures only the -347 pt intraday move.
-
-**Decision tree (operational rule, not yet automated):**
-- If pre-market open shows **GAP_UP small (<50 pts)** + holding above inside_high: buy next-week ATM CE (mild continuation expected, 75% probability based on N=4)
-- If **GAP_UP large (>100 pts)**: buy next-week ATM PE (fade expected, both observed >100pt gap-ups in sample faded heavily)
-- If **GAP_DOWN any size** + holding below inside_low: buy next-week ATM PE (continuation expected, 100% probability based on N=2)
-- If **INSIDE open**: wait 09:15-09:30 IST for direction; act on first sustained break with next-week ATM in break direction
-
-**Open questions:**
-1. **Sample size constraint** — N=14 across 4 buckets, with ±15pp uncertainty bands. Cannot promote to MERDIAN auto-signal until N is meaningfully larger (TD-034 — `hist_atm_option_bars_5m` undersampling — limits historical N).
-2. **Detection timing** — inside-bar status is only confirmed at 15:30 IST close of D-1. Pre-market ATM option pricing on D may already incorporate the setup. Verify whether next-week premium pricing leaves edge after retail recognition.
-3. **Symmetry** — NIFTY weekly skewed break-high (3 of 4 sustained); SENSEX skewed break-low. Different bias per symbol may need symbol-specific direction rules.
-4. **Volatility regime** — all cases pooled. High-IV environments may favour sell-the-strangle (pin thesis); low-IV may favour buy-the-straddle (breakout thesis). Need IV-conditional split.
-
-**Path to live:**
-- Phase 1 (Session 11+): document and validate the rule on out-of-sample inside-bar-before-expiry occurrences as they happen. Track each as it occurs in `inside_bar_expiry_log` (or similar). Goal: accumulate 10+ live observations.
-- Phase 2: write detector script + integrate signal into MERDIAN pipeline (would surface in `signal_snapshots` with new pattern_type='INSIDE_BAR_EXPIRY' or similar).
-- Phase 3: ENH-46-C-style shadow test before live promotion.
-
-**Related:**
-- Exp 33 — primary evidence base.
-- TD-034 — `hist_atm_option_bars_5m` undersampling limits future expiry-day option backtests, including ENH-47 path-to-live validation.
-- ENH-46-A — Telegram alert daemon already running; could be extended to alert on inside-bar-before-expiry candidates pre-market.
-
-**History:** 2026-04-27=PROPOSED. Underpowered evidence base. Discretionary use first, automation second.
-
-
----
-
-## Part 5 — Session 11 New Enhancements (ENH-75 through ENH-79)
-
-*Added 2026-04-28 (Session 11 — ICT research agenda, 7 new edges proven via Exp 34–41B)*
-
----
-
-### ENH-75: PO3 Live Session Bias Detection
-
-| Field | Detail |
-|---|---|
-| Status | **PROPOSED 2026-04-28 (Session 11). Next build target for Session 12.** |
-| Type | Code — new runner or integration into build_trade_signal_local.py |
-| Area | Signal Engine / Market State |
-| Priority | 1 — prerequisite for ENH-76 and ENH-77 |
-| Session | 11 (filed) |
-| Evidence | Exp 35C PASS: PDH first-sweep filtered → 93.3% bearish EOD WR (N=15). Exp 35 PARTIAL PASS: gap-up + PDH sweep OPEN window → 74.3% bearish EOD (N=35). |
-
-**Context.**
-
-Experiments 35, 35B, 35C established that when price sweeps PDH (or PDL) in the OPEN window (09:15–10:00 IST) with gap-up (gap-down) context and genuine rejection, the session closes in the predicted direction 74–93% of the time. This is the ICT Power of Three / AMD manipulation leg — the first sweep of the session sets the bias for the distribution leg that follows.
-
-This signal is entirely back-loaded: T+30m WR = 27.6%, EOD WR = 93.3%. It is a SESSION BIAS SETTER, not an intraday entry trigger. The downstream trade is BEAR_OB in MIDDAY (ENH-76) or BULL_OB AFTERNOON SENSEX (ENH-77).
-
-**Proposal.**
-
-Detect PDH/PDL first-sweep events in the OPEN window each session and write `po3_session_bias = PO3_BEARISH / PO3_BULLISH / PO3_NONE` to market state by 10:05 IST.
-
-**Detection rules (from Exp 35C filtered config):**
-- PDH sweep → PO3_BEARISH: wick ≥0.05% above PDH, closes back inside ≥0.10% within 6 bars (30 min), session open ≥ PDH × 0.999 (gap-up context), gap size <0.5%, sweep depth NOT in 0.10–0.20% range (ambiguous zone, 50% WR)
-- PDL sweep → PO3_BULLISH: mirror logic, depth ≥0.10%
-- T+2 bar (10 min) reversal excluded: 40% WR danger zone per Exp 35B
-- First sweep only per session per level — not all intraday touches
-
-**Schema change:** Add `po3_session_bias VARCHAR(20)` and `po3_sweep_time TIMESTAMPTZ` to `signal_snapshots` or `market_state_snapshots`.
-
-**Prerequisite for:** ENH-76 (BEAR_OB MIDDAY gate), ENH-77 (BULL_OB AFTERNOON gate SENSEX).
-
-**Related:**
-- Exp 34 — FAIL: naked intraday sweeps (all, not just first) have no edge (WR=11%). ENH-75 uses first-sweep only with gap + depth filters.
-- Exp 35/35B/35C — evidence base.
-- TD-029 — `bar_ts` TZ workaround: use `replace(tzinfo=None)`, not `astimezone(IST)`.
-
-**History:** 2026-04-28=PROPOSED.
-
----
-
-### ENH-76: BEAR_OB MIDDAY Gate on PO3_BEARISH
-
-| Field | Detail |
-|---|---|
-| Status | **PROPOSED 2026-04-28 (Session 11). Requires ENH-75 first.** |
-| Type | Code — one filter condition in signal engine |
-| Area | Signal Engine / `build_trade_signal_local.py` |
-| Priority | 1 — highest new signal found in Session 11 |
-| Session | 11 (filed) |
-| Evidence | Exp 40 FULL PASS: BEAR_OB MIDDAY + PO3_BEARISH = 88.2% T+30m WR, +39.1pp lift over 49.2% baseline, EV = 116.5 pts SENSEX / 16.8 pts NIFTY (N=17). Exp 41B: Half-Kelly 44% SENSEX, 41% NIFTY (cap at 5–8% until N=30 live events). |
-
-**Context.**
-
-Exp 40 established the 2×2 structural asymmetry:
-- BEAR_OB MIDDAY + PO3_BEARISH: 88.2% WR — the distribution entry
-- BEAR_OB AFTERNOON + PO3_BEARISH: 33.3% WR — move already done, hard skip
-- BEAR_OB MIDDAY + PO3_BULLISH: 50.0% WR — counter-session, noise
-- BEAR_OB MIDDAY + PO3_NONE: 49.2% baseline — no edge without bias
-
-When institutions distribute bearishly, they do it in the midday lull (11:30–13:30 IST) immediately following the morning manipulation sweep. BEAR_OB in MIDDAY on a PO3_BEARISH session is the canonical distribution entry. By AFTERNOON the move is substantially complete.
-
-**Proposal.**
-
-When a BEAR_OB fires in the MIDDAY session window (11:30–13:30 IST), allow `trade_allowed=true` only if `po3_session_bias = PO3_BEARISH`. All other BEAR_OB MIDDAY signals remain blocked regardless of tier.
-
-**Instrument:** ATM PE, current-week expiry. Stop: above OB zone_high. Exit: T+30m fixed.
-
-**Expected frequency:** ~6–9 BEAR_OB MIDDAY signals per symbol per quarter meeting the PO3_BEARISH gate. Low frequency — size up when they fire.
-
-**History:** 2026-04-28=PROPOSED.
-
----
-
-### ENH-77: BULL_OB AFTERNOON Gate on PO3_BULLISH (SENSEX Only)
-
-| Field | Detail |
-|---|---|
-| Status | **PROPOSED 2026-04-28 (Session 11). Requires ENH-75 first.** |
-| Type | Code — one filter condition in signal engine, SENSEX only |
-| Area | Signal Engine / `build_trade_signal_local.py` |
+| Status | **PROPOSED** |
 | Priority | 1 |
-| Session | 11 (filed) |
-| Evidence | Exp 40 FULL PASS: BULL_OB AFTERNOON + PO3_BULLISH = 64.5% T+30m WR, +16.8pp lift (N=31). SENSEX only: 73.7% WR (N=19). NIFTY: 50.0% WR (N=12) — discard. Exp 41B: SENSEX EV=35.5 pts, Half-Kelly=22% (cap at 5% until N=30 live events). |
-
-**Context.**
-
-The same 2×2 analysis from Exp 40 for BULL_OB:
-- BULL_OB AFTERNOON + PO3_BULLISH (SENSEX): 73.7% WR — London open accumulation completion
-- BULL_OB MIDDAY + PO3_BULLISH: 30.3% WR — premature, accumulation not done yet
-- NIFTY BULL_OB AFTERNOON + PO3_BULLISH: 50.0% WR — no edge, discard
-
-Bullish accumulation on PO3_BULLISH sessions resolves at the London open (13:30+ IST). BULL_OB in AFTERNOON on SENSEX = the accumulation breakout. NIFTY is structurally weaker here — the London-flow dynamic is stronger on SENSEX (broader index, more FII-sensitive).
-
-**Proposal.**
-
-When a BULL_OB fires in the AFTERNOON session window (13:30–15:30 IST) on SENSEX, allow `trade_allowed=true` only if `po3_session_bias = PO3_BULLISH`. NIFTY BULL_OB AFTERNOON signals remain blocked regardless.
-
-**Instrument:** ATM CE, current-week expiry, SENSEX only. Stop: below OB zone_low. Exit: 15:20 IST mandatory — no trailing, insufficient time.
-
-**Note on counter signal anomaly:** Exp 40 showed BULL_OB AFTERNOON + PO3_BEARISH = 68.4% WR (N=19) on SENSEX — higher than the PO3-aligned signal on NIFTY. Suggests BULL_OB AFTERNOON has an intrinsic London-window edge independent of morning bias. Monitor the first 20 live signals before deciding whether PO3-gating should block counter-bias AFTERNOON setups.
-
-**History:** 2026-04-28=PROPOSED.
+| Session filed | Session 13 (2026-04-29) |
+| Goal | Add a button to the MERDIAN signal dashboard that: (1) calls `build_ict_htf_zones.py --timeframe H` to rebuild hourly zones, (2) calls `generate_pine_overlay.py` to regenerate the Pine file, (3) serves the updated `.pine` file for one-click copy-paste into TradingView. Enables intraday zone refresh without manual CLI. |
+| Type | Code — small. Dashboard endpoint + button. |
+| Blocker | None. |
+| Note | TradingView Pine cannot receive live data pushes (sandboxed). This is the practical near-term solution. Full intraday charting in MERDIAN dashboard (TradingView Lightweight Charts) is ENH-87 candidate. |
 
 ---
 
-### ENH-78: DTE<3 PDH Sweep → Current-Week PE Instrument Rule
+### ENH-85 — PO3 Session Direction Lock (anti-flip-flop)
 
 | Field | Detail |
 |---|---|
-| Status | **PROPOSED 2026-04-28 (Session 11).** |
-| Type | Code — instrument selection rule in signal engine |
-| Area | Signal Engine / Instrument Selection |
+| Status | **PROPOSED-DEFERRED (pending Exp 43)** |
 | Priority | 1 |
-| Session | 11 (filed) |
-| Evidence | Exp 35D PASS: PDH DTE<3 current-week PE mean +125% SENSEX / +46% NIFTY vs next-week +68% / +20%. Current-week wins decisively. DTE=1 (expiry day): 75% T+1D WR, mean|wins=0.556%. MAE P90=373 pts SENSEX — do NOT use intraday stop on SENSEX. PDL DTE<3: 42.9% T+1D WR — SKIP. |
-
-**Context.**
-
-Exp 35D tested whether PDH first-sweep events on expiry-week sessions (DTE=1 or DTE=2) justify buying next-week options for T+1D continuation. The data is unambiguous: current-week PE captures gamma explosion on the large moves (SENSEX 2026-02-19: +468% current-week vs +112% next-week). On small moves, current-week underperforms, but large moves dominate the mean.
-
-PDL DTE<3 is explicitly a SKIP: the EOD bounce (78.6% WR) is mechanical expiry pinning, not institutional. It fades the next day (T+1D WR = 42.9%). Buying CE on this is a common trap.
-
-**Proposal.**
-
-When a PDH first-sweep fires on a session with DTE≤2, write `instrument_override = CURRENT_WEEK_PE` to signal metadata. When a PDL first-sweep fires on DTE≤2, write `trade_skip = EXPIRY_PINNING`.
-
-**Rules:**
-- PDH DTE≤2: current-week ATM PE — gamma leverage on EOD move
-- PDH DTE≥3: current-week ATM PE (standard rule unchanged)
-- PDL DTE≤2: SKIP — expiry pinning, not institutional, fades T+1D
-- PDL DTE≥3: current-week ATM CE
-
-**Stop:** 40% of premium paid OR price re-takes PDH intraday (immediate exit). Do NOT use spot-based stop on SENSEX — MAE P90=373 pts means the option is already down 50–70% before recovery.
-
-**History:** 2026-04-28=PROPOSED.
+| Session filed | Session 13 (2026-04-29) |
+| Goal | Prevent ENH-55 `ret_session` momentum opposition from flipping `direction_bias` intraday on confirmed PO3 session days. On PO3_BEARISH days, lock direction BEARISH for the session; on PO3_BULLISH days, lock BULLISH. Eliminates random BUY_CE signals appearing between BUY_PE signals when spot briefly crosses the session open price. |
+| Evidence | Observed 2026-04-29: 12:01 IST BUY_PE → 13:10 IST BUY_CE (spot briefly above open) → 13:51 IST BUY_PE. Mechanically caused by `ret_session` sign change, not genuine reversal. |
+| Blocker | **Exp 43 (Signal Direction Stability) must be run first.** Markets do genuinely reverse intraday. A hard lock prevents adapting to those reversals. Need backtested stability criterion (persistence filter, hysteresis, or slower momentum anchor) before implementing. |
+| Build built and reverted | `build_trade_signal_local.pre_enh85.bak` on disk. Do NOT re-apply without Exp 43 backing. |
 
 ---
 
-### ENH-79: PWL Weekly Sweep → Swing Entry Detection
+### ENH-86 — Dashboard WIN RATE Section Redesign
 
 | Field | Detail |
 |---|---|
-| Status | **PROPOSED 2026-04-28 (Session 11).** |
-| Type | Code — new pre-market detection script |
-| Area | Signal Engine / Multi-Day |
+| Status | **PROPOSED** |
 | Priority | 1 |
-| Session | 11 (filed) |
-| Evidence | Exp 39B PASS: PWL refined weekly sweep → 76.9% EOW WR (N=13), T+1D=84.6%, T+2D=76.9%, T+2D mean=+534 pts SENSEX. PWL + daily PDL confluence → 100% conf-day WR (N=5). Monday sweeps historically strongest (80% PWL, 100% PWH in sample). |
-
-**Context.**
-
-Exp 39 (unrefined) FAIL revealed that naked PWL sweeps have 35.3% EOW WR — worse than random — because trending markets bounce off PWL intraday but continue lower the following week. Exp 39B added three refinements that filter genuine institutional reversals from trending bounces:
-
-1. Reversal quality: close must retreat ≥15% of prior week's range above PWL (genuine rejection, not just a bounce)
-2. Gap context: gap-down open required (session open ≤ PWL × 1.001)
-3. Monday filter: Monday sweeps are the highest conviction (3/3 PWH Monday events = 100% EOW WR in sample)
-
-With these filters, PWL standalone → 76.9% EOW WR (N=13). PWL + same-day daily PDL sweep in OPEN window → 100% conf-day WR (N=5) — the highest-conviction compound signal found in Session 11.
-
-**Proposal.**
-
-Pre-market script (runs at ~08:35 IST) detects whether the current week has a PWL sweep setup forming. If a confirmed sweep occurred the prior session, writes `weekly_swing_bias = BULLISH / NONE` to market state.
-
-**Detection rules (Exp 39B refined config):**
-- PWL = prior week's lowest bar low (computed from prior 5 sessions' 5m bars)
-- Sweep: today's wick ≤ PWL × (1 − 0.0005) AND today's open ≤ PWL × 1.001
-- Reversal: today's close ≥ PWL + (prior_week_high − prior_week_low) × 0.15
-- Daily PDL confluence (E7): simultaneous PDL sweep in OPEN window (09:15–10:00) on same day
-
-**Trade structure:**
-- E6 (PWL standalone): enter at EOD close, buy next-week ATM CE (DTE~8). Stop: if next session closes below PWL. Scale-out: 50% at EOD, 50% at T+2D close.
-- E7 (PWL + daily PDL confluence): enter at daily PDL rejection bar close in OPEN window. Same instrument. Maximum size. 100% WR (N=5) — rare but highest conviction.
-
-**Monday flag:** Monday sweeps flagged separately in output. All 3 Monday PWH events in sample = 100% EOW WR, mean weekly return −1.245%.
-
-**Related:**
-- Exp 39 — FAIL (unrefined), documents why gap context and reversal quality are required
-- Exp 39B — PASS (refined), evidence base
-- ENH-75 — provides `po3_session_bias` which can compose with weekly bias for double-confirmation
-
-**History:** 2026-04-28=PROPOSED.
+| Session filed | Session 13 (2026-04-29) |
+| Goal | Current WIN RATE table mixes signal quality, execution tiers, and historical WR into one opaque block. Redesign into two separate visual sections: (A) Signal quality — pattern, condition, historical WR, EV, N. (B) Execution — tier, lots, BLOCKED/ALLOWED shown prominently. Remove tier from signal quality display entirely. BLOCKED/ALLOWED should be the most prominent element in execution, not buried in a table row. |
+| Type | Code — medium. Dashboard HTML/JS changes. |
+| Blocker | None. |
 
 ---
 
-*Part 5 added 2026-04-28 (Session 11). ENH-75 through ENH-79 are the five production candidates sourced from the Session 11 ICT research agenda (Exp 34–41B).*
+### Exp 43 — Signal Direction Stability (filed Session 13)
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED** |
+| Session filed | Session 13 (2026-04-29) |
+| Question | What is the minimum stability criterion for `direction_bias` before a MERDIAN signal should be trusted? How often does `direction_bias` flip intraday, and when it flips, is it associated with genuine reversals or noise? |
+| Motivation | ENH-55 `ret_session` crosses zero whenever spot oscillates around session open, producing spurious direction flips (BUY_CE between two BUY_PEs on 2026-04-29). Need empirical backing before implementing ENH-85. |
+| Approach options | (1) Persistence filter: require N consecutive cycles same direction (query: how often does direction stay stable ≥3 cycles before a signal fires?). (2) Slower anchor: use ret_30m or ret_60m instead of ret_session for V4 direction. (3) Hysteresis: require stronger threshold to flip back (e.g. 0.15% not 0.05%). (4) PO3 as soft prior: weight confidence ±N when PO3 agrees/disagrees rather than hard lock. |
+| Data source | `hist_pattern_signals` + `hist_market_state` (ret_session per bar). Cross-reference direction flips with T+30m outcomes. |
+| Output | Empirical answer to: "does holding direction stable improve WR vs allowing ENH-55 full rein?" If yes, implement ENH-85 with the winning criterion. |

@@ -84,6 +84,7 @@ These are hard rules. Do not propose violations. Do not ask "what if we…".
 14. **`ret_30m` in `hist_pattern_signals` is stored as PERCENTAGE POINTS, not decimal fraction.** e.g., 0.1351 means 0.1351% of spot, NOT 13.51%. Divide by 100 before multiplying by spot price. Sign convention: BEAR_OB wins when `ret_30m < 0` (spot fell). BULL_OB wins when `ret_30m > 0`. Confirmed Session 11 via diagnostic query. Any script that uses this field must apply the division. (Lesson from Exp 41 which inflated E4/E5 P&L by 100x — corrected in Exp 41B.)
 15. **Supabase hard-caps at 1000 rows per request.** `range(0, 4999)` still returns only 1000. Always set `page_size = 1000` in pagination loops, and terminate when `len(batch) < 1000`. Confirmed Session 11 — Exp 34 initially fetched only 130 of 18,895 bars because page_size was 5000. (Rule added 2026-04-28.)
 16. **TD-029 timezone workaround for hist_spot_bars_5m.** `bar_ts` is stored as IST labeled as `+00:00`. Do NOT use `astimezone(IST)` — this adds 5:30 and shifts all bars. Use `dt.replace(tzinfo=None)` to treat the stored value as naive IST directly. Confirmed Session 11 — Exp 34 initial run had 3,450 bars instead of 18,895 due to this bug. (Rule added 2026-04-28.)
+17. **`market_spot_session_markers` column names differ from documentation.** `open_0915` does not exist as a column — the live column is `open_0915_ts`. Do NOT query `market_spot_session_markers` for open price or gap data. Derive `open_0915` from the first tick in `market_spot_snapshots` for the OPEN window (09:15–10:00 IST). Derive `gap_open_pct` from `(open_0915 - prev_close) / prev_close * 100` where `prev_close` is the last bar close from `hist_spot_bars_5m`. Confirmed Session 13 — `detect_po3_session_bias.py` bypasses this table entirely. (Rule added 2026-04-29.)
 
 ---
 
@@ -158,6 +159,9 @@ When generating: assemble from the markdown layer. The markdown is the source. T
 - ❌ Writing a patched file back with `Path.write_text(text, encoding=...)` on Windows when the original file has LF line endings — `write_text` translates `\n → \r\n` on output, silently converting the file to CRLF and producing a noisy `git diff` showing every line modified. Always use `write_bytes(text.encode(enc))` for symmetric byte handling. v3 of F3 patch is the canonical pattern. (Session 11 extension.)
 - ❌ Trusting the dashboard EXIT AT label for trade exit timing — the label slices the UTC timestamp string directly (`exit_ts[11:16]`), not the IST-converted version. On a 09:31 IST signal this shows 04:31, not 10:01. Compute exit time manually: signal IST + 30 minutes. (TD-038, Session 11 extension.)
 - ❌ Trusting `direction_bias` when `wcb_regime=NULL` in `signal_snapshots` — `wcb_regime` has been NULL since 2026-03-19 (regression, only 32/2171 rows ever populated). On BULLISH breadth days this caused `direction_bias=BEARISH` producing BUY_PE on BULL_FVG. Do not trade on `direction_bias` until TD-035 is fixed and `wcb_regime` is populated. (Session 11 extension live session.)
+- ❌ Querying `market_spot_session_markers` for `open_0915` or `gap_open_pct` — the live column is `open_0915_ts`, not `open_0915`. Derive open price from `market_spot_snapshots` first tick in OPEN window. Derive gap from `hist_spot_bars_5m` prev_close. (Session 13 Rule 17.)
+- ❌ Running `merdian_start.py` on AWS — this script uses `creationflags=CREATE_NO_WINDOW` (Windows-only) and hardcoded Windows paths. It will hang or error on Linux. Session 13: caused a frozen SSM terminal requiring EC2 reboot. AWS uses `python3 gamma_engine_supervisor.py` or individual script launches.
+- ❌ Appending to a Windows batch file with `Add-Content` when there is an `exit /b` line — the appended line runs after `exit /b` and never executes. Always use string replacement to insert before the exit line. (Session 13 bat file patch.)
 
 ---
 
@@ -167,35 +171,35 @@ When generating: assemble from the markdown layer. The markdown is the source. T
 C:\GammaEnginePython\                 (Windows local, PRIMARY LIVE)
 /home/ssm-user/meridian-engine\        (AWS, SHADOW — git pull only)
 
-  CLAUDE.md                           ← THIS FILE — root entry point
-  *.py                                ← engine code
-  .env                                ← secrets, never commit
+  CLAUDE.md                           <- THIS FILE — root entry point
+  *.py                                <- engine code
+  .env                                <- secrets, never commit
 
   docs/
     operational/
       MERDIAN_Change_Protocol_v1.md
-      MERDIAN_Documentation_Protocol_v3.md   ← supersedes v2
+      MERDIAN_Documentation_Protocol_v3.md   <- supersedes v2
       MERDIAN_Session_Management_v1.md
-      MERDIAN_Testing_Protocol_v1.md         ← consolidated preflight/canary/replay
+      MERDIAN_Testing_Protocol_v1.md         <- consolidated preflight/canary/replay
 
     registers/
-      merdian_reference.json          ← machine-queryable inventory (authoritative on op state)
+      merdian_reference.json          <- machine-queryable inventory (authoritative on op state)
       MERDIAN_Enhancement_Register_v<n>.md
-      tech_debt.md                    ← persistent middle-tier issues
+      tech_debt.md                    <- persistent middle-tier issues
 
-    runbooks/                         ← step-by-step procedures for recurring ops
-      README.md                       ← index of all runbooks
-      RUNBOOK_TEMPLATE.md             ← template for new runbooks
+    runbooks/                         <- step-by-step procedures for recurring ops
+      README.md                       <- index of all runbooks
+      RUNBOOK_TEMPLATE.md             <- template for new runbooks
       runbook_update_dhan_token.md
       runbook_update_kite_flow.md
-      runbook_*.md                    ← grows as recurring ops surface
+      runbook_*.md                    <- grows as recurring ops surface
 
     session_notes/
-      CURRENT.md                      ← live session resume — updated EVERY session
-      session_log.md                  ← append-only one-line per session
-      YYYYMMDD_<topic>.md             ← per-session detail when warranted
+      CURRENT.md                      <- live session resume -- updated EVERY session
+      session_log.md                  <- append-only one-line per session
+      YYYYMMDD_<topic>.md             <- per-session detail when warranted
 
-    decisions/                        ← optional ADRs (one per major decision)
+    decisions/                        <- optional ADRs (one per major decision)
       ADR-001-options-only.md
       ADR-002-5m-for-ict.md
       ...
@@ -204,10 +208,10 @@ C:\GammaEnginePython\                 (Windows local, PRIMARY LIVE)
       MERDIAN_Experiment_Compendium_v<n>.md
       merdian_all_experiment_results.md
 
-    masters/                          ← .docx PUBLISHED ARTIFACTS (generated on demand)
+    masters/                          <- .docx PUBLISHED ARTIFACTS (generated on demand)
       MERDIAN_Master_V<n>.docx
 
-    appendices/                       ← .docx PUBLISHED ARTIFACTS (generated on demand)
+    appendices/                       <- .docx PUBLISHED ARTIFACTS (generated on demand)
       MERDIAN_Appendix_V<n>.docx
 ```
 
@@ -242,6 +246,7 @@ These are decisions made and validated. Re-litigating them wastes session time.
 - ✅ OpenItems Register closed (2026-04-15)
 - ✅ D-06 signal-consumer concerns (resolved earlier; do not rebuild regret log)
 - ✅ **Compendium replicates** (Exp 15 re-run 2026-04-27, Session 10) — BEAR_OB ~92% WR, BULL_OB ~84%, MEDIUM context ~77%, combined +193.4% return. The system has real, durable, year-validated edge. Earlier Session 10 wave-1 conclusion that "compendium does not replicate" was **measurement error in Exp 31/32**, explicitly retracted. Do not re-run Exp 31/Exp 32 as evidence of edge absence.
+- ✅ **F1 (ICT zone time_zone classification) SHIPPED** (2026-04-27, Session 10) — `fix_ict_time_zone_utc.py` converted UTC→IST before time-bucket assignment. Verified live.
 - ✅ **F2 (1H OB threshold tuning) REJECTED** (Exp 29 v2, 2026-04-26, Session 10) — full-year sweep over {0.15, 0.20, 0.25, 0.30, 0.40}% confirmed current 0.40% maximises WR for NIFTY; SENSEX peaks at 0.30%. No threshold cleared the 70%/N≥30 ship bar. Threshold is not the lever for surfacing more MEDIUM-context candidates.
 - ✅ **Path A retracted** (Session 10) — the framing "stop pretending ICT is the edge" was wrong. Compendium replicates. Do not re-introduce Path A under different names.
 - ✅ **Naked intraday PDH/PDL sweeps have no edge** (Exp 34, Session 11) — WR=11.1% (PDH), 1.8% (PDL) at T+60m. ~0.73 events/session — normal mean reversion, not institutional. Do not retest without structural change.
@@ -251,10 +256,16 @@ These are decisions made and validated. Re-litigating them wastes session time.
 - ✅ **NIFTY BULL_OB AFTERNOON + PO3_BULLISH = 50% WR** (Exp 40, Session 11) — no edge on NIFTY for this signal. SENSEX only (73.7%). Do not route NIFTY here.
 - ✅ **Current-week PE beats next-week PE for PDH DTE<3** (Exp 41, Session 11) — NIFTY mean +46% vs +20%, SENSEX mean +125% vs +68%. Current-week captures gamma explosion. Settled.
 - ✅ **Entry at T+0 (rejection bar close) always beats waiting** (Exp 41, Session 11) — waiting 1 bar hurts across all edges and both symbols. Never wait.
-- ✅ **TD-017 CLOSED** (Session 11 extension, 2026-04-28) — `build_ict_htf_zones.py` now scheduled daily 08:45 IST via `MERDIAN_ICT_HTF_Zones_0845` Task Scheduler. ENH-71 instrumented. Do not reopen.
-- ✅ **TD-030 CLOSED** (Session 11 extension, 2026-04-28) — `recheck_breached_zones()` added; runs after OHLCV load each day, marks mitigated ACTIVE zones BREACHED. 72 zones now written per run (was 35). Do not reopen.
+- ✅ **TD-017 CLOSED** (Session 11 extension, 2026-04-28) — `build_ict_htf_zones.py` now scheduled daily 08:45 IST via `MERDIAN_ICT_HTF_Zones_0845` Task Scheduler. ENH-71 instrumented. Hourly zones (`--timeframe H`) added to bat file Session 13.
+- ✅ **TD-030 CLOSED** (Session 11 extension, 2026-04-28) — `recheck_breached_zones()` added; runs AFTER all upserts (ordering bug fixed Session 13). 72 zones now written per run (was 35). Do not reopen.
 - ✅ **TD-031 CLOSED** (Session 11 extension, 2026-04-28) — OB/FVG patterns written unconditionally; breach filter retained for PDH/PDL proximity only. D BEAR_OB will appear ACTIVE at 08:45 IST on next down day regardless of overnight recovery. Do not reopen.
 - ✅ **TD-032 dashboard opt_type wrong framing SETTLED** — root cause is NOT 'dashboard hardcodes direction off pattern_type'. Root cause IS `build()` read `opt_type` from `ict_zones.opt_type` (ICT zone direction BEFORE ENH-35 gate overrides). Patched Session 11 extension. Pending 10-cycle live verification to formally close. Do not re-introduce the pattern-hardcoding framing.
+- ✅ **ENH-75 SHIPPED** (Session 13, 2026-04-29) — PO3 session bias detection live. `detect_po3_session_bias.py` running Mon-Fri 10:05 IST. `po3_session_state` table live. `signal_snapshots.po3_session_bias` column populated. Do not reopen design.
+- ✅ **ENH-76 SHIPPED** (Session 13, 2026-04-29) — BEAR_OB MIDDAY 11:30-13:30 IST gated on PO3_BEARISH. 88.2% WR (Exp 40). Wired in `build_trade_signal_local.py`.
+- ✅ **ENH-77 SHIPPED** (Session 13, 2026-04-29) — BULL_OB AFTERNOON SENSEX 13:30-15:00 IST gated on PO3_BULLISH. 73.7% WR (Exp 40). NIFTY hard skip (50% WR). Wired.
+- ✅ **Exp 42 DONE** (Session 13, 2026-04-29) — BEAR_OB MIDDAY occurs in 72.5% of all sessions. Unfiltered WR=48%, EV negative. PO3_BEARISH is the rare gate (~7% of sessions). Composition rate question answered. Do not re-run.
+- ✅ **ENH-85 direction lock REVERTED** (Session 13) — PO3 session lock patch built and reverted. Needs Exp 43 (Signal Direction Stability) before re-implementing. Do NOT re-apply ENH-85 without experiment backing. `build_trade_signal_local.pre_enh85.bak` on disk.
+- ✅ **Breach detection ordering FIXED** (Session 13) — `recheck_breached_zones()` now runs after all `upsert_zones()` calls. Upsert no longer overwrites BREACHED→ACTIVE. Fixed permanently.
 
 If any of these need to change, that is itself an architectural session — write a new ADR.
 
@@ -327,4 +338,17 @@ Three operational findings from the Session 11 extension (engineering + live ses
 
 ---
 
-*CLAUDE.md v1.7 — 2026-04-28 (Session 11 extension close). Added: (a) four new anti-patterns — BOM in patch scripts, CRLF write_text hazard, EXIT AT UTC display bug, wcb_regime NULL direction_bias warning; (b) five new settled-decisions — TD-017/030/031 CLOSED, TD-032 framing settled; (c) Session 11 extension engineering discoveries section documenting live session findings (first gate open, wcb regression, exit timer bug, DTE bug). v1.6 (Session 11 research close) added Rules 14/15/16 and B1-B4 engineering discoveries. v1.5 added compendium-replicates + F2-rejected + anti-patterns. v1.4 corrected Local Python path. v1.3 Rule 13. v1.2 Rule 12. v1.1 Rule 11.* Added: (a) Rules 14/15/16 — ret_30m scale (÷100), Supabase 1000-row hard cap, TD-029 timezone workaround; (b) four new anti-patterns matching B1/B2/B3/B4 bugs; (c) eight new settled-decisions entries covering Session 11 experiment conclusions; (d) Session 11 engineering discoveries section documenting B1-B4 for future sessions. v1.5 (2026-04-27) added compendium-replicates, F2-rejected, Path-A-retracted decisions + two anti-patterns + Kite-auth common-ops row. v1.4 corrected Local Python path. v1.3 Rule 13 contamination registry. v1.2 Rule 12 doc-sync. v1.1 Rule 11 runbooks.*
+## Session 13 engineering discoveries (2026-04-29) — codified as Rule 17
+
+**Bug B5 → Rule 17:** `market_spot_session_markers.open_0915` does not exist in production. Live column is `open_0915_ts`. Never query this table for open price. Use `market_spot_snapshots` first tick instead.
+
+**Operational findings (2026-04-29):**
+- **ws_feed_zerodha.py not in any startup sequence** — `market_ticks` table empty all session → breadth ingest returns 0 ticks → breadth = 0 / stale all day. Fixed: `MERDIAN_WS_Feed_0900` task registered.
+- **merdian_start.py is LOCAL-ONLY** — contains `creationflags=CREATE_NO_WINDOW` (Windows Win32 API) and hardcoded `C:\GammaEnginePython` base path. Running on AWS causes terminal hang. Requires EC2 reboot to recover. Do not run on AWS.
+- **bat file `Add-Content` pitfall** — appending lines after `exit /b` with `Add-Content` means they never execute. Always replace the exit line, don't append after it.
+- **Pine `bar_index - look_back` goes negative** — on daily charts, zones >252 trading days old produce negative bar indices, silently killing all drawings. Fix: `math.max(0, bar_index - look_back)`.
+- **Pine `draw_zone` forward-reference** — `is_nifty`/`is_sensex` must be declared BEFORE `draw_zone` function, not after. Pine evaluates top-to-bottom; forward references fail at runtime.
+
+---
+
+*CLAUDE.md v1.8 — 2026-04-29 (Session 13 close). Added: Rule 17 (market_spot_session_markers column mismatch); three new anti-patterns (querying market_spot_session_markers, running merdian_start.py on AWS, bat file Add-Content pitfall); five new settled-decisions (ENH-75/76/77 SHIPPED, Exp 42 done, ENH-85 reverted, breach detection ordering fixed); Session 13 engineering discoveries section (B5, ws_feed omission, AWS start.py hazard, bat pitfall, Pine bar_index negative, Pine forward-reference). v1.7 (Session 11 extension) added four new anti-patterns, five new settled-decisions, and live-session findings. v1.6 added Rules 14/15/16 and B1-B4 discoveries. v1.5 added compendium-replicates decisions. v1.4 corrected Local Python path. v1.3 Rule 13. v1.2 Rule 12. v1.1 Rule 11.*

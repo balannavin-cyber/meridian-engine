@@ -823,4 +823,70 @@ gate's OUTPUT (NEUTRAL/DO_NOTHING) as if it were the gate's INPUT. See TD-020
 ---
 
 
+
+---
+
+### TD-040 — `recheck_breached_zones()` ran before `upsert_zones()` — BREACHED status overwritten on every rebuild
+
+| | |
+|---|---|
+| **Severity** | ~~S2~~ → CLOSED Session 13 (2026-04-29) |
+| **Discovered** | 2026-04-29 (Session 13 — may-09 BULL_OB 24,008 remained ACTIVE despite spot at 23,995) |
+| **Component** | `build_ict_htf_zones.py` `main()` function — ordering of `recheck_breached_zones()` vs `upsert_zones()` |
+| **Symptom** | BULL_OB zones not marked BREACHED despite spot trading below zone_low. may-09 BULL_OB (24,008–24,411) remained ACTIVE after apr-28 low of 23,955. |
+| **Root cause** | `recheck_breached_zones()` was called BEFORE `upsert_zones()`. The upsert writes all zone dicts with `status='ACTIVE'` hardcoded. On every rebuild: (1) recheck marks zone BREACHED, (2) upsert overwrites BREACHED → ACTIVE. Net effect: zone is never persistently BREACHED. |
+| **Fix applied** | Moved `recheck_breached_zones()` call to AFTER all `upsert_zones()` calls for each symbol in `main()`. Patch: `patch_breach_recheck_order.py`. |
+| **Validation** | After fix: may-09 BULL_OB → BREACHED, aug-08 BULL_OB → BREACHED, apr-24 BULL_OB → BREACHED. All three correctly marked on first run post-patch. |
+| **Closed** | 2026-04-29 (Session 13) |
+
+---
+
+### TD-041 — `ws_feed_zerodha.py` not started by any supervisor or scheduled task
+
+| | |
+|---|---|
+| **Severity** | S2 |
+| **Discovered** | 2026-04-29 (Session 13 — breadth = 0 all day; `market_ticks` table empty) |
+| **Component** | `ws_feed_zerodha.py`, `market_ticks` table, `ingest_breadth_from_ticks.py` |
+| **Symptom** | `ingest_breadth_from_ticks.py` returned SKIPPED_NO_INPUT all session (68 consecutive violations). `market_ticks` table had 0 rows for today. Breadth ingest reads EQ ticks from `market_ticks`; no ticks = 0 coverage = stale breadth_regime read from yesterday. Signal engine showed `breadth_regime=BEARISH` while market was clearly BULLISH (+1.5% day). |
+| **Root cause** | `ws_feed_zerodha.py` is the process that subscribes to Zerodha WS and writes EQ ticks to `market_ticks`. It was not in `merdian_start.py`, `gamma_engine_supervisor.py`, or any Task Scheduler task. `MERDIAN_Market_Tape_1M` task was Disabled. WS feed was never being started automatically. |
+| **Workaround** | Manual `python ws_feed_zerodha.py` launch (market hours only). |
+| **Fix applied** | Registered `MERDIAN_WS_Feed_0900` Task Scheduler task — Mon-Fri 09:00 IST, 8hr execution limit, logs to `logs/ws_feed_zerodha.log`. Launcher: `run_ws_feed_zerodha.bat`. |
+| **Validation** | Task registered and verified. First live run: tomorrow 09:00 IST. |
+| **Owner check-in** | 2026-04-29 |
+
+---
+
+### TD-042 — Pine `bar_index - look_back` goes negative on daily charts for old zones
+
+| | |
+|---|---|
+| **Severity** | ~~S2~~ → CLOSED Session 13 (2026-04-29) |
+| **Discovered** | 2026-04-29 (Session 13 — Pine zones blank on 1D and 15m TF) |
+| **Component** | `generate_pine_overlay.py` Pine template, `draw_zone` function |
+| **Symptom** | All zones blank on TradingView daily chart. Zones from >252 trading days ago produce `bar_index - look_back < 0`. Pine's `box.new()` silently fails on negative bar indices, aborting all subsequent drawings in the script. |
+| **Root cause** | Pine v6 `box.new(left=...)` requires `left >= 0`. `look_back` is computed as trading days since zone formation. On a daily chart, `bar_index ≈ 252`. A zone from 253+ days ago produces left = bar_index - 253 = -1. |
+| **Fix applied** | Added `int lft = math.max(0, bar_index - look_back)` in `draw_zone`. All `box.new` and `line.new` calls use `lft` not `bar_index - look_back`. Patch: `patch_enh46d_entry_band_pine_v2.py`. |
+| **Validation** | Zones rendering correctly on 1D, 15m, 1h charts post-patch. |
+| **Closed** | 2026-04-29 (Session 13) |
+
+---
+
+### TD-043 — Signal direction flip-flop intraday (ENH-55 `ret_session` crosses zero)
+
+| | |
+|---|---|
+| **Severity** | S2 |
+| **Discovered** | 2026-04-29 (Session 13 — BUY_CE at 13:10 IST between two BUY_PE signals on same day) |
+| **Component** | `build_trade_signal_local.py` ENH-55 momentum opposition block, `infer_direction_bias_v4()` |
+| **Symptom** | On 2026-04-29: 12:01 IST BUY_PE → 13:10 IST BUY_CE → 13:51 IST BUY_PE. Signal flips when spot briefly crosses the session open price — `ret_session` changes sign from negative to positive at spot=24,321 (above morning open ~24,095), triggering direction_bias=BULLISH and action=BUY_CE. Market structure was bearish at the time. |
+| **Root cause** | `infer_direction_bias_v4()` uses `ret_session` (current spot vs day open) as direction anchor. `ret_session` is noisy intraday — crosses zero whenever spot oscillates around the opening print. ENH-55 opposition block then fires or clears based on this sign. No persistence filter or hysteresis applied. Signal engine has no memory of prior cycle's direction. |
+| **Workaround** | Operator awareness. Cross-reference with market structure (zones, breadth) before acting on any signal. BUY_PE on a clearly bullish day should be filtered manually. |
+| **Proper fix** | Exp 43 (Signal Direction Stability) — empirical answer to: what stability criterion for `direction_bias` reduces spurious flips without missing genuine reversals? Options: persistence filter (N consecutive cycles), hysteresis (larger threshold to flip back), slower momentum anchor (ret_30m not ret_session), PO3 as soft confidence modifier. ENH-85 is the build target once Exp 43 concludes. |
+| **Blocked by** | Exp 43 (research first) |
+| **Owner check-in** | 2026-04-29 |
+
+---
+
+*MERDIAN tech_debt.md v2 — updated 2026-04-29 (Session 13: TD-040 CLOSED breach recheck order, TD-041 ws_feed task, TD-042 CLOSED Pine bar_index, TD-043 signal flip-flop).
 *MERDIAN tech_debt.md v1 — created concurrent with CLAUDE.md and Documentation Protocol v3. Update inline as items are added/closed; commit with `MERDIAN: [OPS] tech_debt — <action>`.*

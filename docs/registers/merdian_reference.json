@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v7",
+    "version": "v8",
     "generated": "2026-04-19",
     "sources": [
       "MERDIAN_Master_V18_v2 Section 15 (File Master, Table Master, Security IDs, AWS Runtime Files)",
@@ -12,17 +12,19 @@
       "MERDIAN_Appendix_Research_Sessions_4_5 (2026-04-17/18)  --  Experiments 17-27b + MTF OHLCV + hist_pattern_signals",
       "Session 2026-04-19 (C-08 breadth writer fix)",
       "Session 2026-04-19 (ENH renumber + OI migration to Enhancement Register)",
-      "Session 2026-04-28 (Session 12 -- ADR-002 market structure philosophy; ENH-75 through ENH-83 filed; MERDIAN_Enhancement_Register.md rewritten to unified v7+)"
+      "Session 2026-04-28 (Session 12 -- ADR-002 market structure philosophy; ENH-75 through ENH-83 filed; MERDIAN_Enhancement_Register.md rewritten to unified v7+)",
+      "Session 2026-04-29 (Session 13 -- ENH-75/76/77 SHIPPED; ENH-84/85/86 filed; Exp 43 filed; po3_session_state table; signal_snapshots.po3_session_bias column; MERDIAN_PO3_SessionBias_1005 + MERDIAN_WS_Feed_0900 tasks; breach detection ordering fix; Pine entry-band generator overhaul)"
     ],
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
     "update_cadence": "Update this file in the same session as any meaningful change to file status, table schema, or open item status. Commit to Git immediately after update.",
-    "last_updated": "2026-04-28T20:30:00+05:30",
-    "last_updated_by_session": "Session 12",
+    "last_updated": "2026-04-29T23:00:00+05:30",
+    "last_updated_by_session": "Session 13",
     "change_log": [
       "2026-04-26 (Session 9 wave 2): Added daemon + fix scripts; ENH-46-A shipped; TD-027 + TD-028 filed.",
       "2026-04-28 (Session 11): 11 experiments run (Exp 34-41B). 7 edges proven. Bugs B1-B3 fixed (is_pre_market absent, Supabase 1000-row cap, TD-029 TZ). New ENH-75 through ENH-79 filed. Session 11 findings added to research_findings. TD-029 through TD-037 (Session 10) added to open_items. Session 11 added to session_log.",
-      "2026-04-28 (Session 12): ADR-002 (market structure philosophy) authored -- 6 principles (P1 zones not points, P2 force not direction, P3 where sellers panic, P4 regime velocity, P5 local vs aggregate, P6 DTE force multiplier) + capital scaling roadmap (naked buying -> spreads -> defined-risk selling) + GEX weekly storage decision. ENH-80 (per-strike GEX time-series + zone bounds), ENH-81 (dealer flow simulator + regime velocity), ENH-82 (PINNED regime, blocked on Exp 23), ENH-83 (DTE-adjusted force multiplier, deferred Phase 1.5+) filed. MERDIAN_Enhancement_Register.md rewritten as single unified file covering ENH-01 through ENH-83. ADR-002 file created at docs/decisions/ADR-002-market-structure-philosophy.md. gex_strike_snapshots table proposed (ENH-80). gamma_metrics zone bound columns proposed (ENH-80)."
+      "2026-04-28 (Session 12): ADR-002 (market structure philosophy) authored -- 6 principles (P1 zones not points, P2 force not direction, P3 where sellers panic, P4 regime velocity, P5 local vs aggregate, P6 DTE force multiplier) + capital scaling roadmap (naked buying -> spreads -> defined-risk selling) + GEX weekly storage decision. ENH-80 (per-strike GEX time-series + zone bounds), ENH-81 (dealer flow simulator + regime velocity), ENH-82 (PINNED regime, blocked on Exp 23), ENH-83 (DTE-adjusted force multiplier, deferred Phase 1.5+) filed. MERDIAN_Enhancement_Register.md rewritten as single unified file covering ENH-01 through ENH-83. ADR-002 file created at docs/decisions/ADR-002-market-structure-philosophy.md. gex_strike_snapshots table proposed (ENH-80). gamma_metrics zone bound columns proposed (ENH-80).",
+      "2026-04-29 (Session 13): ENH-75 SHIPPED -- detect_po3_session_bias.py live, MERDIAN_PO3_SessionBias_1005 task (Mon-Fri 10:05 IST), po3_session_state table NEW, signal_snapshots.po3_session_bias column NEW. ENH-76 SHIPPED -- BEAR_OB MIDDAY gate on PO3_BEARISH wired in build_trade_signal_local.py. ENH-77 SHIPPED -- BULL_OB AFTERNOON SENSEX gate on PO3_BULLISH wired. Exp 42 DONE -- BEAR_OB MIDDAY 72.5% session frequency, PO3 gate bottleneck confirmed. Pine generator overhauled: entry-band clipping (80pt/250pt), color scheme (BULL_OB dark green, BEAR_OB dark crimson, BULL_FVG lime, BEAR_FVG salmon), TradingView settings toggles, bar_index negative guard, symbol detection reordered. Breach detection ordering bug FIXED (recheck after upsert). MERDIAN_WS_Feed_0900 task registered. Hourly zones added to bat file. Rule 17 added (market_spot_session_markers column mismatch). TD-040/042 CLOSED. TD-041/043 filed. ENH-84/85/86 and Exp 43 filed."
     ]
   },
   "environments": {
@@ -1040,6 +1042,39 @@
       "status": "CREATED Session 12 (2026-04-28). Supersedes no prior ADR on this topic. Companion to ADR-001.",
       "content_summary": "Six market structure principles (P1 zones not points, P2 force not direction, P3 where sellers panic, P4 regime velocity, P5 local vs aggregate, P6 DTE force multiplier). Capital scaling roadmap (Phase 1 naked buying -> Phase 2 spreads -> Phase 3 defined-risk selling). GEX weekly time-series storage decision. Build sequencing ENH-75->ENH-80->ENH-81->Exp23->ENH-82->ENH-83.",
       "open_items": []
+    },
+    "detect_po3_session_bias.py": {
+      "local_path": "C:\\GammaEnginePython\\detect_po3_session_bias.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_5m (prior session PDH/PDL/prev_close)",
+        "market_spot_snapshots (today OPEN-window ticks 09:15-10:00 IST)"
+      ],
+      "writes": [
+        "po3_session_state (UPSERT per symbol per trade_date)",
+        "script_execution_log"
+      ],
+      "call_signature": "python detect_po3_session_bias.py [--dry-run] [--symbol NIFTY|SENSEX]",
+      "cadence": "MERDIAN_PO3_SessionBias_1005 task -- Mon-Fri 10:05 IST",
+      "status": "ACTIVE -- ENH-75 SHIPPED 2026-04-29",
+      "open_items": []
+    },
+    "ws_feed_zerodha.py": {
+      "local_path": "C:\\GammaEnginePython\\ws_feed_zerodha.py",
+      "aws_path": "/home/ssm-user/meridian-engine/ws_feed_zerodha.py",
+      "reads": [
+        "Zerodha WebSocket (EQ ticks for breadth universe)",
+        "active_breadth_universe_nse (instrument tokens)"
+      ],
+      "writes": [
+        "market_ticks (EQ spot ticks, long-running)"
+      ],
+      "call_signature": "python ws_feed_zerodha.py",
+      "cadence": "MERDIAN_WS_Feed_0900 task -- Mon-Fri 09:00 IST, 8hr execution limit",
+      "status": "ACTIVE -- task registered Session 13. Previously not started by any process -- market_ticks was empty all sessions.",
+      "open_items": [
+        "TD-041 (was not started before Session 13 fix)"
+      ]
     }
   },
   "tables": {
@@ -1231,7 +1266,8 @@
           "ict_mtf_context"
         ],
         "alter_table": "ALTER TABLE public.signal_snapshots ADD COLUMN IF NOT EXISTS ict_pattern text, ADD COLUMN IF NOT EXISTS ict_tier text, ADD COLUMN IF NOT EXISTS ict_size_mult numeric, ADD COLUMN IF NOT EXISTS ict_mtf_context text;"
-      }
+      },
+      "notes": "po3_session_bias column added Session 13 (ENH-75)."
     },
     "signal_regret_log": {
       "written_by": [
@@ -1624,6 +1660,32 @@
       "open_items": [
         "ENH-80"
       ]
+    },
+    "po3_session_state": {
+      "schema": "public",
+      "status": "ACTIVE -- NEW Session 13",
+      "written_by": [
+        "detect_po3_session_bias.py"
+      ],
+      "read_by": [
+        "build_trade_signal_local.py (_get_po3_bias())"
+      ],
+      "key_columns": [
+        "id (uuid PK)",
+        "trade_date",
+        "symbol",
+        "po3_session_bias (PO3_BEARISH|PO3_BULLISH|PO3_NONE)",
+        "pdh_used",
+        "pdl_used",
+        "gap_open_pct_used",
+        "sweep_depth_pct",
+        "reversal_bar_idx",
+        "po3_sweep_time",
+        "skip_reason",
+        "detection_version"
+      ],
+      "unique_constraint": "symbol + trade_date",
+      "notes": "One row per symbol per trading day. Populated at 10:05 IST by MERDIAN_PO3_SessionBias_1005 task. ENH-75."
     }
   },
   "security_ids": {
@@ -2052,7 +2114,12 @@
     "bar_ts_tz_workaround": "hist_spot_bars_5m and hist_spot_bars_1m bar_ts is stored as IST time labeled as +00:00 (incorrect UTC label). Use replace(tzinfo=None) to strip the incorrect timezone label before comparing with actual IST times. Do NOT use astimezone(IST) -- it will shift by 5h30m. RULE 16.",
     "no_is_pre_market_column": "hist_spot_bars_5m has no is_pre_market column. Filter pre-market bars by time: bar_ts.time() < time(9,15). Do not query for is_pre_market -- column does not exist. Confirmed Session 11.",
     "adr_002_market_structure_philosophy": "Six architectural principles govern all gamma engine design decisions. P1: markets are zones not points -- every structural feature has a width, not just a level. P2: direction is minimum viable information, force (dealer Cr flow) is the actual edge. P3: know where sellers panic -- the flip zone is where short-gamma writers face cascading hedge requirements. P4: the regime has velocity not just position -- max gamma migration and GEX velocity are signals. P5: local context beats aggregate signal -- local GEX cluster around spot may be positive even when net GEX is negative (PINNED regime, Exp 23 required to define threshold). P6: DTE is a force multiplier not a risk flag -- same GEX at DTE=1 vs DTE=5 is categorically different. See docs/decisions/ADR-002-market-structure-philosophy.md. Established Session 12 (2026-04-28).",
-    "capital_scaling_roadmap": "MERDIAN strategy evolves in three phases: Phase 1 (current) = directional naked options buying, capacity ceiling ~25,000 lots before market impact. Phase 2 = debit spreads when approaching capacity ceiling. Phase 3 = defined-risk selling (credit spreads, NOT naked shorts) -- requires full P1-P5 ADR-002 implementation first. Do not attempt Phase 3 until gex_strike_snapshots is live and Experiment 23 is validated. Established Session 12 (2026-04-28)."
+    "capital_scaling_roadmap": "MERDIAN strategy evolves in three phases: Phase 1 (current) = directional naked options buying, capacity ceiling ~25,000 lots before market impact. Phase 2 = debit spreads when approaching capacity ceiling. Phase 3 = defined-risk selling (credit spreads, NOT naked shorts) -- requires full P1-P5 ADR-002 implementation first. Do not attempt Phase 3 until gex_strike_snapshots is live and Experiment 23 is validated. Established Session 12 (2026-04-28).",
+    "rule_17_market_spot_session_markers_column_mismatch": {
+      "rule": "market_spot_session_markers.open_0915 does not exist in production. Live column is open_0915_ts. Never query this table for open price or gap data. Derive open_0915 from market_spot_snapshots first OPEN-window tick. Derive gap_open_pct from hist_spot_bars_5m prev_close.",
+      "added": "2026-04-29 (Session 13)",
+      "evidence": "detect_po3_session_bias.py received HTTP 400 on open_0915 query -- column does not exist."
+    }
   },
   "session_resume_template": {
     "description": "Paste this structure at the start of every new dev session, filled in for the specific goal.",
@@ -2344,6 +2411,18 @@
       "signal_hierarchy": "E7 > E4 > E5 > E3 > E1/E2 (as standalone). Max 1 trade per symbol per session.",
       "kelly_cap_rule": "Cap all Session 11 Kelly fractions at 5-8% until N=30 live events per edge.",
       "ret_30m_scale_warning": "ret_30m in hist_pattern_signals is percentage points (0.1351 = 0.1351%). Divide by 100 before multiplying by spot. Confirmed Session 11 Exp 41B."
+    },
+    "exp_42_composition_rate": {
+      "experiment": "Exp 42",
+      "date": "2026-04-29 (Session 13)",
+      "question": "How often does a BEAR_OB appear in MIDDAY sessions? What is the unfiltered WR?",
+      "findings": {
+        "BEAR_OB_MIDDAY_session_frequency": "72.5% (169/233 NIFTY, 166/229 SENSEX)",
+        "unfiltered_WR": "48.1% NIFTY, 48.7% SENSEX",
+        "unfiltered_EV": "-1.8 pts NIFTY, -6.4 pts SENSEX",
+        "implication": "Pattern is abundant (72.5% of sessions). PO3_BEARISH is the rare gate (~7% of sessions). ENH-76 design confirmed correct -- the session bias is the bottleneck, not the pattern."
+      },
+      "verdict": "DONE -- composition rate confirmed. ENH-76 gate architecture correct."
     }
   }
 }

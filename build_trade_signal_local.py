@@ -327,6 +327,29 @@ def derive_entry_quality(confidence: float, direction_bias: str, gamma_regime: s
 # -----------------------------
 # Scoring
 # -----------------------------
+
+# -- ENH-75: PO3 session bias reader -----------------------------------------
+def _get_po3_bias(sb, symbol: str, today_ist_str: str) -> str:
+    """Read po3_session_bias from po3_session_state for today.
+    Returns PO3_BEARISH | PO3_BULLISH | PO3_NONE.
+    Safe default PO3_NONE on any error or missing row (pre-10:05 IST).
+    """
+    try:
+        rows = (
+            sb.table("po3_session_state")
+              .select("po3_session_bias")
+              .eq("symbol", symbol)
+              .eq("trade_date", today_ist_str)
+              .execute()
+              .data
+        )
+        if rows:
+            return rows[0].get("po3_session_bias", "PO3_NONE") or "PO3_NONE"
+    except Exception:
+        pass
+    return "PO3_NONE"
+# -- end ENH-75 helper --------------------------------------------------------
+
 def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
     """Build the signal row. Returns (row, flags) tuple where flags
     tracks subsystem degradation (ict_failed, enh06_failed) for
@@ -862,6 +885,70 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
         # Surface in completion notes to track capital subsystem health.
         flags["enh06_failed"] = True
         cautions.append(f"ENH-06: Capital check skipped ({_e06})")
+
+    # ENH-75: PO3 session bias -- read from po3_session_state (written at 10:05 IST)
+    out["po3_session_bias"] = _get_po3_bias(
+        SUPABASE, symbol, str(datetime.now().date())
+    )
+    # ── ENH-76: BEAR_OB MIDDAY gate on PO3_BEARISH ───────────────────────────
+    # Must run AFTER ICT enrichment (out["ict_pattern"] populated) and
+    # AFTER out["po3_session_bias"] populated by _get_po3_bias().
+    # Window: 11:30-13:30 IST
+    # Evidence: Exp 40 -- BEAR_OB MIDDAY + PO3_BEARISH = 88.2% WR (N=17)
+    #           BEAR_OB MIDDAY + other PO3 = 33-50% WR -- block
+    # ── ENH-77: BULL_OB AFTERNOON gate on PO3_BULLISH (SENSEX only) ──────────
+    # Window: 13:30-15:00 IST
+    # Evidence: Exp 40 -- SENSEX 73.7% WR (N=19). NIFTY 50% hard skip always.
+    try:
+        import dateutil.parser as _dp76
+        from datetime import timezone as _tz76
+        _ts76      = _dp76.parse(out.get("ts", "")).astimezone(_tz76.utc)
+        _hh        = _ts76.hour + 5 + (1 if _ts76.minute >= 30 else 0)
+        _mm        = (_ts76.minute + 30) % 60
+        _tot_mins  = _hh * 60 + _mm
+        _ict76     = out.get("ict_pattern", "NONE")
+        _po3_76    = out.get("po3_session_bias", "PO3_NONE")
+
+        # ENH-76
+        _in_midday = (11 * 60 + 30) <= _tot_mins < (13 * 60 + 30)
+        if _in_midday and _ict76 == "BEAR_OB" and action == "BUY_PE":
+            if _po3_76 != "PO3_BEARISH":
+                action        = "DO_NOTHING"
+                trade_allowed = False
+                cautions.append(
+                    f"ENH-76: BEAR_OB MIDDAY blocked -- "
+                    f"po3_session_bias={_po3_76} (requires PO3_BEARISH)"
+                )
+            else:
+                cautions.append(
+                    "ENH-76: BEAR_OB MIDDAY CONFIRMED -- "
+                    "po3_session_bias=PO3_BEARISH (88.2% WR, Exp 40)"
+                )
+
+        # ENH-77
+        _in_aft = (13 * 60 + 30) <= _tot_mins < (15 * 60 + 0)
+        if _in_aft and _ict76 == "BULL_OB" and action == "BUY_CE":
+            if symbol == "NIFTY":
+                action        = "DO_NOTHING"
+                trade_allowed = False
+                cautions.append(
+                    "ENH-77: BULL_OB AFTERNOON NIFTY hard skip -- 50% WR (Exp 40)"
+                )
+            elif symbol == "SENSEX":
+                if _po3_76 != "PO3_BULLISH":
+                    action        = "DO_NOTHING"
+                    trade_allowed = False
+                    cautions.append(
+                        f"ENH-77: BULL_OB AFTERNOON SENSEX blocked -- "
+                        f"po3_session_bias={_po3_76} (requires PO3_BULLISH)"
+                    )
+                else:
+                    cautions.append(
+                        "ENH-77: BULL_OB AFTERNOON SENSEX CONFIRMED -- "
+                        "po3_session_bias=PO3_BULLISH (73.7% WR, Exp 40)"
+                    )
+    except Exception as _e7677:
+        cautions.append(f"ENH-76/77: time gate skipped ({_e7677})")
 
     return out, flags
 

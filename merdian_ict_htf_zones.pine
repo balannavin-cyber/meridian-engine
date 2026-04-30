@@ -1,102 +1,205 @@
+// MERDIAN ICT HTF Zones -- PROXIMITY TIER SYSTEM
+// AUTO-GENERATED 2026-04-29 -- DO NOT EDIT MANUALLY
+// T1=D zones always + W within 2% | T2=W 2-5% | T3=W >5% ghost no-label
+// Total: 79 zones (NIFTY 40 + SENSEX 39)
+
 //@version=6
-// MERDIAN ICT HTF Zones — with zone behaviour labels
-// Generated: 2026-04-27 07:35 IST | Pre-open Session 10
-// Data source: ict_htf_zones (status='ACTIVE'), 8 zones total (4 NIFTY + 4 SENSEX)
-// Context: NIFTY closed 2026-04-24 at 23,897.95 (sat below all W structural zones at week's end).
-//          SENSEX closed 2026-04-24 at 76,664.21 (sat above W BULL_FVG 73,164-75,868, below D PDL 76,563).
-//          Last week's W BULL_FVG zones (NIFTY 24,074-24,241, SENSEX 77,636-78,203) were BREACHED on Friday's selloff.
-//          Both marked BREACHED 2026-04-27 — no longer providing MTF context.
-//          Realistic MTF context for today: D PDL bounce = HIGH context; W zones distant — VERY_HIGH unreachable from current spot.
-indicator("MERDIAN ICT HTF Zones", overlay=true, max_boxes_count=100, max_labels_count=100)
+indicator("MERDIAN ICT HTF Zones (2026-04-29)", overlay=true, max_boxes_count=250, max_lines_count=250, max_labels_count=250)
 
-// ── Inputs ──────────────────────────────────────────────────────────────────
-show_nifty   = input.bool(true,  "Show NIFTY Zones")
-show_sensex  = input.bool(false, "Show SENSEX Zones")
-show_bear    = input.bool(true,  "Show Supply Zones (above price)")
-show_bull    = input.bool(true,  "Show Demand Zones (below price)")
-zone_extend  = input.int(50,     "Extend zones right (bars)", minval=10, maxval=500)
-show_labels  = input.bool(true,  "Show zone labels")
-verbose_lbl  = input.bool(true,  "Show behaviour hint in label")
+// ── Color legend ─────────────────────────────────────────────────────────────
+// BULL_OB   solid green   (high reliability, Exp 35C validated ~88% WR)
+// BULL_FVG  lime green    (lower reliability than OB, gap-fill bias)
+// BEAR_OB   dark crimson  (high reliability, Exp 35C validated ~88% WR)
+// BEAR_FVG  salmon/rose   (lower reliability than OB, gap-fill bias)
+// PDH/PDL   yellow (D) / orange (W)
 
-// ── Colors ───────────────────────────────────────────────────────────────────
-col_bear_ob  = input.color(color.new(color.red,    70), "Weekly BEAR_OB (Supply OB)")
-col_bear_pdh = input.color(color.new(color.orange, 75), "Weekly PDH (Prior High)")
-col_bull_ob  = input.color(color.new(color.green,  70), "Weekly BULL_OB / FVG (Demand)")
-col_bull_pdl = input.color(color.new(color.teal,   75), "Weekly PDL (Prior Low)")
-col_daily_ob = input.color(color.new(color.blue,   65), "Daily OB (Intraday key)")
-col_daily_pd = input.color(color.new(color.purple, 75), "Daily PDH/PDL")
+// ── T1: full opacity (D zones always + W within 2% of spot) ──────────────────
+c_bull_ob_t1    = color.new(#1B8C3E,  45)   // solid green
+c_bull_fvg_t1   = color.new(#7EC85A,  50)   // lime green
+c_bear_ob_t1    = color.new(#8B0000,  40)   // dark crimson
+c_bear_fvg_t1   = color.new(#E05555,  52)   // salmon red
+c_pdh_d_t1      = color.new(color.yellow, 52)
+c_pdl_d_t1      = color.new(color.yellow, 52)
+c_pdh_w_t1      = color.new(color.orange, 62)
+c_pdl_w_t1      = color.new(color.orange, 62)
+c_bull_ob_t1_l  = color.new(#1B8C3E,   5)
+c_bull_fvg_t1_l = color.new(#7EC85A,   8)
+c_bear_ob_t1_l  = color.new(#8B0000,   5)
+c_bear_fvg_t1_l = color.new(#E05555,   8)
+c_pdh_d_t1_l    = color.new(color.yellow,  8)
+c_pdl_d_t1_l    = color.new(color.yellow,  8)
+c_pdh_w_t1_l    = color.new(color.orange, 18)
+c_pdl_w_t1_l    = color.new(color.orange, 18)
 
-// ── Zone drawing ─────────────────────────────────────────────────────────────
-drawZone(hi, lo, fill_col, border_col, short_lbl, hint) =>
-    box.new(bar_index - 200, hi, bar_index + zone_extend, lo, border_color=border_col, border_width=1, bgcolor=fill_col)
-    if show_labels
-        full_lbl = verbose_lbl ? short_lbl + "  |  " + hint : short_lbl
-        label.new(bar_index, math.avg(hi, lo), full_lbl, style=label.style_none, textcolor=border_col, size=size.small)
+// ── T2: medium opacity (W zones 2-5% from spot) ──────────────────────────────
+c_bull_ob_t2    = color.new(#1B8C3E,  72)
+c_bull_fvg_t2   = color.new(#7EC85A,  75)
+c_bear_ob_t2    = color.new(#8B0000,  68)
+c_bear_fvg_t2   = color.new(#E05555,  72)
+c_pdh_d_t2      = color.new(color.yellow, 80)
+c_pdl_d_t2      = color.new(color.yellow, 80)
+c_pdh_w_t2      = color.new(color.orange, 84)
+c_pdl_w_t2      = color.new(color.orange, 84)
+c_bull_ob_t2_l  = color.new(#1B8C3E,  35)
+c_bull_fvg_t2_l = color.new(#7EC85A,  40)
+c_bear_ob_t2_l  = color.new(#8B0000,  30)
+c_bear_fvg_t2_l = color.new(#E05555,  38)
+c_pdh_d_t2_l    = color.new(color.yellow, 42)
+c_pdl_d_t2_l    = color.new(color.yellow, 42)
+c_pdh_w_t2_l    = color.new(color.orange, 52)
+c_pdl_w_t2_l    = color.new(color.orange, 52)
 
+// ── T3: ghost (>5% from spot, no labels) ─────────────────────────────────────
+c_bull_ob_t3    = color.new(#1B8C3E,  93)
+c_bull_fvg_t3   = color.new(#7EC85A,  93)
+c_bear_ob_t3    = color.new(#8B0000,  91)
+c_bear_fvg_t3   = color.new(#E05555,  92)
+c_pdh_d_t3      = color.new(color.yellow, 93)
+c_pdl_d_t3      = color.new(color.yellow, 93)
+c_pdh_w_t3      = color.new(color.orange, 94)
+c_pdl_w_t3      = color.new(color.orange, 94)
+c_bull_ob_t3_l  = color.new(#1B8C3E,  78)
+c_bull_fvg_t3_l = color.new(#7EC85A,  78)
+c_bear_ob_t3_l  = color.new(#8B0000,  75)
+c_bear_fvg_t3_l = color.new(#E05555,  78)
+c_pdh_d_t3_l    = color.new(color.yellow, 78)
+c_pdl_d_t3_l    = color.new(color.yellow, 78)
+c_pdh_w_t3_l    = color.new(color.orange, 80)
+c_pdl_w_t3_l    = color.new(color.orange, 80)
+
+// ── SYMBOL DETECTION (must precede draw_zone) ────────────────────────────────
+is_nifty  = str.contains(syminfo.ticker, "NIFTY")  and not str.contains(syminfo.ticker, "BANK")
+is_sensex = str.contains(syminfo.ticker, "SENSEX") or  str.contains(syminfo.ticker, "BSE")
+
+// ── SETTINGS TOGGLES ─────────────────────────────────────────────────────────
+show_w       = input.bool(true,  "Show Weekly zones",  group="Zone Filters")
+show_d       = input.bool(true,  "Show Daily zones",   group="Zone Filters")
+show_h       = input.bool(false, "Show Hourly zones",  group="Zone Filters", tooltip="Hourly zones not yet generated -- placeholder")
+show_ob      = input.bool(true,  "Show Order Blocks",  group="Zone Filters")
+show_fvg     = input.bool(true,  "Show FVGs",          group="Zone Filters")
+show_pdh_pdl = input.bool(true,  "Show PDH / PDL",     group="Zone Filters")
+
+// ── HELPER ───────────────────────────────────────────────────────────────────
+// bear_side=true  -> BEAR_OB/PDH: entry at zone top, clip bottom
+// bear_side=false -> BULL_OB/PDL: entry at zone bottom, clip top
+// math.max(0, ...) guards against negative bar indices on daily charts
+//   where look_back (trading days since zone formation) > bar_index.
+draw_zone(float zlow, float zhigh, color bg, color line_col, string lbl, int look_back, bool bear_side, bool show) =>
+    if barstate.islast and show
+        float cap   = is_nifty ? 80.0 : 250.0
+        float rng   = zhigh - zlow
+        float dl    = bear_side ? math.max(zlow, zhigh - cap) : zlow
+        float dh    = bear_side ? zhigh : math.min(zhigh, zlow + cap)
+        bool  wide  = rng > cap
+        int   lft   = math.max(0, bar_index - look_back)
+        var box   bx = na
+        var label lb = na
+        var line  rl = na
+        box.delete(bx)
+        label.delete(lb)
+        line.delete(rl)
+        bx := box.new(lft, dh, bar_index + 30, dl, bgcolor=bg, border_color=line_col, border_width=1, extend=extend.right)
+        if lbl != ""
+            lb := label.new(bar_index + 30, (dh + dl) / 2, text=lbl, color=color.new(color.black, 100), textcolor=line_col, style=label.style_label_left, size=size.small)
+        if wide
+            float ry    = bear_side ? zlow : zhigh
+            string rlbl = lbl != "" ? lbl + " (far edge)" : "far edge"
+            rl := line.new(lft, ry, bar_index + 30, ry, color=color.new(line_col, 50), width=1, style=line.style_dashed, extend=extend.right)
+            label.new(bar_index + 30, ry, text=rlbl, color=color.new(color.black, 100), textcolor=color.new(line_col, 30), style=label.style_label_left, size=size.tiny)
+
+// =====================================================
+// NIFTY -- 40 zones  T1:15 T2:15 T3:10  spot=24161.0
+// =====================================================
+if is_nifty
+    draw_zone(24136.80, 24156.80, c_pdh_d_t1, c_pdh_d_t1_l, "D PDH apr-28", 5, true, show_pdh_pdl and show_d)
+    draw_zone(23955.10, 23975.10, c_pdl_d_t1, c_pdl_d_t1_l, "D PDL apr-28", 5, false, show_pdh_pdl and show_d)
+    draw_zone(24176.20, 24264.85, c_bull_fvg_t1, c_bull_fvg_t1_l, "H BULL_FVG apr-29", 5, false, show_fvg and show_h)
+    draw_zone(24280.95, 24300.95, c_pdh_w_t1, c_pdh_w_t1_l, "H PDH apr-29", 5, true, show_pdh_pdl and show_h)
+    draw_zone(24283.75, 24303.75, c_pdh_w_t1, c_pdh_w_t1_l, "H PDH apr-29", 5, true, show_pdh_pdl and show_h)
+    draw_zone(24322.05, 24342.05, c_pdh_w_t1, c_pdh_w_t1_l, "H PDH apr-29", 5, true, show_pdh_pdl and show_h)
+    draw_zone(24303.30, 24323.30, c_pdh_w_t1, c_pdh_w_t1_l, "H PDH apr-29", 5, true, show_pdh_pdl and show_h)
+    draw_zone(24051.75, 24071.75, c_pdl_w_t1, c_pdl_w_t1_l, "H PDL apr-29", 5, false, show_pdh_pdl and show_h)
+    draw_zone(24401.00, 25019.80, c_bear_ob_t2, c_bear_ob_t2_l, "W BEAR_OB may-16", 248, true, show_ob and show_w)
+    draw_zone(24669.70, 25003.05, c_bear_ob_t2, c_bear_ob_t2_l, "W BEAR_OB jun-06", 233, true, show_ob and show_w)
+    draw_zone(24939.75, 25637.80, c_bear_ob_t2, c_bear_ob_t2_l, "W BEAR_OB jun-27", 218, true, show_ob and show_w)
+    draw_zone(25125.05, 25327.05, c_bear_ob_t2, c_bear_ob_t2_l, "W BEAR_OB sep-19", 158, true, show_ob and show_w)
+    draw_zone(26128.30, 26202.95, c_bear_ob_t3, c_bear_ob_t3_l, "", 108, true, show_ob and show_w)
+    draw_zone(26063.35, 26328.55, c_bear_ob_t3, c_bear_ob_t3_l, "", 83, true, show_ob and show_w)
+    draw_zone(25669.05, 25694.35, c_bear_ob_t3, c_bear_ob_t3_l, "", 73, true, show_ob and show_w)
+    draw_zone(24796.50, 25693.70, c_bear_ob_t2, c_bear_ob_t2_l, "W BEAR_OB feb-06", 58, true, show_ob and show_w)
+    draw_zone(25427.45, 25571.25, c_bear_ob_t3, c_bear_ob_t3_l, "", 48, true, show_ob and show_w)
+    draw_zone(23589.60, 24366.90, c_bear_ob_t1, c_bear_ob_t1_l, "W BEAR_OB apr-17", 8, true, show_ob and show_w)
+    draw_zone(25136.20, 25331.65, c_bull_fvg_t2, c_bull_fvg_t2_l, "W BULL_FVG jun-27", 218, false, show_fvg and show_w)
+    draw_zone(24736.25, 24852.85, c_bull_fvg_t2, c_bull_fvg_t2_l, "W BULL_FVG aug-15", 183, false, show_fvg and show_w)
+    draw_zone(24980.75, 25048.75, c_bull_fvg_t2, c_bull_fvg_t2_l, "W BULL_FVG sep-12", 163, false, show_fvg and show_w)
+    draw_zone(24904.80, 25060.55, c_bull_fvg_t2, c_bull_fvg_t2_l, "W BULL_FVG oct-10", 143, false, show_fvg and show_w)
+    draw_zone(25330.75, 25718.20, c_bull_fvg_t3, c_bull_fvg_t3_l, "", 138, false, show_fvg and show_w)
+    draw_zone(25803.10, 25856.20, c_bull_fvg_t3, c_bull_fvg_t3_l, "", 118, false, show_fvg and show_w)
+    draw_zone(22714.10, 23555.60, c_bull_fvg_t2, c_bull_fvg_t2_l, "W BULL_FVG apr-10", 13, false, show_fvg and show_w)
+    draw_zone(24008.00, 24411.45, c_bull_ob_t1, c_bull_ob_t1_l, "W BULL_OB may-09", 253, false, show_ob and show_w)
+    draw_zone(24750.70, 24911.05, c_bull_ob_t2, c_bull_ob_t2_l, "W BULL_OB may-30", 238, false, show_ob and show_w)
+    draw_zone(24718.60, 25160.10, c_bull_ob_t2, c_bull_ob_t2_l, "W BULL_OB jun-13", 228, false, show_ob and show_w)
+    draw_zone(24363.30, 24600.40, c_bull_ob_t1, c_bull_ob_t1_l, "W BULL_OB aug-08", 188, false, show_ob and show_w)
+    draw_zone(24426.85, 24949.15, c_bull_ob_t2, c_bull_ob_t2_l, "W BULL_OB aug-29", 173, false, show_ob and show_w)
+    draw_zone(24654.70, 25255.45, c_bull_ob_t2, c_bull_ob_t2_l, "W BULL_OB sep-26", 153, false, show_ob and show_w)
+    draw_zone(25492.30, 25694.10, c_bull_ob_t3, c_bull_ob_t3_l, "", 123, false, show_ob and show_w)
+    draw_zone(26042.30, 26055.85, c_bull_ob_t3, c_bull_ob_t3_l, "", 88, false, show_ob and show_w)
+    draw_zone(24825.45, 25079.00, c_bull_ob_t2, c_bull_ob_t2_l, "W BULL_OB jan-30", 63, false, show_ob and show_w)
+    draw_zone(25471.10, 25903.10, c_bull_ob_t3, c_bull_ob_t3_l, "", 53, false, show_ob and show_w)
+    draw_zone(22331.40, 22574.70, c_bull_ob_t3, c_bull_ob_t3_l, "", 18, false, show_ob and show_w)
+    draw_zone(24283.80, 24323.80, c_pdh_w_t1, c_pdh_w_t1_l, "W PDH mar-13", 33, true, show_pdh_pdl and show_w)
+    draw_zone(24054.05, 24094.05, c_pdh_w_t1, c_pdh_w_t1_l, "W PDH apr-10", 13, true, show_pdh_pdl and show_w)
+    draw_zone(23929.20, 23969.20, c_pdl_w_t1, c_pdl_w_t1_l, "W PDL may-09", 253, false, show_pdh_pdl and show_w)
+    draw_zone(23846.70, 23886.70, c_pdl_w_t1, c_pdl_w_t1_l, "W PDL apr-24", 5, false, show_pdh_pdl and show_w)
+
+// =====================================================
+// SENSEX -- 39 zones  T1:12 T2:7 T3:20  spot=77440.7
+// =====================================================
+if is_sensex
+    draw_zone(77380.21, 77400.21, c_pdh_d_t1, c_pdh_d_t1_l, "D PDH apr-28", 5, true, show_pdh_pdl and show_d)
+    draw_zone(76757.09, 76777.09, c_pdl_d_t1, c_pdl_d_t1_l, "D PDL apr-28", 5, false, show_pdh_pdl and show_d)
+    draw_zone(77466.64, 77763.25, c_bull_fvg_t1, c_bull_fvg_t1_l, "H BULL_FVG apr-29", 5, false, show_fvg and show_h)
+    draw_zone(77963.78, 77983.78, c_pdh_w_t1, c_pdh_w_t1_l, "H PDH apr-29", 5, true, show_pdh_pdl and show_h)
+    draw_zone(77861.21, 77881.21, c_pdh_w_t1, c_pdh_w_t1_l, "H PDH apr-29", 5, true, show_pdh_pdl and show_h)
+    draw_zone(77899.79, 77919.79, c_pdh_w_t1, c_pdh_w_t1_l, "H PDH apr-29", 5, true, show_pdh_pdl and show_h)
+    draw_zone(77143.63, 77163.63, c_pdl_w_t1, c_pdl_w_t1_l, "H PDL apr-29", 5, false, show_pdh_pdl and show_h)
+    draw_zone(80658.00, 82330.59, c_bear_ob_t3, c_bear_ob_t3_l, "", 248, true, show_ob and show_w)
+    draw_zone(81250.72, 82188.99, c_bear_ob_t3, c_bear_ob_t3_l, "", 233, true, show_ob and show_w)
+    draw_zone(81704.07, 84058.90, c_bear_ob_t3, c_bear_ob_t3_l, "", 218, true, show_ob and show_w)
+    draw_zone(81922.03, 82626.23, c_bear_ob_t3, c_bear_ob_t3_l, "", 158, true, show_ob and show_w)
+    draw_zone(85426.39, 85706.67, c_bear_ob_t3, c_bear_ob_t3_l, "", 108, true, show_ob and show_w)
+    draw_zone(85004.75, 85762.01, c_bear_ob_t3, c_bear_ob_t3_l, "", 83, true, show_ob and show_w)
+    draw_zone(83435.31, 83570.35, c_bear_ob_t3, c_bear_ob_t3_l, "", 73, true, show_ob and show_w)
+    draw_zone(80717.00, 83580.40, c_bear_ob_t3, c_bear_ob_t3_l, "", 58, true, show_ob and show_w)
+    draw_zone(82469.66, 82814.71, c_bear_ob_t3, c_bear_ob_t3_l, "", 48, true, show_ob and show_w)
+    draw_zone(78689.45, 78918.90, c_bear_ob_t1, c_bear_ob_t1_l, "W BEAR_OB mar-06", 38, true, show_ob and show_w)
+    draw_zone(75937.16, 78522.33, c_bear_ob_t1, c_bear_ob_t1_l, "W BEAR_OB apr-17", 8, true, show_ob and show_w)
+    draw_zone(82492.43, 83016.16, c_bull_fvg_t3, c_bull_fvg_t3_l, "", 218, false, show_fvg and show_w)
+    draw_zone(81439.04, 81744.70, c_bull_fvg_t3, c_bull_fvg_t3_l, "", 163, false, show_fvg and show_w)
+    draw_zone(81251.95, 81782.27, c_bull_fvg_t3, c_bull_fvg_t3_l, "", 143, false, show_fvg and show_w)
+    draw_zone(82653.59, 83534.52, c_bull_fvg_t3, c_bull_fvg_t3_l, "", 138, false, show_fvg and show_w)
+    draw_zone(84124.39, 84528.97, c_bull_fvg_t3, c_bull_fvg_t3_l, "", 118, false, show_fvg and show_w)
+    draw_zone(73163.64, 75868.32, c_bull_fvg_t2, c_bull_fvg_t2_l, "W BULL_FVG apr-10", 13, false, show_fvg and show_w)
+    draw_zone(79454.47, 80779.65, c_bull_ob_t2, c_bull_ob_t2_l, "W BULL_OB may-09", 253, false, show_ob and show_w)
+    draw_zone(81451.01, 81887.78, c_bull_ob_t3, c_bull_ob_t3_l, "", 238, false, show_ob and show_w)
+    draw_zone(81118.60, 82636.90, c_bull_ob_t3, c_bull_ob_t3_l, "", 228, false, show_ob and show_w)
+    draw_zone(79857.79, 80692.72, c_bull_ob_t2, c_bull_ob_t2_l, "W BULL_OB aug-08", 188, false, show_ob and show_w)
+    draw_zone(79809.65, 81527.74, c_bull_ob_t2, c_bull_ob_t2_l, "W BULL_OB aug-29", 173, false, show_ob and show_w)
+    draw_zone(80426.46, 82179.33, c_bull_ob_t2, c_bull_ob_t2_l, "W BULL_OB sep-26", 153, false, show_ob and show_w)
+    draw_zone(83216.28, 83829.14, c_bull_ob_t3, c_bull_ob_t3_l, "", 123, false, show_ob and show_w)
+    draw_zone(85041.45, 85197.07, c_bull_ob_t3, c_bull_ob_t3_l, "", 88, false, show_ob and show_w)
+    draw_zone(80722.94, 81455.97, c_bull_ob_t2, c_bull_ob_t2_l, "W BULL_OB jan-30", 63, false, show_ob and show_w)
+    draw_zone(82626.76, 84177.51, c_bull_ob_t3, c_bull_ob_t3_l, "", 53, false, show_ob and show_w)
+    draw_zone(71947.55, 72821.84, c_bull_ob_t3, c_bull_ob_t3_l, "", 18, false, show_ob and show_w)
+    draw_zone(76979.87, 77019.87, c_pdh_w_t1, c_pdh_w_t1_l, "W PDH mar-20", 28, true, show_pdh_pdl and show_w)
+    draw_zone(77615.54, 77655.54, c_pdh_w_t1, c_pdh_w_t1_l, "W PDH apr-10", 13, true, show_pdh_pdl and show_w)
+    draw_zone(75848.32, 75888.32, c_pdl_w_t2, c_pdl_w_t2_l, "W PDL apr-17", 8, false, show_pdh_pdl and show_w)
+    draw_zone(76552.90, 76592.90, c_pdl_w_t1, c_pdl_w_t1_l, "W PDL apr-24", 5, false, show_pdh_pdl and show_w)
+
+// ── HEADER ───────────────────────────────────────────────────────────────────
 if barstate.islast
-
-    // ════════════════════════════════════════════════════════════════════════
-    // NIFTY — 2026-04-27 | Spot 23,898 | D PDH 24,150 | D PDL 23,867
-    // Price BELOW yesterday's mid-range. 30 pts above PDL = first support.
-    // 252 pts below PDH = first resistance.
-    // W BULL_FVG 24,074 (formed 04-20) was BREACHED Friday 04-24 — removed from active set.
-    // Closest live W structural zone: BULL_FVG 22,714-23,556 (~340 pts below = ~1.4%).
-    // VERY_HIGH MTF context not reachable from current price unless NIFTY drops to W zones.
-    // HIGH context only reachable via bullish reversal at D PDL.
-    // ════════════════════════════════════════════════════════════════════════
-    if show_nifty
-
-        // ── SUPPLY (resistance above current price) ───────────────────────
-        if show_bear
-
-            drawZone(24160, 24140, col_daily_pd, color.purple,
-                 "D PDH 24,150 ⚡ NEAREST RESIST",
-                 "Friday (Apr 24) high. ~252 pts above current. Break = trend recovery up.")
-
-        // ── DEMAND (support below current price) ─────────────────────────
-        if show_bull
-
-            drawZone(23877, 23857, col_daily_pd, color.purple,
-                 "D PDL 23,867 ⚡ NEAREST SUPPORT",
-                 "Friday (Apr 24) low. ~30 pts below current. Bounce here = HIGH MTF context candidate. Break = sell-side sweep, watch reversal.")
-
-            drawZone(23556, 22714, col_bull_ob, color.green,
-                 "W BULL_FVG 22,714 [Apr 10]",
-                 "Weekly imbalance from tariff recovery rally. Deep demand on pullback (~340 pts / 1.4% below). Currently above this zone.")
-
-            drawZone(22575, 22331, col_bull_ob, color.green,
-                 "W BULL_OB 22,331 ★ TARIFF LOW [Apr 3]",
-                 "Demand block formed at tariff panic low. Institutional buying proved here Apr 7. Strongest floor (~6.6% below).")
-
-
-    // ════════════════════════════════════════════════════════════════════════
-    // SENSEX — 2026-04-27 | Spot 76,664 | D PDH 77,553 | D PDL 76,573
-    // Price below yesterday's range. ~91 pts above PDL = first support test likely at open.
-    // ~889 pts below PDH = first resistance.
-    // W BULL_FVG 77,636 (formed 04-20) was BREACHED Friday 04-24 — removed from active set.
-    // Closest live W structural zone: BULL_FVG 73,164-75,868 (~796 pts below = ~1.0%).
-    // VERY_HIGH MTF not reachable; HIGH possible via bullish reversal at D PDL.
-    // ════════════════════════════════════════════════════════════════════════
-    if show_sensex
-
-        // ── SUPPLY (resistance above current price) ──────────────────────
-        if show_bear
-
-            drawZone(77563, 77543, col_daily_pd, color.purple,
-                 "D PDH 77,553 ⚡ NEAREST RESIST",
-                 "Friday (Apr 24) high. ~889 pts above current. Break = trend recovery up.")
-
-        // ── DEMAND (support below current price) ─────────────────────────
-        if show_bull
-
-            drawZone(76583, 76563, col_daily_pd, color.purple,
-                 "D PDL 76,573 ⚡ NEAREST SUPPORT",
-                 "Friday (Apr 24) low. ~91 pts below current. Bounce here = HIGH MTF context candidate. Break = sweep, watch reversal.")
-
-            drawZone(75868, 73164, col_bull_ob, color.green,
-                 "W BULL_FVG 73,164 [Apr 10]",
-                 "Tariff panic imbalance. Strong demand on deep pullback (~796 pts / 1.0% below). Wide zone — major support if tested.")
-
-            drawZone(72822, 71948, col_bull_ob, color.green,
-                 "W BULL_OB 71,948 ★ TARIFF LOW [Apr 3]",
-                 "Institutional demand at panic low. Liquidity sweep Apr 7. Strongest floor (~6.2% below).")
+    var label hdr = na
+    label.delete(hdr)
+    sym_str = is_nifty ? "NIFTY" : (is_sensex ? "SENSEX" : "OTHER")
+    n_zones = is_nifty ? 40 : (is_sensex ? 39 : 0)
+    hdr := label.new(x=bar_index, y=high * 1.001, text="MERDIAN HTF | " + sym_str + " | " + str.tostring(n_zones) + " zones | entry-band | 2026-04-29", color=color.new(color.black, 80), textcolor=color.white, style=label.style_label_down, size=size.small)

@@ -1,8 +1,8 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v8",
-    "generated": "2026-04-19",
+    "version": "v9",
+    "generated": "2026-04-30",
     "sources": [
       "MERDIAN_Master_V18_v2 Section 15 (File Master, Table Master, Security IDs, AWS Runtime Files)",
       "MERDIAN_Appendix_V18A_v4 Block 3 (file updates), Block 4 (table updates), Block 5 (schema changes)",
@@ -13,7 +13,9 @@
       "Session 2026-04-19 (C-08 breadth writer fix)",
       "Session 2026-04-19 (ENH renumber + OI migration to Enhancement Register)",
       "Session 2026-04-28 (Session 12 -- ADR-002 market structure philosophy; ENH-75 through ENH-83 filed; MERDIAN_Enhancement_Register.md rewritten to unified v7+)",
-      "Session 2026-04-29 (Session 13 -- ENH-75/76/77 SHIPPED; ENH-84/85/86 filed; Exp 43 filed; po3_session_state table; signal_snapshots.po3_session_bias column; MERDIAN_PO3_SessionBias_1005 + MERDIAN_WS_Feed_0900 tasks; breach detection ordering fix; Pine entry-band generator overhaul)"
+      "Session 2026-04-29 (Session 13 -- ENH-75/76/77 SHIPPED; ENH-84/85/86 filed; Exp 43 filed; po3_session_state table; signal_snapshots.po3_session_bias column; MERDIAN_PO3_SessionBias_1005 + MERDIAN_WS_Feed_0900 tasks; breach detection ordering fix; Pine entry-band generator overhaul)",
+      "Session 13 (2026-04-29): ENH-75/76/77 SHIPPED, breach detection fix, Pine generator overhaul, WS feed task, AWS token refresh",
+      "Session 14 (2026-04-30): ENH-78/84/86v1 SHIPPED, TD-044 CLOSED, TD-038 patch shipped, TD-045/046/047 filed"
     ],
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
@@ -2063,8 +2065,10 @@
     "TD-038": {
       "title": "Dashboard EXIT AT label shows UTC not IST",
       "severity": "S2",
-      "status": "OPEN -- live trading risk",
-      "filed": "Session 11 extension (2026-04-28)"
+      "status": "CLOSED",
+      "filed": "Session 11 extension (2026-04-28)",
+      "closed": "2026-04-30 (Session 14)",
+      "closing_patch": "fix_td038_exit_at_ist_display.py"
     },
     "TD-039": {
       "title": "SENSEX DTE=2 on expiry day (expected 0)",
@@ -2077,6 +2081,36 @@
       "severity": "S4",
       "status": "OPEN -- use information_schema.columns before querying new tables",
       "filed": "Session 10 (2026-04-27)"
+    },
+    "TD-044": {
+      "status": "CLOSED",
+      "severity": "S2",
+      "discovered": "2026-04-30 (Session 14)",
+      "closed": "2026-04-30 (Session 14)",
+      "closing_patch": "fix_td044_enh76_77_out_dict_sync.py v2",
+      "summary": "ENH-76/77 local var / out{} dict drift -- gate decisions never propagated to headline DB-write fields. Three-site sync. Side effect: file line endings normalised to CRLF.",
+      "see_also": "tech_debt.md TD-044 entry"
+    },
+    "TD-045": {
+      "status": "OPEN",
+      "severity": "S3",
+      "discovered": "2026-04-30 (Session 14)",
+      "summary": "script_execution_log.script_version column missing -- PGRST204 warning on detect_po3_session_bias. Non-blocking.",
+      "see_also": "tech_debt.md TD-045 entry"
+    },
+    "TD-046": {
+      "status": "OPEN",
+      "severity": "S3",
+      "discovered": "2026-04-30 (Session 14)",
+      "summary": "build_ict_htf_zones.py reports contract violation when no new zones to write -- false-alarm Telegram alerts on idempotent reruns and pre-market windows. ~15 line fix.",
+      "see_also": "tech_debt.md TD-046 entry"
+    },
+    "TD-047": {
+      "status": "OPEN",
+      "severity": "S4",
+      "discovered": "2026-04-30 (Session 14)",
+      "summary": "ict_zones and ict_htf_zones are two separate tables with different schemas. ict_zones=BULL_FVG only with trade_date/detected_at_ts. ict_htf_zones=structural zones (OB/PDH/PDL/W) with valid_from/valid_to. Architectural separation needs documentation; consolidation is multi-session.",
+      "see_also": "tech_debt.md TD-047 entry"
     }
   },
   "governance_rules": {
@@ -2254,6 +2288,49 @@
         "ADR-002"
       ],
       "summary": "Gamma dashboard analysis (options writer's dashboard vs MERDIAN Gamma Engine). ADR-002 authored: six market structure principles P1-P6, capital scaling roadmap (naked buying -> spreads -> defined-risk selling, ~25k lot capacity ceiling), GEX weekly time-series storage decision. ENH-80 (per-strike GEX table + zone bounds), ENH-81 (dealer flow simulator + regime velocity), ENH-82 (PINNED gamma regime, blocked Exp 23), ENH-83 (DTE force multiplier, deferred Phase 1.5+) filed. MERDIAN_Enhancement_Register.md rewritten as unified file covering ENH-01 through ENH-83. merdian_reference.json bumped to v7. ENH-75 build (PO3 live detection) is the remaining Session 12 primary -- not yet executed."
+    },
+    {
+      "date": "2026-04-29",
+      "appendix": "Session 13 (engineering + live trading day -- ENH-75/76/77 shipped)",
+      "git_end": "pending",
+      "items_closed": [
+        "TD-040",
+        "TD-042"
+      ],
+      "items_added": [
+        "TD-038",
+        "TD-039",
+        "TD-040",
+        "TD-041",
+        "TD-042",
+        "TD-043",
+        "ENH-84",
+        "ENH-85",
+        "ENH-86",
+        "Exp-43"
+      ],
+      "summary": "ENH-75 SHIPPED end-to-end: detect_po3_session_bias.py built using Exp 35C filters (wick >=0.05% above PDH, close-back >=0.10% within 6 bars, gap 0-0.5%, T+2 reversal exclusion, 0.10-0.20% ambiguous depth block); po3_session_state table created; signal_snapshots.po3_session_bias column added; build_trade_signal_local.py patched with _get_po3_bias() helper; MERDIAN_PO3_SessionBias_1005 task registered (Mon-Fri 10:05 IST); live-verified 10:05:03 IST. market_spot_session_markers bypassed -- live column open_0915_ts differs from docs; open_0915 derived from first OPEN-window tick, gap from hist_spot_bars_5m prev_close. ENH-76 SHIPPED: BEAR_OB MIDDAY 11:30-13:30 IST gated on PO3_BEARISH (88.2% WR Exp 40). ENH-77 SHIPPED: BULL_OB AFTERNOON SENSEX 13:30-15:00 IST gated on PO3_BULLISH (73.7% WR); NIFTY hard skip (50% WR). Exp 42 DONE: BEAR_OB MIDDAY 72.5% session frequency, unfiltered WR=48%, PO3_BEARISH is rare gate (~7%). Pine generator overhauled: entry-band clipping (80pt NIFTY/250pt SENSEX cap, dashed far-edge line), color scheme (BULL_OB dark green, BULL_FVG lime, BEAR_OB dark crimson, BEAR_FVG salmon), TradingView toggles (W/D/H, OB/FVG/PDH-PDL), bar_index negative guard math.max(0,...), symbol detection before draw_zone. Breach detection ordering bug FIXED: recheck_breached_zones() was running BEFORE upsert_zones(); upsert overwrote BREACHED->ACTIVE every run; moved to after all upserts; may-09/aug-08/apr-24 BULL_OB zones correctly BREACHED post-fix. MERDIAN_WS_Feed_0900 task registered: ws_feed_zerodha.py was not started by any supervisor, market_ticks empty all session, breadth=0 all day. Hourly zones (--timeframe H) added to run_ict_htf_zones_daily.bat. AWS token refreshed; preflight PASS; left idle. ENH-85 (PO3 direction lock) built and reverted: premature without Exp 43 backing. ENH-84/85/86 and Exp 43 filed. TDs filed: TD-038 (EXIT AT shows UTC), TD-039 (SENSEX DTE=2 expiry), TD-040 (CLOSED breach order), TD-041 (ws_feed task missing), TD-042 (CLOSED Pine bar_index), TD-043 (signal flip-flop ret_session)."
+    },
+    {
+      "date": "2026-04-30",
+      "appendix": "Session 14 (engineering -- multi-concern, four shipped)",
+      "git_end": "pending",
+      "items_closed": [
+        "TD-044",
+        "TD-038"
+      ],
+      "items_added": [
+        "TD-044",
+        "TD-045",
+        "TD-046",
+        "TD-047"
+      ],
+      "enh_shipped": [
+        "ENH-78",
+        "ENH-84",
+        "ENH-86 v1"
+      ],
+      "summary": "ENH-78 SHIPPED: DTE<3 PDH sweep current-week PE rule patched into build_trade_signal_local.py before return out, flags; logic guarded by po3_session_bias=PO3_BEARISH AND 1<=dte<=2 AND action=BUY_PE; DTE=1 lifts standard DTE<=1 gate (reverses -12 conf penalty, removes DTE caution); DTE=2 annotates as confirmed; both add stop rule '40% premium OR PDH reclaim' and set out[raw][enh78_triggered]. Evidence: Exp 35D 90.9% EOD WR (N=11), +125% SENSEX option mean. Validation: ast.parse PASS + 5 functional scenarios. ENH-84 SHIPPED + hotfix: REFRESH ZONES button added to dashboard topbar after PINE OVERLAY; GET endpoint /refresh_and_download_pine subprocess-runs build_ict_htf_zones.py --timeframe H (60s timeout) then calls _gen_pine(sb) and serves merdian_ict_htf_zones_refreshed.pine. Initial deploy didn't show button -- DUAL ZOMBIE LISTENERS on port 8766 (PIDs 32052, 24764); killed via taskkill, restarted. Hotfix replaced sys.executable with bare 'python' because dashboard had no import sys at top level (only import sys as _sys deep in build()). Lesson: grep imports before writing endpoint code referencing module attrs. ENH-86 v1 SHIPPED: WIN RATE legend extended from 5-tuple to 7-tuple (added EV + N columns); two new LIVE rows (E4 BEAR_OB MIDDAY+PO3_BEARISH 88.2% N=17 +116.5pts; E5 BULL_OB AFT+PO3_BULL SENSEX 73.7% N=19 +35.5pts); BEAR_OB MORNING 100% N=9, BULL_OB DTE=0 100% N=20, BULL_FVG HIGH+DTE=0 87.5% N=12, BEAR_OB MOM_YES 83% N=23 backfilled from MERDIAN_Experiment_Compendium_v1; remaining rows use dash. v2 BLOCKED/ALLOWED prominence redesign deferred. TD-044 SHIPPED + CLOSED: discovered same session: ENH-76/77 blocks set local action=DO_NOTHING; trade_allowed=False but never out[action]/out[trade_allowed]; cautions list mutation worked but headline fields didn't, so signal_snapshots row would still show BUY_PE / trade_allowed=True even when ENH-76/77 supposedly blocked. Patch v2 line-ending agnostic -- three-site sync; v1 anchor failed because file had MIXED LINE ENDINGS (1039 CRLF + 87 bare-LF lines from earlier patches not normalising); v2 normalises to LF for matching, restores predominant CRLF on write. Side effect: 87 bare-LF lines normalised to CRLF file-wide. TD-038 (carried-forward from Session 13) PATCHED: fix_td038_exit_at_ist_display.py adds IST conversion for exit_ts before exit_html block in card(); 10:25 UTC -> 15:55 IST verified functionally; live verification next TRADE_ALLOWED signal. Operational interruptions (all resolved): (1) AWS SSH timeout to 13.51.242.119 -- SG inbound rule whitelisted old IP 103.39.127.162/32 (Airtel); operator now on BBNL 122.172.86.178 after Airtel outage 04-29 evening; updated SG sg-0111fb9e3418acf15 to My IP via console. (2) AWS Kite token refresh -- operator updated .env via sed; verified kite.profile() -> OK Navin Balan OV0782; no zombie ws_feed/kite/zerodha processes. (3) Dashboard zombie listeners (recurring) -- multi-PowerShell habit; pattern netstat->taskkill->restart documented. (4) Pre-market alerts 08:00-08:46 IST -- 4x CRASH/SUCCESS-with-zero-writes on build_ict_htf_zones.py; 08:45 scheduled run wrote 70 zones successfully (contract_met=True, 83.5s); other runs were idempotent reruns from REFRESH ZONES button -- script honestly reported 0 new zones to write but contract expects 1; false-alarm contract violations filed as TD-046. Two-table architecture surfaced: ict_zones (BULL_FVG only, 54 rows total, schema with trade_date/detected_at_ts) vs ict_htf_zones (OBs+PDH/PDL+W zones, schema with valid_from/valid_to -- what dashboard+Pine+signal engine consume); 10 ACTIVE zones confirmed covering 2026-04-30 (NIFTY D PDH 24322-24342 + D PDL 24052-24072 + W BULL_OB + W BULL_FVG + W PDL; SENSEX D PDH 77964-77984 + D PDL 77144-77164 + W BULL_OB + W BULL_FVG + W PDL). Pipeline operationally green. Filed TD-047 (architecture doc), TD-045 (script_execution_log.script_version column missing -- PGRST204 on detect_po3_session_bias), TD-046 (contract violation noise on idempotent reruns). Patch script lessons codified: (a) line-ending agnostic mandatory -- detect predominant EOL, normalise to LF for matching, restore on write; (b) grep imports in target file at module level before writing endpoint code that uses module attributes."
     }
   ],
   "git": {

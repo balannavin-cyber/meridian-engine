@@ -265,6 +265,11 @@ These are decisions made and validated. Re-litigating them wastes session time.
 - ✅ **ENH-77 SHIPPED** (Session 13, 2026-04-29) — BULL_OB AFTERNOON SENSEX 13:30-15:00 IST gated on PO3_BULLISH. 73.7% WR (Exp 40). NIFTY hard skip (50% WR). Wired.
 - ✅ **Exp 42 DONE** (Session 13, 2026-04-29) — BEAR_OB MIDDAY occurs in 72.5% of all sessions. Unfiltered WR=48%, EV negative. PO3_BEARISH is the rare gate (~7% of sessions). Composition rate question answered. Do not re-run.
 - ✅ **ENH-85 direction lock REVERTED** (Session 13) — PO3 session lock patch built and reverted. Needs Exp 43 (Signal Direction Stability) before re-implementing. Do NOT re-apply ENH-85 without experiment backing. `build_trade_signal_local.pre_enh85.bak` on disk.
+- ✅ **ENH-78 SHIPPED** (Session 14, 2026-04-30) — DTE<3 PDH sweep current-week PE rule live in `build_trade_signal_local.py`. Guarded by `po3_session_bias=PO3_BEARISH AND 1<=dte<=2 AND action=BUY_PE`. Evidence: Exp 35D 90.9% EOD WR (N=11). Stop rule: 40% premium OR PDH reclaim.
+- ✅ **ENH-84 SHIPPED** (Session 14, 2026-04-30) — Dashboard 🔄 REFRESH ZONES button + `/refresh_and_download_pine` endpoint. With hotfix for `sys.executable` reference. Live verified.
+- ✅ **ENH-86 v1 SHIPPED** (Session 14, 2026-04-30) — WIN RATE legend extended to 7 columns with EV + N. Live rows for E4/E5 added at top. v2 (BLOCKED/ALLOWED visual prominence) deferred — not blocking.
+- ✅ **TD-044 CLOSED** (Session 14, 2026-04-30) — ENH-76/77 local var / `out` dict drift fixed. Three-site sync in `build_trade_signal_local.py`. Side effect: file line endings normalised to uniform CRLF. Do NOT reopen — ENH-76/77 gates now correctly persist to DB headline fields.
+- ✅ **TD-038 EXIT AT IST PATCH SHIPPED** (Session 14, 2026-04-30) — `merdian_signal_dashboard.py` `card()` now converts UTC→IST for the static EXIT AT label. Mirrors sig_ts conversion. Live verification pending next TRADE_ALLOWED signal.
 - ✅ **Breach detection ordering FIXED** (Session 13) — `recheck_breached_zones()` now runs after all `upsert_zones()` calls. Upsert no longer overwrites BREACHED→ACTIVE. Fixed permanently.
 
 If any of these need to change, that is itself an architectural session — write a new ADR.
@@ -351,4 +356,41 @@ Three operational findings from the Session 11 extension (engineering + live ses
 
 ---
 
-*CLAUDE.md v1.8 — 2026-04-29 (Session 13 close). Added: Rule 17 (market_spot_session_markers column mismatch); three new anti-patterns (querying market_spot_session_markers, running merdian_start.py on AWS, bat file Add-Content pitfall); five new settled-decisions (ENH-75/76/77 SHIPPED, Exp 42 done, ENH-85 reverted, breach detection ordering fixed); Session 13 engineering discoveries section (B5, ws_feed omission, AWS start.py hazard, bat pitfall, Pine bar_index negative, Pine forward-reference). v1.7 (Session 11 extension) added four new anti-patterns, five new settled-decisions, and live-session findings. v1.6 added Rules 14/15/16 and B1-B4 discoveries. v1.5 added compendium-replicates decisions. v1.4 corrected Local Python path. v1.3 Rule 13. v1.2 Rule 12. v1.1 Rule 11.*
+## Session 14 engineering discoveries (2026-04-30) — codified as Rules 18-19
+
+**Bug B6 → Rule 18:** Patch scripts MUST be line-ending agnostic. After three sessions of patches, files accumulate mixed line endings — Session 14 found `build_trade_signal_local.py` with 1039 CRLF + 87 bare-LF lines. Single-EOL `replace()` fails when the anchor crosses a mixed-EOL boundary. Canonical pattern:
+
+```python
+src_raw = TARGET.read_bytes().decode("utf-8-sig")
+crlf = src_raw.count("\r\n")
+bare_lf = src_raw.count("\n") - crlf
+write_eol = "\r\n" if crlf >= bare_lf else "\n"
+
+# Match in LF-space (anchors are LF in patch source)
+src_lf = src_raw.replace("\r\n", "\n")
+patched_lf = src_lf.replace(OLD, NEW)
+
+# Restore predominant EOL on write
+patched_out = patched_lf.replace("\n", write_eol) if write_eol == "\r\n" else patched_lf
+TARGET.write_bytes(patched_out.encode("utf-8"))
+```
+
+This pattern also normalises mixed line endings as a side effect — file becomes uniformly EOL-consistent post-patch.
+
+**Bug B7 → Rule 19:** Before writing endpoint code that references module-level attributes (`sys.executable`, `os.path`, etc.), grep imports in target file at module level. Imports inside functions don't expose those names to top-level / endpoint scope. Session 14 ENH-84 endpoint used `sys.executable` but `merdian_signal_dashboard.py` only had `import sys as _sys` deep inside `build()` — endpoint scope had no `sys` reference. Hotfix replaced with literal `"python"`.
+
+```bash
+# Quick check before referencing module attributes in patches:
+grep -n "^import\|^from " target_file.py
+```
+
+**Operational findings (2026-04-30 morning):**
+- **AWS SSH IP rotation** — operator's home network has multi-WAN with Airtel/BBNL failover. SG inbound rules with `/32` IPs break whenever ISP fails over. Long-term fix: AWS Systems Manager Session Manager (no SSH, no IP, no SG port 22 rule needed). Documented in tech_debt as operational note (not yet a TD).
+- **Dashboard zombie listeners** (recurring) — multi-PowerShell-window habit during testing leaves orphan instances bound to port 8766. Standard pattern: `netstat -ano | findstr :8766 | findstr LISTENING` → `taskkill /F /PID <pid>` for each → restart. Long-term fix: move dashboard to Task Scheduler entry instead of foreground PowerShell.
+- **`build_ict_htf_zones.py` contract violation noise** — script declares `expected_writes={'ict_htf_zones': 1}` unconditionally; legitimately writes 0 on idempotent reruns and pre-market windows. Fires false-alarm Telegram alerts. Filed TD-046. Operator must correlate alert against `script_execution_log` to identify the canonical 08:45 scheduled run vs noise reruns.
+- **`ict_zones` vs `ict_htf_zones` confusion** — TWO TABLES with different schemas. `ict_zones` (BULL_FVG only, 54 rows total, schema: `symbol, trade_date, pattern_type, zone_low, zone_high, detected_at_ts, status`) is largely orphaned for current pipeline. `ict_htf_zones` (OBs+PDH/PDL+W zones, schema: `id, symbol, timeframe, pattern_type, direction, zone_high, zone_low, zone_mid, valid_from, valid_to, source_bar_date, status, broken_at_date, break_price, created_at, updated_at`) is the canonical table — what dashboard, Pine generator, and signal engine consume. Filed TD-047. Always query `ict_htf_zones` for D/W/H zones with `valid_from <= today <= valid_to AND status='ACTIVE'`. Reserve `ict_zones` queries for explicit BULL_FVG intraday questions.
+- **Numbering collision in `tech_debt.md`** — TD-038 and TD-039 each appear twice (Active section + Resolved section, different topics). Pre-existing register hygiene issue. Do NOT renumber — the dual entries are now distinguishable by content (TD-038-A=is_pre_market column; TD-038-B=EXIT AT IST). Fixing collisions retroactively risks breaking external references.
+
+---
+
+*CLAUDE.md v1.9 — 2026-04-30 (Session 14 close). Added: Rule 18 (patch scripts must be line-ending agnostic); Rule 19 (grep imports at module level before referencing attributes in endpoint code); five new operational findings (AWS SSH IP rotation, dashboard zombie listeners, contract violation noise, ict_zones vs ict_htf_zones two-table architecture, tech_debt.md TD-038/039 numbering collision pre-existing); Session 14 engineering discoveries section (B6 mixed line endings + canonical patch pattern, B7 module-level imports). v1.8 (Session 13 close) Rule 17 + Session 13 discoveries. v1.7 (Session 11 extension) added four new anti-patterns, five new settled-decisions, and live-session findings. v1.6 added Rules 14/15/16 and B1-B4 discoveries. v1.5 added compendium-replicates decisions. v1.4 corrected Local Python path. v1.3 Rule 13. v1.2 Rule 12. v1.1 Rule 11.*

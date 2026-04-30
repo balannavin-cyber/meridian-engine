@@ -507,13 +507,13 @@ gate's OUTPUT (NEUTRAL/DO_NOTHING) as if it were the gate's INPUT. See TD-020
 
 ---
 
-### TD-030 — ~~`build_ict_htf_zones.py` doesn't re-evaluate breach on existing active zones~~
+### TD-030 — `build_ict_htf_zones.py` doesn't re-evaluate breach on existing active zones
 
 | | |
 |---|---|
-| **Severity** | ~~S2~~ → CLOSED Session 11 extension (2026-04-28) |
-
-*See Resolved section for closing entry.*
+| **Severity** | S2 |
+| **Discovered** | 2026-04-27 (Session 10 pre-open ops) |
+| **Component** | `build_ict_htf_zones.py` (all timeframes; affects `ict_htf_zones` table integrity) |
 | **Symptom** | Two W BULL_FVG zones (NIFTY 24,074-24,241, SENSEX 77,636-78,203) formed 2026-04-20 remained `status='ACTIVE'` after Friday 04-24's selloff broke through them. Zones with `valid_to >= today` AND `status='ACTIVE'` AND price already below `zone_low` (BULL) or above `zone_high` (BEAR) constitute zombie zones that mislead MTF context lookups. |
 | **Root cause** | Script applies breach filter at *write time* during detection of new candidate zones — eliminates already-violated candidates before INSERT. Does NOT re-evaluate existing active zones for breach when subsequent price action breaks them. The "Expired old zones before <date>" log line is date-based expiry only, not breach-based invalidation. |
 | **Workaround** | Manual SQL UPDATE per session when zones are visibly stale. Zombie-zone detection query: compute current spot vs zone boundaries with directional CASE, mark BULL_BREACHED if spot < zone_low / BEAR_BREACHED if spot > zone_high. Then UPDATE matching IDs to `status='BREACHED', valid_to=CURRENT_DATE`. Used 2026-04-27 pre-open with success (cleared 2 zombie BULL_FVG zones). |
@@ -524,13 +524,12 @@ gate's OUTPUT (NEUTRAL/DO_NOTHING) as if it were the gate's INPUT. See TD-020
 
 ---
 
-### TD-031 — ~~D BEAR_OB / D BEAR_FVG detection underactive in `build_ict_htf_zones.py`~~
+### TD-031 — D BEAR_OB / D BEAR_FVG detection underactive in `build_ict_htf_zones.py`
 
 | | |
 |---|---|
-| **Severity** | ~~S2~~ → CLOSED Session 11 extension (2026-04-28) |
-
-*See Resolved section for closing entry.*
+| **Severity** | S2 |
+| **Discovered** | 2026-04-27 (Session 10 pre-open ops, post-rebuild zone audit) |
 | **Component** | `build_ict_htf_zones.py` daily zone detection (D BEAR_OB and D BEAR_FVG specifically) |
 | **Symptom** | Q-D-BEAR-COVERAGE returned: D BEAR_OB total ever written = 2 (last 2026-04-11). D BEAR_FVG total ever written = 0. D BULL_OB = 4 lifetime, D BULL_FVG = 0. Despite multiple visibly bearish daily candles in the past two weeks (NIFTY -1.87% week ending 04-24, SENSEX -1.29%, both with strong red 1D bars 04-23/04-24), the script wrote zero new D BEAR structures. |
 | **Root cause** | Two candidate hypotheses, not yet confirmed: (a) detector logic for D BEAR_OB is asymmetric — fires only under conditions rarely met (e.g., requires opposing-direction prior bar like the 1H detector, but daily timeframe rarely produces clean 0.40% moves followed by clean reversal candles); (b) breach filter is over-conservative on bearish daily candles (e.g., subsequent intraday spot prints filter the candidate out before INSERT). Neither hypothesis tested. |
@@ -608,8 +607,7 @@ gate's OUTPUT (NEUTRAL/DO_NOTHING) as if it were the gate's INPUT. See TD-020
 | **Proper fix** | Source-trace `build_trade_signal_local.py` and `merdian_signal_dashboard.py` to find where wcb_regime is read for each. Either: (a) populate `signal_snapshots.wcb_regime` correctly on every cycle (if it should always be set), or (b) drop the column from signal_snapshots if it's redundant with wcb_alignment / market_state_snapshots, or (c) document explicitly that the column is intentionally null and the canonical source is elsewhere. |
 | **Cost to fix** | <1 session — diagnostic + decide which path. |
 | **Blocked by** | nothing |
-| **Investigation (Session 11 extension 2026-04-28)** | `wcb_regime` regression confirmed. `SELECT COUNT(*), COUNT(wcb_regime), MAX(ts) FROM signal_snapshots WHERE symbol='NIFTY'` returned: total=2171, non_null_wcb=32, latest=2026-04-28. Last non-null row: 2026-03-19 05:06 UTC (`wcb_score=11.237` same value on all 32 rows — likely one stale batch that was never updated). Dead for 40 days. Script that writes wcb_regime not yet traced. Priority ELEVATED to S2 — wcb_regime NULL caused `direction_bias=BEARISH` on a BULLISH breadth day during live session, producing BUY_PE on BULL_FVG. Operator correctly did not trade. |
-| **Owner check-in** | 2026-04-28 |
+| **Owner check-in** | 2026-04-27 |
 
 ---
 
@@ -764,129 +762,4 @@ gate's OUTPUT (NEUTRAL/DO_NOTHING) as if it were the gate's INPUT. See TD-020
 
 ---
 
-### TD-038 — Dashboard EXIT AT label shows UTC not IST
-
-| | |
-|---|---|
-| **Severity** | S2 — live trading risk (operator exits at wrong time if using dashboard timer) |
-| **Discovered** | 2026-04-28 (Session 11 extension, live session 09:15 IST) |
-| **Component** | `merdian_signal_dashboard.py` `card()` function, EXIT AT display label |
-| **Symptom** | Signal at 09:31 IST (= 04:01 UTC), T+30m = 10:01 IST. Dashboard displayed "EXIT AT 04:31 IST". The countdown digit display was correct (used `new Date(exit_ts)` which handles UTC), but the static EXIT AT time label `exit_ts[11:16]` slices the UTC timestamp string directly, not the IST-converted version. So `sig_ts` gets IST conversion (separate code path) but `exit_ts` does not. |
-| **Root cause** | `exit_ts` is computed as `(st + timedelta(minutes=30)).isoformat()` where `st` is UTC. The label renders `exit_ts[11:16]` which is UTC hour:minute, not IST. `sig_ts` conversion applies IST correctly on a separate code path but this was not replicated for `exit_ts`. |
-| **Workaround** | Compute exit time manually: signal time shown in IST + 30 minutes. Do NOT use the EXIT AT label from dashboard as the authoritative exit time. |
-| **Proper fix** | In `card()`, apply the same IST conversion to `exit_ts` as is applied to `sig_ts`. One additional `datetime.fromisoformat(...).astimezone(ZoneInfo("Asia/Kolkata")).strftime(...)` call. ~5 exchanges. |
-| **Cost to fix** | <1 session. |
-| **Blocked by** | nothing |
-| **Owner check-in** | 2026-04-28 |
-
----
-
-### TD-039 — SENSEX DTE=2 on expiry day (expected DTE=0)
-
-| | |
-|---|---|
-| **Severity** | S3 |
-| **Discovered** | 2026-04-28 (Session 11 extension, live session 09:15 IST) |
-| **Component** | DTE computation in `build_trade_signal_local.py` or expiry calendar for SENSEX |
-| **Symptom** | 2026-04-28 is SENSEX monthly expiry (Tuesday post-Sep 2025 rule). Dashboard showed DTE=2 for SENSEX. Expected DTE=0. NIFTY also shows monthly expiry on Tuesdays per EXPIRY_WD dict. DTE=2 suggests the script is computing DTE to a future expiry (04-30) rather than today's (04-28). |
-| **Root cause** | Unconfirmed — not traced in session. Candidates: (a) `nearest_expiry_db()` returning next week's expiry instead of today's, (b) SENSEX expiry calendar row missing for 04-28, (c) off-by-one in DTE logic for same-day expiry. |
-| **Workaround** | On expiry days, verify DTE manually from Dhan/Zerodha expiry list before trading. |
-| **Proper fix** | Trace `nearest_expiry_db()` call for SENSEX on 04-28. Query `trading_calendar` or `expiry_dates` table for SENSEX on that date. If calendar row missing, add it. If DTE logic wrong, fix the boundary condition. |
-| **Cost to fix** | <1 session. |
-| **Blocked by** | nothing |
-| **Owner check-in** | 2026-04-28 |
-
----
-
-
-### TD-030 (closed) — `build_ict_htf_zones.py` didn't re-evaluate breach on existing zones
-
-| | |
-|---|---|
-| **Closed** | 2026-04-28 (Session 11 extension) |
-| **Closing commit** | `46dbdc1` |
-| **Fix applied** | Added `recheck_breached_zones(sb, symbol, daily_ohlcv, as_of, dry_run)` function. Called after `expire_old_zones()` and OHLCV load in `main()`, before new zone detection. For each ACTIVE zone: BULL_OB/BULL_FVG/PDL marked BREACHED if `current_spot <= zone_high`; BEAR_OB/BEAR_FVG/PDH marked BREACHED if `current_spot >= zone_low`. Mirrors `filter_breached_zones()` logic. Dry-run aware. Patch: `fix_td030_td031_zone_breach.py`. |
-| **Validation** | `build_ict_htf_zones.py --dry-run` shows: "Rechecking breached zones for NIFTY @ spot 24,092.7 / DRY RUN -- would mark BREACHED...". Real run: "TD-030: breach recheck done for NIFTY/SENSEX". `script_execution_log` shows `actual_writes={"ict_htf_zones": 72}`, `contract_met=true`. |
-
----
-
-### TD-031 (closed) — D BEAR_OB / D BEAR_FVG detection underactive since 2026-04-11
-
-| | |
-|---|---|
-| **Closed** | 2026-04-28 (Session 11 extension) |
-| **Closing commit** | `46dbdc1` |
-| **Root cause (confirmed)** | `filter_breached_zones()` was applied BEFORE `upsert_zones()` — zones mitigated by overnight recovery were discarded before reaching the DB. E.g. 04-24 BEAR_OB (prior_move=-1.17%) formed and was detected, but by 08:45 IST 04-27 overnight spot had recovered above zone_low so filter removed it. D BEAR_FVG was never in scope — `detect_daily_zones()` was never designed to produce FVGs (structural, not a bug). |
-| **Fix applied** | Breach filter split in `main()` for both weekly and daily loops: OB/FVG patterns written unconditionally (fresh structure regardless of overnight recovery); PDH/PDL patterns still proximity-filtered (nearest 2+2 logic). Patch: `fix_td030_td031_zone_breach.py`. |
-| **Validation** | Before patch: 35 zones written. After patch: 72 zones written (29 OB/FVG + 4 PDH/PDL per symbol). Dry-run log shows: "Detected 33 weekly zones (29 OB/FVG + 4 PDH/PDL)" and "Detected 3 daily zones (1 OB/FVG + 2 PDH/PDL)". D BULL_OB 23,962-24,093 now written and ACTIVE — was being filtered before. Next down day: D BEAR_OB expected to appear ACTIVE at 08:45 IST regardless of overnight recovery. |
-
----
-
-
-
----
-
-### TD-040 — `recheck_breached_zones()` ran before `upsert_zones()` — BREACHED status overwritten on every rebuild
-
-| | |
-|---|---|
-| **Severity** | ~~S2~~ → CLOSED Session 13 (2026-04-29) |
-| **Discovered** | 2026-04-29 (Session 13 — may-09 BULL_OB 24,008 remained ACTIVE despite spot at 23,995) |
-| **Component** | `build_ict_htf_zones.py` `main()` function — ordering of `recheck_breached_zones()` vs `upsert_zones()` |
-| **Symptom** | BULL_OB zones not marked BREACHED despite spot trading below zone_low. may-09 BULL_OB (24,008–24,411) remained ACTIVE after apr-28 low of 23,955. |
-| **Root cause** | `recheck_breached_zones()` was called BEFORE `upsert_zones()`. The upsert writes all zone dicts with `status='ACTIVE'` hardcoded. On every rebuild: (1) recheck marks zone BREACHED, (2) upsert overwrites BREACHED → ACTIVE. Net effect: zone is never persistently BREACHED. |
-| **Fix applied** | Moved `recheck_breached_zones()` call to AFTER all `upsert_zones()` calls for each symbol in `main()`. Patch: `patch_breach_recheck_order.py`. |
-| **Validation** | After fix: may-09 BULL_OB → BREACHED, aug-08 BULL_OB → BREACHED, apr-24 BULL_OB → BREACHED. All three correctly marked on first run post-patch. |
-| **Closed** | 2026-04-29 (Session 13) |
-
----
-
-### TD-041 — `ws_feed_zerodha.py` not started by any supervisor or scheduled task
-
-| | |
-|---|---|
-| **Severity** | S2 |
-| **Discovered** | 2026-04-29 (Session 13 — breadth = 0 all day; `market_ticks` table empty) |
-| **Component** | `ws_feed_zerodha.py`, `market_ticks` table, `ingest_breadth_from_ticks.py` |
-| **Symptom** | `ingest_breadth_from_ticks.py` returned SKIPPED_NO_INPUT all session (68 consecutive violations). `market_ticks` table had 0 rows for today. Breadth ingest reads EQ ticks from `market_ticks`; no ticks = 0 coverage = stale breadth_regime read from yesterday. Signal engine showed `breadth_regime=BEARISH` while market was clearly BULLISH (+1.5% day). |
-| **Root cause** | `ws_feed_zerodha.py` is the process that subscribes to Zerodha WS and writes EQ ticks to `market_ticks`. It was not in `merdian_start.py`, `gamma_engine_supervisor.py`, or any Task Scheduler task. `MERDIAN_Market_Tape_1M` task was Disabled. WS feed was never being started automatically. |
-| **Workaround** | Manual `python ws_feed_zerodha.py` launch (market hours only). |
-| **Fix applied** | Registered `MERDIAN_WS_Feed_0900` Task Scheduler task — Mon-Fri 09:00 IST, 8hr execution limit, logs to `logs/ws_feed_zerodha.log`. Launcher: `run_ws_feed_zerodha.bat`. |
-| **Validation** | Task registered and verified. First live run: tomorrow 09:00 IST. |
-| **Owner check-in** | 2026-04-29 |
-
----
-
-### TD-042 — Pine `bar_index - look_back` goes negative on daily charts for old zones
-
-| | |
-|---|---|
-| **Severity** | ~~S2~~ → CLOSED Session 13 (2026-04-29) |
-| **Discovered** | 2026-04-29 (Session 13 — Pine zones blank on 1D and 15m TF) |
-| **Component** | `generate_pine_overlay.py` Pine template, `draw_zone` function |
-| **Symptom** | All zones blank on TradingView daily chart. Zones from >252 trading days ago produce `bar_index - look_back < 0`. Pine's `box.new()` silently fails on negative bar indices, aborting all subsequent drawings in the script. |
-| **Root cause** | Pine v6 `box.new(left=...)` requires `left >= 0`. `look_back` is computed as trading days since zone formation. On a daily chart, `bar_index ≈ 252`. A zone from 253+ days ago produces left = bar_index - 253 = -1. |
-| **Fix applied** | Added `int lft = math.max(0, bar_index - look_back)` in `draw_zone`. All `box.new` and `line.new` calls use `lft` not `bar_index - look_back`. Patch: `patch_enh46d_entry_band_pine_v2.py`. |
-| **Validation** | Zones rendering correctly on 1D, 15m, 1h charts post-patch. |
-| **Closed** | 2026-04-29 (Session 13) |
-
----
-
-### TD-043 — Signal direction flip-flop intraday (ENH-55 `ret_session` crosses zero)
-
-| | |
-|---|---|
-| **Severity** | S2 |
-| **Discovered** | 2026-04-29 (Session 13 — BUY_CE at 13:10 IST between two BUY_PE signals on same day) |
-| **Component** | `build_trade_signal_local.py` ENH-55 momentum opposition block, `infer_direction_bias_v4()` |
-| **Symptom** | On 2026-04-29: 12:01 IST BUY_PE → 13:10 IST BUY_CE → 13:51 IST BUY_PE. Signal flips when spot briefly crosses the session open price — `ret_session` changes sign from negative to positive at spot=24,321 (above morning open ~24,095), triggering direction_bias=BULLISH and action=BUY_CE. Market structure was bearish at the time. |
-| **Root cause** | `infer_direction_bias_v4()` uses `ret_session` (current spot vs day open) as direction anchor. `ret_session` is noisy intraday — crosses zero whenever spot oscillates around the opening print. ENH-55 opposition block then fires or clears based on this sign. No persistence filter or hysteresis applied. Signal engine has no memory of prior cycle's direction. |
-| **Workaround** | Operator awareness. Cross-reference with market structure (zones, breadth) before acting on any signal. BUY_PE on a clearly bullish day should be filtered manually. |
-| **Proper fix** | Exp 43 (Signal Direction Stability) — empirical answer to: what stability criterion for `direction_bias` reduces spurious flips without missing genuine reversals? Options: persistence filter (N consecutive cycles), hysteresis (larger threshold to flip back), slower momentum anchor (ret_30m not ret_session), PO3 as soft confidence modifier. ENH-85 is the build target once Exp 43 concludes. |
-| **Blocked by** | Exp 43 (research first) |
-| **Owner check-in** | 2026-04-29 |
-
----
-
-*MERDIAN tech_debt.md v2 — updated 2026-04-29 (Session 13: TD-040 CLOSED breach recheck order, TD-041 ws_feed task, TD-042 CLOSED Pine bar_index, TD-043 signal flip-flop).
 *MERDIAN tech_debt.md v1 — created concurrent with CLAUDE.md and Documentation Protocol v3. Update inline as items are added/closed; commit with `MERDIAN: [OPS] tech_debt — <action>`.*

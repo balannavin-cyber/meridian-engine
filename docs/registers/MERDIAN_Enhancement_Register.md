@@ -117,9 +117,11 @@ Sortable table of all 86 IDs. For full detail see Part 4.
 | ENH-73a | Tradable signal alerts via existing pipeline alert daemon (Session 9 wave 2) | 1 | **SHIPPED 2026-04-26** |
 | ENH-73b | Dashboard latched-signal panel (Session 9 wave 2, deferred) | 1 | **PROPOSED-DEFERRED** |
 
-| ENH-84 | Dashboard "Refresh Zones + Pine" Button (intraday) | 1 | **PROPOSED** |
+| ENH-84 | Dashboard "Refresh Zones + Pine" Button (intraday) | 1 | **SHIPPED 2026-04-30** |
 | ENH-85 | PO3 Session Direction Lock (anti-flip-flop) | 1 | **PROPOSED-DEFERRED (pending Exp 43)** |
-| ENH-86 | Dashboard WIN RATE Section Redesign | 1 | **PROPOSED** |
+| ENH-86 | Dashboard WIN RATE Section Redesign | 1 | **SHIPPED v1 2026-04-30 (v2 BLOCKED/ALLOWED prominence DEFERRED)** |
+| ENH-78 | DTE<3 PDH sweep → current-week PE rule | 1 | **SHIPPED 2026-04-30** |
+| ENH-79 | PWL weekly sweep detection + signal entry rules | 1 | **PROPOSED** |
 ---
 
 ## Part 2 -- Active Work (not yet delivered or under monitoring)
@@ -2275,13 +2277,16 @@ Original purpose: cache `build_expiry_index_simple()` output across cycles to av
 
 | Field | Detail |
 |---|---|
-| Status | **PROPOSED** |
+| Status | **SHIPPED 2026-04-30 (Session 14, with hotfix)** |
 | Priority | 1 |
 | Session filed | Session 13 (2026-04-29) |
 | Goal | Add a button to the MERDIAN signal dashboard that: (1) calls `build_ict_htf_zones.py --timeframe H` to rebuild hourly zones, (2) calls `generate_pine_overlay.py` to regenerate the Pine file, (3) serves the updated `.pine` file for one-click copy-paste into TradingView. Enables intraday zone refresh without manual CLI. |
 | Type | Code — small. Dashboard endpoint + button. |
 | Blocker | None. |
 | Note | TradingView Pine cannot receive live data pushes (sandboxed). This is the practical near-term solution. Full intraday charting in MERDIAN dashboard (TradingView Lightweight Charts) is ENH-87 candidate. |
+| Patch | `fix_enh84_refresh_zones_pine_button.py` — added 🔄 REFRESH ZONES button to topbar after PINE OVERLAY + GET endpoint `/refresh_and_download_pine` that subprocess-runs `build_ict_htf_zones.py --timeframe H` (60s timeout) then calls `_gen_pine(sb)` and serves `merdian_ict_htf_zones_refreshed.pine`. Two anchors. ast.parse PASS. |
+| Hotfix | `fix_enh84_hotfix_sys_executable.py` — initial deploy used `sys.executable` for the subprocess call. Dashboard had no `import sys` at module level (only `import sys as _sys` deep inside `build()`), so `sys` was undefined at endpoint scope. Hotfix replaces `sys.executable` with bare `"python"`. Lesson: grep imports in target file at module level before writing endpoint code that references module attributes. |
+| Live verification | Post-hotfix: button visible in topbar, endpoint returns Pine file, operator pasted into TradingView showing 21 zones (`MERDIAN HTF | SENSEX | 21 zones | entry-band | 2026-04-30`). Dashboard zombie-listener pattern surfaced during deploy (PIDs 32052, 24764 both bound to port 8766 simultaneously); operator pattern: `netstat -ano | findstr :8766 | findstr LISTENING` → `taskkill /F /PID <pid>` for each, restart. |
 
 ---
 
@@ -2303,12 +2308,16 @@ Original purpose: cache `build_expiry_index_simple()` output across cycles to av
 
 | Field | Detail |
 |---|---|
-| Status | **PROPOSED** |
+| Status | **SHIPPED v1 2026-04-30 (Session 14). v2 (BLOCKED/ALLOWED visual prominence) DEFERRED.** |
 | Priority | 1 |
 | Session filed | Session 13 (2026-04-29) |
-| Goal | Current WIN RATE table mixes signal quality, execution tiers, and historical WR into one opaque block. Redesign into two separate visual sections: (A) Signal quality — pattern, condition, historical WR, EV, N. (B) Execution — tier, lots, BLOCKED/ALLOWED shown prominently. Remove tier from signal quality display entirely. BLOCKED/ALLOWED should be the most prominent element in execution, not buried in a table row. |
+| Goal (original combined) | Current WIN RATE table mixes signal quality, execution tiers, and historical WR into one opaque block. Redesign into two separate visual sections: (A) Signal quality — pattern, condition, historical WR, EV, N. (B) Execution — tier, lots, BLOCKED/ALLOWED shown prominently. Remove tier from signal quality display entirely. BLOCKED/ALLOWED should be the most prominent element in execution, not buried in a table row. |
 | Type | Code — medium. Dashboard HTML/JS changes. |
 | Blocker | None. |
+| **v1 scope (SHIPPED)** | WIN RATE legend extended from 5-column to 7-column: added EV (per-trade) and N (sample size) columns. New LIVE rows added at top of legend for E4 (BEAR_OB MIDDAY+PO3_BEARISH 88.2% N=17 +116.5pts SENSEX) and E5 (BULL_OB AFT+PO3_BULLISH SENSEX 73.7% N=19 +35.5pts). Existing pattern rows (BEAR_OB MORNING 100% N=9 +81.2%; BULL_OB DTE=0 100% N=20 +121.4%; BULL_FVG HIGH+DTE=0 87.5% N=12 +58.9%; BEAR_OB MOM_YES 83% N=23 +56.1%) backfilled from MERDIAN_Experiment_Compendium_v1; remaining rows display `—` honestly where data wasn't available. |
+| **v1 patch** | `fix_enh86_winrate_redesign_v1.py` — three anchor replacements: (1) `WIN_RATES` list extended from 5-tuple to 7-tuple; (2) `legend_rows()` 7-col unpack emitting EV+N td cells (colspan 5→7); (3) `<thead>` updated 5→7 columns. Live verified after hard refresh + zombie-listener kill. |
+| **v2 scope (DEFERRED)** | Signal quality vs Execution visual separation. BLOCKED/ALLOWED moved out of table-row context into a prominent execution panel element (banner, large badge, or border-highlighted card). Tier removed from signal quality display. Removes the original conflation issue but is structurally a bigger UI change. Not blocking; legend now carries EV+N which was the highest-value information gap. |
+| **v2 trigger** | Operator decides v2 priority based on usage — if BLOCKED/ALLOWED conflation continues to cause misreads, escalate; otherwise the v1 EV/N visibility may be sufficient. |
 
 ---
 
@@ -2323,3 +2332,65 @@ Original purpose: cache `build_expiry_index_simple()` output across cycles to av
 | Approach options | (1) Persistence filter: require N consecutive cycles same direction (query: how often does direction stay stable ≥3 cycles before a signal fires?). (2) Slower anchor: use ret_30m or ret_60m instead of ret_session for V4 direction. (3) Hysteresis: require stronger threshold to flip back (e.g. 0.15% not 0.05%). (4) PO3 as soft prior: weight confidence ±N when PO3 agrees/disagrees rather than hard lock. |
 | Data source | `hist_pattern_signals` + `hist_market_state` (ret_session per bar). Cross-reference direction flips with T+30m outcomes. |
 | Output | Empirical answer to: "does holding direction stable improve WR vs allowing ENH-55 full rein?" If yes, implement ENH-85 with the winning criterion. |
+
+
+---
+
+### ENH-78 — DTE<3 PDH sweep → current-week PE rule
+
+| Field | Detail |
+|---|---|
+| Status | **SHIPPED 2026-04-30 (Session 14)** |
+| Priority | 1 |
+| Session filed | Session 11 (2026-04-28, Exp 35D PASS) — formally added to register Session 14. |
+| Session shipped | Session 14 (2026-04-30) |
+| Goal | When PO3_BEARISH session bias confirmed AND DTE is 1 or 2 AND signal action is BUY_PE: lift the standard DTE<=1 confidence penalty (was -12 conf points + "DTE gate" caution) and treat as a high-conviction current-week PE setup. Tag with explicit stop rule. |
+| Evidence | Exp 35D — PDH DTE<3 current-week PE: 90.9% EOD WR (N=11), +125% mean SENSEX option return. Current-week beats next-week on this rule. |
+| Type | Code — small. Single guarded block in `build_trade_signal_local.py` before `return out, flags`. |
+| Logic | If `po3_session_bias=PO3_BEARISH AND 1<=dte<=2 AND action=BUY_PE`: DTE=1 — reverse -12 confidence penalty, remove "DTE gate" cautions, add stop rule "40% premium OR PDH reclaim", set `out["raw"]["enh78_triggered"]=True/dte/stop_note`. DTE=2 — same but tagged "confirmed" (no original gate to reverse since 2 was already allowed by base logic). |
+| Stop rule rationale | Premium-based stop (40%) protects against opening-print decay on DTE=1; PDH reclaim is the structural invalidation (sweep failed, no continuation). Either trigger exits. |
+| Patch | `fix_enh78_dte_lt3_pe_rule.py` — single ENH-78 block insertion before `return out, flags`. CRLF auto-detect. |
+| Validation | ast.parse PASS + 5 functional scenarios verified: (1) DTE=1 BEAR PO3_BEARISH BUY_PE → triggered, conf reversed; (2) DTE=2 same → triggered as confirmed; (3) DTE=3 → not triggered; (4) PO3_NONE → not triggered; (5) action=BUY_CE → not triggered. |
+| Live verification | Smoke test post-apply ran clean. Live ENH-78 trigger pending — requires PO3_BEARISH session day with DTE<=2 — natural verification within 1–2 weeks. |
+| Carries | TD-044 fix (Session 14) ensures ENH-76/77 dict-sync — relevant because ENH-78 reads `action` after ENH-76/77 may have set `out["action"]`. Without TD-044, ENH-78 would have triggered against stale `action=BUY_PE` even when ENH-76 supposedly blocked. With TD-044, the gate ordering is sound. |
+
+---
+
+### ENH-79 — PWL weekly sweep detection + signal entry rules
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED** |
+| Priority | 1 |
+| Session filed | Session 11 (2026-04-28, Exp 39B PASS) — formally added to register Session 14. |
+| Session target | Session 15 (primary build target) |
+| Goal | Detect PWL (Previous Week's Low) weekly sweep at start of new trading week, persist daily session bias, gate appropriate ATM CE entry signals on the sweep day or next 1–2 days. Mirrors PO3 daily session bias detection (ENH-75) but at weekly cadence. |
+| Evidence | Exp 39B — PWL refined weekly: 76.9% EOW WR (N=13), T+2D mean +534pts SENSEX (E6). Subset E7 — PWL weekly + daily PDL confluence: 100% conf-day WR (N=5), highest conviction signal in research set but smallest N. |
+| Sub-decisions pending operator confirmation | (1) Storage shape — Option A: column on `market_state_snapshots` (per-cycle, redundant). Option B (recommended): new table `weekly_sweep_state(symbol, trade_date, weekly_sweep_bias, daily_pdl_confluence, swept_pwl_value, prev_week_range, detected_at, raw)` keyed `(symbol, trade_date)`. (2) Detection time — Option A: 08:50 IST pre-market (analyses yesterday's close, reflects sweep that completed in last session). Option B: 15:35 IST EOD (detects today's sweep for tomorrow's trade). Compendium implies pre-market 08:50 detection. (3) E6 vs E7 — Option A: ship E6 detection, E7 emerges as a confluence flag. Option B: ship E7 only (highest WR, smallest N). Option C (recommended): ship E6 with `daily_pdl_confluence` boolean flag — signal engine handles both, tags confluence case for higher-conviction sizing. |
+| Default plan | New table `weekly_sweep_state` per Option B; new script `detect_weekly_sweep_bias.py` modeled on `detect_po3_session_bias.py` runs 08:50 IST daily; new Task Scheduler entry `MERDIAN_WeeklySweep_0850`; helper `_get_weekly_sweep_bias()` in `build_trade_signal_local.py` (mirroring `_get_po3_bias()`); entry gating logic for E6 + E7 confluence flag — when `weekly_sweep_bias=BULLISH` AND it's the sweep day's EOD or T+1/T+2, allow next-week ATM CE; if `daily_pdl_confluence=True`, tag for higher-conviction sizing. |
+| Caveat | Entry trigger "sweep day EOD" differs from MERDIAN's existing intraday cycle entry triggers. May require a separate alert path (e.g. a daily 15:35 IST evaluation gate that fires Telegram if conditions met) rather than firing through the regular intraday signal cycle. Worth flagging in design phase. |
+| Forbidden ground | Do NOT replicate ENH-85 mistake (build before research). Operator approval of sub-decisions before code. |
+
+
+
+---
+
+### Exp 44 — Intraday Inverted Hammer Reversal After Cascade (filed Session 14)
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED** |
+| Session filed | Session 14 (2026-04-30) |
+| Seed observation | NIFTY 15m on 2026-04-30, ~09:30-10:00 IST: opening cliff drop -300pts, terminal candle was an inverted hammer at the bottom of the move (~23,800 area), next candle tested but did not break below the hammer's range, third candle began the V-recovery to ~24,080 by 12:00 IST. Pattern observed real-time as a structurally clean capitulation reversal. |
+| Question | Does an inverted hammer after a sustained intraday cascade, followed by a non-violating range test, predict a reversal large enough to be tradeable at T+30m / T+60m / EOD? Run both the bearish-cascade (long-side reversal) AND bullish-cascade mirror (short-side reversal) sides separately. |
+| Hypothesis (bearish side / long entry) | (1) spot drops >=X% from session open within last N bars; (2) candle K is inverted hammer — high-wick >= 2x body, body in lower 1/3, close near low; (3) candle K+1 retests range of K (touches near K's low) but does NOT close below K's low; (4) entry at K+2 open; (5) measure T+30m, T+60m, EOD return. |
+| Hypothesis (bullish side / short entry — MIRROR) | (1) spot rises >=X% from session open within last N bars; (2) candle K is hammer/shooting star — low-wick >= 2x body, body in upper 1/3, close near high; (3) candle K+1 retests range of K (touches near K's high) but does NOT close above K's high; (4) entry at K+2 open; (5) measure T+30m, T+60m, EOD return. |
+| Specification gaps | (a) X = cascade magnitude threshold? Try {0.3%, 0.5%, 0.7%, 1.0%}. (b) N = look-back window for cascade? Try {10, 15, 20} 5m bars. (c) "near low/high" tolerance — 0.05%? 0.10%? (d) "body in lower/upper" — fixed 1/3 vs ratio. (e) Wick ratio threshold — 2x body vs 3x body. |
+| Data source | `hist_spot_bars_5m` 12 months NIFTY + SENSEX, IST window 09:15-15:30 only. Apply TD-029 timezone workaround: `replace(tzinfo=None)`. Apply Bug B4 workaround: filter by time, no `is_pre_market` column. Apply Rule 15: page_size=1000. |
+| Outcome metric | T+30m / T+60m / EOD spot return from K+2 entry. Win rate at each horizon. EV per trade in points. Sample size per side (bearish, bullish). |
+| Comparison hurdles | If WR < ~70% for either side, edge is not actionable. Need N >= 30 events per side per symbol for statistical power. Compare against existing edges: BEAR_OB MIDDAY+PO3 (88.2% N=17), E1 PDH first-sweep (93.3% N=15) — must beat baseline. |
+| Risk of overlap | Pattern may overlap with: (a) E1 PDH first-sweep (similar capitulation+reversal but daily TF); (b) BEAR_OB MORNING (5m TF, 100% N=9 — small N); (c) Wyckoff spring/upthrust (well-documented in TA literature). If found-edge is just a 5m re-expression of E1, the additive value is questionable. |
+| Estimated cost | 3-5 hours research time. Single research session. Could fit Session 15 if ENH-79 deferred to Session 16. |
+| Today's data point | 2026-04-30 NIFTY 15m candle K ~09:45 IST. Verify candle attributes via `hist_spot_bars_5m` after EOD rollup tomorrow. Treat as live N=1 prior. |
+| Forbidden ground | Do NOT cherry-pick threshold values. Use canonical sweep methodology from Exp 29 v2 (full-year sweep, multiple thresholds, report best/worst). Do NOT mix Bearish + Bullish samples — they are independent hypotheses. |
+| Output | Compendium entry with N, WR, EV per side per symbol per horizon. Decision: PASS (file as ENH-N), MARGINAL (revisit later), FAIL (rule out). |

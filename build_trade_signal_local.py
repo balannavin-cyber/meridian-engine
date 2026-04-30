@@ -913,8 +913,14 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
         _in_midday = (11 * 60 + 30) <= _tot_mins < (13 * 60 + 30)
         if _in_midday and _ict76 == "BEAR_OB" and action == "BUY_PE":
             if _po3_76 != "PO3_BEARISH":
+                # TD-044 fix: sync block decision to out{} dict so the
+                # signal_snapshots row reflects the gate. Local-only
+                # assignment was a latent bug that left action=BUY_PE
+                # and trade_allowed=True in the DB row.
                 action        = "DO_NOTHING"
                 trade_allowed = False
+                out["action"]        = "DO_NOTHING"
+                out["trade_allowed"] = False
                 cautions.append(
                     f"ENH-76: BEAR_OB MIDDAY blocked -- "
                     f"po3_session_bias={_po3_76} (requires PO3_BEARISH)"
@@ -929,15 +935,21 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
         _in_aft = (13 * 60 + 30) <= _tot_mins < (15 * 60 + 0)
         if _in_aft and _ict76 == "BULL_OB" and action == "BUY_CE":
             if symbol == "NIFTY":
+                # TD-044 fix: sync block decision to out{} dict.
                 action        = "DO_NOTHING"
                 trade_allowed = False
+                out["action"]        = "DO_NOTHING"
+                out["trade_allowed"] = False
                 cautions.append(
                     "ENH-77: BULL_OB AFTERNOON NIFTY hard skip -- 50% WR (Exp 40)"
                 )
             elif symbol == "SENSEX":
                 if _po3_76 != "PO3_BULLISH":
+                    # TD-044 fix: sync block decision to out{} dict.
                     action        = "DO_NOTHING"
                     trade_allowed = False
+                    out["action"]        = "DO_NOTHING"
+                    out["trade_allowed"] = False
                     cautions.append(
                         f"ENH-77: BULL_OB AFTERNOON SENSEX blocked -- "
                         f"po3_session_bias={_po3_76} (requires PO3_BULLISH)"
@@ -950,6 +962,64 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
     except Exception as _e7677:
         cautions.append(f"ENH-76/77: time gate skipped ({_e7677})")
 
+    # -- ENH-78: DTE<3 PDH sweep -> current-week PE rule ---------------------
+    # Must run AFTER ENH-76/77 block and AFTER out["po3_session_bias"] set.
+    # Evidence: Exp 35D -- PDH DTE<3 + PO3_BEARISH = 90.9% EOD WR (N=11),
+    #   mean option return +125% SENSEX (current-week beats next-week).
+    #   DTE=1 sub-case strongest: 75% T+1D WR, mean|wins=0.556%.
+    # Condition:
+    #   po3_session_bias = PO3_BEARISH
+    #   AND 1 <= dte <= 2   (DTE=0 = already-expired context, excluded)
+    #   AND action = BUY_PE (bearish signal active)
+    # DTE=1 override: the standard DTE<=1 gate blocks trade_allowed and
+    #   deducts 12 confidence points. This edge is confirmed by session
+    #   bias -- gate lifted and penalty reversed.
+    # Stop rule: 40% of entry premium OR price re-takes PDH.
+    # -------------------------------------------------------------------------
+    _po3_78 = out.get("po3_session_bias", "PO3_NONE")
+    _enh78_active = (
+        _po3_78 == "PO3_BEARISH"
+        and dte is not None
+        and 1 <= dte <= 2
+        and action == "BUY_PE"
+    )
+    if _enh78_active:
+        if dte == 1:
+            # Lift the standard DTE<=1 gate for this confirmed-bias edge
+            trade_allowed = True
+            out["trade_allowed"] = True
+            # Reverse the -12 confidence penalty applied by DTE gate above
+            confidence += 12.0
+            confidence = max(0.0, min(100.0, confidence))
+            out["confidence_score"] = round(confidence, 1)
+            # Remove "DTE gate blocks trade" cautions added by DTE gate block
+            out["cautions"][:] = [
+                c for c in out.get("cautions", [])
+                if "DTE gate" not in c
+            ]
+            out["reasons"].append(
+                "ENH-78: DTE=1 gate lifted -- PO3_BEARISH PDH sweep, "
+                "current-week PE (90.9% EOD WR, Exp 35D)"
+            )
+        else:  # dte == 2
+            out["reasons"].append(
+                "ENH-78: DTE=2 PDH sweep confirmed -- current-week PE "
+                "(90.9% EOD WR, Exp 35D)"
+            )
+        out["cautions"].append(
+            "ENH-78: Stop = 40% of entry premium OR price re-takes PDH"
+        )
+        if not out.get("raw"):
+            out["raw"] = {}
+        out["raw"]["enh78_triggered"] = True
+        out["raw"]["enh78_dte"] = dte
+        out["raw"]["enh78_stop_note"] = "40pct_premium_or_pdh_reclaim"
+    elif dte is not None and 1 <= dte <= 2 and action == "BUY_PE":
+        # DTE<3 BUY_PE present but PO3_BEARISH not confirmed -- standard rules
+        if not out.get("raw"):
+            out["raw"] = {}
+        out["raw"]["enh78_triggered"] = False
+    # -- end ENH-78 -----------------------------------------------------------
     return out, flags
 
 

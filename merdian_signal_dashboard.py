@@ -15,24 +15,40 @@ from supabase import create_client
 load_dotenv()
 sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"])
 
+# ENH-46-D: Pine overlay generator (Session 11 extension)
+try:
+    from generate_pine_overlay import generate_pine_content as _gen_pine
+except ImportError:
+    _gen_pine = None
+
 IST      = ZoneInfo("Asia/Kolkata")
 PORT     = 8766
 SYMBOLS  = ["NIFTY", "SENSEX"]
 LOT_SIZE = {"NIFTY": 65, "SENSEX": 20}
 
+# ENH-86 v1: extended to 7-tuples (pat, cond, wr, tier, note, ev, n).
+# `ev` is a string (units vary: "+pts" for live edges from Exp 41B,
+# "+x.x%" for option-return expectancy from Exp 2/8). None where the
+# compendium does not give a clean source number.
+# `n` is sample size (int) or None where unclear.
+# Source experiments cited inline. Update when experiments rerun.
 WIN_RATES = [
-    ("BEAR_OB",   "MORNING (09:15-11:30)",    100.0, "TIER1", ""),
-    ("BULL_OB",   "MORNING (09:15-11:30)",    100.0, "TIER1", ""),
-    ("BULL_OB",   "DTE=0",                    100.0, "TIER1", "+107.4% exp"),
-    ("BULL_OB",   "AFTERNOON (13:00-15:00)",  100.0, "TIER1", "+75.3% exp"),
-    ("BULL_FVG",  "HIGH ctx + DTE=0",          87.5, "TIER1", "+58.9% exp"),
-    ("JUDAS_BULL","confirm at T+15m",           83.3, "TIER2", ""),
-    ("BEAR_OB",   "MOM_YES filter",             83.0, "TIER2", "+21.6pp lift"),
-    ("BULL_OB",   "MOM_YES filter",             80.0, "TIER2", ""),
-    ("JUDAS_BULL","unconfluenced",              69.0, "TIER3", ""),
-    ("BULL_FVG",  "SHORT_GAMMA + BULLISH",      65.0, "TIER2", ""),
-    ("BULL_FVG",  "NO confluence (ICT only)",   50.3, "TIER3", "MIN SIZE"),
-    ("BEAR_OB",   "AFTERNOON 13:00-14:30",      17.0, "SKIP",  "HARD SKIP"),
+    # E4/E5 LIVE edges — Exp 41B (point-EV, corrected scale)
+    ("BEAR_OB",   "MIDDAY + PO3_BEARISH (LIVE)",   88.2, "TIER1", "ENH-76",       "+116.5pts", 17),
+    ("BULL_OB",   "AFT + PO3_BULL SENSEX (LIVE)",  73.7, "TIER1", "ENH-77",       "+35.5pts",  19),
+    # Established static rules — Exp 2/6/8 (option-return EV)
+    ("BEAR_OB",   "MORNING (09:15-11:30)",    100.0, "TIER1", "Exp 8",         "+81.2%",   9),
+    ("BULL_OB",   "MORNING (09:15-11:30)",    100.0, "TIER1", "",              None,       None),
+    ("BULL_OB",   "DTE=0",                    100.0, "TIER1", "Exp 2 \u00a73", "+121.4%",  20),
+    ("BULL_OB",   "AFTERNOON (13:00-15:00)",  100.0, "TIER1", "ENH-40",        "+75.3%",   None),
+    ("BULL_FVG",  "HIGH ctx + DTE=0",          87.5, "TIER1", "Exp 6",         "+58.9%",   12),
+    ("JUDAS_BULL","confirm at T+15m",          83.3, "TIER2", "Exp 2c v2",     None,       None),
+    ("BEAR_OB",   "MOM_YES filter",             83.0, "TIER2", "Exp 8",         "+56.1%",  23),
+    ("BULL_OB",   "MOM_YES filter",             80.0, "TIER2", "Exp 8 lift",    "+64.9%",  None),
+    ("JUDAS_BULL","unconfluenced",              69.0, "TIER3", "",              None,       None),
+    ("BULL_FVG",  "SHORT_GAMMA + BULLISH",      65.0, "TIER2", "",              None,       None),
+    ("BULL_FVG",  "NO confluence (ICT only)",   50.3, "TIER3", "MIN SIZE",      None,       None),
+    ("BEAR_OB",   "AFTERNOON 13:00-14:30",      17.0, "SKIP",  "HARD SKIP",     "-24.7%",   None),
 ]
 
 # ---------------------------------------------------------------------------
@@ -240,18 +256,23 @@ def wr_for(tier, pat):
     return m.get(tier, 60.0)
 
 def legend_rows(pat):
+    # ENH-86 v1: colspan and unpack updated for 7-col table (added EV, N).
     if not pat or pat in ("NONE","NO DATA","ERROR"):
-        return '<tr><td colspan="5" class="no-pat">No active ICT pattern this cycle</td></tr>'
+        return '<tr><td colspan="7" class="no-pat">No active ICT pattern this cycle</td></tr>'
     rows = [r for r in WIN_RATES if r[0]==pat]
     if not rows:
-        return f'<tr><td colspan="5" class="no-pat">No WR data for {pat}</td></tr>'
+        return f'<tr><td colspan="7" class="no-pat">No WR data for {pat}</td></tr>'
     out = []
-    for p,cond,wr,tier,note in rows:
+    for p,cond,wr,tier,note,ev,n in rows:
         tc  = tier_col(tier)
         wrc = "wg" if wr>=80 else "wa" if wr>=60 else "wr" if wr>=30 else "ws"
+        ev_cell = ev if ev else "\u2014"
+        n_cell  = str(n) if n is not None else "\u2014"
         out.append(
             f'<tr><td class="lp">{p}</td><td>{cond}</td>'
             f'<td class="wc {wrc}">{wr:.0f}%</td>'
+            f'<td class="wc">{ev_cell}</td>'
+            f'<td class="nt">{n_cell}</td>'
             f'<td><span class="pill sm" style="border-color:{tc};color:{tc}">{tier}</span></td>'
             f'<td class="nt">{note}</td></tr>'
         )
@@ -340,11 +361,23 @@ def card(d):
         sig_ts = _ts_dt.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%dT%H:%M:%S+05:30")
     except Exception:
         sig_ts = _ts_raw
+    # TD-038 fix: convert UTC exit_ts to IST for the static label.
+    # exit_ts is a UTC isoformat string from build() (st + 30min where
+    # st is UTC). The countdown JS handles UTC->local via Date(), but
+    # the static "EXIT AT hh:mm IST" label was slicing UTC hh:mm.
+    # Mirror the same conversion already applied to sig_ts above.
+    try:
+        from datetime import datetime as _dt38
+        from zoneinfo import ZoneInfo as _ZI38
+        _exit_dt = _dt38.fromisoformat((exit_ts or "").replace("Z","+00:00"))
+        exit_ts_ist = _exit_dt.astimezone(_ZI38("Asia/Kolkata")).strftime("%Y-%m-%dT%H:%M:%S+05:30")
+    except Exception:
+        exit_ts_ist = exit_ts or ""
     if exit_ts and allowed:
         exit_html = (
             f'<div class="xb"><div class="xt">EXIT SIGNAL \u2014 T+30m FIXED</div>'
             f'<div class="xr"><span class="lb">Signal at</span><span class="vl">{sig_ts[11:16]} IST</span></div>'
-            f'<div class="xr"><span class="lb">EXIT AT</span><span class="vl xtm">{exit_ts[11:16]} IST</span></div>'
+            f'<div class="xr"><span class="lb">EXIT AT</span><span class="vl xtm">{exit_ts_ist[11:16]} IST</span></div>'
             f'<div class="cd" id="cd-{sym}" data-exit="{exit_ts}">--:--</div></div>'
         )
 
@@ -366,7 +399,7 @@ def card(d):
         f'</div>'
         f'{zone_html}{lots_html}{exec_html}{exit_html}'
         f'<div class="wd"><div class="wt">WIN RATE \u2014 {pat}</div>'
-        f'<table class="wt2"><thead><tr><th>Pattern</th><th>Condition</th><th>WR</th><th>Tier</th><th>Note</th></tr></thead>'
+        f'<table class="wt2"><thead><tr><th>Pattern</th><th>Condition</th><th>WR</th><th>EV</th><th>N</th><th>Tier</th><th>Note</th></tr></thead>'
         f'<tbody>{legend_rows(pat)}</tbody></table></div>'
         f'<div class="rw">{pill(gamma)} {pill(breadth)}</div>'
         f'<div class="cpr">'
@@ -745,6 +778,8 @@ def render():
   </div>
   <div class="zb" style="color:{zcol};border-color:{zcol}">{zlbl}</div>
   <button class="rb" onclick="location.reload()">&#8635; REFRESH</button>
+  <button class="rb" onclick="window.location.href='/download_pine'" title="Download Pine overlay (auto-generated from ict_htf_zones)">&#128190; PINE OVERLAY</button>
+  <button class="rb" onclick="if(confirm('Rebuild hourly zones in DB then regenerate Pine? Takes 10-30 seconds.'))window.location.href='/refresh_and_download_pine'" title="ENH-84: Rebuild hourly zones then download fresh Pine">&#128260; REFRESH ZONES</button>
 </div>
 <div class="main">
   {cards}
@@ -968,6 +1003,80 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(404); self.end_headers()
 
     def do_GET(self):
+        if self.path.startswith("/refresh_and_download_pine"):
+            # -- ENH-84: rebuild H zones then regenerate and serve Pine ----
+            # Synchronous: subprocess + Pine regen runs inside the GET
+            # handler. Browser will hang ~10-30s. Acceptable for manual
+            # refresh action; not used during automated cycles.
+            # --------------------------------------------------------------
+            try:
+                import subprocess as _sp
+                import os as _os
+                _cwd = _os.path.dirname(_os.path.abspath(__file__))
+                _result = _sp.run(
+                    ["python", "build_ict_htf_zones.py",
+                     "--timeframe", "H"],
+                    capture_output=True, text=True, timeout=60, cwd=_cwd,
+                )
+                if _result.returncode != 0:
+                    _stderr_tail = (_result.stderr or "")[-500:]
+                    raise RuntimeError(
+                        f"build_ict_htf_zones.py exited "
+                        f"{_result.returncode}: {_stderr_tail}"
+                    )
+                if _gen_pine is None:
+                    raise ImportError(
+                        "generate_pine_overlay.py not importable"
+                    )
+                _content = _gen_pine(sb)
+                _body = _content.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type",
+                                 "text/plain; charset=utf-8")
+                self.send_header(
+                    "Content-Disposition",
+                    'attachment; filename='
+                    '"merdian_ict_htf_zones_refreshed.pine"',
+                )
+                self.send_header("Content-Length", len(_body))
+                self.end_headers()
+                self.wfile.write(_body)
+            except _sp.TimeoutExpired:
+                _err = b"# ENH-84: zone rebuild timed out after 60s"
+                self.send_response(500)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", len(_err))
+                self.end_headers()
+                self.wfile.write(_err)
+            except Exception as _e:
+                _err = f"# ENH-84: refresh failed: {_e}".encode()
+                self.send_response(500)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", len(_err))
+                self.end_headers()
+                self.wfile.write(_err)
+            return
+        if self.path.startswith("/download_pine"):
+            # ENH-46-D: generate Pine overlay from DB and serve as download
+            try:
+                if _gen_pine is None:
+                    raise ImportError("generate_pine_overlay.py not found in working directory")
+                content = _gen_pine(sb)
+                body = content.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Disposition", 'attachment; filename="merdian_ict_htf_zones.pine"')
+                self.send_header("Content-Length", len(body))
+                self.end_headers()
+                self.wfile.write(body)
+            except Exception as e:
+                err = f"# Error generating Pine overlay: {e}".encode()
+                self.send_response(500)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", len(err))
+                self.end_headers()
+                self.wfile.write(err)
+            return
         try:
             html = render()
             body = html.encode("utf-8")

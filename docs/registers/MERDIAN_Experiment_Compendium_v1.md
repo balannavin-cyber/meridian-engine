@@ -27,6 +27,208 @@ Each experiment entry has:
 
 Experiments are ordered by number. Most recent experiments at top.
 
+Update note 2026-05-02 (Session 15): registered metadata also at top — period covered now extends Apr 2025 → Apr 2026 (full backfill on patched zone builders, 264 NIFTY + 263 SENSEX trading days, 40,384 zone rows in `hist_ict_htf_zones`, 7,484 signal rows in `hist_pattern_signals` after the BEAR_FVG fix shipped this session). All Session 15 experiments below were run on this dataset. Note: Exp 50 / Exp 50b results recorded here are BULL-only (the bug-discovery vehicle for the BEAR_FVG defect closed this session) — expected to be re-run on now-symmetric data in Session 16.
+
+---
+
+## Experiment 50b — Velocity Test on Cluster-FVG Inversion (BULL-only, MARGINAL)
+
+**Date:** 2026-05-01 (Session 15)
+**Script:** `experiment_50b_fvg_on_ob_velocity.py`
+
+**Question:** If Exp 50's cluster-FVG inversion is real, is it driven by exhaustion? Hypothesis: tight clusters (small lookback × small proximity) imply fast pre-FVG velocity, FVG forms over-extended, fails more often. Test: partition cluster-FVGs by velocity quartile and check whether WR drops monotonically Q1 → Q4.
+
+**Setup:**
+- Reused Exp 50 cluster definition (BULL_FVG within `lookback_min` after BULL_OB and within `proximity_pct` of OB zone). Same 3×3 sweep grid.
+- Velocity = `abs(fvg_price - ob_price) / delta_min` (price-distance per unit time between OB and the subsequent FVG).
+- Quartile partition per (lookback_min, proximity_pct) cell.
+- Outcome: ret_30m sign per cluster pair.
+- BULL-only — `hist_pattern_signals` had 0 BEAR_FVG rows at experiment-run time (subsequently fixed in same session — re-run on bidirectional data is Session 16 carry-forward).
+
+**Decision rule:** PASS = headline cell shows DECREASING WR from Q1 to Q4 AND ≥60% of voting cells (N≥20) show same direction.
+
+**Findings:**
+
+| Lookback | Prox% | N | WR_Q1 | WR_Q4 | Direction |
+|---|---|---|---|---|---|
+| 30 | 0.50 | 47 | 28.6% | 16.7% | DECREASING |
+| 30 | 1.00 | 63 | 31.3% | 25.0% | DECREASING |
+| 60 | 0.50 | 75 | 36.8% | 13.3% | **DECREASING (headline cell)** |
+| 60 | 1.00 | 110 | 39.3% | 35.7% | DECREASING (slight) |
+| 120 | 0.50 | 187 | 51.1% | 38.3% | DECREASING |
+| 120 | 1.00 | 242 | 55.7% | 47.5% | INCREASING (anomaly) |
+
+- Headline cell (60min/0.50%, N=75) PASSes — Q1 36.8% → Q4 13.3%, monotonically decreasing.
+- Across 7 voting cells (N≥20), 3 of 7 show DECREASING = **43% sweep PASS rate**, below the 60% bar.
+
+**Verdict — MARGINAL.** Direction supports exhaustion at the headline cell, but sweep robustness fails. The inversion could be (a) real exhaustion, (b) survivorship bias in standalone bucket (Exp 50 alternative explanation: as cluster definition expands, the standalone bucket loses higher-quality FVGs that had a "background" OB, dragging standalone WR down disproportionately at loose thresholds), or (c) noise. Cannot ship as a filter without bidirectional validation.
+
+**Builds:** None. Carry-forward to Session 16: re-run on bidirectional data.
+
+---
+
+## Experiment 50 — FVG-on-OB Cluster vs Standalone (BULL-only, FAIL with anomaly; bug-discovery vehicle)
+
+**Date:** 2026-05-01 (Session 15)
+**Script:** `experiment_50_fvg_on_ob_cluster.py`
+
+**Question:** Per ICT's PD Array Matrix theory: does an FVG forming after price leaves an OB (same direction) have higher WR than a standalone FVG? Theory: cluster = institutional sponsorship + structural foundation = higher probability.
+
+**Setup:**
+- 3×3 sweep: `lookback_min` ∈ {30, 60, 120} × `proximity_pct` ∈ {0.20%, 0.50%, 1.00%}.
+- Cluster = BULL_FVG within `lookback_min` after a BULL_OB AND within `proximity_pct` of OB zone.
+- Standalone = BULL_FVG with no preceding BULL_OB in window.
+- Outcome: ret_30m sign.
+- BULL-only — `hist_pattern_signals` had 0 BEAR_FVG rows (cause was the bug this experiment surfaced).
+
+**Decision rule:** PASS = cluster WR ≥ standalone + 5pp AND cluster EV_30m ≥ standalone × 1.3 AND cluster N ≥ 30.
+
+**Findings (BULL-only):**
+
+| Lookback | Prox% | N_cluster | WR_cluster | WR_standalone | WR_delta | Verdict |
+|---|---|---|---|---|---|---|
+| 30 | 0.20 | 8 | 0.0% | 36.2% | -36.2pp | FAIL (N too low) |
+| 30 | 0.50 | 47 | 21.3% | 36.5% | -15.2pp | FAIL |
+| 30 | 1.00 | 63 | 30.2% | 36.2% | -6.1pp | FAIL |
+| 60 | 0.20 | 13 | 15.4% | 36.1% | -20.8pp | FAIL |
+| 60 | 0.50 | 75 | 24.0% | 36.7% | -12.7pp | FAIL (headline) |
+| 60 | 1.00 | 110 | 37.3% | 35.8% | +1.5pp | FAIL |
+| 120 | 0.20 | 36 | 36.1% | 35.9% | +0.2pp | FAIL |
+| **120** | **0.50** | **187** | **41.2%** | **35.0%** | **+6.2pp** | **PASS (1/9 cells)** |
+| 120 | 1.00 | 242 | 49.2% | 32.8% | +16.4pp | FAIL on EV-ratio (mis-calibrated criterion) |
+
+- 1/9 cells PASS at the 120min/0.50% loose threshold only.
+- **Monotonic INVERSION of ICT's prediction at tight thresholds**: cluster WR is WORSE than standalone WR. Effect grows as thresholds tighten (largest at 30min/0.20% = -36.2pp WR delta).
+- The trend is monotonic and consistent across the sweep grid.
+- Two competing explanations (per Exp 50b which tested one): exhaustion vs survivorship in standalone bucket.
+
+**Critical ancillary finding (the actual headline of this experiment).** During Exp 50 setup, discovered `hist_pattern_signals` contained 1,261 BULL_FVG and **0 BEAR_FVG** signals over 13 months. Per market structure (sustained bear periods clearly visible on weekly chart Apr 2024-2026, NIFTY -17% Aug 2024 → Mar 2025), this is impossible. Operator challenged. Triggered five-step `diagnostic_bear_fvg_audit.py`, six-bug code review of `build_ict_htf_zones_historical.py`, two production patches (S1.a + S1.b), full historical backfill (40,384 rows), live builder patch (S1.a + S1.b + 1H BEAR_FVG mirror), signal table rebuild (6,318 → 7,484 rows; **BEAR_FVG 0 → 795**). Closes TD-S1-BEAR-FVG-DETECTOR.
+
+**Verdict — FAIL with anomaly (and a major bug discovered).** ICT's PD Array Matrix prediction is INVERTED on BULL-only data at all but one cell. The actual deliverable from this experiment is the BEAR_FVG production fix.
+
+**Caveats and carry-forward:**
+- The EV-ratio criterion (cluster EV_30m ≥ standalone × 1.3) is mis-calibrated when both EVs are tiny negatives — the ratio becomes a meaningless multiple of two near-zeros. Drop this criterion when re-running; keep WR-delta + N-floor only.
+- The 1/9-cell PASS at 120min/0.50% may be a survivorship artifact (loose thresholds drain the standalone bucket of background-OB-adjacent FVGs).
+- Carry-forward to Session 16: re-run on now-symmetric data — 18 cells (vs 9), proper bear-side test of the inversion claim. Either bear-side replicates the inversion (real signal) or it doesn't (BULL-only artifact).
+
+**Builds:** None directly from Exp 50. The bug discovery led to S1 production patches in `build_ict_htf_zones_historical.py` and `build_ict_htf_zones.py` — that is the deliverable.
+
+---
+
+## Experiment 47b — Backwards-Looking Anchors (HYPOTHESIS FALSIFIED — closes ENH-85 "slower anchor" path)
+
+**Date:** 2026-05-01 (Session 15)
+**Script:** `experiment_47b_backwards_anchor.py`
+
+**Question:** Are `ret_30m_back` (close[B] − close[B−6]) or `ret_60m_back` (close[B] − close[B−12]) more stable than `ret_session` (anchored to session open, the ENH-55 V4 baseline) as direction policy? If so, swapping anchors is a low-cost candidate fix for the ENH-55 flip-flop problem.
+
+**Setup:**
+- Pulled `hist_pattern_signals` rows + matching `hist_spot_bars_5m` for backwards lookups.
+- Computed `ret_30m_back` and `ret_60m_back` per signal bar.
+- Counted same-session direction flips per anchor (number of sign changes per (symbol, trade_date)).
+- Per-pattern WR Rule-14-compliant: forward `ret_30m` as outcome; backwards anchor sign as policy.
+
+**Findings:**
+
+| Policy | Same-session flips/session | Multiplier vs ret_session |
+|---|---|---|
+| ret_session (baseline) | 0.27 | 1.00x |
+| ret_30m_back | 0.85 | **3.13x baseline (213% MORE flips)** |
+| ret_60m_back | 0.77 | **2.87x baseline (187% MORE flips)** |
+
+- Per-pattern WR using backwards anchors: 53–58% (within noise; not predictive).
+- Both backwards-rolling anchors flip MORE than `ret_session`, not less.
+
+**Verdict — FALSIFIED.** `ret_session` (anchored to session open, zero rolling) is structurally the slowest available anchor — there is no "slower anchor" path remaining for ENH-85.
+
+**Implication for ENH-85.** Remaining design paths reduced to: (a) **hard PO3 lock** (anchor flips disallowed when PO3 session bias confirmed — risks fighting genuine reversals; needs Exp 43-style stability backing first), or (b) **persistence filter** (require N consecutive same-direction signals before flipping — adds latency but preserves adaptation). Decision deferred to Session 16+. Status update for ENH-85 reflected in Enhancement Register Status Summary table.
+
+**Note on Exp 43 relationship.** Exp 47b answers a subset of Exp 43's question (option 2 of 4: "slower anchor"). Options 1 (persistence filter), 3 (hysteresis), and 4 (PO3 as soft prior weight) remain testable. Exp 43 itself remains PROPOSED at the register level.
+
+**Builds:** None directly. ENH-85 design space recorded as reduced.
+
+---
+
+## Experiment 47 — Direction Stability Anchor (INVALID — superseded by Exp 47b)
+
+**Date:** 2026-05-01 (Session 15)
+**Script:** `experiment_47_direction_stability_anchors.py`
+
+**Question:** Does using `ret_30m`, `ret_60m`, or `ret_session` as a slower anchor than ENH-55 V4's current anchor reduce same-session direction flips?
+
+**Setup:**
+- For each `hist_pattern_signals` row, compute candidate-anchor-direction (sign of metric).
+- Count same-session flips per anchor per symbol.
+- Compute per-pattern WR using the anchor as the policy.
+
+**Findings:**
+- Per-pattern WR 99–100% across all anchors. No real-world classifier achieves this.
+
+**Diagnosis.** `ret_30m` was used as BOTH the policy (sign-as-direction) and the outcome (forward T+30m return per Rule 14). Tautological — predicting the sign of `ret_30m` from the sign of `ret_30m`. The classifier's "win rate" was just measuring agreement of a quantity with itself.
+
+**Verdict — INVALID by construction.** Filed Exp 47b with backwards-looking anchors only (ret_30m_back / ret_60m_back computed from `hist_spot_bars_5m`).
+
+**Builds:** None.
+
+---
+
+## Experiment 44 — Intraday Inverted Hammer Reversal After Cascade (FAIL, with TZ-bug caveat)
+
+**Date:** 2026-05-01 (Session 15)
+**Script:** `experiment_44_inverted_hammer_cascade.py`
+
+**Question:** From Session 14 EOD seed observation (NIFTY 09:30–10:00 IST V-recovery from −300pt opening cliff): does an inverted hammer after a sustained intraday cascade, followed by a non-violating range test, predict a reversal large enough to trade at T+30m / T+60m / EOD? Run both bearish-cascade (long-side reversal) AND bullish-cascade mirror (short-side reversal) sides separately.
+
+**Setup:**
+- Source: `hist_spot_bars_5m` Apr 2025 → Apr 2026, both symbols, in-session 09:15–15:30 IST per CLAUDE.md Rule 16.
+  - **Caveat noted post-result:** Rule 16 was applied verbatim to the entire 263-day sample. The post-04-07 era (~22 sessions) requires era-aware TZ handling per TD-NEW-RULE16-ERA-AWARE — those sessions had ~9 in-session bars analysed instead of ~76. Verdict survives a back-of-envelope re-evaluation (affected sessions are too few to flip cell counts) but a v2 re-run with era-aware TZ would close cleanly.
+- Sweep grid: 6 cascade thresholds (`cascade_pct` ∈ {0.20, 0.25, 0.30, 0.35, 0.40, 0.45}%) × 4 lookback bars (`lookback_bars` ∈ {3, 5, 7, 9}) × 2 sides (bull/bear) × 3 horizons (6, 12, 30 bars = 30m, 60m, 2.5h) × 2 symbols = 288 cells.
+- Cascade definition: spot drops `cascade_pct` within `lookback_bars` of session open.
+- Win: forward return aligned with side at horizon.
+
+**Decision rule:** PASS = (sym, cas, lb, side, horizon) cell with WR ≥ 70 AND N ≥ 30.
+
+**Findings:**
+- **No cell met both thresholds simultaneously.**
+- Highest-WR cells were N=4–12 (underpowered).
+- Highest-N cells (>50) had WR in the 48–58% range.
+- The seed pattern (NIFTY V-recovery 2026-04-30) appears to be a single-instance memorable observation, not a generalisable rule.
+
+**Verdict — FAIL.** No tradeable rule. Closed.
+
+**Caveat (re-run option).** Re-run as Exp 44 v2 with era-aware Rule 16 if revisiting; filed as Session 16 Candidate C contingent.
+
+**Builds:** None.
+
+---
+
+## ADR-003 Phase 1 — ICT Zone Respect-Rate Diagnostic (RESULT — INVALID, methodology bug)
+
+**Date:** 2026-05-01 (Session 15)
+**Script:** `adr003_phase1_zone_respect_rate_v2.py` (and v1 prior)
+**ADR:** See `ADR-003-ict-zone-architecture-review.md` for full Phase 1 results section + Phase 1 v3 plan.
+
+**Question:** Per Session 14 ADR-003 proposal: do `ict_htf_zones` and `hist_ict_htf_zones` zones reflect price-pivot behaviour? Compute respect-rate (% of zone touches where spot reverses within zone) over last 10 trading days for each timeframe. No redesign without numeric evidence.
+
+**Setup:**
+- Pulled active zones from both tables for last 10 sessions, both symbols.
+- For each zone, found 5m bars where spot entered the zone (high ≥ zone_low AND low ≤ zone_high).
+- For each entry, classified as RESPECTED (spot reversed within zone) or BROKEN (spot exited the other side).
+- Computed respect-rate per (symbol, timeframe, pattern_type).
+
+**Initial findings (v1, v2 — both INVALID):**
+- Raw respect-rate: 0% across all timeframes for both symbols.
+- Apparent post-04-07 `hist_spot_bars_5m` coverage: 27.5% (vs ~100% pre-04-07).
+- D zone count in lookback: 0.
+
+**Diagnosis (mid-investigation, two independent bugs surfaced):**
+1. The 27.5% coverage was a script-side bug. CLAUDE.md Rule 16 says: apply `replace(tzinfo=None)` to bar_ts then filter to in-session 09:15–15:30. This is correct for pre-04-07 era only. Post-04-07 bars are stored as true UTC; Rule 16 verbatim drops most of the day. Real coverage post-04-07 is ~100% per `diagnostic_bar_coverage_audit_v3.py` (which avoids the issue by filtering on `trade_date` column).
+2. The 0 D zones in lookback was a separate finding. The historical builder writes D-zone non-FVG with `valid_to = valid_from = target_date` — exactly 1 day validity. By definition, D zones expire by the next session and don't appear in 10-day lookback queries that filter on `valid_from <= lookback_start AND valid_to >= today`.
+
+**Verdict — INVALID.** Methodology compromised by script-side TZ-handling bug AND latent D-zone validity bug. Phase 1 v3 with era-aware Rule 16 needed before any architecture verdict can be drawn.
+
+**Builds:** Two TDs filed — TD-NEW-RULE16-ERA-AWARE (CLAUDE.md Rule 16 needs era-aware addendum, addressed Session 16 Candidate C) and reinforcement of TD-S2.b (D-zone single-day validity for non-FVG). No architecture decision made yet — pending Phase 1 v3.
+
 ---
 
 ## Experiment 41B — Corrected EV for E4/E5 (ret_30m scale fix)

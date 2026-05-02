@@ -9,7 +9,7 @@
 | Document | `docs/registers/MERDIAN_Enhancement_Register.md` |
 | Scope | Living register of all proposed and delivered MERDIAN enhancements, ENH-01 through ENH-86 |
 | Lineage | Unified from v1 (2026-03-31) through v7 (2026-04-19 v8-appended). Prior versioned files archived at `docs/registers/archive/`. |
-| Last updated | 2026-04-29 (Session 13 — ENH-75/76/77 SHIPPED; ENH-84/85/86 filed; Exp 43 filed) |
+| Last updated | 2026-05-02 (Session 15 — Exp 44/47/47b/50/50b run with verdicts; ENH-85 design space reduced via Exp 47b; production patches shipped to two zone builders closing TD-S1-BEAR-FVG-DETECTOR; ADR-003 Phase 1 v1/v2 INVALID — see ADR file for v3 plan; no new ENH IDs filed) |
 | Purpose | Forward-looking and historical register of all enhancement proposals, their status, evidence, and delivery. |
 | Authority | Current operational state of each ENH. Session appendices win on session-specific rationale; this register wins on current status. |
 | Update rule | Update in-place (append or edit). Do NOT create a new versioned file. |
@@ -118,7 +118,7 @@ Sortable table of all 86 IDs. For full detail see Part 4.
 | ENH-73b | Dashboard latched-signal panel (Session 9 wave 2, deferred) | 1 | **PROPOSED-DEFERRED** |
 
 | ENH-84 | Dashboard "Refresh Zones + Pine" Button (intraday) | 1 | **SHIPPED 2026-04-30** |
-| ENH-85 | PO3 Session Direction Lock (anti-flip-flop) | 1 | **PROPOSED-DEFERRED (pending Exp 43)** |
+| ENH-85 | PO3 Session Direction Lock (anti-flip-flop) | 1 | **PROPOSED-DEFERRED — design space reduced Session 15 via Exp 47b (slower-anchor falsified); remaining paths: hard PO3 lock OR persistence filter** |
 | ENH-86 | Dashboard WIN RATE Section Redesign | 1 | **SHIPPED v1 2026-04-30 (v2 BLOCKED/ALLOWED prominence DEFERRED)** |
 | ENH-78 | DTE<3 PDH sweep → current-week PE rule | 1 | **SHIPPED 2026-04-30** |
 | ENH-79 | PWL weekly sweep detection + signal entry rules | 1 | **PROPOSED** |
@@ -2394,3 +2394,129 @@ Original purpose: cache `build_expiry_index_simple()` output across cycles to av
 | Today's data point | 2026-04-30 NIFTY 15m candle K ~09:45 IST. Verify candle attributes via `hist_spot_bars_5m` after EOD rollup tomorrow. Treat as live N=1 prior. |
 | Forbidden ground | Do NOT cherry-pick threshold values. Use canonical sweep methodology from Exp 29 v2 (full-year sweep, multiple thresholds, report best/worst). Do NOT mix Bearish + Bullish samples — they are independent hypotheses. |
 | Output | Compendium entry with N, WR, EV per side per symbol per horizon. Decision: PASS (file as ENH-N), MARGINAL (revisit later), FAIL (rule out). |
+
+
+---
+
+## Session 15 New ENH Entries (2026-05-02)
+
+No new ENH IDs filed Session 15. Six experiments registered (Exp 44 result, Exp 47, Exp 47b, Exp 50, Exp 50b, ADR-003 Phase 1 result). Two production patches shipped to zone builders, closing TD-S1-BEAR-FVG-DETECTOR (see `tech_debt.md`). ENH-85's design space was reduced by Exp 47b — see status update in Part 1 Status Summary table.
+
+### Exp 44 — Intraday Inverted Hammer Reversal After Cascade (RESULT — FAIL, with TZ-bug caveat)
+
+| Field | Detail |
+|---|---|
+| Status | **FAIL (with caveat — re-run as Exp 44 v2 with era-aware Rule 16 if revisiting). Resolves PROPOSED state from Session 14 EOD addendum entry above.** |
+| Session run | Session 15 (2026-05-01) |
+| Script | `experiment_44_inverted_hammer_cascade.py` |
+| Sweep grid | 6 cascade thresholds × 4 lookback bars × 2 sides (bull/bear) × 3 horizons (6/12/30 bars) × 2 symbols = 288 cells |
+| Decision rule (set Session 14) | PASS = (sym, cas, lb, side, horizon) cell with WR ≥ 70 AND N ≥ 30 |
+| Result | **No cell met both thresholds simultaneously.** Highest-WR cells were N=4-12 (underpowered). Highest-N cells (>50) had WR in 48-58% range. |
+| Verdict | FAIL. The seed observation (NIFTY 09:30-10:00 IST V-recovery on 2026-04-30) appears to be a single memorable instance, not a generalisable rule. |
+| Caveat (filed Session 15 post-result) | Script applied CLAUDE.md Rule 16 verbatim to the entire 263-day sample. The post-04-07 era (~22 sessions) requires era-aware TZ handling per TD-NEW-RULE16-ERA-AWARE — those sessions had ~9 in-session bars analysed instead of ~76. Verdict survives a back-of-envelope re-evaluation (the affected sessions are too few to flip the cell counts) but a v2 re-run with era-aware TZ would close the verdict cleanly. Filed as Session 16 Candidate C contingent. |
+| Forbidden ground | (Already-honored.) Did NOT cherry-pick threshold; canonical sweep methodology preserved per the Session 14 entry above. |
+| Builds | None. |
+
+---
+
+### Exp 47 — Direction Stability Anchor (INVALID — superseded by Exp 47b)
+
+| Field | Detail |
+|---|---|
+| Status | **INVALID (tautological by construction). Superseded by Exp 47b.** |
+| Session run | Session 15 (2026-05-01) |
+| Script | `experiment_47_direction_stability_anchors.py` |
+| Question | Does using `ret_30m`, `ret_60m`, or `ret_session` as a slower anchor instead of ENH-55 V4's current anchor reduce same-session direction flips? |
+| Method | For each `hist_pattern_signals` row, compute candidate-anchor-direction; per-pattern WR using the anchor as policy and `ret_30m` sign as outcome; same-session flip count per anchor. |
+| Result | Per-pattern WR 99-100% across all anchors. Suspicious — no real-world classifier achieves this. |
+| Diagnosis | `ret_30m` was used as BOTH the policy (direction sign) and the outcome (forward T+30m return per Rule 14). Tautological — predicting the sign of `ret_30m` from the sign of `ret_30m`. |
+| Verdict | INVALID by construction. Filed Exp 47b with backwards-looking anchors only. |
+| Builds | None. |
+
+---
+
+### Exp 47b — Backwards-Looking Anchors (HYPOTHESIS FALSIFIED — closes ENH-85 "slower anchor" path)
+
+| Field | Detail |
+|---|---|
+| Status | **HYPOTHESIS FALSIFIED. ENH-85 design space reduced — "use a slower anchor" path closed; remaining options: hard PO3 lock OR persistence filter.** |
+| Session run | Session 15 (2026-05-01) |
+| Script | `experiment_47b_backwards_anchor.py` |
+| Question | Are `ret_30m_back` (close[B] - close[B-6]) or `ret_60m_back` (close[B] - close[B-12]) more stable than `ret_session` (anchored to session open, the ENH-55 V4 baseline) as direction policy? |
+| Method | Pulled `hist_pattern_signals` rows + matching `hist_spot_bars_5m` for backwards lookups. Computed both backwards anchors per signal. Counted same-session flips per anchor. Per-pattern WR Rule-14-compliant (forward `ret_30m` as outcome, backwards anchor as policy). |
+| Result | ret_session baseline: 0.27 flips/session. ret_30m_back: 0.85 flips/session = **3.13x baseline** (213% MORE flips). ret_60m_back: 0.77 flips/session = **2.87x baseline** (187% MORE flips). Per-pattern WR using backwards anchors: 53-58% (within noise). |
+| Verdict | FALSIFIED. Backwards-looking rolling anchors flip MORE than `ret_session`, not less. `ret_session` (anchored to session open, zero rolling) is structurally the slowest available anchor — there is no "slower anchor" path remaining for ENH-85. |
+| Implication for ENH-85 | Remaining design paths reduced to: (a) **hard PO3 lock** (anchor flips disallowed regardless of underlying signal — risks fighting genuine reversals; needs Exp 43-style stability backing per Session 13 entry), or (b) **persistence filter** (require N consecutive same-direction signals before flipping — adds latency but preserves adaptation). Decision deferred to Session 16+. |
+| Note on Exp 43 relationship | Exp 47b answers a subset of Exp 43's question (option 2 of 4: "slower anchor"). Options 1 (persistence filter), 3 (hysteresis), and 4 (PO3 as soft prior weight) remain testable. Exp 43 itself remains PROPOSED at register-level — Session 16+ work. |
+| Builds | None. ENH-85 design space recorded. |
+
+---
+
+### Exp 50 — FVG-on-OB Cluster vs Standalone (FAIL with anomaly; bug-discovery vehicle)
+
+| Field | Detail |
+|---|---|
+| Status | **FAIL with monotonic INVERSION anomaly, BULL-only — invalid until re-run on now-symmetric data. CRITICAL: the bug-discovery vehicle for the BEAR_FVG defect closed this session.** |
+| Session run | Session 15 (2026-05-01) |
+| Script | `experiment_50_fvg_on_ob_cluster.py` |
+| Question | Per ICT's PD Array Matrix theory: does an FVG forming after price leaves an OB (same direction) have higher WR than a standalone FVG? Theory: cluster = institutional sponsorship + structural foundation = higher probability. |
+| Method | 3×3 sweep (lookback_min ∈ {30, 60, 120} × proximity_pct ∈ {0.20, 0.50, 1.00}). For each cell: cluster = BULL_FVG within `lookback_min` after a BULL_OB and within `proximity_pct` of OB zone; standalone = BULL_FVG with no preceding BULL_OB in window. Outcome: ret_30m sign. |
+| Decision rule | PASS = cluster WR ≥ standalone + 5pp AND cluster EV_30m ≥ standalone × 1.3 AND cluster N ≥ 30. |
+| Result (BULL-only) | **1/9 cells PASS** (only 120min/0.50% loose threshold). Pattern shows monotonic INVERSION of ICT prediction at tight thresholds: cluster WR is WORSE than standalone WR. Effect grows as thresholds tighten (largest at 30min/0.20% = -36.2pp WR delta). Headline cell (60min/0.50%, N=75): cluster WR 24.0% vs standalone 36.7%, delta -12.7pp. |
+| Verdict | FAIL with anomaly. Inversion plausibly explained by either (a) exhaustion (tight cluster = price moved fast = FVG forms over-extended, fails more), or (b) survivorship bias (cluster definition expands → standalone bucket loses higher-quality FVGs that had a "background" OB → standalone WR drops disproportionately at loose thresholds, making cluster look better). Tested via Exp 50b. |
+| **CRITICAL ancillary finding** | During Exp 50 setup, discovered `hist_pattern_signals` contains 1,261 BULL_FVG and **0 BEAR_FVG** signals over 13 months. Per market structure (sustained bear periods clearly visible on weekly chart Apr 2024-2026, NIFTY -17% Aug 2024 → Mar 2025), this is impossible. Operator challenged. Triggered five-step `diagnostic_bear_fvg_audit.py`, six-bug code review of `build_ict_htf_zones_historical.py`, two production patches (S1.a + S1.b), full historical backfill (40,384 rows), live builder patch (S1.a + S1.b + 1H BEAR_FVG mirror), and signal table rebuild (6,318 → 7,484 rows; **BEAR_FVG 0 → 795**). Closes TD-S1-BEAR-FVG-DETECTOR. |
+| Carry-forward | Re-run on now-symmetric data in Session 16 (Candidate A). 18 cells (vs 9) with bear-side data added. Drop EV-ratio criterion when re-running (when both standalone and cluster EVs are tiny negatives, the ratio is meaningless); keep WR-delta + N-floor only. |
+| Builds | None directly from Exp 50. The bug discovery led to S1 production patches — that's the actual deliverable from this experiment. |
+
+---
+
+### Exp 50b — Velocity Test on Cluster Inversion (MARGINAL, BULL-only)
+
+| Field | Detail |
+|---|---|
+| Status | **MARGINAL — direction supports exhaustion at headline cell but sweep robustness fails. BULL-only — invalid until re-run on now-symmetric data.** |
+| Session run | Session 15 (2026-05-01) |
+| Script | `experiment_50b_fvg_on_ob_velocity.py` |
+| Question | Is Exp 50's cluster-FVG inversion driven by exhaustion? Hypothesis: tight clusters imply fast pre-FVG velocity, FVG forms over-extended, fails more often. Test: partition cluster-FVGs by velocity quartile and check if WR drops as velocity rises. |
+| Method | Reused Exp 50 cluster definition. For each cluster pair: velocity = abs(fvg_price - ob_price) / delta_min. Partitioned cluster pairs into velocity quartiles per cell. Measured WR per quartile. |
+| Decision rule | PASS = headline cell shows DECREASING WR Q1→Q4 AND ≥60% of voting cells (N≥20) show same direction. |
+| Result (BULL-only) | Headline cell (60min/0.50%, N=75): Q1 WR 36.8% → Q4 WR 13.3% — DECREASING (consistent with exhaustion). Sweep across 7 voting cells (N≥20): 3 of 7 = 43% DECREASING (below the 60% bar). 1 anomaly cell (120min/1.00%, N=242): Q1 55.7% → Q4 47.5% INCREASING. |
+| Verdict | MARGINAL. Direction supports exhaustion hypothesis at the headline cell, but sweep robustness fails. Could be (a) real exhaustion, (b) survivorship in standalone bucket (Exp 50 alternative explanation), or (c) noise. Cannot ship as a filter without bidirectional validation. |
+| Carry-forward | Re-run on bidirectional data in Session 16 (Candidate A). The bigger N from bear-side data should make quartile partitioning more robust. |
+| Builds | None. |
+
+---
+
+### ADR-003 Phase 1 — Zone Respect-Rate (RESULT — INVALID, methodology bug)
+
+| Field | Detail |
+|---|---|
+| Status | **INVALID — script-side TZ-handling methodology bug. v3 with era-aware Rule 16 needed. Filed Session 16 Candidate C.** Resolves PROPOSED state from Session 14 EOD addendum. |
+| Session run | Session 15 (2026-05-01) |
+| Script | `adr003_phase1_zone_respect_rate_v2.py` |
+| ADR file | See `ADR-003-ict-zone-architecture-review.md` for full Phase 1 results section + carry-forward Phase 1 v3 plan. |
+| Question | Per Session 14 ADR-003 proposal: do `ict_htf_zones` and `hist_ict_htf_zones` zones reflect price-pivot behaviour? Compute respect-rate over last 10 trading days per timeframe. |
+| Result (raw, before discovery) | 0% respect across all timeframes for both symbols. Apparent post-04-07 `hist_spot_bars_5m` coverage 27.5%. 0 D zones in 10-day lookback. |
+| Diagnosis (mid-investigation) | The 27.5% coverage was a script-side bug, not a pipeline failure. Script applied CLAUDE.md Rule 16 (`replace(tzinfo=None)` then filter to 09:15-15:30) verbatim to post-04-07 era. Post-04-07 bars are stored as true UTC; the verbatim filter dropped to ~9 bars/day. Real coverage post-04-07 is ~100% per `diagnostic_bar_coverage_audit_v3.py` (which uses `trade_date` column instead). The 0 D zones in lookback was a separate finding — D-zone non-FVG validity in the historical builder is exactly 1 day (TD-S2.b), so D zones expire by next session. |
+| Verdict | INVALID. Methodology compromised by script-side TZ-handling bug AND latent D-zone validity bug. Phase 1 v3 with era-aware Rule 16 needed before any architecture verdict can be drawn. |
+| Builds | Two TDs filed — TD-NEW-RULE16-ERA-AWARE (CLAUDE.md Rule 16 needs era-aware addendum, addressed Session 16 Candidate C) and reinforcement of TD-S2.b (D-zone single-day validity for non-FVG). |
+
+---
+
+### Status update — TD-S1-BEAR-FVG-DETECTOR (CLOSED Session 15)
+
+This is a TD entry, not an ENH. Cross-referenced here because closure is the headline outcome of Session 15 and affects how downstream ENH evidence is interpreted (any Compendium entry's "WR on BEAR_FVG" derived from `hist_pattern_signals` pre-Session-15 was based on 0 rows and is invalid). See `tech_debt.md` for full TD detail; summary:
+
+| Field | Detail |
+|---|---|
+| Discovered | Session 15 (during Exp 50 setup) |
+| Symptom | 0 BEAR_FVG signals in `hist_pattern_signals` over 13 months despite 1,129 canonical 3-bar BEAR_FVG shapes existing in `hist_spot_bars_5m` (60d) and 46-50% of recent sessions being bear days. |
+| Root cause | `build_ict_htf_zones_historical.py` and `build_ict_htf_zones.py` had no W BEAR_FVG branch in `detect_weekly_zones()` (only BULL_FVG implemented). `detect_daily_zones()` had no FVG of either direction. `detect_1h_zones()` (live builder only) had only BULL_FVG. Three locations affected, two scripts. Signal builder `build_hist_pattern_signals_5m.py` was direction-symmetric and innocent. |
+| Fix shipped | S1.a (W BEAR_FVG branch in both builders) + S1.b (D BULL_FVG + D BEAR_FVG in both builders, with new constants `FVG_D_MIN_PCT=0.10%` and `D_FVG_VALID_DAYS=5`) + 1H BEAR_FVG mirror in live `detect_1h_zones()`. Full historical backfill ran (40,384 rows; W BEAR_FVG=1,384). Live builder ran (85 rows). Signal rebuild via existing `build_hist_pattern_signals_5m.py` (no code change — direction-symmetric verified): hist_pattern_signals 6,318 → 7,484 rows. **BEAR_FVG 0 → 795.** |
+| Files renamed | `build_ict_htf_zones.py` and `build_ict_htf_zones_historical.py` are now the patched versions; originals preserved as `_PRE_S15.py`. |
+| Status | **CLOSED 2026-05-02.** |
+| Bugs intentionally NOT fixed (catalogued as separate TDs) | TD-S2.a (D-OB definition non-standard ICT — uses move bar K+1 as OB instead of opposing prior K), TD-S2.b (D-zone non-FVG validity = 1 day), TD-S3.a (PDH/PDL `+/-20pt` hardcoded, 3.2x narrower in % on SENSEX vs NIFTY), TD-S3.b (zone status workflow write-once-never-recompute on historical builder). All four candidates for Session 16 Candidate D. |
+
+---
+
+*End Session 15 closeout block. Next session entries land below this line.*

@@ -153,7 +153,7 @@ When generating: assemble from the markdown layer. The markdown is the source. T
 - ❌ Heredoc-pasting Python scripts via SSM (`cat > file.py <<EOF ... EOF`) — invisible non-printing characters can survive nano/cat visual checks but break the Python parser silently (Session 10 morning Kite auth debug). Always nano-type Step 3 verification scripts. SSM TTY can hang silently; `echo hello` is the canary before running anything substantive.
 - ❌ Using `is_pre_market` as a column name in `hist_spot_bars_5m` — this column does not exist. Filter by time: `09:15 ≤ bar_ts_IST ≤ 15:30`. Apply TD-029 workaround (Rule 16). (Session 11 bug B1.)
 - ❌ Setting `page_size > 1000` in Supabase pagination — Supabase hard-caps at 1000 rows per request regardless. Use `page_size = 1000` and loop. (Session 11 bug B2 / Rule 15.)
-- ❌ Using `astimezone(IST)` on `hist_spot_bars_5m.bar_ts` — bar_ts is stored as IST labeled +00:00. Converting timezone adds 5:30 and shifts all bars out of market hours. Use `replace(tzinfo=None)` instead. (Session 11 bug B3 / Rule 16.)
+- ❌ Using `astimezone(IST)` on `hist_spot_bars_5m.bar_ts` — bar_ts is stored as IST labeled +00:00. Converting timezone adds 5:30 and shifts all bars out of market hours. Use `replace(tzinfo=None)` instead. (Session 11 bug B3 / Rule 16.) **NOTE: This is era-conditional. Pre-04-07 use `replace(tzinfo=None)`; post-04-07 use `astimezone(IST)`. See Rule 20 (Session 15) for era-aware helper.**
 - ❌ Using `ret_30m` from `hist_pattern_signals` as a decimal fraction — it is stored as percentage points. Divide by 100 first. (Session 11 Rule 14.)
 - ❌ Reading a Python source file with `Path.read_text(encoding='utf-8')` then calling `ast.parse()` on it when the file has a UTF-8 BOM — `ast.parse` rejects U+FEFF with `invalid non-printable character`. Always use `read_bytes() + decode('utf-8-sig')` in patch scripts. (Session 11 extension — v1 of F3 patch caught this correctly and aborted.)
 - ❌ Writing a patched file back with `Path.write_text(text, encoding=...)` on Windows when the original file has LF line endings — `write_text` translates `\n → \r\n` on output, silently converting the file to CRLF and producing a noisy `git diff` showing every line modified. Always use `write_bytes(text.encode(enc))` for symmetric byte handling. v3 of F3 patch is the canonical pattern. (Session 11 extension.)
@@ -321,7 +321,7 @@ Three bugs were found and fixed across all Session 11 experiment scripts. They a
 
 **Bug B2 → Rule 15:** Supabase pagination max is 1000 rows/request. Use `page_size = 1000`.
 
-**Bug B3 → Rule 16:** `hist_spot_bars_5m.bar_ts` stored as IST labeled `+00:00`. Use `replace(tzinfo=None)`, not `astimezone(IST)`.
+**Bug B3 → Rule 16:** `hist_spot_bars_5m.bar_ts` stored as IST labeled `+00:00`. Use `replace(tzinfo=None)`, not `astimezone(IST)`. **(Era-conditional — pre-04-07 only. See Rule 20 for the post-04-07 path: `astimezone(IST_TZ)`.)**
 
 **Bug B4 (non-rule, one-time):** `hist_spot_bars_5m` has no `is_pre_market` column. Filter by `09:15 ≤ bar_ts_IST ≤ 15:30` instead.
 
@@ -393,4 +393,67 @@ grep -n "^import\|^from " target_file.py
 
 ---
 
-*CLAUDE.md v1.9 — 2026-04-30 (Session 14 close). Added: Rule 18 (patch scripts must be line-ending agnostic); Rule 19 (grep imports at module level before referencing attributes in endpoint code); five new operational findings (AWS SSH IP rotation, dashboard zombie listeners, contract violation noise, ict_zones vs ict_htf_zones two-table architecture, tech_debt.md TD-038/039 numbering collision pre-existing); Session 14 engineering discoveries section (B6 mixed line endings + canonical patch pattern, B7 module-level imports). v1.8 (Session 13 close) Rule 17 + Session 13 discoveries. v1.7 (Session 11 extension) added four new anti-patterns, five new settled-decisions, and live-session findings. v1.6 added Rules 14/15/16 and B1-B4 discoveries. v1.5 added compendium-replicates decisions. v1.4 corrected Local Python path. v1.3 Rule 13. v1.2 Rule 12. v1.1 Rule 11.*
+## Session 15 engineering discoveries (2026-05-02) — codified as Rule 20
+
+**Bug B8 → Rule 20:** Rule 16 (`hist_spot_bars_5m.bar_ts` use `replace(tzinfo=None)` instead of `astimezone(IST)`) is **era-conditional, not universal**. The era boundary is **2026-04-07**.
+
+| Era | Storage convention | Correct handling |
+|---|---|---|
+| **Pre-04-07** (legacy ingest) | Bars stored as IST clock-time labelled `+00:00` (TD-029 root cause) | `bar_ts.replace(tzinfo=None)` then filter by `09:15 ≤ time ≤ 15:30` (Rule 16 verbatim) |
+| **Post-04-07** (current writer) | Bars stored as true UTC | `bar_ts.astimezone(IST_TZ)` then filter by `09:15 ≤ time ≤ 15:30` |
+
+Applying Rule 16 verbatim to post-04-07 data drops most of the day. Concretely: `replace(tzinfo=None)` on a UTC-stored bar produces a UTC clock-time. Filtering UTC clock-time to 09:15-15:30 IST keeps only bars in the UTC 09:15-10:00 window (= IST 14:45-15:30, the last 45 min of session) → ~9 of ~76 in-session bars per day = **27.5% bar coverage** false alarm.
+
+**Canonical era-aware helper** (use this in any script that needs in-session 5m bars across the era boundary):
+
+```python
+from datetime import time, timezone, timedelta
+
+IST = timezone(timedelta(hours=5, minutes=30))
+ERA_BOUNDARY = "2026-04-07"  # exclusive: dates < this use Rule 16; >= this use astimezone
+
+def in_session_filter(bar_ts, trade_date_str):
+    """Returns True if bar is inside 09:15-15:30 IST, era-aware."""
+    if trade_date_str < ERA_BOUNDARY:
+        clock = bar_ts.replace(tzinfo=None).time()  # Rule 16 (legacy)
+    else:
+        clock = bar_ts.astimezone(IST).time()       # Post-04-07 (true UTC)
+    return time(9, 15) <= clock <= time(15, 30)
+```
+
+**Simpler alternative** — use the `trade_date` column for date filters and `bar_ts` only for ordering. Eliminates the era-awareness need entirely. Used in `diagnostic_bar_coverage_audit_v3.py`:
+
+```python
+# Filter on trade_date (string) instead of bar_ts time:
+rows = sb.table("hist_spot_bars_5m") \
+    .eq("symbol", symbol) \
+    .gte("trade_date", str(start_date)) \
+    .lte("trade_date", str(end_date)) \
+    .order("bar_ts") \
+    .range(0, 999) \
+    .execute().data
+```
+
+**Affected scripts identified Session 15** (verbatim Rule 16 → era-aware fix needed):
+- `adr003_phase1_zone_respect_rate.py` v1/v2 (verdict INVALID — Phase 1 v3 will use era-aware)
+- `experiment_44_inverted_hammer_cascade.py` (verdict survives caveat re-evaluation; v2 cleaner)
+
+**Bug B9 (non-rule, anti-pattern):** `hist_pattern_signals.ret_60m` is uniformly 0 across all rows. Either the writer never populates it, or `hist_market_state.ret_60m` source is empty. Do not use `ret_60m` as outcome metric until TD-054 closed. Use `ret_30m` (TD-039) or compute from `hist_spot_bars_5m` directly.
+
+**Bug B10 (non-rule, anti-pattern):** `hist_pattern_signals.ret_eod` column does not exist. EOD-outcome experiments must JOIN to `hist_spot_bars_5m` and compute the session-end forward return per row. TD-055 filed for schema migration.
+
+**Operational findings (2026-05-02):**
+
+- **Five-step audit pattern** for "type-X missing across detector" defects. When Session 15 found `hist_pattern_signals.BEAR_FVG=0` over 13 months, the discovery sequence was: (S1) distinct pattern_type counts; (S2) schema + direction columns; (S3) sibling table check; (S4) market-structure sanity (bear-day count last 30d); (S5) **manual canonical 3-bar shape scan in `hist_spot_bars_5m`** — the load-bearing step. Result: 1,129 canonical BEAR_FVG shapes existed in raw price data, 0 in signals → bug must be in detector or signal builder. Pattern preserved at `diagnostic_bear_fvg_audit.py`. Reuse the structure for similar defects (e.g. SWEEP_REVERSAL count audit, missing-timeframe-pattern audit).
+
+- **Patched-copy deploy pattern** is the canonical safe-deploy for production scripts. Steps: (1) produce `<script>_PATCHED.py`; (2) dry-run; (3) live run; (4) full verification; (5) ONLY THEN rename `<script>.py` → `<script>_PRE_<session>.py` and `<script>_PATCHED.py` → `<script>.py`. Allows discrete rollback (one rename) without `.bak` file proliferation. Session 15 used this for `build_ict_htf_zones.py` and `build_ict_htf_zones_historical.py` — both renames preserved as `_PRE_S15.py`.
+
+- **Verify experiment results against market reality before believing them.** Operator's chart-based challenge to "0 BEAR_FVG over 13 months" was the only signal that surfaced the 13-month silent bug (TD-048). Multiple sessions had run experiments against the broken signal table without anyone noticing. Discoverable by inspection but not by automated test. Going forward: when an experiment produces a result that contradicts visible market structure, treat the data path as suspect before drawing conclusions about the hypothesis.
+
+- **Code review BEFORE patching when fixing a known-incomplete detector.** Session 15's six-bug review (S1.a/S1.b/S15-1H + S2.a/S2.b/S3.a/S3.b) emerged from one review pass. Spreading discovery across multiple sessions would have been more expensive and missed the explicit decision-rule (fix S1, defer S2/S3 with explicit TD filing).
+
+- **Direction-symmetry verification before patching the wrong layer.** Session 15 checked that `build_hist_pattern_signals_5m.py` was direction-symmetric BEFORE patching the zone builders. Confirmed via 5-step audit S5 (canonical shape scan with no signal-table involvement). Avoided the trap of patching the signal builder symptomatically while leaving the zone-builder root cause intact.
+
+---
+
+*CLAUDE.md v1.10 — 2026-05-02 (Session 15 close). Added: Rule 20 (Rule 16 is era-conditional at 2026-04-07; pre uses `replace(tzinfo=None)`, post uses `astimezone(IST)`); B9 (`ret_60m` uniformly 0, TD-054); B10 (`ret_eod` column absent, TD-055); five Session 15 operational findings (5-step audit pattern, patched-copy deploy pattern, verify experiments against market reality, code review before patching, direction-symmetry verification). v1.9 (Session 14 close) Rule 18 (patch scripts line-ending agnostic) + Rule 19 (grep imports at module level) + five operational findings. v1.8 (Session 13 close) Rule 17 + Session 13 discoveries. v1.7 (Session 11 extension) added four new anti-patterns, five new settled-decisions, and live-session findings. v1.6 added Rules 14/15/16 and B1-B4 discoveries. v1.5 added compendium-replicates decisions. v1.4 corrected Local Python path. v1.3 Rule 13. v1.2 Rule 12. v1.1 Rule 11.*

@@ -49,13 +49,11 @@ SESSION 15 PATCH (2026-05-01):
       (new code path, did not exist previously).
     - New constant FVG_D_MIN_PCT (0.10%) controls D-timeframe FVG threshold
       independently of W-timeframe (FVG_MIN_PCT, 0.15%).
-    - Daily FVG validity_to extended to target_date + 5 calendar days
-      (D-FVG zones live longer than D-OB; deliberate ICT convention).
-    - Added SUMMARY + PATCH SANITY CHECK block at end of every run (dry
-      and live) so we can verify BEAR_FVG / D-FVG counts directly.
+    - Daily FVG validity_to extended to target_date + 5 trading days
+      (D-FVG zones live longer than D-OB; this is a deliberate ICT convention).
     - All non-S1 bugs catalogued during review (D-OB definition mismatch,
       D-zone single-day validity for non-FVG, fixed +/-20 PDH/PDL band,
-      status never updated) are intentionally LEFT UNCHANGED.
+      status never updated) are intentionally LEFT UNCHANGED in this patch.
       They are tracked separately as TD candidates.
 """
 from __future__ import annotations
@@ -64,7 +62,7 @@ import argparse
 import os
 import sys
 import time
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import date, datetime, timedelta
 from itertools import groupby
 from pathlib import Path
@@ -168,7 +166,7 @@ def get_trading_dates(daily_ohlcv: dict) -> list[date]:
     return sorted(date.fromisoformat(d) for d in daily_ohlcv.keys())
 
 
-# ── Zone detection ───────────────────────────────────────────────────────────
+# ── Zone detection (reused from build_ict_htf_zones.py) ──────────────────────
 
 def build_weekly_bars(daily_ohlcv: dict) -> list[dict]:
     weekly = defaultdict(list)
@@ -543,7 +541,6 @@ CREATE INDEX IF NOT EXISTS idx_hist_ict_htf_zones_date_sym
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     total_written = 0
-    summary_counter: Counter = Counter()  # (symbol, timeframe, pattern_type) -> count
 
     for symbol in symbols:
         inst_id = INSTRUMENTS[symbol]
@@ -562,6 +559,11 @@ CREATE INDEX IF NOT EXISTS idx_hist_ict_htf_zones_date_sym
         symbol_written = 0
 
         for i, td in enumerate(trading_dates):
+            # Build as-of snapshot — only data available before this date
+            # For weekly: all weeks up to and including the week before td
+            # For daily: all days before td
+
+            # Daily OHLCV available as-of td (excludes td itself — prior day is latest)
             asof_daily = {
                 k: v for k, v in daily_ohlcv.items()
                 if date.fromisoformat(k) < td
@@ -576,7 +578,7 @@ CREATE INDEX IF NOT EXISTS idx_hist_ict_htf_zones_date_sym
             d_zones = detect_daily_zones(asof_daily, symbol, td)
             all_zones.extend(d_zones)
 
-            # Weekly zones
+            # Weekly zones — use weekly lookback from td
             lookback_start = td - timedelta(weeks=WEEKLY_LOOKBACK)
             weekly_daily = {
                 k: v for k, v in asof_daily.items()
@@ -586,10 +588,6 @@ CREATE INDEX IF NOT EXISTS idx_hist_ict_htf_zones_date_sym
                 weekly_bars = build_weekly_bars(weekly_daily)
                 w_zones = detect_weekly_zones(weekly_bars, symbol, td)
                 all_zones.extend(w_zones)
-
-            # Track counts BEFORE upsert (works for both dry-run and live)
-            for z in all_zones:
-                summary_counter[(z["symbol"], z["timeframe"], z["pattern_type"])] += 1
 
             n = upsert_zones(sb, all_zones, dry_run=args.dry_run)
             symbol_written += n
@@ -605,58 +603,6 @@ CREATE INDEX IF NOT EXISTS idx_hist_ict_htf_zones_date_sym
     log(f"Backfill complete. {total_written} total zone-rows written.")
     log("Verify: SELECT as_of_date, symbol, COUNT(*) FROM hist_ict_htf_zones")
     log("        GROUP BY as_of_date, symbol ORDER BY as_of_date LIMIT 10;")
-    log("=" * 60)
-
-    # ── SUMMARY block (always printed; works for dry-run and live) ──────
-    log("")
-    log("=" * 60)
-    log("SUMMARY — zones generated (across all processed as_of_dates)")
-    log("=" * 60)
-    log(f"{'Symbol':<8} {'TF':<4} {'Pattern':<12} {'Count':>10}")
-    log("-" * 40)
-    grand_total = 0
-    keys_sorted = sorted(summary_counter.keys())
-    for k in keys_sorted:
-        sym, tf, pt = k
-        n = summary_counter[k]
-        grand_total += n
-        flag = ""
-        if pt == "BEAR_FVG":
-            flag = "  <- S1.a/S1.b NEW"
-        elif tf == "D" and pt == "BULL_FVG":
-            flag = "  <- S1.b NEW"
-        log(f"{sym:<8} {tf:<4} {pt:<12} {n:>10}{flag}")
-    log("-" * 40)
-    log(f"{'GRAND TOTAL':<24} {'':<4} {grand_total:>10}")
-    log("")
-
-    # ── PATCH SANITY CHECK block ────────────────────────────────────────
-    log("=" * 60)
-    log("PATCH SANITY CHECK — did S1.a / S1.b actually fire?")
-    log("=" * 60)
-    bull_fvg_w = sum(n for (s, tf, pt), n in summary_counter.items()
-                     if tf == "W" and pt == "BULL_FVG")
-    bear_fvg_w = sum(n for (s, tf, pt), n in summary_counter.items()
-                     if tf == "W" and pt == "BEAR_FVG")
-    bull_fvg_d = sum(n for (s, tf, pt), n in summary_counter.items()
-                     if tf == "D" and pt == "BULL_FVG")
-    bear_fvg_d = sum(n for (s, tf, pt), n in summary_counter.items()
-                     if tf == "D" and pt == "BEAR_FVG")
-    log(f"  W BULL_FVG: {bull_fvg_w}")
-    log(f"  W BEAR_FVG: {bear_fvg_w}    "
-        f"{'(S1.a OK)' if bear_fvg_w > 0 else '(S1.a STILL ZERO -- INVESTIGATE)'}")
-    log(f"  D BULL_FVG: {bull_fvg_d}    "
-        f"{'(S1.b OK)' if bull_fvg_d > 0 else '(S1.b STILL ZERO -- INVESTIGATE)'}")
-    log(f"  D BEAR_FVG: {bear_fvg_d}    "
-        f"{'(S1.b OK)' if bear_fvg_d > 0 else '(S1.b STILL ZERO -- INVESTIGATE)'}")
-    if bull_fvg_w > 0:
-        ratio = bear_fvg_w / bull_fvg_w
-        log(f"  W BEAR/BULL FVG ratio: {ratio:.2f} "
-            f"(expected ~0.7-1.5; far off => calibration may need review)")
-    if bull_fvg_d > 0:
-        ratio_d = bear_fvg_d / bull_fvg_d
-        log(f"  D BEAR/BULL FVG ratio: {ratio_d:.2f} "
-            f"(expected ~0.7-1.5; far off => calibration may need review)")
     log("=" * 60)
 
 

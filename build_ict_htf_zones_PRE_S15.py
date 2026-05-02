@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 build_ict_htf_zones.py
-ENH-37 — MERDIAN ICT Higher-Timeframe Zone Builder
+ENH-37 â€” MERDIAN ICT Higher-Timeframe Zone Builder
 
 Builds weekly and daily ICT zones from hist_spot_bars_1m and writes
 them to ict_htf_zones. Runs offline (not in the live runner cycle).
 
 Schedule:
-  Weekly zones:  Sunday night (or Monday pre-market) — one run per week
+  Weekly zones:  Sunday night (or Monday pre-market) â€” one run per week
   Daily zones:   Pre-market each morning at 08:45 IST
 
 Weekly zones built from:
@@ -18,7 +18,7 @@ Weekly zones built from:
 Daily zones built from:
   - Daily OB: last session's key order block
   - PDH/PDL: Prior day high and low
-  - Asia high/low (pre-market range — approximated from first 30 bars)
+  - Asia high/low (pre-market range â€” approximated from first 30 bars)
 
 Usage:
   python build_ict_htf_zones.py --timeframe W   # build weekly zones
@@ -26,19 +26,7 @@ Usage:
   python build_ict_htf_zones.py                 # build both
 
 Read: hist_spot_bars_1m
-Write: ict_htf_zones (upsert — safe to rerun)
-
-SESSION 15 PATCH (2026-05-01) — mirrors historical builder patches:
-  - S1.a fix: W BEAR_FVG detection added in detect_weekly_zones().
-  - S1.b fix: D BULL_FVG and D BEAR_FVG detection added in
-              detect_daily_zones() (new code path).
-  - 1H BEAR_FVG: parallel fix in detect_1h_zones() (same root cause as W).
-  - New constant FVG_D_MIN_PCT (0.10%) for D timeframe.
-  - New constant D_FVG_VALID_DAYS (5) for D-FVG validity window.
-  - filter_breached_zones() unchanged — already symmetric in pattern_type
-    handling; will treat new BEAR_FVG entries correctly.
-  - recheck_breached_zones() unchanged — already iterates BULL_FVG / BEAR_FVG
-    in its update sets.
+Write: ict_htf_zones (upsert â€” safe to rerun)
 """
 
 import os
@@ -62,20 +50,18 @@ SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
 PAGE_SIZE = 1_000
 
-# ── Config ───────────────────────────────────────────────────────────────────
+# â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 OB_MIN_MOVE_PCT = 0.40  # % weekly/daily move to qualify as OB-generating
-FVG_MIN_PCT     = 0.15  # % gap size for weekly / 1H FVG
-FVG_D_MIN_PCT   = 0.10  # % gap size for daily FVG (S1.b: new constant)
+FVG_MIN_PCT     = 0.15  # % gap size for weekly FVG (larger than intraday)
 
 EXPIRY_WD = {"NIFTY": 1, "SENSEX": 1}  # both Tuesday post-Sep 2025
 
 # How many weeks/days back to build zones for
-WEEKLY_LOOKBACK = 52   # 52 weeks of weekly zones
-DAILY_LOOKBACK  = 60   # 60 days of daily zones
-D_FVG_VALID_DAYS = 5   # daily FVG validity window in calendar days
+WEEKLY_LOOKBACK = 52   # 8 weeks of weekly zones
+DAILY_LOOKBACK  = 60   # 5 days of daily zones
 
 
-# ── Utilities ────────────────────────────────────────────────────────────────
+# â”€â”€ Utilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -92,7 +78,7 @@ def week_end(d):
     return d - timedelta(days=d.weekday()) + timedelta(days=4)
 
 
-# ── Data loading ─────────────────────────────────────────────────────────────
+# â”€â”€ Data loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def fetch_paginated(sb, table, filters, select, order="bar_ts"):
     all_rows, offset = [], 0
@@ -145,7 +131,7 @@ def load_daily_ohlcv(sb, inst_id, from_date, to_date):
     return daily
 
 
-# ── Weekly zone detection ────────────────────────────────────────────────────
+# â”€â”€ Weekly zone detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def build_weekly_bars(daily_ohlcv):
     """
@@ -191,7 +177,7 @@ def detect_weekly_zones(weekly_bars, symbol):
         valid_to   = curr["week_end"]
         src_date   = prev["week_end"]  # zone formed in prior week
 
-        # ── Prior Week High / Low (liquidity levels) ──────────────────
+        # â”€â”€ Prior Week High / Low (liquidity levels) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         zones.append({
             "symbol":       symbol,
             "timeframe":    "W",
@@ -217,13 +203,13 @@ def detect_weekly_zones(weekly_bars, symbol):
             "status":       "ACTIVE",
         })
 
-        # ── Weekly Order Blocks ──────────────────────────────────────
-        # Strong bullish week after bearish prior week → BULL_OB
+        # â”€â”€ Weekly Order Blocks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # Strong bullish week after bearish prior week â†’ BULL_OB
         curr_move = pct(curr["open"], curr["close"])
         prev_move = pct(prev["open"], prev["close"])
 
         if curr_move >= OB_MIN_MOVE_PCT and prev_move < 0:
-            # Bullish impulse week — prior bearish week is the OB
+            # Bullish impulse week â€” prior bearish week is the OB
             zones.append({
                 "symbol":       symbol,
                 "timeframe":    "W",
@@ -238,7 +224,7 @@ def detect_weekly_zones(weekly_bars, symbol):
             })
 
         if curr_move <= -OB_MIN_MOVE_PCT and prev_move > 0:
-            # Bearish impulse week — prior bullish week is the OB
+            # Bearish impulse week â€” prior bullish week is the OB
             zones.append({
                 "symbol":       symbol,
                 "timeframe":    "W",
@@ -252,12 +238,11 @@ def detect_weekly_zones(weekly_bars, symbol):
                 "status":       "ACTIVE",
             })
 
-        # ── Weekly FVG ────────────────────────────────────────────────
+        # â”€â”€ Weekly FVG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if i >= 2:
             two_prev = weekly_bars[i - 2]
             ref = curr["open"]
-
-            # === BULL_FVG: gap-up imbalance (existing) ===
+            # Bullish FVG: gap between two_prev.high and curr.low
             if two_prev["high"] < curr["low"]:
                 gap_pct = (curr["low"] - two_prev["high"]) / ref * 100
                 if gap_pct >= FVG_MIN_PCT:
@@ -274,35 +259,15 @@ def detect_weekly_zones(weekly_bars, symbol):
                         "status":       "ACTIVE",
                     })
 
-            # === S1.a FIX: BEAR_FVG ===
-            # 3-bar structure: two_prev low > curr high, with curr displacing down.
-            # The FVG is the gap between curr high and two_prev low.
-            if two_prev["low"] > curr["high"]:
-                gap_pct = (two_prev["low"] - curr["high"]) / ref * 100
-                if gap_pct >= FVG_MIN_PCT:
-                    zones.append({
-                        "symbol":       symbol,
-                        "timeframe":    "W",
-                        "pattern_type": "BEAR_FVG",
-                        "direction":    -1,
-                        "zone_high":    two_prev["low"],
-                        "zone_low":     curr["high"],
-                        "valid_from":   str(valid_from),
-                        "valid_to":     str(valid_to + timedelta(weeks=4)),
-                        "source_bar_date": str(src_date),
-                        "status":       "ACTIVE",
-                    })
-
     return zones
 
 
-# ── Daily zone detection ─────────────────────────────────────────────────────
+# â”€â”€ Daily zone detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def detect_daily_zones(daily_ohlcv, symbol, target_date):
     """
     Detect daily-level ICT zones for the upcoming session (target_date).
-    Looks at the prior trading day for PDH/PDL/OB; needs 3 prior days for
-    D-FVG (S1.b).
+    Looks at the prior trading day.
     Returns list of zone dicts.
     """
     dates = sorted(daily_ohlcv.keys())
@@ -321,7 +286,7 @@ def detect_daily_zones(daily_ohlcv, symbol, target_date):
     valid_to   = str(target_date)
     src_date   = prior_str
 
-    # ── Prior Day High / Low ──────────────────────────────────────────
+    # â”€â”€ Prior Day High / Low â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     zones.append({
         "symbol":       symbol,
         "timeframe":    "D",
@@ -347,13 +312,11 @@ def detect_daily_zones(daily_ohlcv, symbol, target_date):
         "status":       "ACTIVE",
     })
 
-    # ── Prior Day Order Block ─────────────────────────────────────────
-    # NOTE: D-OB definition uses the prior bar itself as the OB (non-standard
-    # ICT). Flagged S2.a during code review; intentionally NOT changed in
-    # this patch. Tracked separately as TD candidate.
+    # â”€â”€ Prior Day Order Block â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     prior_move = pct(prior["open"], prior["close"])
 
     if prior_move >= OB_MIN_MOVE_PCT:
+        # Prior day was bullish â€” use prior day open candle as OB zone
         zones.append({
             "symbol":       symbol,
             "timeframe":    "D",
@@ -381,63 +344,10 @@ def detect_daily_zones(daily_ohlcv, symbol, target_date):
             "status":       "ACTIVE",
         })
 
-    # === S1.b FIX: D-FVG detection (new, both directions) ============
-    # Need 3 consecutive prior daily candles (K, K+1, K+2). Same convention
-    # as historical patch:
-    #   K   = oldest of the 3 (prior_dates[-3])
-    #   K+1 = displacement bar (prior_dates[-2])
-    #   K+2 = newest prior     (prior_dates[-1])
-    # source_bar_date is K+1 (the bar that created the imbalance).
-    # D-FVG zones get a longer validity window than D-OB (5 days vs 1).
-    if len(prior_dates) >= 3:
-        k_str   = prior_dates[-3]
-        k1_str  = prior_dates[-2]
-        k2_str  = prior_dates[-1]
-        k       = daily_ohlcv[k_str]
-        k1      = daily_ohlcv[k1_str]
-        k2      = daily_ohlcv[k2_str]
-        ref     = k1["open"]
-
-        d_fvg_valid_to = str(target_date + timedelta(days=D_FVG_VALID_DAYS))
-
-        # BULL_FVG (D): gap-up imbalance.
-        if k["high"] < k2["low"]:
-            gap_pct = (k2["low"] - k["high"]) / ref * 100
-            if gap_pct >= FVG_D_MIN_PCT:
-                zones.append({
-                    "symbol":       symbol,
-                    "timeframe":    "D",
-                    "pattern_type": "BULL_FVG",
-                    "direction":    +1,
-                    "zone_high":    k2["low"],
-                    "zone_low":     k["high"],
-                    "valid_from":   valid_from,
-                    "valid_to":     d_fvg_valid_to,
-                    "source_bar_date": k1_str,
-                    "status":       "ACTIVE",
-                })
-
-        # BEAR_FVG (D): gap-down imbalance.
-        if k["low"] > k2["high"]:
-            gap_pct = (k["low"] - k2["high"]) / ref * 100
-            if gap_pct >= FVG_D_MIN_PCT:
-                zones.append({
-                    "symbol":       symbol,
-                    "timeframe":    "D",
-                    "pattern_type": "BEAR_FVG",
-                    "direction":    -1,
-                    "zone_high":    k["low"],
-                    "zone_low":     k2["high"],
-                    "valid_from":   valid_from,
-                    "valid_to":     d_fvg_valid_to,
-                    "source_bar_date": k1_str,
-                    "status":       "ACTIVE",
-                })
-
     return zones
 
 
-# ── DB write ──────────────────────────────────────────────────────────────────
+# â”€â”€ DB write â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 # ── Breach detection ──────────────────────────────────────────────────────────
@@ -573,7 +483,7 @@ def upsert_zones(sb, zones, dry_run=False):
         return 0
 
     if dry_run:
-        log(f"  DRY RUN — would write {len(zones)} zones")
+        log(f"  DRY RUN â€” would write {len(zones)} zones")
         for z in zones[:5]:
             log(f"    {z['symbol']} {z['timeframe']} {z['pattern_type']} "
                 f"{z['zone_low']:.0f}-{z['zone_high']:.0f} "
@@ -601,14 +511,14 @@ def upsert_zones(sb, zones, dry_run=False):
     return written
 
 
-# ── Expire old zones ────────────────────────────────────────────────────────
+# â”€â”€ Expire old zones â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def expire_old_zones(sb, symbol, today, dry_run=False):
     """
     Mark zones with valid_to < today as EXPIRED.
     """
     if dry_run:
-        log("  DRY RUN — would expire old zones")
+        log("  DRY RUN â€” would expire old zones")
         return
 
     try:
@@ -623,7 +533,7 @@ def expire_old_zones(sb, symbol, today, dry_run=False):
         log(f"  Warning: could not expire old zones: {e}")
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# â”€â”€ Main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def main():
     parser = argparse.ArgumentParser()
@@ -740,8 +650,8 @@ def main():
 
 
 
-# ── 1H Zone Detection ────────────────────────────────────────────────────────
-# Added for ENH-37 — 1H zones provide MEDIUM context for intraday signals
+# â”€â”€ 1H Zone Detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Added for ENH-37 â€” 1H zones provide MEDIUM context for intraday signals
 # MTF hierarchy: W=VERY_HIGH, D=HIGH, H=MEDIUM, none=LOW
 
 def aggregate_to_hourly(intraday_bars):
@@ -780,11 +690,9 @@ def detect_1h_zones(sb, inst_id, symbol, trade_date):
     """
     Detect 1H ICT zones from today's intraday bars.
     Builds zones from each completed hourly bar.
-    Only processes completed hours — current incomplete hour excluded.
+    Only processes completed hours â€” current incomplete hour excluded.
 
     Returns list of zone dicts for ict_htf_zones upsert.
-
-    SESSION 15 PATCH: added BEAR_FVG branch (mirror of existing BULL_FVG).
     """
     from datetime import timezone, timedelta as td
     IST = timezone(td(hours=5, minutes=30))
@@ -854,12 +762,10 @@ def detect_1h_zones(sb, inst_id, symbol, trade_date):
                 "status":       "ACTIVE",
             })
 
-        # 1H FVG: gap detection between prev-prev and curr (both directions)
+        # 1H BULL_FVG: gap between prev-prev high and curr low
         if i >= 2:
             two_prev = completed[i - 2]
             ref = curr["open"]
-
-            # 1H BULL_FVG (existing): gap-up imbalance
             if two_prev["high"] < curr["low"]:
                 gap_pct = (curr["low"] - two_prev["high"]) / ref * 100
                 if gap_pct >= FVG_MIN_PCT:
@@ -870,24 +776,6 @@ def detect_1h_zones(sb, inst_id, symbol, trade_date):
                         "direction":    +1,
                         "zone_high":    curr["low"],
                         "zone_low":     two_prev["high"],
-                        "valid_from":   valid_from,
-                        "valid_to":     valid_to,
-                        "source_bar_date": src_date,
-                        "status":       "ACTIVE",
-                    })
-
-            # === SESSION 15 PATCH: 1H BEAR_FVG (gap-down imbalance) ===
-            # 3-bar structure: two_prev low > curr high, with curr displacing down.
-            if two_prev["low"] > curr["high"]:
-                gap_pct = (two_prev["low"] - curr["high"]) / ref * 100
-                if gap_pct >= FVG_MIN_PCT:
-                    zones.append({
-                        "symbol":       symbol,
-                        "timeframe":    "H",
-                        "pattern_type": "BEAR_FVG",
-                        "direction":    -1,
-                        "zone_high":    two_prev["low"],
-                        "zone_low":     curr["high"],
                         "valid_from":   valid_from,
                         "valid_to":     valid_to,
                         "source_bar_date": src_date,

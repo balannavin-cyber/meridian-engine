@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v9",
+    "version": "v10",
     "generated": "2026-04-30",
     "sources": [
       "MERDIAN_Master_V18_v2 Section 15 (File Master, Table Master, Security IDs, AWS Runtime Files)",
@@ -20,13 +20,14 @@
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
     "update_cadence": "Update this file in the same session as any meaningful change to file status, table schema, or open item status. Commit to Git immediately after update.",
-    "last_updated": "2026-04-29T23:00:00+05:30",
-    "last_updated_by_session": "Session 13",
+    "last_updated": "2026-05-02T20:00:00+05:30",
+    "last_updated_by_session": "Session 15",
     "change_log": [
       "2026-04-26 (Session 9 wave 2): Added daemon + fix scripts; ENH-46-A shipped; TD-027 + TD-028 filed.",
       "2026-04-28 (Session 11): 11 experiments run (Exp 34-41B). 7 edges proven. Bugs B1-B3 fixed (is_pre_market absent, Supabase 1000-row cap, TD-029 TZ). New ENH-75 through ENH-79 filed. Session 11 findings added to research_findings. TD-029 through TD-037 (Session 10) added to open_items. Session 11 added to session_log.",
       "2026-04-28 (Session 12): ADR-002 (market structure philosophy) authored -- 6 principles (P1 zones not points, P2 force not direction, P3 where sellers panic, P4 regime velocity, P5 local vs aggregate, P6 DTE force multiplier) + capital scaling roadmap (naked buying -> spreads -> defined-risk selling) + GEX weekly storage decision. ENH-80 (per-strike GEX time-series + zone bounds), ENH-81 (dealer flow simulator + regime velocity), ENH-82 (PINNED regime, blocked on Exp 23), ENH-83 (DTE-adjusted force multiplier, deferred Phase 1.5+) filed. MERDIAN_Enhancement_Register.md rewritten as single unified file covering ENH-01 through ENH-83. ADR-002 file created at docs/decisions/ADR-002-market-structure-philosophy.md. gex_strike_snapshots table proposed (ENH-80). gamma_metrics zone bound columns proposed (ENH-80).",
-      "2026-04-29 (Session 13): ENH-75 SHIPPED -- detect_po3_session_bias.py live, MERDIAN_PO3_SessionBias_1005 task (Mon-Fri 10:05 IST), po3_session_state table NEW, signal_snapshots.po3_session_bias column NEW. ENH-76 SHIPPED -- BEAR_OB MIDDAY gate on PO3_BEARISH wired in build_trade_signal_local.py. ENH-77 SHIPPED -- BULL_OB AFTERNOON SENSEX gate on PO3_BULLISH wired. Exp 42 DONE -- BEAR_OB MIDDAY 72.5% session frequency, PO3 gate bottleneck confirmed. Pine generator overhauled: entry-band clipping (80pt/250pt), color scheme (BULL_OB dark green, BEAR_OB dark crimson, BULL_FVG lime, BEAR_FVG salmon), TradingView settings toggles, bar_index negative guard, symbol detection reordered. Breach detection ordering bug FIXED (recheck after upsert). MERDIAN_WS_Feed_0900 task registered. Hourly zones added to bat file. Rule 17 added (market_spot_session_markers column mismatch). TD-040/042 CLOSED. TD-041/043 filed. ENH-84/85/86 and Exp 43 filed."
+      "2026-04-29 (Session 13): ENH-75 SHIPPED -- detect_po3_session_bias.py live, MERDIAN_PO3_SessionBias_1005 task (Mon-Fri 10:05 IST), po3_session_state table NEW, signal_snapshots.po3_session_bias column NEW. ENH-76 SHIPPED -- BEAR_OB MIDDAY gate on PO3_BEARISH wired in build_trade_signal_local.py. ENH-77 SHIPPED -- BULL_OB AFTERNOON SENSEX gate on PO3_BULLISH wired. Exp 42 DONE -- BEAR_OB MIDDAY 72.5% session frequency, PO3 gate bottleneck confirmed. Pine generator overhauled: entry-band clipping (80pt/250pt), color scheme (BULL_OB dark green, BEAR_OB dark crimson, BULL_FVG lime, BEAR_FVG salmon), TradingView settings toggles, bar_index negative guard, symbol detection reordered. Breach detection ordering bug FIXED (recheck after upsert). MERDIAN_WS_Feed_0900 task registered. Hourly zones added to bat file. Rule 17 added (market_spot_session_markers column mismatch). TD-040/042 CLOSED. TD-041/043 filed. ENH-84/85/86 and Exp 43 filed.",
+      "2026-05-02 (Session 15): TD-048 (BEAR_FVG missing across detector pipeline) DISCOVERED + CLOSED end-to-end. Root cause: 3 missing detector branches in 2 zone-builder scripts (W BEAR_FVG, D BULL_FVG + D BEAR_FVG, 1H BEAR_FVG). Patches: build_ict_htf_zones.py + build_ict_htf_zones_historical.py — both PATCHED in place; originals preserved as _PRE_S15.py. Full historical backfill: 40,384 rows written to hist_ict_htf_zones (W BEAR_FVG=1,384, D BEAR_FVG=79, D BULL_FVG=84). Live builder: 85 rows written to ict_htf_zones. Signal rebuild via build_hist_pattern_signals_5m.py (no code change — direction-symmetric verified): hist_pattern_signals 6,318 → 7,484 rows; BEAR_FVG 0 → 795. TD-049..056 filed (8 new TDs from same code review). Rule 20 codified in CLAUDE.md (Rule 16 era-conditional at 2026-04-07). Six experiments registered: Exp 44 FAIL, Exp 47 INVALID (tautological), Exp 47b HYPOTHESIS FALSIFIED (closes ENH-85 slower-anchor path), Exp 50 FAIL with anomaly (bug-discovery vehicle), Exp 50b MARGINAL, ADR-003 Phase 1 INVALID (TZ-handling methodology bug → Phase 1 v3 plan filed)."
     ]
   },
   "environments": {
@@ -666,7 +667,7 @@
       ],
       "call_signature": "called by detect_ict_patterns_runner.py",
       "cadence": "W/D zones: session start. H zones: updated each 5-min cycle",
-      "status": "PRODUCTION  --  ENH-37. Had f-string corruption at line 475 (fixed). build_weekly_bars requires 'date' field as date object (not string).",
+      "status": "PRODUCTION -- ENH-37. PATCHED Session 15 (2026-05-02): added W BEAR_FVG branch (S1.a), D BULL_FVG + D BEAR_FVG branches (S1.b, with FVG_D_MIN_PCT=0.10% and D_FVG_VALID_DAYS=5), 1H BEAR_FVG branch (S15-1H mirror). Original preserved as build_ict_htf_zones_PRE_S15.py. Closes TD-048. Prior status: PRODUCTION  --  ENH-37. Had f-string corruption at line 475 (fixed). build_weekly_bars requires 'date' field as date object (not string).",
       "open_items": []
     },
     "detect_ict_patterns_runner.py": {
@@ -1077,6 +1078,45 @@
       "open_items": [
         "TD-041 (was not started before Session 13 fix)"
       ]
+    },
+    "build_ict_htf_zones_historical.py": {
+      "local_path": "C:\\GammaEnginePython\\build_ict_htf_zones_historical.py",
+      "aws_path": null,
+      "reads": [
+        "hist_spot_bars_1m (via paginated fetch, era-aware per Rule 16/20)"
+      ],
+      "writes": [
+        "hist_ict_htf_zones (40,384 rows from Session 15 full backfill)"
+      ],
+      "call_signature": "manual: python build_ict_htf_zones_historical.py --start <date> --end <date>",
+      "cadence": "On-demand (used for historical backfills only; not scheduled)",
+      "status": "PRODUCTION -- ENH-37 historical builder. PATCHED Session 15 (2026-05-02): S1.a W BEAR_FVG branch + S1.b D BULL_FVG + D BEAR_FVG branches added. Original preserved as build_ict_htf_zones_historical_PRE_S15.py. Six bugs surfaced during Session 15 code review: S1.a + S1.b fixed; S2.a (D-OB definition non-standard ICT) + S2.b (D-zone non-FVG validity = 1 day) + S3.a (PDH/PDL +/-20pt hardcoded) + S3.b (zone status write-once-never-recompute, by design - no-lookahead invariant) deferred as TD-049/050/051/052.",
+      "open_items": [
+        "TD-049",
+        "TD-050",
+        "TD-051",
+        "TD-052"
+      ]
+    },
+    "build_ict_htf_zones_PRE_S15.py": {
+      "local_path": "C:\\GammaEnginePython\\build_ict_htf_zones_PRE_S15.py",
+      "aws_path": null,
+      "reads": [],
+      "writes": [],
+      "call_signature": "n/a -- backup file, not invoked",
+      "cadence": "n/a",
+      "status": "BACKUP -- pre-Session-15 version of build_ict_htf_zones.py. Preserved during the Session 15 BEAR_FVG fix patched-copy deploy pattern. Restore by renaming this -> build_ict_htf_zones.py if regression occurs (see SESSION_15_DETECTOR_FIX.md runbook Failure modes section).",
+      "open_items": []
+    },
+    "build_ict_htf_zones_historical_PRE_S15.py": {
+      "local_path": "C:\\GammaEnginePython\\build_ict_htf_zones_historical_PRE_S15.py",
+      "aws_path": null,
+      "reads": [],
+      "writes": [],
+      "call_signature": "n/a -- backup file, not invoked",
+      "cadence": "n/a",
+      "status": "BACKUP -- pre-Session-15 version of build_ict_htf_zones_historical.py. Preserved during the Session 15 BEAR_FVG fix. Restore by renaming this -> build_ict_htf_zones_historical.py if regression occurs.",
+      "open_items": []
     }
   },
   "tables": {
@@ -2111,6 +2151,69 @@
       "discovered": "2026-04-30 (Session 14)",
       "summary": "ict_zones and ict_htf_zones are two separate tables with different schemas. ict_zones=BULL_FVG only with trade_date/detected_at_ts. ict_htf_zones=structural zones (OB/PDH/PDL/W) with valid_from/valid_to. Architectural separation needs documentation; consolidation is multi-session.",
       "see_also": "tech_debt.md TD-047 entry"
+    },
+    "TD-048": {
+      "status": "CLOSED 2026-05-02 (Session 15)",
+      "severity": "S1",
+      "discovered": "2026-05-01 (Session 15, during Exp 50 setup)",
+      "summary": "BEAR_FVG missing across detector pipeline -- 13-month silent bug. hist_pattern_signals contained 0 BEAR_FVG signals over 13 months despite 1,129 canonical BEAR-FVG 3-bar shapes in hist_spot_bars_5m (60d alone) and 46-50% of recent sessions being bear-direction days. Root cause: zone builders had no BEAR_FVG branch in detect_weekly_zones (only BULL_FVG); detect_daily_zones had no FVG of either direction; detect_1h_zones (live builder) had only BULL_FVG. Three locations in two scripts. Signal builder build_hist_pattern_signals_5m.py was direction-symmetric and innocent. Fix: S1.a + S1.b + S15-1H patches shipped to both zone builders; full historical backfill (40,384 rows); live run (85 rows); signal rebuild via existing direction-symmetric writer; BEAR_FVG count 0 -> 795. End-to-end re-verified via diagnostic_bear_fvg_audit.py.",
+      "see_also": "tech_debt.md TD-048 entry; SESSION_15_DETECTOR_FIX.md runbook"
+    },
+    "TD-049": {
+      "status": "OPEN",
+      "severity": "S2",
+      "discovered": "2026-05-01 (Session 15, code review for BEAR_FVG defect)",
+      "summary": "D-OB detector uses non-standard ICT definition. detect_daily_zones() marks the move bar K+1 itself as the OB; standard ICT defines OB as the LAST opposing-color candle BEFORE the displacement (bar K, not K+1). W-OB uses standard ICT def; D-OB does not. Inconsistent across timeframes. Symptom: D BEAR_OB candidates fire ~6 expected per manual replay vs 1-2 actual = false negatives at standard ICT criterion. Consolidates 'TD-S2.a' working name from Session 15 closeout. Decision required: (a) re-run full historical backfill after definition fix, or (b) ship for new detections only and document version boundary.",
+      "see_also": "tech_debt.md TD-049 entry; consolidates expanded TD-031"
+    },
+    "TD-050": {
+      "status": "OPEN",
+      "severity": "S2",
+      "discovered": "2026-05-01 (Session 15, ADR-003 Phase 1 v2 investigation)",
+      "summary": "D-zone non-FVG validity = exactly 1 day (valid_from = valid_to = target_date). D-OB + D PDH/PDL zones effectively expire by next session. ADR-003 Phase 1 v2 saw 0 D zones in 10-day lookback because each D zone's valid_to < lookback_start_date. Same root pattern as previously-documented H-zone single-day-validity bug. D-FVG zones got 5-day validity in Session 15 S1.b patch (D_FVG_VALID_DAYS=5); D-OB + D PDH/PDL still 1-day. Decision: (a) extend D-zone non-FVG validity to N days, or (b) document 1-day as intentional and adjust downstream consumers.",
+      "see_also": "tech_debt.md TD-050 entry"
+    },
+    "TD-051": {
+      "status": "OPEN",
+      "severity": "S3",
+      "discovered": "2026-05-01 (Session 15, code review for BEAR_FVG defect)",
+      "summary": "PDH/PDL +/-20 band hardcoded, symbol-agnostic. NIFTY at ~24,000 -> 20pt = ~0.083%. SENSEX at ~80,000 -> 20pt = ~0.025%. SENSEX PDH/PDL zones are 3.2x narrower in % terms. 1H session-high/low uses +/-10 (separate constant, even more asymmetric). Proper fix: replace with +/- (level * BAND_PCT) per timeframe. Audit downstream consumers (TIER assignment, APPROACH_PCT interactions) before patching.",
+      "see_also": "tech_debt.md TD-051 entry"
+    },
+    "TD-052": {
+      "status": "OPEN",
+      "severity": "S3",
+      "discovered": "2026-05-01 (Session 15, ADR-003 Phase 1 v2 investigation)",
+      "summary": "Zone status workflow on hist_ict_htf_zones is write-once, never-recompute (historical builder only — live builder is correct: recheck_breached_zones updates status). ADR-003 Phase 1 v2 filtered on status='ACTIVE' and the filter was a no-op (every historical zone is ACTIVE). Total post-Session-15-backfill = 40,384 rows = 100% ACTIVE. By design — preserves no-lookahead audit invariant — but undocumented. Proper fix: either (a) add separate historical_zone_status_at(zone_id, as_of_date) view, or (b) document that status field on hist_ict_htf_zones is meaningless.",
+      "see_also": "tech_debt.md TD-052 entry"
+    },
+    "TD-053": {
+      "status": "OPEN",
+      "severity": "S3",
+      "discovered": "2026-05-01 (Session 15, ADR-003 Phase 1 v2 + Exp 44 + bar-coverage diagnostics)",
+      "summary": "CLAUDE.md Rule 16 needs era-aware addendum (post-04-07 era). Rule 16 says: apply replace(tzinfo=None) to bar_ts and filter to in-session 09:15-15:30. Correct for pre-04-07 era only. Post-04-07 bars stored as true UTC; verbatim Rule 16 drops most of the day (~9 bars vs ~76 per session = false alarm 27.5% bar coverage). Era boundary: 2026-04-07. Workaround: pre-04-07 use replace(tzinfo=None); post-04-07 use astimezone(IST_TZ). Codified as Rule 20 in CLAUDE.md v1.10 (Session 15 close). Audit pending for repo scripts that apply Rule 16 verbatim.",
+      "see_also": "tech_debt.md TD-053 entry; CLAUDE.md Rule 20 (Session 15 codification)"
+    },
+    "TD-054": {
+      "status": "OPEN",
+      "severity": "S3",
+      "discovered": "2026-05-01 (Session 15, Exp 47 review)",
+      "summary": "hist_pattern_signals.ret_60m column is uniformly 0 across every row. Verified in Exp 47b output and Exp 50 output. Either column is never populated by signal builder, or upstream hist_market_state.ret_60m source is empty. Workaround: use ret_30m (TD-039) or compute 60m forward returns directly from hist_spot_bars_5m. Proper fix: diagnose source population, patch builder if needed, backfill via signal rebuild.",
+      "see_also": "tech_debt.md TD-054 entry"
+    },
+    "TD-055": {
+      "status": "OPEN",
+      "severity": "S3",
+      "discovered": "2026-05-01 (Session 15, Exp 50 setup)",
+      "summary": "hist_pattern_signals.ret_eod column does not exist on the table. EOD-outcome experiments must JOIN to hist_spot_bars_5m and compute session-end forward return per row. Coordinate fix with TD-039 (ret_30m naming convention — recommended new column name 'ret_eod_pct' to match unit-explicit convention).",
+      "see_also": "tech_debt.md TD-055 entry; coordinate with TD-039"
+    },
+    "TD-056": {
+      "status": "OPEN",
+      "severity": "S3",
+      "discovered": "2026-05-02 (Session 15, post-fix verification)",
+      "summary": "Signal builder bull-skew vs canonical shape symmetry. After Session 15 BEAR_FVG fix, NIFTY 60d signals: BULL_FVG 274 vs BEAR_FVG 150 (1.83x bull skew). SENSEX 60d: BULL_FVG 263 vs BEAR_FVG 208 (1.26x bull skew). Canonical 5m BEAR_FVG / BULL_FVG shapes in hist_spot_bars_5m are essentially symmetric (NIFTY 562 BEAR / 587 BULL). Asymmetry must come from signal builder's filter logic. Suspected: APPROACH_PCT filter favors BULL zones above-spot in uptrending market. Investigation: partition 60d data by regime and recompute ratio per regime; if inverts in down-regimes, filter is regime-driven and correct; if stays bull-skewed, real asymmetry bug.",
+      "see_also": "tech_debt.md TD-056 entry; Session 16 Candidate B"
     }
   },
   "governance_rules": {
@@ -2331,6 +2434,26 @@
         "ENH-86 v1"
       ],
       "summary": "ENH-78 SHIPPED: DTE<3 PDH sweep current-week PE rule patched into build_trade_signal_local.py before return out, flags; logic guarded by po3_session_bias=PO3_BEARISH AND 1<=dte<=2 AND action=BUY_PE; DTE=1 lifts standard DTE<=1 gate (reverses -12 conf penalty, removes DTE caution); DTE=2 annotates as confirmed; both add stop rule '40% premium OR PDH reclaim' and set out[raw][enh78_triggered]. Evidence: Exp 35D 90.9% EOD WR (N=11), +125% SENSEX option mean. Validation: ast.parse PASS + 5 functional scenarios. ENH-84 SHIPPED + hotfix: REFRESH ZONES button added to dashboard topbar after PINE OVERLAY; GET endpoint /refresh_and_download_pine subprocess-runs build_ict_htf_zones.py --timeframe H (60s timeout) then calls _gen_pine(sb) and serves merdian_ict_htf_zones_refreshed.pine. Initial deploy didn't show button -- DUAL ZOMBIE LISTENERS on port 8766 (PIDs 32052, 24764); killed via taskkill, restarted. Hotfix replaced sys.executable with bare 'python' because dashboard had no import sys at top level (only import sys as _sys deep in build()). Lesson: grep imports before writing endpoint code referencing module attrs. ENH-86 v1 SHIPPED: WIN RATE legend extended from 5-tuple to 7-tuple (added EV + N columns); two new LIVE rows (E4 BEAR_OB MIDDAY+PO3_BEARISH 88.2% N=17 +116.5pts; E5 BULL_OB AFT+PO3_BULL SENSEX 73.7% N=19 +35.5pts); BEAR_OB MORNING 100% N=9, BULL_OB DTE=0 100% N=20, BULL_FVG HIGH+DTE=0 87.5% N=12, BEAR_OB MOM_YES 83% N=23 backfilled from MERDIAN_Experiment_Compendium_v1; remaining rows use dash. v2 BLOCKED/ALLOWED prominence redesign deferred. TD-044 SHIPPED + CLOSED: discovered same session: ENH-76/77 blocks set local action=DO_NOTHING; trade_allowed=False but never out[action]/out[trade_allowed]; cautions list mutation worked but headline fields didn't, so signal_snapshots row would still show BUY_PE / trade_allowed=True even when ENH-76/77 supposedly blocked. Patch v2 line-ending agnostic -- three-site sync; v1 anchor failed because file had MIXED LINE ENDINGS (1039 CRLF + 87 bare-LF lines from earlier patches not normalising); v2 normalises to LF for matching, restores predominant CRLF on write. Side effect: 87 bare-LF lines normalised to CRLF file-wide. TD-038 (carried-forward from Session 13) PATCHED: fix_td038_exit_at_ist_display.py adds IST conversion for exit_ts before exit_html block in card(); 10:25 UTC -> 15:55 IST verified functionally; live verification next TRADE_ALLOWED signal. Operational interruptions (all resolved): (1) AWS SSH timeout to 13.51.242.119 -- SG inbound rule whitelisted old IP 103.39.127.162/32 (Airtel); operator now on BBNL 122.172.86.178 after Airtel outage 04-29 evening; updated SG sg-0111fb9e3418acf15 to My IP via console. (2) AWS Kite token refresh -- operator updated .env via sed; verified kite.profile() -> OK Navin Balan OV0782; no zombie ws_feed/kite/zerodha processes. (3) Dashboard zombie listeners (recurring) -- multi-PowerShell habit; pattern netstat->taskkill->restart documented. (4) Pre-market alerts 08:00-08:46 IST -- 4x CRASH/SUCCESS-with-zero-writes on build_ict_htf_zones.py; 08:45 scheduled run wrote 70 zones successfully (contract_met=True, 83.5s); other runs were idempotent reruns from REFRESH ZONES button -- script honestly reported 0 new zones to write but contract expects 1; false-alarm contract violations filed as TD-046. Two-table architecture surfaced: ict_zones (BULL_FVG only, 54 rows total, schema with trade_date/detected_at_ts) vs ict_htf_zones (OBs+PDH/PDL+W zones, schema with valid_from/valid_to -- what dashboard+Pine+signal engine consume); 10 ACTIVE zones confirmed covering 2026-04-30 (NIFTY D PDH 24322-24342 + D PDL 24052-24072 + W BULL_OB + W BULL_FVG + W PDL; SENSEX D PDH 77964-77984 + D PDL 77144-77164 + W BULL_OB + W BULL_FVG + W PDL). Pipeline operationally green. Filed TD-047 (architecture doc), TD-045 (script_execution_log.script_version column missing -- PGRST204 on detect_po3_session_bias), TD-046 (contract violation noise on idempotent reruns). Patch script lessons codified: (a) line-ending agnostic mandatory -- detect predominant EOL, normalise to LF for matching, restore on write; (b) grep imports in target file at module level before writing endpoint code that uses module attributes."
+    },
+    {
+      "date": "2026-05-02",
+      "appendix": "Session 15 (research → upstream production debug, very long)",
+      "git_end": "8543e08",
+      "items_closed": [
+        "TD-048"
+      ],
+      "items_added": [
+        "TD-049",
+        "TD-050",
+        "TD-051",
+        "TD-052",
+        "TD-053",
+        "TD-054",
+        "TD-055",
+        "TD-056"
+      ],
+      "enh_shipped": [],
+      "summary": "Began as 'run four PROPOSED Session 14 EOD experiments' (Exp 44 inverted hammer cascade, Exp 47 direction stability anchor, Exp 49 Apr-only Exp 15 replication, ADR-003 Phase 1 zone respect-rate). Pivoted to discovery + end-to-end fix of a 13-month-old production detector defect (BEAR_FVG missing from hist_pattern_signals). Phase 1 — pending experiments: Exp 47 INVALID (tautological by construction); Exp 44 FAIL (no cell hit WR>=70 + N>=30); ADR-003 Phase 1 v1/v2 INVALID (script-side TZ-handling bug — Rule 16 applied verbatim to post-04-07 era); Exp 47b FALSIFIED ENH-85 'slower anchor' path (ret_30m_back flips 213% MORE than ret_session); Exp 49 DEFERRED (source script has zero ISO date strings AND zero datetime() constructors, regex auto-patch impossible). Phase 2 — Exp 50 surfaces upstream bug: FVG-on-OB cluster vs standalone ICT PD Array test, 1/9 cells PASS, monotonic INVERSION of ICT prediction. DISCOVERED hist_pattern_signals contains 1,261 BULL_FVG and 0 BEAR_FVG over 13 months. Operator challenged as impossible per market structure. Phase 3 — five-step audit conclusive: 1,129 canonical BEAR_FVG 3-bar shapes in 5m bars over 60d but 0 BEAR_FVG signals; H1 (detector-side asymmetry) confirmed. Phase 4 — six-bug code review: S1.a + S1.b fixed; S2.a/S2.b/S3.a/S3.b filed as TD-049-052. Phase 5 — patches shipped end-to-end: build_ict_htf_zones_historical.py + build_ict_htf_zones.py both PATCHED in place (originals preserved as _PRE_S15.py); full historical backfill 40,384 rows; live builder 85 rows; signal rebuild 6,318 -> 7,484 rows; **BEAR_FVG 0 -> 795** (the headline). Filed: TD-048 (CLOSED), TD-049 (D-OB non-standard ICT def), TD-050 (D-zone 1-day validity), TD-051 (PDH/PDL +/-20pt hardcoded), TD-052 (zone status write-once-never-recompute), TD-053 (CLAUDE.md Rule 16 era-aware addendum needed; codified as Rule 20), TD-054 (ret_60m uniformly 0), TD-055 (ret_eod column absent), TD-056 (signal builder bull-skew investigation). TD-031 EXPANDED (D-FVG portion CLOSED via TD-048; D-OB portion remains as TD-049). Six experiments registered with verdicts. ADR-003 Phase 1 v3 plan filed for Session 16+. Carry-forward: re-run Exp 50 / Exp 50b on now-symmetric data; investigate TD-056 bull-skew; Phase 1 v3 with era-aware Rule 16; address TD-049-052 zone-builder bugs."
     }
   ],
   "git": {

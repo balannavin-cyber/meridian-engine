@@ -778,16 +778,16 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 
 | | |
 |---|---|
-| **Severity** | S3 |
-| **Discovered** | 2026-05-01 (Session 15 — surfaced when Exp 47 review showed `ret_60m` 0.000% across all rows; consolidates "TD-NEW-RET60M") |
+| **Severity** | S2 (raised from S3 Session 16 — extended scope: column has only 4.7-5.0% agreement with locally-computed forward return across 3 cohorts now, 30% NULL — invalidates any analysis using `ret_30m` directly) |
+| **Discovered** | 2026-05-01 (Session 15 — surfaced when Exp 47 review showed `ret_60m` 0.000% across all rows; consolidates "TD-NEW-RET60M"). 2026-05-03 (Session 16) extended scope: `ret_30m` column on same table also broken, not just `ret_60m`. Local re-derive on 3 separate cohorts (Exp 41, Exp 50 v2, ADR-003 Phase 1 v3 indirectly) shows 5% agreement with locally-computed forward return. |
 | **Component** | `build_hist_pattern_signals_5m.py` and possibly upstream `hist_market_state` source |
-| **Symptom** | `ret_60m` column in `hist_pattern_signals` is 0.000% across every single row — verified in Exp 47b output and Exp 50 output. Any experiment using 60m forward return as outcome metric gets a degenerate signal. |
-| **Root cause** | Most likely the column is never populated in the signal builder (default value persists). Could also be the source `hist_market_state.ret_60m` is itself 0 for all rows (parallel issue). Not yet diagnosed. |
-| **Workaround** | None for 60m forward returns. Use `hist_spot_bars_5m` to compute 60m forward returns directly when needed (more expensive but correct). |
-| **Proper fix** | Diagnose: (a) check `hist_market_state.ret_60m` for population (run a SELECT DISTINCT, MIN, MAX, COUNT against the column). If null/zero, fix at source. If populated correctly there, the signal builder isn't reading it — patch the signal builder to read and forward. (b) Backfill all `hist_pattern_signals` rows after fix via signal rebuild. |
-| **Cost to fix** | <1 session diagnostic, ~1 session for fix + backfill. |
-| **Blocked by** | nothing |
-| **Owner check-in** | 2026-05-02 |
+| **Symptom** | `ret_60m` column in `hist_pattern_signals` is 0.000% across every single row — verified Session 15 in Exp 47b output and Exp 50 output. Session 16 expanded: `ret_30m` also unreliable — 4.7% agreement (24/509) with locally-computed forward return on Exp 41 cohort, 5.0% (81/1611) on Exp 50 v2 cohort, 30-35% NULL across both. Any experiment using `ret_30m` sign or magnitude as outcome metric gets noise. |
+| **Root cause** | Most likely both columns are computed with broken or stale logic in the signal builder, OR the source `hist_market_state` columns are themselves broken. Not yet diagnosed. |
+| **Workaround** | **Do not use `ret_30m` or `ret_60m` columns from `hist_pattern_signals` as outcome metrics.** Compute forward return locally from `hist_spot_bars_5m` using Exp 41 mechanics (Rule 20 era-aware): join signal `bar_ts` to spot bars, find bar at signal_ts and signal_ts + 30/60 minutes, compute `(close_t30 - close_t0) / close_t0 * 100`. Used by every Session 15-16 experiment that needed forward returns. More expensive but correct. |
+| **Proper fix** | Diagnose: (a) check `hist_market_state.ret_60m` for population (run a SELECT DISTINCT, MIN, MAX, COUNT against the column). If null/zero, fix at source. If populated correctly there, the signal builder isn't reading it — patch the signal builder to read and forward. Same diagnosis for `ret_30m`. (b) Backfill all `hist_pattern_signals` rows after fix via signal rebuild. **OR**, per ENH-87 (Session 16 filed): consider deprecating `hist_pattern_signals` entirely — Session 16 demonstrated that live-detector replay (`experiment_15_with_csv_dump.py` pattern) provides equivalent research utility without the integrity issues. Decision deferred to Session 17/18. |
+| **Cost to fix** | <1 session diagnostic, ~1 session for fix + backfill if pursued. ENH-87 deprecation alternative: 2-3 sessions to migrate downstream consumers. |
+| **Blocked by** | ENH-87 (deprecation review) — recommend deciding fix-vs-deprecate before fixing. |
+| **Owner check-in** | 2026-05-03 (Session 16 — extended scope, locally-computed workaround in active use) |
 
 ---
 
@@ -808,25 +808,73 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 
 ---
 
-### TD-056 — Signal builder bull-skew vs canonical shape symmetry
+### TD-056 — Signal-detector bull-skew across BOTH code paths (5m batch AND 1m live)
+
+| | |
+|---|---|
+| **Severity** | S2 (raised from S3 Session 16 — confirmed structural across both detector code paths, not just 5m batch) |
+| **Discovered** | 2026-05-02 (Session 15 — surfaced post-BEAR_FVG fix verification on `hist_pattern_signals` 5m batch); 2026-05-03 (Session 16 — Section 17 of `analyze_exp15_trades.py` confirmed live `detect_ict_patterns.py` 1m cohort also bull-skewed; not a 5m-batch-specific artefact) |
+| **Component** | BOTH (a) `build_hist_pattern_signals_5m.py` zone-approach filter logic, AND (b) `detect_ict_patterns.py` live 1m detector. Both are bull-skewed independently. |
+| **Symptom** | **5m-batch (`hist_pattern_signals`)**: NIFTY 60d signals BULL_FVG 274 / BEAR_FVG 150 (1.83x). NIFTY DOWN regime alone: 112 BULL_FVG / 20 BEAR_FVG = **5.60x bull-skew in DOWN regime**. SENSEX DOWN: 2.30x. **1m-live (`detect_ict_patterns.py` running through Exp 15)**: full year 49 BULL_OB / 25 BEAR_OB pooled. NIFTY DOWN regime: 23 BULL_OB / 7 BEAR_OB = **3.29x**. SENSEX DOWN: 1.50x. Plus: **live detector emits ZERO BEAR_FVG signals across full year**, despite Session 15's `build_ict_htf_zones.py` BEAR_FVG fix (separate issue, see TD-058). Canonical 5m BEAR_FVG / BULL_FVG shapes in `hist_spot_bars_5m` are essentially symmetric (NIFTY 562 BEAR / 587 BULL; SENSEX 567 / 575) — both detector paths underemit BEAR signals relative to raw price-structure availability. |
+| **Root cause** | Two non-mutually-exclusive hypotheses: **(H1) zone-availability asymmetry** — the "in or near zone with proximity" filter requires same-direction zones to exist near current price; in an uptrending market BULL zones above-spot are more available than BEAR zones below-spot, so the filter naturally tags more BULL signals. **(H2) detector-symmetry bug** — code paths for BULL vs BEAR detection differ in some non-obvious way (e.g., asymmetric proximity, asymmetric validity windows, missing branch). Session 16 evidence supports H1 partially (bull-skew ratio higher in 5m-batch which has zone-availability filter at signal time, lower in 1m-live which has its own zone construction) but does not fully exonerate H2 (bull-skew persists in DOWN regime where H1 alone would invert the ratio). Mechanism investigation deferred to Session 17 Priority C. |
+| **Workaround** | None automated. Operationally: live trading sees more BULL setups than BEAR setups as a result. Operator-side mitigation: **be more discretionary about looking for bear setups in chop/down sessions**, especially when MERDIAN isn't flagging them — the system undersignals bear opportunities, not because individual BEAR signals are wrong (they're 92% WR on the live cohort) but because there are fewer of them than market structure would imply. |
+| **Proper fix** | **Phase 1 — mechanism diagnosis (Session 17 Priority C, ~1-2 sessions investigation):** code review `detect_ict_patterns.py` for asymmetric BULL/BEAR branches (proximity computation, validity, opt_type mapping); code review `build_hist_pattern_signals_5m.py` zone-approach filter for direction-asymmetric thresholds; instrument both with detection-attempt counters by direction to measure where BEAR candidates are being filtered out. **Phase 2 — patch (1 session if H2 confirmed, 0 sessions if H1 only):** if asymmetric branch identified, patch and re-verify. If H1 only, document as regime-driven and accept (or rebalance proximity threshold per direction). |
+| **Cost to fix** | 1-3 sessions total (Phase 1 + optional Phase 2). |
+| **Blocked by** | TD-058 (BEAR_FVG live emission — likely shares root cause with TD-056 H2). Recommend coordinating both investigations. |
+| **Owner check-in** | 2026-05-03 (Session 16 — confirmed structural, not 5m-batch-specific; Phase 1 deferred to Session 17 Priority C) |
+
+---
+
+### TD-057 — Exp 15 framework provenance gap (no findable execution audit trail)
 
 | | |
 |---|---|
 | **Severity** | S3 |
-| **Discovered** | 2026-05-02 (Session 15 — surfaced post-Session-15 BEAR_FVG fix verification; consolidates "TD-NEW-LIVE-BUILDER-BULL-SKEW") |
-| **Component** | `build_hist_pattern_signals_5m.py` (zone-approach filter logic) — possibly the live signal pipeline `detect_ict_patterns_runner.py` as well, but only `hist_pattern_signals` was directly verified |
-| **Symptom** | After Session 15 BEAR_FVG fix, NIFTY 60d signals: BULL_FVG 274 vs BEAR_FVG 150 (1.83x bull skew). SENSEX 60d: BULL_FVG 263 vs BEAR_FVG 208 (1.26x bull skew). Canonical 5m BEAR_FVG / BULL_FVG shapes in `hist_spot_bars_5m` are essentially symmetric (NIFTY 562 BEAR / 587 BULL; SENSEX 567 / 575). Asymmetry must come from the signal builder's filter logic, not from market-structure imbalance in raw price action. |
-| **Root cause** | Suspected (not confirmed): signal builder applies `APPROACH_PCT = 0.005` filter (close within 0.5% of zone) and "in zone or near zone bear/bull side" logic. In an uptrending market, BULL zones are more often above-spot (and therefore approachable from below as price rises) than BEAR zones are below-spot (approachable from above as price falls). Likely a regime artefact, not a bug — but unverified. |
-| **Workaround** | None for now. Live trading sees more BULL_FVG signals than BEAR_FVG signals as a result. May be acceptable (regime-driven and self-correcting in opposite regimes) or may need filter rebalancing. |
-| **Proper fix** | Investigation (Session 16 Candidate B): partition 60d data by regime (ret_session sign per signal bar) and recompute bull/bear ratio per regime. Decision tree: (a) if ratio inverts in down-regimes (BEAR_FVG outnumbers BULL_FVG when price is falling), filter is regime-driven and correct — close as documented behaviour. (b) if ratio stays bull-skewed in down-regimes, filter has a real asymmetry bug — patch and re-signal. |
-| **Cost to fix** | ~1 session investigation, +0-1 session for fix if needed. |
+| **Discovered** | 2026-05-03 (Session 16 — surfaced during framework audit when stress-testing Compendium claims) |
+| **Component** | `experiment_15_pure_ict_compounding.py`, `MERDIAN_Experiment_Compendium_v1.md` (Exp 15 entry dated 2026-04-12), git history |
+| **Symptom** | The only execution log of `experiment_15_pure_ict_compounding.py` on disk is from 2026-04-11 21:40:35, 427 bytes, showing `SyntaxError: unterminated f-string literal at build_ict_htf_zones.py L475`. The script crashed at import. Compendium entry for Exp 15 dated **one day later** (2026-04-12) reports detailed per-pattern findings (BEAR_OB N=36 94.4% WR, BULL_OB N=44 86.4% WR, BULL_FVG N=155 50.3% WR, BULL_OB MEDIUM 90% WR N=45). Recursive search of `C:\GammaEnginePython\logs\` found no successful execution log of this exact script anywhere. `portfolio_simulation_v2.log` from same evening (21:47:10) is a different experiment with different exit rules and no per-pattern WR aggregates. Three possibilities: (a) script rerun successfully post-fix and log deleted/never persisted, (b) numbers from interactive output captured to clipboard not log, (c) numbers from different script attribution. Plus: April-13 commit `c78b6ea` modified BOTH `experiment_15_pure_ict_compounding.py` AND `detect_ict_patterns.py` together, including silent MTF tier relabeling — pre-Apr-13 vocabulary (HIGH=W, MEDIUM=D, LOW=none) became post-Apr-13 (VERY_HIGH=W, HIGH=D, MEDIUM=H, LOW=none). The Apr-12 Compendium uses post-Apr-13 vocabulary to describe pre-Apr-13 measurements. The "1H zones confirmed Established V18F" claim in `merdian_reference.json` rests on this relabeling. |
+| **Root cause** | Combination of: (a) interactive-shell run pattern at the time (no automatic log capture), (b) git commits modifying experiment scripts and detector code together with non-descriptive commit messages making provenance hard to reconstruct, (c) Compendium written from session-end state rather than from durable execution artefacts. Not a defect in any single component — an aggregate of process-hygiene gaps. |
+| **Workaround** | Session 16 produced `experiment_15_with_csv_dump.py` as a verbatim methodology copy of the original with a CSV-dump tail that produces a durable trade-list artefact (`exp15_trades_<stamp>.csv`). Future research that depends on Exp 15 results uses the CSV pattern, not direct re-attribution to the Apr-12 Compendium claims. Critically: **Session 16 full-year run replicated the Compendium headlines within 2-3pp** (BEAR_OB 92.0% vs claimed 94.4%, BULL_OB 83.7% vs 86.4%, BULL_FVG 50.3% vs 50.3%) — so the published numbers, while audit-traceless, are not refuted. |
+| **Proper fix** | (a) Going forward: every experiment must be invoked with `... 2>&1 \| Tee-Object -FilePath <log>` (already in canonical session pattern). (b) Every Compendium entry must cite the execution log path and git commit hash from which findings were derived. (c) Major published findings should be re-runnable in <30 min with current code; if they aren't, the methodology has drifted. (d) Apr-12-era Compendium entries should be flagged as "vocabulary aligned to post-Apr-13 MTF relabeling" so future readers don't conflate "MEDIUM" across the boundary. |
+| **Cost to fix** | Going-forward fix is process-only (zero code, zero compute). Retroactive flagging of Apr-12-era entries: 0.5 session. |
 | **Blocked by** | nothing |
-| **Owner check-in** | 2026-05-02 |
+| **Owner check-in** | 2026-05-03 |
 
 ---
 
+### TD-058 — Live `detect_ict_patterns.py` emits zero BEAR_FVG signals across full year
 
-## Anti-patterns to avoid (the "don't add new tech debt" list)
+| | |
+|---|---|
+| **Severity** | S2 (production-grade gap — bear-side FVG opportunities are completely invisible to the live system) |
+| **Discovered** | 2026-05-03 (Session 16 — Section 17 of `analyze_exp15_trades.py` checking BULL_FVG/BEAR_FVG ratio per regime on the live-cohort 231-trade CSV) |
+| **Component** | `detect_ict_patterns.py` BEAR_FVG branch (in `detect_fvg` or equivalent function) |
+| **Symptom** | Across 12-month Exp 15 simulation (231 trades), live detector emitted 155 BULL_FVG signals and **zero BEAR_FVG signals** in any regime (UP, FLAT, or DOWN), in either symbol. Confirmed across full year on `hist_spot_bars_1m` runs of `experiment_15_pure_ict_compounding.py`. The `build_ict_htf_zones.py` Session 15 fix added BEAR_FVG zone construction (1,384 W BEAR_FVG zones now exist in `hist_ict_htf_zones`), but the **live signal-detection pipeline** consuming those zones is not emitting signals on them. |
+| **Root cause** | Not yet diagnosed. Likely candidates: (a) BEAR_FVG branch missing entirely from `detect_ict_patterns.py` `detect_fvg` (parallel to the Session 15 zone-builder bug, since `experiment_15_pure_ict_compounding.py` calls `ICTDetector` from this file), (b) BEAR_FVG opt_type mapping missing — pattern is detected internally but never converted to a `BUY_PE` signal, (c) asymmetric proximity/validity check that BEAR_FVGs systematically fail. Hypothesis (a) is most likely given the parallelism with the Session 15 zone-builder defect (both pieces of code touched in the same Apr-13 commit `c78b6ea`). |
+| **Workaround** | None. Bear-side FVG opportunities are not being detected by the live system. **Operator must rely on discretion to identify BEAR_FVG setups on TradingView until this is fixed.** Note: BEAR_OB detection works fine (92% WR on N=25), so bear-side OB setups remain covered. The gap is BEAR_FVG specifically. |
+| **Proper fix** | Code review of `detect_ict_patterns.py` `detect_fvg` (and adjacent functions). Add BEAR_FVG branch symmetrically with BULL_FVG. Test on a known BEAR_FVG day from history — verify signal fires. Then re-run Exp 15 dump to confirm BEAR_FVG WR is comparable to BULL_FVG (or measure the actual rate; Session 16 cluster finding suggests BEAR_FVG should also have +12.8pp lift with recent BEAR_OB context if symmetric). |
+| **Cost to fix** | 1 session (Session 17 Priority A). Code change is small (mirror BULL_FVG branch). Verification requires next-day live run + Exp 15 re-dump. |
+| **Blocked by** | nothing |
+| **Owner check-in** | 2026-05-03 |
+
+---
+
+### TD-059 — ENH-37 MTF context hierarchy inverted from claim (LOW outperforms HIGH on OB patterns)
+
+| | |
+|---|---|
+| **Severity** | S2 (production sizing rule rests on inverted assumption — currently BOOSTING confidence on cells that empirically UNDERPERFORM) |
+| **Discovered** | 2026-05-03 (Session 16 — Section 10 of `analyze_exp15_trades.py` per-cell confidence intervals on N=231 live-cohort trades) |
+| **Component** | `build_trade_signal_local.py` (consumes `mtf_context` from `signal_snapshots`); `detect_ict_patterns.py` `get_mtf_context` (computes the tier label); ENH-37 documentation in Enhancement Register |
+| **Symptom** | Exp 15 published Compendium claim: "MEDIUM context (1H zone) ADDS edge — keep in MTF hierarchy." Session 16 measurement on 231-trade live cohort with Wilson 95% CIs: **BULL_OB|HIGH (D zone) 71.4% N=7, BULL_OB|MEDIUM (H zone) 81.8% N=11 [52.3, 94.9], BULL_OB|LOW (no zone) 87.1% N=31 [71.1, 94.9]**. **BEAR_OB|HIGH 71.4% N=7, BEAR_OB|MEDIUM 100% N=1, BEAR_OB|LOW 100% N=17 [81.6, 100]**. LOW context outperforms HIGH on BOTH BULL_OB and BEAR_OB. The hierarchy current production code applies (HIGH = high confidence, LOW = low confidence) is **inverted from current-code measurement**. (Note: current vocabulary differs from Apr-12 Compendium — see TD-057 — but even using current vocabulary on current data, the hierarchy is wrong.) |
+| **Root cause** | Hypothesis: when a signal triggers in HIGH context (inside a daily zone), the price action is contested — buyers and sellers are both engaged at a known level. The "trade against the zone" logic plays out, but with chop and reduced edge. When a signal triggers in LOW context (no archive-zone confluence), price is in clean expansion — the OB pattern catches a moving market with directional follow-through. Effectively, archive zones may CAUSE the chop they're supposed to identify. Untested hypothesis but consistent with the data. |
+| **Workaround** | Operationally for now: **treat MTF context tier as informational, not as a confidence multiplier.** When operator sees a BULL_OB or BEAR_OB on TradingView, do not size up just because it's tagged HIGH context. The pattern itself is the edge; the context tier is currently misleading. |
+| **Proper fix** | Three options for Session 18+ to evaluate: **(a) Remove MTF context as a confidence multiplier** — keep as an informational annotation but don't let it affect sizing or tier classification. **(b) Invert it** — LOW becomes "high confidence" in production scoring. Risky without more data; current N=17-31 per cell is enough for direction but not for magnitude. **(c) Run shadow mode with both rules** — keep current production rule live, run alternative rule in shadow, log signal_snapshots with both `confidence_score_v1` (current) and `confidence_score_v2` (alternative) for 4-8 weeks, then compare. Recommend (c) — measure before changing production. |
+| **Cost to fix** | (a) ~0.5 session (annotation-only change). (b) ~1 session (invert + verify nothing else depends on the tier ordering). (c) ~1 session to wire shadow mode + 4-8 weeks of measurement + 1 session to decide and ship. |
+| **Blocked by** | TD-057 (vocabulary alignment) — fix should clearly state which MTF vocabulary is canonical (Apr-12 vs Apr-13+) before redesigning. |
+| **Owner check-in** | 2026-05-03 |
+
+---
 
 | Anti-pattern | Why it's bad | What to do instead |
 |---|---|---|

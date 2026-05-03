@@ -29,6 +29,237 @@ Experiments are ordered by number. Most recent experiments at top.
 
 Update note 2026-05-02 (Session 15): registered metadata also at top — period covered now extends Apr 2025 → Apr 2026 (full backfill on patched zone builders, 264 NIFTY + 263 SENSEX trading days, 40,384 zone rows in `hist_ict_htf_zones`, 7,484 signal rows in `hist_pattern_signals` after the BEAR_FVG fix shipped this session). All Session 15 experiments below were run on this dataset. Note: Exp 50 / Exp 50b results recorded here are BULL-only (the bug-discovery vehicle for the BEAR_FVG defect closed this session) — expected to be re-run on now-symmetric data in Session 16.
 
+Update note 2026-05-03 (Session 16): six Session 16 entries added at top below this note. Headline finding: **Exp 15 framework (1m live-detector path) replicates within 2-3pp of original Compendium claims on current code with current data — combined NIFTY+SENSEX ₹4L → ₹11.7L (+193.4%) full year, BEAR_OB 92.0% (vs 94.4%), BULL_OB 83.7% (vs 86.4%), BULL_FVG 50.3% (vs 50.3%).** Per-cell deep audit (Wilson 95% CIs on N=231 trades) revealed BULL_FVG is statistical coin flip standalone but +12.8pp lift with recent BULL_OB cluster (90-min lookback, N=64); MTF context hierarchy is INVERTED from claim (LOW outperforms HIGH on OB patterns); edge concentrates in top 7/57 sessions = 80% P&L (event-dependent). Session 15 Exp 50 / Exp 50b BULL-only verdicts re-tested on bidirectional `hist_pattern_signals` (Items 3-4 of carry-forward) — included as separate v2 entries below. Live-cohort verification of clustering done in Section 18 of `analyze_exp15_trades.py` and reported in the Exp 15 framework replication entry. **Provenance note for Apr-12 Compendium entry on Exp 15:** the original execution log of `experiment_15_pure_ict_compounding.py` is a 427-byte SyntaxError crash; no successful execution log of that exact script exists anywhere in `C:\GammaEnginePython\logs\`. Apr-13 commit `c78b6ea` modified both the experiment script and `detect_ict_patterns.py.get_mtf_context`, silently relabeling MTF tier vocabulary (pre-Apr-13: HIGH=W, MEDIUM=D; post-Apr-13: VERY_HIGH=W, HIGH=D, MEDIUM=H). Apr-12 entry uses post-Apr-13 vocabulary. Session 16 replication is therefore the audit-grade execution; published headlines are not refuted but the original measurement is not directly auditable. TD-057 captures the broader provenance gap.
+
+---
+
+## Session 16 — Exp 15 framework replication on current code (the headline finding)
+
+**Date:** 2026-05-03
+**Script:** `experiment_15_pure_ict_compounding.py` (verbatim, git rev `c78b6ea`); CSV dump version `experiment_15_with_csv_dump.py`; analyzer `analyze_exp15_trades.py` (Sections 9-18).
+**Trade list:** `exp15_trades_20260503_0952.csv` (231 trades, 12 months 2025-04-08 to 2026-03-30)
+
+**Question:** Do the published Exp 15 headlines (BEAR_OB 94.4% WR, BULL_OB 86.4% WR, BULL_FVG 50.3% WR) replicate on current code with current data, after the Apr-13 `c78b6ea` commit modified both `experiment_15_pure_ict_compounding.py` and `detect_ict_patterns.py` and silently relabeled MTF context tiers? And, on the live 1m-detector cohort, what does deep audit (confidence intervals, concentration, regime stability, time-of-day, clustering) show?
+
+**Setup:**
+- Same script, same dataset, same methodology as the original Exp 15
+- 12-month range Apr 2025 → Apr 2026, 264 NIFTY + 263 SENSEX trading days
+- Live `ICTDetector` running on `hist_spot_bars_1m`, T+30m option-side P&L from `hist_option_bars_1m`
+- ₹2L starting capital per symbol, compounding (profits added, losses absorbed)
+- Filters: `tier != SKIP`, `time < POWER_HOUR`, 5-prior-day warmup gate
+- Pre-filter pass rate ~1.3% of detected signals
+
+**Findings — pooled per-pattern WR:**
+
+| Pattern | N | WR | 95% CI (Wilson) | mean P&L | total P&L | Compendium claim | Delta |
+|---|---|---|---|---|---|---|---|
+| BEAR_OB | 25 | 92.0% | [75.0, 97.8] | ₹+14,571 | ₹+364,273 | 94.4% (N=36) | -2.4pp |
+| BULL_OB | 49 | 83.7% | [71.0, 91.5] | ₹+7,735 | ₹+379,016 | 86.4% (N=44) | -2.7pp |
+| BULL_FVG | 155 | 50.3% | [42.5, 58.1] | ₹+195 | ₹+30,153 | 50.3% (N=155) | 0.0pp |
+
+**Headlines replicate within 2-3pp of original claims.** BULL_FVG is exact match (N=155 to N=155). BULL_FVG's CI [42.5, 58.1] **spans 50% — statistical coin flip**; contributes 67% of trades (155/231) but only 3.9% of P&L (₹+30K of ₹+773K total).
+
+**Combined return:** ₹4,00,000 → ₹11,73,442 (+193.4%) over 12 months. NIFTY: ₹2L → ₹5,60,705 (+180.4%, max DD 1.3%, 127 trades). SENSEX: ₹2L → ₹6,12,737 (+206.4%, max DD 3.1%, 104 trades).
+
+**Findings — MTF context (current vocabulary, current data):**
+
+| Pattern | Context | N | WR | 95% CI | mean P&L |
+|---|---|---|---|---|---|
+| BULL_OB | HIGH (D zone) | 7 | 71.4% | [35.9, 91.8] | ₹+13,140 |
+| BULL_OB | MEDIUM (H zone) | 11 | 81.8% | [52.3, 94.9] | ₹+9,616 |
+| BULL_OB | LOW (no zone) | 31 | 87.1% | [71.1, 94.9] | ₹+5,847 |
+| BEAR_OB | HIGH | 7 | 71.4% | [35.9, 91.8] | ₹+11,417 |
+| BEAR_OB | MEDIUM | 1 | 100.0% | [—] | ₹+54,876 |
+| BEAR_OB | LOW | 17 | 100.0% | [81.6, 100.0] | ₹+13,499 |
+
+**LOW context outperforms HIGH context on both BULL_OB and BEAR_OB.** ENH-37 hierarchy is inverted from claim. (Note: current vocabulary = post-Apr-13. The Apr-12 Compendium entry's "MEDIUM context adds edge" was about *daily* zones; today's MEDIUM is *1H* — TD-057 captures this vocabulary boundary.)
+
+**Findings — concentration (Section 11):**
+- Top 1 session = 29.2% of P&L (Feb 1, 2026 — vol-breakout day)
+- Top 4 sessions = 50% of P&L
+- **Top 7 sessions (12.3% of trading sessions with trades) = 80% of P&L**
+- 33/57 sessions with trades profitable; 24/57 negative
+
+**Findings — H1/H2 stability (Section 12):**
+- BULL_OB: 84.6% H1 → 82.6% H2 — STABLE across halves
+- BEAR_OB: 71.4% H1 → 100.0% H2 — drift (H2 had more bear-favorable regime)
+- BULL_FVG: 53.3% H1 → 46.2% H2 — UNSTABLE, pure coin flip
+
+**Findings — per-symbol (Section 13):**
+- NIFTY pooled WR 65.1% [56.4, 72.8], total ₹+360,705
+- SENSEX pooled WR 58.3% [48.6, 67.3], total ₹+412,737
+- SENSEX BULL_FVG: -₹29,056 (negative)
+- NIFTY BULL_FVG: +₹59,209
+- Reinforces "BULL_FVG is luck, both sides"
+- SENSEX BEAR_OB N=13 WR 92.3% drives ₹+271,921 — largest single contributor
+
+**Findings — time-of-day (Section 14):**
+- AFTERNOON: 49% WR (coin flip)
+- MORNING + MIDDAY pooled: 65.6% WR [58.4, 72.1]
+- ENH-64 BEAR_OB AFTERNOON skip is empirically warranted
+
+**Findings — monthly (Section 15):**
+- 9 of 12 months positive
+- Worst month December 2025 at -₹9,544 (only 3 trades)
+- Months with N≥10 are mostly winners
+- February 2026 alone produced ₹+271,939 (driven by Feb 1 vol breakout)
+
+**Findings — TD-056 bull-skew on live cohort (Section 17):**
+- NIFTY DOWN regime: 23 BULL_OB / 7 BEAR_OB = **3.29x bull-skew** (5m-batch had 5.60x)
+- SENSEX DOWN regime: 15 BULL_OB / 10 BEAR_OB = 1.50x
+- BULL_FVG / BEAR_FVG ratio is **infinite in all regimes** — live `detect_ict_patterns.py` emits **zero BEAR_FVG signals across full year** despite Session 15's `build_ict_htf_zones.py` BEAR_FVG fix (TD-058 filed)
+- Bull-skew confirmed structural across BOTH 5m-batch AND 1m-live code paths
+
+**Findings — FVG-on-OB clustering on live cohort (Section 18):**
+
+| Lookback | N clustered | WR clustered | N standalone | WR standalone | Lift |
+|---|---|---|---|---|---|
+| 30 min | 49 | 51.0% | 106 | 50.0% | +1.0pp |
+| 60 min | 57 | 54.4% | 98 | 48.0% | +6.4pp |
+| 90 min | 64 | **57.8%** | 91 | 45.1% | **+12.8pp** |
+
+**Cluster effect replicates and is stronger on live cohort than 5m-batch.** Standalone BULL_FVG is coin flip; BULL_FVG-with-recent-BULL_OB at 90-min lookback transforms into real edge. BEAR-side untestable (zero BEAR_FVG emissions per TD-058).
+
+**Verdict:** **EDGE PRESENT BUT NARROWER THAN HEADLINE.**
+- Pooled WR clears CI [55.6, 68.0] — real edge above coin flip
+- ≥1 cell clears CI > 50% with confidence (BULL_OB|LOW, BEAR_OB|LOW with very tight intervals)
+- Both halves of year positive (₹+287,967 H1, ₹+485,475 H2)
+- **Failed broadly-distributed-P&L check** (top 7/57 = 80%)
+
+Edge is real but concentrated. The +193% number alone overstates steady-yield expectation — the strategy is event-dependent vol-breakout exploitation, not daily accumulation.
+
+**Builds arising:**
+- ENH-87 (filed): `hist_pattern_signals` deprecation review — live-detector replay pattern (this script's CSV dump methodology) provides equivalent research utility without the integrity issues of the 5m batch table
+- ENH-88 (filed): BULL_FVG production routing requires recent BULL_OB context (60-90 min lookback, +12.8pp lift evidence) — replace 50% coin flip with 58% lifted cohort
+- ENH-89 (filed): ENH-37 MTF hierarchy redesign or removal — current implementation subtracts edge per Section 10 evidence
+- TD-057 (filed): Exp 15 framework provenance gap (no findable execution audit trail)
+- TD-058 (filed): live `detect_ict_patterns.py` emits zero BEAR_FVG signals across full year despite Session 15 zone-builder fix
+- TD-059 (filed): MTF context hierarchy inverted from claim (LOW outperforms HIGH on OB patterns)
+- TD-056 EXPANDED (S3→S2): bull-skew confirmed structural across BOTH 5m-batch AND 1m-live code paths
+
+---
+
+## Session 16 — Exp 50 v2 (FVG-on-OB cluster, bidirectional, ret_30m-noise corrected)
+
+**Date:** 2026-05-02 (Session 16)
+**Script:** `experiment_50_fvg_on_ob_cluster_v2.py`
+
+**Question:** Does Exp 50's "FVG inside or near a same-direction OB cluster has different WR than standalone FVG" hypothesis hold on bidirectional `hist_pattern_signals` data, after the Session 15 BEAR_FVG fix and using locally-computed forward return (since `ret_30m` column is broken — TD-054)?
+
+**Setup:**
+- Bidirectional 3×3 sweep: lookback ∈ {30, 60, 120} min × proximity ∈ {0.10%, 0.50%, 1.00%} × side ∈ {BULL, BEAR} = 18 cells
+- Drop EV-ratio gate per session prompt — keep WR-delta + N-floor=20
+- Outcome: locally-computed T+30m return (`ret_30m` column unreliable — `hist_pattern_signals` cohort 5% agreement, 30% NULL)
+- Cohort: full year `hist_pattern_signals`, N=2274 enriched after Session 15 fix
+
+**Findings:**
+- BULL: 2/9 cells PASS at lookback=60min × proximity ∈ {0.50%, 1.00%}
+- BEAR: 0/9 cells PASS
+- Headline cell (60min × 0.50%): BULL +8.3pp WR delta cluster vs standalone PASS; BEAR -4.2pp FAIL
+- The Session 15 reported "monotonic inversion" was an artefact of `ret_30m` column noise — 35pp swing on the same cohort with corrected (locally-computed) metric
+
+**Verdict on `hist_pattern_signals` cohort: BULL has cluster effect, BEAR doesn't.** But this is the wrong cohort — `hist_pattern_signals` is the 5m-batch detector path, not the 1m live detector that Exp 15 uses. **Live-cohort verification: see Session 16 Exp 15 entry above, Section 18: BULL_FVG-on-BULL_OB clustering on the live 231-trade cohort shows +12.8pp lift at 90-min lookback (N=64), replicating and strengthening this finding.** BEAR-side untestable on live cohort because live detector emits zero BEAR_FVG signals (TD-058).
+
+**Builds arising:** Live-cohort replication via Section 18 of `analyze_exp15_trades.py` is the canonical version. ENH-88 (BULL_FVG production routing requires recent BULL_OB) is built on the live-cohort evidence.
+
+---
+
+## Session 16 — Exp 50b v2 (FVG-on-OB velocity moderation)
+
+**Date:** 2026-05-02 (Session 16)
+**Script:** `experiment_50b_fvg_on_ob_velocity_v2.py`
+
+**Question:** Does pre-cluster velocity (price velocity in the lookback window before the FVG) moderate cluster WR symmetrically across BULL and BEAR sides on `hist_pattern_signals`?
+
+**Setup:**
+- Reframed from Session 15 "explain the inversion" (now obsolete since inversion was a `ret_30m` artefact) to "does velocity moderate cluster WR symmetrically across directions"
+- Velocity quartiles Q1-Q4 (slowest to fastest pre-cluster price velocity) on bidirectional cluster cohort
+- Same locally-computed T+30m outcome metric
+
+**Findings:**
+- Headline cell BULL: Q1→Q4 swing -18.2pp (INCREASING — fast clusters outperform slow)
+- Headline cell BEAR: Q1→Q4 swing +26.7pp (DECREASING — slow clusters outperform fast)
+- Sweep voting: BULL 7/7 cells INCREASING; BEAR 4 INC / 3 DEC at smaller cell counts
+- N-weighted BEAR also INCREASING
+
+**Verdict:** Mixed/inconclusive on the per-cell voting metric. Honest reading: symmetric INCREASING signal exists, BULL-stronger. **Carry-forward to Session 17:** Section 18 of `analyze_exp15_trades.py` tested clustering on live cohort but did NOT test velocity quartiles. To close this item properly, extend the analyzer with a Section 19 that computes pre-cluster velocity from entry_spot trajectory and partitions by quartile.
+
+**Builds arising:** None directly. Decision (whether to prefer fast or slow clusters in production sizing) deferred until live-cohort velocity verification.
+
+---
+
+## Session 16 — ADR-003 Phase 1 v3 (zone respect-rate, era-aware, most-recent-ACTIVE)
+
+**Date:** 2026-05-02 (Session 16)
+**Script:** `adr003_phase1_zone_respect_rate_v3.py`
+
+**Question:** Do ICT HTF zones in `hist_ict_htf_zones` actually predict price pivots in `hist_spot_bars_5m`? Re-run with six methodology fixes vs the v1/v2 INVALID runs.
+
+**Setup (six fixes vs v2):**
+1. Query `hist_ict_htf_zones` not `ict_htf_zones` (Session 15's fix table)
+2. Drop `valid_to` filter — take most-recent ACTIVE zone per (TF, pattern) at each bar
+3. Era-aware Rule 20 (`ERA_BOUNDARY = 2026-04-07`)
+4. Use `trade_date` column directly for date filters
+5. `EXPECTED_BARS = 81` (empirical, not 75)
+6. Distance histogram diagnostic added
+
+**Findings:**
+- NIFTY ACTIVE zones: 20,206. SENSEX: 20,178. Total 40,384 — matches Session 15 backfill count exactly.
+- Aggregate zone-respect rate over 60-day window: 75.8% within 0.10% band of pivot bar
+- **Methodology caveat:** 84.3% of pivots are inside zones (distance=0 from zone). Driven primarily by wide weekly OBs — W_BEAR_OB alone respects 53.2% of pivots single-handedly. The "75.8% respect rate" is largely tautological — wide zones contain most price action. The real edge would be in narrow zones (D-level, H-level) but those have 30-50% respect with much smaller N.
+- Two clean-FAIL days where zones existed but didn't predict pivots: NIFTY 2026-04-21, SENSEX 2026-04-22
+
+**Verdict:** **FUNCTIONAL with methodology caveat — wide-zone tautology dominates the headline number.** The system "works" in the sense that zones contain pivots, but the predictive edge of ICT zones for *targeting* pivots specifically is not what the 75.8% number implies.
+
+**Builds arising:** ADR-003 Phase 2 (narrow-zone-only respect-rate, exclude zones >0.50% wide) candidate for future session if zone respect-rate becomes a production sizing input. Not currently a sizing input, so low priority.
+
+---
+
+## Session 16 — TD-056 ret_session regime partition (5m-batch cohort)
+
+**Date:** 2026-05-02 (Session 16)
+**Script:** `td056_regime_partition_v1.py`
+
+**Question:** Is the bull-skew on `hist_pattern_signals` (NIFTY 60d 1.83x BULL_FVG/BEAR_FVG ratio) regime-driven (correct behaviour: detector finds more bullish patterns in up-sessions) or detector-driven (asymmetry independent of market regime)?
+
+**Setup:** Partition all FVG signals on `hist_pattern_signals` by `ret_session` sign (UP > +0.05%, FLAT, DOWN < -0.05% per ENH-44 alignment threshold), recompute BULL/BEAR ratio per regime per symbol.
+
+**Findings:**
+
+| Symbol | Regime | BULL_FVG | BEAR_FVG | Ratio |
+|---|---|---|---|---|
+| NIFTY | UP | 87 | 42 | 2.07x |
+| NIFTY | FLAT | 22 | 12 | 1.83x |
+| NIFTY | **DOWN** | **112** | **20** | **5.60x** |
+| SENSEX | UP | 115 | 88 | 1.31x |
+| SENSEX | FLAT | 8 | 3 | 2.67x |
+| SENSEX | **DOWN** | **106** | **46** | **2.30x** |
+
+**Bull-skew is REGIME-INDEPENDENT.** Even in DOWN sessions, BULL_FVG outnumbers BEAR_FVG 5.6x on NIFTY and 2.3x on SENSEX. If the skew were regime-driven (correct behaviour), we'd expect ratio to invert in DOWN regime (more BEAR_FVGs when price is falling). It doesn't. The detector is structurally biased toward BULL detection on this code path.
+
+**Verdict on `hist_pattern_signals` cohort:** **Detector-driven not regime-driven.** Filed as TD-056 expansion candidate.
+
+**Live-cohort verification:** See Session 16 Exp 15 entry above, Section 17 — bull-skew also exists on the 1m-live `detect_ict_patterns.py` cohort (NIFTY DOWN 3.29x, SENSEX DOWN 1.50x). **Bull-skew is structural across BOTH code paths**, not just 5m-batch. Plus: live detector emits zero BEAR_FVG signals (TD-058 — separate but related). TD-056 expanded to Severity S2.
+
+**Builds arising:**
+- TD-056 EXPANDED to cover both code paths
+- TD-058 NEW (live detector emits zero BEAR_FVG)
+- Session 17 Priority C: mechanism investigation
+
+---
+
+## Session 16 — Check A (Exp 20 alignment + Exp 15 MTF replication on `hist_pattern_signals`)
+
+**Date:** 2026-05-02 (Session 16)
+**Script:** `check_a_exp15_gated_replication_v1.py`
+**Status:** SUPERSEDED by Section 17 of `analyze_exp15_trades.py` (live-cohort version with correct cohort)
+
+**Question:** Do Exp 20 (alignment lift +22.6pp) and Exp 10c/Exp 15 (BULL_OB|MEDIUM 90% WR / 77.3% WR) replicate when measured on locally-computed spot-side T+30m on the gated subset of `hist_pattern_signals`?
+
+**Outcome:** Script ran and produced numbers (ALIGNED pooled 53.3%, OPPOSED 48.2%, lift +5.1pp; BULL_OB|MEDIUM cells came back N=0 because `hist_ict_htf_zones` has no H-timeframe entries). **Verdict: methodology error in this script** — was testing on the wrong cohort entirely. `hist_pattern_signals` (5m batch) is not the cohort Exp 15 / Exp 20 measured. The right replication is on the 1m live-detector cohort, which the Session 16 Exp 15 entry above documents.
+
+**Lesson codified:** Read the source script of an experiment before drawing conclusions about whether its claims replicate. Wrong-cohort comparison is the canonical methodology error. (Captured in CLAUDE.md anti-patterns.)
+
 ---
 
 ## Experiment 50b — Velocity Test on Cluster-FVG Inversion (BULL-only, MARGINAL)

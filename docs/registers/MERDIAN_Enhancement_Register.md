@@ -2375,6 +2375,64 @@ Original purpose: cache `build_expiry_index_simple()` output across cycles to av
 
 ---
 
+### ENH-87 — `hist_pattern_signals` deprecation review (move research to live-detector replay pattern)
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED** |
+| Priority | 2 |
+| Session filed | Session 16 (2026-05-03) |
+| Session target | Session 17 / 18 — decision-only first session, then 2-3 sessions to migrate consumers if approved |
+| Goal | Deprecate `hist_pattern_signals` (the 5m-batch detector path) as a research scaffold, in favour of the live-detector replay pattern demonstrated by Session 16's `experiment_15_with_csv_dump.py` + `analyze_exp15_trades.py` workflow. |
+| Motivation | Three accumulated integrity issues with `hist_pattern_signals`: (1) `ret_30m` column has 4.7-5.0% agreement with locally-computed forward return across 3 cohorts (TD-054 expanded), 30% NULL — every research finding using `ret_30m` directly is suspect. (2) `ret_60m` uniformly 0 across all rows (TD-054). (3) Bull-skew is structural to this code path (TD-056) — produces 5.6x BULL/BEAR_FVG ratio in NIFTY DOWN regime. Plus: the live trading pipeline does NOT consume `hist_pattern_signals` — it reads `signal_snapshots` from `build_trade_signal_local.py` which uses the live 1m detector path. So `hist_pattern_signals` is research scaffolding, not production state. The Session 16 finding that `experiment_15_pure_ict_compounding.py` (live-detector replay, 1m bars, ICTDetector running per bar) replicates Compendium headlines within 2-3pp on 231 trades demonstrates that the same research questions are answerable on the live-detector cohort with better integrity. |
+| Approach options | **(A) Hard deprecate.** Stop running `build_hist_pattern_signals_5m.py`. Migrate any active research that depends on it to the live-detector replay pattern. Mark table read-only "research-archive only, do not trust column values, do not extend." TD-054 / TD-055 / TD-056 close as wontfix-by-deprecation. **(B) Fix and keep.** Diagnose `ret_30m`/`ret_60m` column population, fix at source (signal builder or upstream `hist_market_state`), backfill via signal rebuild. Investigate bull-skew (TD-056 Phase 1). 2-3 sessions of work. **(C) Coexist.** Keep table for historical research (Sessions 1-13 experiments still in Compendium reference it), explicitly tag any new research as "live-detector replay required" — don't allow new findings on `hist_pattern_signals` cohort without parallel live-cohort verification. |
+| Recommendation | **Option C in the short term, Option A long-term.** Don't drop the table now (existing Compendium entries reference it; auditing those would take a session). But require new research to use live-detector replay pattern. Migrate downstream consumers (research dashboards, `merdian_signal_dashboard.py` if it reads from this table — needs check) gradually. Re-evaluate hard deprecation in 3-6 months when no live consumers depend on it. |
+| Cost | Option C: ~0.5 session to add migration guidance to CLAUDE.md and tag new-research workflow. Option A (eventual): 2-3 sessions to migrate all consumers + drop table. |
+| Forbidden ground | Do NOT delete the table or stop the builder until downstream consumers verified migrated. Hard deprecation in middle of production migrations creates orphan-data audit trail issues. |
+
+---
+
+### ENH-88 — BULL_FVG production routing requires recent BULL_OB context (60-90 min lookback)
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED** |
+| Priority | 1 |
+| Session filed | Session 16 (2026-05-03) |
+| Session target | Session 17 (Priority B) |
+| Goal | Patch `build_trade_signal_local.py` to skip BULL_FVG signals UNLESS a BULL_OB trade fired in the same symbol within the last 60-90 minutes. Standalone BULL_FVG = SKIP (or sized down to floor). Clustered BULL_FVG = full sizing. |
+| Evidence | Section 18 of `analyze_exp15_trades.py` on Session 16 live-cohort 231-trade CSV: BULL_FVG with recent BULL_OB at 90-min lookback (N=64) WR 57.8% [44.4, 70.5], vs standalone BULL_FVG (N=91) WR 45.1% [35.2, 55.5] — **+12.8pp lift**. At 60-min lookback: clustered N=57 WR 54.4%, standalone N=98 WR 48.0% — +6.4pp lift. At 30-min lookback: +1.0pp lift only. Standalone BULL_FVG pooled across full year is statistically a coin flip (Section 9: N=155, WR 50.3%, CI [42.5, 58.1] spans 50%). The cluster effect transforms a coin flip into a real edge. |
+| Type | Code — small. Helper function `_recent_bull_ob_check(symbol, current_ts, lookback_min)` queries `signal_snapshots` for same-symbol BULL_OB signals in last N minutes. Gate added to BULL_FVG branch in `build_trade_signal_local.py`. |
+| Logic (proposed) | If `pattern_type=BULL_FVG`: query `signal_snapshots` for `symbol=current.symbol AND pattern_type='BULL_OB' AND signal_ts >= current_ts - 90min AND signal_ts < current_ts AND trade_allowed=True`. If COUNT >= 1: proceed with normal sizing. Else: set `action=DO_NOTHING`, `trade_allowed=False`, add caution `"BULL_FVG without recent BULL_OB context — coin flip pooled, +12.8pp lift only when clustered (Session 16 Exp 15 Section 18)"`. |
+| Lookback choice | 90 min is the strongest evidenced — +12.8pp lift on N=64. 60 min is +6.4pp on N=57. **Recommend 90 min as initial production lookback.** Can shadow-test 60 vs 90 in parallel for one month if uncertain. |
+| Validation | Patch script must end with `ast.parse()` PASS. Functional scenarios: (1) BULL_FVG with BULL_OB at T-30min → trigger; (2) BULL_FVG with BULL_OB at T-60min → trigger; (3) BULL_FVG with BULL_OB at T-100min → block; (4) BULL_FVG with no BULL_OB in 90min → block; (5) BULL_FVG with BEAR_OB at T-30min → block (wrong direction). |
+| Open questions | (a) Should the lookback distinguish between MTF context tiers? Section 18 didn't partition by tier — pooled across all. (b) Should the same rule apply to BEAR_FVG when TD-058 is fixed (live detector starts emitting BEAR_FVG)? Likely yes by symmetry, but should be measured separately on the eventual BEAR_FVG live cohort. (c) Should we ship as confidence-modifier (BULL_FVG without OB context: -25 conf, with: 0 modifier) or hard skip (block trade)? Recommend hard skip — coin flip is not edge worth deploying capital against. |
+| Estimated cost | 1 session (Session 17 Priority B). Includes patch + verification scenarios + Compendium entry update. |
+| Carries | Coordinates with TD-058 (BEAR_FVG live emission fix) — once TD-058 closes, ENH-88 should be extended symmetrically to BEAR_FVG. |
+
+---
+
+### ENH-89 — ENH-37 MTF context hierarchy redesign or removal (LOW outperforms HIGH)
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED** |
+| Priority | 2 |
+| Session filed | Session 16 (2026-05-03) |
+| Session target | Session 18+ (lower priority than ENH-88 / TD-058 fixes, since this is a sizing input not a gate) |
+| Goal | Redesign or remove MTF context hierarchy in production scoring. Current implementation (HIGH=W zone confluence, MEDIUM=H zone, LOW=no zone) treats higher confluence as higher confidence. Session 16 evidence: this is inverted on OB patterns. |
+| Evidence | Section 10 of `analyze_exp15_trades.py` on Session 16 live-cohort 231 trades, Wilson 95% CIs: **BULL_OB|HIGH (D zone) 71.4% N=7, BULL_OB|MEDIUM (H zone) 81.8% N=11 [52.3, 94.9], BULL_OB|LOW (no zone) 87.1% N=31 [71.1, 94.9]**. **BEAR_OB|HIGH 71.4% N=7, BEAR_OB|MEDIUM 100% N=1, BEAR_OB|LOW 100% N=17 [81.6, 100]**. LOW context outperforms HIGH on BOTH OB patterns. The hierarchy as currently built may be filtering away the cleanest signal cohort or boosting confidence on contested-price-action cells. |
+| Hypothesis | When a signal triggers in HIGH context (inside a daily zone), the price action is contested — buyers and sellers are both engaged at a known level. The "trade against the zone" logic plays out, but with chop and reduced edge. When a signal triggers in LOW context (no archive-zone confluence), price is in clean expansion — the OB pattern catches a moving market with directional follow-through. Effectively, archive zones may CAUSE the chop they're supposed to identify. Untested but consistent with the data. |
+| Approach options | **(A) Annotation-only.** Keep MTF context as informational tag in `signal_snapshots` but do NOT use it as a confidence multiplier or sizing input. Production scoring becomes context-agnostic. Lowest-risk change. ~0.5 session. **(B) Inversion.** LOW becomes "high confidence" tier. Risky — current N=17-31 per cell is enough for direction signal but not enough for magnitude calibration. Could overfit to Session 16 cohort. **(C) Shadow A/B test.** Wire `confidence_score_v2` (inverted hierarchy) into `signal_snapshots` alongside current `confidence_score_v1`. Run both for 4-8 weeks live. Compare per-trade outcomes. Decide based on accumulated live data. ~1 session to wire shadow + 4-8 weeks measurement + 1 session to decide and ship. |
+| Recommendation | **Option C — measure before changing production.** Current sizing rule is "wrong" on backtest but live regime may differ. Shadow-mode lets us decide on real data without disrupting current operations. While shadow runs, reduce sizing-multiplier-from-MTF-context magnitudes by half as a hedge against inverted-rule cost. |
+| Caveat | Vocabulary alignment must be settled first (TD-057). Current production code uses post-Apr-13 vocabulary (HIGH=D, MEDIUM=H). The "ENH-37 thesis" was filed against pre-Apr-13 vocabulary (HIGH=W, MEDIUM=D). Before redesigning, document which vocabulary is canonical going forward. (Recommend: post-Apr-13, since that's what `detect_ict_patterns.py` produces today.) |
+| Cost | Option C: 2 sessions across 4-8 weeks of live measurement. |
+| Forbidden ground | Do NOT ship Option B without parallel measurement. N per cell is too small for confidence in the inverted magnitude. |
+
+
+
+---
+
 ### Exp 44 — Intraday Inverted Hammer Reversal After Cascade (filed Session 14)
 
 | Field | Detail |

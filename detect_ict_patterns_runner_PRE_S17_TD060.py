@@ -488,15 +488,8 @@ def main(symbol: str, log_handle: ExecutionLog) -> int:
     # ── Pattern detection (last 10 bars) ──────────────────────────────
     new_patterns_count = 0
     try:
-        # TD-060 fix (Session 17): pass last 30 bars only.
-        # detect() applies internal check_from = len(bars) - 10 filter.
-        # Passing the full session put check_from at the very end,
-        # suppressing all but end-of-day patterns. -30 covers OB
-        # forward-lookahead (5) + sequence features + buffer. Repeat
-        # detection of older patterns is idempotent via on_conflict
-        # upsert in write_new_zones().
         patterns = detector.detect(
-            bars=bars[-30:],
+            bars=bars,
             atm_iv=atm_iv,
             htf_zones=htf_zones,
             prior_high=prior_high,

@@ -479,16 +479,9 @@ class ICTDetector:
 
         htf_zones = htf_zones or []
 
-        # TD-060 fix (Session 17): check_from filter removed.
-        # Previous logic: check_from = max(0, len(bars) - 10) created a
-        # 4-bar eligible window (slice_idx 20-23 in detect_obs's `i in
-        # range(n-6)` loop). With runner's 5-bar cycle stride, the 4-bar
-        # window + 5-bar stride created gaps where OBs at certain
-        # session-idx offsets missed every cycle. Result: ~74% pattern
-        # coverage at most, frequently 0 OBs in production.
-        # Caller (runner) controls scan window via bars input slice
-        # (bars[-30:]). Re-detection across cycles is idempotent via
-        # on_conflict upsert in write_new_zones().
+        # Sub-cycle detection: only check last 10 bars
+        # Older bars already processed in prior cycles
+        check_from = max(0, len(bars) - 10)
 
         # Detect all pattern types
         ob_candidates  = detect_obs(bars, prior_high, prior_low)
@@ -496,9 +489,9 @@ class ICTDetector:
         judas_candidates = detect_judas(bars)
 
         all_candidates = (
-            [(idx, pt) for idx, pt in ob_candidates] +
-            [(idx, pt) for idx, pt in fvg_candidates] +
-            [(idx, pt) for idx, pt in judas_candidates]
+            [(idx, pt) for idx, pt in ob_candidates  if idx >= check_from] +
+            [(idx, pt) for idx, pt in fvg_candidates  if idx >= check_from] +
+            [(idx, pt) for idx, pt in judas_candidates if idx >= check_from]
         )
 
         patterns = []

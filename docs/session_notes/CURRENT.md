@@ -9,6 +9,141 @@
 
 | Field | Value |
 |---|---|
+| **Date** | 2026-05-03 (Sunday — Session 17, very long: TD-058 BEAR_FVG live fix → TD-060 discovered/diagnosed/fixed → Pine ENH-91 + ENH-92 + readability rewrite → operational task scheduler diagnosis). |
+| **Concern** | Session 16 carry-forward Priority A: TD-058 BEAR_FVG live emission fix (`detect_ict_patterns.py` adds BEAR_FVG branch). Session expanded to include Priority B (ENH-88 BULL_FVG cluster gate) which surfaced TD-060 (live runner emits zero OBs across 14 days). |
+| **Type** | Engineering — multi-fix session: 2 production patches deployed (Local + AWS), 2 ENH SHIPPED (Pine WR + intraday), 1 ENH BUILT NOT DEPLOYED (ENH-88 awaiting Mon live data), 1 ENH CANDIDATE filed (ENH-90), 4 TDs filed (TD-060 RESOLVED same session, TD-061/062/063 NEW). |
+| **Outcome** | DONE. **TD-058 RESOLVED end-to-end:** 5-edit patch, BEAR_FVG signal count 0 → 138 across full year, combined NIFTY+SENSEX P&L ₹11.7L → ₹12.6L (+22.8pp lift). **TD-060 NEW + RESOLVED same session:** runner window-slice (F4) + detector check_from removal (G1); full-day smoke on Feb 01 NIFTY achieved 14/14 OB coverage = 100% within tradeable hours (versus 0 OB pre-fix across 14 days × 2280 cycles in production). **ENH-91 SHIPPED:** Pine zone labels embed WR per pattern_type from Exp 15 cohort (BULL_OB 84%, BEAR_OB 92%, BULL_FVG 50%, BEAR_FVG 46%). **ENH-92 SHIPPED:** Pine intraday `ict_zones` rendered as M5 timeframe alongside HTF zones (20-zone-per-symbol cap for Pine 250-element limit). **ENH-88 BUILT NOT DEPLOYED:** BULL_FVG cluster gate patch ready as `_PATCHED.py`, deferred until Mon live data confirms BULL_OB signals flow into `signal_snapshots` post-TD-060 fix. **ENH-90 CANDIDATE filed:** BEAR_FVG anti-cluster gate (-16.5pp anti-edge with N=22, deferred for N expansion per Rule 22 + Session 17 N-threshold). **TD-061/062/063 NEW (operational):** Task Scheduler window suppression, Saturday stuck-process root cause, single-instance enforcement. **13 MERDIAN_* tasks re-enabled** for Mon open after operator killed runaway Python processes Saturday May-2. |
+| **Git start → end** | `f2789b9` (Session 16 close) → `pending` (Session 17 commits). Operator commits at end of session per protocol. AWS synced via `git pull`. |
+| **Local + AWS hash match** | Local advancing this session. **AWS pulled** — both `detect_ict_patterns.py` and `detect_ict_patterns_runner.py` patches deployed; `_PRE_S17_TD060.py` snapshots present on AWS. |
+| **Files changed (code)** | `detect_ict_patterns.py` (G1 — `check_from` filter removed, 1 line + 3 list comprehension filters); `detect_ict_patterns_runner.py` (F4 — `bars=bars` → `bars=bars[-30:]`); both renamed canonical, `_PRE_S17_TD060.py` snapshots preserved. `generate_pine_overlay.py` (ENH-91 + ENH-92 + readability rewrite — 8 anchored edits across 1 file plus 2 hotfix iterations for Pine v6 strict typing). |
+| **Files added (untracked, working dir)** | `patch_td058_bear_fvg_emission.py`, `patch_enh88_bull_fvg_cluster_gate.py`, `diag_enh88_data_source.py`, `patch_td060_runner_instrumentation.py`, `diag_td060_local_repro.py`, `diag_td060_subdetector_trace.py`, `patch_td060_runner_window_slice.py`, `patch_td060_remove_check_from.py`, `diag_td060_full_day_smoke.py`, `patch_pine_intraday_and_wr.py`, `patch_pine_readability.py`, `patch_pine_readability_hotfix.py`, `patch_pine_readability_hotfix2.py`, `diag_pine_zones_audit.py`, `diag_htf_zones_post_build.py`, `diag_active_intraday_zones.py`. All covered by existing `.gitignore` patterns. |
+| **Files modified (docs)** | `CURRENT.md` (this rewrite — Session 16 content preserved below as historical reference per no-crunch directive). `session_log.md` (Session 17 one-liner prepended). `tech_debt.md` (TD-060/061/062/063 added; TD-058 moved to Resolved). `MERDIAN_Experiment_Compendium_v1.md` (Session 17 BEAR_FVG live cohort + cluster asymmetry entry prepended). `MERDIAN_Enhancement_Register.md` (ENH-90 CANDIDATE, ENH-91 SHIPPED, ENH-92 SHIPPED prepended; ENH-88 status updated). `merdian_reference.json` (v11→v12). `CLAUDE.md` (v1.11→v1.12, Rule 22 + B13 + B14 + six findings). |
+| **Tables changed** | None. |
+| **Cron / Tasks added** | None. 13 existing MERDIAN_* tasks re-enabled. |
+| **`docs_updated`** | YES. All seven closeout files produced as full downloads (no append/prepend deltas, no crunching of old entries). |
+
+### What Session 17 did, in 12 bullets
+
+**Phase 1 — TD-058 BEAR_FVG live emission fix:**
+
+- **5-edit patch shipped to `detect_ict_patterns.py` + `experiment_15_pure_ict_compounding.py`.** Edits: (1) `OPT_TYPE` dict adds `BEAR_FVG: PE`; (2) `DIRECTION` dict adds `BEAR_FVG: -1`; (3) `detect_fvg()` body adds BEAR predicate `prev.low > nxt.high and (prev.low - nxt.high)/ref >= min_g`; (4) zone-construction `elif pattern_type == "BEAR_FVG"` block; (5) Exp 15 simulator `build_simulated_htf_zones()` 1H BEAR_FVG mirror. Originals preserved as `_PRE_S17.py`.
+
+- **Validation:** Re-run of Exp 15 simulator on full-year cohort produced BEAR_FVG signal count 0 → 138; combined NIFTY+SENSEX P&L ₹11.7L → ₹12.6L (+22.8pp lift). Section 17 of `analyze_exp15_trades.py` confirmed bear-side FVG detection now functional across all regimes.
+
+**Phase 2 — Cluster effect direction-asymmetry finding:**
+
+- **BULL_FVG cluster (Session 16 finding) replicates:** +12.8pp lift at 90-min lookback (N=64 cluster vs N=91 standalone, 57.8% vs 45.1% WR). ENH-88 patch built around this finding.
+
+- **BEAR_FVG cluster runs OPPOSITE direction:** -16.5pp anti-edge at 90-min lookback (N=22 cluster vs N=116 standalone, 31.8% vs 48.3% WR). Direction-asymmetric finding filed as ENH-90 CANDIDATE; not deployed because N=22 too small (Wilson CI [16.4, 52.8] includes 50%) and Session 17 codified an N-threshold rule for direction-asymmetric gates.
+
+**Phase 3 — TD-060 discovery/diagnosis/fix:**
+
+- **Discovered while attempting ENH-88 deploy.** `signal_snapshots` last 14 days had only NONE and BULL_FVG signals — zero OBs of either direction. Initial hypothesis: schema or write-path issue. Diagnostic `diag_enh88_data_source.py` ruled out schema. Two diagnostics built progressively narrowed scope: `diag_td060_local_repro.py` (reproduces zero-OB on local data) → `diag_td060_subdetector_trace.py` (sub-detectors find 14 OBs + 13 FVGs on Feb 01 NIFTY but `ICTDetector.detect()` returns 0). Filter mismatch confirmed.
+
+- **Root cause:** `detect_ict_patterns.py` had `check_from = max(0, len(bars) - 10)` filter that limited visible OB-candle slot to 4 bars regardless of input size; runner passed `bars=bars` (full session ~400 bars) every 5-min cycle. Combined: cycle stride=5 + eligible window=4 = systematic gap where most session OBs miss every cycle. Only end-of-cycle BULL_FVGs slipped through, explaining production's all-BULL_FVG signal pattern.
+
+- **Fix shipped as 2-patch pair:** F4 (runner `bars=bars[-30:]`) + G1 (detector `check_from` filter removed entirely + 3 list comprehension filters removed). Per-cycle re-detection idempotent via `on_conflict` upsert. Verification: `diag_td060_full_day_smoke.py` simulated 80 5-min cycles on Feb 01 NIFTY, achieved 14/14 OB coverage = 100% within tradeable hours. Both patches deployed Local + AWS via `git pull`; `_PRE_S17_TD060.py` snapshots preserved.
+
+**Phase 4 — Pine generator enhancements:**
+
+- **ENH-91 + ENH-92 shipped together:** WR labels per pattern_type from Exp 15 cohort + intraday `ict_zones` merged into Pine output as M5 timeframe. `INTRADAY_CAP_PER_SYMBOL = 20` to stay safely under Pine v6's 250 box/line/label limit when combined with HTF zones.
+
+- **Pine readability rewrite + 2 hotfix rounds:** Initial rewrite added 5 configurable Pine inputs (`label_pos`, `max_lookback`, `pdh_pdl_as_line`, `label_size`, `label_text_col`); CE10149 error on `size lbl_sz` declaration (Pine v6 — `size` is namespace not type kw); CE10235 on if/else block-type unification (Pine v6 — branches must produce same value type). Hotfix 1 removed invalid type kw; hotfix 2 split if/else into sequential if blocks. Final Pine compiled clean and pasted into TradingView working.
+
+- **Pine generated tonight:** 55 zones (49 HTF + 6 intraday from Apr-30). Intraday zones not stale despite Apr-30 LastRun timestamp because May-1 holiday + May-2 Sat + May-3 Sun = zero trading days elapsed since last live runner cycle.
+
+**Phase 5 — Operational task scheduler diagnosis (NOT FIXED):**
+
+- **Task Scheduler held 13 MERDIAN_* tasks Disabled** after operator killed runaway Python processes Saturday. Re-enabled all 13 via PowerShell loop for Monday open. NO zombie Python processes confirmed via `Get-Process` check.
+
+- **Saturday LastRun timestamps decoded:** 5 tasks (Market_Close_Capture, Post_Market_1600_Capture, Session_Markers_1602, Spot_1M, EOD_Breadth_Refresh) had LastRun=02-05-2026 despite DoW=62 (Mon-Fri only) trigger. NOT new Saturday triggers — these were kill-time artifacts. LastResult 2147946720 = "instance already running". Stuck-process accumulation root cause (TD-062) deferred to dedicated session.
+
+- **Three TDs filed for follow-up:** TD-061 (Task Scheduler window suppression — `pythonw.exe` migration), TD-062 (Saturday stuck-process root cause), TD-063 (single-instance enforcement). All deferred — none blocks Mon open.
+
+---
+
+## This session (Session 18)
+
+| Field | Value |
+|---|---|
+| **Goal** | TBD by operator. Several priorities lined up; pick ONE per Rule 3 (one concern per session). |
+| **Type** | Operator's call — engineering / operations / research. |
+| **Success criterion** | Defined when goal is set. |
+
+### Carry-forward priority queue (ordered by recommended priority for Session 18):
+
+| Priority | Item | Why |
+|---|---|---|
+| **A** | Verify TD-060 fix in live data + ENH-88 deploy | Mon morning live cycle should populate `ict_zones` with all four pattern types (BULL_OB, BEAR_OB, BULL_FVG, BEAR_FVG). Once `signal_snapshots` shows BULL_OB rows flowing, ENH-88 BULL_FVG cluster gate becomes meaningful and can be deployed (`_PATCHED.py` already built and verified). Verification SQL: `SELECT pattern_type, COUNT(*) FROM ict_zones WHERE trade_date = current_date GROUP BY 1;` — expect all four types > 0 by end of first hour. |
+| **B** | TD-061/062/063 Task Scheduler hygiene | Operator productivity tax (TD-061 visible windows, B14 anti-pattern). Stuck-process accumulation (TD-062) is the deeper bug — needs heartbeat instrumentation to identify which task gets stuck. TD-063 single-instance enforcement is the small defense-in-depth fix that can ship in same session as TD-061 PowerShell re-registration loop. |
+| **C** | TD-056 bull-skew mechanism investigation | Section 17 evidence narrows the defect to OB-specific (NIFTY DOWN OB ratio 3.29x suspect; FVG ratio 0.64x correctly directional). The OB detector has a direction-asymmetric defect upstream of the FVG detector. Investigate `detect_obs` symmetry across BULL/BEAR predicate logic. |
+| **D** | ENH-90 BEAR_FVG anti-cluster gate | Direction-asymmetric finding (-16.5pp at 90min) needs N expansion to clear Session 17's N-threshold (≥50 in smaller arm + Wilson CI lower bound clears 50% by ≥5pp). Deferred until either more data accumulates or controlled experiment synthesizes more cluster cells. |
+| **E** | Documentation closure (this list) | If Session 17's documentation files don't get committed to Git + uploaded to project knowledge before Session 18, Session 18's Claude reads stale state. Operator should commit + upload the 7 files produced this session. |
+
+### Files / tables / items relevant for next session
+
+- **`detect_ict_patterns.py`** — patched canonical (Session 17 G1)
+- **`detect_ict_patterns_runner.py`** — patched canonical (Session 17 F4)
+- **`generate_pine_overlay.py`** — patched canonical (ENH-91 + ENH-92 + readability)
+- **`build_trade_signal_local.py`** — has parked ENH-88 patch as `_PATCHED.py` (not yet renamed to canonical)
+- **`ict_zones` table** — primary observability target for TD-060 fix verification
+- **`signal_snapshots` table** — secondary verification target for ENH-88 deploy gating
+- **TradingView chart Pine** — currently has Session 17 generated overlay; Mon ~10:30 IST refresh expected
+- **Task Scheduler (Windows)** — 13 MERDIAN_* tasks re-enabled, ready for Mon 08:00 IST onward triggers
+
+### DO NOT REOPEN this session
+
+- ❌ TD-058 BEAR_FVG live emission — RESOLVED Session 17, validated end-to-end
+- ❌ TD-060 runner window-slice + check_from removal — RESOLVED Session 17, 100% smoke coverage
+- ❌ Pine readability hotfix #2 — final Pine compiles cleanly, pasted into TradingView, working
+- ❌ ENH-88 design (require recent BULL_OB cluster) — settled, only deployment-vs-defer is open
+- ❌ ENH-91 WR label values — settled from Exp 15 Section 9 cohort; refresh only on next major dump
+- ❌ ENH-92 intraday merge approach — settled (M5 timeframe label, 20-zone cap, reuse show_h toggle)
+
+---
+
+## Live state snapshot (at Session 18 start, 2026-05-03 close)
+
+| Component | State |
+|---|---|
+| **Local** | Detector + runner patches deployed canonical. Pine generator patched. 13 Task Scheduler tasks re-enabled. No zombie Python processes. |
+| **AWS (MERDIAN, `i-0e60e4ed9ce20cefb`)** | Detector + runner patches deployed via `git pull`; `_PRE_S17_TD060.py` snapshots present. AWS cron unchanged. |
+| **Critical items (C-N)** | None new. |
+| **Tech debt (active)** | TD-061 (S2), TD-062 (S2), TD-063 (S3) NEW Session 17. TD-056 narrowed to OB-specific. TD-058 RESOLVED. TD-060 RESOLVED same-session. Plus all pre-Session-17 active TDs unchanged. |
+| **ENH in flight** | ENH-88 BUILT NOT DEPLOYED (awaits Mon live BULL_OB data). ENH-90 CANDIDATE (deferred for N expansion). ENH-91 + ENH-92 SHIPPED. |
+| **Pine on TradingView** | 55-zone overlay (49 HTF + 6 intraday); 2026-05-03 generation; show_h ON; readability inputs configured per operator preference. |
+| **Trading calendar** | 2026-05-04 (Mon) is open trading day. Pre-market sequence ready; tasks re-enabled. |
+
+---
+
+## Mid-session checkpoints (per Session Management Rule 1)
+
+*Reset by Session 18 start.*
+
+---
+
+## Session-end checklist (run at end of each substantive session)
+
+```
+☐ Update merdian_reference.json for any file/table/item status change
+☐ Update tech_debt.md if a TD item changes
+☐ Overwrite CURRENT.md (Last session reflects this session, This session reset)
+☐ Append one line to session_log.md (newest-first prepend)
+☐ Update Enhancement Register if architectural thinking happened
+☐ Update CLAUDE.md if a Rule, settled decision, or anti-pattern was added
+☐ Update Experiment Compendium if new experiment evidence was produced
+☐ Commit all documentation changes to Git
+☐ Upload updated files to Claude.ai project knowledge (Rule 12)
+☐ AWS sync if production code changed (git push + AWS git pull)
+☐ Re-enable any disabled Task Scheduler tasks before next market open
+```
+
+---
+
+## Previous session (Session 16) — preserved per no-crunch directive
+
+| Field | Value |
+|---|---|
 | **Date** | 2026-05-02 → 2026-05-03 (Saturday evening into Sunday — Session 16, very long: pending experiments → wrong-cohort detour → Exp 15 source-code archaeology → live-detector replication → diagnostic deep-audit). |
 | **Concern** | "Run the seven Session 15 carry-forward items: Exp 41/41b BEAR_FVG cohort re-derive, stash adjudication, Exp 50/50b re-run on now-symmetric data, ADR-003 Phase 1 v3, TD-056 bull-skew partition, Exp 44 v2 if time." Landed at: **end-to-end audit of Exp 15 framework on current code**, with critical finding that the "ICT framework headlines collapse" framing developed mid-session was wrong-cohort overreach, and Exp 15's published edge replicates within 2-3pp on locally-computed methodology. |
 | **Type** | Multi-experiment session that pivoted from carry-forward closure to framework provenance audit when investigation surfaced (a) Exp 15 had no findable execution audit trail, (b) `experiment_15_pure_ict_compounding.py` and `detect_ict_patterns.py` were both modified post-Compendium-publication on 2026-04-13, including silent MTF tier relabeling (Apr-12 MEDIUM=daily zone, Apr-13+ MEDIUM=1H zone), (c) the carry-forward experiments were testing on `hist_pattern_signals` (5m batch) but Exp 15's actual edge lives on the 1m live-detector path. |
@@ -98,7 +233,7 @@
 
 ---
 
-## This session
+## This session block from Session 16 (superseded by Session 17 block above)
 
 > Session 17. Pick ONE primary path from below at session start.
 
@@ -168,7 +303,7 @@
 
 ---
 
-## Live state snapshot (at Session 17 start)
+## Live state snapshot (at Session 17 start — preserved as historical reference)
 
 **Environment:** Local Windows primary; AWS shadow runner present but not touched Session 16. `MERDIAN_ICT_HTF_Zones` 08:45 IST scheduled task expected to run normally Monday 2026-05-04 — Session 15 patches are in place; no Session 16 production changes.
 

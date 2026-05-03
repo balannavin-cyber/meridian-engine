@@ -8,7 +8,7 @@
 |---|---|
 | Document | MERDIAN_Experiment_Compendium_v1.md |
 | Created | 2026-04-12 |
-| Last updated | 2026-04-28 (Session 11 — Exp 34 through 41B added) |
+| Last updated | 2026-05-03 (Session 17 — TD-058 BEAR_FVG live emission RESOLVED, BEAR_FVG live cohort first measured, cluster direction-asymmetry finding logged as ENH-90 CANDIDATE) |
 | Period covered | Apr 2025 – Apr 2026 (full backtest year) |
 | Dataset | 262 NIFTY sessions, 261 SENSEX sessions, 18,895 / 18,870 regular-session 5m bars |
 | Purpose | Single authoritative reference: all experiments run, findings, and live system builds that arise |
@@ -30,6 +30,54 @@ Experiments are ordered by number. Most recent experiments at top.
 Update note 2026-05-02 (Session 15): registered metadata also at top — period covered now extends Apr 2025 → Apr 2026 (full backfill on patched zone builders, 264 NIFTY + 263 SENSEX trading days, 40,384 zone rows in `hist_ict_htf_zones`, 7,484 signal rows in `hist_pattern_signals` after the BEAR_FVG fix shipped this session). All Session 15 experiments below were run on this dataset. Note: Exp 50 / Exp 50b results recorded here are BULL-only (the bug-discovery vehicle for the BEAR_FVG defect closed this session) — expected to be re-run on now-symmetric data in Session 16.
 
 Update note 2026-05-03 (Session 16): six Session 16 entries added at top below this note. Headline finding: **Exp 15 framework (1m live-detector path) replicates within 2-3pp of original Compendium claims on current code with current data — combined NIFTY+SENSEX ₹4L → ₹11.7L (+193.4%) full year, BEAR_OB 92.0% (vs 94.4%), BULL_OB 83.7% (vs 86.4%), BULL_FVG 50.3% (vs 50.3%).** Per-cell deep audit (Wilson 95% CIs on N=231 trades) revealed BULL_FVG is statistical coin flip standalone but +12.8pp lift with recent BULL_OB cluster (90-min lookback, N=64); MTF context hierarchy is INVERTED from claim (LOW outperforms HIGH on OB patterns); edge concentrates in top 7/57 sessions = 80% P&L (event-dependent). Session 15 Exp 50 / Exp 50b BULL-only verdicts re-tested on bidirectional `hist_pattern_signals` (Items 3-4 of carry-forward) — included as separate v2 entries below. Live-cohort verification of clustering done in Section 18 of `analyze_exp15_trades.py` and reported in the Exp 15 framework replication entry. **Provenance note for Apr-12 Compendium entry on Exp 15:** the original execution log of `experiment_15_pure_ict_compounding.py` is a 427-byte SyntaxError crash; no successful execution log of that exact script exists anywhere in `C:\GammaEnginePython\logs\`. Apr-13 commit `c78b6ea` modified both the experiment script and `detect_ict_patterns.py.get_mtf_context`, silently relabeling MTF tier vocabulary (pre-Apr-13: HIGH=W, MEDIUM=D; post-Apr-13: VERY_HIGH=W, HIGH=D, MEDIUM=H). Apr-12 entry uses post-Apr-13 vocabulary. Session 16 replication is therefore the audit-grade execution; published headlines are not refuted but the original measurement is not directly auditable. TD-057 captures the broader provenance gap.
+
+---
+
+## Session 17 (2026-05-03) — BEAR_FVG live cohort first measurement + cluster direction-asymmetry
+
+### Question
+After Session 17 TD-058 fix that adds BEAR_FVG branch to live `detect_ict_patterns.py`, does BEAR_FVG produce signals comparable to BULL_FVG in the Exp 15 full-year cohort, and does the BULL_FVG-on-BULL_OB cluster effect (+12.8pp lift, Session 16) replicate symmetrically for BEAR_FVG-on-BEAR_OB?
+
+### Setup
+- Re-ran `experiment_15_pure_ict_compounding.py` on full-year cohort post-TD-058 fix.
+- BEAR_FVG signal count went from 0 → 138 across 12 months.
+- Combined NIFTY+SENSEX P&L: ₹11.7L → ₹12.6L (+22.8pp lift on already-strong baseline).
+- Pulled trade-list CSV via `experiment_15_with_csv_dump.py` for per-pattern analysis.
+- Section 18 of `analyze_exp15_trades.py` extended to compute BEAR_FVG cluster effect at 30/60/90-min lookback windows, mirroring the BULL_FVG analysis from Session 16.
+
+### Findings
+
+**BEAR_FVG standalone (post-fix):**
+- N=138 cluster signals, WR 45.7% [37.6, 54.0] Wilson 95% CI
+- CI spans 50% — coin flip standalone (parallel to BULL_FVG which was 50.3% [42.5, 58.1])
+- Both FVG patterns confirmed coin flip standalone; the OB patterns retain edge (BULL_OB 84%, BEAR_OB 92%)
+
+**BEAR_FVG cluster with recent BEAR_OB at 90-min lookback:**
+- WR 31.8% (N=22) vs standalone 48.3% (N=116) = **-16.5pp anti-edge**
+- Direction-OPPOSITE to BULL_FVG cluster (which was +12.8pp at same window)
+- 60-min lookback: similar anti-edge direction
+- 30-min lookback: smaller anti-edge but same sign
+
+**Note on N=22 limitation:** Wilson CI for 31.8% with N=22 is [16.4, 52.8] — the 50% mid-line is inside the CI envelope, so the effect could disappear with more data. Filed as ENH-90 CANDIDATE pending N expansion.
+
+### Verdict
+Three operational conclusions:
+
+1. **TD-058 fix unblocks bear-side FVG visibility.** Live system can now see BEAR_FVG opportunities; bear-side FVG WR is comparable to bull-side (both coin flip standalone). The Session 17 detector patch worked end-to-end.
+
+2. **FVG patterns are coin flip without context.** Both BULL_FVG (50.3%) and BEAR_FVG (45.7%) Wilson CIs span 50%. Trading FVG signals standalone has zero edge. Operational implication: neither should fire production trades without a context filter (clustering, MTF tier, or other gating).
+
+3. **Cluster effect is direction-asymmetric, not symmetric as ICT theory predicts.** BULL_FVG with recent BULL_OB: +12.8pp lift (real edge, basis for ENH-88). BEAR_FVG with recent BEAR_OB: -16.5pp anti-edge. The asymmetry is large but rests on N=22 in the cluster bucket — not yet at production-deploy confidence. Filed as ENH-90 CANDIDATE.
+
+### Builds
+
+- **Production:** TD-058 fix shipped (5-edit patch across `detect_ict_patterns.py` and `experiment_15_pure_ict_compounding.py`); both files renamed canonical, `_PRE_S17.py` snapshots preserved; AWS synced.
+- **Production (TD-060):** runner window-slice + detector check_from removal (2-file patch); both deployed Local + AWS; full-day smoke achieved 14/14 OB coverage on Feb 01 NIFTY.
+- **Filed for next session:** ENH-88 BULL_FVG cluster gate (BUILT NOT DEPLOYED, awaits Mon live BULL_OB data); ENH-90 BEAR_FVG anti-cluster gate (CANDIDATE — needs N expansion).
+
+### Carry-forward
+- Re-measure cluster effects after ENH-88 lives 1 month in production. Live BULL outcomes recalibrate confidence in the asymmetry; if BULL cluster fails to deliver predicted +12.8pp lift live, ENH-90's anti-edge finding gains weight.
+- TD-056 bull-skew narrowed but mechanism investigation deferred. Section 17 of analyzer confirmed bull-skew is OB-specific not generic — NIFTY DOWN OB ratio 3.29x (suspect), FVG ratio 0.64x (correctly directional). The OB detector has a direction-asymmetric defect upstream of the FVG detector. Filed as TD-056 carry-forward.
 
 ---
 

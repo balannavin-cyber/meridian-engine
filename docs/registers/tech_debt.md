@@ -57,6 +57,74 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-060 — Live runner emits zero OBs across 14 days due to detect_ict_patterns check_from filter / runner cycle stride mismatch (RESOLVED same session)
+
+| | |
+|---|---|
+| **Severity** | S1 (production-impacting — entire bear-side OB and most FVG signal flow blind to live system) |
+| **Discovered** | 2026-05-03 (Session 17 — uncovered while attempting ENH-88 BULL_FVG cluster gate deploy; `signal_snapshots` last 14 days had only NONE and BULL_FVG, zero OBs of either direction; investigation revealed runner cycles 14 × ~2280 = ~32,000 invocations producing zero OB rows in `ict_zones`) |
+| **Component** | `detect_ict_patterns_runner.py` invocation of `detector.detect()` AND `detect_ict_patterns.py` `check_from = max(0, len(bars) - 10)` filter |
+| **Symptom** | Despite Session 17 TD-058 detector patch (BEAR_FVG branch added) and Session 15 zone-builder fix (1,384 W BEAR_FVG zones in `hist_ict_htf_zones`), the live `ict_zones` table had only 76 BULL_FVG rows and 0 OBs/BEAR_FVG/JUDAS over 14 trading days. Sub-detectors (`detect_obs`, `detect_fvg`) found 14 OBs + 13 FVGs on Feb 01 NIFTY when called directly; `ICTDetector.detect()` returned 0 patterns on the same data. |
+| **Root cause** | Two-bug pair. (a) `detect_ict_patterns.py` had `check_from = max(0, len(bars) - 10)` filter that limited visible OB-candle slot to indices `[len-10, len-7]` — exactly 4 bars wide regardless of input size, because `detect_obs` caps `i in range(n - 6)`. (b) `detect_ict_patterns_runner.py` passed `bars=bars` (full session ~400 bars) every 5-min cycle. Combined: cycle stride=5 bars + eligible window=4 bars = systematic gap where most session OBs miss every cycle. Only OBs at session-idx N where some cycle ends at N+7..N+10 surfaced; those ending exactly on cycle boundaries (multiples-of-5+10) caught their target. End-of-day BULL_FVGs slipped through more often than mid-day BEAR_OBs, explaining the all-BULL_FVG production rows. |
+| **Workaround** | None applied — went straight to fix. |
+| **Proper fix** | F4 + G1 patch pair shipped as TD-060 fix: (F4) `detect_ict_patterns_runner.py` line `bars=bars` → `bars=bars[-30:]` so per-cycle scan window is bounded to last 30 bars. (G1) `detect_ict_patterns.py` `check_from` line + 3 `if idx >= check_from` filters from list comprehensions removed entirely. Per-cycle re-detection of older patterns is idempotent via `on_conflict` upsert in `write_new_zones()`. Verification: `diag_td060_full_day_smoke.py` simulated 80 5-min cycles on Feb 01 NIFTY, achieved 14/14 OB coverage = 100% within tradeable hours (versus 9/14 = 64% with F4 alone, 0/14 pre-fix). Both patches deployed Local + AWS via `git pull`; `_PRE_S17_TD060.py` snapshots preserved. |
+| **Cost to fix** | ~6 exchanges of diagnostic + 2 patches + 3 hotfix iterations on related Pine work. Closed same session. |
+| **Blocked by** | nothing |
+| **Owner check-in** | 2026-05-03 — RESOLVED |
+
+---
+
+### TD-061 — Task Scheduler entry points spawn visible console windows during pre-market and post-market hours (operator productivity tax)
+
+| | |
+|---|---|
+| **Severity** | S2 (non-blocking but degrades operator workflow — windows flashing during chart prep cause mistypes and break concentration) |
+| **Discovered** | 2026-05-03 (Session 17 — operator reported "all of Friday and Saturday there were a gazillion terminal windows opening and shutting through the day even outside supposed market hours (both holidays). When I checked there were 6-7 processes running. Why?") |
+| **Component** | Windows Task Scheduler tasks: MERDIAN_PreOpen, MERDIAN_Spot_1M, MERDIAN_Dhan_Token_Refresh, MERDIAN_Intraday_Supervisor_Start, MERDIAN_Market_Tape_1M, MERDIAN_PO3_SessionBias_1005, MERDIAN_Post_Market_1600_Capture, MERDIAN_Session_Markers_1602, MERDIAN_Spot_MTF_Rollup_1600, MERDIAN_WS_Feed_0900, MERDIAN_ICT_HTF_Zones_0845, MERDIAN_IV_Context_0905, MERDIAN_EOD_Breadth_Refresh, MERDIAN_Market_Close_Capture (13 tasks). |
+| **Symptom** | Each scheduled task spawns a `python.exe` process which opens a console window. Even when the script's holiday-gate logic correctly exits clean (per ENH-66), the visible console pop-up interrupts operator workflow. Cumulative: 25-30 window flashes per 5-min cycle reported in session_log Apr-13 entry (partial fix applied to `run_option_snapshot_intraday_runner.py` subprocess calls only). On holidays/weekends, every Mon-Fri-triggered task fires, hits calendar gate, exits, but flashes a window. |
+| **Root cause** | Task action runs `python.exe` (console executable) instead of `pythonw.exe` (no-console). The CREATE_NO_WINDOW subprocess flag fix from Session Apr-13 was applied selectively to inner subprocess calls within `run_option_snapshot_intraday_runner.py` but not propagated to top-level Task Scheduler entry points. |
+| **Workaround** | Operator has been killing runaway processes manually when noise becomes intolerable; this disables tasks until manually re-enabled (as happened May-2 this session — re-enabled via PowerShell loop on May-3). |
+| **Proper fix** | Two-option choice: (a) Migrate Task Scheduler entry points from `python.exe` to `pythonw.exe`. Same script runs but no console window. Caveat: scripts that print to stdout without a redirect file lose that output; for MERDIAN tasks that already write to `script_execution_log` Supabase table, this is safe. (b) Wrap each task action with PowerShell `-WindowStyle Hidden` launcher. More complex, briefer flash residue. Pick (a). Verification: re-register one task (e.g. MERDIAN_Spot_1M, highest cycle frequency), confirm no window appears on next trigger AND `script_execution_log` row still written. Then propagate to remaining 12 tasks. |
+| **Cost to fix** | 1 dedicated session (~15 exchanges) — re-register all 13 tasks, test each. |
+| **Blocked by** | nothing |
+| **Owner check-in** | 2026-05-03 |
+
+---
+
+### TD-062 — Saturday LastRun timestamps on 5 Task Scheduler tasks despite DoW=62 (Mon-Fri) trigger — stuck-process accumulation root cause unknown
+
+| | |
+|---|---|
+| **Severity** | S2 (operational hygiene — stuck Python processes accumulate across days, eventually requiring kill, which disables tasks until manual re-enable; root cause hidden) |
+| **Discovered** | 2026-05-03 (Session 17 — Get-ScheduledTask diagnostic showed Market_Close_Capture, Post_Market_1600_Capture, Session_Markers_1602, Spot_1M, EOD_Breadth_Refresh all had LastRun timestamps from 02-05-2026 (Saturday) despite all having `DoW=62` = Mon-Fri only triggers; LastResult 2147946720 = 0x80070420 = 'instance is currently running') |
+| **Component** | Task Scheduler interaction with long-running Python processes; possibly Spot_1M or Supervisor entering hung state on holiday-day calendar queries |
+| **Symptom** | Saturday LastRun timestamps decoded NOT as new Saturday triggers (DoW=62 correctly excludes Saturday) but as kill-time artifacts when operator killed the running instances. The LastResult code 2147946720 means a previous instance was still alive when the next scheduled fire attempted to start — Task Scheduler refused to start a duplicate, returned the error code, and recorded the time as LastRun. The accumulated processes were the same task's previous instance still running, NOT new Saturday firings. |
+| **Root cause** | Unknown. Hypothesis: a script called by one of the affected tasks (likely Spot_1M which fires every minute, or the Supervisor which spawns child processes) hangs on a Supabase call, network call, or holiday-gate evaluation when calendar state is unusual (NULL open_time per Incident #1 class, or just slow-responding). Task instance never exits. Subsequent triggers fire, find existing instance, error out with 2147946720. Process count grows. |
+| **Workaround** | Operator manually kills runaway processes when noticeable; killing disables the task in Windows Task Scheduler until manually re-enabled. Done May-3 this session for all 13 MERDIAN_* tasks. |
+| **Proper fix** | Three steps: (1) Identify which script gets stuck — instrument every long-running task with a heartbeat write to `script_execution_log` (or local heartbeat file with rolling timestamp); compare actual LastRun vs heartbeat to find which task's instances outlive their schedule. (2) Add timeout to all Supabase calls in calendar-gate code paths (currently no timeout means a stuck connection hangs forever). (3) Add `subprocess.Popen(timeout=N)` or signal-based kill to supervisor child processes so a stuck Python script gets reaped after reasonable wall time. |
+| **Cost to fix** | 1 session for instrumentation, 1 session for fix once root cause identified. |
+| **Blocked by** | TD-061 (window-suppression fix may interact — pythonw.exe migration could change process lifecycle behavior; do TD-062 instrumentation first) |
+| **Owner check-in** | 2026-05-03 |
+
+---
+
+### TD-063 — Single-instance enforcement missing on Task Scheduler tasks (defense in depth against TD-062)
+
+| | |
+|---|---|
+| **Severity** | S3 (cosmetic — defense-in-depth; doesn't itself cause failures but lets TD-062's stuck-process accumulation grow unbounded) |
+| **Discovered** | 2026-05-03 (Session 17 — investigation of TD-062 revealed that Task Scheduler's default `MultipleInstances` setting allows new instance to attempt start even when previous still running, leading to the 2147946720 errors observed) |
+| **Component** | Task Scheduler XML triggers / settings for all 13 MERDIAN_* tasks |
+| **Symptom** | When a task instance hangs (TD-062 root cause), subsequent scheduled triggers fire and try to launch a new instance, get rejected with 2147946720, but no automatic cleanup of the stuck instance occurs. Process count grows over the day. |
+| **Root cause** | Default `MultipleInstances=Parallel` (or absent setting interpreted as Parallel) on Task Scheduler tasks. Should be `IgnoreNew` (skip new fire if previous still running) or `StopExisting` (kill old one and start new). |
+| **Workaround** | Operator kills accumulated processes manually; current state. |
+| **Proper fix** | Set `MultipleInstances=IgnoreNew` on all 13 MERDIAN_* tasks via PowerShell `Set-ScheduledTask` or XML edit. This makes the symptom of TD-062 self-clearing on each successive trigger (skips the stuck instance, no error, scheduled work resumes once stuck instance times out or is killed). Alternative: `StopExisting` is more aggressive — kills the stuck instance forcibly, may corrupt state for some scripts. Default to `IgnoreNew`. |
+| **Cost to fix** | 1 PowerShell loop, ~10 minutes including verification. Could be batched with TD-061 re-registration. |
+| **Blocked by** | nothing (independent of TD-061/TD-062 root cause work) |
+| **Owner check-in** | 2026-05-03 |
+
+---
+
 ---
 
 ### TD-001 — `pull_token_from_supabase.py` deployed but not in `merdian_reference.json` Block 3 inventory until v18D audit
@@ -842,22 +910,6 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 
 ---
 
-### TD-058 — Live `detect_ict_patterns.py` emits zero BEAR_FVG signals across full year
-
-| | |
-|---|---|
-| **Severity** | S2 (production-grade gap — bear-side FVG opportunities are completely invisible to the live system) |
-| **Discovered** | 2026-05-03 (Session 16 — Section 17 of `analyze_exp15_trades.py` checking BULL_FVG/BEAR_FVG ratio per regime on the live-cohort 231-trade CSV) |
-| **Component** | `detect_ict_patterns.py` BEAR_FVG branch (in `detect_fvg` or equivalent function) |
-| **Symptom** | Across 12-month Exp 15 simulation (231 trades), live detector emitted 155 BULL_FVG signals and **zero BEAR_FVG signals** in any regime (UP, FLAT, or DOWN), in either symbol. Confirmed across full year on `hist_spot_bars_1m` runs of `experiment_15_pure_ict_compounding.py`. The `build_ict_htf_zones.py` Session 15 fix added BEAR_FVG zone construction (1,384 W BEAR_FVG zones now exist in `hist_ict_htf_zones`), but the **live signal-detection pipeline** consuming those zones is not emitting signals on them. |
-| **Root cause** | Not yet diagnosed. Likely candidates: (a) BEAR_FVG branch missing entirely from `detect_ict_patterns.py` `detect_fvg` (parallel to the Session 15 zone-builder bug, since `experiment_15_pure_ict_compounding.py` calls `ICTDetector` from this file), (b) BEAR_FVG opt_type mapping missing — pattern is detected internally but never converted to a `BUY_PE` signal, (c) asymmetric proximity/validity check that BEAR_FVGs systematically fail. Hypothesis (a) is most likely given the parallelism with the Session 15 zone-builder defect (both pieces of code touched in the same Apr-13 commit `c78b6ea`). |
-| **Workaround** | None. Bear-side FVG opportunities are not being detected by the live system. **Operator must rely on discretion to identify BEAR_FVG setups on TradingView until this is fixed.** Note: BEAR_OB detection works fine (92% WR on N=25), so bear-side OB setups remain covered. The gap is BEAR_FVG specifically. |
-| **Proper fix** | Code review of `detect_ict_patterns.py` `detect_fvg` (and adjacent functions). Add BEAR_FVG branch symmetrically with BULL_FVG. Test on a known BEAR_FVG day from history — verify signal fires. Then re-run Exp 15 dump to confirm BEAR_FVG WR is comparable to BULL_FVG (or measure the actual rate; Session 16 cluster finding suggests BEAR_FVG should also have +12.8pp lift with recent BEAR_OB context if symmetric). |
-| **Cost to fix** | 1 session (Session 17 Priority A). Code change is small (mirror BULL_FVG branch). Verification requires next-day live run + Exp 15 re-dump. |
-| **Blocked by** | nothing |
-| **Owner check-in** | 2026-05-03 |
-
----
 
 ### TD-059 — ENH-37 MTF context hierarchy inverted from claim (LOW outperforms HIGH on OB patterns)
 
@@ -891,6 +943,18 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 ## Resolved (audit trail)
 
 > Closed items live here forever. Never delete — they are evidence of work done and decisions made.
+
+### TD-058 (closed) — Live `detect_ict_patterns.py` emitted zero BEAR_FVG signals across full year
+
+| | |
+|---|---|
+| **Closed** | 2026-05-03 (Session 17) |
+| **Closing commit** | `pending` (Session 17 batch — both detector and runner patches deployed Local + AWS; `_PRE_S17.py` and `_PRE_S17_TD060.py` snapshots preserved) |
+| **Fix applied** | `patch_td058_bear_fvg_emission.py` made 5 surgical edits across 2 files: (1) `detect_ict_patterns.py` `OPT_TYPE` dict added `BEAR_FVG: PE`; (2) `DIRECTION` dict added `BEAR_FVG: -1`; (3) `detect_fvg()` body added BEAR predicate `prev.low > nxt.high and (prev.low - nxt.high)/ref >= min_g` mirroring the BULL clause; (4) zone-construction `elif pattern_type == "BEAR_FVG"` block added with `zone_high = bars[idx-1].low`, `zone_low = bars[idx+1].high`; (5) `experiment_15_pure_ict_compounding.py` `build_simulated_htf_zones()` 1H BEAR_FVG mirror added. Originals preserved as `_PRE_S17.py`. |
+| **Validation** | Re-run of Exp 15 simulator on full-year cohort: BEAR_FVG signal count went from 0 → 138 across 12 months. Combined NIFTY+SENSEX P&L: ₹11.7L → ₹12.6L (+22.8pp lift on already-strong baseline). Per-pattern T+30m analysis confirmed BEAR_FVG WR 45.7% [37.6, 54.0] (CI spans 50% — coin flip standalone, parallel to BULL_FVG; cluster effect to be measured separately per ENH-90 candidate). Section 17 of `analyze_exp15_trades.py` confirmed bear-side FVG detection now functional across all regimes. |
+| **Lesson** | Parallel direction-asymmetric defects exist across the codebase: Session 15 fixed the same pattern in `build_ict_htf_zones.py` (zone-builder side); Session 17 fixed the live-detector mirror. Whenever a direction-asymmetric bug surfaces in one component, audit the parallel component immediately — same author, same era, same blind spot likely applies. Codified as a check pattern in CLAUDE.md Session 17 footer. |
+
+---
 
 ### TD-003 (closed) — `experiment_15b` `detect_daily_zones` date type mismatch
 

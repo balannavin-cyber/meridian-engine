@@ -284,18 +284,6 @@ def build_simulated_htf_zones(daily_ohlcv, intraday_bars_today, symbol, td):
                             zone_low=two_prev["high"],
                             status="ACTIVE",
                         ))
-                elif two_prev["low"] > curr["high"]:
-                    # TD-058 mirror: 1H BEAR_FVG gap (two_prev.low above curr.high).
-                    gap_pct = (two_prev["low"] - curr["high"]) / ref * 100
-                    if gap_pct >= FVG_MIN_PCT:
-                        zones.append(HTFZone(
-                            id=f"H_BEAR_FVG_{curr['hour_start'].strftime('%H%M')}",
-                            symbol=symbol, timeframe="H", pattern_type="BEAR_FVG",
-                            direction=-1,
-                            zone_high=two_prev["low"],
-                            zone_low=curr["high"],
-                            status="ACTIVE",
-                        ))
 
     return zones
 

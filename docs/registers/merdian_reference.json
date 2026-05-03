@@ -1,8 +1,8 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v11",
-    "generated": "2026-04-30",
+    "version": "v12",
+    "generated": "2026-05-03",
     "sources": [
       "MERDIAN_Master_V18_v2 Section 15 (File Master, Table Master, Security IDs, AWS Runtime Files)",
       "MERDIAN_Appendix_V18A_v4 Block 3 (file updates), Block 4 (table updates), Block 5 (schema changes)",
@@ -15,9 +15,10 @@
       "Session 2026-04-28 (Session 12 -- ADR-002 market structure philosophy; ENH-75 through ENH-83 filed; MERDIAN_Enhancement_Register.md rewritten to unified v7+)",
       "Session 2026-04-29 (Session 13 -- ENH-75/76/77 SHIPPED; ENH-84/85/86 filed; Exp 43 filed; po3_session_state table; signal_snapshots.po3_session_bias column; MERDIAN_PO3_SessionBias_1005 + MERDIAN_WS_Feed_0900 tasks; breach detection ordering fix; Pine entry-band generator overhaul)",
       "Session 13 (2026-04-29): ENH-75/76/77 SHIPPED, breach detection fix, Pine generator overhaul, WS feed task, AWS token refresh",
-      "Session 14 (2026-04-30): ENH-78/84/86v1 SHIPPED, TD-044 CLOSED, TD-038 patch shipped, TD-045/046/047 filed"
+      "Session 14 (2026-04-30): ENH-78/84/86v1 SHIPPED, TD-044 CLOSED, TD-038 patch shipped, TD-045/046/047 filed",
+      "Session 17 (2026-05-03): TD-058 RESOLVED end-to-end (BEAR_FVG live emission); TD-060 NEW + RESOLVED (runner window-slice + detector check_from removal — 100% OB coverage in Feb 01 smoke); ENH-91 SHIPPED (Pine WR labels); ENH-92 SHIPPED (Pine intraday zones); ENH-88 BUILT NOT DEPLOYED (BULL_FVG cluster gate); ENH-90 CANDIDATE (BEAR_FVG anti-cluster gate, N=22, deferred); TD-061/062/063 NEW (Task Scheduler hygiene); both production patches synced to AWS via git pull"
     ],
-    "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files.",
+    "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files. Updated through Session 17 (2026-05-03) — TD-058/TD-060 RESOLVED, ENH-91/92 SHIPPED.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
     "update_cadence": "Update this file in the same session as any meaningful change to file status, table schema, or open item status. Commit to Git immediately after update.",
     "last_updated": "2026-05-02T20:00:00+05:30",
@@ -2275,6 +2276,34 @@
     }
   },
   "session_log": [
+    {
+      "date": "2026-05-03",
+      "session": 17,
+      "type": "engineering — multi-fix",
+      "git_end": "pending",
+      "items_closed": [
+        "TD-058",
+        "TD-060"
+      ],
+      "items_new": [
+        "TD-060",
+        "TD-061",
+        "TD-062",
+        "TD-063",
+        "ENH-90 (candidate)",
+        "ENH-91",
+        "ENH-92"
+      ],
+      "items_built_not_deployed": [
+        "ENH-88"
+      ],
+      "production_patches": [
+        "detect_ict_patterns.py (G1 — check_from filter removed; renamed canonical, _PRE_S17_TD060.py preserved)",
+        "detect_ict_patterns_runner.py (F4 — bars=bars[-30:]; renamed canonical, _PRE_S17_TD060.py preserved)"
+      ],
+      "aws_synced": true,
+      "summary": "TD-058 BEAR_FVG live emission fix shipped end-to-end (5-edit patch, BEAR_FVG signal count 0→138 across full year, +22.8pp P&L lift). TD-060 discovered while attempting ENH-88 deploy: live runner emits zero OBs across 14 days due to detect_ict_patterns check_from filter creating 4-bar eligible OB-candle window vs runner's 5-bar cycle stride; root-caused via diag_td060_local_repro.py + diag_td060_subdetector_trace.py; fixed with 2 patches deployed together (F4 runner window slice + G1 detector check_from removal); 100% OB coverage validated on Feb 01 NIFTY full-day smoke. ENH-91 SHIPPED Pine WR labels; ENH-92 SHIPPED Pine intraday zones; Pine readability rewrite after 2 hotfix rounds (Pine v6 strict typing CE10149/CE10235). ENH-88 BUILT NOT DEPLOYED (waits on Mon live BULL_OB data). ENH-90 candidate filed (BEAR_FVG anti-cluster gate, -16.5pp anti-edge but N=22 too small). TD-061/062/063 filed for Task Scheduler hygiene (window suppression, Saturday stuck-process root cause, single-instance enforcement). 13 MERDIAN_* tasks re-enabled for Mon open after operator killed runaway processes Saturday. Both patches synced to AWS via git pull."
+    },
     {
       "date": "2026-03-31",
       "appendix": "V18A",

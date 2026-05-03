@@ -47,86 +47,6 @@ SHOW_FLAG_MAP = {
     "BEAR_FVG": "show_fvg",
 }
 
-# ── ENH-91 (Session 17): WR per pattern_type, from Exp 15 cohort ────────────
-# Source: analyze_exp15_trades.py Section 9 on exp15_trades_20260503_1342.csv
-# (post-TD-058 fix, full year cohort). Values are point estimates; CIs span
-# 50% for FVG patterns, OBs are well above coin flip.
-# Update on next major Exp 15 dump regeneration.
-WR_BY_PATTERN = {
-    "BULL_OB":  84,   # 83.7% [71.0, 91.5], N=49
-    "BEAR_OB":  92,   # 92.0% [75.0, 97.8], N=25
-    "BULL_FVG": 50,   # 50.3% [42.5, 58.1], N=155 — coin flip
-    "BEAR_FVG": 46,   # 45.7% [37.6, 54.0], N=138 — coin flip
-    # PDH / PDL: not in Exp 15 cohort as standalone signals
-}
-
-
-def label_with_wr(timeframe: str, pattern_type: str,
-                  source_bar_date: str) -> str:
-    """Build zone label and append WR if known for this pattern_type."""
-    base = zone_label(timeframe, pattern_type, source_bar_date)
-    wr = WR_BY_PATTERN.get(pattern_type)
-    if wr is not None:
-        return f"{base} (WR {wr}%)"
-    return base
-# ── end ENH-91 helper -------------------------------------------------------
-
-
-# ── ENH-92 (Session 17): intraday zone fetch from ict_zones ─────────────────
-# Reads ACTIVE zones from most recent trading day, returns rows shaped to
-# match render_symbol_block expectations (timeframe set to "M5").
-INTRADAY_CAP_PER_SYMBOL = 20   # Pine v6 box limit safety
-
-
-def fetch_intraday_zones(sb, symbol: str) -> list[dict]:
-    """Return ACTIVE intraday zones from ict_zones for the most recent
-    trading day. Shapes rows to match the structure render_symbol_block
-    expects (adds 'timeframe': 'M5', 'source_bar_date' from session_bar_ts).
-    Returns at most INTRADAY_CAP_PER_SYMBOL rows, most recent first.
-    """
-    try:
-        # Most recent trade_date with active intraday zones
-        recent = sb.table("ict_zones").select(
-            "trade_date"
-        ).eq("symbol", symbol).eq(
-            "status", "ACTIVE"
-        ).order("trade_date", desc=True).limit(1).execute().data
-        if not recent:
-            return []
-        latest_td = recent[0]["trade_date"]
-
-        rows = sb.table("ict_zones").select(
-            "pattern_type, direction, zone_high, zone_low, "
-            "session_bar_ts, ict_tier, mtf_context, trade_date"
-        ).eq("symbol", symbol).eq("status", "ACTIVE").eq(
-            "trade_date", latest_td
-        ).order("session_bar_ts", desc=True).limit(
-            INTRADAY_CAP_PER_SYMBOL
-        ).execute().data
-
-        out = []
-        for r in rows:
-            out.append({
-                "symbol":          symbol,
-                "timeframe":       "M5",
-                "pattern_type":    r["pattern_type"],
-                "direction":       r["direction"],
-                "zone_low":        r["zone_low"],
-                "zone_high":       r["zone_high"],
-                "source_bar_date": str(r["trade_date"]),
-                "valid_from":      str(r["trade_date"]),
-                "ict_tier":        r.get("ict_tier"),
-                "mtf_context":     r.get("mtf_context"),
-            })
-        return out
-    except Exception as _e:
-        # Fail-soft: if intraday read fails, generator still produces
-        # HTF-only Pine rather than crashing.
-        print(f"  Warning: intraday zone fetch failed for {symbol}: {_e}",
-              file=sys.stderr)
-        return []
-# ── end ENH-92 helper -------------------------------------------------------
-
 
 def weekdays_since(source_date_str, today=None):
     if today is None:
@@ -156,9 +76,7 @@ def zone_label(timeframe, pattern_type, source_bar_date):
 
 
 def get_tier(zone_low, zone_high, current_spot, timeframe):
-    # ENH-92: M5 intraday zones always tier 1 (close to current spot
-    # by definition since they formed during today's session).
-    if timeframe in ("D", "M5"):
+    if timeframe == "D":
         return 1
     zone_mid = (float(zone_low) + float(zone_high)) / 2
     if current_spot and current_spot > 0:
@@ -219,15 +137,6 @@ def generate_pine_content(sb):
         if sym in by_symbol:
             by_symbol[sym].append(row)
 
-    # ENH-92: merge intraday ict_zones (M5) on top of HTF rows.
-    # Most recent first, capped per INTRADAY_CAP_PER_SYMBOL.
-    for sym in SYMBOLS:
-        intraday = fetch_intraday_zones(sb, sym)
-        if intraday:
-            print(f"  {sym}: +{len(intraday)} intraday M5 zones merged",
-                  file=sys.stderr)
-            by_symbol[sym].extend(intraday)
-
     def render_symbol_block(sym, zones):
         if not zones:
             return f"// {sym}: no active zones\n"
@@ -250,15 +159,9 @@ def generate_pine_content(sb):
             tier = get_tier(zlo, zhi, spot, tf)
             bg, line_col = pine_color_vars(tf, pt, tier)
             look_back = weekdays_since(src, today)
-            lbl = label_with_wr(tf, pt, src) if tier < 3 else ""
+            lbl = zone_label(tf, pt, src) if tier < 3 else ""
             bear_side = "true" if pt in BEAR_SIDE_PATTERNS else "false"
-            # ENH-92: M5 intraday reuses show_h toggle (was placeholder)
-            if tf == "D":
-                tf_flag = "show_d"
-            elif tf in ("H", "M5"):
-                tf_flag = "show_h"
-            else:
-                tf_flag = "show_w"
+            tf_flag   = "show_d" if tf == "D" else ("show_h" if tf == "H" else "show_w")
             type_flag = SHOW_FLAG_MAP.get(pt, "show_ob")
             show_flag = f"{type_flag} and {tf_flag}"
             lines.append(
@@ -349,7 +252,7 @@ is_sensex = str.contains(syminfo.ticker, "SENSEX") or  str.contains(syminfo.tick
 // ── SETTINGS TOGGLES ─────────────────────────────────────────────────────────
 show_w       = input.bool(true,  "Show Weekly zones",  group="Zone Filters")
 show_d       = input.bool(true,  "Show Daily zones",   group="Zone Filters")
-show_h       = input.bool(true,  "Show Intraday zones",group="Zone Filters", tooltip="ENH-92: Intraday M5 zones from ict_zones (live patched detector)")
+show_h       = input.bool(false, "Show Hourly zones",  group="Zone Filters", tooltip="Hourly zones not yet generated -- placeholder")
 show_ob      = input.bool(true,  "Show Order Blocks",  group="Zone Filters")
 show_fvg     = input.bool(true,  "Show FVGs",          group="Zone Filters")
 show_pdh_pdl = input.bool(true,  "Show PDH / PDL",     group="Zone Filters")

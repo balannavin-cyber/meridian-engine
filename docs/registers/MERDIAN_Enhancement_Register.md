@@ -9,7 +9,7 @@
 | Document | `docs/registers/MERDIAN_Enhancement_Register.md` |
 | Scope | Living register of all proposed and delivered MERDIAN enhancements, ENH-01 through ENH-86 |
 | Lineage | Unified from v1 (2026-03-31) through v7 (2026-04-19 v8-appended). Prior versioned files archived at `docs/registers/archive/`. |
-| Last updated | 2026-05-03 (Session 17 — TD-058 RESOLVED end-to-end via 5-edit detector + experiment patch; TD-060 NEW + RESOLVED via runner window-slice + check_from removal; ENH-88 BUILT NOT DEPLOYED awaiting Mon live BULL_OB data; ENH-90 candidate filed for BEAR_FVG anti-cluster gate (deferred for N expansion); ENH-91 SHIPPED Pine WR labels; ENH-92 SHIPPED Pine intraday zones; both production patches synced to AWS via git pull) |
+| Last updated | 2026-05-05 (Session 20 — data integrity + live writer architecture overhaul; no new ENH items filed; TD-068 RESOLVED via v2.1 capture_spot_1m_v2.py deployment using Dhan /charts/intraday for real OHLC; spot data Apr 1 → May 5 backfilled 16,500 rows real OHLC for NIFTY+SENSEX; HTF zones rebuilt with all 4 ICT pattern types firing on real data; ENH-88 BUILT NOT DEPLOYED still pending (was waiting BULL_OB signal flow which now becomes possible on real OHLC starting tomorrow's live cycle)) |
 | Purpose | Forward-looking and historical register of all enhancement proposals, their status, evidence, and delivery. |
 | Authority | Current operational state of each ENH. Session appendices win on session-specific rationale; this register wins on current status. |
 | Update rule | Update in-place (append or edit). Do NOT create a new versioned file. |

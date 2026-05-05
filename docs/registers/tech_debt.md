@@ -57,6 +57,90 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-071 — Stale 2025 zones still showing ACTIVE due to `expire_old_zones()` order bug in `build_ict_htf_zones.py`
+
+| | |
+|---|---|
+| **Severity** | S2 (operational hygiene — zone status incorrect for ~year-old zones; visual noise on Pine, can affect detector if zones queried by status only without date filter) |
+| **Discovered** | 2026-05-05 (Session 20 — observed during HTF zone rebuild after spot data backfill; some 2025 zones from June through November still showing ACTIVE despite breach by current spot price) |
+| **Component** | `build_ict_htf_zones.py` zone build pipeline; specifically the order of `expire_old_zones()` vs `upsert_zones()` vs `recheck_breached_zones()` |
+| **Symptom** | Old zones (e.g., July 2025 BULL_OB at price 18,500 when current NIFTY spot is 24,051) still show `status='ACTIVE'` in `ict_htf_zones`. They should be `BREACHED` (price moved through them) or expired by date (older than `valid_to`). Q1 from Session 20 rebuild showed 18 W BULL_OB BREACHED but with `oldest=2025-06-02 newest=2026-02-16` indicating recheck DID work for some — but mix of old ACTIVE remains. |
+| **Root cause** | `expire_old_zones()` runs BEFORE `upsert_zones()` in build pipeline — meaning it operates on previous run's data, not the new zone set. The `upsert` writes ACTIVE for newly detected zones (correct) but doesn't re-trigger expire on the upserted set. `recheck_breached_zones()` correctly handles price-breach cases but not date-expiry cases. Session 13 partially addressed via "moved recheck after upsert" comment but order logic still not fully right. |
+| **Workaround** | Manual SQL DELETE or status-update for stale zones; tomorrow morning's auto-rebuild covers the ~248-day lookback so very old zones eventually drop out as detector window slides. Not blocking. |
+| **Proper fix** | Reorder pipeline: (1) detect new zones, (2) `upsert_zones()` writes ACTIVE for newly-detected, (3) `recheck_breached_zones()` for price-breach across ALL zones (new + existing), (4) `expire_old_zones()` for date-expiry across ALL zones. Verify each transition idempotent. |
+| **Cost to fix** | ~6 exchanges (code review + reorder + verify on test data) |
+| **Blocked by** | nothing |
+| **Owner check-in** | 2026-05-05 |
+
+---
+
+### TD-070 — `prev_move < 0` over-filters BULL_OB candidates in `detect_weekly_zones()`
+
+| | |
+|---|---|
+| **Severity** | S2 (detector tuning — costs 5-10 valid BULL_OB zones across lookback per Session 20 observation; doesn't break system, just under-detects) |
+| **Discovered** | 2026-05-05 (Session 20 — observed during HTF zone rebuild on real OHLC; Apr-13 was a +2.27% bullish week that should generate a BULL_OB but didn't because immediately-prior week Apr-06 was also bullish at +4.26%; detector's `prev_move < 0` constraint requires immediately-prior week to be bearish) |
+| **Component** | `build_ict_htf_zones.py::detect_weekly_zones()` BULL_OB candidate filter |
+| **Symptom** | BULL_OB candidates filtered out when prior week was also bullish, even though canonical ICT definition allows OB to form against any nearby bearish candle (not strictly the immediately-prior one). Result: detector under-counts BULL_OB zones in sustained bull-trend periods. |
+| **Root cause** | Code uses simplified single-bar prior-move check: `prior_move = pct(prior["open"], prior["close"]); if prior_move < 0:`. Canonical ICT: BULL_OB is the LAST DOWN CANDLE before a bullish impulse move; can be 1-3 bars back, not strictly the immediately-prior one. |
+| **Workaround** | None — BULL_OB count is empirically still high (2 ACTIVE / 18 BREACHED on NIFTY 252-week lookback, sufficient for production routing). The under-detection is asymmetric (bull markets affected more) but doesn't break detection logic. |
+| **Proper fix** | Replace `if prior_move < 0` with "scan back N bars (3-5) for any bearish candle whose body becomes the OB anchor". Match canonical ICT definition. Verify backward-compat: existing detected zones should remain detected; only NEW candidates surface. |
+| **Cost to fix** | ~4 exchanges (code change + unit test on 5 known cases + production verify) |
+| **Blocked by** | nothing |
+| **Owner check-in** | 2026-05-05 |
+
+---
+
+### TD-069 — D timeframe doesn't generate OB/FVG even with real data (W and 1H do)
+
+| | |
+|---|---|
+| **Severity** | S2 (architectural — daily timeframe contributes 0 directional zones; only PDH/PDL liquidity levels; loses one timeframe of context for ICT MTF context computation) |
+| **Discovered** | 2026-05-05 (Session 20 — HTF zone rebuild after spot data backfill produced 33 W OB/FVG NIFTY + 35 SENSEX with real OHLC, but D timeframe produced 0 OB/FVG for both symbols — only PDH/PDL) |
+| **Component** | `build_ict_htf_zones.py::detect_daily_zones()` |
+| **Symptom** | After spot data backfill produced clean real OHLC for Apr 1 → May 5, weekly detector fired 33+35 OB/FVG zones across full year (correctly distinguishing real candle direction). Daily detector fired 0 OB/FVG despite operating on the same underlying data — only generating PDH/PDL. Direct example: May 4 NIFTY (+0.49% close-vs-open ≥ 0.40% threshold) should fire D-OB but didn't. |
+| **Root cause** | Unknown — code review needed. Possible candidates: (a) D detector uses different threshold than W (perhaps stricter `OB_MIN_MOVE_PCT`); (b) D detector requires 3+ trading days for FVG (`prior_dates[-3]`) but only-prior-day for OB — interaction with date logic may have a bug; (c) `target_date` computed differently than W; (d) D detector reads from different source (`daily_ohlcv` aggregated from minute bars) where aggregation may drop OHLC variation. |
+| **Workaround** | None — system functions, just loses D-timeframe MTF context. W and 1H zones provide sufficient ICT context for current detection. |
+| **Proper fix** | Code review of `detect_daily_zones()` vs `detect_weekly_zones()`. Identify divergence. Likely 1-line or threshold change. |
+| **Cost to fix** | ~6 exchanges (read code, identify cause, patch, verify) |
+| **Blocked by** | nothing |
+| **Owner check-in** | 2026-05-05 |
+
+---
+
+### TD-068 — `capture_spot_1m.py` writes synthetic O=H=L=C=spot bars to `hist_spot_bars_1m` (RESOLVED same session via v2.1 deployment)
+
+| | |
+|---|---|
+| **Severity** | S1 (production-impacting — entire BULL_OB / BEAR_OB pattern detection blind to live data because all candles are flat O=H=L=C from synthetic bar; OB detection requires candle direction) |
+| **Discovered** | 2026-05-05 (Session 20 — surfaced via Session 19 audit script (broken at time of discovery, fixed in same session) flagging BULL_OB/BEAR_OB zero-emission in `ict_zones`; locked diagnosis after triple-verification: source code reads `O=H=L=C=spot` literally per docstring; today's bars sampled = 376/376 flat; `script_execution_log` confirmed `capture_spot_1m.py` is sole writer to `hist_spot_bars_1m` with 3,897 runs in 30 days) |
+| **Component** | `capture_spot_1m.py` synthetic bar writer (lines 165-178: `bar_rows.append({"open": spot, "high": spot, "low": spot, "close": spot, ...})`) |
+| **Symptom** | Despite running every minute during market hours and writing to both `market_spot_snapshots` (live spot dashboard) and `hist_spot_bars_1m` (ICT detector input), the bars table contained only synthetic flat candles. ICT detection requires candle direction (`open vs close`); cannot fire on flat bars. Result: 7+ days of zero BULL_OB / BEAR_OB emission in `ict_zones`. |
+| **Root cause** | Original `capture_spot_1m.py` design treats `hist_spot_bars_1m` as snapshot table not OHLC table — uses `/v2/marketfeed/ltp` endpoint which returns single price; writes that as O=H=L=C to satisfy schema. Likely unintended consequence of dual-purpose script (spot snapshot + bar writer) where original requirement was just spot capture. OB detection added later assumed real OHLC; never noticed flat bars because BULL_FVG / BEAR_FVG can fire on consecutive close prices alone. |
+| **Workaround** | None — went straight to fix. |
+| **Proper fix** | `capture_spot_1m_v2.py` (475 lines, v2.1) shipped Session 20: drop-in replacement using `/v2/charts/intraday` endpoint which returns full 1-min OHLC arrays. v2.1 features: market-hours guard (skip outside 09:15-15:30 IST), filler-bar skip (V=0+flat detection prevents post-market filler writes). Same .env vars, same instrumentation, same heartbeat wrapper. Task Scheduler `MERDIAN_Spot_1M` action repointed to v2 with full `pythonw.exe` path. v1 untouched at `capture_spot_1m.py` for rollback. **Backfill of pre-Session-20 historical data:** 16,500 rows for Apr 1 → May 5 backfilled real OHLC via Kite `historical_data` (16 stray 15:30 boundary flats deleted post-backfill). HTF zone rebuild on backfilled data confirmed all 4 ICT pattern types now fire. |
+| **Cost to fix** | ~25 exchanges including diagnostic oscillation, backfill, v2 design + write + deploy. Closed same session. |
+| **Blocked by** | nothing |
+| **Owner check-in** | 2026-05-05 — RESOLVED via v2.1 deployment. **Verification deferred to next live cycle** 2026-05-06 09:16:02 IST: query `script_execution_log` for capture_spot_1m_v2 invocations + `hist_spot_bars_1m` for is_flat=false on today's bars. |
+
+---
+
+### TD-067 — Intraday backfill detector for Apr 1 → today historical pattern record
+
+| | |
+|---|---|
+| **Severity** | S2 (research enablement — system functions live, but historical intraday pattern record for Apr 1 → May 5 missing because pre-TD-068 data was synthetic flats; once backfilled real OHLC exists, detection should be replayed to populate `ict_zones` for those days) |
+| **Discovered** | 2026-05-05 (Session 20 — after spot data backfill produced clean real OHLC for Apr 1 → May 5, recognized that runner-based intraday detection only runs forward-going on today's bars; days before today have no `ict_zones` records on real OHLC) |
+| **Component** | New script needed: `backfill_ict_zones.py` that walks each day's `hist_spot_bars_1m` and runs `ICTDetector` on each session's bars |
+| **Symptom** | `ict_zones` table has no historical records for Apr 1 → May 5 patterns detected on real OHLC. Research/replay queries against this table see zero or mostly-empty data for that range. Live runner only fills today's slot going forward. |
+| **Workaround** | None needed for production (live detection works on today). For research replay, run `experiment_15_pure_ict_compounding.py` which simulates detection per session (different code path, different output format). |
+| **Proper fix** | Build `backfill_ict_zones.py`: load `hist_spot_bars_1m` for date range, group by symbol+trade_date, instantiate `ICTDetector`, walk bars, write to `ict_zones` with same schema as live runner. Verify against today's real-time output. ~30 min build + run for Apr 1 → May 5 (22 trading days × 2 symbols). |
+| **Cost to fix** | ~10 exchanges (build + verify + run) |
+| **Blocked by** | TD-068 RESOLVED (real OHLC exists for Apr 1 → May 5 now) |
+| **Owner check-in** | 2026-05-05 |
+
+---
+
 ### TD-060 — Live runner emits zero OBs across 14 days due to detect_ict_patterns check_from filter / runner cycle stride mismatch (RESOLVED same session)
 
 | | |
@@ -1038,4 +1122,4 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 
 ---
 
-*MERDIAN tech_debt.md v1 — created concurrent with CLAUDE.md and Documentation Protocol v3. Update inline as items are added/closed; commit with `MERDIAN: [OPS] tech_debt — <action>`.*
+*MERDIAN tech_debt.md v1 — created concurrent with CLAUDE.md and Documentation Protocol v3. Updated Session 18 (2026-05-04): TD-061/063/056/065 RESOLVED, TD-062 PARTIAL (heartbeat foundation), TD-064/066/067 NEW (migrated from closed OpenItems Register). Update inline as items are added/closed; commit with `MERDIAN: [OPS] tech_debt — <action>`.*

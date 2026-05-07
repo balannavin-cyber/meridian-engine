@@ -201,6 +201,56 @@ Per Documentation Protocol v2 Rule 5: rejected IDs keep their slot as rejection 
 
 Chronological by ID. Each entry shows current status, evidence, and history.
 
+### ENH-93 — Replay/simulation harness: exact mimic of live runner cycle for outside-market-hours testing (CANDIDATE 2026-05-07)
+
+| Field | Detail |
+|---|---|
+| Status | **CANDIDATE** |
+| Filed | 2026-05-07 (Session 22) |
+| Priority | MEDIUM — operator-facing testing tool; promoted from S22 architecture conversation |
+| Area | INFRASTRUCTURE — testing/simulation layer |
+| Session | 22 (filed) |
+
+**Context.** Per V18G § 7.2, the live AWS shadow runner cycle is 6 ordered scripts: `compute_gamma_metrics_local.py` → `compute_volatility_metrics_local.py` → `build_momentum_features_local.py` → `build_market_state_snapshot_local.py` → `build_trade_signal_local.py` → `compute_options_flow_local.py`. There is no equivalent replay path that exercises this exact cycle outside market hours against historical data into the live tables (or shadow-namespaced equivalents). Existing reconstruction tooling — `replay_shadow_for_date_local.py`, `reconstruct_shadow_for_date_local_v3.py`, `backfill_gamma_metrics.py`, `backfill_volatility_metrics.py`, `backfill_market_state.py` — all write to `hist_*` tables, not the live `gamma_metrics` / `volatility_snapshots` / `market_state_snapshots` / `signal_snapshots` chain that today's signal builder reads. This means: (a) replay can produce historical analysis but not live-table verification; (b) Session 22's outage gap (64 missing 5-min option_chain_snapshots windows) cannot be closed in the live derived layer using existing tooling; (c) any new derived-layer feature must be tested in production market hours, increasing risk.
+
+**Proposal.** Build `replay_runner_for_date_local.py` orchestrator:
+1. Takes `--date 2026-05-07` (or arbitrary historical date) as input.
+2. **Reconstructs missing `option_chain_snapshots` rows** from backfilled `hist_option_bars_1m` (per-strike OHLC × ATM±5 × 5-min snapshots × 2 expiries × 2 symbols). Greeks computed via Black-Scholes from spot, strike, expiry, OHLC.
+3. For each 5-min boundary from 09:15 → 15:30 IST on the target date:
+   - Set `MERDIAN_REPLAY_TS` env var to that timestamp (or pass via CLI to each subprocess).
+   - Run scripts 1-6 in order via `subprocess.run` (exact mimic of `run_merdian_shadow_runner.py` cycle structure).
+   - Each script reads the reconstructed `option_chain_snapshots` rows.
+   - Each script writes derived rows with proper `created_at = MERDIAN_REPLAY_TS`.
+4. Writes go to live tables OR a `_replay` namespaced shadow table (config flag).
+5. Each cycle writes `script_execution_log` rows with `host='replay'` for audit.
+
+**Pre-requisites.**
+- Each of the 6 live scripts must accept (or be modified to accept) a replay timestamp injection — either env var `MERDIAN_REPLAY_TS` overriding `now_ist()`, or `--ts <iso>` CLI arg. Most likely needs minor patches to each script to read from env-var with fallback to `datetime.now()`.
+- Black-Scholes greeks reconstruction logic — backfill_gamma_metrics.py already does this for `hist_gamma_metrics`; reuse the IV/greeks per-strike compute path.
+- Consider whether to write to live or shadow namespace — operator call.
+
+**Use cases.**
+- Close Session 22's gap: replay 2026-05-07 09:30-13:30 IST and 14:45-15:25 IST outage windows to populate missing derived rows.
+- Pre-deploy testing: any change to signal builder, gamma compute, etc. can be replayed against last 30 days to compare new vs old output before promoting.
+- Backfill new derived columns: when adding a new column to signal_snapshots or market_state_snapshots, replay-populates historical rows.
+- Outside-market-hours operator validation: run replay during weekends to verify pipeline behavior on selected days.
+
+**Cost.** ~3-5 sessions: (1) reconstructor for option_chain_snapshots from hist_option_bars_1m + Black-Scholes; (2) env-var injection patches across 6 scripts; (3) orchestrator build; (4) validation against a clean day where live + replay should match exactly; (5) wire shadow namespace if chosen.
+
+**Blocked by.** Operator decision in S23 architecture conversation Phase α — the replay harness is one of three priorities (Token reliability TD-080, AWS migration scope, replay harness) and ordering matters.
+
+**Open questions.**
+- Live tables vs shadow namespace? (Live = simpler but pollutes prod; shadow = cleaner but requires schema mirror.)
+- Black-Scholes assumptions: which IV reconstruction (newton-raphson on per-strike OHLC midpoint vs ATM-anchored smile)?
+- Time injection mechanism: env-var (simplest, fewest patches) vs CLI arg (cleaner contract, more script surface).
+- How to handle ws_feed_zerodha-derived breadth and market_ticks during replay — those are real-time only; either skip those reads in replay or use a static snapshot.
+
+**Related.** TD-080 (Dhan outage — replay would close today's option_chain_snapshots gap). TD-079 (zone validity rewrite — replay can validate new zone-expiry logic against historical data).
+
+**History:** 2026-05-07 = CANDIDATE (filed during S22 architecture conversation; awaiting operator priority assignment).
+
+---
+
 ### ENH-92 — Pine generator: intraday `ict_zones` rendered as M5 timeframe alongside HTF zones (SHIPPED 2026-05-03)
 
 | Field | Detail |

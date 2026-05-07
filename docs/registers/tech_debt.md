@@ -57,39 +57,199 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
-### TD-071 — Stale 2025 zones still showing ACTIVE due to `expire_old_zones()` order bug in `build_ict_htf_zones.py`
+### TD-084 — `backfill_option_zerodha_OI_FIXED.py` UTC/IST timezone bug truncated Kite output to 46 bars per strike (RESOLVED same session)
 
-| | |
-|---|---|
-| **Severity** | S2 (operational hygiene — zone status incorrect for ~year-old zones; visual noise on Pine, can affect detector if zones queried by status only without date filter) |
-| **Discovered** | 2026-05-05 (Session 20 — observed during HTF zone rebuild after spot data backfill; some 2025 zones from June through November still showing ACTIVE despite breach by current spot price) |
-| **Component** | `build_ict_htf_zones.py` zone build pipeline; specifically the order of `expire_old_zones()` vs `upsert_zones()` vs `recheck_breached_zones()` |
-| **Symptom** | Old zones (e.g., July 2025 BULL_OB at price 18,500 when current NIFTY spot is 24,051) still show `status='ACTIVE'` in `ict_htf_zones`. They should be `BREACHED` (price moved through them) or expired by date (older than `valid_to`). Q1 from Session 20 rebuild showed 18 W BULL_OB BREACHED but with `oldest=2025-06-02 newest=2026-02-16` indicating recheck DID work for some — but mix of old ACTIVE remains. |
-| **Root cause** | `expire_old_zones()` runs BEFORE `upsert_zones()` in build pipeline — meaning it operates on previous run's data, not the new zone set. The `upsert` writes ACTIVE for newly detected zones (correct) but doesn't re-trigger expire on the upserted set. `recheck_breached_zones()` correctly handles price-breach cases but not date-expiry cases. Session 13 partially addressed via "moved recheck after upsert" comment but order logic still not fully right. |
-| **Workaround** | Manual SQL DELETE or status-update for stale zones; tomorrow morning's auto-rebuild covers the ~248-day lookback so very old zones eventually drop out as detector window slides. Not blocking. |
-| **Proper fix** | Reorder pipeline: (1) detect new zones, (2) `upsert_zones()` writes ACTIVE for newly-detected, (3) `recheck_breached_zones()` for price-breach across ALL zones (new + existing), (4) `expire_old_zones()` for date-expiry across ALL zones. Verify each transition idempotent. |
-| **Cost to fix** | ~6 exchanges (code review + reorder + verify on test data) |
-| **Blocked by** | nothing |
-| **Owner check-in** | 2026-05-05 |
+> **Status: RESOLVED** Session 22 (2026-05-07) — see Resolved (audit trail) below for closure details. Listed here briefly to reflect the discovery of a pattern: any code that does `.replace(tzinfo=ZoneInfo("UTC")).astimezone(IST)` to a Kite-returned `historical_data` datetime is wrong (Kite returns IST-tagged datetimes natively).
 
 ---
 
-### TD-070 — `prev_move < 0` over-filters BULL_OB candidates in `detect_weekly_zones()`
+### TD-083 — ExecutionLog rejects `OUTSIDE_MARKET_HOURS` and `NO_DATA` exit_reasons from capture_spot_1m_v2 (false-alarm Telegram)
 
 | | |
 |---|---|
-| **Severity** | S2 (detector tuning — costs 5-10 valid BULL_OB zones across lookback per Session 20 observation; doesn't break system, just under-detects) |
-| **Discovered** | 2026-05-05 (Session 20 — observed during HTF zone rebuild on real OHLC; Apr-13 was a +2.27% bullish week that should generate a BULL_OB but didn't because immediately-prior week Apr-06 was also bullish at +4.26%; detector's `prev_move < 0` constraint requires immediately-prior week to be bearish) |
-| **Component** | `build_ict_htf_zones.py::detect_weekly_zones()` BULL_OB candidate filter |
-| **Symptom** | BULL_OB candidates filtered out when prior week was also bullish, even though canonical ICT definition allows OB to form against any nearby bearish candle (not strictly the immediately-prior one). Result: detector under-counts BULL_OB zones in sustained bull-trend periods. |
-| **Root cause** | Code uses simplified single-bar prior-move check: `prior_move = pct(prior["open"], prior["close"]); if prior_move < 0:`. Canonical ICT: BULL_OB is the LAST DOWN CANDLE before a bullish impulse move; can be 1-3 bars back, not strictly the immediately-prior one. |
-| **Workaround** | None — BULL_OB count is empirically still high (2 ACTIVE / 18 BREACHED on NIFTY 252-week lookback, sufficient for production routing). The under-detection is asymmetric (bull markets affected more) but doesn't break detection logic. |
-| **Proper fix** | Replace `if prior_move < 0` with "scan back N bars (3-5) for any bearish candle whose body becomes the OB anchor". Match canonical ICT definition. Verify backward-compat: existing detected zones should remain detected; only NEW candidates surface. |
-| **Cost to fix** | ~4 exchanges (code change + unit test on 5 known cases + production verify) |
+| **Severity** | S4 (false-alarm operational noise — not blocking, just generates spurious Telegram alerts when v2.1 correctly skips during off-hours or filler-bar windows) |
+| **Discovered** | 2026-05-07 (Session 22 — observed in script_execution_log during outage diagnosis when capture_spot_1m_v2 cycles outside market hours got logged as CRASH because v2.1 returns these clean exit reasons but enum doesn't recognize them) |
+| **Component** | `chk_exit_reason_valid` Postgres enum on `script_execution_log.exit_reason`; `capture_spot_1m_v2.py` exit-reason emission |
+| **Symptom** | `script_execution_log` rows from `capture_spot_1m_v2.py` outside 09:15-15:30 IST (or hitting filler-bar pattern) emit `OUTSIDE_MARKET_HOURS` or `NO_DATA` as exit_reason. Postgres enum rejects (only allows SUCCESS/SKIPPED_NO_INPUT/DATA_ERROR/...). The script's INSERT silently fails on the enum check or gets reclassified as CRASH; alerting layer (or audit) reports CRASH; Telegram fires false-alarm. |
+| **Root cause** | v2.1 added new clean exit reasons that didn't exist in original enum. Enum migration was forgotten when the script was deployed Session 20. |
+| **Workaround** | Operator ignores OUTSIDE_MARKET_HOURS/NO_DATA Telegram alerts. Not blocking. |
+| **Proper fix** | ALTER TYPE chk_exit_reason_valid ADD VALUE 'OUTSIDE_MARKET_HOURS'; ADD VALUE 'NO_DATA'; OR re-classify the script's emit logic to fold these into SKIPPED_NO_INPUT. ENH-72 instrumentation layer authoritative source. |
+| **Cost to fix** | ~2 exchanges (enum migration is one DDL + verify v2.1 exits land cleanly). |
 | **Blocked by** | nothing |
-| **Owner check-in** | 2026-05-05 |
+| **Owner check-in** | 2026-05-07 |
 
 ---
+
+### TD-082 — `ingest_option_chain_local.py` contract miscalibration: backfill spike of 482 writes vs expected 50 logged as success (write-contract too permissive)
+
+| | |
+|---|---|
+| **Severity** | S3 (degrades audit signal but doesn't break the pipeline; backfill-style spikes blur the line between "real run wrote 50 rows successfully" and "10x burst-write somehow" — both green) |
+| **Discovered** | 2026-05-07 (Session 22 — surfaced during ingest_option_chain failure pattern audit; one row in `script_execution_log` showed 482 actual_writes for `option_chain_snapshots` where typical run writes ~50) |
+| **Component** | `ingest_option_chain_local.py::_write_exec_log()` and the `contract_met` predicate |
+| **Symptom** | One run on 2026-05-07 logged 482 rows written to option_chain_snapshots, compared to typical 50 per run. `contract_met=true` because predicate is `actual_writes >= 1`. The 482-row write was likely a multi-cycle accumulation from a partially-stuck process or coalesced retry, not a single intended cycle. |
+| **Root cause hypothesis** | Either (a) script had a stuck cycle that buffered N cycles' worth of writes, or (b) write-batching accumulated mid-outage and flushed at recovery. Not yet diagnosed. |
+| **Workaround** | None. Audit treats >300-row writes as anomaly worth investigating but doesn't fail the contract. |
+| **Proper fix** | Tighten contract: `contract_met = (actual_writes >= 30 and actual_writes <= 100)` for option_chain_snapshots — outside that band is contract violation regardless of direction (zero rows = bad ingest, 500 rows = stuck or stale buffer). |
+| **Cost to fix** | ~3 exchanges (read script, identify write path, tighten predicate, verify on backfill day). |
+| **Blocked by** | TD-080 (Dhan outage diagnosis — same script, same module). |
+| **Owner check-in** | 2026-05-07 |
+
+---
+
+### TD-081 — No data-freshness guard between primary ingestion and derived layers — signal builder produces signals on stale data without warning
+
+| | |
+|---|---|
+| **Severity** | S2 HIGH (architectural — when primary ingestion is partially failing as Session 22, the derived signal layer continues to produce output based on last-good snapshot, which can be 30-60 minutes stale; signals get fired into Telegram with no staleness flag) |
+| **Discovered** | 2026-05-07 (Session 22 — observed during Dhan outage; while ingest_option_chain failed 50% of cycles, build_trade_signal_local.py continued producing signal_snapshots rows; downstream consumers had no way to know the option_chain underlying signals was stale) |
+| **Component** | `build_trade_signal_local.py`, `compute_gamma_metrics_local.py`, `compute_volatility_metrics_local.py`, etc. — the derived chain. Architectural defect spans the pipeline. |
+| **Symptom** | When Dhan ingest fails for 30+ minutes, derived layer still emits signals using the last successful option_chain_snapshots row as if it were current. Signal confidence/direction gets computed against stale data. |
+| **Root cause** | No upstream-freshness check before derived computation. Each derived script reads the latest row of its source table; if the source table hasn't received a fresh row, the derived script proceeds anyway. |
+| **Workaround** | None operationally. Operator trusts pipeline + ad-hoc inspects script_execution_log when alerts surface. |
+| **Proper fix** | Each derived script must check `option_chain_snapshots.created_at` (or upstream equivalent) and reject if older than max-staleness threshold (e.g., 10 min for 5-min cycle). Reject = exit with SKIPPED_STALE_SOURCE; don't write a signal. Telegram alert escalates if N consecutive cycles skip. Pattern: ENH-71 instrumentation layer extended with a "freshness gate" predicate. |
+| **Cost to fix** | ~2 sessions (design + implement across 6 scripts + test). Likely should be filed as ENH-93 not just TD. |
+| **Blocked by** | nothing |
+| **Owner check-in** | 2026-05-07 |
+
+---
+
+### TD-080 — Dhan option chain endpoint intermittent 401 (50/50 alternation) — root cause unconfirmed
+
+| | |
+|---|---|
+| **Severity** | S2 HIGH (loses ~70% of trading day's option chain ingest; permanent loss of full chain greeks/IV smile/OI per strike for outage windows; option_chain_snapshots gap of 64 5-min windows on 2026-05-07) |
+| **Discovered** | 2026-05-07 (Session 22 — incident from 09:30 IST onwards, 151 of 299 attempts failed today with `401 Authentication Failed - Client ID or Token invalid`) |
+| **Component** | `ingest_option_chain_local.py` (runs on AWS despite filename); the Dhan REST option chain endpoint specifically (capture_spot_1m_v2 using `/charts/intraday` succeeded 97% with same token); possibly the Dhan token-refresh layer (`refresh_dhan_token.py`) |
+| **Symptom** | Alternating 50/50 success/fail pattern across full trading day, hourly-stable. Two outage windows: 09:30-13:30 IST (~4hrs) + 14:45-15:25 IST (40min). Manual token refresh at 13:30 IST temporarily restored, broke again ~14:45. Same token served `/charts/intraday` (capture_spot_1m_v2) at 97% throughout — endpoint-specific or per-call instability. |
+| **Root cause** | UNCONFIRMED. Six hypotheses tested and refuted Session 22: (1) Token sync silent failure; (2) TD-072 battery flag side-effect re-enabling dormant Dhan-touching task; (3) AWS refresh_dhan_token competing writer; (4) MeridianAlpha competing for Dhan tokens; (5) Long-running stale-token daemon on AWS; (6) shadow_runner stale token in memory. Most likely remaining hypothesis: Dhan-side rate limiting on option chain endpoint, or per-token instability with the specific 08:24-issued token. |
+| **Workaround** | Use Kite via MeridianAlpha to backfill option strike OHLC for outage days — validated end-to-end Session 22 (24,749 rows for today). Doesn't recover full option_chain_snapshots (greeks/IV smile/OI per strike) but recovers per-strike OHLC sufficient for ATM straddle reconstruction. |
+| **Proper fix** | Tomorrow morning Session 23: watch 09:15 IST cron — if breaks again, controlled reproducer to isolate: (a) Dhan endpoint rate limit confirmation via probe with throttled call frequency; (b) per-token lifecycle check (does the same token serve both endpoints consistently right after issuance); (c) AWS network/IP reputation issue. If it doesn't break, today was operator-laptop-OFF + double-start triggered something — file as session-specific learning. |
+| **Cost to fix** | ~1 session if reproducer fires; multi-session if intermittent enough to require statistical sampling. |
+| **Blocked by** | nothing — top priority Session 23 P0. |
+| **Owner check-in** | 2026-05-07 |
+
+---
+
+### TD-079 — `valid_to = week_end + 4 weeks` discards structurally-relevant unbreached resistances (zone date-expiry vs ICT canon)
+
+| | |
+|---|---|
+| **Severity** | S2 HIGH (architectural defect — unbreached W BEAR_OB/BEAR_FVG zones above 78,000 marked EXPIRED purely on date despite still being structurally relevant; bleeds signal quality across months of trading) |
+| **Discovered** | 2026-05-07 (Session 22 — Pine overlay visually missing ALL resistances above current spot 78,000 → 86,000; SQL confirmed 18 W BEAR_OB/BEAR_FVG zones above 78k all marked EXPIRED purely on date) |
+| **Component** | `build_ict_htf_zones.py::expire_old_zones()` — applies date-based expiry uniformly across pattern_types; assumes `valid_to = week_end + 4 weeks` is correct for OB/FVG (it isn't, per ICT canon). |
+| **Symptom** | Unbreached structurally-relevant W zones (especially resistances above current spot during a bull market) get marked EXPIRED on the 4-weeks-after-source-bar boundary regardless of whether price ever closed through them. Pine overlay visually missing all >78k resistances. Detector still emits new zones each rebuild but the historical archive of unbreached structure is silently discarded. |
+| **Root cause** | `valid_to` model is wrong for OB/FVG. Per ICT canon: zones live until price *closes through them*, not date-expire. PDH/PDL legitimately date-expire (they're daily levels by definition). OB/FVG should expire only on price-breach, never on date. Current code conflates the two. |
+| **Workaround** | Manual SQL UPDATE to flip wrongly-EXPIRED zones back to ACTIVE; manual TradingView annotation for missing resistances (operator currently doing this discretionarily during analysis). Not scalable. |
+| **Proper fix** | (1) ADR-005 first: capture the design decision and confirm with operator; (2) Code change: split `expire_old_zones()` logic by pattern_type — PDH/PDL keep date-expire, OB/FVG `valid_to = NULL` and rely solely on `recheck_breached_zones()` for status transitions; (3) Backfill pass: scan all historical OB/FVG zones, identify unbreached ones, flip status to ACTIVE; (4) Verify Pine overlay shows full resistance + support stack post-fix. |
+| **Cost to fix** | ~2 sessions: ADR-005 draft + 1 code change + backfill. |
+| **Blocked by** | ADR-005 (zone validity model) — pending operator answers to architecture conversation Q1. |
+| **Owner check-in** | 2026-05-07 |
+
+---
+
+### TD-078 — TD-070 closure verification incomplete — empirically multi-week BULL_OB lookback may not be firing as designed
+
+| | |
+|---|---|
+| **Severity** | S3 (verification gap; doesn't block production but creates uncertainty about whether TD-070 v2 fix actually catches more BULL_OB zones in sustained bull-trend periods) |
+| **Discovered** | 2026-05-06 (Session 21 — closing TD-070 v2 succeeded structurally but smoke-test SQL on Apr-13 BULL_OB candidate not run before session ended) |
+| **Component** | `build_ict_htf_zones.py::_find_unbreached_anchor()` (TD-070 v2 helper) — verify it actually returns Apr-13 BULL_OB anchor for a known sustained-bull-week scenario |
+| **Symptom** | Apr-13 was a +2.27% bullish week, Apr-06 was +4.26% bullish — by old `prior_move < 0` filter Apr-13 BULL_OB would have been rejected; by new TD-070 v2 8-week unbreached-anchor lookback it should be ACCEPTED. SQL not yet run. If the dedup logic in v2 folded Apr-13 into Apr-06's anchor as a duplicate, that's "semantically correct" but loses the Apr-13 finer-grain signal. |
+| **Root cause** | Verification step skipped at session-end Session 21 due to time pressure. Not a defect; just unverified. |
+| **Workaround** | None needed — system runs without this verification; risk is just hidden under-detection. |
+| **Proper fix** | Run SQL: `SELECT * FROM ict_htf_zones WHERE timeframe='W' AND pattern_type='BULL_OB' AND source_bar_date='2026-04-13'`. Expected: a row exists. If empty, dedup folded Apr-13 into Apr-06; verify if that's the intended behavior. |
+| **Cost to fix** | ~1 exchange — run SQL, interpret result. |
+| **Blocked by** | nothing |
+| **Owner check-in** | 2026-05-07 |
+
+---
+
+### TD-077 — Wide FVG zones during volatile weeks lack outlier filter
+
+| | |
+|---|---|
+| **Severity** | S4 LOW (cosmetic + signal-quality edge case — during high-volatility weeks FVG zones can span 800-1500 points which dominate the Pine overlay and reduce visual clarity) |
+| **Discovered** | 2026-05-06 (Session 21 — observed during HTF zone rebuild; one BEAR_FVG on NIFTY spans 1,200 points) |
+| **Component** | `build_ict_htf_zones.py` FVG detection (no outlier filter on zone_high - zone_low spread) |
+| **Symptom** | Volatile weeks produce FVG zones with high-low spread of 800-1500 points (compared to typical 100-300). These dominate Pine overlay, can mask narrower more-actionable zones, and produce overly-large stop levels if zone is used for execution. |
+| **Root cause** | Detection includes any 3-bar imbalance regardless of size. No upper bound on zone spread. |
+| **Workaround** | Operator visually filters wide zones during analysis. Pine `show_h` toggle helps. Not blocking. |
+| **Proper fix** | Add `MAX_ZONE_SPREAD_PCT` parameter (e.g., 1.5% of underlying for W) and reject FVG candidates wider than that. Verify on Session 21's wide-zone case. |
+| **Cost to fix** | ~2 exchanges. |
+| **Blocked by** | nothing |
+| **Owner check-in** | 2026-05-07 |
+
+---
+
+### TD-076 — SENSEX DTE gate persistent block on weekly expiry
+
+| | |
+|---|---|
+| **Severity** | S4 LOW (operator-tier visibility issue; the DTE gate skips signals on SENSEX expiry day every Thursday which is a high-edge expiry-gamma window) |
+| **Discovered** | 2026-05-06 (Session 21 — observed signal_snapshots for SENSEX Thursday expiry day showing all DTE=0 SKIPPED) |
+| **Component** | `build_trade_signal_local.py` DTE gate logic (`signal_snapshots.dte_gate_blocked`) |
+| **Symptom** | Every SENSEX Thursday expiry day shows all signals SKIPPED with reason `DTE=0`. SENSEX expiry-gamma is one of the higher-edge windows historically (Exp 9 SMDM analysis). Gate is over-conservative. |
+| **Root cause** | DTE gate built around NIFTY's previous Thursday-expiry pattern when NIFTY was Thursday-weekly. With NIFTY moved to Tuesday and SENSEX still Thursday, the gate doesn't account for SENSEX-specific edge on its own expiry. |
+| **Workaround** | Operator manually overrides on SENSEX expiry days. |
+| **Proper fix** | Per-symbol DTE gate: NIFTY Tuesday allows DTE=0 with attenuation; SENSEX Thursday allows DTE=0 with full sizing (or ENH-77-style time-band routing for expiry-gamma window). |
+| **Cost to fix** | ~1 session. |
+| **Blocked by** | TD-074 (related ENH-77 routing review). |
+| **Owner check-in** | 2026-05-07 |
+
+---
+
+### TD-075 — Confidence threshold 60 vs observed max 45 (gate never reached)
+
+| | |
+|---|---|
+| **Severity** | S3 MED (production gate set to 60 but live signals top out at confidence 45; gate is effectively dead code — never trips, never blocks anything; likely should be lowered to 40-45 or made dynamic) |
+| **Discovered** | 2026-05-06 (Session 21 — confidence histogram across signal_snapshots showed max=45, gate at 60 never reached) |
+| **Component** | `build_trade_signal_local.py` confidence threshold for trade_allowed gating |
+| **Symptom** | trade_allowed always FALSE due to confidence < 60 threshold; no signals ever pass to execution layer. Effective trading gate is purely operator-discretionary at this point. |
+| **Root cause** | Threshold derived from a different signal-generation regime (pre-ENH-35? pre-V4?). Hasn't been recalibrated since then. |
+| **Workaround** | Operator-discretionary execution. Trade_allowed gate ignored. |
+| **Proper fix** | Recalibrate threshold based on observed distribution: median, p75, p90 across last 30 days. Or make threshold dynamic by regime (LONG_GAMMA vs SHORT_GAMMA different). |
+| **Cost to fix** | ~1 session — distributional analysis + threshold revision + 2-week shadow validation per Master V15 18.1 rule. |
+| **Blocked by** | signal_regret_log accumulation (Master V15 says 30+ sessions before threshold change). |
+| **Owner check-in** | 2026-05-07 |
+
+---
+
+### TD-074 — ENH-77 BULL_OB AFTERNOON NIFTY hard skip blocked the only TIER1 signal
+
+| | |
+|---|---|
+| **Severity** | S3 MED (over-aggressive routing rule — ENH-77 hard-skips BULL_OB+AFTERNOON+NIFTY; 2026-05-06 had a 700pt rally for which the only TIER1 BULL_OB signal was hard-skipped, costing capture) |
+| **Discovered** | 2026-05-06 (Session 21 — post-mortem on missed TIER1 signal on 700pt rally afternoon) |
+| **Component** | `build_trade_signal_local.py` — ENH-77 time-of-day routing for BULL_OB |
+| **Symptom** | BULL_OB signals in AFTERNOON time band (12:00-15:00 IST) on NIFTY are hard-routed to SKIP. The 2026-05-06 rally had a TIER1 BULL_OB at ~13:00 that should have triggered; was skipped per ENH-77 rule. |
+| **Root cause** | ENH-77 rule was derived from cohort analysis showing AFTERNOON BULL_OB underperforms; but the rule is hard-skip not attenuation, eliminating the long tail of high-edge AFTERNOON cases. Direction-asymmetric defect: BEAR_OB+AFTERNOON not hard-skipped, only BULL_OB. |
+| **Workaround** | Operator-discretionary execution overrides. |
+| **Proper fix** | Replace hard-skip with attenuation (size_mult 0.5x instead of 0x) OR rebuild ENH-77 with finer time bands (12:00-13:30 vs 13:30-15:00 may be different cohorts). |
+| **Cost to fix** | ~1 session — ENH-77 cohort review + rule revision + 2-week shadow validation. |
+| **Blocked by** | signal_regret_log accumulation (same as TD-075). |
+| **Owner check-in** | 2026-05-07 |
+
+---
+
+### TD-073 — Momentum direction lagged 700pt rally May 6 by ~60 min
+
+| | |
+|---|---|
+| **Severity** | S2 HIGH (signal-quality defect — momentum_direction component of build_trade_signal lagged the 2026-05-06 700pt rally by ~60 min; signal stayed BEARISH/NEUTRAL while spot was already in clear bullish expansion; downstream signal direction wrong throughout the lag window) |
+| **Discovered** | 2026-05-06 (Session 21 — observed during live trading on rally day) |
+| **Component** | `build_momentum_features_local.py` — `momentum_direction` derivation; possibly `ret_session` or `vwap_slope` lag |
+| **Symptom** | Spot rallied from 24,200 to 24,900 over ~13:00-14:30 IST window. `momentum_snapshots.momentum_direction` stayed `BEARISH` until ~14:00 then flipped `NEUTRAL` then finally `BULLISH` at ~14:30 — by which point most of the move was over. Lag of ~60 min vs price action. |
+| **Root cause hypothesis** | `ret_session` uses session_open as reference; if session opened weak and rallied, ret_session takes time to flip sign. `vwap_slope` is a lagging indicator by construction. Multi-vote system (5 momentum components) may have 3 lagging components dragging the vote. |
+| **Workaround** | Operator-discretionary direction override during live trading (but then signal confidence is also wrong). |
+| **Proper fix** | Diagnose which of the 5 momentum components is laggiest; consider replacing with a faster-responding indicator (e.g., 5m return + 15m return weighted majority) OR add a "fast momentum override" when 5m return exceeds 0.5%. |
+| **Cost to fix** | ~1.5 sessions — instrument each component + correlate with price; design replacement; shadow-test. |
+| **Blocked by** | nothing |
+| **Owner check-in** | 2026-05-07 |
+
+---
+
 
 ### TD-069 — D timeframe doesn't generate OB/FVG even with real data (W and 1H do)
 
@@ -1027,6 +1187,54 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 ## Resolved (audit trail)
 
 > Closed items live here forever. Never delete — they are evidence of work done and decisions made.
+
+### TD-084 (closed) — `backfill_option_zerodha_OI_FIXED.py` UTC/IST timezone bug truncated Kite output to 46 bars per strike
+
+| | |
+|---|---|
+| **Closed** | 2026-05-07 (Session 22, same-session as discovery) |
+| **Closing commit** | uncommitted MALPHA dirty (~/meridian-alpha/backfill_option_zerodha_OI_FIXED.py with .bak_S22 preserved). MALPHA dirty acceptable per S20 directive (Kite gateway only). |
+| **Fix applied** | sed-replaced line 184: `dt_ist = bar["date"].replace(tzinfo=ZoneInfo("UTC")).astimezone(IST)` → `dt_ist = bar["date"].astimezone(IST) if bar["date"].tzinfo else bar["date"].replace(tzinfo=IST)`. New logic: if bar["date"] already has tzinfo (it does, from Kite as IST) → astimezone(IST) is a no-op; if tzinfo missing → assume IST (safe fallback). |
+| **Validation** | Pre-fix dry-run: 46 bars/strike per SENSEX strike on 2026-05-07. Direct Kite probe via `/tmp/check_sensex_kite.py`: 375 bars confirmed (full session). Post-fix dry-run: 375 bars/strike for both NIFTY+SENSEX. Live run wrote 24,749 rows (NIFTY 8,250 = 22 strikes × 1 expiry; SENSEX 16,499 = 44 strikes × 2 expiries). Verified per-strike via SQL `SELECT strike, expiry_date, option_type, COUNT(*) FROM hist_option_bars_1m WHERE trade_date='2026-05-07' GROUP BY 1,2,3` showing 375 bars/contract uniformly. |
+| **Lesson** | Kite returns IST-tagged datetimes for `historical_data` calls — applying `.replace(tzinfo=ZoneInfo("UTC"))` is the canonical timezone bug pattern, never apply to Kite output. The same bug pattern can appear anywhere in the codebase that consumes Kite historical data; audit `grep -rn "tzinfo=ZoneInfo.*UTC.*astimezone(IST)"` to find latent instances. Filed as a CLAUDE.md operational finding. |
+
+---
+
+### TD-072 (closed) — 22-min Task Scheduler gap 13:25-13:47 IST traced to power-source change events
+
+| | |
+|---|---|
+| **Closed** | 2026-05-06 (Session 21) |
+| **Closing commit** | uncommitted (S21 patches still in working tree at S22 close) |
+| **Fix applied** | PowerShell loop set `DisallowStartIfOnBatteries=$false` and `StopIfGoingOnBatteries=$false` on 8 market-hours tasks: MERDIAN_Spot_1M, MERDIAN_PreOpen, MERDIAN_IV_Context_0905, MERDIAN_PO3_SessionBias_1005, MERDIAN_Market_Tape_1M, MERDIAN_HB_Watchdog, MERDIAN_ICT_HTF_Zones_0845, MERDIAN_Intraday_Supervisor_Start. |
+| **Validation** | Battery flags persist verified at Session 22 pre-market (08:00 IST PowerShell `Get-ScheduledTask | Get-ScheduledTaskSettings`). 08:45 IST cron fired clean Session 22 — no gap re-occurrence. |
+| **Lesson** | Windows Task Scheduler default `DisallowStartIfOnBatteries=$true` + `StopIfGoingOnBatteries=$true` is a silent killer for laptop-based production systems. Apply battery flags to every market-hours task at task creation time, not after a gap is observed. Codified as CLAUDE.md operational finding. |
+
+---
+
+### TD-071 (closed) — Stale 2025 zones still showing ACTIVE due to `expire_old_zones()` order bug in `build_ict_htf_zones.py`
+
+| | |
+|---|---|
+| **Closed** | 2026-05-06 (Session 21) |
+| **Closing commit** | uncommitted (S21 patches still in working tree at S22 close) |
+| **Fix applied** | `fix_td071_zone_pipeline_order.py` (v3 patch canon). expire_old_zones() rewritten — dropped `.eq("status","ACTIVE")` filter, added `.in_("timeframe",["W","D"])` (H carve-out per operator), added `.neq("status","EXPIRED")` idempotency guard. Pipeline reorder in main(): expire moved from BEFORE upserts to AFTER recheck_breached_zones(). Final order: detect → upsert(ACTIVE) → recheck(price-breach) → expire(date). Backup `_PRE_S21_TD071.py` preserved. |
+| **Validation** | Session 21 18:33 IST verification rebuild: 18 stale BREACHED W zones flipped to EXPIRED correctly (the very issue TD-071 was filed to fix). Session 22 08:45 IST cron: 82 zones written, 0 ON CONFLICT errors, expiry transitions correct. |
+| **Lesson** | Pipeline ordering matters in idempotent zone management — the order detect → upsert → recheck → expire is the only correct one because: (a) detect produces new candidates; (b) upsert writes ACTIVE for new + leaves existing untouched; (c) recheck flips status based on price action across new + existing; (d) expire flips date-based across all. Reordering any step makes the sequence non-idempotent or produces wrong final state. |
+
+---
+
+### TD-070 (closed) — `prev_move < 0` over-filters BULL_OB candidates in `detect_weekly_zones()` (TD-070 v1 + v2 dedup stack)
+
+| | |
+|---|---|
+| **Closed** | 2026-05-06 (Session 21) |
+| **Closing commit** | uncommitted (S21 patches still in working tree at S22 close) |
+| **Fix applied** | TWO-STAGE FIX: **Stage 1 (TD-070 v1):** `fix_td070_weekly_ob_lookback.py` replaced single-bar `prior_move < 0` check in detect_weekly_zones() with 8-week unbreached-anchor lookback via new `_find_unbreached_anchor()` helper (`TD070_LOOKBACK_WEEKS = 8`); symmetric BULL_OB + BEAR_OB; body-based breach test; most-recent-bearish anchor selection; backward-compat preserved. **Stage 2 (TD-070 v2 dedup):** Initial v1 deploy crashed live with Postgres 21000 'cannot affect row a second time' error on upsert ON CONFLICT. Root cause: 8-week lookback can produce multiple zone entries from same source-bar-date → same conflict key (symbol, timeframe, pattern_type, source_bar_date, zone_high, zone_low). Fixed via `fix_td070_v2_dedup.py` adding `_dedup_zones_by_conflict_key()` to collapse zones matching upsert ON CONFLICT key, keeping earliest valid_from. Backups `_PRE_S21.py`, `_PRE_TD070V2.py` preserved. |
+| **Validation** | Session 21 18:33 IST verification rebuild: NIFTY 37 W zones + SENSEX 39 W zones = 78 total, zero ON CONFLICT errors. Session 22 08:45 IST cron: 82 zones written cleanly. **Verification gap: TD-078 PENDING** — Apr-13 BULL_OB SQL not yet run to confirm new lookback actually catches sustained-bull-week BULL_OB candidates that prev_move<0 would have rejected. |
+| **Lesson** | (a) When relaxing a filter to widen acceptance, ALWAYS verify that the upsert ON CONFLICT key handles the new multiplicity. The 8-week lookback can produce 1-3 zone entries per source bar; ON CONFLICT predicate must dedupe upstream of the upsert. (b) `prev_move < 0` single-bar check was a simplified ICT canon shortcut; canonical ICT allows scanning 1-3 bars back for any bearish candle. The simplification was wrong in sustained bull markets. (c) v3 patch canon (read_bytes+utf-8-sig, normalize CRLF→LF, ast.parse validate, idempotency guard, write_bytes preserve LF, output `_PATCHED.py` then operator-rename) is the only correct way to apply Python source patches on Windows; bare PowerShell string-replacement breaks on encoding/line-endings. |
+
+---
 
 ### TD-058 (closed) — Live `detect_ict_patterns.py` emitted zero BEAR_FVG signals across full year
 

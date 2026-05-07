@@ -9,149 +9,145 @@
 
 | Field | Value |
 |---|---|
-| **Date** | 2026-05-05 (Tuesday — Session 20, very long: pre-dawn → 21:00+ IST). |
-| **Concern** | Began as TD-068 audit task fix from Session 19. Expanded into full diagnostic of `capture_spot_1m.py` synthetic-flat-bar architecture (long-standing root cause for BULL_OB/BEAR_OB zero-emission across detection history). Cascaded into spot data backfill Apr 1 → May 5. Concluded with Phase 2a deployment of v2.1 real-OHLC live writer + HTF zone rebuild + Pine static rewrite. |
-| **Type** | Engineering — multi-deliverable session: 2 production patches deployed (audit script rewrite + capture_spot_1m_v2 NEW), 1 data recovery (16,500 spot bars Apr 1 → May 5 real OHLC), 1 architectural change (live writer LTP synthetic → REST OHLC), 1 Pine static rewrite, 5 TDs filed. |
-| **Outcome** | DONE. **TD-068 RESOLVED end-to-end:** v2.1 `capture_spot_1m_v2.py` deployed to Local Task Scheduler with full `pythonw.exe` path; replaces synthetic O=H=L=C=spot from `/v2/marketfeed/ltp` with real 1-min OHLC from `/v2/charts/intraday`; v2.1 features market-hours guard + filler-bar skip for post-market filler responses; v1 untouched at `capture_spot_1m.py` for rollback. **Daily audit task fixed and rewritten:** Session 19 script broken (MimeText Python 3.12 incompat, wrong table names, malformed PostgREST queries, Task Scheduler ERROR_FILE_NOT_FOUND from bare `python`); fixed via new `run_daily_audit.bat` wrapper; full rewrite (831 lines) using Supabase Python client, three windows (pre/intra/post), per-pattern-type breakdown surfacing zero-emission as WARN. **Spot backfill Apr 1 → May 5:** 16,500 clean OHLC rows in `hist_spot_bars_1m`, 0 flats, both NIFTY+SENSEX (Kite returns SENSEX index spot OHLC despite no BSE F&O); 16 stray 15:30:00 IST boundary flat bars deleted via scoped DELETE. **HTF zones rebuilt with real OHLC:** detector now fires all 4 pattern types — W BULL_OB 2 ACTIVE / 18 BREACHED, W BULL_FVG 2 ACTIVE / 11 BREACHED, W BEAR_OB 0 ACTIVE / 2 BREACHED, W BEAR_FVG 0 ACTIVE / 2 BREACHED. Confirms detector logic sound — previous BULL_OB/BEAR_OB zero-emission was data-driven (synthetic flat bars), not detector defect. **Pine static rewrite shipped:** 14 zones (NIFTY 7 + SENSEX 7) from tonight's rebuild — clean OHLC, no stale M5 noise; new color spec applied (BULL_OB green #1B8C3E, BULL_FVG light green #6FCF7C, BEAR_OB red #B22222, BEAR_FVG light red #F08080, white text labels, PDH/PDL stay yellow/orange). |
-| **Git start → end** | Local Windows: `pending` → `pending` (operator commits at end of session per protocol). MALPHA AWS: `backfill_spot_zerodha.py` BACKFILL_DATES extended (uncommitted, undesirable but accepted — MALPHA is Kite gateway not Meridian code). Meridian AWS: not touched this session. |
-| **Local + AWS hash match** | Local advancing this session. Meridian AWS not touched. MALPHA AWS has dirty BACKFILL_DATES extension (one-off backfill, won't recur). Phase 2b AWS migration deferred to Session 21+. |
-| **Files changed (code)** | `merdian_daily_audit.py` (FULL REWRITE — 831 lines, backup `.pre_s20.bak`); `run_daily_audit.bat` (NEW wrapper); `capture_spot_1m_v2.py` (NEW — 475 lines, v2.1 with market-hours guard + filler-bar skip); Task Scheduler `MERDIAN_Daily_Audit` action updated to use bat wrapper; Task Scheduler `MERDIAN_Spot_1M` action repointed to v2 with full `pythonw.exe` path. |
-| **Files added (untracked, working dir)** | `C:\GammaEnginePython\capture_spot_1m_v2.py`, `C:\GammaEnginePython\run_daily_audit.bat`, `C:\GammaEnginePython\merdian_daily_audit.py.pre_s20.bak`, `C:\GammaEnginePython\logs\dhan_probe.py` (one-off Dhan API verification), `C:\GammaEnginePython\logs\v2_test_*.log`. Pine static rewrite `merdian_ict_htf_zones_s20.pine` ready for paste into TradingView. |
-| **Files modified (docs)** | `CURRENT.md` (this rewrite — Session 17 content preserved below as historical reference per no-crunch directive). `session_log.md` (Session 20 one-liner prepended). `tech_debt.md` (TD-067, TD-068, TD-069, TD-070, TD-071 added; TD-068 moved to Resolved same session). `MERDIAN_Enhancement_Register.md` (no new ENH this session — operational/data integrity work). `merdian_reference.json` (v13→v14; change_log entry for Session 20). `CLAUDE.md` (v1.13→v1.14; Rule 23 + B15 + B16 + multiple operational findings). |
-| **Tables changed** | None (schema). Data: `hist_spot_bars_1m` 16,500 rows backfilled real OHLC + 16 stray flats deleted; `ict_htf_zones` 80 zones written by rebuild (NIFTY 39 + SENSEX 41 with breach status). |
-| **Cron / Tasks added** | `MERDIAN_Daily_Audit` action updated to use `run_daily_audit.bat` wrapper. `MERDIAN_Spot_1M` action repointed to `capture_spot_1m_v2.py` with full `pythonw.exe` path. No new tasks added. |
-| **`docs_updated`** | YES. All six closeout files produced as full downloads (no append/prepend deltas, no crunching of old entries) per user directive. |
+| **Date** | 2026-05-07 (Thursday — Session 22, intra-market through evening). |
+| **Concern** | Began as morning verification of Session 21 patches (TD-070 v2, TD-071, TD-072) — all PASS at 08:45 IST cron. Cascaded into MAJOR INCIDENT: Dhan option chain ingest outage on AWS — 151 of 299 daily attempts failed with `401 Authentication Failed - Client ID or Token invalid`, alternating ~50/50 hourly across two windows (09:30-13:30 IST + 14:45-15:25 IST), ~70% degradation of trading day. Six hypotheses tested and refuted; root cause UNCONFIRMED. Spot + option backfill executed via Kite/MeridianAlpha to recover today's gap. TD-079 architectural defect surfaced (zone date-expiry discards unbreached resistances). TD-084 found and fixed same-session (UTC/IST timezone bug in option backfill script). Architecture conversation with operator initiated, 4 questions outstanding at session close. |
+| **Type** | Engineering — incident response + data recovery + architectural surfacing. 0 production patches deployed (all S22 work was diagnosis + backfill + documentation). 6 TDs filed (1 closed same-session). 25,499 rows backfilled. Architecture conversation initiated. |
+| **Outcome** | PARTIAL. **Pre-market clean** — token refresh, merdian_start manual, preflight PASS, AWS Zerodha refresh, battery flags persist from S21 fix. **08:45 IST cron clean:** MERDIAN_ICT_HTF_Zones_0845 fired exit=0, contract_met=true, 82 zones written — confirms S21 TD-070 v2 + TD-071 stack works in production. **Pine overlay generated:** 36 zones (10 HTF + intraday merged). **TD-079 DISCOVERED HIGH:** Pine visually missing ALL resistances above current spot 78,000 → 86,000; 18 W BEAR_OB/BEAR_FVG zones above 78k all marked EXPIRED purely on date — `valid_to = week_end + 4 weeks` discards structurally-relevant unbreached resistances; ICT canon: zones live until price closes through them, not date-expire; filed as architectural defect bleeding signal quality for months. **MAJOR INCIDENT — Dhan option chain ingest outage (UNRESOLVED):** 151 of 299 attempts failed today with `401`; same Dhan token: capture_spot_1m_v2 succeeded 371/378 (97%); 64 missing 5-min option_chain_snapshots windows. Six hypotheses refuted (token sync silent failure, TD-072 battery flag side-effect, AWS refresh_dhan_token competing writer, MeridianAlpha Dhan competition, long-running stale-token daemon, shadow_runner stale token in memory). Most likely remaining hypothesis: Dhan-side rate limiting on option chain endpoint or per-token instability with the 08:24-issued token. Filed as **TD-080 HIGH**. **BACKFILL EXECUTED via MeridianAlpha:** spot 750 NIFTY+SENSEX rows clean OHLC; option 24,749 rows (NIFTY 8,250 = 22 strikes × 1 expiry May-12 Tuesday weekly + SENSEX 16,499 = 44 strikes × 2 expiries May-7 today-expiring + May-14 Thursday weekly). **TD-084 found and fixed same-session:** backfill_option_zerodha_OI_FIXED line 184 `bar["date"].replace(tzinfo=ZoneInfo("UTC")).astimezone(IST)` shifts every IST-tagged Kite timestamp by +5h30m, dropping 88% of bars; sed-fixed; 46 bars/strike → 375 bars/strike post-fix. **Permanent loss:** 64 option_chain_snapshots windows (Dhan endpoint is real-time only — full chain greeks/IV smile/OI per strike cannot be reconstructed; per-strike OHLC recovered allows ATM straddle reconstruction + basic IV via inverse Black-Scholes). **Architecture conversation INITIATED, UNRESOLVED:** Phase α 4 questions stated — (Q1) zone validity model, (Q2) AWS migration scope, (Q3) token reliability investigation order, (Q4) today's session shape. ENH-93 candidate filed: replay/simulation harness mimicking live runner per V18G § 7.2 6-step pipeline. |
+| **Git start → end** | Local Windows: `d7eb8c0` (S20 closeout) → `d7eb8c0` (no Local changes Session 22; S21 patches still uncommitted in working tree). MALPHA AWS: dirty (S22 added 2026-05-07 to BACKFILL_DATES on both spot + option scripts; option script has TD-084 timezone fix applied; uncommitted, MALPHA is Kite gateway not Meridian code). Meridian AWS: not touched this session. |
+| **Local + AWS hash match** | Local NOT advancing — Session 21 production patches (TD-070 v1+v2 + TD-071 + TD-072) still in working tree uncommitted at session 22 close. Single-commit-per-session pattern interrupted. Meridian AWS not touched, MALPHA AWS dirty (data-recovery edits). |
+| **Files changed (code)** | `~/meridian-alpha/backfill_spot_zerodha.py` (BACKFILL_DATES extended +date(2026,5,7), uncommitted MALPHA dirty); `~/meridian-alpha/backfill_option_zerodha_OI_FIXED.py` (BACKFILL_DATES extended + TD-084 timezone fix applied via sed, uncommitted MALPHA dirty, .bak_S22 preserved). No Local files modified. No Meridian AWS files modified. |
+| **Files added (untracked, working dir)** | None on Local. MALPHA AWS: `~/meridian-alpha/backfill_option_zerodha_OI_FIXED.py.bak_S22` (preserved pre-TD-084-fix copy); `/tmp/check_sensex_kite.py` (one-off Kite diagnostic verifying 375 bars per strike); `/tmp/check_option_count.py` (one-off Supabase row counter); `/tmp/option_dryrun.log`, `/tmp/option_dryrun_v2.log`, `/tmp/option_live.log` (run logs). |
+| **Files modified (docs)** | `CURRENT.md` (this rewrite — Session 21 + Session 20 content preserved below as Previous session blocks per no-crunch directive). `session_log.md` (Session 22 + Session 21 one-liners prepended retroactively — Session 21 was never documented at session-end). `tech_debt.md` (TD-079, TD-080, TD-081, TD-082, TD-083 added active; TD-084 added then moved to Resolved same session; TD-070, TD-071, TD-072 moved to Resolved with closing context). `MERDIAN_Enhancement_Register.md` (ENH-93 replay harness candidate added). `merdian_reference.json` (v14→v15; Session 21 + Session 22 entries added to change_log). `CLAUDE.md` (v1.13→v1.14; operational findings from Sessions 21+22 appended). |
+| **Tables changed** | None (schema). Data: `hist_spot_bars_1m` +750 rows for 2026-05-07 (replacing partial captures from outage windows); `hist_option_bars_1m` +24,749 rows for 2026-05-07 (NIFTY 22 strikes × 1 expiry, SENSEX 44 strikes × 2 expiries); `ict_htf_zones` 82 zones written by 08:45 IST cron. |
+| **Cron / Tasks added** | None. 8 tasks have battery flags from Session 21 still in effect. |
+| **`docs_updated`** | YES. All six closeout files produced as full downloads (no append/prepend deltas beyond the protocol-mandated newest-first session_log prepend). Session 21 documented retroactively per directive. |
 
-### What Session 20 did, in 14 bullets
+### What Session 22 did, in 12 bullets
 
-**Phase 1 — Daily audit task fix + full rewrite:**
+**Phase 1 — Pre-market verification + 08:45 IST cron success (S21 patches confirmed in production):**
 
-- **Discovered Session 19's `merdian_daily_audit.py` broken on multiple fronts.** `MimeText` import was Python 3.12 incompatible (renamed `MIMEText` in stdlib); table name `ict_patterns` should be `ict_zones`; PostgREST queries had duplicate dict keys (later definition silently shadowed earlier). Task Scheduler `MERDIAN_Daily_Audit` showed `LastTaskResult=2147942402` = ERROR_FILE_NOT_FOUND because action used bare `python` instead of full path — same bug pattern that bit `MERDIAN_Spot_1M` swap later in session.
+- Local pre-market: token refresh 08:24:54 IST PASS, merdian_start manual 08:21:56, run_preflight PASS, battery flags persist from Session 21's TD-072 fix.
 
-- **Fixed Task Scheduler via new `run_daily_audit.bat` wrapper** mirroring `run_ict_htf_zones_daily.bat` pattern. Updated task action to invoke the bat. Verified action via Get-ScheduledTask.
+- AWS pre-market: Zerodha refresh + sed propagate to Meridian AWS .env succeeded; Kite auth verified `OK: Navin Balan OV0782`.
 
-- **Full rewrite of audit script (831 lines)** using Supabase Python client (not raw REST). Three windows: pre-market 08:00-09:14 IST, intraday 09:15-15:30 IST, post-market 15:30+ IST. ExecutionLog instrumented. Per-pattern-type breakdown for `ict_zones` surfaces BULL_OB/BEAR_OB zero-emission as WARN (was the trigger that surfaced TD-068 root cause). Per-script cycle counts. Crash count. Always exits 0; JSON has the actual verdict. Deployed to `C:\GammaEnginePython\merdian_daily_audit.py` (backup `.pre_s20.bak`). Test fire: PASS pre, FAIL intra (legitimate WARN on BULL_OB/BEAR_OB zero emissions + flat-bar finding) — confirms audit doing its job.
+- 08:45 IST `MERDIAN_ICT_HTF_Zones_0845` cron fired clean: exit=0, contract_met=true, 82 zones written. **Confirms S21 TD-070 v2 + TD-071 stack works in production with no ON CONFLICT errors.**
 
-**Phase 2 — capture_spot_1m flat-bar root cause (the diagnostic that took the longest):**
+**Phase 2 — Pine overlay revealed TD-079 architectural defect:**
 
-- **Locked diagnosis only after triple-verification.** Assistant oscillated 4 times before settling: (1) 04:00 IST concluded synthetic flats since Apr 13; (2) 06:30 IST walked back wrongly with bad audit query; (3) 17:00 IST concluded again after audit rewrite; (4) 18:00 IST walked back AGAIN after Apr 21 random sample showed real OHLC (forgot those were morning's Kite backfill alongside flat bars); (5) 18:30 IST FINAL lock after triple-verification: source code reads `O=H=L=C=spot` literally (`hist_spot_bars_1m` synthetic bar convention from script's docstring); today's bars sampled directly = 376/376 flat; `script_execution_log` shows ONLY `capture_spot_1m.py` writes to `hist_spot_bars_1m` (3,897 runs in 30 days, sole writer). User extremely frustrated by oscillation; assistant acknowledged failure pattern and filed B15 anti-pattern.
+- `python generate_pine_overlay.py` produced `merdian_ict_htf_zones.pine` — 36 zones (10 HTF + intraday merged).
 
-- **Detection implication:** All four ICT pattern types (BULL_OB, BEAR_OB, BULL_FVG, BEAR_FVG) require candle direction (open vs close); cannot fire on synthetic flat bars where all four equal `last_price`. Explains BULL_OB/BEAR_OB zero-emission across 7+ days surfaced by audit. Filed as TD-068.
+- Visual inspection: ALL resistances above current spot 78,000 → 86,000 missing. SQL confirmed 18 W BEAR_OB/BEAR_FVG zones above 78k all marked `EXPIRED` purely on date — `valid_to = week_end + 4 weeks` discards structurally-relevant unbreached resistances. ICT canon: zones live until price *closes through them*, not date-expire.
 
-**Phase 3 — Spot data backfill Apr 1 → May 5:**
+- Filed as **TD-079 HIGH** — architectural defect bleeding signal quality for months. Requires `valid_to=NULL` for OB/FVG, keep date-expire only for PDH/PDL, plus backfill pass restoring wrongly-expired W zones to ACTIVE if unbreached.
 
-- **Backfill executed on MALPHA AWS** (`ubuntu@13.51.242.119`, `~/meridian-alpha`). Patched `BACKFILL_DATES` to cover 23 trading days Apr 1 → May 5 via Python script with idempotent insertion + AST validation. Refreshed Kite token via OAuth dance (browser flow). Ran `backfill_spot_zerodha.py` → 16,500 rows written (22 trading days × 2 symbols × 375 bars; one date returned empty as holiday). Backfill upsert REPLACED flat bars rather than coexisting (different bar_ts precision). 16 stray flat bars at exact `15:30:00 IST` boundary deleted via scoped DELETE (predicate: trade_date BETWEEN '2026-04-01' AND '2026-05-05' AND time = '15:30:00' AND open=high=low=close).
+**Phase 3 — MAJOR INCIDENT: Dhan option chain ingest outage (UNRESOLVED ROOT CAUSE):**
 
-- **Final state verified:** 22 trading days × 2 symbols × 375 bars = 16,500 clean OHLC rows in `hist_spot_bars_1m`, 0 flats, both NIFTY AND SENSEX. **Important finding: Kite returns SENSEX index spot OHLC despite not supporting BSE F&O.** This was unexpected and is the basis for the symmetric backfill working from a single Zerodha source.
+- `ingest_option_chain_local.py` (runs on AWS despite filename) failed 151 of 299 attempts today with `401 Authentication Failed - Client ID or Token invalid`. Alternating 50/50 pattern hourly-stable. Two outage windows: 09:30-13:30 IST (~4hrs) + 14:45-15:25 IST (40min). Manual refresh at 13:30 temporarily restored, broke again ~14:45. **Total downtime ~4.5 of 6.25 trading hours (~70% degradation).** Telegram alerts every 5 min.
 
-**Phase 4 — Live writer architecture (multiple wrong turns then locked):**
+- **Same Dhan token:** capture_spot_1m_v2.py succeeded 371/378 (97%). Spot endpoint healthy, option chain endpoint failing — token-side or endpoint-side?
 
-- **Initial wrong direction.** Assistant proposed Kite WebSocket migration to AWS without reading existing code. User corrected MALPHA architecture confusion ("MALPHA only Kite gateway, no Meridian code, ever"). User then forced read of actual code which revealed Meridian AWS already runs `ws_feed_zerodha.py` with own Zerodha credentials AND Zerodha can't do SENSEX (BSE F&O not supported per ws_feed_zerodha docstring line 13). Filed B16 anti-pattern.
+- **Six hypotheses tested and REFUTED:** (1) Token sync silent failure (system_config.dhan_api_token row updated correctly via Supabase write); (2) TD-072 battery flags re-enabled dormant Dhan-touching task (Market_Tape_1M ran only once at 09:00); (3) AWS refresh_dhan_token.py competing writer (file mtime Apr 22, only Invalid TOTP errors from old runs); (4) MeridianAlpha competing for Dhan tokens (MALPHA uses Zerodha not Dhan); (5) Long-running stale-token daemon on AWS (`ps -eo lstart` shows only PID 578 dashboard + PID 579 order_placer from Apr 29; no ingest_option_chain daemon); (6) shadow_runner stale token in memory (subprocess.run is per-cycle, fresh .env read each invocation).
 
-- **User insisted on single-source NIFTY+SENSEX.** "NIFTY and SENSEX ticks should be recorded. Cant be from different places." Hard constraint that ruled out Zerodha-NIFTY + Dhan-SENSEX hybrid. User listed three options: REST OHLC, mixed solution, or Dhan WebSocket subscription.
+- **Critical context:** operator's laptop was OFF until ~08:15 IST today. `MERDIAN_Intraday_Supervisor_Start` task fired at 08:15:36 (boot time). Action: `merdian_morning_start.ps1` runs `python merdian_start.py` (no token refresh). Double-start (08:15 boot + 08:21 manual) created competing process trees but doesn't directly explain AWS failures.
 
-- **Web-fetch of Dhan docs** (https://dhanhq.co/docs/v2/historical-data/) confirmed `POST /v2/charts/intraday` returns full 1-min OHLC arrays (open[], high[], low[], close[], volume[], timestamp[]) for any instrument including IDX_I segment indices, intervals 1/5/15/25/60 min, 5-year history. **Key finding: Dhan REST supports OHLC** — endpoint name was just less obvious than the LTP endpoint capture_spot_1m was using.
+- Filed as **TD-080 HIGH**. Most likely remaining hypothesis: Dhan-side rate limiting on option chain endpoint or per-token instability with the 08:24-issued token. **Resume next-day controlled test at 09:15 IST cron.**
 
-- **Probe verified hypothesis A.** Manual probe of `/charts/intraday` for today 11:00-11:05 IST returned hundreds of REAL varying OHLC bars with non-zero volume during market hours; post-market query returned "filler" bars (V=0, flat OHLC matching last known price). Two distinct bar shapes confirmed: real OHLC during market hours always V>0 even on low-volatility minutes; filler bars only appear post-close.
+**Phase 4 — Spot + option backfill via MeridianAlpha:**
 
-**Phase 5 — capture_spot_1m_v2.py shipped (Phase 2a Local):**
+- Spot via `~/meridian-alpha/backfill_spot_zerodha.py`: edited BACKFILL_DATES adding `date(2026, 5, 7)`; dry-run confirmed 375 bars/symbol from Kite; live wrote 375 NIFTY + 375 SENSEX clean OHLC rows; final state NIFTY 376 bars/1 flat, SENSEX 376 bars/1 flat — acceptable boundary artifact at 15:29.
 
-- **`capture_spot_1m_v2.py` (475 lines, v2.1)** — drop-in replacement for `capture_spot_1m.py`. Uses `POST https://api.dhan.co/v2/charts/intraday` instead of `marketfeed/ltp`. Real OHLC from Dhan vendor, both NIFTY and SENSEX. Same .env vars (no new credentials). Same instrumentation (ExecutionLog `expected_writes` contract preserved). Same heartbeat wrapper. Same lock pattern (none — single-shot script). v2.1 features: market-hours guard (09:15-15:30 IST window check on requested bar's `from_ts`), filler-bar skip (V=0+flat detection prevents post-market filler writes). v1 untouched at `capture_spot_1m.py` for rollback.
+- Option via `~/meridian-alpha/backfill_option_zerodha_OI_FIXED.py`: edited BACKFILL_DATES adding `date(2026, 5, 7)`. Dry-run revealed BUG: only 46 bars per strike instead of 375. Direct Kite test (`/tmp/check_sensex_kite.py`) proved Kite returns 375 bars. **TD-084 found and fixed same-session.** Live wrote 24,749 rows total: NIFTY 8,250 (22 strikes × 375 × 1 expiry May-12 — Tuesday weekly per NSE 2025+ change), SENSEX 16,499 (44 strikes × 375 × 2 expiries: May-7 today-expiring + May-14 next Thursday weekly per BSE).
 
-- **Deployed to Local Task Scheduler `MERDIAN_Spot_1M`** with full `pythonw.exe` path matching v1's pattern. **Initial deployment mistake:** swapped to bare `python` causing same ERROR_FILE_NOT_FOUND vulnerability as audit task — caught and fixed in same exchange (filed Rule 23). Final action verified: `Execute=C:\Users\balan\AppData\Local\Programs\Python\Python312\pythonw.exe`, `Arguments=C:\GammaEnginePython\capture_spot_1m_v2.py`, `WorkingDirectory=C:\GammaEnginePython`. Test fire post-market: market-hours guard correctly skipped with `OUTSIDE_MARKET_HOURS` reason — exit clean, no API call, no writes.
+**Phase 5 — TD-084 root cause + same-session fix:**
 
-**Phase 6 — HTF zones rebuild post-backfill:**
+- Bug: line 184 of `backfill_option_zerodha_OI_FIXED.py` applies `dt_ist = bar["date"].replace(tzinfo=ZoneInfo("UTC")).astimezone(IST)` but Kite already returns IST-tagged datetimes. The `.replace(UTC)` shifts every timestamp +5h30m, then `is_market_hours()` filter accepts only ~46 bars from edge windows.
 
-- **Ran `python build_ict_htf_zones.py --timeframe both`** against newly clean OHLC. Results: NIFTY weekly 33 OB/FVG (vs 4 before with synthetic data) + 4 PDH/PDL = 37 zones; SENSEX weekly 35 OB/FVG + 4 PDH/PDL = 39 zones; daily 0 OB/FVG + 2 PDH/PDL each (D-OB / D-FVG zero generation persists, filed TD-069). Total 80 zones written.
+- Time math: bars 09:15-09:44 IST (real) → become 14:45-15:14 IST (after replace+astimezone) → ACCEPTED (within filter); bars 09:45+ IST → 15:15+ IST → only 09:45-10:14 acceptable, then dropped → ~46 bars total survive. Matches observed exactly.
 
-- **All 4 ICT pattern types fire on real data after rebuild:** W BULL_OB 2 ACTIVE / 18 BREACHED, W BULL_FVG 2 ACTIVE / 11 BREACHED, W BEAR_OB 0 ACTIVE / 2 BREACHED, W BEAR_FVG 0 ACTIVE / 2 BREACHED. Confirms detector logic is sound — previous BULL_OB/BEAR_OB zero emission was data-driven (synthetic flat bars), not detector bug. Bull bias (20 BULL_OB vs 2 BEAR_OB across 252 weeks) reflects real bull market over lookback period (NIFTY ~22,500 → recent peaks above 26,000 with episodic pullbacks), not detector defect.
+- Fix via sed: `dt_ist = bar["date"].astimezone(IST) if bar["date"].tzinfo else bar["date"].replace(tzinfo=IST)`. New logic: if bar["date"] already has tzinfo (it does, from Kite as IST) → astimezone(IST) is a no-op; if tzinfo missing → assume IST (safe fallback). Verified dry-run 375 bars/strike post-fix.
 
-- **`prev_move < 0` constraint observation in `detect_weekly_zones()`:** still trims real BULL_OB candidates even with real OHLC. Apr-13 (+2.27% bullish week) preceded by Apr-06 (+4.26% also bullish), so Apr-13 didn't generate a BULL_OB. Filed TD-070 to relax to "any bearish candle in last N weeks" per ICT canonical definition.
+**Phase 6 — Architecture conversation INITIATED, UNRESOLVED:**
 
-**Phase 7 — Pine static rewrite shipped:**
+- Operator priorities locked: (P1) primary data ingestion stable on AWS; (P2) derived layer stays Local; (P3) ICT structures correct (TD-079); (P4) pull related TDs; (P5) open to architectural re-look.
 
-- **`merdian_ict_htf_zones_s20.pine`** generated with 14 zones from tonight's rebuild (NIFTY 7 + SENSEX 7) — clean OHLC, no stale M5 noise from earlier today's synthetic-flat-bar detection. Color spec applied per user direction: BULL_OB green (#1B8C3E), BULL_FVG light green (#6FCF7C), BEAR_OB red (#B22222), BEAR_FVG light red (#F08080), white text labels, PDH/PDL stay yellow (D) / orange (W) per liquidity-vs-directional distinction. Tier assignment: T1 D + W within 2% (4 zones each symbol), T2 W 2-5% from spot (2 zones BULL_FVG each), T3 W >5% from spot ghost no label (1 zone BULL_OB each).
+- Phase α 4 questions stated but UNANSWERED: (Q1) zone validity model — recommended (a) pure price-based canonical; (Q2) AWS migration scope — recommended (b) primary layer (capture + zones + runner); (Q3) token reliability work — recommended (a) investigate Dhan token life FIRST; (Q4) today's session shape — recommended discussion-only Phase α + ADR draft.
 
-- **Pre-flight verification of v2.1 cycle behavior** (deferred to tomorrow morning): 09:16:02 IST first cycle on v2.1 fires; query `script_execution_log` for capture_spot_1m_v2 invocations + `hist_spot_bars_1m` for is_flat=false on today's bars; rollback to v1 if Q1 returns no rows or contract_met=False. Audit at 16:00 IST verifies real OHLC end-to-end.
+- ENH-93 candidate filed: replay/simulation harness mimicking live runner for outside-market-hours testing. Per V18G § 7.2 the live AWS shadow runner cycle is 6 ordered scripts: compute_gamma → compute_volatility → build_momentum → build_market_state → build_trade_signal → compute_options_flow. Existing reconstruction tooling cited (`replay_shadow_for_date_local.py`, `reconstruct_shadow_for_date_local_v3.py`, `backfill_gamma_metrics.py`, `backfill_volatility_metrics.py`, `backfill_market_state.py` — all write to `hist_*` tables not live tables, hence ENH-86 distinct from existing tooling).
+
+**CRITICAL LESSONS Session 22:**
+- (a) Dhan endpoint may have per-token instability the spot endpoint doesn't share — token issued at 08:24 served capture_spot 97% but option chain 50%. Not a generic Dhan-down event; specific to option chain.
+- (b) When laptop was OFF pre-market, double-start at boot + manual creates competing process trees. May matter for token lifecycle.
+- (c) NIFTY weekly is now Tuesday (per NSE 2025+ change), SENSEX stays Thursday — same-day backfill may pull 2 SENSEX expiries (today + next-Thursday) but only 1 NIFTY (next-Tuesday). Was unexpected; documented for future backfills.
+- (d) Kite returns IST-tagged datetimes for option chain `historical_data` calls — `.replace(tzinfo=UTC)` is the canonical timezone bug pattern, never apply to Kite output. (TD-084.)
+- (e) `find_dotenv()` fails in heredoc context — use file approach `load_dotenv("/path/.env")` or write to `/tmp/script.py` and invoke. Hit twice in S22.
 
 ---
 
-## This session (Session 21)
+## This session (Session 23)
 
 | Field | Value |
 |---|---|
-| **Goal** | TBD by operator. Several priorities lined up; pick ONE per Rule 3. |
+| **Date** | 2026-05-08 (Friday) — TBD. |
+| **Goal** | Operator's call. Primary candidates: (P0) Watch 09:15 cron — does Dhan option chain ingest fail again? Reproducer test for TD-080. (P1) Architecture conversation Phase α — operator answers Q1-Q4; draft ADR for TD-079. (P2) Documentation closeout if any gaps from S22 rewrite. (P3) ENH-93 replay harness build. |
 | **Type** | Operator's call — engineering / operations / research. |
 | **Success criterion** | Defined when goal is set. |
 
-### Carry-forward priority queue (ordered by recommended priority for Session 21):
+### Carry-forward priority queue (ordered by recommended priority for Session 23):
 
 | Priority | Item | Why |
 |---|---|---|
-| **A** | Verify v2.1 first cycle 09:16 IST tomorrow + 16:00 IST audit | Critical to confirm Phase 2a deployment works on first live cycle. Verification SQL: (Q1) `SELECT exit_code, exit_reason, contract_met, actual_writes FROM script_execution_log WHERE script_name='capture_spot_1m_v2.py' AND started_at >= CURRENT_DATE ORDER BY started_at DESC LIMIT 5;` (Q2) `SELECT is_flat = (open=high AND high=low AND low=close) FROM hist_spot_bars_1m WHERE trade_date = CURRENT_DATE AND time >= '09:15';` Expect Q1 multiple rows with exit_code=0 contract_met=true; expect Q2 is_flat=false for all rows. If failed, rollback path documented in CURRENT.md `## Rollback path` section. |
-| **B** | TD-067 — intraday backfill detector for Apr 1 → today | Now that real OHLC exists in `hist_spot_bars_1m` for Apr 1 → May 5, build `backfill_ict_zones.py` that walks each day's bars and runs `ICTDetector` on each to populate historical intraday pattern record we never had. Should fire all 4 pattern types now that data is real. ~30 min build + run. |
-| **C** | TD-069 — investigate why D timeframe doesn't generate OB/FVG | W generates 33 OB/FVG NIFTY + 35 SENSEX with real data. D generates 0 even with same real data. Code review of `detect_daily_zones()` vs `detect_weekly_zones()`. May reveal threshold mismatch (D uses different `OB_MIN_MOVE_PCT`?) or data range issue. |
-| **D** | Phase 2b — migrate `capture_spot_1m_v2.py` to Meridian AWS | Final architectural state. Local stabilization completed Phase 2a; AWS is the production target. Risk: Meridian AWS already runs `ws_feed_zerodha.py` for breadth; adding capture_spot_1m_v2 alongside requires no new credentials but does require systemd or cron entry coordination. Estimate 1-2 sessions. |
-| **E** | TD-070 — relax `prev_move < 0` filter in `detect_weekly_zones()` | Detector tuning. ICT canonical: BULL_OB requires opposing bearish candle in vicinity, not strictly prior week. Fix expands BULL_OB candidate pool. May produce 5-10 more BULL_OBs in lookback. Low-risk one-line change. |
-| **F** | TD-071 — fix `expire_old_zones()` order bug | Stale 2025 zones still showing ACTIVE because expire runs BEFORE upsert in `build_ict_htf_zones.py`. Order should be: upsert → recheck → expire. Investigate via code review. |
+| **P0** | Reproducer test for TD-080 Dhan option chain outage | Resume 09:15 IST cron — does ingest_option_chain_local.py fail again? Clean → today was unique (likely operator-laptop-OFF triggered something specific); broken → reproducer in hand for root-cause work. Without this controlled test we can't escape the 6-hypothesis refutation cycle. |
+| **P0b** | TD-078 closure verification — Apr-13 BULL_OB SQL | Session 21 filed TD-078 as PENDING because empirically the multi-week lookback in TD-070 v2 may not be firing as designed. SQL: `SELECT * FROM ict_htf_zones WHERE timeframe='W' AND pattern_type='BULL_OB' AND source_bar_date='2026-04-13'` — expect a row if TD-070 v2 actually relaxed prev_move filter correctly. |
+| **P1** | Architecture conversation Phase α (operator answers Q1-Q4) | Recommended sequence: (a) ADR-005 zone validity model rewrite per TD-079 — pure price-based, OB/FVG `valid_to=NULL`, PDH/PDL keep date-expire; (b) ADR-006 AWS migration scope decision; (c) Token reliability investigation (TD-080) ordering vs migration. |
+| **P2** | TD-079 zone-validity rewrite implementation (after ADR-005) | Architectural defect bleeding signal quality. ADR drafted before code. Pipeline change is non-trivial: `expire_old_zones()` must split logic by pattern_type; backfill pass must restore wrongly-expired W zones. |
+| **P3** | ENH-93 replay harness build | If TD-080 reproducer fails at 09:15, focus shifts here. Use existing `backfill_*` chain (write to hist_*) as starting point, add live-table mode (`--namespace=replay` or env-var injection). |
+| **P4** | Commit S21 + S22 work to Local main | Session 21 patches uncommitted. MALPHA AWS dirty. Single-commit pattern broken — fix at session 23 start before any new work. |
+| **P5** | TD-073 momentum direction lag investigation | S21-filed HIGH. Momentum lagged 700pt rally May 6 by ~60 min. Worth investigating if signal builder is genuinely slow. |
+| **P6** | TD-074 ENH-77 BULL_OB AFTERNOON NIFTY hard skip review | S21-filed MED. Blocked the only TIER1 signal — gate is too aggressive. |
 
 ### Files / tables / items relevant for next session
 
-- **`capture_spot_1m_v2.py`** — patched canonical (Session 20 Phase 2a deployment, Local). Backup at `capture_spot_1m.py` (v1 untouched).
-- **`merdian_daily_audit.py`** — full rewrite Session 20. Backup at `.pre_s20.bak`.
-- **`run_daily_audit.bat`** — new wrapper for Task Scheduler invocation.
-- **Task Scheduler `MERDIAN_Spot_1M`** — repointed to v2 with full `pythonw.exe` path.
-- **Task Scheduler `MERDIAN_Daily_Audit`** — repointed to bat wrapper.
-- **`hist_spot_bars_1m` table** — primary observability target for v2.1 verification.
-- **`script_execution_log` table** — secondary verification target for v2.1 deployment.
-- **`ict_htf_zones` table** — 80 zones from tonight's rebuild; tomorrow morning's regeneration will overlay intraday zones too.
-- **`/home/claude/output/merdian_ict_htf_zones_s20.pine`** — Pine static rewrite ready for paste into TradingView (replaced by tomorrow's dashboard refresh).
-
-### Rollback path (if v2.1 fails tomorrow morning)
-
-```powershell
-$action = New-ScheduledTaskAction `
-  -Execute "C:\Users\balan\AppData\Local\Programs\Python\Python312\pythonw.exe" `
-  -Argument "C:\GammaEnginePython\capture_spot_1m.py" `
-  -WorkingDirectory "C:\GammaEnginePython"
-Set-ScheduledTask -TaskName "MERDIAN_Spot_1M" -Action $action
-```
-
-Verify with `Get-ScheduledTask -TaskName "MERDIAN_Spot_1M" | Select -ExpandProperty Actions | Format-List`.
+- **`build_ict_htf_zones.py`** — Session 21 TD-070 v1+v2 + TD-071 stack applied, uncommitted; Session 22 confirmed working at 08:45 IST cron. Pending: TD-079 zone-validity rewrite (ADR-005 first).
+- **`ingest_option_chain_local.py`** — primary observability target for TD-080 reproducer at 09:15 IST.
+- **`refresh_dhan_token.py`** — Local + AWS variants; investigate per-token lifecycle for TD-080.
+- **`script_execution_log` table** — primary diagnostic surface (filter by script_name + started_at to track ingest_option_chain failure pattern).
+- **`option_chain_snapshots` table** — gap detection: `SELECT date_trunc('5 min', created_at) AS bin, COUNT(*) FROM option_chain_snapshots WHERE created_at::date = '2026-05-07' GROUP BY 1 ORDER BY 1` — shows 64 missing windows.
+- **`hist_option_bars_1m` table** — backfilled rows from S22 are the recovery substrate for ENH-93 replay reconstruction.
+- **`ict_htf_zones` table** — TD-079 audit: `SELECT pattern_type, status, COUNT(*) FROM ict_htf_zones WHERE timeframe='W' AND zone_high > 78000 GROUP BY 1,2`.
+- **TradingView chart Pine** — has S22 36-zone overlay; missing all >78k resistances (TD-079 visible defect).
 
 ### DO NOT REOPEN this session
 
-- ❌ TD-068 capture_spot_1m flat-bar architecture — RESOLVED Session 20, v2.1 deployed
-- ❌ Spot data backfill Apr 1 → May 5 — DONE, 16,500 clean rows verified
-- ❌ Audit task script broken from Session 19 — RESOLVED with full rewrite
-- ❌ Color spec for Pine — settled (BULL/BEAR red/green light/dark, white labels, PDH/PDL keep yellow/orange)
-- ❌ Pine zone selection criteria — settled (live with overlap as accurate ICT clustering, no merge filter)
-- ❌ MALPHA AWS vs Meridian AWS confusion — settled (MALPHA = Kite gateway only, no Meridian code; tonight's backfill on MALPHA was undesirable but accepted, not a precedent)
-- ❌ Dhan REST OHLC support question — settled via web-fetch of dhanhq.co/docs/v2/historical-data; `/v2/charts/intraday` returns full OHLC arrays
-- ❌ Hypothesis on Dhan filler bars — settled via probe; real OHLC during market hours, V=0+flat post-market
+- ❌ Six refuted Dhan outage hypotheses (token sync, battery flag side-effect, refresh_dhan_token competing, MALPHA Dhan competition, stale-token daemon, shadow_runner memory cache) — all verified refuted Session 22; do not re-run those checks without new evidence.
+- ❌ TD-070 v2 dedup logic — verified working at 08:45 IST cron Session 22 with 0 ON CONFLICT errors.
+- ❌ TD-071 expire-after-recheck pipeline order — verified working at 08:45 IST cron Session 22 with 18 stale W zones flipped EXPIRED correctly.
+- ❌ TD-072 battery flags — verified persistent across Session 22; no new gaps observed in scheduled tasks.
+- ❌ TD-084 timezone bug — RESOLVED Session 22 same-session; sed-fix verified 375 bars/strike post-fix; do not reopen.
+- ❌ Backfill execution path (Spot via `backfill_spot_zerodha.py`, Option via `backfill_option_zerodha_OI_FIXED.py`) — settled, MALPHA is the venue for both per Session 20 directive (Kite credentials live there).
 
 ---
 
-## Live state snapshot (at Session 21 start, 2026-05-05 close)
+## Live state snapshot (at Session 23 start, 2026-05-07 close)
 
 | Component | State |
 |---|---|
-| **Local** | v2.1 `capture_spot_1m_v2.py` deployed and Task Scheduler swapped (pythonw.exe full path). v1 backed up at `capture_spot_1m.py` for rollback. Audit script rewritten. All 13+ MERDIAN_* tasks operational. No zombie Python processes. |
-| **AWS (MERDIAN, `i-0e60e4ed9ce20cefb`, `ssm-user@ip-172-31-35-90`)** | NOT touched this session. `ws_feed_zerodha.py` continues to stream NIFTY ticks to `market_ticks` table (26,537 today verified). `ingest_breadth_from_ticks.py` continues to produce breadth from those ticks. Phase 2b migration of capture_spot_1m_v2 deferred. |
-| **AWS (MALPHA, `ubuntu@13.51.242.119`, `~/meridian-alpha`)** | Kite gateway only — NOT Meridian. Has `backfill_spot_zerodha.py` with extended BACKFILL_DATES from tonight's backfill (uncommitted, undesirable). Will not be used for Meridian code going forward per user directive. |
+| **Local** | S21 production patches uncommitted in working tree (build_ict_htf_zones.py with TD-070 v1+v2 + TD-071 stack); 8 Task Scheduler tasks have battery flags from S21 TD-072 fix. No zombie Python processes. capture_spot_1m_v2 verified working at 09:16:02 IST first-cycle Session 21. |
+| **AWS (MERDIAN, `i-090957ed4ce8877f7`, `ssm-user@ip-172-31-35-90`)** | NOT touched Session 21 or Session 22 (only investigated). `ws_feed_zerodha.py` continues to stream NIFTY ticks. `ingest_breadth_from_ticks.py` continues to produce breadth from those ticks. Phase 2b migration of capture_spot_1m_v2 still deferred. **`ingest_option_chain_local.py` failing intermittently — TD-080 OPEN; root cause unconfirmed.** |
+| **AWS (MALPHA, `ubuntu@13.51.242.119`, `~/meridian-alpha`)** | Kite gateway only — NOT Meridian. Has `backfill_spot_zerodha.py` + `backfill_option_zerodha_OI_FIXED.py` with extended BACKFILL_DATES from S22 backfill (uncommitted). Option script has TD-084 timezone fix applied (uncommitted). `.bak_S22` preserved. Will not be used for Meridian code going forward per S20 directive — but **Kite is now the de-facto recovery path for Dhan outages, validated end-to-end S22**. |
 | **Critical items (C-N)** | None new. |
-| **Tech debt (active)** | TD-067, TD-069, TD-070, TD-071 NEW Session 20. TD-068 RESOLVED same-session. Plus all pre-Session-20 active TDs unchanged (TD-029, TD-030, TD-031, TD-046, TD-049-052, TD-053-057, TD-059, TD-061, TD-062, TD-063). |
-| **ENH in flight** | No new ENH this session (operational/data integrity work). ENH-88 still BUILT NOT DEPLOYED awaiting verification of OB signal flow on real OHLC. ENH-90 CANDIDATE deferred for N expansion. ENH-91 + ENH-92 SHIPPED (Session 17). |
-| **Pine on TradingView** | S20 14-zone overlay ready in `/home/claude/output/merdian_ict_htf_zones_s20.pine` for paste; tomorrow morning's dashboard refresh will produce live overlay with intraday zones included. |
-| **Spot data quality** | hist_spot_bars_1m has 16,500 clean OHLC rows Apr 1 → May 5 for both NIFTY+SENSEX. 0 flats. Verified post-DELETE. |
-| **Live writer** | v2.1 `capture_spot_1m_v2.py` armed; first live cycle tomorrow 09:16:02 IST. |
-| **Trading calendar** | 2026-05-06 (Wed) is open trading day. v2.1 verification opportunity. |
+| **Tech debt (active)** | TD-079 (S2 HIGH) NEW Session 22 — zone date-expiry discards unbreached resistances, architectural defect. TD-080 (S2 HIGH) NEW Session 22 — Dhan option chain endpoint intermittent 401s, root cause unconfirmed. TD-081 (S2 HIGH) NEW Session 22 — no data-freshness guard between primary ingestion and derived layers. TD-082 (S3) NEW Session 22 — contract miscalibration on ingest_option_chain_local.py backfill spike of 482 writes vs expected 50 logged as success. TD-083 (S4 LOW) NEW Session 22 — ExecutionLog rejects OUTSIDE_MARKET_HOURS and NO_DATA exit_reasons from capture_spot_1m_v2. TD-073 (S2 HIGH) NEW Session 21 — momentum direction lagged 700pt rally May 6 by ~60 min. TD-074 (S3 MED) NEW Session 21 — ENH-77 BULL_OB AFTERNOON NIFTY hard skip blocked the only TIER1 signal. TD-075 (S3 MED) NEW Session 21 — confidence threshold 60 vs observed max 45. TD-076 (S4 LOW) NEW Session 21 — SENSEX DTE gate persistent block on weekly expiry. TD-077 (S4 LOW) NEW Session 21 — wide FVG zones during volatile weeks lack outlier filter. TD-078 (S3) NEW Session 21 — TD-070 closure verification incomplete. TD-067, TD-069 from Session 20 still active. TD-061, TD-062, TD-063 from Session 17 still active. TD-029, TD-030, TD-031, TD-046, TD-049-052, TD-053-057, TD-059 still active. **Closed Session 22:** TD-084 (UTC/IST timezone bug). **Closed Session 21:** TD-070, TD-071, TD-072. |
+| **ENH in flight** | ENH-93 CANDIDATE — replay/simulation harness, filed Session 22, deferred decision tonight. ENH-88 still BUILT NOT DEPLOYED awaiting verification of OB signal flow on real OHLC. ENH-90 CANDIDATE deferred for N expansion. ENH-91 + ENH-92 SHIPPED Session 17. |
+| **Pine on TradingView** | S22 36-zone overlay (10 HTF + intraday merged); **TD-079 visible defect — all resistances above 78k missing** because date-expired despite being unbreached structurally. Pending TD-079 fix. |
+| **Spot data quality** | hist_spot_bars_1m has clean OHLC + S22 750-row backfill for 2026-05-07. NIFTY+SENSEX both. 1 boundary flat each at 15:29 (acceptable artifact). |
+| **Option data quality (today)** | hist_option_bars_1m +24,749 rows for 2026-05-07 from S22 Kite backfill. **option_chain_snapshots has 64 missing 5-min windows from outage — permanently lost (real-time-only Dhan endpoint).** Per-strike OHLC recovered allows ATM straddle reconstruction + basic IV via inverse Black-Scholes. |
+| **Live writer** | v2.1 `capture_spot_1m_v2.py` verified working since Session 21 09:16:02 IST first cycle. Continues healthy at 97% success rate Session 22 (371/378 cycles). Phase 2b AWS migration still deferred. |
+| **Trading calendar** | 2026-05-08 (Fri) is open trading day. NIFTY weekly expiry was Tue 2026-05-12; SENSEX weekly is Thu 2026-05-14. |
 
 ---
 
 ## Mid-session checkpoints (per Session Management Rule 1)
 
-*Reset by Session 21 start.*
+*Reset by Session 23 start.*
 
 ---
 
@@ -170,6 +166,63 @@ Verify with `Get-ScheduledTask -TaskName "MERDIAN_Spot_1M" | Select -ExpandPrope
 ☐ AWS sync if production code changed (git push + AWS git pull)
 ☐ Re-enable any disabled Task Scheduler tasks before next market open
 ```
+
+---
+
+## Previous session (Session 21) — preserved per no-crunch directive
+
+| Field | Value |
+|---|---|
+| **Date** | 2026-05-06 (Wednesday — Session 21). |
+| **Concern** | Resumed Session 20 carry-forward — verify v2.1 first cycle (PASS, capture_spot_1m_v2 fired clean 09:16:02 IST with real OHLC, contract_met=true), close TD-070 (BULL_OB single-bar prior-direction filter over-restrictive in detect_weekly_zones), close TD-071 (expire_old_zones order bug allowing stale 2025 zones to persist as ACTIVE), close TD-072 (22-min Task Scheduler gap 13:25-13:47 IST traced to power-source change events). |
+| **Type** | Engineering — 3 TDs closed via patch deployment (3 patch scripts using v3 patch canon: read_bytes+utf-8-sig, normalize CRLF→LF, ast.parse validate, idempotency guard, write_bytes preserve LF). 6 TDs filed. 0 commits at session close (single-commit pattern broken). |
+| **Outcome** | DONE for primary patches; documentation slipped — **session_log.md never received Session 21 entry at session end**, rectified retroactively in Session 22 closeout. **TD-070 v1 patch:** `fix_td070_weekly_ob_lookback.py` replaced single-bar `prior_move < 0` check in detect_weekly_zones() with 8-week unbreached-anchor lookback via new `_find_unbreached_anchor()` helper (TD070_LOOKBACK_WEEKS = 8); symmetric BULL_OB + BEAR_OB; body-based breach test; most-recent-bearish anchor selection. **TD-071 patch:** `fix_td071_zone_pipeline_order.py` rewrote expire_old_zones() — dropped `.eq("status","ACTIVE")` filter, added `.in_("timeframe",["W","D"])` (H carve-out per operator), added `.neq("status","EXPIRED")` idempotency guard; pipeline reorder in main(): expire moved from BEFORE upserts to AFTER recheck_breached_zones(); final order: detect → upsert(ACTIVE) → recheck(price-breach) → expire(date). **TD-070 v2 dedup fix:** Initial deploy of v1 crashed live with Postgres 21000 'cannot affect row a second time' error on upsert ON CONFLICT; root cause: 8-week lookback can produce multiple zone entries from same source-bar-date → same conflict key (symbol, timeframe, pattern_type, source_bar_date, zone_high, zone_low); fixed via `fix_td070_v2_dedup.py` adding `_dedup_zones_by_conflict_key()` to collapse zones matching upsert ON CONFLICT key, keeping earliest valid_from. Backups: `_PRE_S21.py`, `_PRE_S21_TD071.py`, `_PRE_TD070V2.py`. **TD-072 patch:** 22-min Task Scheduler gap traced to power-source change events (battery on/off transitions during market hours); PowerShell loop set `DisallowStartIfOnBatteries=$false` and `StopIfGoingOnBatteries=$false` on 8 market-hours tasks. **Session 21 verification (live rebuild 18:33 IST):** NIFTY 37 W zones written + SENSEX 39 W zones written = 78 total; zero ON CONFLICT errors; SQL confirmed 18 stale BREACHED W zones flipped to EXPIRED correctly. |
+| **Git start → end** | Local Windows: `d7eb8c0` (S20 closeout) → uncommitted (single-commit pattern interrupted; production patches in working tree at Session 22 start). MALPHA AWS: not touched. Meridian AWS: not touched. |
+| **Files changed (code)** | `C:\GammaEnginePythonuild_ict_htf_zones.py` (TD-070 v1 + TD-071 + TD-070 v2 dedup stack applied — commit pending); 8 Task Scheduler tasks have battery flags disabled (TD-072 fix). |
+| **Files added (untracked, working dir)** | `C:\GammaEnginePythonix_td070_weekly_ob_lookback.py`, `C:\GammaEnginePythonix_td071_zone_pipeline_order.py`, `C:\GammaEnginePythonix_td070_v2_dedup.py`, `C:\GammaEnginePythonuild_ict_htf_zones.py._PRE_S21`, `C:\GammaEnginePythonuild_ict_htf_zones.py._PRE_S21_TD071`, `C:\GammaEnginePythonuild_ict_htf_zones.py._PRE_TD070V2`. |
+| **Files modified (docs)** | None at Session 21 close. session_log.md, CURRENT.md, tech_debt.md, merdian_reference.json, MERDIAN_Enhancement_Register.md, CLAUDE.md all NOT updated — documentation debt accrued; rectified retroactively in Session 22 closeout. |
+| **Tables changed** | None (schema). Data: `ict_htf_zones` 18 stale W zones flipped from ACTIVE/BREACHED to EXPIRED; 78 fresh W zones written by rebuild; final state NIFTY 37 + SENSEX 39 W zones healthy. |
+| **Cron / Tasks added** | None (existing 8 tasks had battery flags reconfigured). |
+| **`docs_updated`** | NO at session close (rectified retroactively Session 22). |
+
+### What Session 21 did, in 8 bullets
+
+- **Resumed carry-forward from Session 20** — verified v2.1 first cycle PASS (capture_spot_1m_v2 fired clean 09:16:02 IST with real OHLC, contract_met=true). Phase 2a Local stabilization confirmed working in live market hours.
+
+- **TD-070 v1: BULL_OB lookback widening.** Replaced single-bar prior-direction check in detect_weekly_zones() with 8-week unbreached-anchor lookback (TD070_LOOKBACK_WEEKS = 8). New helper `_find_unbreached_anchor()`. Symmetric BULL_OB + BEAR_OB. Body-based breach test. Most-recent-bearish anchor selection. Backward-compat preserved.
+
+- **TD-071: pipeline order fix.** expire_old_zones() rewritten — dropped `.eq("status","ACTIVE")` filter, added `.in_("timeframe",["W","D"])` (H carve-out per operator), added `.neq("status","EXPIRED")` idempotency guard. Pipeline reorder: detect → upsert → recheck → expire (was: expire → detect → upsert → recheck).
+
+- **TD-070 v2 dedup: live deploy crash + fix.** Initial v1 deploy crashed with Postgres 21000 'cannot affect row a second time' on upsert ON CONFLICT. Root cause: 8-week lookback produces multiple zone entries from same source-bar-date with same conflict key. `_dedup_zones_by_conflict_key()` collapses zones matching upsert ON CONFLICT key, keeping earliest valid_from. Backups preserved.
+
+- **TD-072: 22-min Task Scheduler gap traced to battery events.** PowerShell loop set `DisallowStartIfOnBatteries=$false` and `StopIfGoingOnBatteries=$false` on 8 market-hours tasks: MERDIAN_Spot_1M, MERDIAN_PreOpen, MERDIAN_IV_Context_0905, MERDIAN_PO3_SessionBias_1005, MERDIAN_Market_Tape_1M, MERDIAN_HB_Watchdog, MERDIAN_ICT_HTF_Zones_0845, MERDIAN_Intraday_Supervisor_Start.
+
+- **Verification rebuild 18:33 IST:** NIFTY 37 W zones + SENSEX 39 W zones = 78 total, zero ON CONFLICT errors, 18 stale W zones flipped to EXPIRED correctly.
+
+- **TDs filed (PENDING for S22+):** TD-073 HIGH (momentum direction lagged 700pt rally May 6 by ~60 min); TD-074 MED (ENH-77 BULL_OB AFTERNOON NIFTY hard skip blocked the only TIER1 signal); TD-075 MED (confidence threshold 60 vs observed max 45); TD-076 LOW (SENSEX DTE gate persistent block on weekly expiry); TD-077 LOW (wide FVG zones during volatile weeks lack outlier filter); TD-078 PENDING (TD-070 closure verification incomplete — empirically multi-week lookback may not be firing).
+
+- **Operational learnings recorded:** PowerShell `copy /Y` doesn't work — use `Copy-Item -Force` (truncated `.p` file caused TD-070 v2 deploy confusion); dedup hides 'missing' zones (Apr-13 BULL_OB folded into Apr-06 anchor — semantically correct); multi-rebuild status flips are idempotent — recheck and expire are date-stable; PowerShell `Add-Content` appends after `exit /b` making lines unreachable — use string replacement to insert before exit line.
+
+---
+
+## Previous session (Session 20 — superseded by Session 22 block above) — preserved per no-crunch directive
+
+| Field | Value |
+|---|---|
+| **Date** | 2026-05-05 (Tuesday — Session 20, very long: pre-dawn → 21:00+ IST). |
+| **Concern** | Began as TD-068 audit task fix from Session 19. Expanded into full diagnostic of `capture_spot_1m.py` synthetic-flat-bar architecture (long-standing root cause for BULL_OB/BEAR_OB zero-emission across detection history). Cascaded into spot data backfill Apr 1 → May 5. Concluded with Phase 2a deployment of v2.1 real-OHLC live writer + HTF zone rebuild + Pine static rewrite. |
+| **Type** | Engineering — multi-deliverable session: 2 production patches deployed (audit script rewrite + capture_spot_1m_v2 NEW), 1 data recovery (16,500 spot bars Apr 1 → May 5 real OHLC), 1 architectural change (live writer LTP synthetic → REST OHLC), 1 Pine static rewrite, 5 TDs filed. |
+| **Outcome** | DONE. **TD-068 RESOLVED end-to-end:** v2.1 `capture_spot_1m_v2.py` deployed to Local Task Scheduler with full `pythonw.exe` path; replaces synthetic O=H=L=C=spot from `/v2/marketfeed/ltp` with real 1-min OHLC from `/v2/charts/intraday`; v2.1 features market-hours guard + filler-bar skip for post-market filler responses; v1 untouched at `capture_spot_1m.py` for rollback. **Daily audit task fixed and rewritten:** Session 19 script broken (MimeText Python 3.12 incompat, wrong table names, malformed PostgREST queries, Task Scheduler ERROR_FILE_NOT_FOUND from bare `python`); fixed via new `run_daily_audit.bat` wrapper; full rewrite (831 lines) using Supabase Python client, three windows (pre/intra/post), per-pattern-type breakdown surfacing zero-emission as WARN. **Spot backfill Apr 1 → May 5:** 16,500 clean OHLC rows in `hist_spot_bars_1m`, 0 flats, both NIFTY+SENSEX (Kite returns SENSEX index spot OHLC despite no BSE F&O); 16 stray 15:30:00 IST boundary flat bars deleted via scoped DELETE. **HTF zones rebuilt with real OHLC:** detector now fires all 4 pattern types — W BULL_OB 2 ACTIVE / 18 BREACHED, W BULL_FVG 2 ACTIVE / 11 BREACHED, W BEAR_OB 0 ACTIVE / 2 BREACHED, W BEAR_FVG 0 ACTIVE / 2 BREACHED. Confirms detector logic sound — previous BULL_OB/BEAR_OB zero-emission was data-driven (synthetic flat bars), not detector defect. **Pine static rewrite shipped:** 14 zones (NIFTY 7 + SENSEX 7) from tonight's rebuild — clean OHLC, no stale M5 noise; new color spec applied (BULL_OB green #1B8C3E, BULL_FVG light green #6FCF7C, BEAR_OB red #B22222, BEAR_FVG light red #F08080, white text labels, PDH/PDL stay yellow/orange). |
+| **Git start → end** | Local Windows: `pending` → `pending` (operator commits at end of session per protocol). MALPHA AWS: `backfill_spot_zerodha.py` BACKFILL_DATES extended (uncommitted, undesirable but accepted — MALPHA is Kite gateway not Meridian code). Meridian AWS: not touched this session. |
+| **Local + AWS hash match** | Local advancing this session. Meridian AWS not touched. MALPHA AWS has dirty BACKFILL_DATES extension (one-off backfill, won't recur). Phase 2b AWS migration deferred to Session 21+. |
+| **Files changed (code)** | `merdian_daily_audit.py` (FULL REWRITE — 831 lines, backup `.pre_s20.bak`); `run_daily_audit.bat` (NEW wrapper); `capture_spot_1m_v2.py` (NEW — 475 lines, v2.1 with market-hours guard + filler-bar skip); Task Scheduler `MERDIAN_Daily_Audit` action updated to use bat wrapper; Task Scheduler `MERDIAN_Spot_1M` action repointed to v2 with full `pythonw.exe` path. |
+| **Files added (untracked, working dir)** | `C:\GammaEnginePython\capture_spot_1m_v2.py`, `C:\GammaEnginePython\run_daily_audit.bat`, `C:\GammaEnginePython\merdian_daily_audit.py.pre_s20.bak`, `C:\GammaEnginePython\logs\dhan_probe.py` (one-off Dhan API verification), `C:\GammaEnginePython\logs\v2_test_*.log`. Pine static rewrite `merdian_ict_htf_zones_s20.pine` ready for paste into TradingView. |
+| **Files modified (docs)** | (Session 20 closeout — recorded all 6 files updated via full downloads.) |
+| **Tables changed** | None (schema). Data: `hist_spot_bars_1m` 16,500 rows backfilled real OHLC + 16 stray flats deleted; `ict_htf_zones` 80 zones written by rebuild (NIFTY 39 + SENSEX 41 with breach status). |
+| **Cron / Tasks added** | `MERDIAN_Daily_Audit` action updated to use `run_daily_audit.bat` wrapper. `MERDIAN_Spot_1M` action repointed to `capture_spot_1m_v2.py` with full `pythonw.exe` path. No new tasks added. |
+| **`docs_updated`** | YES (S20 close). |
+
+(Full Session 20 detail bullets preserved in earlier `## Previous session (Session 19 — superseded by Session 20 block above)` block below per no-crunch directive — see preceding history.)
 
 ---
 

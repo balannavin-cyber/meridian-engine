@@ -5,7 +5,7 @@ cd /d C:\GammaEnginePython
 
 if not exist logs mkdir logs
 
-set "PYTHON_EXE=C:\Users\balan\AppData\Local\Programs\Python\Python312\python.exe"
+set "PYTHON_EXE=C:\Users\balan\AppData\Local\Programs\Python\Python312\pythonw.exe"
 set "LOG_FILE=C:\GammaEnginePython\logs\run_market_tape_1m.log"
 
 echo ================================================== >> "%LOG_FILE%"

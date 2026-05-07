@@ -174,6 +174,100 @@ def build_weekly_bars(daily_ohlcv):
     return result
 
 
+# TD-070 (Session 21, 2026-05-06): unbreached-anchor lookback helper.
+# Spec: 8-week lookback, most-recent-opposing, body-low/body-high breach test.
+TD070_LOOKBACK_WEEKS = 8
+
+
+def _find_unbreached_anchor(weekly_bars, i, direction):
+    """Find the most recent unbreached opposing-direction weekly bar in the
+    8-week lookback window before bar i.
+
+    Args:
+        weekly_bars: list of weekly bar dicts with open/high/low/close/week_end.
+        i:           index of the impulse (current) bar in weekly_bars.
+        direction:   "BULL" -> looking for bearish anchor; "BEAR" -> bullish.
+
+    Returns:
+        The anchor bar dict if found and unbreached. None otherwise.
+
+    Breach rule (body-based, TD-070 spec):
+        BULL anchor (bearish bar) is breached if ANY intervening bar K+1..i-1
+            has low < anchor body_low (= min(open, close)).
+        BEAR anchor (bullish bar) is breached if ANY intervening bar K+1..i-1
+            has high > anchor body_high (= max(open, close)).
+
+    Backward-compat: when the prior bar (i-1) is opposing, no intervening bars
+    exist; the anchor is vacuously unbreached. Behavior matches pre-TD-070 code.
+    """
+    if direction not in ("BULL", "BEAR"):
+        raise ValueError(f"direction must be BULL or BEAR, got {direction!r}")
+
+    start = max(0, i - TD070_LOOKBACK_WEEKS)
+    # Walk K from i-1 down to start (most recent first).
+    for k in range(i - 1, start - 1, -1):
+        anchor = weekly_bars[k]
+
+        # Filter to the right anchor direction.
+        if direction == "BULL":
+            is_anchor = anchor["close"] < anchor["open"]   # bearish bar
+        else:  # BEAR
+            is_anchor = anchor["close"] > anchor["open"]   # bullish bar
+
+        if not is_anchor:
+            continue
+
+        # Check breach by intervening bars k+1 .. i-1 (may be empty).
+        body_low  = min(anchor["open"], anchor["close"])
+        body_high = max(anchor["open"], anchor["close"])
+        breached = False
+        for j in range(k + 1, i):
+            interv = weekly_bars[j]
+            if direction == "BULL":
+                if interv["low"] < body_low:
+                    breached = True
+                    break
+            else:  # BEAR
+                if interv["high"] > body_high:
+                    breached = True
+                    break
+
+        if not breached:
+            return anchor
+        # else continue scanning further back
+
+    return None
+
+
+def _dedup_zones_by_conflict_key(zones):
+    """Dedup zones list by the upsert ON CONFLICT key.
+
+    TD-070 v2 (Session 21, 2026-05-06): when multiple impulse weeks find
+    the same unbreached anchor via _find_unbreached_anchor(), both produce
+    OB zones with identical (symbol, timeframe, pattern_type,
+    source_bar_date, zone_high, zone_low). upsert_zones() ON CONFLICT
+    matches that exact key, so the batched upsert fails with Postgres 21000
+    (cannot affect row a second time).
+
+    Resolution: collapse duplicates to the entry with the earliest
+    valid_from. Zone is "published" the moment the first impulse confirms
+    it; subsequent impulses are re-confirmations of the same zone.
+    """
+    seen = {}
+    for z in zones:
+        key = (
+            z["symbol"],
+            z["timeframe"],
+            z["pattern_type"],
+            z["source_bar_date"],
+            z["zone_high"],
+            z["zone_low"],
+        )
+        if key not in seen or z["valid_from"] < seen[key]["valid_from"]:
+            seen[key] = z
+    return list(seen.values())
+
+
 def detect_weekly_zones(weekly_bars, symbol):
     """
     Detect weekly-level ICT zones.
@@ -222,35 +316,43 @@ def detect_weekly_zones(weekly_bars, symbol):
         curr_move = pct(curr["open"], curr["close"])
         prev_move = pct(prev["open"], prev["close"])
 
-        if curr_move >= OB_MIN_MOVE_PCT and prev_move < 0:
-            # Bullish impulse week — prior bearish week is the OB
-            zones.append({
-                "symbol":       symbol,
-                "timeframe":    "W",
-                "pattern_type": "BULL_OB",
-                "direction":    +1,
-                "zone_high":    max(prev["open"], prev["close"]),
-                "zone_low":     min(prev["open"], prev["close"]),
-                "valid_from":   str(valid_from),
-                "valid_to":     str(valid_to + timedelta(weeks=4)),  # persist 4 weeks
-                "source_bar_date": str(src_date),
-                "status":       "ACTIVE",
-            })
+        # TD-070: 8-week unbreached-anchor lookback for BULL_OB.
+        # Find most recent bearish week in i-1 .. max(0, i-8) that is unbreached
+        # by intervening weeks (no intervening low < anchor body_low).
+        if curr_move >= OB_MIN_MOVE_PCT:
+            anchor = _find_unbreached_anchor(weekly_bars, i, direction="BULL")
+            if anchor is not None:
+                zones.append({
+                    "symbol":       symbol,
+                    "timeframe":    "W",
+                    "pattern_type": "BULL_OB",
+                    "direction":    +1,
+                    "zone_high":    max(anchor["open"], anchor["close"]),
+                    "zone_low":     min(anchor["open"], anchor["close"]),
+                    "valid_from":   str(valid_from),
+                    "valid_to":     str(valid_to + timedelta(weeks=4)),  # persist 4 weeks
+                    "source_bar_date": str(anchor["week_end"]),
+                    "status":       "ACTIVE",
+                })
 
-        if curr_move <= -OB_MIN_MOVE_PCT and prev_move > 0:
-            # Bearish impulse week — prior bullish week is the OB
-            zones.append({
-                "symbol":       symbol,
-                "timeframe":    "W",
-                "pattern_type": "BEAR_OB",
-                "direction":    -1,
-                "zone_high":    max(prev["open"], prev["close"]),
-                "zone_low":     min(prev["open"], prev["close"]),
-                "valid_from":   str(valid_from),
-                "valid_to":     str(valid_to + timedelta(weeks=4)),
-                "source_bar_date": str(src_date),
-                "status":       "ACTIVE",
-            })
+        # TD-070: 8-week unbreached-anchor lookback for BEAR_OB (symmetric).
+        # Find most recent bullish week in i-1 .. max(0, i-8) that is unbreached
+        # by intervening weeks (no intervening high > anchor body_high).
+        if curr_move <= -OB_MIN_MOVE_PCT:
+            anchor = _find_unbreached_anchor(weekly_bars, i, direction="BEAR")
+            if anchor is not None:
+                zones.append({
+                    "symbol":       symbol,
+                    "timeframe":    "W",
+                    "pattern_type": "BEAR_OB",
+                    "direction":    -1,
+                    "zone_high":    max(anchor["open"], anchor["close"]),
+                    "zone_low":     min(anchor["open"], anchor["close"]),
+                    "valid_from":   str(valid_from),
+                    "valid_to":     str(valid_to + timedelta(weeks=4)),
+                    "source_bar_date": str(anchor["week_end"]),
+                    "status":       "ACTIVE",
+                })
 
         # ── Weekly FVG ────────────────────────────────────────────────
         if i >= 2:
@@ -292,6 +394,11 @@ def detect_weekly_zones(weekly_bars, symbol):
                         "source_bar_date": str(src_date),
                         "status":       "ACTIVE",
                     })
+
+    # TD-070 v2 (Session 21): dedup by upsert conflict key. Multiple impulse
+    # weeks finding the same unbreached anchor produce duplicate OB rows
+    # that crash the batched upsert (Postgres 21000). See helper docstring.
+    zones = _dedup_zones_by_conflict_key(zones)
 
     return zones
 
@@ -605,10 +712,20 @@ def upsert_zones(sb, zones, dry_run=False):
 
 def expire_old_zones(sb, symbol, today, dry_run=False):
     """
-    Mark zones with valid_to < today as EXPIRED.
+    Mark W and D zones with valid_to < today as EXPIRED.
+
+    TD-071 (Session 21, 2026-05-06):
+      - Widened from ACTIVE-only to status-agnostic. BREACHED zones past
+        valid_to now correctly transition to EXPIRED instead of staying
+        BREACHED forever (date is the semantic check, not status).
+      - Restricted to W and D timeframes. H (intraday) zones use 1-day
+        validity (valid_to = trade_date); their expiry basis is unclear
+        and intentionally not handled here. See TD-050.
+      - Added .neq("status", "EXPIRED") idempotency guard so rerunning
+        does not bump updated_at on already-expired rows.
     """
     if dry_run:
-        log("  DRY RUN — would expire old zones")
+        log("  DRY RUN — would expire old W/D zones (status-agnostic)")
         return
 
     try:
@@ -617,8 +734,12 @@ def expire_old_zones(sb, symbol, today, dry_run=False):
             "updated_at": datetime.utcnow().isoformat()
         }).eq("symbol", symbol).lt(
             "valid_to", str(today)
-        ).eq("status", "ACTIVE").execute()
-        log(f"  Expired old {symbol} zones before {today}")
+        ).in_(
+            "timeframe", ["W", "D"]
+        ).neq(
+            "status", "EXPIRED"
+        ).execute()
+        log(f"  Expired old W/D {symbol} zones before {today}")
     except Exception as e:
         log(f"  Warning: could not expire old zones: {e}")
 
@@ -672,7 +793,10 @@ def main():
             total_written += n
             continue
 
-        expire_old_zones(sb, symbol, target_date, dry_run)
+        # TD-071 (Session 21): expire_old_zones moved to AFTER recheck.
+        # Old order (expire-first) operated on stale data, leaving
+        # BREACHED zones past valid_to permanently BREACHED. New order
+        # is detect -> upsert(ACTIVE) -> recheck(price-breach) -> expire(date).
 
         lookback_days = max(WEEKLY_LOOKBACK * 7 + 7, DAILY_LOOKBACK + 3)
         from_date = target_date - timedelta(days=lookback_days)
@@ -719,6 +843,10 @@ def main():
         # TD-030 fix (reordered): recheck AFTER upserts so status=ACTIVE
         # upsert does not overwrite BREACHED set by recheck.
         recheck_breached_zones(sb, symbol, daily_ohlcv, str(target_date), dry_run)
+
+        # TD-071 (Session 21): expire-by-date runs LAST, against ALL zones
+        # (both ACTIVE and BREACHED). Restricted to W/D timeframes.
+        expire_old_zones(sb, symbol, target_date, dry_run)
 
     log(f"Done -- {total_written} total zones written to ict_htf_zones")
 

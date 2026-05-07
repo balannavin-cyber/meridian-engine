@@ -1,5 +1,5 @@
 ﻿$logFile = "C:\GammaEnginePython\logs\eod_breadth_refresh.log"
-$python = "C:\Users\balan\AppData\Local\Programs\Python\Python312\python.exe"
+$python = "C:\Users\balan\AppData\Local\Programs\Python\Python312\pythonw.exe"
 $scriptDir = "C:\GammaEnginePython"
 
 Add-Content $logFile "=================================================="

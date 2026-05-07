@@ -1,7 +1,7 @@
 ﻿$ErrorActionPreference = "Stop"
 
 $base = "C:\GammaEnginePython"
-$python = Join-Path $base ".venv\Scripts\python.exe"
+$python = Join-Path $base ".venv\Scripts\pythonw.exe"
 
 if (-not (Test-Path $python)) {
     $python = "python"

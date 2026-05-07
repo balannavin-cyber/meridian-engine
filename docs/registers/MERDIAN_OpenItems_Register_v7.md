@@ -54,9 +54,8 @@
 ## Section 1 — Critical Fixes
 
 ### C-07b — Pre-open capture gap (09:00-09:08 window)
-**Status:** OPEN
-
-Supervisor starts at 09:14 IST, missing the pre-open 09:08 capture window. AWS cron captures at 09:08 but only 4–5 snapshots per session — insufficient for bar construction. Architectural fix required.
+**Status:** CLOSED — 2026-05-04 (Session 18)
+**Resolution:** Migrated to TD-064 in tech_debt.md. MERDIAN_PreOpen task restored to working state, heartbeat instrumentation added, token refresh verified working. Partial closure pending Mon 09:05 IST verification evidence.
 
 All other C-series items: CLOSED — see v5.
 
@@ -132,38 +131,20 @@ Post-gate: Phase 4 promotion decision → ENH-41 code build → Execution layer 
 
 
 ### OI-11 — HTF Zone Rebuild Not Automated on AWS
-| Field | Value |
-|---|---|
-| Priority | MEDIUM |
-| Opened | 2026-04-14 |
-| Blocking | ENH-51c (AWS primary) — if runner migrates to AWS but HTF zones not rebuilt, ICT detector uses stale zones |
-| Description | build_ict_htf_zones.py --timeframe D is currently MANUAL pre-market only. Must be added as AWS cron before AWS becomes primary compute. |
-| Fix | Add to MERDIAN AWS crontab: 30 3 * * 1-5 cd /home/ssm-user/meridian-engine && /bin/bash -lc 'set -a; . .env; set +a; python3 build_ict_htf_zones.py --timeframe D >> logs/htf_zones.log 2>&1' |
-| Build when | Before ENH-51c (AWS primary promotion) |
+**Status:** CLOSED — 2026-05-04 (Session 18)
+**Resolution:** Migrated to TD-065 in tech_debt.md. Local automation already exists (MERDIAN_ICT_HTF_Zones_0845 task). .bat rc-capture bug fixed. H-zone production healthy in `ict_htf_zones` table. AWS-side automation deferred pending ENH-51c relevance.
 
 ---
 
 ### OI-12 — market_ticks Retention Cron Not Set
-| Field | Value |
-|---|---|
-| Priority | MEDIUM |
-| Opened | 2026-04-14 |
-| Blocking | Storage growth — market_ticks grows ~1,007 rows per tick event during market hours |
-| Description | market_ticks table has no retention policy. During live market hours at full tick frequency, table will grow rapidly. 2-day retention recommended. |
-| Fix | Add Supabase pg_cron job: SELECT cron.schedule('delete-old-ticks', '0 20 * * 1-5', $$DELETE FROM market_ticks WHERE ts < now() - interval ''2 days''$$); OR add to AWS post-market cron. |
-| Build when | Before ENH-51b (pipeline reads market_ticks) |
+**Status:** CLOSED — 2026-05-04 (Session 18)
+**Resolution:** Migrated to TD-066 in tech_debt.md. Retention policy remains to be implemented as pg_cron job or AWS cleanup script.
 
 ---
 
 ### OI-13 — Telegram Credentials Not in .env
-| Field | Value |
-|---|---|
-| Priority | MEDIUM |
-| Opened | 2026-04-14 |
-| Blocking | merdian_exit_monitor.py Telegram alerts — currently console-only |
-| Description | TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID missing from local .env. Exit monitor runs and polls correctly but cannot send Telegram alerts at T+30m. |
-| Fix | Add to C:\GammaEnginePython\.env: TELEGRAM_BOT_TOKEN=<token> and TELEGRAM_CHAT_ID=<chat_id>. Create bot via @BotFather if not already done. |
-| Build when | Next session |
+**Status:** CLOSED — 2026-05-04 (Session 18)
+**Resolution:** Migrated to TD-067 in tech_debt.md. Exit monitor functional but requires Telegram bot setup + .env configuration.
 
 ---
 
@@ -210,7 +191,15 @@ New operational issues will be tracked in the Enhancement Register or session ap
 | SPO-01 | DTE null in signal_snapshots | ✅ CLOSED — 2026-04-15 |
 | HIST-02 | S3 warm tier archiver | 🔵 MOVED TO ENH-52b (deferred Phase 5) |
 
-**ZERO OPEN ITEMS REMAIN.**
+### Final Session 18 cleanup (2026-05-04)
 
-*MERDIAN Open Items Register — PERMANENTLY CLOSED 2026-04-15*
-*Superseded by operational monitoring. Future items tracked in Enhancement Register or session appendices.*
+**Items migrated to tech_debt.md:**
+- C-07b → TD-064 (pre-open capture gap — PARTIAL, awaits verification)
+- OI-11 → TD-065 (HTF zone automation — RESOLVED substantively)  
+- OI-12 → TD-066 (market_ticks retention — action required)
+- OI-13 → TD-067 (Telegram credentials — action required)
+
+**ZERO OPEN ITEMS REMAIN.** All items resolved or migrated to tech_debt.md. This register is permanently closed.
+
+*MERDIAN Open Items Register — PERMANENTLY CLOSED 2026-04-15 (final cleanup 2026-05-04)*
+*Superseded by operational monitoring. Future items tracked in Enhancement Register or tech_debt.md.*

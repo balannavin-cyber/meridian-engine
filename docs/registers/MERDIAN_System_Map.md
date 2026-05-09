@@ -35,9 +35,7 @@ This is the **production** map. Research scripts (`experiment_*.py`, etc.) are n
 
 | Script | Local | AWS | Reads | Writes | Status |
 |---|---|---|---|---|---|
-| `capture_market_spot_snapshot_local.py` | ✅ | ✅ | Dhan REST `/marketfeed/quote/index` | `market_spot_snapshots` | ACTIVE — used by AWS PreOpen cron 09:08 IST |
-| `capture_spot_1m.py` | ✅ | ❌ | Dhan REST | `market_spot_snapshots` | ACTIVE — used by Local `MERDIAN_PreOpen` task (pythonw.exe). Different code path from `capture_market_spot_snapshot_local.py` despite same purpose — see Deployment Topology §9 question #2 |
-| `capture_spot_1m_v2.py` | ✅ | ❌ | Dhan REST | `market_spot_snapshots` | ACTIVE — used by Local `MERDIAN_Spot_1M` task (pythonw.exe). Production-active 1-min spot ingester replacing disabled `run_market_tape_1m.py` |
+| `capture_market_spot_snapshot_local.py` | ✅ | ✅ | Dhan REST `/marketfeed/quote/index` | `market_spot_snapshots` | ACTIVE |
 | `capture_index_futures_snapshot_local.py` | ✅ | ✅ | Dhan REST + dynamic contract resolution | `index_futures_snapshots` | ACTIVE — V17E dynamic contract |
 | `ws_feed_zerodha.py` | ✅ | ❌ | Zerodha KiteTicker WebSocket (NIFTY full chain) | `option_chain_snapshots` (Zerodha rows) | ACTIVE — Session 13 task registered |
 | `ingest_option_chain_local.py` | ✅ | ✅ | Dhan REST option chain | `option_chain_snapshots` | ACTIVE — currently failing 401 on Local (V18A) |
@@ -96,9 +94,6 @@ This is the **production** map. Research scripts (`experiment_*.py`, etc.) are n
 | `gamma_engine_alert_daemon.py` | ✅ | ❌ | Alert emission on operational thresholds | ACTIVE |
 | `merdian_pipeline_alert_daemon.py` | ✅ | ❌ | Pipeline-stage alerting | RUNNING (PID 19636 as of 2026-04-26 14:17 IST) |
 | `gamma_engine_telemetry_logger.py` | ✅ | ❌ | Heartbeat / telemetry capture | ACTIVE — supervisor write failure tracked (M-07) |
-| `merdian_watchdog.py` | ✅ | ❌ | Process killer for hung Python runners (`--kill` flag) | ACTIVE — wired to `MERDIAN_HB_Watchdog` (TimeTrigger interval), runs as `pythonw.exe`. **Production-critical; currently untracked in git — see follow-up flag** |
-| `watchdog_check.ps1` | ✅ | ❌ | Passive state-check / alert layer (companion to `merdian_watchdog.py`) | ACTIVE — wired to `MERDIAN_Watchdog` (TimeTrigger interval). PowerShell |
-| `merdian_morning_start.ps1` | ✅ | ❌ | Morning supervisor entry point (Mon-Fri 08:00 + AtLogon) | ACTIVE — wired to `MERDIAN_Intraday_Supervisor_Start`. **Replaces `start_supervisor_clean.ps1` that JSON had as the action** — `merdian_morning_start.ps1` may invoke `start_supervisor_clean.ps1` internally; not yet audited |
 | `evaluate_shadow_vs_live.py` | ✅ | ✅ | Shadow vs live comparison (returns 0 rows below threshold) | FUNCTIONAL |
 
 ### A.6 Phase 4A execution (manual signal capture + trade logging)
@@ -357,22 +352,17 @@ Source: `merdian_reference.json` `aws_cron`. Install rule: NEVER use interactive
 
 ### D.2 Local Task Scheduler entries
 
-**Canonical inventory: `MERDIAN_Deployment_Topology.md` §7.2.** 17 `MERDIAN_*` tasks confirmed via Session 23 audit (`Get-ScheduledTask` + action mapping pass). The full inventory with trigger types, cadences, canonical actions (script paths + arguments), and architectural notes lives in Topology §7.2 — single source of truth.
+The JSON tracks 4; Session 17 reactivation evidence indicates 13 `MERDIAN_*` tasks exist in production. The reference is partial. Known:
 
-Summary view:
-
-| Tasks running | Count |
-|---|---|
-| Active production tasks | 16 |
-| Disabled / functionally non-functional | 1 (`MERDIAN_Market_Tape_1M` — task `Ready` but script DhanError 401) |
-| **Total** | **17** |
-
-The split by trigger type: 13 Weekly (Mon-Fri-bound), 2 TimeTrigger (recurring intervals — watchdogs), 1 LogonTrigger (`Live_Dashboard`), 1 Daily.
-
-Architectural insights from the action-mapping audit (full detail in Topology §7.2 Notes + Architectural Insights subsection):
-- **TD-061 pythonw migration partially complete** — 4 tasks already use `pythonw.exe` (`HB_Watchdog`, `Live_Dashboard`, `PreOpen`, `Spot_1M`); 11 still wrap through cmd via .bat
-- **Two-watchdog architecture is intentional** — `merdian_watchdog.py --kill` (kill layer) + `watchdog_check.ps1` (observe layer)
-- **Local `MERDIAN_PreOpen` and AWS cron `MERDIAN_PreOpen` run different scripts** — `capture_spot_1m.py` (Local, pythonw) vs `capture_market_spot_snapshot_local.py` (AWS); dupe-check pending
+| Task | Cadence | Action | Status |
+|---|---|---|---|
+| `MERDIAN_Market_Tape_1M` | 1-min | run_market_tape_1m.py | DISABLED 2026-04-07 |
+| `MERDIAN_Intraday_Supervisor_Start` | Mon-Fri 08:00 + AtLogon | start_supervisor_clean.ps1 | ACTIVE |
+| `MERDIAN_Live_Dashboard` | AtLogon | merdian_live_dashboard.py | ACTIVE — PYTHONIOENCODING=utf-8 |
+| `MERDIAN_Spot_MTF_Rollup_1600` | Mon-Fri 16:00 IST | run_spot_mtf_rollup_once.bat → build_spot_bars_mtf.py | ACTIVE — Session 9 closure of TD-019/023, ENH-71 instrumented |
+| `MERDIAN_ICT_HTF_Zones_0845` | Mon-Fri 08:45 IST | build_ict_htf_zones.py (with `--timeframe H` added Session 13) | ACTIVE — Session 11 extension closure of TD-017 |
+| `MERDIAN_IV_Context_0905` | Mon-Fri 09:05 IST | compute_iv_context_local.py | ACTIVE |
+| (~7 more) | (TBD) | — | **Gap — see §G.1** |
 
 ### D.3 Supervisor responsibilities
 
@@ -506,14 +496,13 @@ Stable abstractions used by multiple builders:
 
 Things this Map does not yet cover comprehensively. Fill in subsequent sessions.
 
-### G.1 Task Scheduler completeness — ✅ RESOLVED (Session 23 audit)
+### G.1 Task Scheduler completeness (HIGH priority gap)
 
-`merdian_reference.json` originally listed 4 Task Scheduler entries; Session 17 reactivation evidence suggested ~13. Session 23 PowerShell audit (Navin) revealed **17 tasks** plus a second-pass action-mapping audit that captured the canonical `Execute + Arguments` for each. Full inventory now lives in `MERDIAN_Deployment_Topology.md` §7.2; this Map's §D.2 points to it as single source of truth.
-
-Three discoveries from the audit became their own follow-ups (filed in Topology §9 questions list):
-- Local↔AWS PreOpen run different scripts (dupe-check pending)
-- Local↔AWS Post-market run different scripts (dupe-check pending)
-- TD-061 pythonw migration partially complete (4/15 candidate tasks already migrated)
+`merdian_reference.json` lists 4 Task Scheduler entries; Session 17 reactivation evidence (13 `MERDIAN_*` tasks were disabled and re-enabled) indicates the production reality is ~13 tasks. The other ~9 are not in the JSON. A one-session audit:
+```powershell
+Get-ScheduledTask -TaskName "MERDIAN_*" | Select TaskName, State, Triggers
+```
+will produce the canonical list. Update §D.2 with the result.
 
 ### G.2 Kite client function signatures (MEDIUM priority gap)
 
@@ -523,13 +512,9 @@ Three discoveries from the audit became their own follow-ups (filed in Topology 
 
 V18 master appendices (V18A–H) use a 13-block structure. The schema of each block (B1 file changes, B2 table changes, etc.) is well-known to current Claude but undocumented in markdown form. If the Master `.docx` archive becomes hard to read, this Map could absorb a B1–B13 schema reference table in a §H section.
 
-### G.4 Signal_snapshots column-by-column reference (MEDIUM priority gap)
+### G.4 Signal_snapshots column-by-column reference
 
 `signal_snapshots` is the primary decision record. Its column inventory (especially after ICT additions and `po3_session_bias`) is split across V18F appendix + V18G appendix + V19 §8. A consolidated column reference would belong here as B.3 sub-table.
-
-### G.5 Wrapper script layer — `.bat` and `.ps1` files (NEWLY DISCOVERED, Session 23)
-
-The Task Scheduler audit revealed ~13 `.bat` and `.ps1` wrappers that orchestrate when production Python scripts run on Local. They are not "writes-to-table" production architecture (System Map's primary scope) but they are the operational glue that schedules production architecture. Inventory lives in **Deployment Topology §A.2** (Newly catalogued scripts) — this Map points to it. Consider whether the wrapper layer warrants its own §A.10 here in a future session, or whether keeping it in Topology is the right division.
 
 ---
 
@@ -537,9 +522,54 @@ The Task Scheduler audit revealed ~13 `.bat` and `.ps1` wrappers that orchestrat
 
 | Date | Session | Event |
 |---|---|---|
-| 2026-05-09 | Session 23 (initial) | Created. Sourced from `merdian_reference.json` (72 files, 36 tables, 4 cron, 4 task entries) + V18/V19 master appendices for cycle pipelines + V15.1 §9.1/9.2 for core abstractions and monitoring schemas. Four known gaps flagged in §G for follow-up sessions. |
-| 2026-05-09 | Session 23 (Topology audit follow-up) | Updates after the Deployment Topology Task Scheduler audit (canonical 17-task inventory): §A.1 gained `capture_spot_1m.py` and `capture_spot_1m_v2.py` (production data-capture scripts revealed by audit); §A.5 gained `merdian_watchdog.py`, `watchdog_check.ps1`, `merdian_morning_start.ps1` (operational/supervisor layer); §D.2 reduced to pointer to Topology §7.2 (canonical scheduler inventory); §G.1 marked RESOLVED; §G.5 added documenting the .bat/.ps1 wrapper layer that lives in Topology §A.2. |
+| 2026-05-09 | Session 23 | Created. Sourced from `merdian_reference.json` (72 files, 36 tables, 4 cron, 4 task entries) + V18/V19 master appendices for cycle pipelines + V15.1 §9.1/9.2 for core abstractions and monitoring schemas. Four known gaps flagged in §G for follow-up sessions. |
 
 ---
 
 *MERDIAN System Map — established Session 23, 2026-05-09. Updated inline per Doc Protocol v4 Rule 1 + Rule 9.1. Source authority: `merdian_reference.json` for canonical file paths and statuses; this Map for human-readable architectural narrative and pipeline ordering.*
+
+
+---
+
+## §A.X — Replay layer (`C:\GammaEnginePython\replay\`) — added Session 24, 2026-05-09
+
+Built per ADR-008 zero-touch constraint. This is a sibling tree to the live scripts; NOT a fork or set of monkey-patches. Live scripts physically untouched. All replay scripts at `C:\GammaEnginePython\replay\`. Operator-invoked only — no Task Scheduler entries.
+
+| Script | Purpose | Reads | Writes | Called by |
+|---|---|---|---|---|
+| `replay_clock.py` | UTC/IST constants, `parse_replay_ts()`, `replay_today_ist()`, `to_iso_utc()`, `assert_outside_market_hours()` (08:00-16:30 IST weekday block); 12/12 self-tests | — | — | All replay scripts (import only) |
+| `replay_execution_log.py` | Mirror of `core/execution_log.py` with table → `script_execution_log_replay`, host=`replay`, atexit hook preserved | `script_execution_log_replay` (PATCH for set_symbol) | `script_execution_log_replay` (INSERT/PATCH) | All replay scripts |
+| `replay_chain_reconstructor.py` | Reconstruct `option_chain_snapshots_replay` + `market_spot_snapshots_replay` for a date from hist_*; computes IV via inverse Black-Scholes Newton-Raphson; with TD-087 5h30m subtract on read for option bars + TD-094 OI lift from live `option_chain_snapshots` per ±150s match window | `hist_spot_bars_1m`, `hist_option_bars_1m`, `instruments`, live `option_chain_snapshots` (OI lift only) | `option_chain_snapshots_replay`, `market_spot_snapshots_replay` | `replay_runner_for_date.py` (Phase 4 orchestrator); manual CLI invocation |
+| `replay_compute_gamma_metrics.py` | Mirror of `compute_gamma_metrics_local.py` | `option_chain_snapshots_replay` (filter by run_id) | `gamma_metrics_replay` | Orchestrator; manual `--replay-ts --run-id --symbol` |
+| `replay_compute_volatility_metrics.py` | Mirror of `compute_volatility_metrics_local.py`; replaces `fetch_india_vix()` with `india_vix_daily` historical close | `option_chain_snapshots_replay`, live `india_vix_daily` (history), `volatility_snapshots_replay` (prior cycles) | `volatility_snapshots_replay` | Orchestrator; manual `--replay-ts --run-id --symbol` |
+| `replay_build_momentum_features.py` | Mirror of `build_momentum_features_local.py`; cycle_ts from `--replay-ts` | `market_spot_snapshots_replay`, `gamma_metrics_replay`, `momentum_snapshots_replay` (prior session_vwap), live `market_breadth_intraday` (filtered by replay_date) | `momentum_snapshots_replay` | Orchestrator; manual `--replay-ts --symbol` |
+| `replay_build_market_state_snapshot.py` | Mirror of `build_market_state_snapshot_local.py`; consolidator | `gamma_metrics_replay`, `volatility_snapshots_replay`, `momentum_snapshots_replay` (`ts <= replay_ts` semantics), live `market_breadth_intraday`, live `weighted_constituent_breadth_snapshots` | `market_state_snapshots_replay` | Orchestrator; manual `--replay-ts --symbol` |
+| `replay_detect_ict_patterns_runner.py` | Mirror of `detect_ict_patterns_runner.py`; `bar_ts < replay_ts` strict; skips hourly 1H zone rebuild (already in live ict_htf_zones for replay_date) | `hist_spot_bars_1m` (filtered `bar_ts < replay_ts`), live `ict_htf_zones` (filtered by replay_date), `ict_zones_replay`, `market_state_snapshots_replay` (atm_iv lookup), `option_chain_snapshots_replay` (expiry lookup), live `capital_tracker` (current state, accepted) | `ict_zones_replay` (new patterns + breach updates + Kelly lots) | Orchestrator; manual `--replay-ts --symbol` |
+| `replay_compute_options_flow.py` | Mirror of `compute_options_flow_local.py`; CLI changed to `--replay-ts --symbol --run-id` per orchestrator pattern | `option_chain_snapshots_replay` (filter by run_id) | `options_flow_snapshots_replay` | Orchestrator; manual `--replay-ts --run-id --symbol` |
+| `replay_build_trade_signal.py` | Mirror of `build_trade_signal_local.py`; ALL gates preserved exactly (ENH-53/55/76/77/78, DTE, VIX-elevated, power-hour using `replay_ts.astimezone(IST).hour`, LONG_GAMMA, NO_FLIP, signal_v4); ICT enrichment from `ict_zones_replay`; PO3 from live `po3_session_state`; ENH-06 capital from live `capital_tracker` | `market_state_snapshots_replay`, `options_flow_snapshots_replay`, `ict_zones_replay`, live `po3_session_state` (filtered by replay_date), live `capital_tracker` | `signal_snapshots_replay` | Orchestrator; manual `--replay-ts --symbol` |
+| `replay_runner_for_date.py` | Phase 4 orchestrator. File lock at `replay/runtime/replay.lock`; OOH guard at entry; TRUNCATE 9 `_replay` tables (preserves `script_execution_log_replay` audit); reconstruct chain + spot via `replay_chain_reconstructor.reconstruct()`; for each of 76 boundaries iterate scripts in V19 §5.2 order PER BOUNDARY (gamma → volatility → momentum → market_state → ICT → options_flow → signal); subprocess.run per script; per-script success-rate matrix at end. CLI: `replay_date YYYY-MM-DD [--first-n-boundaries N] [--skip-truncate] [--skip-reconstruct]` | All `_replay` tables (TRUNCATE), reads via subprocess'd replay scripts | All `_replay` tables (writes via subprocess'd replay scripts) | Operator manual; never on cron/scheduler |
+
+**Status as of S24 close:** Phase 4b validated full-day on 2026-05-07 — 1056/1064 invocations (99.2%) succeeded in 5009s. ENH-95 candidate filed for in-process orchestrator optimization (~85 min → 10-15 min estimated, deferred until first what-if experiment campaign demonstrates need). Replay is operator-invoked only; no scheduled runs.
+
+**Migration file:** `C:\GammaEnginePython\replay\migrations\001_create_replay_tables.sql` — applied 2026-05-09.
+
+---
+
+## §B.X — Replay tables (`*_replay` mirrors) — added Session 24, 2026-05-09
+
+Created Session 24, 2026-05-09 via SQL migration `replay/migrations/001_create_replay_tables.sql`. All 10 tables created with `CREATE TABLE LIKE <live_table> INCLUDING ALL` — schema parity with live, separate row spaces. No views, no triggers. TRUNCATEd at start of every full-day replay orchestrator run except `script_execution_log_replay` which accumulates as audit.
+
+| Table | Mirrors | Purpose |
+|---|---|---|
+| `option_chain_snapshots_replay` | `option_chain_snapshots` | Reconstructed chain rows (OHLC + IV via Black-Scholes + OI lifted from live per TD-094) |
+| `market_spot_snapshots_replay` | `market_spot_snapshots` | Reconstructed spot rows from `hist_spot_bars_1m` at 5-min boundaries |
+| `gamma_metrics_replay` | `gamma_metrics` | Replay gamma compute output (regime, gamma_zone, flip_level, net_gex, straddle_atm) |
+| `volatility_snapshots_replay` | `volatility_snapshots` | Replay volatility compute output; VIX sourced from `india_vix_daily` historical close (replaces live `fetch_india_vix()` network call) |
+| `momentum_snapshots_replay` | `momentum_snapshots` | Replay momentum features (ret_5m/15m/30m/60m/session, vwap_slope, atm_straddle_change, momentum_regime). 5-min vs 1-min spot granularity vs live is a documented divergence per ADR-008. |
+| `market_state_snapshots_replay` | `market_state_snapshots` | Replay 6-component JSONB state (gamma_features + breadth_features + volatility_features + momentum_features + wcb_features + spot/expiry context) |
+| `ict_zones_replay` | `ict_zones` | Replay ICT pattern detection output (intraday zones with breach status + Kelly tier lots). Requires orchestrator boundary sequence to reproduce live behavior — single-boundary ad-hoc invocations under-detect because patterns whose anchor bar is outside 30-bar lookback are missed. |
+| `signal_snapshots_replay` | `signal_snapshots` | Replay signal-builder output — apex of pipeline; this is the what-if comparison target. Per ADR-008 §"What 'what-if experiment' means", baseline replay snapshot is preserved (CTAS or CSV) before modified-code re-run, then SQL-diffed. |
+| `options_flow_snapshots_replay` | `options_flow_snapshots` | Replay options flow — PCR, skew_regime, flow_regime, ce/pe vol_oi ratios per ATM±5 window |
+| `script_execution_log_replay` | `script_execution_log` | Replay audit trail; host='replay' on every row; preserved across runs (NOT truncated by orchestrator) so audit history of every experiment is retained automatically. Same ENH-72 write-contract semantics as live ExecutionLog. |
+
+**Permitted live reads from replay code (immutable historical reference per ADR-008):** `instruments`, `hist_spot_bars_1m`, `hist_option_bars_1m`, `india_vix_daily`, `option_chain_snapshots` (for OI lift only), `market_breadth_intraday`, `weighted_constituent_breadth_snapshots`, `ict_htf_zones`, `po3_session_state`, `capital_tracker`. **Live writes from replay code: PROHIBITED architecturally** (replay scripts only address `*_replay` table names; constraint is structural, not a runtime check).

@@ -201,15 +201,61 @@ Per Documentation Protocol v2 Rule 5: rejected IDs keep their slot as rejection 
 
 Chronological by ID. Each entry shows current status, evidence, and history.
 
-### ENH-93 — Replay/simulation harness: exact mimic of live runner cycle for outside-market-hours testing (CANDIDATE 2026-05-07)
+### ENH-95 — Replay orchestrator in-process invocation (CANDIDATE 2026-05-09)
 
 | Field | Detail |
 |---|---|
 | Status | **CANDIDATE** |
+| Filed | 2026-05-09 (Session 24) |
+| Priority | LOW — optimization only; current replay runtime usable but slow |
+| Area | INFRASTRUCTURE — testing/simulation layer (replay) |
+| Session | 24 (filed) |
+
+**Context.** ENH-93 replay orchestrator (`replay/replay_runner_for_date.py`) currently invokes each of 7 replay scripts via `subprocess.run` per boundary per symbol. Phase 4b 2026-05-07 full-day run took 5008.7s (~83 min) for 76 boundaries × 2 symbols × 7 scripts = 1064 invocations. Per-invocation overhead ~4.7s, dominated by Python startup + `dotenv` load + `supabase.create_client` init + module imports. Pure compute work per invocation is sub-second. The ratio is poor: ~95% of wall time is process startup overhead, ~5% is actual replay logic.
+
+**Proposal.** Refactor orchestrator to import each replay script's `main()` directly and call it in-process. Share a single supabase client across all calls in the run. Estimated runtime reduction: 65min → 10-15min for full-day replay (assuming compute is currently <1s per call and overhead drops to single-init-per-run).
+
+**Pre-requisites.**
+- Each replay script must expose `main(args)` (or equivalent) callable that takes parsed argparse namespace and returns exit code, separately from the `if __name__ == "__main__": sys.exit(main())` entry. Most replay scripts already structure this way; minor refactors needed for any that don't.
+- Single shared `supabase.Client` instance threaded through; replay scripts currently each call `_load_env() / create_client(...)` independently.
+- ExecutionLog isolation — each script's invocation needs its own ExecutionLog row in `script_execution_log_replay`. The current pattern (each script creates `ExecutionLog(...)` at main() entry) works in-process unchanged.
+
+**Trade-offs.**
+- **Tighter coupling** between orchestrator and script internals. Currently orchestrator only knows the CLI surface (`--replay-ts`, `--run-id`, `--symbol`); after refactor it knows the import surface. Refactoring any replay script requires checking the orchestrator.
+- **Diagnostic blast radius increases.** A crash in one script now lives in the same Python process as the orchestrator. Currently subprocess crashes are isolated and logged independently.
+- **Per-invocation contract logging may need adjustment.** Currently each subprocess gets a clean process state for ExecutionLog atexit hook; in-process invocation shares the parent atexit which may conflict.
+
+**Use cases.**
+- Faster what-if experiment cycles. Operator iterating on signal-logic changes can run baseline + modified replay in ~30 min instead of ~2.5 hours.
+- More replays per session. Multi-day what-if campaigns (e.g., test a gate change against 10 days) become tractable in a single session instead of overnight.
+
+**Cost.** ~1-2 sessions: (1) audit each replay script's `main()` surface; (2) refactor orchestrator to in-process invocation pattern with shared supabase client; (3) verify ExecutionLog atexit + per-invocation contract still works correctly; (4) measure runtime improvement; (5) document in ADR-008 § Open follow-ups.
+
+**Blocked by.** Operator decision — not pursued unless first what-if experiment campaign demonstrates a need for faster cycle time. Current 85-min full-day replay is operationally fine for occasional use.
+
+**Open questions.**
+- Does `subprocess.run` isolation buy us anything besides clean process state? (E.g., one script's import-time error doesn't kill the orchestrator. In-process refactor needs equivalent error handling.)
+- Should the in-process orchestrator be a separate file (`replay_runner_for_date_inproc.py`) preserving the subprocess version, or replace it? Likely replace — maintaining two orchestrator modes is documentation debt.
+- Does shared supabase client introduce any state leakage between invocations? (Likely no, but needs verification — the supabase Python client is documented thread-safe but in-process serial use is the question.)
+
+**Related.** ENH-93 (this is a follow-up optimization). ADR-008 § Open follow-ups (canonical home for the deferral decision).
+
+**History:** 2026-05-09 = CANDIDATE (filed during S24 ENH-93 closeout; deferred until first what-if experiment campaign demonstrates need).
+
+---
+
+### ENH-93 — Replay/simulation harness: exact mimic of live runner cycle for outside-market-hours testing (CLOSED 2026-05-09 via ADR-008)
+
+| Field | Detail |
+|---|---|
+| Status | **CLOSED** (Session 24, 2026-05-09 — superseded by ADR-008 which governs replay architecture going forward) |
 | Filed | 2026-05-07 (Session 22) |
-| Priority | MEDIUM — operator-facing testing tool; promoted from S22 architecture conversation |
+| Closed | 2026-05-09 (Session 24) — built end-to-end across 5 phases in single session; ADR-008 Accepted |
+| Priority | MEDIUM (at filing) — operator-facing testing tool; promoted from S22 architecture conversation |
 | Area | INFRASTRUCTURE — testing/simulation layer |
-| Session | 22 (filed) |
+| Session | 22 (filed) → 24 (closed) |
+
+> **NOTE.** Original CANDIDATE content from S22 filing is preserved verbatim below as historical record. Closure section follows at end of block ("Closure (2026-05-09, Session 24)" — that section is the authoritative summary of what was built and how it differs from the S22 proposal).
 
 **Context.** Per V18G § 7.2, the live AWS shadow runner cycle is 6 ordered scripts: `compute_gamma_metrics_local.py` → `compute_volatility_metrics_local.py` → `build_momentum_features_local.py` → `build_market_state_snapshot_local.py` → `build_trade_signal_local.py` → `compute_options_flow_local.py`. There is no equivalent replay path that exercises this exact cycle outside market hours against historical data into the live tables (or shadow-namespaced equivalents). Existing reconstruction tooling — `replay_shadow_for_date_local.py`, `reconstruct_shadow_for_date_local_v3.py`, `backfill_gamma_metrics.py`, `backfill_volatility_metrics.py`, `backfill_market_state.py` — all write to `hist_*` tables, not the live `gamma_metrics` / `volatility_snapshots` / `market_state_snapshots` / `signal_snapshots` chain that today's signal builder reads. This means: (a) replay can produce historical analysis but not live-table verification; (b) Session 22's outage gap (64 missing 5-min option_chain_snapshots windows) cannot be closed in the live derived layer using existing tooling; (c) any new derived-layer feature must be tested in production market hours, increasing risk.
 
@@ -247,9 +293,55 @@ Chronological by ID. Each entry shows current status, evidence, and history.
 
 **Related.** TD-080 (Dhan outage — replay would close today's option_chain_snapshots gap). TD-079 (zone validity rewrite — replay can validate new zone-expiry logic against historical data).
 
-**History:** 2026-05-07 = CANDIDATE (filed during S22 architecture conversation; awaiting operator priority assignment).
-
 ---
+
+**Closure (2026-05-09, Session 24).** Built end-to-end in one session, much faster than the 3-5 sessions originally estimated. All 5 phases complete:
+
+- **Phase 1 — Tables + clock.** 10 `*_replay` Supabase tables created via SQL migration `replay/migrations/001_create_replay_tables.sql` using `CREATE TABLE LIKE INCLUDING ALL` for schema parity with live (option_chain_snapshots_replay, market_spot_snapshots_replay, gamma_metrics_replay, volatility_snapshots_replay, momentum_snapshots_replay, market_state_snapshots_replay, ict_zones_replay, signal_snapshots_replay, options_flow_snapshots_replay, script_execution_log_replay). `replay/replay_clock.py` built (~6KB, 12/12 self-tests) with `parse_replay_ts()`, `replay_today_ist()`, `to_iso_utc()`, `assert_outside_market_hours()` — out-of-hours hard guard blocks 08:00-16:30 IST weekdays. Weekends + Indian-market holidays open.
+
+- **Phase 2 — Chain reconstructor.** `replay/replay_chain_reconstructor.py` (~600 lines) reconstructs `option_chain_snapshots_replay` + `market_spot_snapshots_replay` from `hist_spot_bars_1m` + `hist_option_bars_1m`. Two data-layer defects discovered + permanent compensations: **TD-087** (`hist_option_bars_1m.bar_ts` IST-as-UTC defect, 5h30m phantom offset; reconstructor subtracts 5h30m on read for option bars only — `hist_spot_bars_1m` stores correct UTC); **TD-094** (`hist_option_bars_1m.oi=0` from S22 Kite backfill because Kite `historical_data` API does not return OI for index option minute bars; reconstructor lifts OI from live `option_chain_snapshots` per (boundary, strike, option_type) within ±150s tolerance window). Two additional bugs fixed during build: ISODOW vs Python weekday convention (NIFTY=2 Tuesday, SENSEX=4 Thursday weekly_expiry_dow); PostgREST timestamp space-separator + `+00` short-offset normalization (`_parse_pg_timestamp`). Validated on 2026-05-07: 75/76 boundaries reconstructed, 150 spot rows + 3,300 chain rows. One boundary skipped: 15:30 because last hist bar is at 15:29 (filed as TD-096 cosmetic).
+
+- **Phase 3 — Seven replay scripts.** 7 scripts at `C:\GammaEnginePython\replay\` mirror live counterparts with mechanical changes (argparse named args, `_replay` table reads/writes, `replay_clock` for time, `replay_execution_log` for audit). Live scripts physically untouched per ADR-008 zero-touch constraint. ALL gates preserved exactly: ENH-53 (breadth), ENH-55 (momentum opposition), ENH-76 (BEAR_OB MIDDAY PO3 gate), ENH-77 (BULL_OB AFTERNOON SENSEX PO3), ENH-78 (DTE PDH sweep), DTE gate, VIX-elevated gate, power-hour gate (uses `replay_ts.astimezone(IST).hour` not wall-clock), LONG_GAMMA gate, NO_FLIP gate, signal_v4 logic. Specific design decisions per script:
+  - `replay_compute_volatility_metrics.py`: replaces live `fetch_india_vix()` network call with `india_vix_daily` historical close lookup (`fetch_replay_date_vix()`).
+  - `replay_build_momentum_features.py`: cycle_ts derived from `--replay-ts` not "latest gamma_metrics"; reads `market_breadth_intraday` LIVE filtered by replay_date (immutable past — permitted live read per ADR-008).
+  - `replay_build_market_state_snapshot.py`: consolidator; upstream reads use `ts <= replay_ts ORDER BY ts DESC LIMIT 1` mirroring live "latest" semantics; reads `market_breadth_intraday` and `weighted_constituent_breadth_snapshots` LIVE.
+  - `replay_detect_ict_patterns_runner.py`: most complex; reads `hist_spot_bars_1m` LIVE filtered by `bar_ts < replay_ts` (strict less-than excludes in-progress boundary bar); `should_rebuild_1h_zones` returns False always (skip hourly rebuild for replay; HTF zones already in live `ict_htf_zones` for replay_date); capital from live `capital_tracker` (current state, accepted per ADR-008 — replay tests pattern logic, not historical capital state).
+  - `replay_compute_options_flow.py`: CLI changed to `--replay-ts --symbol --run-id` per orchestrator pattern.
+  - `replay_build_trade_signal.py`: ICT enrichment reads `ict_zones_replay`; PO3 from live `po3_session_state` (immutable past); `enrich_signal_with_ict` from `detect_ict_patterns` reused as-is (pure function).
+
+- **Phase 4 — Orchestrator.** `replay/replay_runner_for_date.py` — file lock at `replay/runtime/replay.lock` (refuses to run if held); out-of-hours guard at entry; TRUNCATE 9 `_replay` tables (preserves `script_execution_log_replay` audit); reconstruct chain + spot via `replay_chain_reconstructor.reconstruct()`; **for each of 76 boundaries iterate `gamma → volatility → momentum → market_state → ICT → options_flow → signal` PER BOUNDARY (critical contract — not script-by-script across boundaries; confirmed by S24 momentum-at-03:50 finding stale gamma at 03:45 when sequence wrong)**. subprocess.run per script; per-script success counters; final per-script success-rate matrix. Validated 4a smoke on 3 boundaries (42/42 succeeded in 156.8s); validated 4b full-day on 2026-05-07: **1056/1064 invocations succeeded (99.2%) in 5009s (~83 min)**. Per-script: gamma 144/152 (95%), volatility 147/152 (97%), momentum 152/152, market_state 152/152, ICT 152/152, options_flow 150/152 (99%), signal 152/152. 8 failures all explainable: boundary 15:30 reconstruction-skipped (TD-096), 6 SENSEX boundaries during 2026-05-07 OI-gap windows where live `option_chain_snapshots` had no data to lift (cascading TD-094 limitation), 1 collateral cascade. No logic bug.
+
+- **Phase 5 — Validation.** Replay-vs-live for NIFTY at 03:45 boundary: action=BUY_PE matches, trade_allowed=False matches, direction_bias=BEARISH matches, gamma_regime=LONG_GAMMA matches, entry_quality=D matches, confidence_score 46 vs 40 (+6 diff traces to vix_regime HIGH_IV vs NORMAL_IV penalty). Direction-of-edge match perfect on first sample. Full-day: NIFTY 76 paired signals — **100% gamma_regime match, 68% direction_bias / action match** (32% divergence traces to documented 5-min-vs-1-min spot-granularity property), avg_conf_diff=4.7. SENSEX 76 signals — 91% action match (mostly DO_NOTHING-on-DO_NOTHING tautology) but 28% gamma_regime match (structural narrow-strike-base divergence: 11 strikes × 100-pt SENSEX step covers ±500pts, frequently fails to bracket flip level that live's full chain ~482 strikes does bracket). Both `trade_allowed=true` count: 0 — 2026-05-07 was a LONG_GAMMA / NO_FLIP day across the session per ENH-35 gating, so executable signals could not be cross-validated against live on this date.
+
+**Decision crystallized in ADR-008.** Replay's actual value is **replay-vs-replay comparison with one variable changed**, NOT replay-vs-live. Live cannot be re-run with modified code; replay can. Three architectural divergences from live are documented properties not bugs: (1) **strike-base** — replay 11 strikes vs live ~482; (2) **spot granularity** — 5-min boundary vs 1-min ticks; (3) **VIX source** — `india_vix_daily` historical close vs intraday tick. ADR-008 contains canonical "What 'what-if experiment' means" methodology section (5-step mechanic: baseline replay → snapshot → modify one signal-logic file → re-run → SQL diff; what you learn = sensitivity, direction, spatial clustering; what replay does NOT validate = production logic correctness via replay-vs-live, live's quantitative metrics, executed trades; discipline = always baseline first, single-variable changes only, replicate across multiple days).
+
+**Use-case revisions vs original ENH-93 proposal (S22 filing).**
+- (a) Close Session 22's outage gap — **NOT pursued.** The gap is now visible and intentionally documented as a replay-vs-live divergence source, not patched in live tables.
+- (b) Pre-deploy testing of signal logic changes — **VALIDATED, ready for first what-if experiment.**
+- (c) Outside-market-hours operator validation — **VALIDATED via Phase 4b on 2026-05-07.**
+- (d) Backfill new derived columns — **out of scope** for ENH-93 closure; if needed in future, the replay infrastructure provides the substrate.
+
+**Open questions resolved.**
+- "Live tables vs shadow namespace?" — `_replay` shadow tables (10 of them via CREATE TABLE LIKE INCLUDING ALL).
+- "Black-Scholes IV reconstruction?" — Newton-Raphson per-strike on close, fallback to historical IV from `india_vix_daily` for VIX context.
+- "Time injection mechanism?" — argparse `--replay-ts` named arg (no env-var override, no monkey-patch). Failed parse produces non-zero exit; ambiguity is impossible.
+- "ws_feed_zerodha-derived breadth?" — read live `market_breadth_intraday` for replay_date (immutable past, permitted READ per ADR-008).
+
+**Net deliverables.** 11 new files in `C:\GammaEnginePython\replay\` (`__init__.py`, `replay_clock.py`, `replay_chain_reconstructor.py`, `replay_execution_log.py`, `replay_compute_gamma_metrics.py`, `replay_compute_volatility_metrics.py`, `replay_build_momentum_features.py`, `replay_build_market_state_snapshot.py`, `replay_detect_ict_patterns_runner.py`, `replay_compute_options_flow.py`, `replay_build_trade_signal.py`, `replay_runner_for_date.py`) + 1 SQL migration (10 mirror tables) + ADR-008 (~250 lines) + 4 TDs filed (TD-087, TD-094, TD-095, TD-096) + ENH-95 candidate filed (in-process orchestrator optimization). Net new code ~3,500 lines. Net new schema 10 tables. **Zero live-table writes; zero live-script edits.** Live scripts physically untouched per ADR-008 zero-touch constraint.
+
+**Follow-ups (not blocking ENH-93 closure).**
+- ENH-95 in-process orchestrator (CANDIDATE; deferred until first what-if experiment campaign demands faster cycle time).
+- Patchy-day stress test (deferred; run replay on a known-bad-data day to confirm failure modes stay bounded).
+- First real what-if experiment (pending operator selection of production-candidate signal-logic change).
+- AWS replay capability (deferred; Local-only by design per ADR-008).
+- Granularity widening (defer-class; if quantitative replay-vs-live fidelity ever required, two paths: re-backfill `hist_option_bars_1m` at full-chain width, OR widen reconstructor to lift chain rows from live `option_chain_snapshots` not just OI).
+- TD-087 backfill correction (UPDATE hist_option_bars_1m to subtract 5h30m once verified all rows uniformly affected).
+- TD-094 OI backfill via Zerodha `quote()` snapshot capture (separate per-strike script).
+- TD-095 atm_iv_avg unit canonicalization audit.
+
+**History:**
+- 2026-05-07 = CANDIDATE (filed during S22 architecture conversation; awaiting operator priority assignment).
+- 2026-05-09 = CLOSED (Session 24, ADR-008 Accepted; built end-to-end in single session across 5 phases; replay infrastructure idles awaiting operator selection of first what-if experiment).
 
 ### ENH-92 — Pine generator: intraday `ict_zones` rendered as M5 timeframe alongside HTF zones (SHIPPED 2026-05-03)
 

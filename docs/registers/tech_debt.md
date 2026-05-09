@@ -57,6 +57,74 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-096 — Replay reconstructor skips boundary 15:30 because last `hist_spot_bars_1m` bar is at 15:29 IST
+
+| | |
+|---|---|
+| **Severity** | S4 (cosmetic — replay produces 75/76 boundaries instead of 76/76; downstream effect is one missing replay row at the session-close boundary). |
+| **Discovered** | 2026-05-09 (Session 24 — observed during ENH-93 Phase 4b full-day orchestrator run on 2026-05-07). |
+| **Component** | `C:\GammaEnginePython\replay\replay_chain_reconstructor.py` `_reconstruct_symbol`; the `direct datetime lookup` in `bars_by_ts.get(boundary_utc, [])` returns empty for the 15:30 IST boundary because no `hist_option_bars_1m` row has bar_ts=15:30 IST (last hist bar is 15:29 IST). Reconstructor reports `boundaries: emitted=75 skipped=1` per symbol. |
+| **Symptom** | One boundary missing per symbol per replay run (76 generated → 75 emitted). Per-script success matrix shows N/152 instead of N/154 baseline-corrected. Phase 4b 2026-05-07 run: gamma 144/152, volatility 147/152, options_flow 150/152 — all reflect this skipped boundary cascading to dependent scripts. |
+| **Root cause** | `hist_spot_bars_1m` and `hist_option_bars_1m` capture bars whose `bar_ts` represents the bar START minute. Session ends 15:30 IST inclusive, so the last bar STARTS at 15:29 IST (covers 15:29:00–15:29:59) and there is no bar starting at 15:30:00. Replay's boundary generator emits 76 5-min boundaries 09:15–15:30 inclusive; the 15:30 one has no corresponding hist bar. |
+| **Workaround** | Accept 75-boundary replay as healthy. None of the per-script success criteria fail because of this — the orchestrator's per-script success-rate matrix is the trustworthy diagnostic. |
+| **Proper fix** | Two options: (a) extend `hist_spot_bars_1m` capture to write a 15:30:00 bar at session close (operational change to capture pipeline; requires upstream coordination); (b) reconstructor synthesizes a 15:30 boundary by carrying forward 15:29's close as 15:30's spot (single-line addition; preserves bar count parity). Option (b) is simpler but introduces a synthetic-bar source that future debugging needs to be aware of. |
+| **Cost to fix** | ~30min (option b) to ~1 session (option a). |
+| **Blocked by** | nothing |
+| **Owner check-in** | 2026-05-09 |
+
+---
+
+### TD-095 — `atm_iv_avg` unit ambiguity surfaces in `detect_ict_patterns_runner.py` Kelly sizing path
+
+| | |
+|---|---|
+| **Severity** | S3 (potentially mis-sizes Kelly lots if Kelly was designed for percent — observed cosmetically as `iv=0.1%` in detector log when actual IV is 14.9%; functional impact pending verification of `compute_kelly_lots` IV-input expectation). |
+| **Discovered** | 2026-05-09 (Session 24 — observed during ENH-93 Phase 3 ICT detector run on 2026-05-07; replay surfaced the issue but it applies to live identically). |
+| **Component** | `compute_volatility_metrics_local.py` (writes `atm_iv_avg`); `detect_ict_patterns_runner.py` `load_atm_iv` reader + Kelly-lot writer; `merdian_utils.compute_kelly_lots` (consumer). |
+| **Symptom** | `compute_volatility_metrics_local.py` writes `atm_iv_avg` as decimal fraction (e.g., 0.149 for 14.9%). Live and replay `detect_ict_patterns_runner.py` reads `vol.get("atm_iv_avg")`, formats as `f"{iv:.1f}%"` rendering 0.149 as "0.1%" in the log line, AND passes 0.149 to `compute_kelly_lots(_, _, _, current_spot, atm_iv_pct, dte_days)`. The parameter name `atm_iv_pct` suggests percent expected but receives decimal. |
+| **Root cause** | Unit drift between writer (decimal) and consumer (parameter named `_pct` suggests percent). Has been latent across both production paths since at least Session 13 ENH-37 wiring. Replay made it visible because the detector log printed under operator inspection. |
+| **Workaround** | None operationally — Kelly outputs lot counts that look reasonable (T1:112, T2:90, T3:45 for INR 25,000 capital) so end-state is not obviously broken. May or may not be silently mis-sizing depending on Kelly's IV-elasticity term. |
+| **Proper fix** | Inspect `compute_kelly_lots` signature + IV-elasticity math. Decide which unit is canonical (decimal or percent). Fix writer or consumer to align. Then audit every other consumer of `atm_iv_avg` (signal builder reads it for HIGH_IV gate; gamma metrics; etc.) for the same drift. Likely 1-2 hour investigation + small patch. |
+| **Cost to fix** | ~1 session (find canonical, audit consumers, patch). |
+| **Blocked by** | nothing |
+| **Owner check-in** | 2026-05-09 |
+
+---
+
+### TD-094 — `hist_option_bars_1m.oi=0` across all rows from S22 Kite backfill (Kite `historical_data` API does not return OI for index option minute bars)
+
+| | |
+|---|---|
+| **Severity** | S2 (would have permanently broken ENH-93 replay reconstructor without the live-OI-lift compensation; affects any future research / replay that needs OI from `hist_option_bars_1m`). |
+| **Discovered** | 2026-05-09 (Session 24 — diagnosed during ENH-93 Phase 2 reconstructor build when `replay_compute_gamma_metrics` returned `DATA_ERROR all option rows filtered out as unusable` for run_id from reconstructed chain). |
+| **Component** | `hist_option_bars_1m` Supabase table; data was written by S22 Kite backfill (`backfill_option_zerodha_OI_FIXED.py`); root cause is Kite Connect `historical_data` API behavior, not the backfill script. |
+| **Symptom** | Direct query: `SELECT COUNT(*), MIN(oi), MAX(oi) FROM hist_option_bars_1m WHERE trade_date='2026-05-07'` returns ~8,250 rows for NIFTY with oi MIN=0 MAX=0. Volume populates correctly (e.g., 114,790 / 942,240 / 1,945,645 — full session traded volumes). Downstream consequence: replay reconstructor wrote chain rows with oi=0; `compute_gamma_metrics` filter `gamma!=0 AND oi>0` drops every row; gamma computation fails entirely. |
+| **Root cause** | Kite Connect `historical_data` REST endpoint returns OHLC + Volume for index option minute bars but does NOT include open interest. OI is only available via real-time WebSocket OI ticks (KiteTicker `oi` field at run-time) or `quote()` REST calls (snapshot per-strike, run-time only — not historical). The S22 backfill assumed implicitly that historical_data returned OI; it does not. The defect was undetected because S22 backfill was followed immediately by ENH-93 work which initially planned to use only volume from hist_option_bars_1m. |
+| **Workaround** | Permanent compensation in `replay_chain_reconstructor.py` `_fetch_live_oi_for_replay`: lifts OI from live `option_chain_snapshots` per (boundary, strike, option_type) tuple within ±150s tolerance window of each replay 5-min boundary. Live OI for past dates is immutable; this is a permitted READ from live per ADR-008. Tested on 2026-05-07: NIFTY 35,668 live rows → 35,668 entries across 74/76 boundaries; SENSEX 31,820 live rows → 30,100 entries across 70/76 boundaries (6 SENSEX boundaries in 2026-05-07 OI-gap windows have no live data to lift, producing oi=0 in those replay rows; cascades to gamma/volatility/options_flow failures at those boundaries). |
+| **Proper fix** | Three options: (a) Re-backfill OI via Zerodha `quote()` per strike — many calls but accurate, requires per-day per-strike snapshot capture; (b) Drop `hist_option_bars_1m.oi NOT NULL` constraint, write NULL when unavailable, change downstream filters from `oi > 0` to `oi IS NULL OR oi > 0` — preserves backfill semantics but loses signal on actual zero-OI strikes; (c) Skip `hist_option_bars_1m` entirely for OI in research/replay; always lift from live `option_chain_snapshots` (current replay strategy) — works for any date where live captured the chain, fails for dates where live ingest was completely down. Recommend (a) for proper fix when research needs OI from past dates beyond what live captured. |
+| **Cost to fix** | (a) ~2 sessions (per-strike `quote()` snapshot capture script + backfill of historical date range). (b) <1 session (DDL + filter audit). (c) Already in place via reconstructor. |
+| **Blocked by** | Decision: which historical date ranges need OI? If only ENH-93 replay use case, (c) suffices. If broader research (e.g., regime studies on 2024-2025 historical data), (a) or (b) needed. |
+| **Owner check-in** | 2026-05-09 |
+
+---
+
+### TD-087 — `hist_option_bars_1m.bar_ts` IST-as-UTC defect (5h30m phantom offset; only on option bars, not spot bars)
+
+| | |
+|---|---|
+| **Severity** | S2 (silently mis-aligns option bars by 5h30m if read naively; replay reconstructor compensates but every other consumer needs awareness). |
+| **Discovered** | 2026-05-09 (Session 24 — diagnosed during ENH-93 Phase 2 reconstructor build when boundary lookups returned no option bars at canonical UTC boundaries despite 8,250 rows present). |
+| **Component** | `hist_option_bars_1m` Supabase table `bar_ts` column; introduced by some S22 backfill or upstream historical-data ingest path (specific root commit not identified). `hist_spot_bars_1m.bar_ts` is correctly stored UTC; the defect is option-bars-only. |
+| **Symptom** | A bar that represents the 09:15 IST minute (= 03:45 UTC) is stored as `'2026-05-07 09:15:00+00'` instead of `'2026-05-07 03:45:00+00'`. The clock value is IST but the timezone tag is UTC, so `datetime.fromisoformat()` yields a datetime that is 5h30m AHEAD of the true UTC instant. Downstream code that does direct UTC-boundary lookup (`bars_by_ts.get(boundary_utc, [])`) finds nothing. |
+| **Root cause** | Either upstream Kite-historical-data response timestamps are in IST and the ingest path tagged them `+00:00` without conversion, OR a `.replace(tzinfo=...)` instead of `.astimezone(...)` was used somewhere in the backfill chain. Closely related to TD-084 (S22 same-session resolution: `backfill_option_zerodha_OI_FIXED.py` had `.replace(tzinfo=ZoneInfo('UTC')).astimezone(IST)` which mis-shifted timestamps) — TD-087 is the residual defect where the timestamps in the table never got corrected. |
+| **Workaround** | Permanent compensation in `replay_chain_reconstructor.py` `_fetch_hist_option_bars`: subtracts `timedelta(hours=5, minutes=30)` from each parsed `bar_ts` before storing as `bar_ts_dt`. Documented in code comment: "DO NOT apply this adjustment to hist_spot_bars_1m — that table stores correct UTC." |
+| **Proper fix** | Two options: (a) Backfill correction — `UPDATE hist_option_bars_1m SET bar_ts = bar_ts - INTERVAL '5 hours 30 minutes'` after verifying every row is affected (must be all-or-none; mixed rows would corrupt the fix). (b) Schema decision: rename column to `bar_ts_ist_as_utc` to make the convention explicit, document, and adjust every consumer. Option (a) preferred — single DDL run, all consumers get correct UTC. |
+| **Cost to fix** | (a) ~30min for the UPDATE + verification queries; ~1 session if the audit reveals mixed rows requiring per-row inspection. |
+| **Blocked by** | Verification that all hist_option_bars_1m rows uniformly have the defect (no mixed-correctness). |
+| **Owner check-in** | 2026-05-09 |
+
+---
+
 ### TD-084 — `backfill_option_zerodha_OI_FIXED.py` UTC/IST timezone bug truncated Kite output to 46 bars per strike (RESOLVED same session)
 
 > **Status: RESOLVED** Session 22 (2026-05-07) — see Resolved (audit trail) below for closure details. Listed here briefly to reflect the discovery of a pattern: any code that does `.replace(tzinfo=ZoneInfo("UTC")).astimezone(IST)` to a Kite-returned `historical_data` datetime is wrong (Kite returns IST-tagged datetimes natively).

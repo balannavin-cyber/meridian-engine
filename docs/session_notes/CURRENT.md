@@ -9,6 +9,219 @@
 
 | Field | Value |
 |---|---|
+| **Date** | 2026-05-09 (Saturday — non-trading day, deep-work doc consolidation session). |
+| **Concern** | Documentation consolidation across V15.1 → V19 + 11 appendices + scattered protocol files. Reconcile apparent contradictions between versions; promote `.docx`-locked governance to canonical markdown; establish six-file reference-index layer per Doc Protocol v4 Rule 9; retroactively document the V18F ICT signal-architecture pivot via ADR-007 (the most consequential architectural change since V11, never given an ADR at the time). |
+| **Type** | Engineering — documentation / governance. 0 production code changes. 11 markdown documents created or modified. 2 commits. 2 tags. |
+| **Outcome** | PASS. **Six-file reference layer established per Doc Protocol v4 Rule 9** (System Map + Deployment Topology + Decision Index + Assumption Register + Governance Framework + Disaster Rebuild Runbook). **ADR-007 drafted retroactively** documenting the V18F ICT pivot — one ADR resolves nine apparent reversals (CONFLICT lift, VIX gate removal, MIN_CONFIDENCE 60→40, three-zone gamma made moot, multi-horizon voting made moot, etc.). **Doc Protocol v3→v4** with mandatory ADR triggers (Rule 10), exhaustive changelog requirement (per operator instruction "if removing/changing this change should be recorded"), and Rule 11 ADR linkage rules. **CASE-2026-03-11 promoted** to standalone with V15.1 remediation supersession annotation. **CLAUDE.md edited:** read order extended 5 → 7 entries (System Map at #3, Decision Index at #4); single source of truth map extended 11 → 15 rows; settled-decisions footer gained ADR-001/002/007 governance one-liners. **Task Scheduler audit (PowerShell `Get-ScheduledTask` + action-mapping pass) revealed 17 `MERDIAN_*` tasks** (vs JSON's 4) — canonical inventory landed in Topology §7.2; 16 newly-catalogued .bat/.ps1 wrapper scripts surfaced; **TD-061 pythonw migration shown to be 4/15 partially complete** (`HB_Watchdog`, `Live_Dashboard`, `PreOpen`, `Spot_1M` already on `pythonw.exe`; remaining 11 wrap through cmd via .bat). **Two-watchdog architecture documented as intentional** (`merdian_watchdog.py --kill` kills hung processes; `watchdog_check.ps1` is passive observer). **`merdian_watchdog.py` flagged as production-critical but currently untracked in git** — disaster-rebuild runbook references it but `git clone` wouldn't bring it (Session 24 P5 candidate). **`merdian_morning_start.ps1` is canonical Intraday_Supervisor_Start entry**, not `start_supervisor_clean.ps1` as JSON had. **PreOpen 09:08 IST and Post-market 16:00 IST run different scripts on Local vs AWS** — Local PreOpen = `capture_spot_1m.py` (pythonw); AWS PreOpen = `capture_market_spot_snapshot_local.py`; same divergence post-market. Filed in Topology §9 dupe-check questions. **11 boundary questions** filed in Topology §9 as evidence base for ADR-006 (AWS migration scope) when drafted. **7 prioritised assumption-validation queue items** filed in Assumption Register §D.7 (HIGH: TD-059 MTF hierarchy, ENH-43 breadth removal). **Walk-Forward methodology open question** filed in Governance Framework §6: Exp 15 used full year as one cohort, not Y1+Y2/Y3 split. |
+| **Git start → end** | Local Windows + Meridian AWS: `d7eb8c0` (last common ancestor) → `74c1f8d` (Session 23 main consolidation: 10 files, 3,073 insertions, 8 deletions) → `70a5cc6` (System Map sync after Topology audit follow-up: 1 file, 35 insertions, 19 deletions). Both pushed; AWS hash matches Local at `70a5cc6`. **Session 21 patches still uncommitted in working tree** (carry-forward from S22) — separate from S23 doc work. MALPHA AWS still dirty (S22 backfill edits, separate concern). |
+| **Local + AWS hash match** | ✅ Both at `70a5cc6`. Two commits same session (single-commit pattern intentionally split because System Map needed update after Topology audit revealed new findings — both are MERDIAN: [DOCS] commits in same session). |
+| **Files added (docs)** | 9 new files: `docs/decisions/ADR-007-v18f-ict-pivot.md` (171); `docs/decisions/MERDIAN_Decision_Index.md` (98); `docs/decisions/CASE-2026-03-11-do-nothing-on-trend-day.md` (142); `docs/operational/MERDIAN_Documentation_Protocol_v4.md` (655); `docs/operational/MERDIAN_Governance_Framework.md` (208); `docs/registers/MERDIAN_Assumption_Register.md` (181); `docs/registers/MERDIAN_System_Map.md` (545 — final after audit follow-up); `docs/registers/MERDIAN_Deployment_Topology.md` (400); `docs/runbooks/runbook_disaster_rebuild.md` (672). |
+| **Files modified (docs)** | `CLAUDE.md` (3 targeted edits — read order, source-of-truth map, settled-decisions footer for ADR-001/002/007); `CURRENT.md` (this rewrite — Session 22 preserved below as Previous session per no-crunch directive); `session_log.md` (Session 23 prepended). |
+| **Files modified (code)** | None. Session 21 production patches (TD-070 v1+v2 + TD-071 + TD-072 stack on `build_ict_htf_zones.py`) still uncommitted in working tree from S21 — separate concern, not addressed Session 23. |
+| **Tables changed** | None (schema or data). |
+| **Cron / Tasks added** | None. |
+| **Tags added** | `docs-v4` (signals Doc Protocol revision per Rule 4.3); `session-23-docs-consolidation` (session marker). Both pushed. |
+| **`docs_updated`** | YES. Full closeout per Doc Protocol v4 Rule 3 session-end checklist. **Project knowledge upload pending** (P0 Session 24 task). |
+
+### What Session 23 did, in 10 bullets
+
+**Phase 1 — Reconciliation diagnosis:**
+
+- Read V15.1 + V16 end-to-end (1,121 + 2,339 lines plain text); cross-checked every distinctive item against V17 + V18 master + 11 V18 appendices + V19 + V19A + ADR-001/002 + CLAUDE.md + CURRENT.md + session_log + tech_debt + Enhancement Register + merdian_reference.json. First-pass orphan analysis produced flat 25-item Tier 1-4 list — operator pushed back: "did you reconcile, not catalogue?"
+
+- Identified the missing integration story: **V18F (2026-04-11/12) was a major architectural pivot from gamma+breadth+momentum+VIX confidence-scoring engine to ICT pattern detection with Kelly tier sizing — with no ADR**. Single pivot explains nine apparently-isolated reversals.
+
+**Phase 2 — ADR-007 retroactive pivot ADR:**
+
+- Drafted ADR-007 (171 lines) following ADR-001/002 format. Status: Accepted (retroactive). Status field "Accepted (retroactive)" introduced as new pattern; closing note establishes retroactive ADRs are acceptable for pre-ADR-habit decisions but **required (not retroactive)** for new decisions of comparable scope. Nine decisions documented: ICT pattern as primary trigger, Kelly tier sizing, LONG_GAMMA + NO_FLIP gates preserved, CONFLICT lifted (58.7% WR), VIX>20 gate removed, MIN_CONFIDENCE 60→40, confidence as adjustment layer, T+30m exit, V15.1 remediation specs become moot. Three alternatives rejected with reasons. Governance language: *"The signal trigger is the discrete ICT pattern. The confidence score is the size dial. Gates that validated as binary truth — LONG_GAMMA, NO_FLIP — remain. Gates that validated as conservative myth — CONFLICT, VIX>20 — are lifted. The 11 March 2026 insight stays; its proposed remediation does not."*
+
+**Phase 3 — Doc Protocol v3→v4:**
+
+- Per operator instruction "if removing/changing this change should be recorded": exhaustive changelog at top of v4 showing every Added / Modified / Removed / Preserved-Unchanged item from v3. Three new rules: Rule 9 (six reference indexes first-class), Rule 10 (ADRs **mandatory** before code for signal-architecture / deployment-topology / schema-affecting / settled-decision reversal changes; retroactive allowed only as fallback for pre-habit decisions per ADR-007 precedent), Rule 11 (ADR linkage: every accepted ADR mechanically prepends Decision Index, updates Assumption Register if applicable, appends governance footer to CLAUDE.md). Master `.docx` demoted to archive-only post-V19. Rules 0/4/5/7/8 preserved unchanged.
+
+**Phase 4 — Six-file reference layer:**
+
+- `MERDIAN_Decision_Index.md` (98 lines): flat lookup seeded with ADR-001/002/007. Migration note for V18 §17 + V18G §10 pre-ADR settled-decision queues. No DEC-NNN ID prefix introduced — only ADR-NNN and CASE-YYYY-MM-DD per Doc Protocol v4 Rule 5.
+
+- `MERDIAN_Assumption_Register.md` (181 lines): V15.1 Appendix D promoted, refreshed for ICT-era. D.1 (Signal Engine) + D.4 (Momentum) largely SUPERSEDED post-pivot. D.2 (Gamma) largely intact (Exp 17/19 confirmed binary). D.3 (Breadth) partially live (ENH-43 candidate). D.6 ICT-era new assumptions added. D.7 validation queue prioritised.
+
+- `MERDIAN_System_Map.md` (529 → 545 lines after audit follow-up): file/table/runner/orchestration index. §A 50+ scripts grouped by role. §B all 36 tables grouped by domain. §C 5 ASCII pipeline diagrams. §D orchestration. §E V15.1 health-check thresholds + telemetry files + heartbeat schema rescued. §F core/ module signatures rescued. §G.1 originally HIGH-priority Task-Scheduler-completeness gap — RESOLVED in same session by audit.
+
+- `MERDIAN_Deployment_Topology.md` (400 lines): "what runs where" — Local↔AWS boundaries, side-by-side environment summary, Local-only / AWS-only / both-environments script lists, token flow, AWS gotchas (DO NOT), 17 Task Scheduler entries with canonical action mapping, 11 open boundary questions for ADR-006 evidence base.
+
+- `MERDIAN_Governance_Framework.md` (208 lines): V16 §3 (M→V→S→P) preserved verbatim. V16 §3.3 (Four Evidence Questions) preserved verbatim with post-ADR-007 status added per question. V16 §3.6 (Walk-Forward) preserved verbatim with open methodological question. V15.1 §18.1 / V16 §25.1 (Do-NOT-Revive) preserved as §8.1; six post-ADR-007 antipatterns added as §8.2; six operational antipatterns referenced from CLAUDE.md/Topology as §8.3. ADR-001/002/007 cross-references. §7 worked example tracing V18F pivot through M→V→S→P stages end-to-end.
+
+- `runbook_disaster_rebuild.md` (672 lines): V15.1/V16 Appendix A refreshed for ICT-era. Phased structure (9 phases vs original 18 flat steps). New phases: ICT layer (§5), Phase 4A execution including Zerodha WebSocket (§6), AWS shadow setup (§7), 17-task Scheduler bootstrap (§8). Validation expanded with B.5 (ICT) and B.7 (dupe-check). Honest limitations section flagging "Last verified end-to-end: Never as a single procedure post-V18F."
+
+**Phase 5 — CASE study promotion:**
+
+- `CASE-2026-03-11-do-nothing-on-trend-day.md` (142 lines): V15.1 §3.6 / V16 §4 diagnostic content preserved verbatim (§1-§3). §4 V15.1-spec'd remediation path documented. §5 V18F supersession documented per-fix (three-zone gamma → moot, ret_session → built and live, multi-horizon voting → moot, 30-session regret-log gate → satisfied). §6 permanent implications. §7 what-this-does-NOT-mean. Self-contained — readers do not need to chase ADR-007 to understand the supersession.
+
+**Phase 6 — Task Scheduler audit (PowerShell + action mapping):**
+
+- Operator ran `Get-ScheduledTask -TaskName "MERDIAN_*"` — **17 tasks** revealed (vs JSON's 4). Then second pass with `Actions.Execute + Arguments` — canonical action map captured.
+
+- Discoveries: 16 newly-catalogued .bat/.ps1 wrapper scripts (`merdian_watchdog.py`, `watchdog_check.ps1`, `merdian_morning_start.ps1`, `capture_spot_1m.py`, `capture_spot_1m_v2.py`, plus 11 wrappers). TD-061 pythonw migration is 4/15 partially complete. Two-watchdog architecture (kill + observe) intentional. `merdian_morning_start.ps1` is canonical Intraday_Supervisor_Start, not `start_supervisor_clean.ps1`. PreOpen and Post-market 16:00 are different scripts on Local vs AWS — dupe-check pending Session 24.
+
+- Topology §7.2 + System Map §A.1 + §A.5 + §D.2 + §G updated to reflect audit findings. Topology §A.2 lists all 16 newly-catalogued scripts.
+
+**Phase 7 — CLAUDE.md targeted edits:**
+
+- Edit 1 (read order): 5 entries → 7. System Map at #3, Decision Index at #4. Note added that V19 is last Master under v4 Rule 6.
+
+- Edit 2 (source-of-truth map): 11 rows → 15. New rows: Topology, Decision Index, Assumption Register, Governance Framework, Disaster Rebuild Runbook. Doc Protocol reference v3→v4.
+
+- Edit 3 (settled-decisions footer): three new bullets for ADR-001/002/007 with full governance language one-liners. Each ADR cross-referenced.
+
+**Phase 8 — Commit + AWS sync + tag:**
+
+- Commit 1: `74c1f8d` "MERDIAN: [DOCS] Session 23 documentation consolidation" — 10 files, 3,073 insertions, 8 deletions. Pushed.
+
+- Commit 2: `70a5cc6` "MERDIAN: [DOCS] System Map — sync with Session 23 Topology audit" — 1 file, 35 insertions, 19 deletions (System Map updated post-Topology-audit findings). Pushed.
+
+- AWS pull: hash match `70a5cc6`. Files physically present (verified `ls -la` on three samples).
+
+- Tags: `docs-v4` + `session-23-docs-consolidation`. Both pushed.
+
+**Phase 9 — Project knowledge upload (PENDING for Session 24 P0):**
+
+- 10 files for upload: CLAUDE.md + Doc Protocol v4 + Governance Framework + ADR-007 + Decision Index + CASE-2026-03-11 + Assumption Register + System Map + Deployment Topology + Disaster Rebuild Runbook.
+
+- Files to remove from project knowledge: `MERDIAN_Documentation_Protocol_v3.md` (superseded by v4), `MERDIAN_OpenItems_Register_v7.md` (closed 2026-04-15 — keep on disk in git, remove from live knowledge to avoid pollution).
+
+**Phase 10 — Session-23 close:**
+
+- `session_log.md` Session 23 line prepended (newest-first). `CURRENT.md` rewritten — Session 23 promoted to Last session; Session 22 preserved as Previous session per no-crunch directive; This session block reset to Session 24. Session-end checklist updated to Doc Protocol v4 (added System Map / Topology / Decision Index / Assumption Register update lines + ADR linkage steps).
+
+**CRITICAL LESSONS Session 23:**
+
+- (a) **Reconciliation ≠ catalogue.** First-pass orphan analysis was a flat 25-item Tier list — operator correctly demanded the integration story. The story was a single architectural pivot (V18F ICT) that shipped without ADR; nine apparent reversals all flow from one decision.
+
+- (b) **Per-protocol-revision exhaustive changelog is now mandatory.** Operator caught a dropped item between v2 and v3 documentation and required: every Added/Modified/Removed/Preserved-Unchanged item explicit going forward. v3→v4 is the first revision held to that standard.
+
+- (c) **Static facts in code can drift undetected from JSON inventory.** `merdian_reference.json` listed 4 Task Scheduler tasks; reality was 17. Without the audit-prompt, the gap would have persisted into the disaster-rebuild runbook. PowerShell two-pass audit closed it.
+
+- (d) **Two-watchdog architecture is real.** `merdian_watchdog.py --kill` and `watchdog_check.ps1` look like duplication but are intentional kill-layer + observe-layer split. Documenting prevents future "consolidate the watchdogs" sessions.
+
+- (e) **`merdian_watchdog.py` is production-critical but untracked in git.** The disaster-rebuild runbook references it (`MERDIAN_HB_Watchdog` task action), but `git clone` doesn't bring it. Worth adding to git as a follow-up so the runbook is actually executable.
+
+- (f) **Retroactive ADR is one-time concession, not a pattern.** ADR-007 retroactively grounds the V18F pivot because V18F predates the ADR habit. Future architectural decisions of comparable scope require ADR before code, not after.
+
+---
+
+## This session (Session 24)
+
+| Field | Value |
+|---|---|
+| **Date** | TBD (Saturday 2026-05-09 onwards; Saturday non-trading; resumes Mon 2026-05-12). |
+| **Goal** | Operator's call. Two streams of carry-forward: (a) Session 22 carry-forward (TD-080 reproducer, TD-079 zone-validity rewrite, Session 21 patch commit) is unaddressed by Session 23 (which was scoped to documentation only). (b) Session 23 introduced new candidates: project knowledge upload (P0), review pass of 11 new docs, Topology §9 dupe-checks, untracked-script cleanup. |
+| **Type** | Operator's call — engineering / operations / research / documentation review. |
+| **Success criterion** | Defined when goal is set. |
+
+### Carry-forward priority queue (ordered by recommended priority for Session 24):
+
+| Priority | Item | Why |
+|---|---|---|
+| **P0** | Project knowledge upload (Claude.ai UI) | Closing step of Session 23 cross-layer sync. Without it, next Claude session reads stale v3-era knowledge. 10 files to upload, 2 files to remove. ~5 min UI work. |
+| **P0b** | Session 21 patch commit (carry-forward from S22) | Single-commit-per-session pattern broken since S21. Production patches (TD-070 v1+v2 + TD-071 + TD-072 stack on `build_ict_htf_zones.py`) still uncommitted in working tree. Should land before any new code work. |
+| **P1** | TD-080 Dhan option chain ingest reproducer (carry-forward from S22) | Watch 09:15 IST cron Mon 2026-05-12 — does ingest_option_chain_local.py fail again? Clean → S22 outage was unique; broken → reproducer in hand for root-cause work. Without controlled test we can't escape the 6-hypothesis refutation cycle. |
+| **P1b** | TD-078 closure verification (Apr-13 BULL_OB SQL) | S21 filed PENDING. SQL: `SELECT * FROM ict_htf_zones WHERE timeframe='W' AND pattern_type='BULL_OB' AND source_bar_date='2026-04-13'`. ~5 min. |
+| **P2** | Architecture conversation Phase α (operator answers Q1-Q4) | Carry-forward from S22. Recommended sequence per S22 closeout: ADR-005 zone validity model rewrite per TD-079 (now anchored in Decision Index reserved IDs); ADR-006 AWS migration scope (now anchored in Topology §9 11 boundary questions); token reliability investigation (TD-080) ordering. |
+| **P3** | Topology §9 dupe-checks (post-market 16:00 + PreOpen 09:08) | S23 audit revealed Local + AWS run different scripts at same times. Single SQL query each — does `market_spot_snapshots` show duplicate writes at 03:38 UTC and 10:30 UTC? If yes, disable one writer. ~10 min total. |
+| **P4** | TD-079 zone-validity rewrite implementation (after ADR-005) | Carry-forward from S22. Architectural defect bleeding signal quality. Pipeline change non-trivial. |
+| **P5** | Untracked production scripts to git | `merdian_watchdog.py` (production-critical, wired to `MERDIAN_HB_Watchdog` task) and `capture_spot_1m_v2.py` (production 1-min spot ingester) untracked. Disaster-rebuild runbook references them but `git clone` wouldn't bring them. Plus ~85 untracked experiment / diagnostic scripts — needs `.gitignore` policy decision. |
+| **P6** | Review pass of 11 new docs from S23 | Read end-to-end, flag anything that doesn't match reality. Particularly: System Map §E.1 health-check thresholds (V15.1 values may have drifted in code); §F core/ module signatures (may need Kite client addition per System Map §G.2). |
+| **P7** | TD-073 momentum direction lag investigation | S21-filed HIGH. Carry-forward from S22. |
+| **P8** | TD-074 ENH-77 BULL_OB AFTERNOON NIFTY hard skip review | S21-filed MED. Carry-forward from S22. |
+| **P9** | ENH-93 replay harness build | Carry-forward from S22. |
+
+### Files / tables / items relevant for next session
+
+- **Project knowledge upload (Claude.ai UI)** — 10 files to add, 2 to remove. P0 task.
+- **`build_ict_htf_zones.py`** — Session 21 TD-070 v1+v2 + TD-071 stack still uncommitted; needs S22 commit. Pending TD-079 zone-validity rewrite (ADR-005 first per Doc Protocol v4 Rule 10).
+- **`ingest_option_chain_local.py`** — primary observability target for TD-080 reproducer at 09:15 IST Mon 2026-05-12.
+- **`refresh_dhan_token.py`** — Local + AWS variants; investigate per-token lifecycle for TD-080.
+- **`merdian_watchdog.py`** — production-critical, untracked in git. P5 candidate.
+- **`capture_spot_1m_v2.py`** — production 1-min spot ingester, untracked in git. P5 candidate.
+- **`script_execution_log` table** — primary diagnostic surface for TD-080 reproducer.
+- **`option_chain_snapshots` table** — gap detection query per S22.
+- **`market_spot_snapshots` table** — Topology §9 dupe-check at 03:38 UTC and 10:30 UTC. P3 candidate.
+- **`hist_option_bars_1m` table** — backfilled rows from S22 are recovery substrate for ENH-93.
+- **`ict_htf_zones` table** — TD-079 audit query; TD-078 verification query.
+- **TradingView chart Pine** — has S22 36-zone overlay; missing all >78k resistances (TD-079 visible defect).
+- **`docs/decisions/MERDIAN_Decision_Index.md`** — 4 reserved IDs (ADR-003/004/005/006); ADR-005 (zone validity per TD-079) and ADR-006 (AWS migration scope) are next likely candidates.
+- **`docs/registers/MERDIAN_Deployment_Topology.md` §9** — 11 open boundary questions; P3 covers the first two.
+- **`docs/registers/MERDIAN_Assumption_Register.md` §D.7** — 7 prioritised validation queue items.
+
+### DO NOT REOPEN this session
+
+- ❌ All S22 DO_NOT_REOPENs (six refuted Dhan outage hypotheses, TD-070 v2 dedup logic, TD-071 expire-after-recheck pipeline order, TD-072 battery flags, TD-084 timezone bug, backfill execution path).
+- ❌ Doc Protocol v3 — superseded by v4. Do not reference.
+- ❌ V19 § "non-superseded on architecture" — V16 §3 governance is preserved unchanged via Governance Framework. Do not propose a "new governance framework" without proposing supersession of V16 §3 explicitly.
+- ❌ V18F as a moment without an ADR — ADR-007 retroactively documents it. Do not propose drafting "an ADR for the V18F pivot."
+- ❌ `start_supervisor_clean.ps1` as the action for `MERDIAN_Intraday_Supervisor_Start` — canonical action is `merdian_morning_start.ps1` per S23 audit. JSON entry was stale.
+- ❌ "Task Scheduler has 4 entries" — JSON inventory was partial; reality is 17 tasks; canonical inventory is in Topology §7.2.
+- ❌ Three-zone gamma model as live behavioral spec — `gamma_zone` field exists for research; behavioral role is moot per ADR-007 / Assumption Register §D.2.
+- ❌ Multi-horizon momentum voting model — never built, made moot by ICT pivot per ADR-007 / Assumption Register §D.4.
+- ❌ V15.1 §15.2 Items 6/7/8 (three-zone, voting, regret-log threshold-gate) — superseded per ADR-007. The 11 March case study insight is preserved (CASE-2026-03-11 §6); the V15.1 remediation is not.
+- ❌ Retroactive ADR pattern as routine — ADR-007 was the one-time concession for a pre-habit decision. New decisions of comparable scope require ADR before code (Doc Protocol v4 Rule 10).
+
+---
+
+## Live state snapshot (at Session 24 start, 2026-05-09 close)
+
+| Component | State |
+|---|---|
+| **Local** | S21 production patches still uncommitted in working tree (`build_ict_htf_zones.py` with TD-070 v1+v2 + TD-071 stack); 8 Task Scheduler tasks have battery flags from S21 TD-072 fix. **Session 23 docs commits committed and pushed (`74c1f8d` + `70a5cc6`)**. No zombie Python processes. capture_spot_1m_v2 verified working since S21. |
+| **AWS (MERDIAN, `i-090957ed4ce8877f7`, `ssm-user@ip-172-31-35-90`)** | NOT touched Session 21/22/23 (only investigated and S23 git pull). Hash matches Local at `70a5cc6`. `ws_feed_zerodha.py` continues to stream NIFTY ticks. `ingest_breadth_from_ticks.py` continues to produce breadth from those ticks. **`ingest_option_chain_local.py` failing intermittently — TD-080 OPEN; root cause unconfirmed; resume reproducer Mon 2026-05-12 09:15 IST cron.** |
+| **AWS (MALPHA, `ubuntu@13.51.242.119`, `~/meridian-alpha`)** | Kite gateway only — NOT Meridian. S22 backfill edits remain dirty (uncommitted). Kite is now the de-facto recovery path for Dhan outages, validated end-to-end S22. |
+| **Critical items (C-N)** | None new. |
+| **Tech debt (active)** | All from S22+S21 still active (TD-073 thru TD-083, TD-067, TD-069, TD-061, TD-062, TD-063, TD-029, TD-030, TD-031, TD-046, TD-049-052, TD-053-057, TD-059, TD-077, TD-078). **No new TDs filed Session 23** (doc work only). Three TD candidates surfaced from S23 audit (not yet filed): disable `MERDIAN_Market_Tape_1M` task to match script reality; extend TD-061 pythonw migration to remaining 11 cmd-spawning tasks; add `merdian_watchdog.py` + `capture_spot_1m_v2.py` to git. |
+| **ENH in flight** | ENH-93 CANDIDATE replay harness. ENH-88 BUILT NOT DEPLOYED awaiting verification of OB signal flow on real OHLC. ENH-90 CANDIDATE deferred for N expansion. ENH-91 + ENH-92 SHIPPED Session 17. No new ENH filed Session 23. |
+| **Documentation reference layer (NEW post-S23)** | Six-file reference layer established at `74c1f8d` + System Map sync at `70a5cc6`. **Doc Protocol v4 in force.** ADR-007 retroactively grounds V18F pivot. Decision Index seeded with 3 ADRs; 4 reserved IDs (003/004/005/006). Assumption Register grounded in V15.1 Appendix D + ICT-era refresh. Governance Framework preserves V16 §3 verbatim. Disaster Rebuild Runbook + CASE-2026-03-11 promoted to canonical markdown. CLAUDE.md edited (read order, source-of-truth map, settled-decisions footer). 11 boundary questions filed for ADR-006. 7 prioritised assumption validations queued. Tags: `docs-v4`, `session-23-docs-consolidation`. |
+| **Project knowledge layer** | **STALE — pending Session 24 P0 upload.** Knowledge base reflects pre-S23 state. v3 protocol still visible. New reference files not yet uploaded. **Cross-layer sync rule unsatisfied until upload completes.** |
+| **Pine on TradingView** | S22 36-zone overlay; **TD-079 visible defect — all resistances above 78k missing** because date-expired despite being unbreached structurally. Pending TD-079 fix after ADR-005. |
+| **Spot data quality** | hist_spot_bars_1m has clean OHLC + S22 750-row backfill for 2026-05-07. NIFTY+SENSEX both. |
+| **Option data quality** | hist_option_bars_1m +24,749 rows for 2026-05-07 from S22 Kite backfill. **option_chain_snapshots has 64 missing 5-min windows from S22 outage — permanently lost** (real-time-only Dhan endpoint). Per-strike OHLC recovered allows ATM straddle reconstruction. |
+| **Live writer** | v2.1 `capture_spot_1m_v2.py` continues healthy. Phase 2b AWS migration still deferred. |
+| **Trading calendar** | Saturday 2026-05-09 closed (today). Sunday 2026-05-10 closed. Mon 2026-05-12 is open trading day. NIFTY weekly expiry Tue 2026-05-12; SENSEX weekly Thu 2026-05-14. |
+
+---
+
+## Mid-session checkpoints (per Session Management Rule 1)
+
+*Reset by Session 24 start.*
+
+---
+
+## Session-end checklist (run at end of each substantive session — per Doc Protocol v4 Rule 3)
+
+```
+☐ Update merdian_reference.json for any file/table/item status change
+☐ Update tech_debt.md if a TD item changes
+☐ Update System Map if file/table/runner/orchestration changed                    (NEW v4)
+☐ Update Deployment Topology if AWS↔Local boundary changed                        (NEW v4)
+☐ Overwrite CURRENT.md (Last session reflects this session, This session reset)
+☐ Append one line to session_log.md (newest-first prepend)
+☐ Update Enhancement Register if architectural thinking happened
+☐ Update CLAUDE.md if a Rule, settled decision, or anti-pattern was added
+☐ If new ADR was written:                                                         (NEW v4)
+    ☐ prepend entry to MERDIAN_Decision_Index.md
+    ☐ append governance-language one-liner to CLAUDE.md settled-decisions
+    ☐ if it touches an assumption: update MERDIAN_Assumption_Register.md
+☐ Update Experiment Compendium if new experiment evidence was produced
+☐ Commit all documentation changes to Git
+☐ Upload updated files to Claude.ai project knowledge (CLAUDE.md Rule 12)
+☐ AWS sync if production code changed (git push + AWS git pull)
+☐ Re-enable any disabled Task Scheduler tasks before next market open
+```
+
+---
+
+## Previous session (Session 22) — preserved per no-crunch directive
+
+| Field | Value |
+|---|---|
 | **Date** | 2026-05-07 (Thursday — Session 22, intra-market through evening). |
 | **Concern** | Began as morning verification of Session 21 patches (TD-070 v2, TD-071, TD-072) — all PASS at 08:45 IST cron. Cascaded into MAJOR INCIDENT: Dhan option chain ingest outage on AWS — 151 of 299 daily attempts failed with `401 Authentication Failed - Client ID or Token invalid`, alternating ~50/50 hourly across two windows (09:30-13:30 IST + 14:45-15:25 IST), ~70% degradation of trading day. Six hypotheses tested and refuted; root cause UNCONFIRMED. Spot + option backfill executed via Kite/MeridianAlpha to recover today's gap. TD-079 architectural defect surfaced (zone date-expiry discards unbreached resistances). TD-084 found and fixed same-session (UTC/IST timezone bug in option backfill script). Architecture conversation with operator initiated, 4 questions outstanding at session close. |
 | **Type** | Engineering — incident response + data recovery + architectural surfacing. 0 production patches deployed (all S22 work was diagnosis + backfill + documentation). 6 TDs filed (1 closed same-session). 25,499 rows backfilled. Architecture conversation initiated. |
@@ -80,92 +293,6 @@
 - (c) NIFTY weekly is now Tuesday (per NSE 2025+ change), SENSEX stays Thursday — same-day backfill may pull 2 SENSEX expiries (today + next-Thursday) but only 1 NIFTY (next-Tuesday). Was unexpected; documented for future backfills.
 - (d) Kite returns IST-tagged datetimes for option chain `historical_data` calls — `.replace(tzinfo=UTC)` is the canonical timezone bug pattern, never apply to Kite output. (TD-084.)
 - (e) `find_dotenv()` fails in heredoc context — use file approach `load_dotenv("/path/.env")` or write to `/tmp/script.py` and invoke. Hit twice in S22.
-
----
-
-## This session (Session 23)
-
-| Field | Value |
-|---|---|
-| **Date** | 2026-05-08 (Friday) — TBD. |
-| **Goal** | Operator's call. Primary candidates: (P0) Watch 09:15 cron — does Dhan option chain ingest fail again? Reproducer test for TD-080. (P1) Architecture conversation Phase α — operator answers Q1-Q4; draft ADR for TD-079. (P2) Documentation closeout if any gaps from S22 rewrite. (P3) ENH-93 replay harness build. |
-| **Type** | Operator's call — engineering / operations / research. |
-| **Success criterion** | Defined when goal is set. |
-
-### Carry-forward priority queue (ordered by recommended priority for Session 23):
-
-| Priority | Item | Why |
-|---|---|---|
-| **P0** | Reproducer test for TD-080 Dhan option chain outage | Resume 09:15 IST cron — does ingest_option_chain_local.py fail again? Clean → today was unique (likely operator-laptop-OFF triggered something specific); broken → reproducer in hand for root-cause work. Without this controlled test we can't escape the 6-hypothesis refutation cycle. |
-| **P0b** | TD-078 closure verification — Apr-13 BULL_OB SQL | Session 21 filed TD-078 as PENDING because empirically the multi-week lookback in TD-070 v2 may not be firing as designed. SQL: `SELECT * FROM ict_htf_zones WHERE timeframe='W' AND pattern_type='BULL_OB' AND source_bar_date='2026-04-13'` — expect a row if TD-070 v2 actually relaxed prev_move filter correctly. |
-| **P1** | Architecture conversation Phase α (operator answers Q1-Q4) | Recommended sequence: (a) ADR-005 zone validity model rewrite per TD-079 — pure price-based, OB/FVG `valid_to=NULL`, PDH/PDL keep date-expire; (b) ADR-006 AWS migration scope decision; (c) Token reliability investigation (TD-080) ordering vs migration. |
-| **P2** | TD-079 zone-validity rewrite implementation (after ADR-005) | Architectural defect bleeding signal quality. ADR drafted before code. Pipeline change is non-trivial: `expire_old_zones()` must split logic by pattern_type; backfill pass must restore wrongly-expired W zones. |
-| **P3** | ENH-93 replay harness build | If TD-080 reproducer fails at 09:15, focus shifts here. Use existing `backfill_*` chain (write to hist_*) as starting point, add live-table mode (`--namespace=replay` or env-var injection). |
-| **P4** | Commit S21 + S22 work to Local main | Session 21 patches uncommitted. MALPHA AWS dirty. Single-commit pattern broken — fix at session 23 start before any new work. |
-| **P5** | TD-073 momentum direction lag investigation | S21-filed HIGH. Momentum lagged 700pt rally May 6 by ~60 min. Worth investigating if signal builder is genuinely slow. |
-| **P6** | TD-074 ENH-77 BULL_OB AFTERNOON NIFTY hard skip review | S21-filed MED. Blocked the only TIER1 signal — gate is too aggressive. |
-
-### Files / tables / items relevant for next session
-
-- **`build_ict_htf_zones.py`** — Session 21 TD-070 v1+v2 + TD-071 stack applied, uncommitted; Session 22 confirmed working at 08:45 IST cron. Pending: TD-079 zone-validity rewrite (ADR-005 first).
-- **`ingest_option_chain_local.py`** — primary observability target for TD-080 reproducer at 09:15 IST.
-- **`refresh_dhan_token.py`** — Local + AWS variants; investigate per-token lifecycle for TD-080.
-- **`script_execution_log` table** — primary diagnostic surface (filter by script_name + started_at to track ingest_option_chain failure pattern).
-- **`option_chain_snapshots` table** — gap detection: `SELECT date_trunc('5 min', created_at) AS bin, COUNT(*) FROM option_chain_snapshots WHERE created_at::date = '2026-05-07' GROUP BY 1 ORDER BY 1` — shows 64 missing windows.
-- **`hist_option_bars_1m` table** — backfilled rows from S22 are the recovery substrate for ENH-93 replay reconstruction.
-- **`ict_htf_zones` table** — TD-079 audit: `SELECT pattern_type, status, COUNT(*) FROM ict_htf_zones WHERE timeframe='W' AND zone_high > 78000 GROUP BY 1,2`.
-- **TradingView chart Pine** — has S22 36-zone overlay; missing all >78k resistances (TD-079 visible defect).
-
-### DO NOT REOPEN this session
-
-- ❌ Six refuted Dhan outage hypotheses (token sync, battery flag side-effect, refresh_dhan_token competing, MALPHA Dhan competition, stale-token daemon, shadow_runner memory cache) — all verified refuted Session 22; do not re-run those checks without new evidence.
-- ❌ TD-070 v2 dedup logic — verified working at 08:45 IST cron Session 22 with 0 ON CONFLICT errors.
-- ❌ TD-071 expire-after-recheck pipeline order — verified working at 08:45 IST cron Session 22 with 18 stale W zones flipped EXPIRED correctly.
-- ❌ TD-072 battery flags — verified persistent across Session 22; no new gaps observed in scheduled tasks.
-- ❌ TD-084 timezone bug — RESOLVED Session 22 same-session; sed-fix verified 375 bars/strike post-fix; do not reopen.
-- ❌ Backfill execution path (Spot via `backfill_spot_zerodha.py`, Option via `backfill_option_zerodha_OI_FIXED.py`) — settled, MALPHA is the venue for both per Session 20 directive (Kite credentials live there).
-
----
-
-## Live state snapshot (at Session 23 start, 2026-05-07 close)
-
-| Component | State |
-|---|---|
-| **Local** | S21 production patches uncommitted in working tree (build_ict_htf_zones.py with TD-070 v1+v2 + TD-071 stack); 8 Task Scheduler tasks have battery flags from S21 TD-072 fix. No zombie Python processes. capture_spot_1m_v2 verified working at 09:16:02 IST first-cycle Session 21. |
-| **AWS (MERDIAN, `i-090957ed4ce8877f7`, `ssm-user@ip-172-31-35-90`)** | NOT touched Session 21 or Session 22 (only investigated). `ws_feed_zerodha.py` continues to stream NIFTY ticks. `ingest_breadth_from_ticks.py` continues to produce breadth from those ticks. Phase 2b migration of capture_spot_1m_v2 still deferred. **`ingest_option_chain_local.py` failing intermittently — TD-080 OPEN; root cause unconfirmed.** |
-| **AWS (MALPHA, `ubuntu@13.51.242.119`, `~/meridian-alpha`)** | Kite gateway only — NOT Meridian. Has `backfill_spot_zerodha.py` + `backfill_option_zerodha_OI_FIXED.py` with extended BACKFILL_DATES from S22 backfill (uncommitted). Option script has TD-084 timezone fix applied (uncommitted). `.bak_S22` preserved. Will not be used for Meridian code going forward per S20 directive — but **Kite is now the de-facto recovery path for Dhan outages, validated end-to-end S22**. |
-| **Critical items (C-N)** | None new. |
-| **Tech debt (active)** | TD-079 (S2 HIGH) NEW Session 22 — zone date-expiry discards unbreached resistances, architectural defect. TD-080 (S2 HIGH) NEW Session 22 — Dhan option chain endpoint intermittent 401s, root cause unconfirmed. TD-081 (S2 HIGH) NEW Session 22 — no data-freshness guard between primary ingestion and derived layers. TD-082 (S3) NEW Session 22 — contract miscalibration on ingest_option_chain_local.py backfill spike of 482 writes vs expected 50 logged as success. TD-083 (S4 LOW) NEW Session 22 — ExecutionLog rejects OUTSIDE_MARKET_HOURS and NO_DATA exit_reasons from capture_spot_1m_v2. TD-073 (S2 HIGH) NEW Session 21 — momentum direction lagged 700pt rally May 6 by ~60 min. TD-074 (S3 MED) NEW Session 21 — ENH-77 BULL_OB AFTERNOON NIFTY hard skip blocked the only TIER1 signal. TD-075 (S3 MED) NEW Session 21 — confidence threshold 60 vs observed max 45. TD-076 (S4 LOW) NEW Session 21 — SENSEX DTE gate persistent block on weekly expiry. TD-077 (S4 LOW) NEW Session 21 — wide FVG zones during volatile weeks lack outlier filter. TD-078 (S3) NEW Session 21 — TD-070 closure verification incomplete. TD-067, TD-069 from Session 20 still active. TD-061, TD-062, TD-063 from Session 17 still active. TD-029, TD-030, TD-031, TD-046, TD-049-052, TD-053-057, TD-059 still active. **Closed Session 22:** TD-084 (UTC/IST timezone bug). **Closed Session 21:** TD-070, TD-071, TD-072. |
-| **ENH in flight** | ENH-93 CANDIDATE — replay/simulation harness, filed Session 22, deferred decision tonight. ENH-88 still BUILT NOT DEPLOYED awaiting verification of OB signal flow on real OHLC. ENH-90 CANDIDATE deferred for N expansion. ENH-91 + ENH-92 SHIPPED Session 17. |
-| **Pine on TradingView** | S22 36-zone overlay (10 HTF + intraday merged); **TD-079 visible defect — all resistances above 78k missing** because date-expired despite being unbreached structurally. Pending TD-079 fix. |
-| **Spot data quality** | hist_spot_bars_1m has clean OHLC + S22 750-row backfill for 2026-05-07. NIFTY+SENSEX both. 1 boundary flat each at 15:29 (acceptable artifact). |
-| **Option data quality (today)** | hist_option_bars_1m +24,749 rows for 2026-05-07 from S22 Kite backfill. **option_chain_snapshots has 64 missing 5-min windows from outage — permanently lost (real-time-only Dhan endpoint).** Per-strike OHLC recovered allows ATM straddle reconstruction + basic IV via inverse Black-Scholes. |
-| **Live writer** | v2.1 `capture_spot_1m_v2.py` verified working since Session 21 09:16:02 IST first cycle. Continues healthy at 97% success rate Session 22 (371/378 cycles). Phase 2b AWS migration still deferred. |
-| **Trading calendar** | 2026-05-08 (Fri) is open trading day. NIFTY weekly expiry was Tue 2026-05-12; SENSEX weekly is Thu 2026-05-14. |
-
----
-
-## Mid-session checkpoints (per Session Management Rule 1)
-
-*Reset by Session 23 start.*
-
----
-
-## Session-end checklist (run at end of each substantive session)
-
-```
-☐ Update merdian_reference.json for any file/table/item status change
-☐ Update tech_debt.md if a TD item changes
-☐ Overwrite CURRENT.md (Last session reflects this session, This session reset)
-☐ Append one line to session_log.md (newest-first prepend)
-☐ Update Enhancement Register if architectural thinking happened
-☐ Update CLAUDE.md if a Rule, settled decision, or anti-pattern was added
-☐ Update Experiment Compendium if new experiment evidence was produced
-☐ Commit all documentation changes to Git
-☐ Upload updated files to Claude.ai project knowledge (Rule 12)
-☐ AWS sync if production code changed (git push + AWS git pull)
-☐ Re-enable any disabled Task Scheduler tasks before next market open
-```
 
 ---
 

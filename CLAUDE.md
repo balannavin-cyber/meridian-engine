@@ -17,11 +17,13 @@ MERDIAN — Market Structure Intelligence & Options Decision Engine. A live opti
 
 1. **This file** (`CLAUDE.md`) — orientation, rules, pointers
 2. **`docs/session_notes/CURRENT.md`** — what the last session did, what this session is for, what NOT to reopen
-3. **`docs/registers/tech_debt.md`** — known broken-ish things, workarounds, severity
-4. **`docs/registers/MERDIAN_Enhancement_Register_v<latest>.md`** — forward-looking proposals (only if this session touches them)
-5. **`docs/registers/merdian_reference.json`** — *targeted lookup only*, not full read. Use for file/table inventory.
+3. **`docs/registers/MERDIAN_System_Map.md`** — file/table/runner/orchestration index (use for "what writes to what" lookups)
+4. **`docs/decisions/MERDIAN_Decision_Index.md`** — flat lookup of every accepted ADR (use for "have we decided this?" checks)
+5. **`docs/registers/tech_debt.md`** — known broken-ish things, workarounds, severity
+6. **`docs/registers/MERDIAN_Enhancement_Register_v<latest>.md`** — forward-looking proposals (only if this session touches them)
+7. **`docs/registers/merdian_reference.json`** — *targeted lookup only*, not full read. Use for file/table inventory.
 
-That's it. Do **not** auto-load any `.docx` master at session start. They are generated artifacts, not working documents.
+That's it. Do **not** auto-load any `.docx` master at session start. They are generated artifacts, not working documents (V19 is the last Master under normal cadence per Doc Protocol v4 Rule 6).
 
 ---
 
@@ -50,15 +52,19 @@ For any recurring operation (token rotation, runner restart, backfill, credentia
 
 | Question | Where to look |
 |---|---|
-| "What does this file do? Where is it? What does it write to?" | `merdian_reference.json` → `files.<filename>` |
-| "What's the schema / row count / status of this table?" | `merdian_reference.json` → `tables.<tablename>` |
+| "What does this file do? Where is it? What does it write to?" | `MERDIAN_System_Map.md` §A · or `merdian_reference.json` → `files.<filename>` |
+| "What's the schema / row count / status of this table?" | `MERDIAN_System_Map.md` §B · or `merdian_reference.json` → `tables.<tablename>` |
+| "What runs on Local vs AWS? What ABSOLUTELY can't run on AWS?" | `MERDIAN_Deployment_Topology.md` |
 | "How do I do <recurring operation>?" | `docs/runbooks/` — check `README.md` first |
 | "Is this issue known? What's the workaround?" | `tech_debt.md` |
 | "Is this a critical bug or a forward proposal?" | `merdian_reference.json` → `open_items` (C-N) for critical · Enhancement Register for ENH-N |
-| "What did we decide last time about X?" | `docs/decisions/ADR-<N>-<topic>.md` if it exists, else `session_log.md` grep |
+| "What did we decide last time about X? Have we already decided this?" | `docs/decisions/MERDIAN_Decision_Index.md` (flat lookup) → drill into specific `ADR-NNN-<topic>.md` |
+| "What's the unvalidated assumption behind this rule?" | `docs/registers/MERDIAN_Assumption_Register.md` |
+| "What's the governance framework? (M→V→S→P, evidence questions, walk-forward, do-not-revive)" | `docs/operational/MERDIAN_Governance_Framework.md` |
+| "How would I cold-rebuild MERDIAN from zero?" | `docs/runbooks/runbook_disaster_rebuild.md` |
 | "How do I run preflight / canary / replay?" | `docs/operational/MERDIAN_Testing_Protocol_v1.md` |
 | "What's the commit/branch/deploy rule?" | `docs/operational/MERDIAN_Change_Protocol_v1.md` |
-| "When do I write an appendix vs a session note?" | `docs/operational/MERDIAN_Documentation_Protocol_v3.md` |
+| "When do I write an appendix vs a session note? When is an ADR mandatory?" | `docs/operational/MERDIAN_Documentation_Protocol_v4.md` |
 | "How do I keep a session from degrading?" | `docs/operational/MERDIAN_Session_Management_v1.md` |
 | "What were the experiment findings?" | `docs/research/MERDIAN_Experiment_Compendium_v<latest>.md` |
 
@@ -271,6 +277,9 @@ These are decisions made and validated. Re-litigating them wastes session time.
 - ✅ **TD-044 CLOSED** (Session 14, 2026-04-30) — ENH-76/77 local var / `out` dict drift fixed. Three-site sync in `build_trade_signal_local.py`. Side effect: file line endings normalised to uniform CRLF. Do NOT reopen — ENH-76/77 gates now correctly persist to DB headline fields.
 - ✅ **TD-038 EXIT AT IST PATCH SHIPPED** (Session 14, 2026-04-30) — `merdian_signal_dashboard.py` `card()` now converts UTC→IST for the static EXIT AT label. Mirrors sig_ts conversion. Live verification pending next TRADE_ALLOWED signal.
 - ✅ **Breach detection ordering FIXED** (Session 13) — `recheck_breached_zones()` now runs after all `upsert_zones()` calls. Upsert no longer overwrites BREACHED→ACTIVE. Fixed permanently.
+- ✅ **ADR-001 settled** (Session 7, 2026-04-23) — *"N days of shadow does not catch a stable lie. Duration gates test stability, not truth. Truth requires external reference or internal consistency — applied every cycle, not just at gate boundaries."* All MERDIAN gates pair stability + validity layers.
+- ✅ **ADR-002 settled** (Session 12, 2026-04-28) — *"Direction tells you which way to lean. Force tells you whether to bet. Zones tell you where the physics actually lives. And the regime you're in right now is not the regime you'll be in at expiry — because the structure migrates."* Six market-structure principles (P1–P6) govern the gamma layer and signal engine.
+- ✅ **ADR-007 settled** (Session 23, 2026-05-09) — *"The signal trigger is the discrete ICT pattern. The confidence score is the size dial. Gates that validated as binary truth — LONG_GAMMA, NO_FLIP — remain. Gates that validated as conservative myth — CONFLICT, VIX>20 — are lifted. The 11 March 2026 insight stays; its proposed remediation does not."* V18F ICT pivot retroactively documented.
 
 If any of these need to change, that is itself an architectural session — write a new ADR.
 

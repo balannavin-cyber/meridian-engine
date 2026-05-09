@@ -35,7 +35,9 @@ This is the **production** map. Research scripts (`experiment_*.py`, etc.) are n
 
 | Script | Local | AWS | Reads | Writes | Status |
 |---|---|---|---|---|---|
-| `capture_market_spot_snapshot_local.py` | ✅ | ✅ | Dhan REST `/marketfeed/quote/index` | `market_spot_snapshots` | ACTIVE |
+| `capture_market_spot_snapshot_local.py` | ✅ | ✅ | Dhan REST `/marketfeed/quote/index` | `market_spot_snapshots` | ACTIVE — used by AWS PreOpen cron 09:08 IST |
+| `capture_spot_1m.py` | ✅ | ❌ | Dhan REST | `market_spot_snapshots` | ACTIVE — used by Local `MERDIAN_PreOpen` task (pythonw.exe). Different code path from `capture_market_spot_snapshot_local.py` despite same purpose — see Deployment Topology §9 question #2 |
+| `capture_spot_1m_v2.py` | ✅ | ❌ | Dhan REST | `market_spot_snapshots` | ACTIVE — used by Local `MERDIAN_Spot_1M` task (pythonw.exe). Production-active 1-min spot ingester replacing disabled `run_market_tape_1m.py` |
 | `capture_index_futures_snapshot_local.py` | ✅ | ✅ | Dhan REST + dynamic contract resolution | `index_futures_snapshots` | ACTIVE — V17E dynamic contract |
 | `ws_feed_zerodha.py` | ✅ | ❌ | Zerodha KiteTicker WebSocket (NIFTY full chain) | `option_chain_snapshots` (Zerodha rows) | ACTIVE — Session 13 task registered |
 | `ingest_option_chain_local.py` | ✅ | ✅ | Dhan REST option chain | `option_chain_snapshots` | ACTIVE — currently failing 401 on Local (V18A) |
@@ -94,6 +96,9 @@ This is the **production** map. Research scripts (`experiment_*.py`, etc.) are n
 | `gamma_engine_alert_daemon.py` | ✅ | ❌ | Alert emission on operational thresholds | ACTIVE |
 | `merdian_pipeline_alert_daemon.py` | ✅ | ❌ | Pipeline-stage alerting | RUNNING (PID 19636 as of 2026-04-26 14:17 IST) |
 | `gamma_engine_telemetry_logger.py` | ✅ | ❌ | Heartbeat / telemetry capture | ACTIVE — supervisor write failure tracked (M-07) |
+| `merdian_watchdog.py` | ✅ | ❌ | Process killer for hung Python runners (`--kill` flag) | ACTIVE — wired to `MERDIAN_HB_Watchdog` (TimeTrigger interval), runs as `pythonw.exe`. **Production-critical; currently untracked in git — see follow-up flag** |
+| `watchdog_check.ps1` | ✅ | ❌ | Passive state-check / alert layer (companion to `merdian_watchdog.py`) | ACTIVE — wired to `MERDIAN_Watchdog` (TimeTrigger interval). PowerShell |
+| `merdian_morning_start.ps1` | ✅ | ❌ | Morning supervisor entry point (Mon-Fri 08:00 + AtLogon) | ACTIVE — wired to `MERDIAN_Intraday_Supervisor_Start`. **Replaces `start_supervisor_clean.ps1` that JSON had as the action** — `merdian_morning_start.ps1` may invoke `start_supervisor_clean.ps1` internally; not yet audited |
 | `evaluate_shadow_vs_live.py` | ✅ | ✅ | Shadow vs live comparison (returns 0 rows below threshold) | FUNCTIONAL |
 
 ### A.6 Phase 4A execution (manual signal capture + trade logging)
@@ -352,17 +357,22 @@ Source: `merdian_reference.json` `aws_cron`. Install rule: NEVER use interactive
 
 ### D.2 Local Task Scheduler entries
 
-The JSON tracks 4; Session 17 reactivation evidence indicates 13 `MERDIAN_*` tasks exist in production. The reference is partial. Known:
+**Canonical inventory: `MERDIAN_Deployment_Topology.md` §7.2.** 17 `MERDIAN_*` tasks confirmed via Session 23 audit (`Get-ScheduledTask` + action mapping pass). The full inventory with trigger types, cadences, canonical actions (script paths + arguments), and architectural notes lives in Topology §7.2 — single source of truth.
 
-| Task | Cadence | Action | Status |
-|---|---|---|---|
-| `MERDIAN_Market_Tape_1M` | 1-min | run_market_tape_1m.py | DISABLED 2026-04-07 |
-| `MERDIAN_Intraday_Supervisor_Start` | Mon-Fri 08:00 + AtLogon | start_supervisor_clean.ps1 | ACTIVE |
-| `MERDIAN_Live_Dashboard` | AtLogon | merdian_live_dashboard.py | ACTIVE — PYTHONIOENCODING=utf-8 |
-| `MERDIAN_Spot_MTF_Rollup_1600` | Mon-Fri 16:00 IST | run_spot_mtf_rollup_once.bat → build_spot_bars_mtf.py | ACTIVE — Session 9 closure of TD-019/023, ENH-71 instrumented |
-| `MERDIAN_ICT_HTF_Zones_0845` | Mon-Fri 08:45 IST | build_ict_htf_zones.py (with `--timeframe H` added Session 13) | ACTIVE — Session 11 extension closure of TD-017 |
-| `MERDIAN_IV_Context_0905` | Mon-Fri 09:05 IST | compute_iv_context_local.py | ACTIVE |
-| (~7 more) | (TBD) | — | **Gap — see §G.1** |
+Summary view:
+
+| Tasks running | Count |
+|---|---|
+| Active production tasks | 16 |
+| Disabled / functionally non-functional | 1 (`MERDIAN_Market_Tape_1M` — task `Ready` but script DhanError 401) |
+| **Total** | **17** |
+
+The split by trigger type: 13 Weekly (Mon-Fri-bound), 2 TimeTrigger (recurring intervals — watchdogs), 1 LogonTrigger (`Live_Dashboard`), 1 Daily.
+
+Architectural insights from the action-mapping audit (full detail in Topology §7.2 Notes + Architectural Insights subsection):
+- **TD-061 pythonw migration partially complete** — 4 tasks already use `pythonw.exe` (`HB_Watchdog`, `Live_Dashboard`, `PreOpen`, `Spot_1M`); 11 still wrap through cmd via .bat
+- **Two-watchdog architecture is intentional** — `merdian_watchdog.py --kill` (kill layer) + `watchdog_check.ps1` (observe layer)
+- **Local `MERDIAN_PreOpen` and AWS cron `MERDIAN_PreOpen` run different scripts** — `capture_spot_1m.py` (Local, pythonw) vs `capture_market_spot_snapshot_local.py` (AWS); dupe-check pending
 
 ### D.3 Supervisor responsibilities
 
@@ -496,13 +506,14 @@ Stable abstractions used by multiple builders:
 
 Things this Map does not yet cover comprehensively. Fill in subsequent sessions.
 
-### G.1 Task Scheduler completeness (HIGH priority gap)
+### G.1 Task Scheduler completeness — ✅ RESOLVED (Session 23 audit)
 
-`merdian_reference.json` lists 4 Task Scheduler entries; Session 17 reactivation evidence (13 `MERDIAN_*` tasks were disabled and re-enabled) indicates the production reality is ~13 tasks. The other ~9 are not in the JSON. A one-session audit:
-```powershell
-Get-ScheduledTask -TaskName "MERDIAN_*" | Select TaskName, State, Triggers
-```
-will produce the canonical list. Update §D.2 with the result.
+`merdian_reference.json` originally listed 4 Task Scheduler entries; Session 17 reactivation evidence suggested ~13. Session 23 PowerShell audit (Navin) revealed **17 tasks** plus a second-pass action-mapping audit that captured the canonical `Execute + Arguments` for each. Full inventory now lives in `MERDIAN_Deployment_Topology.md` §7.2; this Map's §D.2 points to it as single source of truth.
+
+Three discoveries from the audit became their own follow-ups (filed in Topology §9 questions list):
+- Local↔AWS PreOpen run different scripts (dupe-check pending)
+- Local↔AWS Post-market run different scripts (dupe-check pending)
+- TD-061 pythonw migration partially complete (4/15 candidate tasks already migrated)
 
 ### G.2 Kite client function signatures (MEDIUM priority gap)
 
@@ -512,9 +523,13 @@ will produce the canonical list. Update §D.2 with the result.
 
 V18 master appendices (V18A–H) use a 13-block structure. The schema of each block (B1 file changes, B2 table changes, etc.) is well-known to current Claude but undocumented in markdown form. If the Master `.docx` archive becomes hard to read, this Map could absorb a B1–B13 schema reference table in a §H section.
 
-### G.4 Signal_snapshots column-by-column reference
+### G.4 Signal_snapshots column-by-column reference (MEDIUM priority gap)
 
 `signal_snapshots` is the primary decision record. Its column inventory (especially after ICT additions and `po3_session_bias`) is split across V18F appendix + V18G appendix + V19 §8. A consolidated column reference would belong here as B.3 sub-table.
+
+### G.5 Wrapper script layer — `.bat` and `.ps1` files (NEWLY DISCOVERED, Session 23)
+
+The Task Scheduler audit revealed ~13 `.bat` and `.ps1` wrappers that orchestrate when production Python scripts run on Local. They are not "writes-to-table" production architecture (System Map's primary scope) but they are the operational glue that schedules production architecture. Inventory lives in **Deployment Topology §A.2** (Newly catalogued scripts) — this Map points to it. Consider whether the wrapper layer warrants its own §A.10 here in a future session, or whether keeping it in Topology is the right division.
 
 ---
 
@@ -522,7 +537,8 @@ V18 master appendices (V18A–H) use a 13-block structure. The schema of each bl
 
 | Date | Session | Event |
 |---|---|---|
-| 2026-05-09 | Session 23 | Created. Sourced from `merdian_reference.json` (72 files, 36 tables, 4 cron, 4 task entries) + V18/V19 master appendices for cycle pipelines + V15.1 §9.1/9.2 for core abstractions and monitoring schemas. Four known gaps flagged in §G for follow-up sessions. |
+| 2026-05-09 | Session 23 (initial) | Created. Sourced from `merdian_reference.json` (72 files, 36 tables, 4 cron, 4 task entries) + V18/V19 master appendices for cycle pipelines + V15.1 §9.1/9.2 for core abstractions and monitoring schemas. Four known gaps flagged in §G for follow-up sessions. |
+| 2026-05-09 | Session 23 (Topology audit follow-up) | Updates after the Deployment Topology Task Scheduler audit (canonical 17-task inventory): §A.1 gained `capture_spot_1m.py` and `capture_spot_1m_v2.py` (production data-capture scripts revealed by audit); §A.5 gained `merdian_watchdog.py`, `watchdog_check.ps1`, `merdian_morning_start.ps1` (operational/supervisor layer); §D.2 reduced to pointer to Topology §7.2 (canonical scheduler inventory); §G.1 marked RESOLVED; §G.5 added documenting the .bat/.ps1 wrapper layer that lives in Topology §A.2. |
 
 ---
 

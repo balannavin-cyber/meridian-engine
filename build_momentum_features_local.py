@@ -235,29 +235,50 @@ def find_spot_before(symbol: str, before_ts: datetime, minutes_back: int) -> flo
 
 
 def get_session_open_spot(symbol: str, current_ts: datetime) -> float | None:
-    rows = supabase_select(
-        "market_spot_snapshots",
-        "symbol, ts, spot",
-        filters={"symbol": symbol},
-        order_by="ts",
-        desc=False,
-        limit=500,
+    # TD-101 fix (S26 2026-05-10): previous version called
+    # supabase_select(..., order_by="ts", desc=False, limit=500) WITHOUT
+    # a date filter. market_spot_snapshots is an unbounded growing table,
+    # so the query returned the OLDEST 500 rows ever recorded -- every one
+    # of them dropped by the today-date filter inside the loop, leaving
+    # chosen=None. Result: ret_session was NULL on every signal since
+    # ~2026-04-17 (3+ weeks of silent ENH-55 momentum gate failure).
+    # Same OI-18 bug shape as the S25 dashboard pre-open status fix
+    # (TD-097), in a separate file that never got the propagation.
+    #
+    # Fix: bound the query to today's UTC start via gte filter, then walk
+    # ASC and break on first row at-or-after the anchor threshold. Market
+    # hours are 09:00-16:30 IST = 03:30-11:00 UTC, so today's UTC date
+    # always equals today's IST date during cycle execution.
+    current_utc = current_ts.astimezone(timezone.utc)
+    today_start_utc_iso = datetime(
+        current_utc.year, current_utc.month, current_utc.day,
+        tzinfo=timezone.utc,
+    ).isoformat()
+
+    resp = (
+        SUPABASE.table("market_spot_snapshots")
+        .select("ts, spot")
+        .eq("symbol", symbol)
+        .gte("ts", today_start_utc_iso)
+        .order("ts", desc=False)
+        .limit(20)
+        .execute()
     )
+    rows = getattr(resp, "data", None) or []
 
-    current_date = current_ts.astimezone(timezone.utc).date()
     chosen: float | None = None
-
     for row in rows:
         ts = parse_ts(row.get("ts"))
         spot = to_float(row.get("spot"))
         if ts is None or spot is None:
             continue
-        if ts.astimezone(timezone.utc).date() != current_date:
+        # Defense-in-depth date check (query is already today-bounded).
+        if ts.astimezone(timezone.utc).date() != current_utc.date():
             continue
-
-        # 09:05 IST ~= 03:35 UTC (accepts pre-open capture from MERDIAN_PreOpen task)
-        # ENH-01 fix per V18G. Threshold MUST stay at 03:35 UTC; reverting to
-        # 03:45 would cause ret_session to be NULL all session (regression).
+        # 09:05 IST = 03:35 UTC (Local PreOpen, disabled S25),
+        # 09:08 IST = 03:38 UTC (AWS PreOpen, current anchor per Topology Sec 9.A).
+        # ENH-01 / V18G threshold preserved: 03:35 UTC catches both anchors.
+        # Do NOT raise to 03:45 (regression history per ENH-01).
         hh = ts.astimezone(timezone.utc).hour
         mm = ts.astimezone(timezone.utc).minute
         if (hh > 3) or (hh == 3 and mm >= 35):

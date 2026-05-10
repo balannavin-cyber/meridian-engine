@@ -122,6 +122,7 @@ Sortable table of all 86 IDs. For full detail see Part 4.
 | ENH-86 | Dashboard WIN RATE Section Redesign | 1 | **SHIPPED v1 2026-04-30 (v2 BLOCKED/ALLOWED prominence DEFERRED)** |
 | ENH-78 | DTE<3 PDH sweep → current-week PE rule | 1 | **SHIPPED 2026-04-30** |
 | ENH-79 | PWL weekly sweep detection + signal entry rules | 1 | **PROPOSED** |
+| ENH-96 | Dashboard "Gap (vs prev close)" card (prelim 09:08 + final 09:15 vs prev close 16:00) | 1 | **SHIPPED 2026-05-10** |
 ---
 
 ## Part 2 -- Active Work (not yet delivered or under monitoring)
@@ -200,6 +201,48 @@ Per Documentation Protocol v2 Rule 5: rejected IDs keep their slot as rejection 
 ## Part 4 -- Individual Entry Blocks
 
 Chronological by ID. Each entry shows current status, evidence, and history.
+
+### ENH-96 — Dashboard "Gap (vs prev close)" card showing prelim and final morning gap (SHIPPED 2026-05-10)
+
+| Field | Detail |
+|---|---|
+| Status | **SHIPPED** (filed and delivered same-session) |
+| Filed | 2026-05-10 (Session 25) |
+| Priority | MEDIUM — operator-facing visibility for pattern context per Phase α Q3 framing |
+| Area | OPERATIONS — operator dashboard (`merdian_live_dashboard.py`) |
+| Session | 25 (filed and shipped) |
+
+**Context.** Operator's pattern-context discipline requires knowing the gap-vs-prev-close at session start to interpret subsequent ICT pattern formations correctly (gap-and-go vs gap-and-fill have very different OB/FVG behavior). Pre-S25 dashboard had no gap surface — operator had to manually query `market_spot_snapshots` for prev close + 09:08 prelim + 09:15 final or eyeball it from TradingView. Discovered as side-effect of TD-097 investigation: the data was already captured (PreOpen 09:08 row exists in `market_spot_snapshots`), just not surfaced.
+
+**Proposal.** Add a "Gap (vs prev close)" card to the live dashboard between the Token card and the Pre-open card. The card shows three values per index (NIFTY, SENSEX): `prev close → prelim gap (16:00 vs 09:08) → final gap (16:00 vs 09:15)`. Color-code based on absolute gap magnitude (small / medium / large) per operator-defined thresholds.
+
+**Pre-requisites.**
+- TD-097 fix shipped (URL-encoding bug fixed first, otherwise the same broken-fetch pattern would have prevented gap card data fetch from working). Both TD-097 fix and ENH-96 wiring went into the same `patch_s25_dashboard_preopen_gap.py` patch script.
+- `market_spot_snapshots` schema has 16:00 IST and 09:08 IST and 09:15 IST anchors reliably populated. Confirmed live for 5 trading days 2026-05-04 → 2026-05-08 during S25 §9 Q1 audit.
+
+**Implementation (shipped S25):**
+1. **`get_gap_status()` function** added to `merdian_live_dashboard.py`. Reads three timestamps per symbol: prev session close (16:00 IST of last trading day), prelim gap row (09:08 IST today), final gap row (09:15 IST today). Returns dict with raw values and computed deltas + percent gaps.
+2. **`collect_data()` wired** to invoke `get_gap_status()` alongside existing status getters; results pass into the HTML render path.
+3. **`gap_html` builder** added — produces the per-symbol gap card markup.
+4. **Card placement** — inserted between Token card (existing) and Pre-open card (existing) in dashboard layout. Two cosmetic post-patch repositions converged on operator-preferred location.
+
+**Validation (S25):** Dashboard rendered correctly post-patch on 2026-05-10 evening. Gap card displays three reading triplet per index. Diagnostic scripts retained: `diag_preopen_render.py`, `diag_preopen_render_v2.py`, `diag_preopen_render_v3.py`. Pre-S25 backup `merdian_live_dashboard_PRE_S25.py` (before patch) and `merdian_live_dashboard_PRE_S25b.py` (post FIX1, before cosmetic reposition) preserved.
+
+**Use cases.**
+- Operator pattern-context discipline at session start (gap-and-go vs gap-and-fill).
+- Quick visual check that AWS 09:08 capture worked for the morning.
+- Aligns with Phase α Q3 emphasis on operator-facing tooling staying Local and surfacing capture-stage results clearly.
+
+**Cost shipped.** ~1 session for combined TD-097 fix + ENH-96 wiring (single patch script, single set of validations).
+
+**Blocked by.** Nothing — shipped same-session.
+
+**Related.** TD-097 (URL-encoding bug; fixed in same patch), TD-099 (5 other scripts with same URL-encoding pattern; filed separately), Phase α Q3 (operator-facing tooling stays Local; gap card is operator-facing).
+
+**History:**
+- 2026-05-10 (S25): Filed during TD-097 investigation when operator noted dashboard gap-data absence; SHIPPED same-session via `patch_s25_dashboard_preopen_gap.py` (5 substitutions applied to `merdian_live_dashboard.py`); validated end-of-S25.
+
+---
 
 ### ENH-95 — Replay orchestrator in-process invocation (CANDIDATE 2026-05-09)
 

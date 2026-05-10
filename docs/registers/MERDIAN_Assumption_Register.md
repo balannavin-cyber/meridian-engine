@@ -168,6 +168,30 @@ Open assumptions that would benefit from formal validation, prioritised:
 
 ---
 
+## D.8 Methodology assumptions (Phase α Q4 — calibration discipline)
+
+Filed S25 2026-05-10 from Phase α Q4 deferred-to-architect resolution. These are not signal-engine assumptions; they are **methodological commitments** that govern how new parameter changes are validated before promotion to production. ADR-009 will codify these; this section is the working draft.
+
+| ID | Assumption | Status | Evidence | Action |
+|---|---|---|---|---|
+| **D.8.1** | Single-cohort parameter derivation (Exp 15 era — full ~Apr 2025 → Apr 2026 of data used for both calibration and validation, no holdout slice) is not statistically defensible going forward. | **REJECTED S25** (option d in Phase α Q4 framing) | In-sample-only calibration memorizes noise alongside signal; out-of-sample degradation is structural and unmeasurable without a holdout split. | All new parameter changes must follow D.8.2 split discipline. Existing Exp 15-era params get D.8.3 prospective parity check. |
+| **D.8.2** | Phase 1 holdout split (now → ~April 2027 / Y2 close): N≥60 → 67/33 split, 10pp tolerance; 30≤N<60 → 75/25 split, 15pp tolerance; N<30 → "low-N calibration-only" tag in `merdian_reference.json`, no split required. | **LIVE S25 — pending ADR-009 codification** | Graduated by N because formal split below N=60 destroys statistical power on holdout slice. | Apply to next parameter-change experiment. Failures (holdout WR outside tolerance) → parameter filed but not shipped. |
+| **D.8.3** | Existing Exp 15-era parameters get a **prospective parity check** instead of retroactive split: track live WR for next 60 trading days against calibration WR. Flag drift > 15pp. | **LIVE S25 — implicit; formalized here** | Already happening implicitly via live trading; this just codifies the threshold for "this parameter is degrading." | Operationalize threshold check via dashboard or scheduled audit script. Owner-check-in: ~July 2026 (60 trading days post-S25). |
+| **D.8.4** | Phase 2 (Y2 close, ~April 2027): migrate to rolling walk-forward — 12-month calibration / 3-month holdout, slide quarterly. Parameter versioning via git tag + `merdian_reference.json` entry. Old parameters preserved for replay-based comparison. | **DEFERRED to Y2** | Walk-forward operationally too heavy at Y1 data scale; cohort sizes today don't always support it. | ADR-009 codifies trigger date for Phase 1 → Phase 2 cutover. Parameter versioning infrastructure to be designed before Y2. |
+| **D.8.5** | Status-quo single-cohort derivation (option d in Phase α Q4 framing) is explicitly **not acceptable** even under the constraint that some experiments have insufficient N for formal split. Discipline at low-N is the "low-N tag" in D.8.2, not silent waiver. | **REJECTED S25** | Single-cohort derivation has produced parameters traded against; degradation discipline matters even at low-N. | No silent waivers. Every parameter change either follows D.8.2 (formal split) or is tagged "low-N calibration-only" under D.8.2. |
+
+**ADR-009 governance language draft (to be ratified when ADR is drafted):**
+
+> *Parameter changes ship to production only after holdout validation. The split is graduated by cohort size: N≥60 takes a formal 67/33 split with 10pp tolerance; 30≤N<60 takes 75/25 with 15pp tolerance; N<30 ships as "low-N calibration-only" with explicit tag and prospective live-tracking commitment. Existing Exp 15-era parameters carry a prospective 60-day parity check against calibration WR. Walk-forward becomes mandatory at Y2 close. Single-cohort silent derivation is not permitted.*
+
+**Open follow-ups:**
+
+1. Operationalize D.8.3 prospective parity check — does it run via dashboard surfacing or a scheduled audit script? File as ENH if not already.
+2. Inventory all Exp 15-era parameter values currently in production code paths so the parity check has a concrete target list. Most are in `detect_ict_patterns.py` thresholds and `assign_tier()` routing logic.
+3. Define `merdian_reference.json` schema extension for "low-N calibration-only" tag (parameter name, cohort size at calibration, calibration WR, derivation date, N-target for upgrade to formal split).
+
+---
+
 ## Update log
 
 This register itself follows Doc Protocol v4 Rule 9.5: superseded rows are annotated, never deleted. Significant register events are recorded here.
@@ -175,6 +199,7 @@ This register itself follows Doc Protocol v4 Rule 9.5: superseded rows are annot
 | Date | Session | Event |
 |---|---|---|
 | 2026-05-09 | Session 23 | Created. V15.1 Appendix D content promoted. Refreshed for ICT-era post ADR-007. Status assignments grounded in V18F evidence + V19 SRB rules + Session 16/17 findings. |
+| 2026-05-10 | Session 25 | **§D.8 added** — Phase α Q4 calibration discipline answer codified into methodology assumptions. 5 rows: D.8.1 (single-cohort REJECTED), D.8.2 (graduated holdout split LIVE pending ADR-009), D.8.3 (Exp 15-era prospective parity check LIVE), D.8.4 (Phase 2 walk-forward DEFERRED to Y2), D.8.5 (status-quo silent waiver REJECTED). ADR-009 governance language draft + 3 open follow-ups recorded. |
 
 ---
 

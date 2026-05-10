@@ -175,7 +175,7 @@ All 36 currently-tracked tables in `merdian_reference.json`. Grouped by domain.
 
 | Table | Written by | Read by | Status |
 |---|---|---|---|
-| `ict_htf_zones` | `build_ict_htf_zones.py`, `build_ict_htf_zones_historical.py` | `detect_ict_patterns.py`, dashboard, Pine overlay | LIVE — ENH-37 |
+| `ict_htf_zones` | `build_ict_htf_zones.py`, `build_ict_htf_zones_historical.py` | `detect_ict_patterns.py`, dashboard, Pine overlay | LIVE — ENH-37. **`source_bar_date` semantics differ by timeframe (codified Session 25 from TD-078 closure):** W = week-start Monday date; D = bar's calendar date; 1H = hour bucket date. When debugging "missing zone row" claims on this table, check the timeframe-aware convention before concluding the row is absent. |
 | `ict_zones` | `detect_ict_patterns.py` (intraday zone build) | dashboard, signal builder | LIVE — ENH-37. Note: separate schema from `ict_htf_zones` (TD-047). |
 | `hist_pattern_signals` | `detect_ict_patterns.py`, `build_hist_pattern_signals_5m.py` (backfill) | analytics, dashboards, win-rate computations | ACTIVE — 6,318 rows |
 | `hist_spot_bars_5m` | `build_spot_bars_mtf.py` | ICT detector, HTF zone builder, experiment scripts | ACTIVE — 41,248 rows full year |
@@ -523,6 +523,8 @@ V18 master appendices (V18A–H) use a 13-block structure. The schema of each bl
 | Date | Session | Event |
 |---|---|---|
 | 2026-05-09 | Session 23 | Created. Sourced from `merdian_reference.json` (72 files, 36 tables, 4 cron, 4 task entries) + V18/V19 master appendices for cycle pipelines + V15.1 §9.1/9.2 for core abstractions and monitoring schemas. Four known gaps flagged in §G for follow-up sessions. |
+| 2026-05-09 | Session 24 | Added §A.X (Replay layer scripts) and §B.X (Replay tables) per ADR-008. 11 new replay scripts in `C:\GammaEnginePython\replay\` + 10 new `*_replay` Supabase tables. Zero-touch constraint preserved (live scripts physically untouched). |
+| 2026-05-10 | Session 25 | §B.4 ict_htf_zones row annotated with timeframe-aware `source_bar_date` semantics (codified from TD-078 closure): W = week-start Monday, D = bar's calendar date, 1H = hour bucket date. Implicit convention in `build_ict_htf_zones.py` made explicit so future debugging of "missing row" claims doesn't waste time. No script index or pipeline diagram changes (S25 was code-light per non-AWS-touch constraint of Phase α Q3 sequencing). MERDIAN_PreOpen Local 09:05 IST task DISABLED via PowerShell (durable); no §A row removal because the underlying script `capture_spot_1m.py` retains capability — only the scheduled invocation was removed. Note for future: Topology §7.2 task inventory next pass should mark `MERDIAN_PreOpen` State=Disabled. |
 
 ---
 

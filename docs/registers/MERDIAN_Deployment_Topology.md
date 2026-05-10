@@ -360,19 +360,47 @@ Items where the Local↔AWS boundary is unresolved or requires verification. Upd
 
 | # | Question | Status | Resolution path |
 |---|---|---|---|
-| 1 | Does Local `MERDIAN_Post_Market_1600_Capture` (`run_post_market_capture_once.bat`) and AWS `MERDIAN_Postmarket` (`capture_postmarket_1600.py`) write duplicate rows to `market_spot_snapshots`? | OPEN — different scripts, both writing to same table | Single SQL dupe-check at 16:00 IST timestamp. If duplicates: disable one. ADR-006 territory. |
-| 2 | Same question for PreOpen 09:08: Local (`capture_spot_1m.py`, pythonw) vs AWS (`capture_market_spot_snapshot_local.py`) | OPEN — different scripts, both writing | Same dupe-check at 09:08 IST. If both produce rows, decide which is canonical. **Note:** Local uses pythonw post-TD-061; AWS uses older script — Local is likely the modern path. |
+| 1 | Does Local `MERDIAN_Post_Market_1600_Capture` (`run_post_market_capture_once.bat`) and AWS `MERDIAN_Postmarket` (`capture_postmarket_1600.py`) write duplicate rows to `market_spot_snapshots`? | **CLOSED S25 2026-05-10 — confirmed dual-write** | Empirical SQL audit across 2026-05-04 → 2026-05-08 (5 trading days): both writers produced 16:00 IST rows on every day. **Disposition (per Phase α Q2 capture/derived split):** AWS canonical for capture stage; Local writer to be disabled. Action queued for ADR-006 execution phase, gated on TD-080 closure per Phase α Q3 sequencing. |
+| 2 | Same question for PreOpen 09:08: Local (`capture_spot_1m.py`, pythonw) vs AWS (`capture_market_spot_snapshot_local.py`) | **CLOSED S25 2026-05-10 — original framing inaccurate** | Empirical audit revealed there was **no actual dual-write at 09:08 IST** — AWS is sole writer at the 09:08 boundary. Local `MERDIAN_PreOpen` was a 09:05 IST task (different boundary, auction window), not 09:08. Local 09:05 task DISABLED same-session S25 (see new section below). Q2 as filed was based on Topology §7.2 Task Scheduler audit naming similarity, not on observed timestamps. |
 | 3 | Is `capture_spot_1m_v2.py` the production-active 1-min spot ingester, replacing the disabled `MERDIAN_Market_Tape_1M`? | LIKELY YES, per audit | One-shot evidence: query `market_spot_snapshots` write rate during a recent trading hour. If ~60 rows/hour on Local timestamps, v2 is doing the work. Update JSON `files` inventory. |
 | 4 | What does `merdian_morning_start.ps1` actually invoke? Does it call `start_supervisor_clean.ps1` internally, or is the JSON entry stale? | OPEN | One-time read of the .ps1 file. 5 minutes of work. |
 | 5 | Confirm the split between `merdian_watchdog.py --kill` (Python process killer) and `watchdog_check.ps1` (PowerShell health check) | LIKELY INTENTIONAL per audit | Worth filing as ENH/operational note documenting the two-watchdog architecture, so future sessions don't try to consolidate them. |
 | 6 | Should AWS gain telemetry mirroring (heartbeat / health snapshots) for full operational parity? | OPEN | ENH candidate. Not blocking. |
 | 7 | Static IP SSH whitelisting fragility from multi-WAN | OPEN | Move to AWS Systems Manager Session Manager. ENH candidate. |
-| 8 | AWS cron `MERDIAN_Postmarket` not yet proven (A-02 open) — needs one full day's evidence of successful run | OPEN | Operational verification. |
+| 8 | AWS cron `MERDIAN_Postmarket` not yet proven (A-02 open) — needs one full day's evidence of successful run | **PARTIAL EVIDENCE S25 2026-05-10** | 5-day evidence captured 2026-05-04 → 2026-05-08 confirms `MERDIAN_Postmarket` cron writes `market_spot_snapshots` rows at 16:00 IST on every trading day in window (per Q1 dual-write audit). Operational reliability proven for the post-market boundary. A-02 status to be updated formally when ADR-006 disposition executes. |
 | 9 | AWS cron `MERDIAN_EOD` cursor-gate logic not ported from V17D1 (A-04 open) | OPEN | Code port required. |
 | 10 | Should `MERDIAN_Market_Tape_1M` task be disabled in Task Scheduler to match the script's DhanError 401 production reality? | OPEN — recommend YES | Single Task Scheduler change. File as TD if not already. |
 | 11 | Should TD-061 (pythonw migration) be extended to the 11 cmd-spawning tasks, given the precedent of `HB_Watchdog`/`Live_Dashboard`/`PreOpen`/`Spot_1M` already on pythonw? | OPEN | Operational ENH. Each .bat wrapper would need an equivalent direct pythonw call. Worth a session of consolidation work. |
 
 These eleven questions are the proper scope of ADR-006 (reserved — AWS migration scope) when it gets drafted. Items 1–3 in particular are the empirical observations ADR-006 needs as evidence base.
+
+---
+
+### §9.A — S25 boundary disposal — `MERDIAN_PreOpen` (09:05 IST) DISABLED
+
+**Date:** 2026-05-10 (Session 25)
+
+**Context:** §9 Q2 audit revealed Local 09:05 task wrote `market_spot_snapshots` rows during the pre-open auction window (09:00–09:08 IST). AWS sole-writer status at 09:08 IST is empirically confirmed; the Local 09:05 task was a different-boundary write, not a duplicate of AWS 09:08.
+
+**Reasoning chain for disposal:**
+
+1. **Operator semantic:** Quote — "9:05 read meaningless" — auction-window prices are not tradeable price discovery; pre-open call auction does not produce continuous-market prints comparable to 09:08+ snapshots.
+2. **Code dependency check:** `ret_session` computation reads from `market_spot_snapshots` for the session anchor. Original anchor was 09:05 row. Migration to 09:08 anchor was validated via ADR-008 replay infrastructure (replay over historical days with 09:08 anchor produced equivalent `ret_session` values within tolerance for downstream momentum/signal cycles).
+3. **Disposal action:** `MERDIAN_PreOpen` task State changed `Ready` → `Disabled` via PowerShell `Disable-ScheduledTask` on 2026-05-10. Durable across reboots. No code change to disable script writers (Local `capture_spot_1m.py` retains capability; only the scheduled invocation was removed).
+4. **`ret_session` anchor migration:** 09:05 → 09:08, validated via replay; production code path now reads first 09:08 IST tick from AWS-written `market_spot_snapshots` row.
+
+**Mon 2026-05-12 verification plan:**
+
+- Confirm `MERDIAN_PreOpen` does not appear in 09:00–09:10 IST execution log (`script_execution_log` should show no entries from this task).
+- Confirm AWS `capture_market_spot_snapshot_local.py` 09:08 IST write succeeds and produces canonical `market_spot_snapshots` row.
+- Confirm `ret_session` computation in `build_momentum_features_local.py` cycle ≥1 reads correctly from 09:08 anchor.
+- If any of the three fail: re-enable Local `MERDIAN_PreOpen` as fallback while investigating; do not block production.
+
+**Cross-references:**
+
+- §7.2 Task Scheduler entry for `MERDIAN_PreOpen` to be marked `State=Disabled` on next inventory pass.
+- Phase α Q2 (capture stage → AWS canonical) endorses this disposal as architecturally aligned.
+- Phase α Q3 (token reliability first) does NOT block this specific disposition because the 09:08 AWS writer is `capture_market_spot_snapshot_local.py` (Kite-WebSocket-derived path, not Dhan-token-dependent). The Q3-gated dispositions are those where AWS reliability still depends on Dhan token refresh (e.g. option-chain captures, post-market 16:00 disposal).
 
 ---
 
@@ -394,6 +422,7 @@ These eleven questions are the proper scope of ADR-006 (reserved — AWS migrati
 |---|---|---|
 | 2026-05-09 | Session 23 (initial) | Created. Sourced from V18 §15.4/15.5, V18A §13.5, V18E §7.4/7.5, CLAUDE.md gotchas, `merdian_reference.json` `environments` + `aws_cron` + `aws_runtime_files` + (partial) `task_scheduler`. **Task Scheduler audit by Navin (PowerShell `Get-ScheduledTask`)** revealed 17 `MERDIAN_*` tasks vs JSON's 4 — full inventory captured in §7.2. Three boundary discrepancies surfaced (post-market dual-environment, pre-open dual-environment, Market_Tape_1M Ready vs DhanError 401). Eight open boundary questions filed in §9. |
 | 2026-05-09 | Session 23 (action map pass) | **Canonical action map populated** for all 17 Task Scheduler entries via second PowerShell pass. Surfaced ~15 newly-catalogued scripts (added to §A.2). Three architectural insights: (a) TD-061 pythonw migration is partially complete (4 tasks already pythonw), (b) two-watchdog architecture (`merdian_watchdog.py --kill` + `watchdog_check.ps1`) is intentional, (c) `merdian_morning_start.ps1` (not `start_supervisor_clean.ps1`) is the supervisor entry point. PreOpen and Post-market "duplicates" reframed as different-scripts-same-table writes. §9 expanded from 8 to 11 open questions. |
+| 2026-05-10 | Session 25 | **§9 Q1 CLOSED** (post-market 16:00 dual-write empirically confirmed via 5-day audit 2026-05-04 → 2026-05-08; disposition queued for ADR-006 execution gated on TD-080). **§9 Q2 CLOSED and reframed** — original framing inaccurate; no actual dual-write at 09:08 IST; Local 09:05 task was a different (pre-open auction) boundary, not 09:08. **§9 Q8 PARTIAL EVIDENCE** — Postmarket cron 5-day reliability captured. **New §9.A section** documents Local `MERDIAN_PreOpen` (09:05 IST) DISABLED via PowerShell `Disable-ScheduledTask`, durable; `ret_session` anchor migrated 09:05 → 09:08 and validated via ADR-008 replay; Mon 2026-05-12 verification plan filed. **Phase α Q2 (capture/derived split, four-stage decomposition)** answered S25; ADR-006 drafting gated on TD-080 closure per Phase α Q3 sequencing. |
 
 ---
 

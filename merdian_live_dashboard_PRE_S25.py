@@ -251,7 +251,7 @@ def get_preopen_status() -> Dict:
     # including 09:15 (market open). Query today's rows directly
     # using an IST start-of-day lower bound rendered as UTC ISO.
     today_ist = now_ist().replace(hour=0, minute=0, second=0, microsecond=0)
-    today_start_utc = today_ist.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')  # S25-FIX1-PREOPEN-URL-ENCODING
+    today_start_utc = today_ist.astimezone(timezone.utc).isoformat()
     rows = sb_get(
         "market_spot_snapshots",
         f"select=ts,spot,symbol&ts=gte.{today_start_utc}&order=ts.asc&limit=200",
@@ -272,93 +272,6 @@ def get_preopen_status() -> Dict:
                 "symbol": row.get("symbol"),
             })
     return {"captured": len(captured) > 0, "count": len(captured), "rows": captured[:6]}
-
-
-def get_gap_status() -> Dict:
-    """# S25-FIX2-GAP-FUNCTION
-    Compute per-symbol prelim_gap and final_gap for the dashboard's gap card.
-
-    prelim_gap : (today's 09:08 IST spot - prev session 16:00 IST spot) / prev_16:00 * 100
-    final_gap  : (today's 09:15 IST spot - prev session 16:00 IST spot) / prev_16:00 * 100
-
-    Both display-only. No signal-layer consumer. Returns dict keyed by
-    symbol ('NIFTY', 'SENSEX'); inner dict has fields:
-      prev_close      : float | None  (prev session 16:00 IST spot)
-      prev_close_date : str | None    (YYYY-MM-DD IST)
-      preopen_spot    : float | None  (today's 09:08-ish IST spot)
-      preopen_ts      : str | None    (HH:MM:SS IST)
-      open_spot       : float | None  (today's 09:15-ish IST spot)
-      open_ts         : str | None    (HH:MM:SS IST)
-      prelim_gap_pct  : float | None
-      final_gap_pct   : float | None
-    """
-    result: Dict[str, Dict] = {}
-    today_ist = now_ist().replace(hour=0, minute=0, second=0, microsecond=0)
-    today_start_utc = today_ist.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-    today_str = now_ist().strftime("%Y-%m-%d")
-
-    # Look back 5 calendar days from today's IST start to find prev close
-    lookback_start_ist = today_ist - timedelta(days=5)
-    lookback_start_utc = lookback_start_ist.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-
-    for symbol in ["NIFTY", "SENSEX"]:
-        sym_result = {
-            "prev_close": None, "prev_close_date": None,
-            "preopen_spot": None, "preopen_ts": None,
-            "open_spot": None, "open_ts": None,
-            "prelim_gap_pct": None, "final_gap_pct": None,
-        }
-
-        # --- Prev session close: most recent row in 15:55-16:05 IST window
-        # within the last 5 days but BEFORE today's IST start.
-        rows = sb_get(
-            "market_spot_snapshots",
-            f"select=ts,spot&symbol=eq.{symbol}"
-            f"&ts=gte.{lookback_start_utc}&ts=lt.{today_start_utc}"
-            f"&order=ts.desc&limit=200",
-        )
-        for row in rows:
-            dt = parse_ist_dt(row.get("ts", ""))
-            if dt and dt.hour == 16 and dt.minute < 5:
-                sym_result["prev_close"] = float(row.get("spot")) if row.get("spot") is not None else None
-                sym_result["prev_close_date"] = dt.strftime("%Y-%m-%d")
-                break
-
-        # --- Today's pre-open + open spots (09:08 and 09:15 IST)
-        # Use Z-suffix to avoid the '+' URL-encoding bug.
-        rows = sb_get(
-            "market_spot_snapshots",
-            f"select=ts,spot&symbol=eq.{symbol}"
-            f"&ts=gte.{today_start_utc}"
-            f"&order=ts.asc&limit=200",
-        )
-        for row in rows:
-            dt = parse_ist_dt(row.get("ts", ""))
-            if not (dt and dt.strftime("%Y-%m-%d") == today_str and dt.hour == 9):
-                continue
-            spot_val = float(row.get("spot")) if row.get("spot") is not None else None
-            # 09:06-09:14 → pre-open anchor (catches 09:08 AWS capture);
-            # 09:15-09:30 → market open anchor (first row at/after 09:15).
-            if 6 <= dt.minute < 15 and sym_result["preopen_spot"] is None:
-                sym_result["preopen_spot"] = spot_val
-                sym_result["preopen_ts"] = dt.strftime("%H:%M:%S")
-            elif dt.minute >= 15 and sym_result["open_spot"] is None:
-                sym_result["open_spot"] = spot_val
-                sym_result["open_ts"] = dt.strftime("%H:%M:%S")
-            if sym_result["preopen_spot"] is not None and sym_result["open_spot"] is not None:
-                break
-
-        # --- Compute gaps
-        prev = sym_result["prev_close"]
-        if prev and prev > 0:
-            if sym_result["preopen_spot"] is not None:
-                sym_result["prelim_gap_pct"] = (sym_result["preopen_spot"] - prev) / prev * 100.0
-            if sym_result["open_spot"] is not None:
-                sym_result["final_gap_pct"] = (sym_result["open_spot"] - prev) / prev * 100.0
-
-        result[symbol] = sym_result
-
-    return result
 
 
 def get_pipeline_stages() -> Dict:
@@ -534,7 +447,6 @@ def collect_data() -> Dict:
         "session": get_session_info(),
         "token": get_token_status(),
         "preopen": get_preopen_status(),
-        "gap": get_gap_status(),  # S25-FIX2-GAP-WIRED
         "pipeline": get_pipeline_stages(),
         "breadth": get_breadth_status(),
         "aws": get_aws_status(),
@@ -590,46 +502,6 @@ def build_html(data: Dict) -> str:
     token_ok = token.get("success") is True
     token_fail = token.get("success") is False
     countdown, countdown_color = fmt_expiry_countdown(token.get("expiry", ""))
-
-    # S25-FIX2-GAP-BUILDER: build gap_html for the new gap card
-    gap_data = data.get("gap", {}) or {}
-    gap_rows_html = []
-    for sym in ("NIFTY", "SENSEX"):
-        g = gap_data.get(sym) or {}
-        prev = g.get("prev_close")
-        prelim = g.get("prelim_gap_pct")
-        final = g.get("final_gap_pct")
-        prev_date = g.get("prev_close_date") or "?"
-        if prev is None:
-            gap_rows_html.append(
-                f'<div style="font-size:12px;margin:2px 0;color:#888">{sym}: prev close unavailable</div>'
-            )
-            continue
-        # Prelim badge (09:08)
-        if prelim is None:
-            prelim_str = '<span style="color:#888">pending</span>'
-        else:
-            prelim_color = "#1565c0" if abs(prelim) < 0.1 else ("#2e7d32" if prelim > 0 else "#c62828")
-            sign = "+" if prelim >= 0 else ""
-            prelim_str = f'<span style="color:{prelim_color};font-weight:600">{sign}{prelim:.2f}%</span>'
-        # Final badge (09:15)
-        if final is None:
-            final_str = '<span style="color:#888">pending</span>'
-        else:
-            final_color = "#1565c0" if abs(final) < 0.1 else ("#2e7d32" if final > 0 else "#c62828")
-            sign = "+" if final >= 0 else ""
-            final_str = f'<span style="color:{final_color};font-weight:600">{sign}{final:.2f}%</span>'
-        gap_rows_html.append(
-            f'<div style="font-size:12px;margin:3px 0">'
-            f'<strong>{sym}</strong> '
-            f'<span style="color:#666">(prev {prev:.2f} on {prev_date})</span> &nbsp; '
-            f'prelim: {prelim_str} &nbsp; final: {final_str}'
-            f'</div>'
-        )
-    if not gap_rows_html:
-        gap_html = '<div style="font-size:12px;color:#888">No gap data</div>'
-    else:
-        gap_html = "".join(gap_rows_html)
 
     preopen_html = ""
     for r in preopen.get("rows", []):
@@ -801,14 +673,6 @@ th{{background:#f6f8fa;padding:6px 10px;text-align:left;font-size:11px;color:#66
       <div style="font-size:11px;color:#666;margin-top:2px">Expires: {token.get('expiry','?')[:19] if token.get('expiry') else 'unknown'}</div>
       <div style="font-size:12px;font-weight:600;color:{countdown_color};margin-top:2px">{countdown}</div>
       {'<div style="font-size:10px;color:#8b0000;margin-top:2px">' + token.get('error','')[:80] + '</div>' if token.get('error') else ''}
-    </div>
-  </div>
-
-  <div class="card">
-    <!-- S25-FIX2-GAP-CARD-HTML -->
-    <div class="ct">Gap (vs prev close)</div>
-    <div class="cb">
-      {gap_html}
     </div>
   </div>
 

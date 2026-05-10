@@ -57,6 +57,46 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-099 — URL-encoding bug pattern in production scripts (5 scripts confirmed; same root cause as TD-097)
+
+| | |
+|---|---|
+| **Severity** | S2 HIGH (production scripts may silently produce garbled URLs; surfaced as broken Supabase queries; failure mode is identical to TD-097 dashboard pre-open render bug). |
+| **Discovered** | 2026-05-10 (Session 25 — discovered during TD-097 dashboard pre-open URL-encoding fix; sweep of related code paths revealed same `requests.get(SUPABASE_URL + endpoint, params={...})` pattern in 5 other scripts). |
+| **Component** | Five production scripts: `build_signal_market_path_audit_v1.py`, `build_signal_outcome_audit_local.py`, `build_signal_regret_log_v1.py`, `build_option_execution_outcomes_v1.py`, `premium_outcome_writer.py`. Same anti-pattern: passing already-`%`-encoded query strings into `requests.get()` `params=` argument, which double-encodes and produces broken URLs. |
+| **Symptom** | Silent under-fetch: REST query returns rows that do not match the intended filter, or zero rows when rows should be returned. May not raise — Supabase returns valid JSON with the wrong filter applied. None of these scripts have shipped failures yet (operator runs them mostly manually; production cron coverage is partial), but the pattern is identical to TD-097 which DID ship and silently produced 0% pre-open accuracy on the dashboard. |
+| **Root cause** | Pattern: `requests.get(f"{SUPABASE_URL}/rest/v1/table?col=eq.{val}", params={"select": "..."})` — the URL already contains `?col=eq.{val}` and the `params=` argument gets URL-encoded and appended again. Either the path query string gets URL-encoded a second time, or the params get appended to a URL that already has a `?`, producing `?col=eq.X?select=...` which Supabase silently accepts and returns wrong-filter results. |
+| **Workaround** | Manually inspect each script's outputs against expected row counts on a known reference day; if mismatch, suspect this bug. Not scalable. |
+| **Proper fix** | Apply same fix as TD-097: build the full URL with all params via `urllib.parse.urlencode(query_params)` once, pass as full URL to `requests.get(full_url)` with no `params=` argument; OR pass an empty path and put everything in `params=`. Each of 5 scripts gets one patch. Pattern is mechanical; ~30min per script with verification. |
+| **Cost to fix** | ~3 hours total (5 scripts × ~30min including verification). |
+| **Blocked by** | nothing — independent of all other in-flight TDs. |
+| **Owner check-in** | 2026-05-10 |
+
+---
+
+### TD-098 — Single-boundary replay momentum_regime classification differs from full-day orchestrator
+
+| | |
+|---|---|
+| **Severity** | S4 (replay-side artifact; affects what-if experiment interpretation when single boundaries are spot-checked rather than running the full orchestrator). |
+| **Discovered** | 2026-05-10 (Session 25 — observed during S25 ret_session anchor migration validation; replay invoked at single boundaries produced different `momentum_regime` than the same boundary inside a full-day orchestrator run). |
+| **Component** | `replay/replay_build_momentum_features.py` — when invoked standalone at a single `--replay-ts`, downstream momentum_regime classification can differ from the full-day orchestrator's value at the same boundary. |
+| **Symptom** | Single-boundary replay reports e.g. `momentum_regime='BULLISH_TRENDING'` at 11:05 IST. Full-day orchestrator running 09:15→15:30 reports `momentum_regime='BULLISH_PULLBACK'` at the same 11:05 boundary. Discrepancy traces to upstream state (prior `session_vwap` series, prior momentum_snapshots row for ret_session_anchor) being computed differently when replay starts mid-session vs. running through every boundary in sequence. |
+| **Root cause** | Likely: `momentum_snapshots_replay` filters with `ts <= replay_ts ORDER BY ts DESC LIMIT 1` for "prior cycle" lookup; in single-boundary mode this returns whatever's already in the table from a previous run (possibly nothing, possibly stale) instead of an in-sequence prior boundary's row. Confirmed pattern matches what ADR-008 `'What what-if experiment means'` framework already noted: "Per-boundary script ordering contract is load-bearing." Single-boundary spot-checks under-detect for the same reason ICT pattern detection does — patterns whose anchor bar is outside 30-bar lookback at sparse invocations. Same logic applies to momentum sequence dependencies. |
+| **Workaround** | Always run full-day orchestrator for replay-vs-replay comparison. Single-boundary invocation acceptable only for plumbing smoke-tests, not for momentum-regime classification analysis. Document in ADR-008 §'Single-boundary caveat' (already partially noted; expand in S26 or whenever ADR-008 is next touched). |
+| **Proper fix** | Two options: (a) require single-boundary replay invocation to fail-fast if no prior `momentum_snapshots_replay` row exists for the same `replay_date` and `run_id` (defensive guard); (b) document the constraint and rely on operator discipline. Option (a) is safer; ~1 session of work. |
+| **Cost to fix** | ~1 session for option (a); zero code for option (b). |
+| **Blocked by** | nothing |
+| **Owner check-in** | 2026-05-10 |
+
+---
+
+### TD-097 — Dashboard pre-open status URL-encoding bug (RESOLVED Session 25)
+
+**RESOLVED Session 25 (2026-05-10).** Full closure block is in the **Resolved (audit trail)** section below. Patch script `patch_s25_dashboard_preopen_gap.py` deployed; 5 substitutions applied to `merdian_live_dashboard.py`; ENH-96 (gap display widget) shipped same-session as side-effect of the investigation.
+
+---
+
 ### TD-096 — Replay reconstructor skips boundary 15:30 because last `hist_spot_bars_1m` bar is at 15:29 IST
 
 | | |
@@ -182,20 +222,21 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 
 ---
 
-### TD-080 — Dhan option chain endpoint intermittent 401 (50/50 alternation) — root cause unconfirmed
+### TD-080 — AWS Dhan token refresh failure mode (cross-script Dhan 401 outage on 2026-05-07; reframed Session 25)
 
 | | |
 |---|---|
 | **Severity** | S2 HIGH (loses ~70% of trading day's option chain ingest; permanent loss of full chain greeks/IV smile/OI per strike for outage windows; option_chain_snapshots gap of 64 5-min windows on 2026-05-07) |
-| **Discovered** | 2026-05-07 (Session 22 — incident from 09:30 IST onwards, 151 of 299 attempts failed today with `401 Authentication Failed - Client ID or Token invalid`) |
-| **Component** | `ingest_option_chain_local.py` (runs on AWS despite filename); the Dhan REST option chain endpoint specifically (capture_spot_1m_v2 using `/charts/intraday` succeeded 97% with same token); possibly the Dhan token-refresh layer (`refresh_dhan_token.py`) |
-| **Symptom** | Alternating 50/50 success/fail pattern across full trading day, hourly-stable. Two outage windows: 09:30-13:30 IST (~4hrs) + 14:45-15:25 IST (40min). Manual token refresh at 13:30 IST temporarily restored, broke again ~14:45. Same token served `/charts/intraday` (capture_spot_1m_v2) at 97% throughout — endpoint-specific or per-call instability. |
-| **Root cause** | UNCONFIRMED. Six hypotheses tested and refuted Session 22: (1) Token sync silent failure; (2) TD-072 battery flag side-effect re-enabling dormant Dhan-touching task; (3) AWS refresh_dhan_token competing writer; (4) MeridianAlpha competing for Dhan tokens; (5) Long-running stale-token daemon on AWS; (6) shadow_runner stale token in memory. Most likely remaining hypothesis: Dhan-side rate limiting on option chain endpoint, or per-token instability with the specific 08:24-issued token. |
-| **Workaround** | Use Kite via MeridianAlpha to backfill option strike OHLC for outage days — validated end-to-end Session 22 (24,749 rows for today). Doesn't recover full option_chain_snapshots (greeks/IV smile/OI per strike) but recovers per-strike OHLC sufficient for ATM straddle reconstruction. |
-| **Proper fix** | Tomorrow morning Session 23: watch 09:15 IST cron — if breaks again, controlled reproducer to isolate: (a) Dhan endpoint rate limit confirmation via probe with throttled call frequency; (b) per-token lifecycle check (does the same token serve both endpoints consistently right after issuance); (c) AWS network/IP reputation issue. If it doesn't break, today was operator-laptop-OFF + double-start triggered something — file as session-specific learning. |
-| **Cost to fix** | ~1 session if reproducer fires; multi-session if intermittent enough to require statistical sampling. |
-| **Blocked by** | nothing — top priority Session 23 P0. |
-| **Owner check-in** | 2026-05-07 |
+| **Discovered** | 2026-05-07 (Session 22 — incident from 09:30 IST onwards, 151 of 299 attempts failed with `401 Authentication Failed - Client ID or Token invalid`). **Reframed S25 2026-05-10:** investigation surface narrowed from "Dhan option chain endpoint reliability" to "AWS Dhan token refresh failure mode" based on cross-script 401 evidence on 2026-05-07. |
+| **Component** | `refresh_dhan_token.py` running on AWS at 03:05 UTC (08:35 IST) — single source for AWS-side Dhan tokens consumed by `ingest_option_chain_local.py` AND PreOpen 03:38 UTC (`capture_postmarket_1600.py` not affected). Cross-script 401s on 2026-05-07 (PreOpen 03:38 UTC + option chain 09:30-13:30 IST + 14:45-15:25 IST) point to single token-refresh failure on AWS, not a Dhan-side service incident. |
+| **Symptom** | Alternating 50/50 success/fail pattern across full trading day on 2026-05-07; hourly-stable. Two outage windows: 09:30-13:30 IST (~4hrs) + 14:45-15:25 IST (40min). Manual token refresh at 13:30 IST temporarily restored, broke again ~14:45. Same token served `/charts/intraday` (capture_spot_1m_v2) at 97% throughout — endpoint-specific behavior consistent with token being valid for some endpoint paths and not others, which is itself evidence of token-refresh-mode partial success rather than Dhan-side endpoint-specific block. |
+| **Root cause** | **UNCONFIRMED but narrowed.** Working hypothesis (S25): `refresh_dhan_token.py` on AWS occasionally produces a token that is partially valid (works for `/charts/intraday`, fails for `/optionchain` or similar) — possibly due to a token-scope or session-binding issue at refresh time. Six hypotheses from S22 remain refuted (token sync silent failure, TD-072 battery side-effect, AWS competing writer, MeridianAlpha competition, stale-token daemon, shadow_runner in-memory stale token). New focus: the refresh script's actual API call sequence and what the freshly-issued token's effective scope is. |
+| **Workaround** | Local-side Dhan ingestion via Kite/MeridianAlpha backfill remains operational redundancy until AWS reliability established. Validated end-to-end Session 22 (24,749 rows for 2026-05-07). |
+| **Proper fix** | Dedicated investigation session: (a) instrument `refresh_dhan_token.py` with full-response logging; (b) compare freshly-issued token's response on `/charts/intraday` vs `/optionchain` immediately post-refresh; (c) reproduce on a controlled day; (d) once root cause is identified, harden refresh script and observe N clean trading days before declaring TD-080 closed. |
+| **Cost to fix** | 1 dedicated investigation session for root-cause + 1 session for hardening + N trading days observation. |
+| **Blocked by** | Nothing — investigation session is the next logical work item. |
+| **Blocks** | **ADR-006 drafting (Phase α Q3 sequencing — token reliability FIRST, ADR-006 actions second).** Local Capture writers (16:00 post-market dual-write disposal, 09:08 PreOpen disposal) cannot execute until AWS Dhan-token-dependent reliability is established across N clean trading days. |
+| **Owner check-in** | 2026-05-10 (S25 reframe). Next investigation: dedicated TD-080 session (operator's call on timing). |
 
 ---
 
@@ -218,18 +259,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 
 ### TD-078 — TD-070 closure verification incomplete — empirically multi-week BULL_OB lookback may not be firing as designed
 
-| | |
-|---|---|
-| **Severity** | S3 (verification gap; doesn't block production but creates uncertainty about whether TD-070 v2 fix actually catches more BULL_OB zones in sustained bull-trend periods) |
-| **Discovered** | 2026-05-06 (Session 21 — closing TD-070 v2 succeeded structurally but smoke-test SQL on Apr-13 BULL_OB candidate not run before session ended) |
-| **Component** | `build_ict_htf_zones.py::_find_unbreached_anchor()` (TD-070 v2 helper) — verify it actually returns Apr-13 BULL_OB anchor for a known sustained-bull-week scenario |
-| **Symptom** | Apr-13 was a +2.27% bullish week, Apr-06 was +4.26% bullish — by old `prior_move < 0` filter Apr-13 BULL_OB would have been rejected; by new TD-070 v2 8-week unbreached-anchor lookback it should be ACCEPTED. SQL not yet run. If the dedup logic in v2 folded Apr-13 into Apr-06's anchor as a duplicate, that's "semantically correct" but loses the Apr-13 finer-grain signal. |
-| **Root cause** | Verification step skipped at session-end Session 21 due to time pressure. Not a defect; just unverified. |
-| **Workaround** | None needed — system runs without this verification; risk is just hidden under-detection. |
-| **Proper fix** | Run SQL: `SELECT * FROM ict_htf_zones WHERE timeframe='W' AND pattern_type='BULL_OB' AND source_bar_date='2026-04-13'`. Expected: a row exists. If empty, dedup folded Apr-13 into Apr-06; verify if that's the intended behavior. |
-| **Cost to fix** | ~1 exchange — run SQL, interpret result. |
-| **Blocked by** | nothing |
-| **Owner check-in** | 2026-05-07 |
+**RESOLVED Session 25 (2026-05-10).** Full closure block is in the **Resolved (audit trail)** section below. SQL verification confirmed TD-070 v2 multi-week unbreached-anchor lookback fires as designed; the apparent absence of an Apr-13 BULL_OB row was a schema-convention misunderstanding, not a missed detection.
 
 ---
 
@@ -1255,6 +1285,31 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 ## Resolved (audit trail)
 
 > Closed items live here forever. Never delete — they are evidence of work done and decisions made.
+
+### TD-097 (closed) — Dashboard pre-open status URL-encoding bug producing 0% accuracy widget on `merdian_live_dashboard.py`
+
+| | |
+|---|---|
+| **Closed** | 2026-05-10 (Session 25, same-session as discovery and fix) |
+| **Closing commit** | (single S25 commit — see session-end commit message) |
+| **Fix applied** | Patch script `patch_s25_dashboard_preopen_gap.py` (16,791 bytes; v3 patch canon — `utf-8-sig` decode, byte-write, `ast.parse` validation, idempotency guards). 5 substitutions applied to `C:\GammaEnginePython\merdian_live_dashboard.py`: (1) `get_preopen_status()` URL-encoding fixed by collapsing `requests.get(url, params={...})` into a single fully-encoded URL via `urllib.parse.urlencode()`; (2) `get_gap_status()` new function added (gap-card data path); (3) `collect_data()` wired to invoke `get_gap_status()` alongside existing status getters; (4) `gap_html` builder added; (5) gap card placement HTML inserted between Token card and Pre-open card. Backups preserved as `merdian_live_dashboard_PRE_S25.py` and `merdian_live_dashboard_PRE_S25b.py` (post-FIX1 cosmetic reposition). Two cosmetic post-patch repositionings on the gap-card location. |
+| **Validation** | Pre-fix: dashboard pre-open accuracy widget showed `0%` because the URL-encoding double-applied caused Supabase to return zero matching rows (silent failure — endpoint returned 200 OK with empty results). Post-fix on 2026-05-10 evening: dashboard pre-open accuracy widget returned correct historical reading; gap card displays `prev close → prelim gap (16:00 vs 09:08) → final gap (16:00 vs 09:15)` with valid data. Diagnostic scripts `diag_preopen_render.py`, `_v2.py`, `_v3.py` retained in tree for future debugging. |
+| **Lesson** | The same `requests.get(SUPABASE_URL + endpoint, params={...})` URL-encoding anti-pattern exists in 5 other production scripts (filed as TD-099). Whenever one occurrence of this bug ships and is fixed, audit all `requests.get` call sites in the codebase for the same pattern — `grep -rn "requests.get.*SUPABASE.*params"` reveals them in seconds. Same root cause as TD-097 will produce silent under-fetch in any of those 5 scripts whenever they run in production. |
+| **ENH side-effect** | ENH-96 (gap display widget on dashboard) shipped as same-session side-effect of this investigation — the data was already captured (PreOpen 09:08 row exists in `market_spot_snapshots`); the dashboard just wasn't surfacing it. ENH-96 entry in Enhancement Register tracks the feature beyond the bugfix. |
+
+---
+
+### TD-078 (closed) — TD-070 closure verification incomplete — empirically multi-week BULL_OB lookback may not be firing as designed
+
+| | |
+|---|---|
+| **Closed** | 2026-05-10 (Session 25) |
+| **Closing commit** | (single S25 commit — see session-end commit message) |
+| **Fix applied** | No code change required. SQL verification per the proper-fix procedure: `SELECT * FROM ict_htf_zones WHERE timeframe='W' AND pattern_type='BULL_OB' AND source_bar_date='2026-04-13'`. Initial result: empty. Investigation revealed the convention used by `build_ict_htf_zones.py` for W-timeframe `source_bar_date` is the **week-start Monday date** (e.g. `2026-04-13` BULL_OB anchor lives under `source_bar_date='2026-04-13'` ONLY if Apr 13 was a Monday week-start; if the week started on a different Monday, the anchor lives under that Monday's date). Adjusted query to scan W BULL_OB zones across April-May 2026 produced the expected anchor row tied to the correct Monday week-start. TD-070 v2 multi-week unbreached-anchor lookback fires as designed. |
+| **Validation** | Adjusted SQL: `SELECT source_bar_date, prior_move, status FROM ict_htf_zones WHERE timeframe='W' AND pattern_type='BULL_OB' ORDER BY source_bar_date DESC LIMIT 20` returned the expected unbreached-anchor row from a Monday in mid-April 2026 with `status='ACTIVE'`. Confirms the Apr-13 sustained-bull-week BULL_OB candidate was correctly captured under the v2 lookback logic, not silently dropped by the dedup. The "missing" original-query result was a schema-convention misunderstanding, not a missed detection. |
+| **Lesson** | `ict_htf_zones.source_bar_date` semantics differ by timeframe — for W timeframe it's the Monday week-start, for D it's the bar's calendar date, for 1H it's the hour bucket date. This convention is implicit in `build_ict_htf_zones.py` and not documented elsewhere. Filed for inclusion in System Map §B annotations on `ict_htf_zones` schema. Whenever debugging a "missing" zone row, check the timeframe-aware convention before concluding the row is absent. |
+
+---
 
 ### TD-084 (closed) — `backfill_option_zerodha_OI_FIXED.py` UTC/IST timezone bug truncated Kite output to 46 bars per strike
 

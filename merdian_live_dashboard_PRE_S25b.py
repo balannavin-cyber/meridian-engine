@@ -805,18 +805,17 @@ th{{background:#f6f8fa;padding:6px 10px;text-align:left;font-size:11px;color:#66
   </div>
 
   <div class="card">
-    <!-- S25-FIX2-GAP-CARD-HTML -->
-    <div class="ct">Gap (vs prev close)</div>
-    <div class="cb">
-      {gap_html}
-    </div>
-  </div>
-
-  <div class="card">
     <div class="ct">Pre-open 09:00–09:08</div>
     <div class="cb">
       <div>{badge(preopen['captured'], f"CAPTURED ({preopen['count']} rows)", "NOT CAPTURED", "NOT CAPTURED")}</div>
       <div style="margin-top:5px">{preopen_html}</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="ct">Gap (vs prev close)  # S25-FIX2-GAP-CARD-HTML</div>
+    <div class="cb">
+      {gap_html}
     </div>
   </div>
 

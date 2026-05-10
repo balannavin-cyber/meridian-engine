@@ -350,6 +350,57 @@ def _get_po3_bias(sb, symbol: str, today_ist_str: str) -> str:
     return "PO3_NONE"
 # -- end ENH-75 helper --------------------------------------------------------
 
+# -- ENH-88: BULL_FVG cluster gate -- recent BULL_OB lookback ----------------
+# Standalone BULL_FVG is statistical coin flip (Exp 15 N=155, WR 50.3%,
+# Wilson 95% CI [42.5, 58.1] spans 50%). BULL_FVG with recent BULL_OB
+# at 90-min lookback: WR 57.8% N=64 (+12.8pp lift) -- Section 18 of
+# analyze_exp15_trades.py, replicated Sessions 16+17 on live cohort.
+# This gate hard-skips standalone BULL_FVG; passes clustered BULL_FVG.
+#
+# ASYMMETRY: BEAR_FVG behaves OPPOSITE on clustering (Session 17 finding
+# 2: -16.5pp at 90min, N=22). Do NOT mirror this gate to BEAR_FVG.
+# Filed as candidate ENH-90 for measurement on larger cohort.
+ENH88_LOOKBACK_MIN: int = 90
+
+
+def _has_recent_bull_ob(sb, symbol: str, current_ts_iso: str,
+                        lookback_min: int = ENH88_LOOKBACK_MIN) -> bool:
+    """ENH-88: True if any BULL_OB signal_snapshots row exists for `symbol`
+    within `lookback_min` minutes ending at `current_ts_iso`.
+
+    Filters trade_allowed=True (strict). Counts only BULL_OBs that fired
+    through all prior MERDIAN gates -- i.e. represented an executed bullish
+    thesis, not just a detected pattern. The Section 18 evidence cohort
+    (Exp 15 trades) was post-filter; this is the closest production analogue.
+
+    Fail-CLOSED on query error: returns False, gate blocks BULL_FVG.
+    Rationale: standalone BULL_FVG is coin flip (CI [42.5, 58.1]);
+    defaulting to 'allow' on uncertainty defaults to 'trade a coin flip'.
+    """
+    try:
+        from datetime import timedelta as _td88
+        import dateutil.parser as _dp88
+        cutoff_iso = (
+            _dp88.parse(current_ts_iso) - _td88(minutes=lookback_min)
+        ).isoformat()
+        rows = (
+            sb.table("signal_snapshots")
+              .select("ts")
+              .eq("symbol", symbol)
+              .eq("ict_pattern", "BULL_OB")
+              .eq("trade_allowed", True)
+              .gte("ts", cutoff_iso)
+              .lt("ts", current_ts_iso)
+              .limit(1)
+              .execute()
+              .data
+        )
+        return bool(rows)
+    except Exception:
+        return False  # fail-closed
+# -- end ENH-88 helper -------------------------------------------------------
+
+
 def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
     """Build the signal row. Returns (row, flags) tuple where flags
     tracks subsystem degradation (ict_failed, enh06_failed) for
@@ -1020,6 +1071,43 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
             out["raw"] = {}
         out["raw"]["enh78_triggered"] = False
     # -- end ENH-78 -----------------------------------------------------------
+
+    # -- ENH-88: BULL_FVG cluster gate -- requires recent BULL_OB ------------
+    # Must run AFTER ICT enrichment (out["ict_pattern"] populated) and
+    # AFTER all other gates so `action` reflects final direction-bias path.
+    # Evidence: Exp 15 Section 18 -- standalone BULL_FVG WR 50.3%
+    #   (CI [42.5, 58.1], coin flip). With recent BULL_OB at 90-min:
+    #   WR 57.8%, N=64 (+12.8pp lift).
+    # Behaviour: hard SKIP standalone; pass clustered.
+    # Asymmetry: BEAR_FVG anti-clusters (Session 17 finding 2). Do NOT mirror.
+    if out.get("ict_pattern") == "BULL_FVG" and action == "BUY_CE":
+        if _has_recent_bull_ob(SUPABASE, symbol, out.get("ts", "")):
+            cautions.append(
+                f"ENH-88: BULL_FVG cluster CONFIRMED -- recent BULL_OB "
+                f"within {ENH88_LOOKBACK_MIN}min (+12.8pp lift, Exp 15 Sec 18)"
+            )
+            if not out.get("raw"):
+                out["raw"] = {}
+            out["raw"]["enh88_triggered"]    = True
+            out["raw"]["enh88_decision"]     = "ALLOW"
+            out["raw"]["enh88_lookback_min"] = ENH88_LOOKBACK_MIN
+        else:
+            # TD-044 idiom: three-site sync (action, trade_allowed, out{}).
+            action        = "DO_NOTHING"
+            trade_allowed = False
+            out["action"]        = "DO_NOTHING"
+            out["trade_allowed"] = False
+            cautions.append(
+                f"ENH-88: BULL_FVG standalone blocked -- no BULL_OB "
+                f"within {ENH88_LOOKBACK_MIN}min (coin flip without "
+                f"cluster, Exp 15 Sec 18)"
+            )
+            if not out.get("raw"):
+                out["raw"] = {}
+            out["raw"]["enh88_triggered"]    = True
+            out["raw"]["enh88_decision"]     = "BLOCK"
+            out["raw"]["enh88_lookback_min"] = ENH88_LOOKBACK_MIN
+    # -- end ENH-88 -----------------------------------------------------------
     return out, flags
 
 

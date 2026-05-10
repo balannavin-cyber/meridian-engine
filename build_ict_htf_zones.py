@@ -330,7 +330,7 @@ def detect_weekly_zones(weekly_bars, symbol):
                     "zone_high":    max(anchor["open"], anchor["close"]),
                     "zone_low":     min(anchor["open"], anchor["close"]),
                     "valid_from":   str(valid_from),
-                    "valid_to":     str(valid_to + timedelta(weeks=4)),  # persist 4 weeks
+                    "valid_to":     None,  # ADR-005 / TD-079: D/W OB expire only on price-breach
                     "source_bar_date": str(anchor["week_end"]),
                     "status":       "ACTIVE",
                 })
@@ -349,7 +349,7 @@ def detect_weekly_zones(weekly_bars, symbol):
                     "zone_high":    max(anchor["open"], anchor["close"]),
                     "zone_low":     min(anchor["open"], anchor["close"]),
                     "valid_from":   str(valid_from),
-                    "valid_to":     str(valid_to + timedelta(weeks=4)),
+                    "valid_to":     None,  # ADR-005 / TD-079: D/W OB expire only on price-breach
                     "source_bar_date": str(anchor["week_end"]),
                     "status":       "ACTIVE",
                 })
@@ -371,7 +371,7 @@ def detect_weekly_zones(weekly_bars, symbol):
                         "zone_high":    curr["low"],
                         "zone_low":     two_prev["high"],
                         "valid_from":   str(valid_from),
-                        "valid_to":     str(valid_to + timedelta(weeks=4)),
+                        "valid_to":     None,  # ADR-005 / TD-079: D/W FVG expire only on price-breach
                         "source_bar_date": str(src_date),
                         "status":       "ACTIVE",
                     })
@@ -390,7 +390,7 @@ def detect_weekly_zones(weekly_bars, symbol):
                         "zone_high":    two_prev["low"],
                         "zone_low":     curr["high"],
                         "valid_from":   str(valid_from),
-                        "valid_to":     str(valid_to + timedelta(weeks=4)),
+                        "valid_to":     None,  # ADR-005 / TD-079: D/W FVG expire only on price-breach
                         "source_bar_date": str(src_date),
                         "status":       "ACTIVE",
                     })
@@ -469,7 +469,7 @@ def detect_daily_zones(daily_ohlcv, symbol, target_date):
             "zone_high":    max(prior["open"], prior["close"]),
             "zone_low":     min(prior["open"], prior["close"]),
             "valid_from":   valid_from,
-            "valid_to":     valid_to,
+            "valid_to":     None,  # ADR-005 / TD-079: D/W OB expire only on price-breach
             "source_bar_date": src_date,
             "status":       "ACTIVE",
         })
@@ -483,7 +483,7 @@ def detect_daily_zones(daily_ohlcv, symbol, target_date):
             "zone_high":    max(prior["open"], prior["close"]),
             "zone_low":     min(prior["open"], prior["close"]),
             "valid_from":   valid_from,
-            "valid_to":     valid_to,
+            "valid_to":     None,  # ADR-005 / TD-079: D/W OB expire only on price-breach
             "source_bar_date": src_date,
             "status":       "ACTIVE",
         })
@@ -519,7 +519,7 @@ def detect_daily_zones(daily_ohlcv, symbol, target_date):
                     "zone_high":    k2["low"],
                     "zone_low":     k["high"],
                     "valid_from":   valid_from,
-                    "valid_to":     d_fvg_valid_to,
+                    "valid_to":     None,  # ADR-005 / TD-079: D/W FVG expire only on price-breach
                     "source_bar_date": k1_str,
                     "status":       "ACTIVE",
                 })
@@ -536,7 +536,7 @@ def detect_daily_zones(daily_ohlcv, symbol, target_date):
                     "zone_high":    k["low"],
                     "zone_low":     k2["high"],
                     "valid_from":   valid_from,
-                    "valid_to":     d_fvg_valid_to,
+                    "valid_to":     None,  # ADR-005 / TD-079: D/W FVG expire only on price-breach
                     "source_bar_date": k1_str,
                     "status":       "ACTIVE",
                 })
@@ -735,11 +735,11 @@ def expire_old_zones(sb, symbol, today, dry_run=False):
         }).eq("symbol", symbol).lt(
             "valid_to", str(today)
         ).in_(
-            "timeframe", ["W", "D"]
+            "timeframe", ["W", "D", "H"]
         ).neq(
             "status", "EXPIRED"
         ).execute()
-        log(f"  Expired old W/D {symbol} zones before {today}")
+        log(f"  Expired old W/D/H {symbol} zones before {today}")
     except Exception as e:
         log(f"  Warning: could not expire old zones: {e}")
 
@@ -962,7 +962,7 @@ def detect_1h_zones(sb, inst_id, symbol, trade_date):
                 "zone_high":    max(prev["open"], prev["close"]),
                 "zone_low":     min(prev["open"], prev["close"]),
                 "valid_from":   valid_from,
-                "valid_to":     valid_to,
+                "valid_to":     str(trade_date + timedelta(days=7)),  # ADR-005 / TD-079: 1H OB 1-week tactical fallback
                 "source_bar_date": src_date,
                 "status":       "ACTIVE",
             })
@@ -977,7 +977,7 @@ def detect_1h_zones(sb, inst_id, symbol, trade_date):
                 "zone_high":    max(prev["open"], prev["close"]),
                 "zone_low":     min(prev["open"], prev["close"]),
                 "valid_from":   valid_from,
-                "valid_to":     valid_to,
+                "valid_to":     str(trade_date + timedelta(days=7)),  # ADR-005 / TD-079: 1H OB 1-week tactical fallback
                 "source_bar_date": src_date,
                 "status":       "ACTIVE",
             })
@@ -999,7 +999,7 @@ def detect_1h_zones(sb, inst_id, symbol, trade_date):
                         "zone_high":    curr["low"],
                         "zone_low":     two_prev["high"],
                         "valid_from":   valid_from,
-                        "valid_to":     valid_to,
+                        "valid_to":     str(trade_date + timedelta(days=7)),  # ADR-005 / TD-079: 1H FVG 1-week tactical fallback
                         "source_bar_date": src_date,
                         "status":       "ACTIVE",
                     })
@@ -1017,7 +1017,7 @@ def detect_1h_zones(sb, inst_id, symbol, trade_date):
                         "zone_high":    two_prev["low"],
                         "zone_low":     curr["high"],
                         "valid_from":   valid_from,
-                        "valid_to":     valid_to,
+                        "valid_to":     str(trade_date + timedelta(days=7)),  # ADR-005 / TD-079: 1H FVG 1-week tactical fallback
                         "source_bar_date": src_date,
                         "status":       "ACTIVE",
                     })

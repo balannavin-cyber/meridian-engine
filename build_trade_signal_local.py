@@ -89,6 +89,13 @@ from core.execution_log import ExecutionLog
 load_dotenv()
 SIGNAL_V4_ENABLED: bool = os.getenv("MERDIAN_SIGNAL_V4", "1").strip() == "1"
 
+# ENH-55 disabled 2026-05-10 (S26): production data 2026-04-17 -> 2026-05-10
+# showed 44 OPPOSED-but-winning BUY_PE trades at 79.1% WR -- opposite direction
+# of Exp 20's +22.6pp lift claim that the gate was built on. Disabled by default
+# pending option-P&L re-measurement on the TD-101-corrected cohort. Set
+# MERDIAN_ENH55_ENABLED=1 in .env to re-enable. Filed as ADR-009 candidate.
+ENH55_ENABLED: bool = os.getenv("MERDIAN_ENH55_ENABLED", "0").strip() == "1"
+
 
 # -----------------------------
 # Environment / Supabase client
@@ -700,7 +707,7 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
         # ENH-55: Momentum opposition hard block
         # Threshold: abs(ret_session) > 0.0005 (= 0.05%).
         # Below threshold: NEUTRAL — no block, no bonus.
-        if ret_session is not None and abs(ret_session) > 0.0005:
+        if ENH55_ENABLED and ret_session is not None and abs(ret_session) > 0.0005:
             opposed = (
                 (action == "BUY_CE" and ret_session < -0.0005)
                 or (action == "BUY_PE" and ret_session > 0.0005)

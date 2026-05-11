@@ -85,7 +85,7 @@ def signed_gamma_exposure(row: dict[str, Any], spot: float) -> float:
     if gamma == 0.0 or oi <= 0.0 or spot <= 0.0:
         return 0.0
 
-    base = gamma * oi * (spot ** 2) / 1e7  # TD-NEW-3: store in Crore
+    base = gamma * oi * (spot ** 2)
     return -base if option_type == "PE" else base
 
 

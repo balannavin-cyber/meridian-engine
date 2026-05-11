@@ -1,33 +1,47 @@
-"""
-replay.replay_compute_gamma_metrics — Replay mirror of compute_gamma_metrics_local.py.
-
-Differences from compute_gamma_metrics_local.py:
-  1. Reads option_chain_snapshots_replay (not _snapshots).
-  2. Reads/writes gamma_metrics_replay (not gamma_metrics).
-  3. dte computed from --replay-ts, NOT date.today() — replay must be wall-clock-free.
-  4. spot_vs_range always None (intraday_ohlc not reconstructed in Phase 3 first cut).
-  5. CLI uses argparse with named args (--replay-ts, --run-id, --symbol).
-  6. Imports from replay.replay_execution_log (writes to script_execution_log_replay).
-  7. All Black-Scholes / pure-function logic unchanged.
-
-Live impact: ZERO. Reads only _replay tables. Writes only _replay tables.
-
-Author: Session 24 (2026-05-09)
-"""
 from __future__ import annotations
 
-import argparse
 import os
+import re
 import sys
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
-from replay.replay_clock import parse_replay_ts, replay_today_ist
-from replay.replay_execution_log import ExecutionLog
+# ENH-72 write-contract layer. See docs/MERDIAN_Master_V19.docx governance
+# rule `script_execution_log_contract`. Pattern mirrored from
+# ingest_option_chain_local.py and capture_spot_1m.py.
+from core.execution_log import ExecutionLog
+
+
+# ============================================================
+# MERDIAN - compute_gamma_metrics_local.py
+#
+# Purpose:
+#   1. Read one option-chain batch from option_chain_snapshots via run_id
+#   2. Filter out unusable rows (gamma == 0 or oi <= 0)
+#   3. Build signed strike exposure map
+#   4. Compute a genuine flip level only if a real zero-crossing exists
+#   5. If no zero-crossing exists, write flip_level = NULL
+#   6. E-02: add gamma_zone using canonical flip_distance_pct
+#
+# V18B additions (Track 2 SMDM infrastructure):
+#   7. straddle_velocity — rate of change of straddle_atm vs prior run
+#   8. otm_oi_velocity   — rate of change of OTM OI vs prior run
+#   9. spot_vs_range     — spot position within session high-low range
+#  10. run_type          — FULL / PARTIAL (passed as optional CLI arg)
+# ============================================================
+
+
+UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{12}$"
+)
 
 
 def _load_env() -> Client:
@@ -38,10 +52,14 @@ def _load_env() -> Client:
 
     if not supabase_url:
         raise RuntimeError("SUPABASE_URL not found in environment or .env")
+
     if not service_role_key:
         raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY not found in environment or .env")
+
     if not supabase_url.startswith(("http://", "https://")):
-        raise RuntimeError(f"SUPABASE_URL is invalid: {supabase_url!r}")
+        raise RuntimeError(
+            f"SUPABASE_URL is invalid: {supabase_url!r}. It must start with https://"
+        )
 
     return create_client(supabase_url, service_role_key)
 
@@ -77,6 +95,10 @@ def as_iso_ts(value: Any) -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def is_uuid_like(value: str) -> bool:
+    return bool(UUID_RE.match(value.strip()))
+
+
 def signed_gamma_exposure(row: dict[str, Any], spot: float) -> float:
     gamma = to_float(row.get("gamma"))
     oi = to_float(row.get("oi"))
@@ -85,7 +107,7 @@ def signed_gamma_exposure(row: dict[str, Any], spot: float) -> float:
     if gamma == 0.0 or oi <= 0.0 or spot <= 0.0:
         return 0.0
 
-    base = gamma * oi * (spot ** 2) / 1e7  # TD-NEW-3: store in Crore
+    base = gamma * oi * (spot ** 2)
     return -base if option_type == "PE" else base
 
 
@@ -106,6 +128,7 @@ class GammaMetricsResult:
     straddle_slope: float | None
     regime: str
     expansion_probability: float | None
+    # V18B additions
     straddle_velocity: float | None
     otm_oi_velocity: float | None
     spot_vs_range: float | None
@@ -118,16 +141,22 @@ def fetch_option_chain_rows(run_id: str, expected_symbol: str | None = None) -> 
     out: list[dict[str, Any]] = []
 
     while True:
-        query = SUPABASE.table("option_chain_snapshots_replay").select("*").eq("run_id", run_id)
+        query = SUPABASE.table("option_chain_snapshots").select("*").eq("run_id", run_id)
+
         if expected_symbol:
             query = query.eq("symbol", expected_symbol.upper())
+
         result = query.range(offset, offset + page_size - 1).execute()
         batch = _rows(result)
+
         if not batch:
             break
+
         out.extend(batch)
+
         if len(batch) < page_size:
             break
+
         offset += page_size
 
     return out
@@ -135,13 +164,14 @@ def fetch_option_chain_rows(run_id: str, expected_symbol: str | None = None) -> 
 
 def fetch_symbols_for_run_id(run_id: str) -> dict[str, int]:
     result = (
-        SUPABASE.table("option_chain_snapshots_replay")
+        SUPABASE.table("option_chain_snapshots")
         .select("symbol")
         .eq("run_id", run_id)
         .limit(5000)
         .execute()
     )
     rows = _rows(result)
+
     counts: dict[str, int] = {}
     for row in rows:
         sym = str(row.get("symbol", "")).upper()
@@ -161,6 +191,7 @@ def filter_usable_option_rows(option_rows: list[dict[str, Any]]) -> list[dict[st
 
 def infer_symbol(option_rows: list[dict[str, Any]], expected_symbol: str | None = None) -> str:
     symbols = sorted({str(r.get("symbol", "")).upper() for r in option_rows if r.get("symbol")})
+
     if expected_symbol:
         expected_symbol = expected_symbol.upper()
         if symbols and symbols != [expected_symbol]:
@@ -168,6 +199,7 @@ def infer_symbol(option_rows: list[dict[str, Any]], expected_symbol: str | None 
                 f"Option rows contain symbol(s) {symbols}, expected only {expected_symbol}"
             )
         return expected_symbol
+
     if not symbols:
         raise RuntimeError("Could not infer symbol from option rows")
     if len(symbols) > 1:
@@ -198,11 +230,13 @@ def infer_strike_step(option_rows: list[dict[str, Any]]) -> float | None:
     strikes = sorted({to_float(r.get("strike")) for r in option_rows if to_float(r.get("strike")) > 0})
     if len(strikes) < 2:
         return None
+
     diffs: list[float] = []
     for i in range(1, len(strikes)):
         diff = strikes[i] - strikes[i - 1]
         if diff > 0:
             diffs.append(diff)
+
     return min(diffs) if diffs else None
 
 
@@ -223,9 +257,11 @@ def build_strike_exposure_map(option_rows: list[dict[str, Any]], spot: float) ->
 def compute_gamma_concentration(strike_map: dict[float, float]) -> float | None:
     if not strike_map:
         return None
+
     total_abs = sum(abs(v) for v in strike_map.values())
     if total_abs <= 0:
         return None
+
     max_abs = max(abs(v) for v in strike_map.values())
     return max_abs / total_abs if max_abs > 0 else None
 
@@ -233,27 +269,34 @@ def compute_gamma_concentration(strike_map: dict[float, float]) -> float | None:
 def compute_flip_level(strike_map: dict[float, float]) -> float | None:
     if not strike_map:
         return None
+
     strikes = sorted(strike_map.keys())
     cumulative_points: list[tuple[float, float]] = []
+
     running = 0.0
     for strike in strikes:
         running += strike_map[strike]
         cumulative_points.append((strike, running))
+
     if len(cumulative_points) < 2:
         return None
+
     for i in range(1, len(cumulative_points)):
         strike_prev, cum_prev = cumulative_points[i - 1]
         strike_curr, cum_curr = cumulative_points[i]
+
         if cum_prev == 0.0:
             return strike_prev
         if cum_curr == 0.0:
             return strike_curr
+
         if (cum_prev < 0.0 < cum_curr) or (cum_prev > 0.0 > cum_curr):
             denom = cum_curr - cum_prev
             if denom == 0:
                 return None
             frac = -cum_prev / denom
             return strike_prev + frac * (strike_curr - strike_prev)
+
     return None
 
 
@@ -268,8 +311,10 @@ def compute_straddle_atm(option_rows: list[dict[str, Any]], spot: float) -> floa
     atm_strike = find_atm_strike(option_rows, spot)
     if atm_strike is None:
         return None
+
     ce_ltp = None
     pe_ltp = None
+
     for row in option_rows:
         strike = to_float(row.get("strike"))
         opt_type = str(row.get("option_type", "")).upper()
@@ -279,22 +324,27 @@ def compute_straddle_atm(option_rows: list[dict[str, Any]], spot: float) -> floa
             ce_ltp = to_float(row.get("ltp"), default=0.0)
         elif opt_type == "PE":
             pe_ltp = to_float(row.get("ltp"), default=0.0)
+
     if ce_ltp is None or pe_ltp is None:
         return None
+
     return ce_ltp + pe_ltp
 
 
 def compute_straddle_slope(option_rows: list[dict[str, Any]], spot: float) -> float | None:
     atm_strike = find_atm_strike(option_rows, spot)
     strike_step = infer_strike_step(option_rows)
+
     if atm_strike is None or strike_step is None or strike_step <= 0:
         return None
+
     lower = atm_strike - strike_step
     upper = atm_strike + strike_step
 
     def straddle_for_strike(target_strike: float) -> float | None:
         ce_ltp = None
         pe_ltp = None
+
         for row in option_rows:
             strike = to_float(row.get("strike"))
             opt_type = str(row.get("option_type", "")).upper()
@@ -304,6 +354,7 @@ def compute_straddle_slope(option_rows: list[dict[str, Any]], spot: float) -> fl
                 ce_ltp = to_float(row.get("ltp"), default=0.0)
             elif opt_type == "PE":
                 pe_ltp = to_float(row.get("ltp"), default=0.0)
+
         if ce_ltp is None or pe_ltp is None:
             return None
         return ce_ltp + pe_ltp
@@ -311,8 +362,10 @@ def compute_straddle_slope(option_rows: list[dict[str, Any]], spot: float) -> fl
     lower_straddle = straddle_for_strike(lower)
     atm_straddle = straddle_for_strike(atm_strike)
     upper_straddle = straddle_for_strike(upper)
+
     if lower_straddle is None or atm_straddle is None or upper_straddle is None:
         return None
+
     return ((upper_straddle - atm_straddle) + (atm_straddle - lower_straddle)) / 2.0
 
 
@@ -323,13 +376,16 @@ def compute_expansion_probability(
 ) -> float | None:
     if gamma_concentration is None:
         return None
+
     score = 45.0 if net_gex < 0 else 20.0
+
     if gamma_concentration >= 0.25:
         score += 20.0
     elif gamma_concentration >= 0.15:
         score += 12.0
     else:
         score += 5.0
+
     if flip_distance_pct is not None:
         if flip_distance_pct < 0.5:
             score += 20.0
@@ -337,6 +393,7 @@ def compute_expansion_probability(
             score += 10.0
         else:
             score += 2.0
+
     return max(0.0, min(100.0, score))
 
 
@@ -356,12 +413,20 @@ def determine_gamma_zone(flip_distance_pct: float | None) -> str | None:
     return "LOW_GAMMA"
 
 
-# REPLAY: reads gamma_metrics_replay (not gamma_metrics)
+# ---------------------------------------------------------------------------
+# V18B: Velocity and range helpers
+# ---------------------------------------------------------------------------
+
 def fetch_prior_gamma_metrics(symbol: str, current_ts: str) -> dict[str, Any] | None:
+    """
+    Fetch the most recent gamma_metrics row for symbol before current_ts.
+    Returns None if no prior row exists (first run of session).
+    Used for straddle_velocity and otm_oi_velocity computation.
+    """
     try:
         result = (
-            SUPABASE.table("gamma_metrics_replay")
-            .select("straddle_atm,ts,raw")
+            SUPABASE.table("gamma_metrics")
+            .select("straddle_atm,ts")
             .eq("symbol", symbol)
             .lt("ts", current_ts)
             .order("ts", desc=True)
@@ -378,6 +443,11 @@ def compute_straddle_velocity(
     current_straddle: float | None,
     prior_row: dict[str, Any] | None,
 ) -> float | None:
+    """
+    Rate of change of ATM straddle vs prior run.
+    Negative = IV compressing. NULL on first run of session.
+    Expressed as absolute point change (not percentage) to match spec.
+    """
     if current_straddle is None or prior_row is None:
         return None
     prior_straddle = prior_row.get("straddle_atm")
@@ -395,16 +465,26 @@ def compute_otm_oi_velocity(
     prior_row: dict[str, Any] | None,
     otm_steps: int = 2,
 ) -> float | None:
+    """
+    Rate of change of OTM OI vs prior run.
+    Computes total OI at strikes >= otm_steps away from ATM on the
+    directionally relevant side, compares to prior run's stored value.
+    Returns pct change (0.10 = 10% increase). NULL on first run.
+
+    Per SMDM spec: OTM_OI_VELOCITY_THRESHOLD = 0.10 (10% increase triggers alert).
+    """
     if prior_row is None:
         return None
 
     strike_step = infer_strike_step(option_rows)
     atm_strike = find_atm_strike(option_rows, spot)
+
     if strike_step is None or atm_strike is None or strike_step <= 0:
         return None
 
     otm_threshold = atm_strike + (otm_steps * strike_step)
 
+    # Sum OI for deep OTM CE strikes (squeeze accumulation is on CE side on expiry day)
     current_otm_oi = sum(
         to_float(r.get("oi"))
         for r in option_rows
@@ -412,12 +492,14 @@ def compute_otm_oi_velocity(
         and str(r.get("option_type", "")).upper() == "CE"
     )
 
+    # Prior OTM OI stored in raw JSONB if available
     prior_raw = prior_row.get("raw") or {}
     prior_otm_oi = None
     if isinstance(prior_raw, dict):
         prior_otm_oi = prior_raw.get("otm_oi_snapshot")
 
     if prior_otm_oi is None or float(prior_otm_oi) <= 0:
+        # Can't compute velocity without prior — store current for next run
         return None
 
     try:
@@ -427,10 +509,39 @@ def compute_otm_oi_velocity(
         return None
 
 
-# REPLAY: spot_vs_range always None — intraday_ohlc not reconstructed in Phase 3.
-# If post-validation shows material divergence, file ENH-94 to add 8th replay script.
 def fetch_spot_vs_range(symbol: str, current_ts: str) -> float | None:
-    return None
+    """
+    Spot position within today's session high-low range from intraday_ohlc.
+    0.0 = at session low, 1.0 = at session high.
+    NULL if intraday_ohlc has no data for this symbol yet.
+    """
+    try:
+        result = (
+            SUPABASE.table("intraday_ohlc")
+            .select("close,session_high,session_low")
+            .eq("symbol", f"{symbol}_SPOT")
+            .lte("ts", current_ts)
+            .order("ts", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = _rows(result)
+        if not rows:
+            return None
+
+        row = rows[0]
+        close = to_float(row.get("close"), default=0.0)
+        session_high = to_float(row.get("session_high"), default=0.0)
+        session_low = to_float(row.get("session_low"), default=0.0)
+
+        if session_high <= session_low or session_high == 0.0:
+            return None
+
+        ratio = (close - session_low) / (session_high - session_low)
+        return round(max(0.0, min(1.0, ratio)), 4)
+
+    except Exception:
+        return None
 
 
 def compute_otm_oi_snapshot(
@@ -438,11 +549,17 @@ def compute_otm_oi_snapshot(
     spot: float,
     otm_steps: int = 2,
 ) -> float | None:
+    """
+    Current OTM OI snapshot — stored in raw{} for next run's velocity computation.
+    """
     strike_step = infer_strike_step(option_rows)
     atm_strike = find_atm_strike(option_rows, spot)
+
     if strike_step is None or atm_strike is None or strike_step <= 0:
         return None
+
     otm_threshold = atm_strike + (otm_steps * strike_step)
+
     return sum(
         to_float(r.get("oi"))
         for r in option_rows
@@ -450,6 +567,10 @@ def compute_otm_oi_snapshot(
         and str(r.get("option_type", "")).upper() == "CE"
     )
 
+
+# ---------------------------------------------------------------------------
+# Core compute function — unchanged interface, extended output
+# ---------------------------------------------------------------------------
 
 def compute_gamma_metrics(
     run_id: str,
@@ -462,10 +583,10 @@ def compute_gamma_metrics(
         available = fetch_symbols_for_run_id(run_id)
         if expected_symbol:
             raise RuntimeError(
-                f"No option_chain_snapshots_replay rows found for run_id={run_id}, symbol={expected_symbol}. "
+                f"No option_chain_snapshots rows found for run_id={run_id}, symbol={expected_symbol}. "
                 f"Available symbols for this run_id: {available}"
             )
-        raise RuntimeError(f"No option_chain_snapshots_replay rows found for run_id={run_id}")
+        raise RuntimeError(f"No option_chain_snapshots rows found for run_id={run_id}")
 
     symbol = infer_symbol(option_rows_raw, expected_symbol=expected_symbol)
     spot = infer_spot(option_rows_raw)
@@ -496,6 +617,7 @@ def compute_gamma_metrics(
     expansion_probability = compute_expansion_probability(gamma_concentration, flip_distance_pct, net_gex)
     regime = determine_regime(net_gex, flip_level)
 
+    # V18B: velocity and range fields
     prior_row = fetch_prior_gamma_metrics(symbol, ts)
     straddle_velocity = compute_straddle_velocity(straddle_atm, prior_row)
     otm_oi_velocity = compute_otm_oi_velocity(option_rows, spot, prior_row)
@@ -524,8 +646,9 @@ def compute_gamma_metrics(
     )
 
 
-def upsert_gamma_metrics(result: GammaMetricsResult, replay_date: date) -> dict[str, Any]:
-    """REPLAY: writes to gamma_metrics_replay; dte computed against replay_date, not date.today()."""
+def upsert_gamma_metrics(result: GammaMetricsResult) -> dict[str, Any]:
+    # Compute OTM OI snapshot for next run's velocity calculation
+    # We re-fetch here only if needed — stored in raw for continuity
     otm_oi_snapshot = None
     try:
         option_rows_raw = fetch_option_chain_rows(result.run_id, expected_symbol=result.symbol)
@@ -535,18 +658,16 @@ def upsert_gamma_metrics(result: GammaMetricsResult, replay_date: date) -> dict[
     except Exception:
         pass
 
-    # REPLAY: dte computed against replay_date, NOT date.today()
-    dte = (
-        (date.fromisoformat(result.expiry_date) - replay_date).days
-        if result.expiry_date else None
-    )
-
     payload = {
         "run_id": result.run_id,
         "symbol": result.symbol,
         "ts": result.ts,
         "expiry_date": result.expiry_date,
-        "dte": dte,
+        "dte": (
+            (__import__("datetime").date.fromisoformat(result.expiry_date) -
+             __import__("datetime").date.today()).days
+            if result.expiry_date else None
+        ),
         "spot": result.spot,
         "net_gex": result.net_gex,
         "gamma_concentration": result.gamma_concentration,
@@ -558,14 +679,15 @@ def upsert_gamma_metrics(result: GammaMetricsResult, replay_date: date) -> dict[
         "straddle_slope": result.straddle_slope,
         "regime": result.regime,
         "expansion_probability": result.expansion_probability,
+        # V18B additions
         "straddle_velocity": result.straddle_velocity,
         "otm_oi_velocity": result.otm_oi_velocity,
         "spot_vs_range": result.spot_vs_range,
         "run_type": result.run_type,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "raw": {
-            "builder": "replay_compute_gamma_metrics.py",
-            "builder_version": "REPLAY_V1",
+            "builder": "compute_gamma_metrics_local.py",
+            "builder_version": "V18B_SMDM_VELOCITY_V1",
             "gamma_zone_policy": {
                 "HIGH_GAMMA_lt_pct": 0.5,
                 "MID_GAMMA_lt_pct": 1.5,
@@ -573,63 +695,104 @@ def upsert_gamma_metrics(result: GammaMetricsResult, replay_date: date) -> dict[
                 "canonical_distance_field": "flip_distance_pct",
             },
             "otm_oi_snapshot": otm_oi_snapshot,
-            "replay_date": replay_date.isoformat(),
         },
     }
 
-    response = SUPABASE.table("gamma_metrics_replay").upsert(payload, on_conflict="symbol,ts").execute()
+    response = SUPABASE.table("gamma_metrics").upsert(payload, on_conflict="symbol,ts").execute()
     rows = _rows(response)
     return rows[0] if rows else payload
 
 
-def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="replay_compute_gamma_metrics",
-        description="Replay mirror of compute_gamma_metrics_local.py — writes to gamma_metrics_replay.",
-    )
-    parser.add_argument("--replay-ts", required=True, help="Replay boundary timestamp ISO (e.g. 2026-05-07T03:45:00Z)")
-    parser.add_argument("--run-id", required=True, help="run_id present in option_chain_snapshots_replay")
-    parser.add_argument("--symbol", required=False, default=None, help="NIFTY or SENSEX (optional; inferred if absent)")
-    parser.add_argument("--run-type", default="FULL", choices=["FULL", "PARTIAL"], help="Run type (default FULL)")
-    return parser.parse_args(argv)
+def parse_args(argv: list[str]) -> tuple[str, Optional[str], str]:
+    """
+    Supports:
+        compute_gamma_metrics_local.py <run_id>
+        compute_gamma_metrics_local.py <run_id> <symbol>
+        compute_gamma_metrics_local.py <symbol> <run_id>
+        compute_gamma_metrics_local.py <run_id> <symbol> PARTIAL
+        compute_gamma_metrics_local.py <run_id> PARTIAL
+    """
+    if len(argv) not in {2, 3, 4}:
+        raise RuntimeError(
+            "Usage: python compute_gamma_metrics_local.py <run_id> [symbol] [FULL|PARTIAL]"
+        )
+
+    run_type = "FULL"
+    args = argv[1:]
+
+    # Extract run_type if present
+    if args[-1].upper() in {"FULL", "PARTIAL"}:
+        run_type = args[-1].upper()
+        args = args[:-1]
+
+    if len(args) == 1:
+        run_id = args[0].strip()
+        if not is_uuid_like(run_id):
+            raise RuntimeError("Single-argument mode requires a UUID run_id")
+        return run_id, None, run_type
+
+    a = args[0].strip()
+    b = args[1].strip()
+
+    if is_uuid_like(a) and not is_uuid_like(b):
+        return a, b.upper(), run_type
+    if is_uuid_like(b) and not is_uuid_like(a):
+        return b, a.upper(), run_type
+    if is_uuid_like(a) and is_uuid_like(b):
+        return a, None, run_type
+
+    raise RuntimeError("Could not determine run_id from arguments")
 
 
 def _classify_exception(err: Exception) -> tuple[str, int]:
+    """
+    Map an exception to (exit_reason, exit_code) for ExecutionLog.
+
+    SKIPPED_NO_INPUT: the upstream ingest wrote nothing for this run_id.
+                     This is NOT this script's fault -- surface it as a
+                     different failure class so dashboards don't flag it
+                     against compute_gamma_metrics.
+    DATA_ERROR:      every other domain-level failure (empty usable rows,
+                     no spot, symbol mismatch, Supabase rejects the upsert).
+    """
     msg = str(err)
-    if "No option_chain_snapshots_replay rows found" in msg:
+    if "No option_chain_snapshots rows found" in msg:
         return ("SKIPPED_NO_INPUT", 1)
     return ("DATA_ERROR", 1)
 
 
 def main() -> int:
+    # Parse CLI args BEFORE opening an ExecutionLog row. A usage error is
+    # an operator/integration bug, not a pipeline failure, and should not
+    # pollute script_execution_log with RUNNING rows that never resolve.
     try:
-        args = parse_args(sys.argv[1:])
-    except SystemExit:
-        # argparse itself sys.exits on bad args — pass through, no log row created.
-        raise
-
-    try:
-        replay_ts = parse_replay_ts(args.replay_ts)
-    except ValueError as e:
-        print(f"[ERROR] Invalid --replay-ts: {e}", file=sys.stderr)
+        run_id, expected_symbol, run_type = parse_args(sys.argv)
+    except Exception as e:
+        print(f"[ERROR] {e}", file=sys.stderr)
         return 2
 
-    replay_date = replay_today_ist(replay_ts)
-    expected_symbol = args.symbol.upper() if args.symbol else None
-    run_id = args.run_id.strip()
-
+    # ── ENH-72 write-contract declaration ────────────────────────────────────
+    # Contract: this invocation writes exactly 1 row to gamma_metrics via
+    # UPSERT on (symbol, ts). Floor = expected = 1.
+    #
+    # Symbol is set to expected_symbol if provided by the caller; otherwise
+    # None until inferred from the chain rows inside compute_gamma_metrics.
+    # We update log.symbol in-place after inference so the final PATCH row
+    # carries the real symbol. Opening RUNNING row may have symbol=null for
+    # ~500ms in the one-arg case -- acceptable; atexit crash coverage takes
+    # priority over opening-row completeness.
     log = ExecutionLog(
-        script_name="replay_compute_gamma_metrics.py",
-        expected_writes={"gamma_metrics_replay": 1},
+        script_name="compute_gamma_metrics_local.py",
+        expected_writes={"gamma_metrics": 1},
         symbol=expected_symbol,
-        notes=f"run_id={run_id} run_type={args.run_type} replay_ts={args.replay_ts}",
+        notes=f"run_id={run_id} run_type={run_type}",
     )
 
     try:
         result = compute_gamma_metrics(
             run_id,
             expected_symbol=expected_symbol,
-            run_type=args.run_type,
+            run_type=run_type,
         )
     except Exception as e:
         reason, code = _classify_exception(e)
@@ -639,10 +802,16 @@ def main() -> int:
             error_message=f"compute_gamma_metrics failed: {e}",
         )
 
+    # Backfill the symbol onto the log row now that we know it. set_symbol()
+    # issues a PATCH to script_execution_log updating the symbol column on
+    # the RUNNING row before the final complete()/exit_with_reason() PATCH
+    # lands. Added to ExecutionLog in Session 3 for run_id-contract scripts
+    # (gamma, volatility, momentum) that discover symbol after the first
+    # Supabase read rather than at CLI parse time.
     log.set_symbol(result.symbol)
 
     try:
-        upserted = upsert_gamma_metrics(result, replay_date)
+        upserted = upsert_gamma_metrics(result)
     except Exception as e:
         return log.exit_with_reason(
             "DATA_ERROR",
@@ -650,13 +819,13 @@ def main() -> int:
             error_message=f"upsert_gamma_metrics failed: {e}",
         )
 
-    log.record_write("gamma_metrics_replay", 1)
+    # The upsert returns the row (or at minimum the payload we sent).
+    # Either way, one row landed in gamma_metrics.
+    log.record_write("gamma_metrics", 1)
 
     print("=" * 72)
-    print("MERDIAN REPLAY - replay_compute_gamma_metrics")
+    print("MERDIAN - Local Python compute_gamma_metrics")
     print("=" * 72)
-    print(f"replay_ts={args.replay_ts}")
-    print(f"replay_date={replay_date}")
     print(f"run_id={result.run_id}")
     print(f"symbol={result.symbol}")
     print(f"run_type={result.run_type}")
@@ -664,6 +833,7 @@ def main() -> int:
     print(f"net_gex={result.net_gex}")
     print(f"gamma_concentration={result.gamma_concentration}")
     print(f"flip_level={result.flip_level}")
+    print(f"flip_distance={result.flip_distance}")
     print(f"flip_distance_pct={result.flip_distance_pct}")
     print(f"gamma_zone={result.gamma_zone}")
     print(f"straddle_atm={result.straddle_atm}")

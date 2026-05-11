@@ -103,11 +103,21 @@ def signed_gamma_exposure(row: dict[str, Any], spot: float) -> float:
     gamma = to_float(row.get("gamma"))
     oi = to_float(row.get("oi"))
     option_type = str(row.get("option_type", "")).upper()
+    strike = to_float(row.get("strike"))
 
     if gamma == 0.0 or oi <= 0.0 or spot <= 0.0:
         return 0.0
 
-    base = gamma * oi * (spot ** 2)
+    # TD-NEW-2 Part A: reject deep-ITM rows with spurious gamma.
+    # Options >5% from spot should have near-zero gamma in reality.
+    # Threshold 5e-5 is ~5x typical ATM gamma; well outside legitimate
+    # deep-ITM values. Dhan started returning gamma=7e-5 at strike 21,250
+    # CE with spot 24,200 on 2026-05-08, polluting the flip-level walk.
+    if strike > 0 and abs(strike - spot) / spot > 0.05:
+        if abs(gamma) > 5e-5:
+            return 0.0
+
+    base = gamma * oi * (spot ** 2) / 1e7  # TD-NEW-3: store in Crore
     return -base if option_type == "PE" else base
 
 
@@ -266,7 +276,20 @@ def compute_gamma_concentration(strike_map: dict[float, float]) -> float | None:
     return max_abs / total_abs if max_abs > 0 else None
 
 
-def compute_flip_level(strike_map: dict[float, float]) -> float | None:
+def compute_flip_level(strike_map: dict[float, float], spot: float | None = None) -> float | None:
+    """Find the operational gamma flip strike.
+
+    TD-NEW-2 Part B: walk outward from ATM in both directions and return the
+    zero-crossing closest to spot. The original bottom-up walk returned the
+    first zero-crossing from min_strike, which is fragile to spurious
+    contributions at deep-ITM strikes (see 2026-05-08 regression where a
+    single bad row at strike 21,250 made flip_level resolve to 21,250 instead
+    of the real ~24,800).
+
+    spot parameter is keyword-optional for backward compatibility with any
+    caller that hasn't been updated; when omitted, falls back to the legacy
+    bottom-up walk. New code should pass spot.
+    """
     if not strike_map:
         return None
 
@@ -281,21 +304,65 @@ def compute_flip_level(strike_map: dict[float, float]) -> float | None:
     if len(cumulative_points) < 2:
         return None
 
-    for i in range(1, len(cumulative_points)):
-        strike_prev, cum_prev = cumulative_points[i - 1]
+    # Legacy fallback: caller didn't supply spot. Preserve original behavior.
+    if spot is None or spot <= 0:
+        for i in range(1, len(cumulative_points)):
+            strike_prev, cum_prev = cumulative_points[i - 1]
+            strike_curr, cum_curr = cumulative_points[i]
+            if cum_prev == 0.0:
+                return strike_prev
+            if cum_curr == 0.0:
+                return strike_curr
+            if (cum_prev < 0.0 < cum_curr) or (cum_prev > 0.0 > cum_curr):
+                denom = cum_curr - cum_prev
+                if denom == 0:
+                    return None
+                frac = -cum_prev / denom
+                return strike_prev + frac * (strike_curr - strike_prev)
+        return None
+
+    # Walk-from-ATM: collect candidate flip strikes on both sides of spot,
+    # return the one closest to spot (operational flip definition).
+    atm_idx = min(range(len(strikes)), key=lambda i: abs(strikes[i] - spot))
+    candidates: list[float] = []
+
+    # Walk downward from ATM toward min_strike
+    for i in range(atm_idx, 0, -1):
         strike_curr, cum_curr = cumulative_points[i]
-
+        strike_prev, cum_prev = cumulative_points[i - 1]
         if cum_prev == 0.0:
-            return strike_prev
+            candidates.append(strike_prev)
+            break
         if cum_curr == 0.0:
-            return strike_curr
-
+            candidates.append(strike_curr)
+            break
         if (cum_prev < 0.0 < cum_curr) or (cum_prev > 0.0 > cum_curr):
             denom = cum_curr - cum_prev
-            if denom == 0:
-                return None
-            frac = -cum_prev / denom
-            return strike_prev + frac * (strike_curr - strike_prev)
+            if denom != 0:
+                frac = -cum_prev / denom
+                candidates.append(strike_prev + frac * (strike_curr - strike_prev))
+            break
+
+    # Walk upward from ATM toward max_strike
+    for i in range(atm_idx, len(cumulative_points) - 1):
+        strike_curr, cum_curr = cumulative_points[i]
+        strike_next, cum_next = cumulative_points[i + 1]
+        if cum_curr == 0.0:
+            candidates.append(strike_curr)
+            break
+        if cum_next == 0.0:
+            candidates.append(strike_next)
+            break
+        if (cum_curr < 0.0 < cum_next) or (cum_curr > 0.0 > cum_next):
+            denom = cum_next - cum_curr
+            if denom != 0:
+                frac = -cum_curr / denom
+                candidates.append(strike_curr + frac * (strike_next - strike_curr))
+            break
+
+    if not candidates:
+        return None
+    return min(candidates, key=lambda x: abs(x - spot))
 
     return None
 
@@ -602,7 +669,7 @@ def compute_gamma_metrics(
     strike_map = build_strike_exposure_map(option_rows, spot)
     net_gex = compute_net_gex(option_rows, spot)
     gamma_concentration = compute_gamma_concentration(strike_map)
-    flip_level = compute_flip_level(strike_map)
+    flip_level = compute_flip_level(strike_map, spot)
 
     if flip_level is None:
         flip_distance = None

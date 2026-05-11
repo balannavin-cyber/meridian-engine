@@ -80,7 +80,7 @@ def implied_vol(S, K, T, r, price, opt):
     return (lo+hi)/2
 
 def signed_gex(gamma, oi, spot, opt):
-    base=gamma*oi*(spot**2)/1e7  # TD-NEW-3: store in Crore
+    base=gamma*oi*(spot**2)
     return -base if opt=="PE" else base
 
 def compute_flip_level(rows, spot):

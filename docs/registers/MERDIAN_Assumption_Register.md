@@ -233,6 +233,40 @@ Production data on the live cohort over 24 trading days **falsifies the gate hyp
 
 ---
 
+### D.10 — ADR-002 v2 acceptance: new live assumptions filed (Session 27)
+
+ADR-002 v2 (full rewrite of v1 accepted Session 27, 2026-05-11) introduces two new principles beyond v1's P1-P6 — P7 vol-pricing (RR ratio) and P8 second-order Greeks (vanna/charm) — plus names the buyer/writer inversion as first-class architectural concept. The principles are accepted as architectural commitments; the empirical validation per principle is the Phase 0b overlay calibration study work item. ENH-84 (vol_analytics + RR ratio) and ENH-85 (vanna/charm Phase 3 prep) are filed in scope.
+
+Two related production resolutions in the same session (TD-NEW-2 flip_level regression + TD-NEW-3 net_gex unit standardisation) generated VALIDATED rows from ADR-002 v2's methodology requirements — see D.10.3 and D.10.4.
+
+| ID | Assumption | Status | Evidence | Action |
+|---|---|---|---|---|
+| **D.10.1** | RR ratio (realized vs implied vol) carries independent edge from direction; RR < 0.85 → premium-buying adverse for buyer; RR > 1.2 → premium-collection adverse for writer. | **LIVE — pending Phase 0b validation** | ADR-002 v2 P7 commitment; thresholds match practitioner-dashboard convention. No MERDIAN empirical evidence yet (Phase 0b dependency on ENH-84 vol_analytics build). | Calibrate against historical signal cohort post-ENH-84. Phase 0b test: does RR < 0.85 conditional WR difference vs RR > 1.2 strata exceed noise on completed BUY signals? |
+| **D.10.2** | The same gamma layer serves buyer and writer in mirrored interpretation (buyer/writer inversion). | **LIVE — architectural commitment** | ADR-002 v2 buyer/writer inversion section. v1 risked category error treating writer's intelligence as Phase 3-deferred. | No experiment needed at architectural level; tested via gate-stack strategy-mode parameter design when v2 build sequence reaches buyer-polarity gates. |
+| **D.10.3** | Walk-from-ATM is the operationally correct flip-level definition; bottom-up first zero-crossing was fragile to spurious deep-strike contributions. | **VALIDATED Session 27 via TD-NEW-2 production resolution** | TD-NEW-2 patch Part B deployed and verified: HEALTHY 2026-05-07 cycle PATCHED flip 24,773.93 vs LIVE 24,785.97 (delta -12pts/0.05%); BROKEN 2026-05-08 cycle PATCHED flip 25,060 near spot vs stuck 21,250 live. Walk-from-ATM produces operationally meaningful flips on noisy and clean data. | Codified as canonical method; legacy bottom-up walk retained as fallback for callers without spot context. |
+| **D.10.4** | `net_gex` is canonically stored in Crore (rupees / 1e7). Raw rupees storage was a unit-scale bug that was silent because all consumers were sign-only. | **VALIDATED Session 27 via TD-NEW-3 production resolution** | TD-NEW-3 patch deployed in three writer files (`compute_gamma_metrics_local.py`, `replay/replay_compute_gamma_metrics.py`, `backfill_gamma_metrics.py`); 2026-05-11 09:30 IST cycle PATCHED 78,544.84 Cr vs LIVE 775,285,881,741 raw rupees; ratio 9.87M ≈ 1e7. Reader codebase audited — zero magnitude thresholds, unit change non-disruptive. | Canonical Crore unit. Future magnitude-consuming gates must specify Crore explicitly. |
+| **D.10.5** | Five named scalars (`gamma_wall_strike`, `short_strike_for_strike`, `gradient_max_strike`, `hedged_long_cr`, `lambda_score_pct`) are the primary consumption surface of the Positioning Landscape, more operationally usable than v1's generic zone bounds. | **LIVE — pending ENH-81 build** | ADR-002 v2 Positioning Landscape section. v1 specified zone bounds only; v2 refines to named scalars (zone bounds retained as auxiliary for edge-case detection). | Build via ENH-81. Each scalar populates `gamma_metrics` as new column. Phase 0 must verify scalar-level computation against source-material dashboard reference cycles before threshold gating. |
+| **D.10.6** | Six-scenario dealer-flow simulator output (±0.5%, ±1%, ±2% × {Cr, contracts, trajectory}) carries operationally usable force-magnitude information beyond binary regime classification. | **LIVE — pending ENH-81 build + assumption stack sensitivity test** | ADR-002 v2 P2 force-is-edge commitment. Sensitivity test (Methodology §2 of ADR-002 v2) gates whether scenarios are gate-consumable (<30% spread on assumption grid) or advisory (15-30%) or methodology-blocked (>30%). | ENH-81 builds; assumption stack sensitivity is a Phase 0c work item. |
+| **D.10.7** | PINNED regime is empirically observable (i.e., distinct outcome distribution from LONG_GAMMA / SHORT_GAMMA on the live cohort). | **LIVE — pending Experiment 23** | ADR-002 v2 P5 commitment. Threshold for `local_gex_cluster_cr` magnitude that qualifies as PINNED is empirically determined. Phase 0b will identify if ≥5 confirmed mislabeled sessions exist in 12-month lookback (deprioritize if not). | Experiment 23 design + run after ENH-80 per-strike GEX table builds. |
+| **D.10.8** | Vanna/charm have material gate value only at Phase 3 (writer's strategy mode). For Phase 1 buyer, vanna is risk-advisory only; charm is not consumed. | **LIVE — pending Phase 3 backtest** | ADR-002 v2 P8 commitment. ENH-85 NEW filed. Phase 1/2 consumption deferred until Phase 2 imminent. | Build ENH-85 only when Phase 2 (spreads) deployment plan is committed. |
+
+**Cross-references:**
+
+- **ADR-002 v2** (`docs/decisions/ADR-002-market-structure-philosophy.md`) — supersedes v1; v1 preserved in git history at commit `b46249e` and prior.
+- **D.7 Validation queue** — Phase 0b overlay calibration study work item to be appended (post-ENH-84 build).
+- **D.8.2 holdout discipline** — applies to RR threshold calibration when historical data accumulates post-ENH-84. Cohort-translation discipline (D.9.3 lesson) applies.
+- **TD-NEW-2** — RESOLVED Session 27, commit `241f943`. D.10.3 codifies the walk-from-ATM definition from the resolution.
+- **TD-NEW-3** — RESOLVED Session 27, commit `241f943`. D.10.4 codifies the Crore unit convention from the resolution.
+
+**Open follow-ups (S28+):**
+
+1. **ENH-84 vol_analytics build.** Schema spec in ADR-002 v2; build sequence places ENH-84 immediately after ENH-80. Phase 0b RR conditional-WR test requires ENH-84 producing live data. ~1-2 sessions.
+2. **Phase 0b overlay calibration study.** Retroactive computation of D.10.1, D.10.5, D.10.7 metrics from `option_chain_snapshots` for historical signal cohort. Tag historical signals with would-be overlay; quantify if v2 metrics would have improved or saved signals. ~1-2 sessions.
+3. **Phase 0c methodology selection.** Run zone-definition Options A/B/C/D side-by-side on backfill data; pick option with strongest WR differential between "spot inside zone" vs "spot outside zone." Dealer-flow assumption stack sensitivity test on representative session. ~1 session.
+4. **ENH-85 Phase 3 prep.** Build vanna/charm compute when Phase 2 deployment plan is committed. Until then, ADR-002 v2 P8 is documented but inactive.
+
+---
+
 ---
 
 ## Update log
@@ -242,9 +276,10 @@ This register itself follows Doc Protocol v4 Rule 9.5: superseded rows are annot
 | Date | Session | Event |
 |---|---|---|
 | 2026-05-09 | Session 23 | Created. V15.1 Appendix D content promoted. Refreshed for ICT-era post ADR-007. Status assignments grounded in V18F evidence + V19 SRB rules + Session 16/17 findings. |
+| 2026-05-11 | Session 27 | **§D.10 added** — ADR-002 v2 acceptance new live assumptions filed. 8 rows: D.10.1 (RR ratio independent edge LIVE pending Phase 0b), D.10.2 (buyer/writer inversion LIVE architectural), D.10.3 (walk-from-ATM flip definition VALIDATED via TD-NEW-2), D.10.4 (Crore unit canonical VALIDATED via TD-NEW-3), D.10.5 (Positioning Landscape five named scalars LIVE pending ENH-81), D.10.6 (six-scenario dealer-flow simulator LIVE pending ENH-81), D.10.7 (PINNED regime empirically observable LIVE pending Exp 23), D.10.8 (vanna/charm Phase 3 only LIVE pending Phase 3 backtest). Cross-refs: ADR-002 v2 (`docs/decisions/ADR-002-market-structure-philosophy.md`), D.7 validation queue, D.8.2 holdout discipline (cohort-translation lesson D.9.3 applies), TD-NEW-2 RESOLVED commit `241f943` (walk-from-ATM codification), TD-NEW-3 RESOLVED commit `241f943` (Crore unit codification). 4 open follow-ups (ENH-84 vol_analytics build, Phase 0b overlay calibration, Phase 0c methodology selection, ENH-85 Phase 3 prep). |
 | 2026-05-10 | Session 26 | **§D.9 added** — ENH-55 momentum opposition gate hypothesis (Exp 20) REFUTED by 24-day production cohort (2026-04-17 → 2026-05-10, N=44 opposed-but-winning trades at 79.5% WR; aligned bucket 54.3% WR — symmetric claim also REFUTED). 5 rows: D.9.1 (opposition rule REFUTED), D.9.2 (alignment bonus REFUTED), D.9.3 (cohort-translation hypothesis REFUTED), D.9.4 (TD-101 writer fix CONFIRMED orthogonal correct), D.9.5 (env-flag disablement DECIDED). First substantive application of D.8.3 prospective parity check; first parameter to fail post-codification. Cross-refs: TD-101 (writer fix RESOLVED commit `3cb84e2`), ENH-55 (status note ENV-DISABLED), CLAUDE.md B19 (OI-18 propagation lesson). 4 open follow-ups recorded (ADR-009 case study, re-validation protocol, retroactive blocks audit, cohort-translation parameter inventory). |
 | 2026-05-10 | Session 25 | **§D.8 added** — Phase α Q4 calibration discipline answer codified into methodology assumptions. 5 rows: D.8.1 (single-cohort REJECTED), D.8.2 (graduated holdout split LIVE pending ADR-009), D.8.3 (Exp 15-era prospective parity check LIVE), D.8.4 (Phase 2 walk-forward DEFERRED to Y2), D.8.5 (status-quo silent waiver REJECTED). ADR-009 governance language draft + 3 open follow-ups recorded. |
 
 ---
 
-*MERDIAN Assumption Register — established Session 23, 2026-05-09. Last updated Session 26, 2026-05-10. Living document. Update inline as experimental evidence resolves rows; superseded rows are annotated with the superseding ADR/Exp, never deleted.*
+*MERDIAN Assumption Register — established Session 23, 2026-05-09. Last updated Session 27, 2026-05-11. Living document. Update inline as experimental evidence resolves rows; superseded rows are annotated with the superseding ADR/Exp, never deleted.*

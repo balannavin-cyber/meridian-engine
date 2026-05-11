@@ -404,6 +404,120 @@ These eleven questions are the proper scope of ADR-006 (reserved — AWS migrati
 
 ---
 
+## §9.B — Boundary disposals and discoveries (Session 26)
+
+> Fourth working block (after §9, §9.A) for the boundary work shipped in Session 26. Single block: TD-080 instrumentation deployed (probe-log table + view + extended `pull_token_from_supabase.py`).
+
+**TD-080 instrumentation (Session 26, commit `718ef39`):**
+
+- New Supabase table `dhan_token_probe_log` created (DDL applied via `001_create_dhan_token_probe_log.sql` migration).
+
+  | Column | Type | Purpose |
+  |---|---|---|
+  | `id` | bigserial PK | Auto-increment row ID. |
+  | `ts_utc` | timestamptz | UTC timestamp of probe execution. |
+  | `ts_ist` | timestamp | IST display timestamp (derived). |
+  | `host` | text | `'aws'` or `'local'` — execution environment. |
+  | `script` | text | Caller script name (e.g. `'pull_token_from_supabase.py'`). |
+  | `phase` | text | One of: `'pre_write'`, `'post_write_ltp'`, `'post_write_optionchain'`, `'asymmetry_verdict'`. |
+  | `endpoint` | text | Dhan endpoint probed (e.g. `'/v2/marketfeed/ltp'`, `'/v2/optionchain/expirylist'`). |
+  | `http_status` | int | HTTP response code from Dhan. |
+  | `latency_ms` | int | Round-trip latency. |
+  | `token_len` | int | Length of token used (sanity check; expected 280). |
+  | `token_prefix` | text | First 12 chars of token (audit, no PII risk). |
+  | `verdict` | text | `'OK'` / `'PARTIAL'` / `'FAIL'` per phase logic. |
+  | `error_excerpt` | text | First 500 chars of response body if non-200. |
+  | `notes` | text | Free-form annotation. |
+
+- New convenience view `v_dhan_token_probe_today` (DDL in same migration): filters today's UTC date, orders DESC by `ts_utc`. Used by Mon 2026-05-12 verification triplet check #1.
+
+- `pull_token_from_supabase.py` extended 50 → 355 lines:
+  - **Atomic .env write** with readback verify (read-back-and-compare-prefix sanity check before considering write committed).
+  - **Post-write probes** of `/v2/marketfeed/ltp` (lightweight, low-rate-limit) + `/v2/optionchain/expirylist` (option-chain-relevant) immediately after .env write.
+  - **Audit logging** to `dhan_token_probe_log` for each probe phase.
+  - **Asymmetry verdict** logic: if both endpoints succeed → `OK`; if only one succeeds → `PARTIAL` (logged with which endpoint, prepares for Mon triage); if both fail → `FAIL` (token-side problem, distinct from per-endpoint problem).
+  - Backup `pull_token_from_supabase_PRE_S26.py` preserved.
+
+- **Sunday 2026-05-10 smoke test PASS** at 20:28 IST: token len=280, both probes 200 OK, verdict=`OK`. AWS cron `5 3 * * 1-5 /usr/bin/python3 /home/ssm-user/meridian-engine/pull_token_from_supabase.py` continues to fire weekday 03:05 UTC = 08:35 IST as before; no scheduler change.
+
+**Mon 2026-05-12 verification triplet (P0b S27):**
+
+```sql
+-- Check #1 (08:36 IST onwards) — token probe-log triage
+SELECT * FROM v_dhan_token_probe_today ORDER BY ts_ist DESC LIMIT 10;
+-- Decision tree:
+--   both 200 → token side healthy; if option-chain still fails 09:15 IST → endpoint-side investigation
+--   partial (LTP 200 + option-chain 401) → JWT scope / endpoint-specific auth issue
+--   both fail → upstream problem (TOTP / login flow on Local 08:15)
+```
+
+```sql
+-- Check #2 (09:08 IST) — Topology §9.A 3-check
+-- (a) MERDIAN_PreOpen task absent from 09:00-09:10 IST script_execution_log (verifies S25 disable durable)
+SELECT script_name, ts, exit_code, contract_met
+FROM script_execution_log
+WHERE ts >= (CURRENT_DATE + INTERVAL '3 hours 30 minutes')::timestamptz
+  AND ts < (CURRENT_DATE + INTERVAL '3 hours 40 minutes')::timestamptz
+  AND script_name LIKE '%PreOpen%' OR script_name LIKE '%capture_spot_1m%'
+ORDER BY ts;
+
+-- (b) AWS 09:08 IST capture_market_spot_snapshot_local.py write succeeded
+SELECT id, ts, symbol, spot, source_table FROM market_spot_snapshots
+WHERE ts >= (CURRENT_DATE + INTERVAL '3 hours 38 minutes')::timestamptz
+  AND ts < (CURRENT_DATE + INTERVAL '3 hours 40 minutes')::timestamptz
+  AND symbol IN ('NIFTY','SENSEX')
+ORDER BY ts;
+
+-- (c) ret_session reads from 09:08 anchor — TD-101 fix verification
+SELECT cycle_ts, symbol, raw->>'ret_session' AS ret_session_value
+FROM signal_snapshots
+WHERE ts >= (CURRENT_DATE + INTERVAL '3 hours 45 minutes')::timestamptz
+  AND symbol IN ('NIFTY','SENSEX')
+ORDER BY ts
+LIMIT 10;
+-- Expect: ret_session populated (not NULL) starting from second cycle onwards (first cycle may legitimately be neutral if open == 09:08 spot)
+```
+
+```sql
+-- Check #3 (first cycle onwards) — ENH-88 + ENH-55 absence verification
+-- ENH-88 BULL_FVG cluster gate firing
+SELECT
+    COUNT(*) FILTER (WHERE cautions::text LIKE '%ENH-88%' OR reasons::text LIKE '%ENH-88%') AS enh88_decisions,
+    COUNT(*) FILTER (WHERE raw->>'enh88_decision' = 'ALLOW')                                  AS enh88_allow,
+    COUNT(*) FILTER (WHERE raw->>'enh88_decision' = 'BLOCK')                                  AS enh88_block,
+    COUNT(*) FILTER (WHERE ict_pattern = 'BULL_FVG' AND action = 'BUY_CE')                    AS bull_fvg_signals
+FROM signal_snapshots
+WHERE ts >= CURRENT_DATE;
+-- Expect: enh88_decisions ≥ bull_fvg_signals (every BULL_FVG BUY_CE signal records an enh88_decision)
+
+-- ENH-55 disabled — no opposition blocks, no alignment bonuses
+SELECT
+    COUNT(*) FILTER (WHERE cautions::text LIKE '%ENH-55: Momentum opposition%') AS opposition_blocks,
+    COUNT(*) FILTER (WHERE reasons::text  LIKE '%ENH-55: Momentum aligned%')      AS alignment_bonuses,
+    COUNT(*)                                                                       AS total_signals
+FROM signal_snapshots
+WHERE ts >= CURRENT_DATE;
+-- Expect: opposition_blocks=0, alignment_bonuses=0, total_signals > 0
+
+-- TD-101 ret_session writer fix verification (ground truth)
+SELECT
+    COUNT(*) AS total_momentum_rows,
+    COUNT(*) FILTER (WHERE ret_session IS NOT NULL) AS rs_populated,
+    100.0 * COUNT(*) FILTER (WHERE ret_session IS NOT NULL) / NULLIF(COUNT(*), 0) AS pct_populated
+FROM momentum_snapshots
+WHERE ts >= CURRENT_DATE + INTERVAL '4 hours';
+-- Expect: pct_populated approaches 100% from second cycle onwards
+```
+
+**Cross-references:**
+
+- TD-080 root-cause investigation (P1 S27) — gates ADR-006 drafting per Phase α Q3 sequencing. Probe-log triage on Mon morning is the diagnostic input; ADR-006 evidence base for AWS migration scope decisions.
+- §9.A `MERDIAN_PreOpen` disable validation continues — Mon's Check #2 is the first live trading day after disable.
+- TD-101 ret_session writer fix is orthogonal to topology but verification is bundled here because Check #2 (c) depends on it.
+- ENH-88 + ENH-55 verification queries are not topology-scope but bundled because Mon morning is the verification gate for all S26 changes that depend on live data flowing.
+
+---
+
 ## §10 — How to use this map
 
 **At session start:** Read §1 (the side-by-side summary) plus the section relevant to the question being asked.
@@ -422,8 +536,9 @@ These eleven questions are the proper scope of ADR-006 (reserved — AWS migrati
 |---|---|---|
 | 2026-05-09 | Session 23 (initial) | Created. Sourced from V18 §15.4/15.5, V18A §13.5, V18E §7.4/7.5, CLAUDE.md gotchas, `merdian_reference.json` `environments` + `aws_cron` + `aws_runtime_files` + (partial) `task_scheduler`. **Task Scheduler audit by Navin (PowerShell `Get-ScheduledTask`)** revealed 17 `MERDIAN_*` tasks vs JSON's 4 — full inventory captured in §7.2. Three boundary discrepancies surfaced (post-market dual-environment, pre-open dual-environment, Market_Tape_1M Ready vs DhanError 401). Eight open boundary questions filed in §9. |
 | 2026-05-09 | Session 23 (action map pass) | **Canonical action map populated** for all 17 Task Scheduler entries via second PowerShell pass. Surfaced ~15 newly-catalogued scripts (added to §A.2). Three architectural insights: (a) TD-061 pythonw migration is partially complete (4 tasks already pythonw), (b) two-watchdog architecture (`merdian_watchdog.py --kill` + `watchdog_check.ps1`) is intentional, (c) `merdian_morning_start.ps1` (not `start_supervisor_clean.ps1`) is the supervisor entry point. PreOpen and Post-market "duplicates" reframed as different-scripts-same-table writes. §9 expanded from 8 to 11 open questions. |
+| 2026-05-10 | Session 26 | **New §9.B section** documents TD-080 instrumentation deployment (commit `718ef39`): new Supabase table `dhan_token_probe_log` (12 columns) + view `v_dhan_token_probe_today`; `pull_token_from_supabase.py` extended 50 → 355 lines with atomic .env write + readback verify + post-write Dhan endpoint probes (`/v2/marketfeed/ltp` + `/v2/optionchain/expirylist`) + audit logging + asymmetry verdict logic; backup `_PRE_S26.py` preserved. Sunday 2026-05-10 smoke test PASS (token len=280, both probes 200 OK, verdict=OK). Mon 2026-05-12 verification triplet filed (3 SQL check blocks: 08:36 IST probe-log triage, 09:08 IST §9.A 3-check + TD-101 ret_session verification, first-cycle ENH-88 + ENH-55 absence verification + TD-101 writer-cadence verification). TD-080 root-cause investigation (P1 S27) gates ADR-006 drafting. **Note:** S26 also shipped 4 production code patches but only TD-080 is topology-scope (Local↔AWS boundary or new infrastructure); TD-079 zone validity, ENH-88 deploy, TD-101 writer fix, ENH-55 disable are recorded in `MERDIAN_Enhancement_Register.md`, `tech_debt.md`, `MERDIAN_System_Map.md` not here. |
 | 2026-05-10 | Session 25 | **§9 Q1 CLOSED** (post-market 16:00 dual-write empirically confirmed via 5-day audit 2026-05-04 → 2026-05-08; disposition queued for ADR-006 execution gated on TD-080). **§9 Q2 CLOSED and reframed** — original framing inaccurate; no actual dual-write at 09:08 IST; Local 09:05 task was a different (pre-open auction) boundary, not 09:08. **§9 Q8 PARTIAL EVIDENCE** — Postmarket cron 5-day reliability captured. **New §9.A section** documents Local `MERDIAN_PreOpen` (09:05 IST) DISABLED via PowerShell `Disable-ScheduledTask`, durable; `ret_session` anchor migrated 09:05 → 09:08 and validated via ADR-008 replay; Mon 2026-05-12 verification plan filed. **Phase α Q2 (capture/derived split, four-stage decomposition)** answered S25; ADR-006 drafting gated on TD-080 closure per Phase α Q3 sequencing. |
 
 ---
 
-*MERDIAN Deployment Topology — established Session 23, 2026-05-09. Updated inline per Doc Protocol v4 Rule 1 + Rule 9.2. Anchor for ADR-006 (AWS migration scope) when drafted.*
+*MERDIAN Deployment Topology — established Session 23, 2026-05-09. Last updated Session 26, 2026-05-10. Updated inline per Doc Protocol v4 Rule 1 + Rule 9.2. Anchor for ADR-006 (AWS migration scope) when drafted.*

@@ -158,7 +158,7 @@ All 36 currently-tracked tables in `merdian_reference.json`. Grouped by domain.
 | `gamma_metrics` | `compute_gamma_metrics_local.py` | `build_market_state_snapshot_local.py`, signal builder | LIVE — V18A `gamma_zone` field, raw columns. ENH-80 will add zone-bound columns. |
 | `iv_context_snapshots` | `compute_iv_context_local.py` | `build_market_state_snapshot_local.py`, signal builder | ACTIVE — morning via `MERDIAN_IV_Context_0905` |
 | `volatility_snapshots` | `compute_volatility_metrics_local.py` | `build_market_state_snapshot_local.py`, signal builder | LIVE |
-| `momentum_snapshots` | `build_momentum_features_local.py` | `build_market_state_snapshot_local.py`, signal builder | LIVE — includes `ret_session` (ENH-01) |
+| `momentum_snapshots` | `build_momentum_features_local.py` | `build_market_state_snapshot_local.py`, signal builder | LIVE — includes `ret_session` (ENH-01). **TD-101 RESOLVED Session 26 (commit `3cb84e2`):** `get_session_open_spot()` was returning oldest 500 rows of unbounded `market_spot_snapshots` query (OI-18 class anti-pattern); inside-loop today-date filter discarded all 500; `ret_session` was NULL on every row 2026-04-17 → 2026-05-10 (3+ weeks ~5,000 signals). Fix: bounded query with `gte("ts", today_start_utc_iso)` + limit=20; threshold 03:35 UTC preserved per ENH-01/V18G regression history. **Live impact:** ENH-55 momentum opposition gate was silent no-op for 24 days; surfaced retrospective evidence falsifying Exp 20 hypothesis (see Assumption Register §D.9). |
 | `momentum_snapshots_v2` | `compute_momentum_features_v2_local.py` (manual) | shadow comparison | ACTIVE — manual / shadow only |
 | `weighted_constituent_breadth_snapshots` | `build_wcb_snapshot_local.py` | analytics, breadth diagnostic | LIVE |
 | `market_state_snapshots` | `build_market_state_snapshot_local.py` | `build_trade_signal_local.py`, analytics | LIVE WITH DEFECT — C-01 open (duplicate rows) |
@@ -167,7 +167,7 @@ All 36 currently-tracked tables in `merdian_reference.json`. Grouped by domain.
 
 | Table | Written by | Read by | Status |
 |---|---|---|---|
-| `signal_snapshots` | `build_trade_signal_local.py` | outcome engine, analytics, shadow comparison, regret log builder, `merdian_signal_dashboard.py` | LIVE — primary decision record. ICT columns added 2026-04-11 (`patch_signal_ict.py`). `po3_session_bias` added Session 13. |
+| `signal_snapshots` | `build_trade_signal_local.py` | outcome engine, analytics, shadow comparison, regret log builder, `merdian_signal_dashboard.py` | LIVE — primary decision record. ICT columns added 2026-04-11 (`patch_signal_ict.py`). `po3_session_bias` added Session 13. **Session 26 changes:** ENH-88 BULL_FVG cluster gate SHIPPED (commit `8407169`) — `raw.enh88_decision` field set to `"ALLOW"` or `"BLOCK"` for every BULL_FVG BUY_CE signal based on 90-min BULL_OB lookback in same table. ENH-55 momentum opposition + alignment bonus DISABLED by env flag (commit `5b94c78`) — default OFF; `cautions` and `reasons` lists no longer carry `ENH-55: Momentum opposition` or `ENH-55: Momentum aligned` entries unless `MERDIAN_ENH55_ENABLED=1`. ENH-53 breadth modifier remains active (different evidence base). |
 | `signal_regret_log` | `build_signal_regret_log_v1.py` | analytics, ADR-007 evidence base | ACTIVE — 614 rows V18A baseline. Per ADR-007, the V15.1-spec'd role as threshold-change gate is retired; ongoing diagnostic role continues. |
 | `shadow_signal_snapshots_v3` | `build_shadow_signal_v3_local.py` (manual) | shadow comparison | ACTIVE — manual only |
 
@@ -175,7 +175,7 @@ All 36 currently-tracked tables in `merdian_reference.json`. Grouped by domain.
 
 | Table | Written by | Read by | Status |
 |---|---|---|---|
-| `ict_htf_zones` | `build_ict_htf_zones.py`, `build_ict_htf_zones_historical.py` | `detect_ict_patterns.py`, dashboard, Pine overlay | LIVE — ENH-37. **`source_bar_date` semantics differ by timeframe (codified Session 25 from TD-078 closure):** W = week-start Monday date; D = bar's calendar date; 1H = hour bucket date. When debugging "missing zone row" claims on this table, check the timeframe-aware convention before concluding the row is absent. |
+| `ict_htf_zones` | `build_ict_htf_zones.py`, `build_ict_htf_zones_historical.py` | `detect_ict_patterns.py`, dashboard, Pine overlay | LIVE — ENH-37. **`source_bar_date` semantics differ by timeframe (codified Session 25 from TD-078 closure):** W = week-start Monday date; D = bar's calendar date; 1H = hour bucket date. When debugging "missing zone row" claims on this table, check the timeframe-aware convention before concluding the row is absent. **ADR-005 zone validity model applied Session 26 (TD-079 fix, commit `0731e67`):** D/W OB/FVG `valid_to=NULL` (price-breach only canonical); 1H OB/FVG `valid_to=trade_date+7days` tactical fallback; PDH/PDL date-expire unchanged. `expire_old_zones()` filter widened from `["W","D"]` → `["W","D","H"]`. Backfill revived 18 SENSEX W BEAR_OB/BEAR_FVG zones above 78k from EXPIRED → ACTIVE valid_to=NULL. Pine 36 → 62 zones (49 HTF + 13 intraday). |
 | `ict_zones` | `detect_ict_patterns.py` (intraday zone build) | dashboard, signal builder | LIVE — ENH-37. Note: separate schema from `ict_htf_zones` (TD-047). |
 | `hist_pattern_signals` | `detect_ict_patterns.py`, `build_hist_pattern_signals_5m.py` (backfill) | analytics, dashboards, win-rate computations | ACTIVE — 6,318 rows |
 | `hist_spot_bars_5m` | `build_spot_bars_mtf.py` | ICT detector, HTF zone builder, experiment scripts | ACTIVE — 41,248 rows full year |
@@ -208,6 +208,15 @@ All 36 currently-tracked tables in `merdian_reference.json`. Grouped by domain.
 |---|---|---|---|
 | `trading_calendar` | manual / config | every cycle as hard gate; `trading_calendar.py` lookup | AUTHORITATIVE — missing row = system treats day as non-trading |
 
+### B.10 Operational instrumentation (Session 26)
+
+| Table | Written by | Read by | Status |
+|---|---|---|---|
+| `dhan_token_probe_log` | `pull_token_from_supabase.py` (post-write probes); ad-hoc operator scripts | `v_dhan_token_probe_today` view; Mon morning verification triplet (P0b S27) | LIVE — Session 26 (TD-080 instrumentation, commit `718ef39`). 12 columns: id, ts_utc, ts_ist, host, script, phase ('pre_write'/'post_write_ltp'/'post_write_optionchain'/'asymmetry_verdict'), endpoint, http_status, latency_ms, token_len, token_prefix, verdict ('OK'/'PARTIAL'/'FAIL'), error_excerpt, notes. Sunday 2026-05-10 smoke test PASS at 20:28 IST: token len=280, both Dhan probes 200 OK, verdict=OK. Mon 2026-05-12 first cron-driven probe is the diagnostic input for TD-080 root-cause investigation. |
+| `v_dhan_token_probe_today` | (view, auto-reflects newest rows) | Mon morning verification triplet (P0b S27); operator console for triage | LIVE — Session 26 view. Filter: today's UTC date. ORDER BY ts_utc DESC. Used directly as `SELECT * FROM v_dhan_token_probe_today ORDER BY ts_ist DESC LIMIT 10` for triage. |
+
+---
+
 ### B.8 Manual / shadow only
 
 | Table | Written by | Read by | Status |
@@ -222,6 +231,26 @@ All 36 currently-tracked tables in `merdian_reference.json`. Grouped by domain.
 | `capital_tracker` | NOT BUILT | OI-09 / required before ENH-38 (Kelly capital scaling) |
 | `gex_strike_snapshots` | NOT BUILT | ENH-80 PROPOSED — build after ENH-75 |
 | `option_execution_price_history` | DEPRECATED | No new rows. Formal DROP pending after outcome engine migration. |
+
+---
+
+## §A.S26 — Production scripts touched in Session 26
+
+> Lightweight callout per Doc Protocol v4 §1 (System Map update trigger: production scripts changed). Rows in §A.1–§A.5 above are the canonical source for path, reads, writes, called-by, status. This section captures S26-specific change descriptions in one place for the session-history view.
+
+| Script | S26 change | Commit |
+|---|---|---|
+| `pull_token_from_supabase.py` (AWS) | Extended 50 → 355 lines: atomic .env write with readback verify, post-write probes of Dhan `/v2/marketfeed/ltp` + `/v2/optionchain/expirylist`, audit logging to new `dhan_token_probe_log` table, asymmetry verdict logic. **Note:** AWS does NOT call Dhan `generateAccessToken` — Local does the refresh at 08:15 IST and PATCHes Supabase; AWS pulls from Supabase at 08:35 IST. The S26 instrumentation lives in the AWS-side puller. Backup `_PRE_S26.py` preserved. | `718ef39` |
+| `build_ict_htf_zones.py` (Local) | TD-079 ADR-005 zone validity rewrite via `patch_s26_td079_zone_validity.py` 13 surgical replacements AST-validated: D/W OB/FVG `valid_to=None` (price-breach only canonical), 1H OB/FVG `valid_to=str(trade_date+timedelta(days=7))` (tactical fallback), `expire_old_zones()` filter widened `["W","D"]` → `["W","D","H"]`, PDH/PDL date-expiry unchanged. Live rebuild produced 80 zones; backfill SQL revived 18 SENSEX W BEAR_OB/BEAR_FVG zones above 78k from EXPIRED → ACTIVE valid_to=NULL. Pine output 36 → 62 zones (49 HTF + 13 intraday). | `0731e67` |
+| `build_trade_signal_local.py` (Local) | Two patches in same file this session. **ENH-88 deploy** (`patch_s26_enh88_deploy.py`): adds `ENH88_LOOKBACK_MIN: int = 90` + `_has_recent_bull_ob(sb, symbol, current_ts_iso, lookback_min=90)` helper after ENH-75 helper anchor; new ENH-88 gate block before `return out, flags` queries `signal_snapshots` for BULL_OB in last 90min with `trade_allowed=True`; ALLOW or BLOCK with three-site sync (action, trade_allowed, out{}); sets `out["raw"]["enh88_decision"]`. BEAR-side anti-clusters not mirrored (per ENH-90 -16.5pp anti-edge). **ENH-55 disable** (`patch_s26_enh55_disable.py`): adds `ENH55_ENABLED: bool = os.getenv("MERDIAN_ENH55_ENABLED", "0").strip() == "1"` after `SIGNAL_V4_ENABLED`; modifies inner condition `if ret_session is not None and abs(ret_session) > 0.0005:` → `if ENH55_ENABLED and ret_session is not None and abs(ret_session) > 0.0005:`. Disables BOTH opposition block AND alignment bonus (same evidence base, symmetric claims falsified together). ENH-53 breadth modifier untouched. Default OFF; reversible via `.env` `MERDIAN_ENH55_ENABLED=1`. | `8407169` + `5b94c78` |
+| `build_momentum_features_local.py` (Local) | TD-101 RESOLVED — `get_session_open_spot()` bounded query fix via `patch_s26_td101_ret_session.py`. Old: `supabase_select("market_spot_snapshots", filters={"symbol": symbol}, order_by="ts", desc=False, limit=500)` returns oldest 500 rows of unbounded table; inside-loop today-date filter discards all 500; returns None silently. New: `today_start_utc_iso` derived from `current_ts.astimezone(timezone.utc)` date; `gte("ts", today_start_utc_iso)` filter; limit=20; defense-in-depth date filter inside loop preserved; threshold 03:35 UTC preserved per ENH-01/V18G regression history (catches both 09:05 IST Local PreOpen now-disabled and 09:08 IST AWS PreOpen current anchor). Backup `_PRE_S26_TD101.py` preserved. Same OI-18 class as S25 TD-097 dashboard fix; the audit Session 25 ran (TD-099) didn't reach this writer-side helper because grep was shape-specific to dashboard URL construction. | `3cb84e2` |
+
+**Tables touched Session 26:**
+- New: `dhan_token_probe_log` (TD-080 instrumentation; see §B.10 above), `v_dhan_token_probe_today` (view).
+- Data update: `ict_htf_zones` — 18 SENSEX W BEAR_OB/BEAR_FVG zones revived from EXPIRED → ACTIVE valid_to=NULL via TD-079 backfill SQL.
+- No DDL changes to existing tables.
+
+**Note on `merdian_start.py`:** Unchanged Session 26. Per CLAUDE.md memory, this file remains LOCAL-ONLY (Windows `creationflags=CREATE_NO_WINDOW` + hardcoded Windows paths). Running on AWS still freezes SSM terminal. No S26 work attempts to modify this constraint.
 
 ---
 
@@ -524,11 +553,12 @@ V18 master appendices (V18A–H) use a 13-block structure. The schema of each bl
 |---|---|---|
 | 2026-05-09 | Session 23 | Created. Sourced from `merdian_reference.json` (72 files, 36 tables, 4 cron, 4 task entries) + V18/V19 master appendices for cycle pipelines + V15.1 §9.1/9.2 for core abstractions and monitoring schemas. Four known gaps flagged in §G for follow-up sessions. |
 | 2026-05-09 | Session 24 | Added §A.X (Replay layer scripts) and §B.X (Replay tables) per ADR-008. 11 new replay scripts in `C:\GammaEnginePython\replay\` + 10 new `*_replay` Supabase tables. Zero-touch constraint preserved (live scripts physically untouched). |
+| 2026-05-10 | Session 26 | **§B.4 ict_htf_zones + signal_snapshots + momentum_snapshots rows annotated** with S26 changes (TD-079 zone validity rewrite, ENH-88 + ENH-55 disable, TD-101 ret_session writer fix). **New §B.10 Operational instrumentation section** for `dhan_token_probe_log` table + `v_dhan_token_probe_today` view (TD-080 instrumentation, S26 commit `718ef39`). **New §A.S26 callout block** lists 4 production scripts touched Session 26 (`pull_token_from_supabase.py` AWS, `build_ict_htf_zones.py` Local, `build_trade_signal_local.py` Local two patches, `build_momentum_features_local.py` Local) with commit hashes + change descriptions. No §A row removals (all underlying scripts remain canonical at same paths). Pipeline diagrams §C unchanged (no orchestration / schedule changes Session 26). |
 | 2026-05-10 | Session 25 | §B.4 ict_htf_zones row annotated with timeframe-aware `source_bar_date` semantics (codified from TD-078 closure): W = week-start Monday, D = bar's calendar date, 1H = hour bucket date. Implicit convention in `build_ict_htf_zones.py` made explicit so future debugging of "missing row" claims doesn't waste time. No script index or pipeline diagram changes (S25 was code-light per non-AWS-touch constraint of Phase α Q3 sequencing). MERDIAN_PreOpen Local 09:05 IST task DISABLED via PowerShell (durable); no §A row removal because the underlying script `capture_spot_1m.py` retains capability — only the scheduled invocation was removed. Note for future: Topology §7.2 task inventory next pass should mark `MERDIAN_PreOpen` State=Disabled. |
 
 ---
 
-*MERDIAN System Map — established Session 23, 2026-05-09. Updated inline per Doc Protocol v4 Rule 1 + Rule 9.1. Source authority: `merdian_reference.json` for canonical file paths and statuses; this Map for human-readable architectural narrative and pipeline ordering.*
+*MERDIAN System Map — established Session 23, 2026-05-09. Last updated Session 26, 2026-05-10. Updated inline per Doc Protocol v4 Rule 1 + Rule 9.1. Source authority: `merdian_reference.json` for canonical file paths and statuses; this Map for human-readable architectural narrative and pipeline ordering.*
 
 
 ---

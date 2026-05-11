@@ -9,6 +9,203 @@
 
 | Field | Value |
 |---|---|
+| **Date** | 2026-05-10 (Sunday — non-trading day; Session 26 — 5 production commits in single session: TD-080 instrumentation + TD-079 ADR-005 zone validity fix + ENH-88 BULL_FVG cluster gate deploy + TD-101 ret_session writer fix + ENH-55 disabled by env flag after 24-day production data falsifies Exp 20 hypothesis; plus TD-099 closed as filed-in-error after URL-spy verification). |
+| **Concern** | Opened on TD-099 (5-script URL-encoding bug sweep, P3 carry-forward from S25). Diagnostic-first verification via URL-spy showed the grep audit produced false positives → TD-099 closed filed-in-error (~3 hours of patching avoided). Operator pivoted to TD-054 (broken `ret_30m` research column) at session midpoint; diagnostic SQL on `signal_snapshots.raw.ret_session` surfaced **TD-101** — a live trading bug propagating from `build_momentum_features_local.py::get_session_open_spot()` unbounded query that silently NULLed `ret_session` for 24 trading days (2026-04-17 → 2026-05-10, ~5,000 signals). Same OI-18 anti-pattern class as S25 TD-097, but writer-side helper that S25's grep audit (TD-099) couldn't reach. TD-101 fix surfaced retrospective evidence on the silent-failure window that directionally falsifies Exp 20's ENH-55 momentum opposition hypothesis (N=44 OPPOSED at 79.5% WR vs Exp 20's claimed 38.3%). Same-session: TD-101 fix shipped + ENH-55 disabled by env flag. Also shipped TD-080 instrumentation deployment (probe-log table + view + extended puller), TD-079 ADR-005 zone validity rewrite implementation (Phase α Q1 answer locked S25), and ENH-88 BULL_FVG cluster gate deploy (built-not-deployed since S17, gate satisfied). |
+| **Type** | Mixed: production engineering (4 code patches across 4 files), schema (1 new Supabase table + 1 view), TD work (TD-099 closed filed-in-error, TD-079 closed via implementation, TD-101 NEW + RESOLVED same-session, TD-080 status update with instrumentation deployed), ENH work (ENH-88 SHIPPED, ENH-55 ENV-DISABLED), retrospective experiment (24-day silent-gate-failure cohort audit falsifying Exp 20), 9-file documentation pack per Doc Protocol v4. **5 separate commits this session** — single-commit pattern intentionally broken because each commit is an independent shippable unit of work (TD-080 instrumentation, TD-079 zone validity, ENH-88 deploy, TD-101 writer fix, ENH-55 disable). |
+| **Outcome** | PASS. **5 commits pushed origin/main, AWS pulled clean.** Commit hashes: `718ef39` (TD-080 instrumentation), `0731e67` (TD-079 ADR-005 zone validity), `8407169` (ENH-88 cluster gate deploy), `3cb84e2` (TD-101 ret_session writer fix), `5b94c78` (ENH-55 env-flag disable). **TD-099 closed as filed-in-error** after URL-spy verification (all 4 scripts in scope emit clean URLs; 5th uses supabase Python client different code path; ~3 hours of unnecessary patching avoided; filing rule established: "same anti-pattern in N scripts" claims require runtime verification before priority assignment). **TD-079 RESOLVED** via 13 surgical AST-validated replacements implementing Phase α Q1 answer (D/W OB/FVG `valid_to=None`, 1H OB/FVG `valid_to=trade_date+7days`, `expire_old_zones()` filter widened `["W","D"]` → `["W","D","H"]`; backfill SQL revived 18 SENSEX W BEAR_OB/BEAR_FVG zones above 78k from EXPIRED → ACTIVE; live rebuild 80 zones; Pine 36 → 62 zones). **TD-101 RESOLVED same-session** as discovery (bounded query with `gte("ts", today_start_utc_iso)` + limit=20; 03:35 UTC threshold preserved per ENH-01/V18G regression history; smoke test PASS Friday close prices NIFTY 24,161.3 + SENSEX 77,582.08). **TD-080 instrumentation DEPLOYED** (`pull_token_from_supabase.py` extended 50 → 355 lines with atomic .env write + readback verify + post-write probes + audit logging + asymmetry verdict; Sunday smoke PASS 20:28 IST; root-cause investigation pending Mon 2026-05-12 first probe-log triage). **ENH-88 SHIPPED** (`ENH88_LOOKBACK_MIN=90` + `_has_recent_bull_ob()` helper + gate block with three-site sync; BEAR-side asymmetry preserved per ENH-90 -16.5pp anti-edge). **ENH-55 DISABLED** by env flag (default OFF, reversible via `MERDIAN_ENH55_ENABLED=1`; both opposition block AND alignment +10 bonus gated together as symmetric claims falsified together; ENH-53 breadth modifier untouched). |
+| **Git start → end** | Local Windows: S25-close → `5b94c78` (5 commits this session). AWS Meridian: synced to `5b94c78` after each commit's push. MeridianAlpha: not touched. |
+| **Local + AWS hash match** | ✅ Both at `5b94c78`. AWS pulled clean after each push. |
+| **Files added (code)** | `patch_s26_td079_zone_validity.py` (zone validity patch script, AST-validated 13 replacements); `patch_s26_enh88_deploy.py` (BULL_FVG cluster gate deploy); `patch_s26_td101_ret_session.py` (writer fix); `patch_s26_enh55_disable.py` (env-flag wrap). `001_create_dhan_token_probe_log.sql` (new Supabase table + view migration). `td079_backfill.sql` (backfill SQL revived 18 SENSEX W zones). All patch scripts v3 patch canon — `utf-8-sig` decode, byte-write, `ast.parse` validation, idempotency guards, snapshot original. |
+| **Files added (docs)** | None new ADR-level. ADR-005 formal draft is a P2 S27 carry-forward (implementation already shipped via TD-079); ADR-009 formal draft is a P2b S27 carry-forward (S26 ENH-55 falsification is the first case study). |
+| **Files modified (docs)** | 9 canonical files: `tech_debt.md` (TD-101 NEW S1 in Active + same-session RESOLVED block in Resolved; TD-099 RESOLVED filed-in-error block in Resolved; TD-079 RESOLVED via patch closure block in Resolved; TD-080 status update row with instrumentation deployment details; TD-054 cross-ref to TD-101 row); `MERDIAN_Enhancement_Register.md` (ENH-88 status PROPOSED → COMPLETE SHIPPED 2026-05-10 with full closure block + ENH-55 status note ENV-DISABLED with 24-day evidence + Part 1 status table updates); `merdian_reference.json` (v17 → v18 + S26 change_log entry + S26 session_log entry + `dhan_token_probe_log` table + `v_dhan_token_probe_today` view inventory); `MERDIAN_System_Map.md` (production scripts S26 status annotations on ict_htf_zones + signal_snapshots + momentum_snapshots rows; new §B.10 Operational instrumentation section; new §A.S26 callout block listing 4 production scripts touched; S26 update log entry); `MERDIAN_Deployment_Topology.md` (new §9.B for TD-080 instrumentation deployment block + Mon 2026-05-12 verification triplet SQL filed + S26 update log); `MERDIAN_Assumption_Register.md` (new §D.9 ENH-55 hypothesis falsification 5 rows D.9.1–D.9.5 + ADR-009 first-case-study material + 4 open follow-ups + S26 update log); `CLAUDE.md` (B19 OI-18 propagation lesson + 8 Session 26 operational findings + version v1.16 → v1.17 with settled-decisions footer entries for all 5 commits); `CURRENT.md` (this rewrite — Session 25 preserved below as Previous session per no-crunch directive); `session_log.md` (Session 26 prepended newest-first). |
+| **Files modified (code)** | 4 production code patches: `pull_token_from_supabase.py` (AWS — TD-080 instrumentation, extended 50 → 355 lines; commit `718ef39`); `build_ict_htf_zones.py` (Local — TD-079 ADR-005 zone validity rewrite, 13 surgical replacements; commit `0731e67`); `build_trade_signal_local.py` (Local — ENH-88 deploy in commit `8407169` THEN ENH-55 disable in commit `5b94c78`, two patches in same file this session); `build_momentum_features_local.py` (Local — TD-101 writer fix, `get_session_open_spot()` bounded query; commit `3cb84e2`). All snapshots preserved (`_PRE_S26_*.py` backups). |
+| **Tables created (Supabase)** | `dhan_token_probe_log` (12 columns: id, ts_utc, ts_ist, host, script, phase, endpoint, http_status, latency_ms, token_len, token_prefix, verdict, error_excerpt, notes). View `v_dhan_token_probe_today` (filters today's UTC date, ORDER BY ts_utc DESC). Both created via `001_create_dhan_token_probe_log.sql` migration applied Session 26. |
+| **Tables modified (data)** | `ict_htf_zones` — 18 SENSEX W BEAR_OB/BEAR_FVG zones revived from EXPIRED → ACTIVE valid_to=NULL via TD-079 backfill SQL. No DDL changes to existing tables. |
+| **Cron / Tasks added** | None. No scheduler changes Session 26. |
+| **Tags added (proposed)** | `session-26-close` (session marker — operator's call on push). |
+| **`docs_updated`** | YES. Full closeout per Doc Protocol v4 Rule 3 session-end checklist. No new ADR drafted Session 26 (ADR-005 formal draft P2 S27 carry-forward — implementation already shipped via TD-079; ADR-009 formal draft P2b S27 carry-forward — S26 ENH-55 falsification is the first case study). Assumption Register updated with new §D.9 capturing ENH-55 hypothesis falsification. **Project knowledge upload pending** (carry-forward to Session 27 — same pattern as S23/S24/S25 close). |
+
+### What Session 26 did, in 14 bullets
+
+**TD-099 closure (~30 minutes investigation):**
+
+- **TD-099 closed as filed-in-error.** Operator opened session on TD-099 sweep work (5-script URL-encoding audit, S25-filed S2 HIGH on strength of grep match). Diagnostic-first verification via URL-spy: monkey-patched `requests.get` to print URLs + params before each call, ran each script in dry-run mode. **All 4 scripts in scope emit clean single-`?` URLs with proper encoding** (`%2A`=`*`, `%2C`=`,`). 5th script `premium_outcome_writer.py` uses supabase Python client (`supabase.table(...).select(...).execute()`), not raw `requests.get` — different code path entirely. **No real defect.** Filing rule established: "same anti-pattern in N scripts" claims require URL-spy or runtime trace verification before priority assignment, not just grep matches. ~3 hours of unnecessary patching avoided. Filed as TD-099 closure block in Resolved.
+
+**TD-080 instrumentation (commit `718ef39`):**
+
+- **TD-080 instrumentation deployed.** New Supabase table `dhan_token_probe_log` (12 cols) + view `v_dhan_token_probe_today` created via `001_create_dhan_token_probe_log.sql`. `pull_token_from_supabase.py` extended 50 → 355 lines: atomic .env write with readback verify (read-back-and-compare-prefix sanity check before considering write committed); post-write probes of `/v2/marketfeed/ltp` (lightweight) + `/v2/optionchain/expirylist` (option-chain-relevant); audit logging to probe-log table per phase (`pre_write`, `post_write_ltp`, `post_write_optionchain`, `asymmetry_verdict`); asymmetry verdict logic (both 200 → OK; one 200 + one 4xx → PARTIAL with endpoint flag; both fail → FAIL token-side problem distinct from per-endpoint problem). **Sunday 2026-05-10 smoke test PASS at 20:28 IST: token len=280, both probes 200 OK, verdict=OK.** AWS cron `5 3 * * 1-5 /usr/bin/python3 pull_token_from_supabase.py` continues to fire 03:05 UTC = 08:35 IST as before; no scheduler change. Backup `pull_token_from_supabase_PRE_S26.py` preserved. Mon 2026-05-12 verification SQL filed (`SELECT * FROM v_dhan_token_probe_today ORDER BY ts_ist DESC LIMIT 10;`) — decision tree: both 200 → token healthy; partial → JWT scope / endpoint-specific auth; both fail → upstream TOTP / login flow on Local 08:15.
+
+**TD-079 ADR-005 zone validity (commit `0731e67`):**
+
+- **TD-079 RESOLVED via ADR-005 implementation.** Patch script `patch_s26_td079_zone_validity.py` applied 13 surgical AST-validated replacements to `build_ict_htf_zones.py` implementing Phase α Q1 answer locked Session 25 ("(a) pure price-based canonical with timeframe-tiered fallback intraday-only"): D/W OB/FVG `valid_to=None` (was `week_end + 4 weeks` for W, `bar_date + 1 day` for D); 1H OB/FVG `valid_to = str(trade_date + timedelta(days=7))` (tactical fallback to prevent intraday memory pile-up); `expire_old_zones()` filter widened from `["W","D"]` → `["W","D","H"]` so 1H zones still get expired by date when their week is up; PDH/PDL date-expiry logic untouched. `recheck_breached_zones()` becomes primary status transition for D/W (price-breach detection against ACTIVE zones with `valid_to=NULL`). Backfill SQL `td079_backfill.sql` revived 18 SENSEX W BEAR_OB/BEAR_FVG zones above 78k from EXPIRED → ACTIVE valid_to=NULL. Live rebuild via `build_ict_htf_zones.py --timeframe both` produced 80 zones (47 NIFTY + 33 SENSEX); Pine overlay 36 → 62 zones (49 HTF + 13 intraday) — visual confirmation: all major resistances 78k → 86k now displayed on TradingView. ADR-005 formal draft (P2 S27 carry-forward) follows the implementation per CLAUDE.md S26 lesson: architecture-defect TDs implementable before formal ADR when (a) Phase α answer in hand, (b) implementation reversible (snapshot original), (c) ADR draft follows in dedicated session to capture rationale + alternatives. Doc Protocol v4 Rule 10 satisfied — decision was made S25 and recorded in Decision Index + Assumption Register §D.7; the ADR draft is the writeup of an already-made decision.
+
+**ENH-88 BULL_FVG cluster gate deploy (commit `8407169`):**
+
+- **ENH-88 SHIPPED.** Built-not-deployed since Session 17, gated on Mon BULL_OB live data confirmation. Sunday gate-discharge via smoke test: `patch_s26_enh88_deploy.py` adds two chunks to `build_trade_signal_local.py`: (1) module-level `ENH88_LOOKBACK_MIN: int = 90` + helper `_has_recent_bull_ob(sb, symbol, current_ts_iso, lookback_min=90)` after `# -- end ENH-75 helper` anchor; (2) ENH-88 gate block before `return out, flags` — when `out.get("ict_pattern") == "BULL_FVG" and action == "BUY_CE"`, query `signal_snapshots` for BULL_OB in last 90min same symbol with `trade_allowed=True`. ALLOW (proceed normal sizing) or BLOCK (action=DO_NOTHING, trade_allowed=False, three-site sync of action + trade_allowed + out{}). Sets `out["raw"]["enh88_decision"] = "ALLOW"|"BLOCK"` for telemetry. **BEAR-side asymmetry preserved** — BEAR_FVG anti-clusters NOT mirrored per ENH-90 -16.5pp anti-edge (Session 16 Section 18 BEAR analysis; opposite direction to BULL effect). BEAR_FVG signals continue without cluster gate. Smoke test PASS Sunday non-trading day (both NIFTY+SENSEX `_has_recent_bull_ob` returned False as expected). Live verification deferred to Mon 2026-05-12 first BULL_FVG signal. Evidence base: Session 16 Section 18 of `analyze_exp15_trades.py` — BULL_FVG with recent BULL_OB at 90-min lookback (N=64) WR 57.8% vs standalone (N=91) WR 45.1% → **+12.8pp lift**; standalone BULL_FVG is statistically coin flip (CI [42.5, 58.1] spans 50%). Cluster effect transforms coin flip into real edge.
+
+**TD-101 ret_session writer fix + retrospective audit (commit `3cb84e2`):**
+
+- **TD-101 NEW + RESOLVED same-session (S1).** Discovery path: operator picked TD-054 (broken `ret_30m` research column) at session midpoint; diagnostic SQL Q2 showed `signal_snapshots.raw.ret_session` NULL on EVERY signal going back to 2026-04-17 (3+ weeks ~5,000 signals). Q4 confirmed `market_state_snapshots.momentum_features.ret_session` value=NULL but key=present. Q-source confirmed `momentum_snapshots.ret_session` 100% NULL while `ret_15m` / `ret_30m` / `ret_60m` 100% populated. Bug localized to `build_momentum_features_local.py::get_session_open_spot()`: `supabase_select("market_spot_snapshots", filters={"symbol": symbol}, order_by="ts", desc=False, limit=500)` returns OLDEST 500 rows of unbounded table (no date filter); inside-loop today-date filter discards all 500; returns None silently; `compute_return(curr, None)` returns None; stored as NULL. **Same OI-18 anti-pattern class as S25 TD-097 dashboard fix** but in writer-side helper rather than dashboard URL construction; TD-099 grep (`requests.get.*SUPABASE.*params`) couldn't reach because the anti-pattern is inside `supabase_select()` helper. **Live impact: ENH-55 momentum opposition (which gates on `ret_session is not None`) was SILENT NO-OP for 3+ weeks.** Both opposition hard-block AND alignment +10 confidence bonus inactive. Fix: `patch_s26_td101_ret_session.py` replaces function body with bounded query — `today_start_utc_iso` from `current_ts.astimezone(timezone.utc)` date; `gte("ts", today_start_utc_iso)` filter; limit=20; defense-in-depth date filter inside loop preserved; **threshold 03:35 UTC preserved per ENH-01/V18G regression history** (catches both 09:05 IST Local PreOpen now-disabled and 09:08 IST AWS PreOpen current anchor). Smoke test PASS: Friday NIFTY 24,161.3, SENSEX 77,582.08; Sunday both None (clean, no errors). Backup `build_momentum_features_local_PRE_S26_TD101.py` preserved.
+
+**ENH-55 falsification + env-flag disable (commit `5b94c78`):**
+
+- **ENH-55 disabled by env flag** (default OFF, reversible). Retrospective audit query partitioned 2026-04-17 → 2026-05-10 actionable signals (action ∈ {BUY_CE, BUY_PE} ∧ `trade_allowed=TRUE`) by what ENH-55 WOULD have done if firing: **WOULD_HAVE_BLOCKED bucket N=44 35W/9L 79.5% WR** (43/44 BUY_PE in up-sessions with `ict_pattern=NONE` — pure momentum-driven signals where 15m/30m turn down despite session running up; signature: exhaustion / mean-reversion edge); WOULD_HAVE_ALIGNED_BONUS N=35 19W/16L 54.3% WR; NEUTRAL_BAND N=1 0/1 0%. **Production data over 24 days on the cohort ENH-55 actually gates directionally falsifies Exp 20 hypothesis** (sign of lift opposite; magnitude 25pp clears §D.8.3 prospective-parity flag-drift criterion >15pp). Operator decision: keep TD-101 fix (writer bug unambiguously correct, orthogonal to gating decision) + disable ENH-55 by env flag (the calibration question). `patch_s26_enh55_disable.py` adds `ENH55_ENABLED: bool = os.getenv("MERDIAN_ENH55_ENABLED", "0").strip() == "1"` after `SIGNAL_V4_ENABLED` declaration; modifies inner condition to `if ENH55_ENABLED and ret_session is not None and abs(ret_session) > 0.0005:`. Disables BOTH opposition block AND alignment bonus (same evidence base, symmetric claims falsified together). ENH-53 breadth modifier untouched. Commit `5b94c78`, +8 lines, AST OK on Local + AWS. Filed as Assumption Register §D.9 (5 rows D.9.1–D.9.5 + 4 open follow-ups + ADR-009 first-case-study material).
+
+**Documentation pack:**
+
+- **9 canonical files updated** per Doc Protocol v4 Rule 3 session-end checklist (`tech_debt.md`, `MERDIAN_Enhancement_Register.md`, `merdian_reference.json`, `MERDIAN_System_Map.md`, `MERDIAN_Deployment_Topology.md`, `MERDIAN_Assumption_Register.md`, `CLAUDE.md`, `CURRENT.md` this file, `session_log.md`). No Decision Index update (no new ADR Session 26 — ADR-005 and ADR-009 drafts deferred to S27). No Experiment Compendium update (retrospective audit is filed via Assumption Register §D.9, not a planned experiment).
+
+### Outcomes summary (counters)
+
+- **TDs CLOSED**: 3 (TD-079 via patch, TD-099 filed-in-error, TD-101 same-session)
+- **TDs NEW**: 1 (TD-101 — same-session NEW+RESOLVED)
+- **TDs STATUS UPDATE**: 1 (TD-080 instrumentation deployed pending Mon root-cause)
+- **ADRs NEW**: 0 (ADR-005 draft P2 S27, ADR-009 draft P2b S27)
+- **ENH NEW+SHIPPED**: 1 (ENH-88 BULL_FVG cluster gate — built-not-deployed S17 → deployed S26)
+- **ENH DISABLED (env flag)**: 1 (ENH-55 momentum opposition + alignment bonus)
+- **HYPOTHESIS FALSIFIED**: 1 (Exp 20 ENH-55 — production data over 24 days directionally refutes the claim)
+- **Production code patches**: 4 files (`pull_token_from_supabase.py` AWS, `build_ict_htf_zones.py` Local, `build_trade_signal_local.py` Local 2 patches, `build_momentum_features_local.py` Local)
+- **New tables**: 1 (`dhan_token_probe_log`); 1 view (`v_dhan_token_probe_today`)
+- **Commits**: 5 (single-commit pattern broken intentionally; each commit independently shippable)
+- **Silent-gate-failure window**: 24 trading days (2026-04-17 → 2026-05-10, ~5,000 signals)
+
+### CRITICAL LESSONS Session 26
+
+- (a) **OI-18 class fix at one site does NOT close the class.** S25 fixed TD-097 (dashboard URL-encoding) and filed TD-099 via grep audit; S26 proved TD-099 was filed-in-error (5 grep matches were correct production code) AND TD-101 was the real instance the grep couldn't reach (writer-side helper). When fixing OI-18-class bugs, runtime-verify every candidate site including writer-side helpers downstream of the symptom site, not just request-side construction at the symptom site. The grep is shape-specific and misses helper-buried instances. Codified as CLAUDE.md B19.
+- (b) **Production data on the live cohort over 24 documented days trumps research-cohort hypothesis when they disagree directionally.** Exp 20's evidence base (5m-batch `hist_pattern_signals` cohort) does not survive translation to the live signal cohort under current selection logic. Sign of lift is opposite (live OPPOSED 79.5% vs Exp 20 OPPOSED 38.3%); magnitude clears §D.8.3 flag-drift threshold. Default to disabling the parameter behind a reversible flag, file as Assumption Register row, re-validate only with proper outcome metric on the cohort the parameter actually gates. **First substantive application of §D.8.3 prospective parity check post-codification S25.**
+- (c) **Reversible disablement (env flag, default OFF) > code removal** for hypothesis-falsified parameters. ENH-55's code path stayed in the codebase; only the inner condition was guarded by an env flag. Re-enable is a `.env` line addition + restart. The alternative — strip ENH-55 from the codebase — would have made re-validation cost a re-implementation rather than a flag flip. Code paths that fail empirically are still valuable as documentation of what was tried.
+- (d) **Gates guarded on `not None` writer values need parallel writer-cadence diagnostics at gate-promotion time.** ENH-55's silent failure produced telemetrically identical output to "gate not firing because ret_session in neutral band" — no signal of failure other than slow drift in opposed-aligned signal counts that nobody was monitoring. Only writer-cadence assertion (`SELECT COUNT(*) FILTER (WHERE col IS NULL) FROM table WHERE date = today` should approach 0) would have surfaced the regression at cycle-1, not at 24-day retrospective audit. Ship the diagnostic at gate-promotion time, not retrospectively.
+- (e) **Same-session TD close discipline.** TD-101 NEW S1 → RESOLVED commit `3cb84e2` within Session 26 (TD-097 was the S25 precedent; TD-101 is the second instance). Acceptable when the diagnostic that surfaces the bug also produces enough evidence for the fix design. Pattern: discovery → SQL diagnostic → bug localization → patch → smoke test → commit, all in one session. The TD entry in `tech_debt.md` records the lifecycle as separate Active and Resolved blocks both stamped Session 26 — audit trail (NEW + RESOLVED in same session) matters for future sessions reading the register.
+- (f) **Architecture-defect TDs whose Phase α answer is in hand can be implemented BEFORE the formal ADR draft.** TD-079 (Phase α Q1 answer locked S25, recorded in Decision Index + Assumption Register §D.7) shipped via implementation Session 26; ADR-005 formal draft (P2 S27) follows. Doc Protocol v4 Rule 10 (ADR-mandatory-before-code) satisfied because the architectural decision was made S25; the ADR draft is the writeup of an already-made decision, not the decision itself. Provided: (a) Phase α answer is in hand, (b) implementation is reversible (snapshot original), (c) ADR draft follows in dedicated session.
+- (g) **Filing rule for grep-derived TDs.** "Same anti-pattern in N scripts" claims require URL-spy or equivalent runtime verification of at least one match before priority assignment. False-positive grep matches against dashboard-style code patterns are common; the symptom that surfaced the original bug does not necessarily survive in code-shape grep terms. TD-099 was filed at S2 HIGH on the strength of a grep match; URL-spy verification S26 showed false positives. Filing pattern going forward: TD-097-style audit-derived TDs require runtime verification of at least one match before filing the rest.
+
+---
+
+## This session (Session 27)
+
+| Field | Value |
+|---|---|
+| **Date** | TBD (Session 26 closed 2026-05-10 evening; Session 27 timing operator's call). |
+| **Goal** | Operator's call. Top-tier carry-forwards: (P0) project knowledge upload Claude.ai UI; (P0b) Mon 2026-05-12 verification triplet (TD-080 probe-log triage + Topology §9.A 3-check + first-cycle TD-101 + ENH-88 + ENH-55 absence verification + TD-101 writer-cadence verification); (P1) TD-080 root-cause investigation post probe-log triage (gates ADR-006); (P2) ADR-005 draft (Q1 zone validity codification — implementation already shipped via TD-079 S26, ADR codifies); (P2b) ADR-009 draft (Q4 calibration discipline + ENH-55 falsification case-study Phase 1 first instance); (P3) Historical signal audit — ENH-55 retroactive blocks (~30min query, what fraction of 2026-04-17 → 2026-05-10 losses came from gate-failure vs other). |
+| **Type** | Operator's call — engineering / operations / research / documentation. |
+| **Success criterion** | Defined when goal is set. |
+
+### Carry-forward priority queue (ordered by recommended priority for Session 27)
+
+| Priority | Item | Why |
+|---|---|---|
+| **P0** | Project knowledge upload (Claude.ai UI) | Closing step of Session 26 cross-layer sync. Without it, next Claude session reads stale pre-S26 knowledge. **9 files modified this session need to land in Claude.ai project knowledge:** `tech_debt.md`, `MERDIAN_Enhancement_Register.md`, `merdian_reference.json`, `MERDIAN_System_Map.md`, `MERDIAN_Deployment_Topology.md`, `MERDIAN_Assumption_Register.md`, `CLAUDE.md`, `CURRENT.md` (this file), `session_log.md`. ~5 min UI work. |
+| **P0b** | Mon 2026-05-12 verification triplet execution | First open trading day after S26 changes. **Three SQL check blocks per Topology §9.B:** (1) 08:36 IST onwards — token probe-log triage: `SELECT * FROM v_dhan_token_probe_today ORDER BY ts_ist DESC LIMIT 10;` Decision tree per verdict. (2) 09:08 IST — Topology §9.A 3-check: PreOpen task absence verification + AWS 09:08 write success + ret_session reads from 09:08 anchor (TD-101 fix verification). (3) First cycle onwards — ENH-88 + ENH-55 absence + TD-101 writer-cadence verification (`enh88_decisions` count, `opposition_blocks=0`, `alignment_bonuses=0`, `ret_session` populated 100%). |
+| **P1** | TD-080 root-cause investigation post probe-log triage | Probe-log evidence Mon morning is the diagnostic input. If both probes 200 OK on token refresh but option-chain fails 09:15 IST → endpoint-side investigation. If PARTIAL verdict → JWT scope / endpoint-specific auth. If both fail → upstream TOTP / login flow on Local 08:15. Dedicated session to harden refresh script + observe N clean trading days before declaring TD-080 closed. **Gates ADR-006 drafting per Phase α Q3 sequencing.** |
+| **P1b** | Session 21 patch commit (carry-forward from S22+S23+S24+S25+S26) | Single-commit-per-session pattern broken since S21. Production patches (TD-070 v1+v2 + TD-071 + TD-072 stack on `build_ict_htf_zones.py`) still uncommitted in working tree. **Note:** S26's TD-079 patch landed in `build_ict_htf_zones.py` so the working tree now contains S21 + S26 changes; needs careful reconcile commit before any new code work. |
+| **P2** | ADR-005 draft (Q1 zone validity model codification) | Independent of TD-080 — implementation already shipped via TD-079 S26. ADR codifies the design decision + alternatives considered + governance language. Use Phase α Q1 answer + 3 implementation actions as the spec. Doc Protocol v4 Rule 10 satisfied retrospectively (decision was made S25, implementation S26, ADR follows S27). |
+| **P2b** | ADR-009 draft (Q4 calibration discipline codification) | Independent of TD-080 — can draft anytime. §D.8 Assumption Register draft is the spec. **S26 ENH-55 falsification is the first case study** — include a §"Worked example — ENH-55 falsification by TD-101 cascade" section pointing to Assumption Register §D.9. ADR codifies graduated-strictness Phase 1 / rolling walk-forward Phase 2 cutover at Y2 close. |
+| **P3** | Historical signal audit — ENH-55 retroactive blocks (~30min query) | What fraction of 2026-04-17 → 2026-05-10 losses came from gate-failure (signals that fired with `trade_allowed=true` but lost)? The 79.5% WR figure is on the WOULD_HAVE_BLOCKED cohort; what about the cohort that actually fired? Cross-check baseline diagnostic of the period. Single-session task. |
+| **P4** | First what-if experiment (replay-enabled) | ADR-008 §"What 'what-if experiment' means" describes the 5-step mechanic. Operator selects production-candidate signal-logic change to test. Until a real candidate exists, replay system idles. Candidate now: ENH-55 re-derivation on cohort-matched live signal cohort with proper option-P&L outcome metric — but that's a research project, not a what-if. Maybe better candidate: vary ENH-88 lookback (60 vs 90 vs 120 min). |
+| **P5** | TD-073 momentum direction lag investigation | S21-filed HIGH. Carry-forward from S22+S23+S24+S25+S26. |
+| **P6** | TD-074 ENH-77 BULL_OB AFTERNOON NIFTY hard skip review | S21-filed MED. Carry-forward from S22+S23+S24+S25+S26. |
+| **P7** | ENH-95 in-process orchestrator optimization (replay-related) | CANDIDATE filed Session 24. Estimated 65min → 10-15min for full-day replay. Deferred until what-if campaign requires faster cycle time. |
+| **P8** | Patchy-day stress test (replay-related) | Run replay on a known patchy day (2026-04-XX with longer outages) to confirm failure modes stay bounded to documented data gaps. Single-session task. |
+| **P9** | Untracked production scripts to git | `merdian_watchdog.py`, `capture_spot_1m_v2.py` untracked. Disaster-rebuild runbook references them but `git clone` wouldn't bring them. Plus ~85 untracked experiment / diagnostic scripts — needs `.gitignore` policy decision. |
+| **P10** | Review pass of 11 new docs from S23 + S26 docs | Read end-to-end, flag anything that doesn't match reality. Plus review the new replay/* code structure for S24-introduced inconsistencies. |
+| **P11** | TD-087 backfill correction (hist_option_bars_1m IST-as-UTC) | S24-filed S2. Replay reconstructor compensates; underlying defect remains. ~1 session for `UPDATE hist_option_bars_1m SET bar_ts = bar_ts - INTERVAL '5 hours 30 minutes'` after audit verifies all rows uniformly affected. |
+| **P12** | TD-094 OI backfill (hist_option_bars_1m.oi=0) | S24-filed S2. Replay reconstructor compensates via live OI lift. Proper fix: per-strike Zerodha `quote()` snapshot capture script, OR drop NOT NULL constraint with downstream filter audit. |
+| **P13** | TD-095 atm_iv_avg unit ambiguity audit | S24-filed S3. Inspect `compute_kelly_lots` IV-elasticity term to determine canonical unit; align writer or consumer. ~1 session. |
+| **P14** | TD-098 single-boundary replay momentum_regime guard | S25-filed S4. Defensive guard in `replay_build_momentum_features.py` to fail-fast on missing prior row, OR document-only constraint. |
+
+### Files / tables / items relevant for next session
+
+- **Project knowledge upload (Claude.ai UI)** — 9 files to add/replace. P0 task.
+- **`pull_token_from_supabase.py` (AWS)** — Mon morning probe-log first triage; primary TD-080 investigation input.
+- **`build_momentum_features_local.py`** — TD-101 fix verification first cycle Mon; expected `ret_session` populated 100% from second cycle onwards.
+- **`build_trade_signal_local.py`** — ENH-88 + ENH-55 disable both landed Session 26; Mon morning verification of `enh88_decision` field populated + no `ENH-55: Momentum opposition` / `ENH-55: Momentum aligned` cautions/reasons.
+- **`build_ict_htf_zones.py`** — Session 21 TD-070 v1+v2 + TD-071 stack still uncommitted; S26's TD-079 patch landed on top; needs careful S21+S26 reconcile commit before any new code work.
+- **`merdian_live_dashboard.py`** — S25 modifications still live; validate Mon 2026-05-12 that ENH-96 gap card displays correctly with live data.
+- **`dhan_token_probe_log` table + `v_dhan_token_probe_today` view** — Mon morning canonical surface for TD-080 triage.
+- **`script_execution_log` table** — primary diagnostic surface for TD-080 reproducer + §9.A PreOpen task absence verification.
+- **`market_spot_snapshots` table** — Mon 2026-05-12 09:08 IST AWS write verification + first-cycle ret_session source.
+- **`momentum_snapshots` table** — Mon 2026-05-12 TD-101 writer-cadence verification (`COUNT(*) FILTER (WHERE ret_session IS NOT NULL)` should approach 100% from second cycle).
+- **`signal_snapshots` table** — Mon 2026-05-12 ENH-88 `raw.enh88_decision` field verification + ENH-55 absence (no `ENH-55: *` cautions/reasons) + first BULL_FVG signal post-S26-deploy.
+- **`option_chain_snapshots` table** — Mon 2026-05-12 09:15 IST first AWS Dhan-token-dependent ingest — input to TD-080 root-cause hypothesis (does the option chain succeed or fail given the probe-log evidence for that day's token).
+- **`ict_htf_zones` table** — verify revived 18 SENSEX W BEAR_OB/BEAR_FVG zones remain ACTIVE post Mon's first rebuild (08:45 IST `MERDIAN_ICT_HTF_Zones_0845`).
+- **`*_replay` tables** (10 of them) — populated with 2026-05-07 baseline data from S24; ready for first what-if experiment when operator selects candidate (P4).
+- **`docs/decisions/MERDIAN_Decision_Index.md`** — 3 reserved IDs (ADR-003/004/006) still pending; ADR-005 + ADR-009 are next likely drafts (P2, P2b).
+- **`docs/registers/MERDIAN_Deployment_Topology.md` §9 + §9.A + §9.B** — 8 boundary questions remaining open (Q3, Q4, Q5, Q6, Q7, Q9, Q10, Q11); §9.A documents S25 MERDIAN_PreOpen disposal; §9.B documents S26 TD-080 instrumentation.
+- **`docs/registers/MERDIAN_Assumption_Register.md` §D.7 + §D.8 + §D.9** — D.7 validation queue 7 prioritised items; D.8 calibration discipline 5 rows pending ADR-009 codification; D.9 ENH-55 falsification 5 rows + 4 open follow-ups + ADR-009 first-case-study material.
+
+### DO NOT REOPEN this session
+
+- ❌ All S22 DO_NOT_REOPENs (six refuted Dhan outage hypotheses, TD-070 v2 dedup logic, TD-071 expire-after-recheck pipeline order, TD-072 battery flags, TD-084 timezone bug, backfill execution path).
+- ❌ All S23 DO_NOT_REOPENs (Doc Protocol v3 superseded by v4; V19 § governance preserved unchanged via Governance Framework; V18F as a moment without an ADR — ADR-007 retroactively documents it; `start_supervisor_clean.ps1` as supervisor entry — canonical is `merdian_morning_start.ps1`; "Task Scheduler has 4 entries" — reality is 17; three-zone gamma model behavioral spec — moot per ADR-007; multi-horizon momentum voting — moot per ADR-007; V15.1 §15.2 Items 6/7/8 — superseded; retroactive ADR pattern as routine).
+- ❌ All S24 DO_NOT_REOPENs (replay architecture decisions per ADR-008: 7-script replay pipeline, strike-base / spot-granularity / VIX-source divergences as documented properties not bugs, OOH hard guard, TD-087 5h30m subtract on read, TD-094 OI lift, per-boundary script ordering, replay-vs-live = direction-of-edge match not bit-identical, ENH-93 CLOSED via ADR-008, modifying replay/* without an experiment goal).
+- ❌ All S25 DO_NOT_REOPENs (Phase α Q1-Q4 answers; Topology §9 Q2 reframing; TD-098 single-boundary replay momentum divergence as architectural property; `merdian_live_dashboard.py` URL-encoding fix).
+- ❌ **S26 DO_NOT_REOPENs:**
+  - "Is Exp 20 ENH-55 evidence valid?" — yes on 5m-batch cohort; **no on live signal cohort** (production data over 24 days N=44 OPPOSED at 79.5% WR vs Exp 20's 38.3% directly refutes; sign of lift opposite; magnitude clears flag-drift criterion). Filed §D.9. Re-validation conditions documented (proper option-P&L outcome metric + cohort-matched re-derivation + walk-forward).
+  - "Should we restore ENH-55?" — only after re-validation conditions met (see D.9.5). The fact that production data falsifies a research-cohort hypothesis is itself the validation result. Re-enable is a one-line `.env` change when conditions met.
+  - "Should TD-099 be reopened?" — no; closed filed-in-error after URL-spy verification of all 4 scripts (5th uses supabase Python client, different code path). Filing rule established: grep-based "N silent siblings" claims require runtime verification before priority assignment.
+  - "Why was TD-101 missed in S25?" — S25 grep audit (TD-099) was shape-specific to URL construction (`requests.get.*SUPABASE.*params`); TD-101's anti-pattern is inside `supabase_select()` helper, not at top-level URL construction. Grep couldn't match by construction. Codified as CLAUDE.md B19 (OI-18 class fix at one site does not close the class — runtime-verify all candidate sites).
+  - "Should ENH-55 code be removed from `build_trade_signal_local.py`?" — no; env-flag disablement preserves reversibility for re-validation. Code paths that fail empirically are still valuable as documentation of what was tried. Re-validation cost should be one experiment, not one re-implementation.
+  - "Are ENH-88 BEAR-side anti-clusters worth shipping symmetrically?" — no; per ENH-90 candidate Session 17 evidence (-16.5pp anti-edge with recent BEAR_OB at 90min, opposite direction to BULL effect). BEAR_FVG signals continue without cluster gate. ENH-90 CANDIDATE remains deferred for N expansion.
+  - "Does TD-101 fix imply ENH-55 should be re-enabled?" — no; the writer fix and the gate disablement are orthogonal. Writer correctness is structural; gate calibration is a separate empirical question that production data resolved against the gate. Both decisions stand independently.
+
+---
+## Live state snapshot (at Session 26 close, 2026-05-10 evening)
+
+| Component | State |
+|---|---|
+| **Local** | S21 production patches still uncommitted in working tree (`build_ict_htf_zones.py` with TD-070 v1+v2 + TD-071 stack) — same state as S22+S23+S24+S25 entry. **S26 added TD-079 changes on top** of S21 working-tree state in `build_ict_htf_zones.py`; needs careful S21+S26 reconcile commit before any new code work (P1b S27 carry-forward). **5 commits landed this session** for production code patches + S26 documentation files: `718ef39`, `0731e67`, `8407169`, `3cb84e2`, `5b94c78` (5 separate commits because each is independently shippable). 8 Task Scheduler tasks have battery flags from S21 TD-072 fix. **`MERDIAN_PreOpen` (09:05 IST) DISABLED S25 — durable across reboots.** No zombie Python processes. capture_spot_1m_v2 verified working since S21. `C:\GammaEnginePython\replay\` tree present from S24 — 11 files + migrations subdir + runtime/ lock dir. `C:\GammaEnginePython\patch_s26_*.py` patch scripts present in working tree (4 patch scripts: TD-079, ENH-88 deploy, TD-101, ENH-55 disable). |
+| **AWS (MERDIAN, `i-0e60e4ed9ce20cefb`, `ssm-user@ip-172-31-35-90`)** | **Synced to `5b94c78` after final S26 push.** `pull_token_from_supabase.py` extended 50 → 355 lines with TD-080 instrumentation (atomic .env write + readback verify + post-write Dhan probes + audit logging + asymmetry verdict). Sunday smoke test PASS 20:28 IST (token len=280, both probes 200 OK, verdict=OK). `ws_feed_zerodha.py` continues to stream NIFTY ticks. `ingest_breadth_from_ticks.py` continues. `ingest_option_chain_local.py` reliability TBD on Mon 2026-05-12 09:15 IST cron — **TD-080 root-cause investigation gate**: if option chain still fails 09:15 IST despite Mon morning probe-log showing both probes 200 OK at 08:36 IST → endpoint-side investigation (JWT scope, per-endpoint rate limit). |
+| **AWS (MALPHA, `ubuntu@13.51.242.119`, `~/meridian-alpha`)** | Kite gateway only — NOT Meridian. S22 backfill edits remain dirty (uncommitted). |
+| **Critical items (C-N)** | None new. |
+| **Tech debt (active)** | All from S22+S21+S20 still active. **S26 closed 3 TDs:** TD-079 via implementation (commit `0731e67`), TD-099 as filed-in-error after URL-spy verification, TD-101 same-session NEW+RESOLVED (commit `3cb84e2`). **S26 status update on 1 TD:** TD-080 instrumentation deployed pending Mon root-cause investigation. S25-added TDs TD-098 (S4) still active. S24-added TDs (TD-087, TD-094, TD-095, TD-096) still active per S24. |
+| **ENH in flight** | **ENH-88 SHIPPED** Session 26 (BULL_FVG cluster gate, `ENH88_LOOKBACK_MIN=90`, commit `8407169`). **ENH-55 ENV-DISABLED** Session 26 (default OFF; reversible via `MERDIAN_ENH55_ENABLED=1`; both opposition block AND alignment bonus gated together; ENH-53 breadth modifier untouched; commit `5b94c78`). **ENH-96 SHIPPED** Session 25 (dashboard gap card). **ENH-93 CLOSED** S24 via ADR-008. **ENH-95 CANDIDATE** filed S24 (in-process orchestrator optimization). **ENH-90 CANDIDATE** deferred for N expansion (BEAR_FVG anti-cluster gate, -16.5pp anti-edge per Session 17 evidence). ENH-91 + ENH-92 SHIPPED Session 17. |
+| **ADR layer** | **No new ADR drafted S26.** ADR-005 formal draft is P2 S27 carry-forward (implementation already shipped via TD-079 S26 — Phase α Q1 answer locked S25). ADR-009 formal draft is P2b S27 carry-forward (Q4 calibration discipline; S26 ENH-55 falsification is the first case study to include in the §"Worked example" section). ADR-006 drafting remains blocked on TD-080 closure per Phase α Q3 sequencing. ADR-001/002/007/008 settled per S22/S23/S24. 3 reserved IDs (ADR-003/004/006) still pending. |
+| **Documentation reference layer** | Six-file reference layer plus ADR collection. Doc Protocol v4 in force. **S26 updates:** `tech_debt.md` (TD-101 NEW S1 in Active + same-session RESOLVED block + TD-099 RESOLVED filed-in-error block + TD-079 RESOLVED via patch closure block + TD-080 status update row + TD-054 cross-ref); `MERDIAN_Enhancement_Register.md` (ENH-88 SHIPPED + ENH-55 ENV-DISABLED + Part 1 status table updates); `merdian_reference.json` (v17 → v18 + S26 change_log entry); `MERDIAN_System_Map.md` (production scripts S26 status annotations + new §B.10 Operational instrumentation + new §A.S26 callout block); `MERDIAN_Deployment_Topology.md` (new §9.B TD-080 instrumentation + Mon 2026-05-12 verification triplet SQL); `MERDIAN_Assumption_Register.md` (new §D.9 ENH-55 hypothesis falsification 5 rows); `CLAUDE.md` (B19 + 8 Session 26 operational findings + v1.16 → v1.17); `CURRENT.md` (this rewrite — S25 preserved below as Previous session per no-crunch); `session_log.md` (S26 prepended). |
+| **Project knowledge layer** | **STALE — pending Session 27 P0 upload.** Knowledge base reflects pre-S26 state. **Cross-layer sync rule unsatisfied until upload completes.** |
+| **Pine on TradingView** | **62 zones (49 HTF + 13 intraday)** post-S26 TD-079 fix — up from S25's 36. All major resistances 78k → 86k now displayed. SENSEX W BEAR_OB/BEAR_FVG stack above 78k revived. |
+| **Spot data quality** | hist_spot_bars_1m has clean OHLC. No new spot data work S26. |
+| **Option data quality** | hist_option_bars_1m unchanged. TD-087 (IST-as-UTC) and TD-094 (oi=0) defects active per S24. Replay reconstructor compensates for both. |
+| **Live writer** | v2.1 `capture_spot_1m_v2.py` continues healthy. Phase 2b AWS migration still deferred per Phase α Q3 sequencing (gated on TD-080 closure). |
+| **Replay layer** | Tree fully built and validated end-to-end on 2026-05-07 (S24). 10 `*_replay` Supabase tables populated. Lock released. Operator-invoked only. Out-of-hours hard guard active. First non-construction use was S25 ret_session anchor migration validation. |
+| **Dashboard** | `merdian_live_dashboard.py` S25-patched continues. Mon 2026-05-12 first-live-data validation of ENH-96 gap card pending. |
+| **Trading calendar** | Sunday 2026-05-10 closed (today). Mon 2026-05-12 is open trading day. NIFTY weekly expiry Tue 2026-05-12; SENSEX weekly Thu 2026-05-14. |
+
+---
+
+## Mid-session checkpoints (per Session Management Rule 1)
+
+*Reset by Session 27 start.*
+
+---
+
+## Session-end checklist (run at end of each substantive session — per Doc Protocol v4 Rule 3)
+
+```
+☐ Update merdian_reference.json for any file/table/item status change
+☐ Update tech_debt.md if a TD item changes
+☐ Update System Map if file/table/runner/orchestration changed                    (NEW v4)
+☐ Update Deployment Topology if AWS↔Local boundary changed                        (NEW v4)
+☐ Overwrite CURRENT.md (Last session reflects this session, This session reset)
+☐ Append one line to session_log.md (newest-first prepend)
+☐ Update Enhancement Register if architectural thinking happened
+☐ Update CLAUDE.md if a Rule, settled decision, or anti-pattern was added
+☐ If new ADR was written:                                                         (NEW v4)
+    ☐ prepend entry to MERDIAN_Decision_Index.md
+    ☐ append governance-language one-liner to CLAUDE.md settled-decisions
+    ☐ if it touches an assumption: update MERDIAN_Assumption_Register.md
+☐ Update Experiment Compendium if new experiment evidence was produced
+☐ Commit all documentation changes to Git
+☐ Upload updated files to Claude.ai project knowledge (CLAUDE.md Rule 12)
+☐ AWS sync if production code changed (git push + AWS git pull)
+☐ Re-enable any disabled Task Scheduler tasks before next market open
+```
+
+---
+
+## Previous session (Session 25 — superseded by Session 26 block above) — preserved per no-crunch directive
+
+| Field | Value |
+|---|---|
 | **Date** | 2026-05-10 (Sunday — non-trading day; Session 25 — Phase α architecture conversation completion + multiple TD closures + ENH-96 ship + Topology §9 corrections + ret_session anchor migration + multi-file documentation pack production). |
 | **Concern** | Multiple. (a) Investigate Topology §9 Q1 (post-market 16:00 dual-write) and Q2 (PreOpen 09:08 dual-write) suspicions empirically via SQL audit on `market_spot_snapshots` for 2026-05-04 → 2026-05-08; (b) close TD-078 verification gap (Apr-13 BULL_OB SQL); (c) close TD-097 dashboard pre-open accuracy widget bug; (d) complete Phase α architecture conversation Q1-Q4 begun in S22; (e) ship ENH-96 dashboard gap card if data is already available. **Phase α was the structurally most-important work of the session** — four open questions (zone validity model, AWS migration scope, token reliability sequencing, calibration discipline) had been carrying since S22 and gating ADR-005, ADR-006, and a future ADR-009. |
 | **Type** | Mixed: architecture (Phase α conversation), TD closure (TD-078, TD-097), TD reframing (TD-080), TD filing (TD-098, TD-099), ENH ship (ENH-96), Topology audit (§9 Q1+Q2+Q8 closures + new §9.A), production code change (1 patch script + 5 substitutions on `merdian_live_dashboard.py`), Task Scheduler change (1 task disabled), documentation pack production (8 canonical files updated per Doc Protocol v4). |
@@ -73,118 +270,6 @@
 - (f) **TD-080 reframing reduces investigation surface materially.** Going from "Dhan API reliability" to "AWS `refresh_dhan_token.py` failure mode" is the difference between a multi-vendor diagnostic problem and a single-script root-cause problem. The narrowing was earned by cross-script 2026-05-07 evidence; without it, TD-080 stayed open-ended.
 
 ---
-
-## This session (Session 26)
-
-| Field | Value |
-|---|---|
-| **Date** | TBD (Session 25 closed 2026-05-10 evening; Session 26 timing operator's call). |
-| **Goal** | Operator's call. The two top-tier carry-forwards are TD-080 root-cause investigation (gates ADR-006) and dedicated ADR drafts (ADR-005 zone validity per Q1; ADR-009 calibration discipline per Q4 — both independent of TD-080). Other priorities (TD-099 5-script URL-encoding sweep, ENH-88 deployment if Mon BULL_OB live data confirms, Mon 2026-05-12 verification of MERDIAN_PreOpen disable) all fit within S26 scope. |
-| **Type** | Operator's call — engineering / operations / research / documentation. |
-| **Success criterion** | Defined when goal is set. |
-
-### Carry-forward priority queue (ordered by recommended priority for Session 26)
-
-| Priority | Item | Why |
-|---|---|---|
-| **P0** | Project knowledge upload (Claude.ai UI) | Closing step of Session 25 cross-layer sync. Without it, next Claude session reads stale pre-S25 knowledge. 8 files modified this session need to land in Claude.ai project knowledge: `MERDIAN_Decision_Index.md`, `MERDIAN_Deployment_Topology.md`, `MERDIAN_Assumption_Register.md`, `tech_debt.md`, `MERDIAN_Enhancement_Register.md`, `merdian_reference.json`, `CURRENT.md` (this file), `session_log.md`. ~5 min UI work. |
-| **P0b** | Mon 2026-05-12 verification plan execution | First open trading day after `MERDIAN_PreOpen` disable. Three checks per Topology §9.A: (1) `MERDIAN_PreOpen` does not appear in 09:00-09:10 IST `script_execution_log`; (2) AWS 09:08 IST write succeeds and produces canonical `market_spot_snapshots` row; (3) `ret_session` cycle ≥1 reads correctly from 09:08 anchor. If any fail: re-enable as fallback while investigating. Also: TD-080 reproducer day — watch 09:15 IST AWS Dhan token-dependent ingest cycles. |
-| **P1** | TD-080 root-cause investigation session | Now narrowed to AWS `refresh_dhan_token.py` failure mode. Dedicated session: instrument with full-response logging, compare freshly-issued token's response on `/charts/intraday` vs `/optionchain` immediately post-refresh, reproduce on a controlled day, harden refresh script, observe N clean trading days. **Gates ADR-006 drafting per Phase α Q3 sequencing.** |
-| **P1b** | Session 21 patch commit (carry-forward from S22+S23+S24+S25) | Single-commit-per-session pattern broken since S21. Production patches (TD-070 v1+v2 + TD-071 + TD-072 stack on `build_ict_htf_zones.py`) still uncommitted in working tree. Should land before any new code work. |
-| **P2** | ADR-005 draft (Q1 zone validity model codification) | Independent of TD-080 — can draft anytime. Phase α Q1 answer + 3 implementation actions are the spec. After ADR is Accepted: rewrite `expire_old_zones()`, make `recheck_breached_zones()` primary D/W transition, run backfill pass for D/W zones currently date-EXPIRED unbreached. |
-| **P2b** | ADR-009 draft (Q4 calibration discipline codification) | Independent of TD-080 — can draft anytime. §D.8 Assumption Register draft is the spec. ADR codifies graduated-strictness Phase 1 / rolling walk-forward Phase 2 cutover at Y2 close. |
-| **P3** | TD-099 URL-encoding bug sweep (5 production scripts) | Same anti-pattern as TD-097 in `build_signal_market_path_audit_v1.py`, `build_signal_outcome_audit_local.py`, `build_signal_regret_log_v1.py`, `build_option_execution_outcomes_v1.py`, `premium_outcome_writer.py`. ~3 hours total. Mechanical patch shape; same fix as TD-097. |
-| **P3b** | ENH-88 deployment (gated on Mon 2026-05-12 BULL_OB live data) | If Mon's signal_snapshots show BULL_OB signals flowing as expected post anchor migration, BULL_FVG cluster gate can deploy. Otherwise hold. |
-| **P4** | First what-if experiment (replay-enabled) | ADR-008 §"What 'what-if experiment' means" describes the 5-step mechanic. Operator selects production-candidate signal-logic change to test. Until a real candidate exists, replay system idles. |
-| **P5** | TD-073 momentum direction lag investigation | S21-filed HIGH. Carry-forward from S22+S23+S24+S25. |
-| **P6** | TD-074 ENH-77 BULL_OB AFTERNOON NIFTY hard skip review | S21-filed MED. Carry-forward from S22+S23+S24+S25. |
-| **P7** | ENH-95 in-process orchestrator optimization (replay-related) | CANDIDATE filed Session 24. Estimated 65min → 10-15min for full-day replay. Deferred until what-if campaign requires faster cycle time. |
-| **P8** | Patchy-day stress test (replay-related) | Run replay on a known patchy day (2026-04-XX with longer outages) to confirm failure modes stay bounded to documented data gaps. Single-session task. |
-| **P9** | Untracked production scripts to git | `merdian_watchdog.py`, `capture_spot_1m_v2.py` untracked. Disaster-rebuild runbook references them but `git clone` wouldn't bring them. Plus ~85 untracked experiment / diagnostic scripts — needs `.gitignore` policy decision. |
-| **P10** | Review pass of 11 new docs from S23 | Read end-to-end, flag anything that doesn't match reality. Plus review the new replay/* code structure for S24-introduced inconsistencies. |
-| **P11** | TD-087 backfill correction (hist_option_bars_1m IST-as-UTC) | S24-filed S2. Replay reconstructor compensates; underlying defect remains. ~1 session for `UPDATE hist_option_bars_1m SET bar_ts = bar_ts - INTERVAL '5 hours 30 minutes'` after audit verifies all rows uniformly affected. |
-| **P12** | TD-094 OI backfill (hist_option_bars_1m.oi=0) | S24-filed S2. Replay reconstructor compensates via live OI lift. Proper fix: per-strike Zerodha `quote()` snapshot capture script, OR drop NOT NULL constraint with downstream filter audit. |
-| **P13** | TD-095 atm_iv_avg unit ambiguity audit | S24-filed S3. Inspect `compute_kelly_lots` IV-elasticity term to determine canonical unit; align writer or consumer. ~1 session. |
-| **P14** | TD-098 single-boundary replay momentum_regime guard | S25-filed S4. Defensive guard in `replay_build_momentum_features.py` to fail-fast on missing prior row, OR document-only constraint. |
-
-### Files / tables / items relevant for next session
-
-- **Project knowledge upload (Claude.ai UI)** — 8 files to add/replace. P0 task.
-- **`refresh_dhan_token.py`** — primary TD-080 investigation target. Local + AWS variants.
-- **`build_ict_htf_zones.py`** — Session 21 TD-070 v1+v2 + TD-071 stack still uncommitted; needs commit. Pending ADR-005 zone-validity rewrite per Phase α Q1.
-- **5 scripts with URL-encoding bug per TD-099** — `build_signal_market_path_audit_v1.py`, `build_signal_outcome_audit_local.py`, `build_signal_regret_log_v1.py`, `build_option_execution_outcomes_v1.py`, `premium_outcome_writer.py`.
-- **`merdian_live_dashboard.py`** — S25 modified (5 substitutions); validate Mon 2026-05-12 that ENH-96 gap card displays correctly with live data.
-- **`script_execution_log` table** — primary diagnostic surface for TD-080 reproducer.
-- **`market_spot_snapshots` table** — Mon 2026-05-12 09:08 IST verification per Topology §9.A.
-- **`option_chain_snapshots` table** — TD-080 reproducer target.
-- **`ict_htf_zones` table** — ADR-005 implementation will rewrite expire/recheck pipeline.
-- **`*_replay` tables** (10 of them) — populated with 2026-05-07 baseline data from S24; ready for first what-if experiment when operator selects candidate.
-- **`docs/decisions/MERDIAN_Decision_Index.md`** — 4 reserved IDs (ADR-003/004/005/006) still pending; ADR-009 row newly added with Phase α Q4 answer recorded; ADR-005/006/009 are next likely drafts.
-- **`docs/registers/MERDIAN_Deployment_Topology.md` §9 + §9.A** — 8 boundary questions remaining open (Q3, Q4, Q5, Q6, Q7, Q9, Q10, Q11); §9.A documents the S25 disposal with Mon verification plan.
-- **`docs/registers/MERDIAN_Assumption_Register.md` §D.7 + §D.8** — D.7 validation queue 7 prioritised items + D.8 calibration discipline 5 rows pending ADR-009 codification.
-
-### DO NOT REOPEN this session
-
-- ❌ All S22 DO_NOT_REOPENs (six refuted Dhan outage hypotheses, TD-070 v2 dedup logic, TD-071 expire-after-recheck pipeline order, TD-072 battery flags, TD-084 timezone bug, backfill execution path).
-- ❌ All S23 DO_NOT_REOPENs (Doc Protocol v3 superseded by v4; V19 § governance preserved unchanged via Governance Framework; V18F as a moment without an ADR — ADR-007 retroactively documents it; `start_supervisor_clean.ps1` as supervisor entry — canonical is `merdian_morning_start.ps1`; "Task Scheduler has 4 entries" — reality is 17; three-zone gamma model behavioral spec — moot per ADR-007; multi-horizon momentum voting — moot per ADR-007; V15.1 §15.2 Items 6/7/8 — superseded; retroactive ADR pattern as routine).
-- ❌ All S24 DO_NOT_REOPENs (replay architecture decisions per ADR-008: 7-script replay pipeline, strike-base / spot-granularity / VIX-source divergences as documented properties not bugs, OOH hard guard, TD-087 5h30m subtract on read, TD-094 OI lift, per-boundary script ordering, replay-vs-live = direction-of-edge match not bit-identical, ENH-93 CLOSED via ADR-008, modifying replay/* without an experiment goal).
-- ❌ **Phase α Q1-Q4 answers per S25.** Specifically: zone validity = pure price-based with intraday-only 1-week fallback (not write-once-never-recompute); AWS migration = capture/derived split with four-stage decomposition (not blanket "everything to AWS" or "everything stays Local"); token reliability sequencing = TD-080 closure FIRST then ADR-006 actions (not parallel); calibration discipline = graduated-strictness holdout (not strict uniform 67/33, not status-quo single-cohort).
-- ❌ "Topology §9 Q2 says PreOpen 09:08 has dual-write" — original framing was inaccurate. AWS is sole writer at 09:08; Local 09:05 was a different boundary. Disposed S25.
-- ❌ "Single-boundary replay should match full-day orchestrator's momentum_regime" — no, per TD-098 this is an architectural property of the per-boundary script ordering contract (consistent with ADR-008). Always run full-day orchestrator for replay-vs-replay analysis.
-- ❌ Reverting `merdian_live_dashboard.py` URL-encoding fix — the patch is correct per `urllib.parse.urlencode()` standard. Backups `_PRE_S25.py` and `_PRE_S25b.py` are diagnostic-only; do not redeploy.
-
----
-
-## Live state snapshot (at Session 25 close, 2026-05-10 evening)
-
-| Component | State |
-|---|---|
-| **Local** | S21 production patches still uncommitted in working tree (`build_ict_htf_zones.py` with TD-070 v1+v2 + TD-071 stack) — same state as S22+S23+S24 entry. **S25 commit landed for `merdian_live_dashboard.py` patch + 8 documentation files** (single commit pattern). 8 Task Scheduler tasks have battery flags from S21 TD-072 fix. **`MERDIAN_PreOpen` (09:05 IST) DISABLED S25.** No zombie Python processes. capture_spot_1m_v2 verified working since S21. `C:\GammaEnginePythoneplay\` tree present from S24 — 11 files + migrations subdir + runtime/ lock dir. |
-| **AWS (MERDIAN, `i-090957ed4ce8877f7`, `ssm-user@ip-172-31-35-90`)** | NOT touched Session 25. Same state as S24 close. **AWS Dhan token refresh failure mode is the focal item for Session 26 P1** (TD-080 reframed). `ws_feed_zerodha.py` continues to stream NIFTY ticks. `ingest_breadth_from_ticks.py` continues. `ingest_option_chain_local.py` reliability TBD on Mon 2026-05-12 09:15 IST cron. |
-| **AWS (MALPHA, `ubuntu@13.51.242.119`, `~/meridian-alpha`)** | Kite gateway only — NOT Meridian. S22 backfill edits remain dirty (uncommitted). |
-| **Critical items (C-N)** | None new. |
-| **Tech debt (active)** | All from S22+S21+S20 still active. **S25 added 2 new TDs:** TD-098 (S4, single-boundary replay momentum_regime divergence; replay-side artifact), TD-099 (S2 HIGH, URL-encoding bug pattern in 5 production scripts; ~3 hours to fix all). **S25 closed 2 TDs:** TD-078 (TD-070 v2 verification), TD-097 (dashboard pre-open URL-encoding bug). **S25 reframed 1 TD:** TD-080 (now AWS Dhan token refresh failure mode; Blocks ADR-006). S24-added TDs (TD-087, TD-094, TD-095, TD-096) still active per S24. |
-| **ENH in flight** | **ENH-96 SHIPPED** Session 25 (dashboard gap card). **ENH-93 CLOSED** S24 via ADR-008. **ENH-95 CANDIDATE** filed S24 (in-process orchestrator optimization). ENH-88 BUILT NOT DEPLOYED awaiting Mon 2026-05-12 BULL_OB live data confirmation. ENH-90 CANDIDATE deferred for N expansion. ENH-91 + ENH-92 SHIPPED Session 17. |
-| **ADR layer** | **No new ADR drafted S25.** Phase α answers feed three pending ADRs: ADR-005 (Q1 codification, can draft anytime), ADR-006 (Q2 + Q3 sequencing, blocked on TD-080 closure), ADR-009 (Q4 codification, can draft anytime). ADR-001/002/007/008 settled per S22/S23/S24. 4 reserved IDs (ADR-003/004/005/006) plus newly-added ADR-009 row in Decision Index. |
-| **Documentation reference layer** | Six-file reference layer plus ADR collection. Doc Protocol v4 in force. **S25 updates:** Decision Index 3 pending ADR rows updated with Phase α answers + ADR-009 added; Topology §9 Q1+Q2+Q8 closures + new §9.A boundary disposal section + S25 update log; Assumption Register new §D.8 calibration discipline + ADR-009 governance language draft + S25 update log; tech_debt full closure blocks for TD-097 + TD-078 + TD-080 reframe + TD-098 + TD-099 + Active stub redirects; Enhancement Register ENH-96 in Part 4 + Part 1 row; merdian_reference.json v16 → v17 + S25 change_log entry; CURRENT.md (this rewrite — S24 preserved as Previous session per no-crunch); session_log.md S25 prepended. |
-| **Project knowledge layer** | **STALE — pending Session 26 P0 upload.** Knowledge base reflects pre-S25 state. **Cross-layer sync rule unsatisfied until upload completes.** |
-| **Pine on TradingView** | S22 36-zone overlay; **TD-079 visible defect — all resistances above 78k missing** because date-expired despite being unbreached structurally. Pending TD-079 fix after ADR-005 drafting and code rewrite. |
-| **Spot data quality** | hist_spot_bars_1m has clean OHLC + S22 750-row backfill for 2026-05-07. NIFTY+SENSEX both. **No new spot data work S25.** |
-| **Option data quality** | hist_option_bars_1m +24,749 rows for 2026-05-07 from S22 Kite backfill. TD-087 (IST-as-UTC) and TD-094 (oi=0) defects active per S24. Replay reconstructor compensates for both. **option_chain_snapshots has 64 missing 5-min windows from S22 outage — permanently lost.** |
-| **Live writer** | v2.1 `capture_spot_1m_v2.py` continues healthy. Phase 2b AWS migration still deferred per Phase α Q3 sequencing (gated on TD-080 closure). |
-| **Replay layer** | Tree fully built and validated end-to-end on 2026-05-07 (S24). 10 `*_replay` Supabase tables populated. Lock released. Operator-invoked only. Out-of-hours hard guard active. **First non-construction use S25:** `ret_session` 09:05 → 09:08 anchor migration validated via replay before MERDIAN_PreOpen disable. |
-| **Dashboard** | `merdian_live_dashboard.py` S25-patched: pre-open accuracy widget restored from 0% to correct historical reading; new "Gap (vs prev close)" card displays prev close → prelim 09:08 → final 09:15 per index. Mon 2026-05-12 first-live-data validation pending. |
-| **Trading calendar** | Sunday 2026-05-10 closed (today). Mon 2026-05-12 is open trading day. NIFTY weekly expiry Tue 2026-05-12; SENSEX weekly Thu 2026-05-14. |
-
----
-
-## Mid-session checkpoints (per Session Management Rule 1)
-
-*Reset by Session 26 start.*
-
----
-
-## Session-end checklist (run at end of each substantive session — per Doc Protocol v4 Rule 3)
-
-```
-☐ Update merdian_reference.json for any file/table/item status change
-☐ Update tech_debt.md if a TD item changes
-☐ Update System Map if file/table/runner/orchestration changed                    (NEW v4)
-☐ Update Deployment Topology if AWS↔Local boundary changed                        (NEW v4)
-☐ Overwrite CURRENT.md (Last session reflects this session, This session reset)
-☐ Append one line to session_log.md (newest-first prepend)
-☐ Update Enhancement Register if architectural thinking happened
-☐ Update CLAUDE.md if a Rule, settled decision, or anti-pattern was added
-☐ If new ADR was written:                                                         (NEW v4)
-    ☐ prepend entry to MERDIAN_Decision_Index.md
-    ☐ append governance-language one-liner to CLAUDE.md settled-decisions
-    ☐ if it touches an assumption: update MERDIAN_Assumption_Register.md
-☐ Update Experiment Compendium if new experiment evidence was produced
-☐ Commit all documentation changes to Git
-☐ Upload updated files to Claude.ai project knowledge (CLAUDE.md Rule 12)
-☐ AWS sync if production code changed (git push + AWS git pull)
-☐ Re-enable any disabled Task Scheduler tasks before next market open
-```
 
 ---
 

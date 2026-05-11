@@ -190,6 +190,49 @@ Filed S25 2026-05-10 from Phase α Q4 deferred-to-architect resolution. These ar
 2. Inventory all Exp 15-era parameter values currently in production code paths so the parity check has a concrete target list. Most are in `detect_ict_patterns.py` thresholds and `assign_tier()` routing logic.
 3. Define `merdian_reference.json` schema extension for "low-N calibration-only" tag (parameter name, cohort size at calibration, calibration WR, derivation date, N-target for upgrade to formal split).
 
+### D.9 — ENH-55 momentum opposition gate hypothesis (Exp 20) refuted by 24-day production cohort (Session 26)
+
+**First substantive application of D.8.3 prospective parity check.** ENH-55 was promoted on Exp 20 evidence (5m-batch `hist_pattern_signals` cohort, derivation date 2026-04-XX): aligned WR 60.9% vs opposed WR 38.3%, +22.6pp lift, ~+18pp lift over standalone — sufficient to ship as a hard gate (opposition → DO_NOTHING) plus a +10 confidence bonus on alignment. The gate fires when `abs(ret_session) > 0.0005` (0.05%).
+
+A writer bug (TD-101) in `build_momentum_features_local.py::get_session_open_spot()` — unbounded `market_spot_snapshots` query returning the oldest 500 rows since table creation, all of which fail the today-date filter — caused `momentum_snapshots.ret_session` to be persistently NULL. Population started 2026-04-17 and remained NULL through 2026-05-10 (3+ trading weeks; ~5,000 signals). Because ENH-55's inner condition gates on `ret_session is not None and abs(ret_session) > 0.0005`, the gate was a silent no-op for the entire window. The same anti-pattern (unbounded `order_by`+`limit` returning oldest rows) is the OI-18 class fixed at TD-097 site Session 25 — TD-101 is the propagation instance the TD-099 audit missed.
+
+Once TD-101 was fixed (commit `3cb84e2`), retrospective audit on the silent-gate-failure window (2026-04-17 → 2026-05-10) partitioned actionable signals (action ∈ {BUY_CE, BUY_PE} ∧ `trade_allowed=TRUE`) into the buckets ENH-55 *would have* applied:
+
+| Bucket | N | Wins | Losses | T+30m spot-side WR |
+|---|---|---|---|---|
+| WOULD_HAVE_BLOCKED (opposed) | 44 | 35 | 9 | **79.5%** |
+| WOULD_HAVE_ALIGNED_BONUS | 35 | 19 | 16 | 54.3% |
+| NEUTRAL_BAND (`abs(ret_session) ≤ 0.0005`) | 1 | 0 | 1 | 0.0% |
+
+Decomposition: All 44 OPPOSED-but-winning trades are BUY_PE in up-sessions (`ret_session > 0` in cohort definition; `action == BUY_PE` selected). 43/44 have `ict_pattern=NONE` — pure momentum-driven signals where recent 15m/30m turn down despite session running up. Signature: intraday-rollover-of-up-session-strength = exhaustion / mean-reversion edge. Zero ENH-76/77/78 PO3-confirmed contributions. The 79.5% WR is on the cohort that would have been blocked; the 54.3% WR is on the cohort that would have received +10 confidence bonus.
+
+Production data on the live cohort over 24 trading days **falsifies the gate hypothesis directionally**: opposed outperforms aligned. The gate, had it fired, would have suppressed a 79.5% WR setup (sample-conservative; even after adjusting for spot-direction-as-proxy approximation, the lift over aligned WR is large). The Exp 20 evidence base was on a different cohort (5m-batch `hist_pattern_signals`, with different filters and outcome metric). Exp 20's lift does not survive translation to the live signal cohort under current selection logic.
+
+| ID | Statement | Status (post-S26) | Confidence | Implication if revised |
+|---|---|---|---|---|
+| **D.9.1** | ENH-55 momentum opposition rule (ret_session opposed → BUY_CE/BUY_PE blocked) is the right calibration for the live signal cohort. | **REFUTED S26** (production cohort 2026-04-17 → 2026-05-10, N=44 opposed at 79.5% WR). | High — sign of the lift is opposite to Exp 20; magnitude is large enough that even with proxy-WR caveats, gate is hostile to edge. | Disable the gate on the live cohort. Re-validate only with proper option-P&L outcome metric and re-derived alignment thresholds. |
+| **D.9.2** | ENH-55 alignment bonus (+10 confidence) is the right calibration for the live signal cohort. | **REFUTED S26 — same evidence base, symmetric claim**. WOULD_HAVE_ALIGNED_BONUS bucket WR 54.3% is approximately neutral; not consistent with the Exp 20 +22.6pp claim. | High — same data; either both directions hold or neither. The Exp 20 hypothesis is symmetric (opposed worse + aligned better); both halves fail in production. | Disable the alignment bonus alongside the opposition block. |
+| **D.9.3** | Exp 20 evidence base (5m-batch `hist_pattern_signals`) is representative of the live signal cohort that ENH-55 actually gates. | **REFUTED S26** — cohort-translation hypothesis fails. The 5m-batch cohort has different filter sequence (no LONG_GAMMA gate, no DTE gate, no power-hour gate, no ENH-76/77/78 PO3 gates, different outcome metric), so even if ENH-55's relationship holds in the source cohort, it does not translate to the cohort post-other-gates. | Medium-High — single-instance lesson, but the magnitude of disagreement is too large to attribute to noise alone. | Future calibration parameters require parity check on the cohort they will actually gate, per D.8.3. Exp 20's failure here is the precedent. |
+| **D.9.4** | TD-101 ret_session writer fix is unambiguously correct — the writer bug should be fixed regardless of whether the consumed value is gated. | **CONFIRMED S26**. The fix targets a bounded-query semantic that was producing wrong (NULL) data; whether downstream consumers gate on it is orthogonal to whether the writer is correct. | High — the fix is structural. | Independent of any decision about ENH-55. Stays in production. |
+| **D.9.5** | The corrective action is to disable ENH-55 by env flag (default OFF) rather than rip from the codebase. Reversibility preserved for re-validation when proper option-P&L outcome metric is available; data continues to flow downstream for any other consumer of `ret_session`. | **DECIDED S26**. `ENH55_ENABLED` env flag added; default `0`; can be re-enabled via `MERDIAN_ENH55_ENABLED=1` in `.env`. ENH-53 breadth modifier remains active (different evidence base). | High — disablement is reversible; re-validation cost is one experiment when warranted. | Future falsifications of similar magnitude follow this pattern: disable by env flag, file as case study, do not strip code. |
+
+**Cross-references:**
+
+- **TD-101** (`build_momentum_features_local.py::get_session_open_spot()` unbounded query) — RESOLVED Session 26, commit `3cb84e2`. Bounded query with `gte("ts", today_start_utc_iso)` filter + limit=20 + 03:35 UTC boundary preserved per ENH-01 / V18G regression history.
+- **ENH-55** entry in `MERDIAN_Enhancement_Register.md` — status note added Session 26: COMPLETE (PROMOTED, ENV-DISABLED 2026-05-10) with full 24-day evidence block and re-validation conditions for re-enablement.
+- **CLAUDE.md B19** (TD-101 propagation lesson) — when an OI-18-class bug is fixed at one site, audit must runtime-verify (not just grep) all candidate sites, including writers downstream of the symptom site, before declaring the class closed. TD-097 → TD-099 grep-based audit closed only request-side scripts; TD-101 was a writer-side instance the grep couldn't reach because the anti-pattern was inside a helper, not a top-level URL construction.
+- **§D.8.3** — Exp 15-era prospective parity check. ENH-55 is the first parameter to fail this check post-codification (S25). The 24-day window (2026-04-17 → 2026-05-10) is shorter than D.8.3's 60-day prospective parity threshold but the magnitude of disagreement (sign-flip on a proxy WR with large effect size) cleared the "flag drift" criterion within the silent-failure window. Discipline applied: gate disabled, finding logged, future re-validation gated on proper option-P&L cohort + re-derivation.
+- **§D.8** rejected status-quo single-cohort silent waiver (D.8.5). D.9 demonstrates that the calibration discipline does fire when warranted; status-quo here would have been "ENH-55 disabled silently because TD-101 was the proximate fix" without the audit. Doing the audit before re-enabling production gating is the discipline.
+
+**Open follow-ups (S27+):**
+
+1. **ADR-009 first case study material.** D.9 is the first concrete instance of D.8.2/D.8.3 discipline being applied. ADR-009 draft (P2b S26 carry-forward) should include a §"Worked example — ENH-55 falsification" section pointing to D.9.
+2. **Re-validation protocol.** When (or whether) to re-validate ENH-55: requires (a) proper option-P&L outcome metric replacing spot-direction proxy, (b) re-derived alignment threshold, (c) cohort matching production filter sequence (post-DTE, post-power-hour, post-ENH-76/77/78). Until then, gate stays disabled.
+3. **ENH-55 retroactive blocks audit (S26 P3 carry-forward).** What fraction of 2026-04-17 → 2026-05-10 losses came from gate-failure (signals that fired with `trade_allowed=true` but lost) vs other? The 79.5% WR figure is on the cohort that would have been blocked; what about the cohort that fired? Cross-check, not just for ENH-55 introspection but as baseline diagnostic of the period.
+4. **Cohort-translation discipline (D.9.3 implication).** Inventory all currently-shipped parameters whose evidence base is `hist_pattern_signals` (5m-batch) but which gate the live signal cohort. Flag for parity-check audit. Likely candidates: ENH-53 breadth, ENH-37 MTF context (already SUPERSEDED via TD-059 Session 16), ENH-76/77 BEAR_OB MIDDAY / BULL_OB AFTERNOON gates (Exp 40-derived; cohort match more direct).
+
+---
+
 ---
 
 ## Update log
@@ -199,8 +242,9 @@ This register itself follows Doc Protocol v4 Rule 9.5: superseded rows are annot
 | Date | Session | Event |
 |---|---|---|
 | 2026-05-09 | Session 23 | Created. V15.1 Appendix D content promoted. Refreshed for ICT-era post ADR-007. Status assignments grounded in V18F evidence + V19 SRB rules + Session 16/17 findings. |
+| 2026-05-10 | Session 26 | **§D.9 added** — ENH-55 momentum opposition gate hypothesis (Exp 20) REFUTED by 24-day production cohort (2026-04-17 → 2026-05-10, N=44 opposed-but-winning trades at 79.5% WR; aligned bucket 54.3% WR — symmetric claim also REFUTED). 5 rows: D.9.1 (opposition rule REFUTED), D.9.2 (alignment bonus REFUTED), D.9.3 (cohort-translation hypothesis REFUTED), D.9.4 (TD-101 writer fix CONFIRMED orthogonal correct), D.9.5 (env-flag disablement DECIDED). First substantive application of D.8.3 prospective parity check; first parameter to fail post-codification. Cross-refs: TD-101 (writer fix RESOLVED commit `3cb84e2`), ENH-55 (status note ENV-DISABLED), CLAUDE.md B19 (OI-18 propagation lesson). 4 open follow-ups recorded (ADR-009 case study, re-validation protocol, retroactive blocks audit, cohort-translation parameter inventory). |
 | 2026-05-10 | Session 25 | **§D.8 added** — Phase α Q4 calibration discipline answer codified into methodology assumptions. 5 rows: D.8.1 (single-cohort REJECTED), D.8.2 (graduated holdout split LIVE pending ADR-009), D.8.3 (Exp 15-era prospective parity check LIVE), D.8.4 (Phase 2 walk-forward DEFERRED to Y2), D.8.5 (status-quo silent waiver REJECTED). ADR-009 governance language draft + 3 open follow-ups recorded. |
 
 ---
 
-*MERDIAN Assumption Register — established Session 23, 2026-05-09. Living document. Update inline as experimental evidence resolves rows; superseded rows are annotated with the superseding ADR/Exp, never deleted.*
+*MERDIAN Assumption Register — established Session 23, 2026-05-09. Last updated Session 26, 2026-05-10. Living document. Update inline as experimental evidence resolves rows; superseded rows are annotated with the superseding ADR/Exp, never deleted.*

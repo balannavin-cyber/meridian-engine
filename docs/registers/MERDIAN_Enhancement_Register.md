@@ -9,7 +9,7 @@
 | Document | `docs/registers/MERDIAN_Enhancement_Register.md` |
 | Scope | Living register of all proposed and delivered MERDIAN enhancements, ENH-01 through ENH-86 |
 | Lineage | Unified from v1 (2026-03-31) through v7 (2026-04-19 v8-appended). Prior versioned files archived at `docs/registers/archive/`. |
-| Last updated | 2026-05-05 (Session 20 — data integrity + live writer architecture overhaul; no new ENH items filed; TD-068 RESOLVED via v2.1 capture_spot_1m_v2.py deployment using Dhan /charts/intraday for real OHLC; spot data Apr 1 → May 5 backfilled 16,500 rows real OHLC for NIFTY+SENSEX; HTF zones rebuilt with all 4 ICT pattern types firing on real data; ENH-88 BUILT NOT DEPLOYED still pending (was waiting BULL_OB signal flow which now becomes possible on real OHLC starting tomorrow's live cycle)) |
+| Last updated | 2026-05-10 (Session 26 — 5 production commits in single session: TD-080 instrumentation + TD-079 ADR-005 zone validity fix + **ENH-88 BULL_FVG cluster gate SHIPPED** commit `8407169` + TD-101 ret_session writer fix + **ENH-55 momentum opposition gate runtime DISABLED via env flag** commit `5b94c78` after 24-day production data falsifies Exp 20 hypothesis. Plus TD-099 closed as filed-in-error after URL-spy verification. ENH-87, ENH-89, ENH-90 added to Part 1 status table from Session 16 backlog. ENH-88 status PROPOSED → COMPLETE (SHIPPED). ENH-55 status COMPLETE (PROMOTED) → COMPLETE (PROMOTED, ENV-DISABLED). Cross-references to Assumption Register §D.9 (ENH-55 hypothesis falsification 5 rows) added.) |
 | Purpose | Forward-looking and historical register of all enhancement proposals, their status, evidence, and delivery. |
 | Authority | Current operational state of each ENH. Session appendices win on session-specific rationale; this register wins on current status. |
 | Update rule | Update in-place (append or edit). Do NOT create a new versioned file. |
@@ -94,7 +94,7 @@ Sortable table of all 86 IDs. For full detail see Part 4.
 | ENH-52b | S3 Warm Tier Archiver (was HIST-02) | 1 | **DEFERRED (Phase 5)** |
 | ENH-53 | Remove breadth regime as hard gate | 1 | **COMPLETE (PROMOTED)** |
 | ENH-54 | HTF Sweep Reversal Trade Mode | 1 | **REJECTED** |
-| ENH-55 | Momentum opposition hard block | 1 | **COMPLETE (PROMOTED)** |
+| ENH-55 | Momentum opposition hard block | 1 | **COMPLETE (PROMOTED, ENV-DISABLED 2026-05-10 Session 26)** — runtime disabled by env flag default OFF after 24-day production data N=44 OPPOSED at 79.5% WR directionally falsified Exp 20 hypothesis; reversible via `MERDIAN_ENH55_ENABLED=1`; see Assumption Register §D.9 |
 | ENH-56 | Premium sweep detector (monitor phase) | 1 | **PROPOSED (MONITOR ONLY)** |
 | ENH-57 | MTF OHLCV infrastructure | 1 | **COMPLETE** |
 | ENH-58 | hist_pattern_signals table | 1 | **COMPLETE** |
@@ -120,6 +120,10 @@ Sortable table of all 86 IDs. For full detail see Part 4.
 | ENH-84 | Dashboard "Refresh Zones + Pine" Button (intraday) | 1 | **SHIPPED 2026-04-30** |
 | ENH-85 | PO3 Session Direction Lock (anti-flip-flop) | 1 | **PROPOSED-DEFERRED — design space reduced Session 15 via Exp 47b (slower-anchor falsified); remaining paths: hard PO3 lock OR persistence filter** |
 | ENH-86 | Dashboard WIN RATE Section Redesign | 1 | **SHIPPED v1 2026-04-30 (v2 BLOCKED/ALLOWED prominence DEFERRED)** |
+| ENH-87 | hist_pattern_signals deprecation review | 2 | **PROPOSED-DEFERRED** (Session 16) |
+| ENH-88 | BULL_FVG production routing requires recent BULL_OB context (90 min lookback) | 1 | **COMPLETE (SHIPPED 2026-05-10 Session 26)** — `build_trade_signal_local.py` ENH88_LOOKBACK_MIN=90; commit `8407169`; +12.8pp lift evidence Session 16 Exp 15 Section 18; BEAR-side asymmetry preserved (anti-cluster -16.5pp per ENH-90 — do not mirror) |
+| ENH-89 | ENH-37 MTF context hierarchy redesign or removal (LOW outperforms HIGH) | 2 | **PROPOSED-DEFERRED** (Session 16) — Option C shadow A/B test recommended |
+| ENH-90 | BEAR_FVG anti-cluster gate (-16.5pp anti-edge with recent BEAR_OB at 90min) | 2 | **CANDIDATE — DEFERRED for N expansion** (Session 17, N=22 currently) |
 | ENH-78 | DTE<3 PDH sweep → current-week PE rule | 1 | **SHIPPED 2026-04-30** |
 | ENH-79 | PWL weekly sweep detection + signal entry rules | 1 | **PROPOSED** |
 | ENH-96 | Dashboard "Gap (vs prev close)" card (prelim 09:08 + final 09:15 vs prev close 16:00) | 1 | **SHIPPED 2026-05-10** |
@@ -1764,18 +1768,44 @@ NOT modified.
 
 | Field | Detail |
 |---|---|
-| Status | **COMPLETE (PROMOTED)** — 2026-04-19 |
+| Status | **COMPLETE (PROMOTED, ENV-DISABLED 2026-05-10 Session 26)** — original promotion 2026-04-19; runtime disabled by env flag default OFF Session 26 after 24-day production data falsified Exp 20 hypothesis. Code paths preserved; reversible via `MERDIAN_ENH55_ENABLED=1` in `.env`. |
 | Promoted | 2026-04-19 |
-| Commits | 8f70822 (build, flag default off), e986cbb (flag default on) |
-| Evidence | Experiment 20 (5m): ALIGNED 60.9% WR (N=2,138) vs OPPOSED 38.3% WR (N=2,275). Lift +22.6pp. Consistent across BEAR_OB (63.1/40.4), BULL_OB (59.3/35.9), BULL_FVG (58.6/36.9). |
+| Disabled (runtime) | 2026-05-10 Session 26 commit `5b94c78` |
+| Commits | 8f70822 (build, flag default off), e986cbb (flag default on), `5b94c78` (env-flag wrap, default OFF Session 26) |
+| Original evidence (Exp 20, 5m-batch `hist_pattern_signals`) | ALIGNED 60.9% WR (N=2,138) vs OPPOSED 38.3% WR (N=2,275). Lift +22.6pp. Consistent across BEAR_OB (63.1/40.4), BULL_OB (59.3/35.9), BULL_FVG (58.6/36.9). |
 | Definition | BUY_PE + ret_session < -0.05% = ALIGNED. BUY_CE + ret_session > +0.05% = ALIGNED. \|ret_session\| < 0.05% = NEUTRAL (allow). Mismatch = OPPOSED → block. |
-| Validation | 2026-04-19 historical replay on 2026-03-16/20/24/25: V4_BLOCKED = 0 on both symbols. SQL audit of 60-day history: 0 rows where momentum_regime field explicitly opposes ret_session. Opposition block in place as safety rail with no practical fire cases in historical data. Aligned +10 bonus fires on V4_OPENED and aligned-SAME paths. |
-| Build | `build_trade_signal_local.py`: (1) if `abs(ret_session) > 0.0005` and action opposes sign of ret_session → action=DO_NOTHING, trade_allowed=False, direction_bias=NEUTRAL; (2) else if aligned → +10 confidence; (3) re-clamp confidence to [0, 100]. |
-| Flag | MERDIAN_SIGNAL_V4 — shared with ENH-53. Default "1". |
-| Depends on | None — bundled with ENH-53 |
+| Validation (original) | 2026-04-19 historical replay on 2026-03-16/20/24/25: V4_BLOCKED = 0 on both symbols. SQL audit of 60-day history: 0 rows where momentum_regime field explicitly opposes ret_session. Opposition block in place as safety rail with no practical fire cases in historical data. Aligned +10 bonus fires on V4_OPENED and aligned-SAME paths. |
+| Build | `build_trade_signal_local.py`: (1) if `ENH55_ENABLED and abs(ret_session) > 0.0005` and action opposes sign of ret_session → action=DO_NOTHING, trade_allowed=False, direction_bias=NEUTRAL; (2) else if aligned → +10 confidence; (3) re-clamp confidence to [0, 100]. **`ENH55_ENABLED` env-flag gate added Session 26.** Both opposition block AND alignment +10 bonus are gated together (same evidence base — symmetric claims falsified together). |
+| Flag (original) | MERDIAN_SIGNAL_V4 — shared with ENH-53. Default "1". |
+| Flag (Session 26) | `MERDIAN_ENH55_ENABLED` — independent of MERDIAN_SIGNAL_V4. Default "0" (OFF). Set to "1" to re-enable. ENH-53 breadth modifier remains active under MERDIAN_SIGNAL_V4 unaffected. |
+| Depends on | TD-101 ret_session writer fix (commit `3cb84e2`) — unambiguously correct, kept active. ENH-55 runtime disablement is orthogonal to writer correctness. |
 
+**ENV-DISABLED rationale (Session 26):**
 
-**History:** v7=COMPLETE (PROMOTED) — 2026-04-19 | 2026-04-19=COMPLETE (PROMOTED)
+TD-101 ret_session writer bug fix (commit `3cb84e2`) restored `momentum_snapshots.ret_session` population after 3+ trading weeks of NULL values (2026-04-17 → 2026-05-10, ~5,000 signals, OI-18 class anti-pattern in `get_session_open_spot()` unbounded query). Because ENH-55's inner condition gates on `ret_session is not None and abs(ret_session) > 0.0005`, the gate had been a silent no-op for the entire window. Once the writer fix surfaced, retrospective audit on the silent-failure period partitioned actionable signals (action ∈ {BUY_CE, BUY_PE} ∧ `trade_allowed=TRUE`) into ENH-55-decision buckets:
+
+| Bucket | N | Wins | Losses | T+30m spot-side WR |
+|---|---|---|---|---|
+| WOULD_HAVE_BLOCKED (opposed) | 44 | 35 | 9 | **79.5%** |
+| WOULD_HAVE_ALIGNED_BONUS | 35 | 19 | 16 | 54.3% |
+| NEUTRAL_BAND (`abs(ret_session) ≤ 0.0005`) | 1 | 0 | 1 | 0.0% |
+
+Decomposition: All 44 OPPOSED-but-winning trades are BUY_PE in up-sessions; 43/44 have `ict_pattern=NONE` — pure momentum-driven signals where 15m/30m turn down despite session running up. Signature: intraday-rollover-of-up-session-strength = exhaustion / mean-reversion edge. Zero ENH-76/77/78 PO3-confirmed contributions.
+
+Production data on the live cohort over 24 trading days **directionally falsifies the Exp 20 gate hypothesis**: opposed bucket outperforms aligned bucket. Sign of the lift is opposite to Exp 20's claim; magnitude (gap of 25pp between WOULD_BLOCK 79.5% and WOULD_ALIGN 54.3%) clears the §D.8.3 prospective-parity flag-drift criterion (>15pp). The 5m-batch evidence base (`hist_pattern_signals`) does not survive translation to the live signal cohort under current selection logic (post-DTE, post-power-hour, post-ENH-76/77/78 filters).
+
+Operator decision: keep TD-101 fix (writer bug unambiguously correct, orthogonal to gating decision) + disable ENH-55 by env flag (the calibration question). Reversibility preserved for re-validation when proper option-P&L outcome metric is available + cohort-matched re-derivation completes. Filed as Assumption Register §D.9 (5 rows D.9.1–D.9.5 + 4 open follow-ups + ADR-009 first-case-study material).
+
+**Re-enablement conditions (S27+):**
+
+1. **Proper option-P&L outcome metric** replacing spot-direction T+30m proxy. The 79.5% WR figure is on spot-side proxy; option premium WR may differ but magnitude of disagreement is too large to attribute to proxy-noise alone.
+2. **Cohort-matched re-derivation** on the live signal cohort (post-DTE, post-power-hour, post-ENH-76/77/78 filters), not 5m-batch `hist_pattern_signals`. Per §D.9.3, cohort-translation hypothesis is REFUTED.
+3. **Re-derived alignment threshold.** Current threshold `abs(ret_session) > 0.0005` (0.05%) was Exp 20-derived; new threshold needed if direction of relationship is preserved (e.g., aligned-block / opposed-allow inversion of original gate).
+4. **Walk-forward validation** per §D.8 graduated-strictness holdout (N≥60 → 67/33 split, 10pp tolerance) — Session 26 cohort is N=44 across both buckets, below the 67/33 formal-split threshold; falls into 30≤N<60 bucket → 75/25 split, 15pp tolerance.
+
+Until conditions met: `MERDIAN_ENH55_ENABLED` stays "0" (default OFF). Status remains COMPLETE (PROMOTED, ENV-DISABLED) — code is in production, gate is dormant.
+
+**History:** v7=COMPLETE (PROMOTED) — 2026-04-19 | 2026-04-19=COMPLETE (PROMOTED) | **Session 26 (2026-05-10)=COMPLETE (PROMOTED, ENV-DISABLED) — runtime disabled by env flag default OFF after 24-day production data (N=44 OPPOSED at 79.5% WR vs Exp 20's 38.3% claim) directionally falsified Exp 20 hypothesis (commit `5b94c78`); reversible via `MERDIAN_ENH55_ENABLED=1`; filed as Assumption Register §D.9**
 
 ---
 
@@ -2654,23 +2684,36 @@ Original purpose: cache `build_expiry_index_simple()` output across cycles to av
 
 ---
 
-### ENH-88 — BULL_FVG production routing requires recent BULL_OB context (60-90 min lookback) — BUILT NOT DEPLOYED 2026-05-03
+### ENH-88 — BULL_FVG production routing requires recent BULL_OB context (90 min lookback) — SHIPPED Session 26, 2026-05-10
 
 | Field | Detail |
 |---|---|
-| Status | **PROPOSED** |
+| Status | **COMPLETE (SHIPPED 2026-05-10 Session 26)** |
 | Priority | 1 |
 | Session filed | Session 16 (2026-05-03) |
-| Session target | Session 17 (Priority B) |
-| Goal | Patch `build_trade_signal_local.py` to skip BULL_FVG signals UNLESS a BULL_OB trade fired in the same symbol within the last 60-90 minutes. Standalone BULL_FVG = SKIP (or sized down to floor). Clustered BULL_FVG = full sizing. |
+| Session built | Session 17 (BUILT NOT DEPLOYED — `_PATCHED.py` in working tree, gated on Mon BULL_OB live data confirmation) |
+| Session shipped | Session 26 (2026-05-10) — commit `8407169` |
+| Goal | Patch `build_trade_signal_local.py` to skip BULL_FVG signals UNLESS a BULL_OB signal fired in the same symbol within the last 90 minutes. Standalone BULL_FVG = SKIP. Clustered BULL_FVG = full sizing. |
 | Evidence | Section 18 of `analyze_exp15_trades.py` on Session 16 live-cohort 231-trade CSV: BULL_FVG with recent BULL_OB at 90-min lookback (N=64) WR 57.8% [44.4, 70.5], vs standalone BULL_FVG (N=91) WR 45.1% [35.2, 55.5] — **+12.8pp lift**. At 60-min lookback: clustered N=57 WR 54.4%, standalone N=98 WR 48.0% — +6.4pp lift. At 30-min lookback: +1.0pp lift only. Standalone BULL_FVG pooled across full year is statistically a coin flip (Section 9: N=155, WR 50.3%, CI [42.5, 58.1] spans 50%). The cluster effect transforms a coin flip into a real edge. |
-| Type | Code — small. Helper function `_recent_bull_ob_check(symbol, current_ts, lookback_min)` queries `signal_snapshots` for same-symbol BULL_OB signals in last N minutes. Gate added to BULL_FVG branch in `build_trade_signal_local.py`. |
-| Logic (proposed) | If `pattern_type=BULL_FVG`: query `signal_snapshots` for `symbol=current.symbol AND pattern_type='BULL_OB' AND signal_ts >= current_ts - 90min AND signal_ts < current_ts AND trade_allowed=True`. If COUNT >= 1: proceed with normal sizing. Else: set `action=DO_NOTHING`, `trade_allowed=False`, add caution `"BULL_FVG without recent BULL_OB context — coin flip pooled, +12.8pp lift only when clustered (Session 16 Exp 15 Section 18)"`. |
-| Lookback choice | 90 min is the strongest evidenced — +12.8pp lift on N=64. 60 min is +6.4pp on N=57. **Recommend 90 min as initial production lookback.** Can shadow-test 60 vs 90 in parallel for one month if uncertain. |
-| Validation | Patch script must end with `ast.parse()` PASS. Functional scenarios: (1) BULL_FVG with BULL_OB at T-30min → trigger; (2) BULL_FVG with BULL_OB at T-60min → trigger; (3) BULL_FVG with BULL_OB at T-100min → block; (4) BULL_FVG with no BULL_OB in 90min → block; (5) BULL_FVG with BEAR_OB at T-30min → block (wrong direction). |
-| Open questions | (a) Should the lookback distinguish between MTF context tiers? Section 18 didn't partition by tier — pooled across all. (b) Should the same rule apply to BEAR_FVG when TD-058 is fixed (live detector starts emitting BEAR_FVG)? Likely yes by symmetry, but should be measured separately on the eventual BEAR_FVG live cohort. (c) Should we ship as confidence-modifier (BULL_FVG without OB context: -25 conf, with: 0 modifier) or hard skip (block trade)? Recommend hard skip — coin flip is not edge worth deploying capital against. |
-| Estimated cost | 1 session (Session 17 Priority B). Includes patch + verification scenarios + Compendium entry update. |
-| Carries | Coordinates with TD-058 (BEAR_FVG live emission fix) — once TD-058 closes, ENH-88 should be extended symmetrically to BEAR_FVG. |
+| Build | `build_trade_signal_local.py` modified by `patch_s26_enh88_deploy.py` — adds two chunks: (1) module-level `ENH88_LOOKBACK_MIN: int = 90` + helper `_has_recent_bull_ob(sb, symbol, current_ts_iso, lookback_min=90)` after the `# -- end ENH-75 helper` anchor; (2) ENH-88 gate block before `return out, flags` — when `out.get("ict_pattern") == "BULL_FVG" and action == "BUY_CE"`, query `signal_snapshots` for BULL_OB in last 90min same symbol with `trade_allowed=True`. ALLOW (proceed) or BLOCK (action=DO_NOTHING, trade_allowed=False, three-site sync of action + trade_allowed + out{}). Sets `out["raw"]["enh88_decision"] = "ALLOW"\|"BLOCK"` for telemetry. |
+| Lookback choice | 90 min — strongest-evidenced lift in Session 16 Section 18. Configurable via module-level constant `ENH88_LOOKBACK_MIN`. |
+| Validation | `ast.parse()` PASS post-patch. Smoke test 2026-05-10 (Sunday non-trading day): both NIFTY+SENSEX `_has_recent_bull_ob` returned False as expected (no Sunday data); no errors; ENH88_LOOKBACK_MIN imported as 90. Live verification deferred to first BULL_FVG signal post-Mon 2026-05-12. |
+| Asymmetry preserved | BEAR-side anti-clusters NOT mirrored. Per Session 16 Section 18 BEAR_FVG analysis (filed as ENH-90 candidate): BEAR_FVG with recent BEAR_OB at 90-min lookback shows -16.5pp anti-edge (anti-cluster, opposite direction to BULL effect). BEAR_FVG signals ship without cluster gate; ENH-90 deferred for N expansion. |
+| Production data baseline | TD-101 fix (Session 26 commit `3cb84e2`) restored ret_session population starting Mon 2026-05-12; signal_snapshots BULL_OB writes were unaffected by the TD-101 silent failure (BULL_OB does not gate on ret_session). The S17→S26 deployment delay was warranted by the Phase α Q1+Q2 architecture conversation in S25 + S26's TD-080 + TD-079 priorities; the gate's input data path was always live. |
+| Cross-reference | TD-058 (BEAR_FVG live emission) was the original gate for symmetric BEAR_FVG version of ENH-88; status post-Session 17 should be confirmed. ENH-90 (BEAR_FVG anti-cluster gate) is the asymmetric BEAR-side instance per Session 16 evidence; remains CANDIDATE pending N expansion. |
+
+**Mon 2026-05-12 verification SQL (P0b S27):**
+```sql
+SELECT
+    COUNT(*) FILTER (WHERE ict_pattern = 'BULL_FVG' AND action = 'BUY_CE')        AS bull_fvg_signals,
+    COUNT(*) FILTER (WHERE raw->>'enh88_decision' = 'ALLOW')                       AS enh88_allow,
+    COUNT(*) FILTER (WHERE raw->>'enh88_decision' = 'BLOCK')                       AS enh88_block
+FROM signal_snapshots
+WHERE ts >= CURRENT_DATE;
+-- Expect: enh88_allow + enh88_block = bull_fvg_signals (every BULL_FVG BUY_CE records a decision)
+```
+
+**History:** v7=PROPOSED Session 16 (2026-05-03) | Session 17 (2026-05-03)=BUILT NOT DEPLOYED (`_PATCHED.py` in working tree, gated on Mon BULL_OB live data confirmation) | **Session 26 (2026-05-10)=COMPLETE (SHIPPED, commit `8407169`)**
 
 ---
 

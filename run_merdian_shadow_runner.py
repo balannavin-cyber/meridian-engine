@@ -476,7 +476,7 @@ def run_symbol_pipeline(symbol: str) -> bool:
     log(f"Resolved run_id for {symbol}: {run_id}")
 
     gamma_result = run_step(
-        [PYTHON_BIN, "compute_gamma_metrics_local.py", run_id, symbol],
+        [PYTHON_BIN, "compute_gamma_metrics_local.py", run_id, symbol, "--shadow"],  # TD-NEW-12 S28
         TIMEOUT_SINGLE_STEP_SECONDS,
         "compute_gamma_metrics_local.py",
         symbol=symbol,

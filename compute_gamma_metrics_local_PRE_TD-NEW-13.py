@@ -726,17 +726,7 @@ def _dte_from_ts(result):
     _IST = _tz(_td(hours=5, minutes=30))
     ts = result.ts
     if isinstance(ts, str):
-        # TD-NEW-13 (S28): normalize microseconds to 6 digits for Python 3.10 compat.
-        # AWS runs Python 3.10 which rejects non-3/6-digit microseconds in fromisoformat.
-        # Supabase serializes with variable precision (2-7 digits).
-        import re as _re
-        _ts = ts.replace("Z", "+00:00")
-        _m = _re.match(r"^(.+)\.(\d+)(\+\d{2}:\d{2}|\-\d{2}:\d{2})$", _ts)
-        if _m:
-            _base, _frac, _tz = _m.groups()
-            _frac = (_frac + "000000")[:6]
-            _ts = f"{_base}.{_frac}{_tz}"
-        ts_dt = _dt.fromisoformat(_ts)
+        ts_dt = _dt.fromisoformat(ts.replace("Z", "+00:00"))
     else:
         ts_dt = ts
     if ts_dt.tzinfo is None:

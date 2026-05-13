@@ -713,28 +713,6 @@ def compute_gamma_metrics(
     )
 
 
-def _dte_from_ts(result):
-    """TD-NEW-4 (S28): compute DTE as (expiry - result.ts.date()) in IST.
-
-    Replaces prior `date.today()` reference which silently broke backfill
-    correctness. Live writes unaffected (result.ts is ~= now within seconds).
-    Self-contained: local imports avoid module-level import changes.
-    """
-    if not result.expiry_date:
-        return None
-    from datetime import date as _date, datetime as _dt, timezone as _tz, timedelta as _td
-    _IST = _tz(_td(hours=5, minutes=30))
-    ts = result.ts
-    if isinstance(ts, str):
-        ts_dt = _dt.fromisoformat(ts.replace("Z", "+00:00"))
-    else:
-        ts_dt = ts
-    if ts_dt.tzinfo is None:
-        ts_dt = ts_dt.replace(tzinfo=_IST)
-    as_of = ts_dt.astimezone(_IST).date()
-    return (_date.fromisoformat(result.expiry_date) - as_of).days
-
-
 def upsert_gamma_metrics(result: GammaMetricsResult) -> dict[str, Any]:
     # Compute OTM OI snapshot for next run's velocity calculation
     # We re-fetch here only if needed — stored in raw for continuity
@@ -752,7 +730,11 @@ def upsert_gamma_metrics(result: GammaMetricsResult) -> dict[str, Any]:
         "symbol": result.symbol,
         "ts": result.ts,
         "expiry_date": result.expiry_date,
-        "dte": _dte_from_ts(result),
+        "dte": (
+            (__import__("datetime").date.fromisoformat(result.expiry_date) -
+             __import__("datetime").date.today()).days
+            if result.expiry_date else None
+        ),
         "spot": result.spot,
         "net_gex": result.net_gex,
         "gamma_concentration": result.gamma_concentration,

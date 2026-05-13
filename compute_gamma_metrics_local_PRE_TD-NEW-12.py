@@ -492,7 +492,7 @@ def fetch_prior_gamma_metrics(symbol: str, current_ts: str) -> dict[str, Any] | 
     """
     try:
         result = (
-            SUPABASE.table(TARGET_TABLE)
+            SUPABASE.table("gamma_metrics")
             .select("straddle_atm,ts")
             .eq("symbol", symbol)
             .lt("ts", current_ts)
@@ -713,28 +713,6 @@ def compute_gamma_metrics(
     )
 
 
-def _dte_from_ts(result):
-    """TD-NEW-4 (S28): compute DTE as (expiry - result.ts.date()) in IST.
-
-    Replaces prior `date.today()` reference which silently broke backfill
-    correctness. Live writes unaffected (result.ts is ~= now within seconds).
-    Self-contained: local imports avoid module-level import changes.
-    """
-    if not result.expiry_date:
-        return None
-    from datetime import date as _date, datetime as _dt, timezone as _tz, timedelta as _td
-    _IST = _tz(_td(hours=5, minutes=30))
-    ts = result.ts
-    if isinstance(ts, str):
-        ts_dt = _dt.fromisoformat(ts.replace("Z", "+00:00"))
-    else:
-        ts_dt = ts
-    if ts_dt.tzinfo is None:
-        ts_dt = ts_dt.replace(tzinfo=_IST)
-    as_of = ts_dt.astimezone(_IST).date()
-    return (_date.fromisoformat(result.expiry_date) - as_of).days
-
-
 def upsert_gamma_metrics(result: GammaMetricsResult) -> dict[str, Any]:
     # Compute OTM OI snapshot for next run's velocity calculation
     # We re-fetch here only if needed — stored in raw for continuity
@@ -752,7 +730,11 @@ def upsert_gamma_metrics(result: GammaMetricsResult) -> dict[str, Any]:
         "symbol": result.symbol,
         "ts": result.ts,
         "expiry_date": result.expiry_date,
-        "dte": _dte_from_ts(result),
+        "dte": (
+            (__import__("datetime").date.fromisoformat(result.expiry_date) -
+             __import__("datetime").date.today()).days
+            if result.expiry_date else None
+        ),
         "spot": result.spot,
         "net_gex": result.net_gex,
         "gamma_concentration": result.gamma_concentration,
@@ -783,19 +765,9 @@ def upsert_gamma_metrics(result: GammaMetricsResult) -> dict[str, Any]:
         },
     }
 
-    response = SUPABASE.table(TARGET_TABLE).upsert(payload, on_conflict="symbol,ts").execute()
+    response = SUPABASE.table("gamma_metrics").upsert(payload, on_conflict="symbol,ts").execute()
     rows = _rows(response)
     return rows[0] if rows else payload
-
-
-# TD-NEW-12 (S28): shadow-vs-live table separation.
-# AWS shadow runner passes --shadow to redirect writes to gamma_metrics_shadow.
-# Local invocations omit it and write to gamma_metrics.
-# Reads (fetch_prior_gamma_metrics) ALSO redirected — shadow pipeline reads its own history.
-USE_SHADOW = "--shadow" in sys.argv
-if USE_SHADOW:
-    sys.argv = [a for a in sys.argv if a != "--shadow"]
-TARGET_TABLE = "gamma_metrics_shadow" if USE_SHADOW else "gamma_metrics"
 
 
 def parse_args(argv: list[str]) -> tuple[str, Optional[str], str]:
@@ -878,7 +850,7 @@ def main() -> int:
     # priority over opening-row completeness.
     log = ExecutionLog(
         script_name="compute_gamma_metrics_local.py",
-        expected_writes={TARGET_TABLE: 1},
+        expected_writes={"gamma_metrics": 1},
         symbol=expected_symbol,
         notes=f"run_id={run_id} run_type={run_type}",
     )
@@ -916,7 +888,7 @@ def main() -> int:
 
     # The upsert returns the row (or at minimum the payload we sent).
     # Either way, one row landed in gamma_metrics.
-    log.record_write(TARGET_TABLE, 1)
+    log.record_write("gamma_metrics", 1)
 
     print("=" * 72)
     print("MERDIAN - Local Python compute_gamma_metrics")

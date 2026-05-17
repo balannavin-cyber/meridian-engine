@@ -96,6 +96,21 @@ SIGNAL_V4_ENABLED: bool = os.getenv("MERDIAN_SIGNAL_V4", "1").strip() == "1"
 # MERDIAN_ENH55_ENABLED=1 in .env to re-enable. Filed as ADR-009 candidate.
 ENH55_ENABLED: bool = os.getenv("MERDIAN_ENH55_ENABLED", "0").strip() == "1"
 
+# === S30_PATCHES_APPLIED ===
+# S30 fix bank — four env-flag toggles. All default disabled.
+# Rationale: S30 v5 + gate audit showed these gates blocked the high-edge
+# pure-ICT cohort. See ADR-009 §S30 case study + D.12.10/D.12.11.
+#
+# Set to "1" in .env to re-enable original behaviour:
+#   MERDIAN_ENH76_ENABLED=0   # BEAR_OB MIDDAY PO3_BEARISH-only gate
+#   MERDIAN_ENH77_ENABLED=0   # BULL_OB AFTERNOON NIFTY-skip + SENSEX PO3 gate
+#   MERDIAN_ENH88_ENABLED=0   # BULL_FVG cluster gate (requires recent BULL_OB)
+#   MERDIAN_TIER_MULT_DISABLE=1  # force ict_size_mult = 1.0 (live-cohort safe)
+ENH76_ENABLED: bool = os.getenv("MERDIAN_ENH76_ENABLED", "0").strip() == "1"
+ENH77_ENABLED: bool = os.getenv("MERDIAN_ENH77_ENABLED", "0").strip() == "1"
+ENH88_ENABLED: bool = os.getenv("MERDIAN_ENH88_ENABLED", "0").strip() == "1"
+TIER_MULT_DISABLE: bool = os.getenv("MERDIAN_TIER_MULT_DISABLE", "0").strip() == "1"
+
 
 # -----------------------------
 # Environment / Supabase client
@@ -886,6 +901,16 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
         out["ict_lots_t2"]     = None
         out["ict_lots_t3"]     = None
 
+    # S30 patch: tier multiplier disable
+    # When MERDIAN_TIER_MULT_DISABLE=1, force ict_size_mult to 1.0 regardless
+    # of what ict_zones writer set. Removes Compendium-prior bias from sizing
+    # while live cohort accumulates per-pattern N>=30 (see ADR-009 §S30).
+    if TIER_MULT_DISABLE:
+        out["ict_size_mult"] = 1.0
+        if "raw" not in out:
+            out["raw"] = {}
+        out["raw"]["tier_mult_disabled"] = True
+
     # ENH-06: Pre-trade cost filter
     # Validates lot sizing against current capital at signal time.
     try:
@@ -967,9 +992,9 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
         _ict76     = out.get("ict_pattern", "NONE")
         _po3_76    = out.get("po3_session_bias", "PO3_NONE")
 
-        # ENH-76
+        # ENH-76 (S30: gated by MERDIAN_ENH76_ENABLED, default 0)
         _in_midday = (11 * 60 + 30) <= _tot_mins < (13 * 60 + 30)
-        if _in_midday and _ict76 == "BEAR_OB" and action == "BUY_PE":
+        if ENH76_ENABLED and _in_midday and _ict76 == "BEAR_OB" and action == "BUY_PE":
             if _po3_76 != "PO3_BEARISH":
                 # TD-044 fix: sync block decision to out{} dict so the
                 # signal_snapshots row reflects the gate. Local-only
@@ -989,9 +1014,9 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
                     "po3_session_bias=PO3_BEARISH (88.2% WR, Exp 40)"
                 )
 
-        # ENH-77
+        # ENH-77 (S30: gated by MERDIAN_ENH77_ENABLED, default 0)
         _in_aft = (13 * 60 + 30) <= _tot_mins < (15 * 60 + 0)
-        if _in_aft and _ict76 == "BULL_OB" and action == "BUY_CE":
+        if ENH77_ENABLED and _in_aft and _ict76 == "BULL_OB" and action == "BUY_CE":
             if symbol == "NIFTY":
                 # TD-044 fix: sync block decision to out{} dict.
                 action        = "DO_NOTHING"
@@ -1087,7 +1112,7 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
     #   WR 57.8%, N=64 (+12.8pp lift).
     # Behaviour: hard SKIP standalone; pass clustered.
     # Asymmetry: BEAR_FVG anti-clusters (Session 17 finding 2). Do NOT mirror.
-    if out.get("ict_pattern") == "BULL_FVG" and action == "BUY_CE":
+    if ENH88_ENABLED and out.get("ict_pattern") == "BULL_FVG" and action == "BUY_CE":
         if _has_recent_bull_ob(SUPABASE, symbol, out.get("ts", "")):
             cautions.append(
                 f"ENH-88: BULL_FVG cluster CONFIRMED -- recent BULL_OB "

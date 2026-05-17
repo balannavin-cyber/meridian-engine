@@ -155,6 +155,52 @@ def fetch_with_retry(query_fn, max_attempts=4):
             time.sleep(2 ** attempt)
 
 
+# ── TD-S31-NEW-1 fix (Session 31): 1-min → 5-min bar aggregation ────
+# detect_obs() in detect_ict_patterns.py is calibrated for 5-min input
+# (OB_MIN_MOVE_PCT=0.40% over 5 bars). Production runner historically
+# passed raw 1-min bars from hist_spot_bars_1m, which made BEAR_OB
+# structurally impossible on Indian indices (zero emission across
+# 2026-05-04→2026-05-15 despite multiple tradeable drops on the chart).
+# This helper aggregates 1-min Bar list into 5-min Bar list by floored
+# absolute 5-min boundary. Drops buckets with < 5 1-min bars to avoid
+# partial-trailing noise; idempotent on_conflict upsert in
+# write_new_zones() handles cross-cycle re-detection.
+def aggregate_1m_to_5m(bars_1m: list) -> list:
+    """Aggregate 1-min Bar list into 5-min Bar list. OHLC: open=first,
+    high=max, low=min, close=last across the bucket. Buckets keyed by
+    floored absolute 5-min boundary on each bar's bar_ts. Drops buckets
+    with fewer than 5 1-min bars (partial trailing or TD-080-style
+    gaps).
+    """
+    from collections import defaultdict
+    if not bars_1m:
+        return []
+    buckets = defaultdict(list)
+    for b in bars_1m:
+        ts = b.bar_ts
+        bucket_ts = ts.replace(
+            minute=(ts.minute // 5) * 5,
+            second=0,
+            microsecond=0,
+        )
+        buckets[bucket_ts].append(b)
+    out = []
+    for bucket_ts in sorted(buckets):
+        items = sorted(buckets[bucket_ts], key=lambda b: b.bar_ts)
+        if len(items) < 5:
+            continue
+        out.append(Bar(
+            bar_ts=bucket_ts,
+            open=items[0].open,
+            high=max(b.high for b in items),
+            low=min(b.low for b in items),
+            close=items[-1].close,
+            trade_date=items[0].trade_date,
+        ))
+    return out
+# ── end TD-S31-NEW-1 helper ───────────────────────────────────────────
+
+
 # ── Data loaders ──────────────────────────────────────────────────────
 
 def load_today_spot_bars(sb, inst_id: str, trade_date: date) -> list[Bar]:
@@ -495,8 +541,13 @@ def main(symbol: str, log_handle: ExecutionLog) -> int:
         # forward-lookahead (5) + sequence features + buffer. Repeat
         # detection of older patterns is idempotent via on_conflict
         # upsert in write_new_zones().
+        # TD-S31-NEW-1 fix (Session 31): aggregate to 5-min before detection.
+        # detect_obs() threshold is calibrated for 5-min input; passing raw
+        # 1-min bars suppressed BEAR_OB emission to zero across 4 weeks.
+        bars_5m = aggregate_1m_to_5m(bars)
+        log(f"  Aggregated {len(bars)} 1-min bars -> {len(bars_5m)} 5-min bars")
         patterns = detector.detect(
-            bars=bars[-30:],
+            bars=bars_5m[-30:],
             atm_iv=atm_iv,
             htf_zones=htf_zones,
             prior_high=prior_high,

@@ -624,38 +624,65 @@ def get_best_active_zone(
     action:        str,
 ) -> Optional[dict]:
     """
-    Given a list of ACTIVE ict_zones and the current signal action,
-    return the highest-quality zone that is closest to current spot.
+    TD-S30-NEW-3 fix (Session 31) — observational attachment.
 
-    Used by build_trade_signal_local.py to enrich signals with ICT context.
+    Returns the highest-quality ACTIVE zone whose
+    [zone_low, zone_high] contains current_spot. Direction-of-action
+    is NO LONGER a filter — S30 audit semantic is "which zone is
+    spot currently inside", not "which zone matches my chosen trade
+    direction". This makes ict_pattern an observation of zone-touch
+    rather than an endorsement of trade direction. Sizing impact is
+    nil while MERDIAN_TIER_MULT_DISABLE=1 (S30 default).
 
-    Priority:
-      1. TIER1 zones first
-      2. Within same tier: most recent (latest detected_at_ts)
-      3. Within same tier+time: closest to spot
+    Selection priority:
+      1. Tier rank: TIER1 > TIER2 > TIER3 > SKIP (SKIP no longer
+         excluded — observed truth needs the zone to be visible
+         regardless of sizing).
+      2. Recency: most recent detected_at_ts wins (docstring intent;
+         prior sort was ASC and returned oldest — fixed).
+      3. Tightness: smaller (zone_high - zone_low) wins (most
+         specific containing zone is preferred).
     """
-    if not active_zones:
+    if not active_zones or current_spot is None or current_spot == 0:
         return None
 
-    # Filter by direction matching action
-    direction = +1 if action == "BUY_CE" else -1
-    matching  = [
-        z for z in active_zones
-        if z.get("direction") == direction
-        and z.get("status") == "ACTIVE"
-        and z.get("ict_tier") != "SKIP"
-    ]
+    spot_f = float(current_spot)
+    _TIER_RANK = {"TIER1": 0, "TIER2": 1, "TIER3": 2, "SKIP": 3}
+
+    matching = []
+    for z in active_zones:
+        if z.get("status") != "ACTIVE":
+            continue
+        try:
+            zl = float(z.get("zone_low", 0))
+            zh = float(z.get("zone_high", 0))
+        except (TypeError, ValueError):
+            continue
+        if zl <= spot_f <= zh:
+            matching.append(z)
 
     if not matching:
         return None
 
-    # Sort: TIER1 first, then by recency
-    def sort_key(z):
-        tier_rank = 0 if z.get("ict_tier") == "TIER1" else 1
-        ts_str    = z.get("detected_at_ts", "")
-        return (tier_rank, ts_str)
+    def _ts_key(ts_str):
+        # ISO-8601 strings sort lex equivalent to chronological for
+        # same-zone-character prefixes; we want DESC (newest first).
+        # Return a value that sorts ASC by negation: use a tuple of
+        # length-and-content negation via reverse-string trick is
+        # fragile; simpler — sort with reverse on this key dimension
+        # only via two-pass stable sort. Implemented below.
+        return ts_str or ""
 
-    matching.sort(key=sort_key)
+    # Stable two-pass sort:
+    # Pass 1: tightest first (last, least important).
+    matching.sort(
+        key=lambda z: float(z.get("zone_high", 0)) - float(z.get("zone_low", 0))
+    )
+    # Pass 2: most recent first.
+    matching.sort(key=lambda z: _ts_key(z.get("detected_at_ts", "")), reverse=True)
+    # Pass 3: best tier first (most important, last applied → wins).
+    matching.sort(key=lambda z: _TIER_RANK.get(z.get("ict_tier"), 99))
+
     return matching[0]
 
 
@@ -665,25 +692,31 @@ def enrich_signal_with_ict(
     current_spot: float,
 ) -> dict:
     """
-    Enrich an existing signal dict with ICT pattern fields.
-    Called from build_trade_signal_local.py after signal action is determined.
+    TD-S30-NEW-3 fix (Session 31) — observational attachment.
+
+    Enrich an existing signal dict with ICT pattern fields. Called
+    from build_trade_signal_local.py after signal action is determined.
+
+    SEMANTIC CHANGE: attachment is now observational (which zone is
+    spot inside) rather than directional-action-endorsed. The previous
+    early-return on action=DO_NOTHING is removed so gated cycles
+    (LONG_GAMMA, NO_FLIP, DTE, power-hour, ENH-55/76/77/88) still
+    surface their zone-touch context in ict_pattern. This is the S30
+    audit semantic and unblocks per-OB-pattern live-cohort
+    re-validation (D.13.5 closure path).
 
     Adds fields:
       ict_pattern       — pattern type or "NONE"
-      ict_tier          — TIER1 | TIER2 | NONE
-      ict_size_mult     — 0.5 | 1.0 | 1.5 | 1.0 (default)
-      ict_mtf_context   — HIGH | MEDIUM | LOW | NONE
+      ict_tier          — TIER1 | TIER2 | TIER3 | SKIP | NONE
+      ict_size_mult     — value from matched zone or 1.0 default
+                          (force-1.0 downstream while
+                          MERDIAN_TIER_MULT_DISABLE=1)
+      ict_mtf_context   — VERY_HIGH | HIGH | MEDIUM | LOW | NONE
     """
-    action = signal_dict.get("action", "DO_NOTHING")
+    # `action` kept for back-compat callers; no longer used for filtering.
+    _ = signal_dict.get("action", "DO_NOTHING")
 
-    if action == "DO_NOTHING":
-        signal_dict["ict_pattern"]     = "NONE"
-        signal_dict["ict_tier"]        = "NONE"
-        signal_dict["ict_size_mult"]   = 1.0
-        signal_dict["ict_mtf_context"] = "NONE"
-        return signal_dict
-
-    best_zone = get_best_active_zone(active_zones, current_spot, action)
+    best_zone = get_best_active_zone(active_zones, current_spot, _)
 
     if best_zone is None:
         signal_dict["ict_pattern"]     = "NONE"

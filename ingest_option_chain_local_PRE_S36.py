@@ -26,17 +26,6 @@ from core.supabase_client import SupabaseClient
 from gamma_engine_retry_utils import retry_call
 
 
-def is_dhan_429(exc: Exception) -> bool:
-    """ENH-99 (S36): retry predicate -- True only for Dhan rate-limit (429).
-
-    Dhan signals 429 via 'status=429' substring in the exception message OR
-    error_code '805' in the response body. Any other failure (401 auth, 404
-    not_found, network, parse) returns False so retry_call fails fast.
-    """
-    msg = str(exc)
-    return "status=429" in msg or '"805"' in msg
-
-
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 
@@ -329,10 +318,9 @@ def ingest_symbol(symbol: str, mode: str, log: ExecutionLog) -> int:
                 underlying_scrip=underlying["UnderlyingScrip"],
                 underlying_seg=underlying["UnderlyingSeg"],
             ),
-            attempts=6,
-            delay_seconds=15.0,
+            attempts=3,
+            delay_seconds=5.0,
             backoff_multiplier=1.5,
-            retry_predicate=is_dhan_429,
             label=f"{symbol} get_expiry_list",
         )
     except Exception as e:
@@ -361,10 +349,9 @@ def ingest_symbol(symbol: str, mode: str, log: ExecutionLog) -> int:
                 underlying_seg=underlying["UnderlyingSeg"],
                 expiry=expiry_date,
             ),
-            attempts=6,
-            delay_seconds=15.0,
+            attempts=3,
+            delay_seconds=5.0,
             backoff_multiplier=1.5,
-            retry_predicate=is_dhan_429,
             label=f"{symbol} get_option_chain",
         )
     except Exception as e:

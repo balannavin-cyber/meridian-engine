@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v26",
+    "version": "v27",
     "generated": "2026-05-16",
     "sources": [
       "Session 28 (2026-05-13): 3 production commits (72622a9 + de23467 + 447634c), tag session-28-close. P0 verification PASS 09:25 IST 2026-05-12. 8 TDs closed same-session (first 8-TD-close session): TD-NEW-12 (AWS shadow runner writing to production gamma_metrics 13 days due to silent architecture violation — --shadow flag plumbed via TARGET_TABLE constant routing SELECT + UPSERT + ExecutionLog telemetry + AWS wrapper line 479 + schema reconciliation 7 cols + UNIQUE constraint + NOTIFY pgrst), TD-NEW-4 (_dte_from_ts helper from result.ts not date.today() wall clock), TD-NEW-13 (microsecond regex normalization to 6 digits for Python 3.10 fromisoformat compatibility; 60/60 retry success), TD-NEW-8 (MERDIAN_WS_Stop pkill → pkill -9 SIGKILL config-only), TD-NEW-6 (MERDIAN_WS_Feed_0900 Local task Disabled durable), TD-NEW-5 (run_ict_htf_zones_daily.bat extended with Pine overlay Call 3 chain), TD-NEW-10 (closed filed-in-error — intentional Phase 4B Order Placer audited live), TD-NEW-11 (RESOLVED as documentation gap — merdian_order_placer.py catalogued Topology §3 + §7.1 + §8.2). 3 TDs NEW pending S29+: TD-NEW-7 S1 (MALPHA Zerodha token Supabase automation mirroring Dhan flow), TD-NEW-9 S2 (ws_feed_zerodha.py heartbeat), TD-NEW-15 S2 (ENH-97/98 cross-doc rename propagation across 8 files + ADR-002 v2). TD-NEW-14 slot soft-reserved for gamma_metrics_shadow history backfill (Topology §9 Q14 OPTIONAL). P1 broken-window gamma_metrics backfill CLOSED 587/587 rows clean across 2026-05-08 + 2026-05-11; codified D.11.4. P2 Enhancement Register filing CLOSED with renumber — ENH-97 (vol_analytics + RR ratio writer, ADR-002 v2 P7, Tier 1, PROPOSED) + ENH-98 (vanna/charm second-order Greeks, ADR-002 v2 P8, Tier 2, PROPOSED). Renumbered from S27 verbally-NEW 'ENH-84'/'ENH-85' due to slot collision at formal filing time (slots occupied by SHIPPED REFRESH ZONES button S14 + PROPOSED-DEFERRED PO3 lock S13). Per Doc Protocol v2 Rule 5 monotonic-no-reuse, new entries filed at next-available IDs. Cross-doc rename propagation queued as TD-NEW-15. MALPHA catalogued as third environment in Deployment Topology §1.5. merdian_order_placer.py catalogued as MERDIAN-AWS-only Phase 4B service. AWS shadow architecture RESTORED via TD-NEW-12 fix. CLAUDE.md v1.18 → v1.19 (B22 cross-Python compat + B23 Phase 0 closure meta-pattern + 6 S28 operational findings). Assumption Register §D.11 added (D.11.1 shadow architecture invariant; D.11.2 as-of-date from result.ts; D.11.3 cross-Python microsecond normalization; D.11.4 P1 backfill closure). 8 doc files modified. Schema changes: 1 (gamma_metrics_shadow ALTER TABLE ADD COLUMN x7 + ADD CONSTRAINT UNIQUE + NOTIFY pgrst). BUGS_LATENT_SURFACED: 4. SILENT_ARCHITECTURE_VIOLATION_DAYS: 13. CARRY_FORWARD_TO_S29: P0_PRIMARY ENH-97 vol_analytics build per ADR-002 v2 §P7; P0b S29-day shadow architecture verification; P0c project knowledge upload; P1 TD-NEW-7; P1b TD-NEW-15 ENH rename propagation; P2 Phase 0b overlay calibration; P2b Phase 0c methodology; P3 TD-NEW-9; P4 gamma_metrics_shadow history backfill OPTIONAL; P5 replay parity TD-NEW-2 + TD-NEW-12 + TD-NEW-4 + TD-NEW-13; P6 TD-080; P6b S21+ patches reconcile; P7 ADR-005 draft; P7b ADR-009 draft; P8-P14 older items.",
@@ -29,9 +29,95 @@
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files. Updated through Session 24 (2026-05-09) — ENH-93 replay/simulation harness built end-to-end across all 5 phases in single session: 10 new *_replay Supabase tables + 11 new files in C:\\GammaEnginePython\\replay\\ + 1 SQL migration + ADR-008 (~250 lines, Accepted) capturing replay architecture + canonical 'What what-if experiment means' methodology; 4 TDs filed (TD-087 hist_option_bars_1m IST-as-UTC defect with 5h30m phantom offset, TD-094 hist_option_bars_1m.oi=0 from S22 Kite backfill, TD-095 atm_iv_avg unit ambiguity, TD-096 reconstructor skips boundary 15:30); ENH-95 CANDIDATE filed (in-process orchestrator optimization, deferred until what-if campaign); ENH-93 CANDIDATE → CLOSED via ADR-008 acceptance. Phase 4b 2026-05-07 full-day run: 1056/1064 invocations (99.2%) succeeded; NIFTY 100% gamma_regime + 68% direction-bias match with live; SENSEX 91% action match (mostly DO_NOTHING tautology) + 28% gamma_regime match (structural narrow-strike-base divergence). Zero production code changes; zero writes to live tables; live scripts physically untouched. Session 23 (earlier same calendar date) was documentation consolidation; this Session 24 is the construction. Session 21 carry-forward patches still uncommitted in working tree.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
     "update_cadence": "Update this file in the same session as any meaningful change to file status, table schema, or open item status. Commit to Git immediately after update.",
-    "last_updated": "2026-05-24",
-    "last_updated_by_session": "Session 35",
+    "last_updated": "2026-05-25",
+    "last_updated_by_session": "Session 36",
     "change_log": [
+      {
+        "date": "2026-05-25",
+        "session": 36,
+        "type": "capture-layer resilience session — TD-S30-CANDIDATE-1 closed-misdiagnosis via direct writer-state read (live `compute_gamma_metrics_local.py` was NEVER regressed; residual was historical raw-rupees window from pre-S27 mis-labeled at S29 close; 7-session carry-forward cost from inverted diagnosis order codified §D.18.1) + TD-080 closed via ENH-99 SHIPPED (3-component build: Dhan 429 retry predicate + orphan-run janitor + RETRY_BURN_DOWN telemetry; Mode B token 401 DROPPED from scope as upstream-resolved S29) + 9-canonical-file doc-close pack per Doc Protocol v4 Rule 3 full-file no-crunch",
+        "git_end": "(pending S36 close commit)",
+        "items_closed": [
+          "TD-S30-CANDIDATE-1 CLOSED-MISDIAGNOSIS (live `compute_gamma_metrics_local.py` writer was NEVER regressed; direct read of writer function body in S36 first turn confirmed `/1e7` Cr conversion intact at S27 commit `241f943`; three-epoch SQL on `gamma_metrics.net_gex` magnitude-by-week revealed historical data unit-mix: pre-2026-03 Cr-correct backfill / 2026-03-02→2026-05-04 raw-rupees ~3,500 rows from pre-S27 live writer / post-2026-05-11 Cr-correct post-/1e7 patch; March epoch recovered via `backfill_gamma_metrics_to_main.py --mode overwrite` 2,850 cycles; April-early-May ~4,300 rows DELETEd as confirmed gaps under TD-S35-NEW-1 chain coverage residual; 1 outlier 2026-05-19 09:55:14 NIFTY -4.7B DELETEd; post-cleanup `gamma_metrics` single-unit Cr globally; foundational diagnosis-ordering lesson codified §D.18.1 — 7-session carry-forward cost S29→S35 from inverted diagnosis order is the empirical foundation)",
+          "TD-080 CLOSED via ENH-99 SHIPPED (failure-shape diagnosis against `script_execution_log` partitioned the failure surface into three independent modes — A: 429 quota / B: 401 token / C: orphan RUNNING; Mode B DROPPED from scope as upstream-resolved S29 via `pull_token_from_supabase.py` atomic write + readback + `dhan_token_probe_log` — zero post-S29 401s in 11 instrumented days; Mode A addressed via Component 1 retry predicate; Mode C addressed via Component 2 orphan janitor; Component 3 telemetry; Component 4 audit thresholds DEFERRED)"
+        ],
+        "items_new": [
+          "ENH-99 PROPOSED → SHIPPED (consumed S29 reservation slot — `Dhan 429 retry layer + orphan-run janitor + RETRY_BURN_DOWN telemetry capture-layer resilience`; three components live in production; Mode B token 401 dropped from scope as upstream-resolved S29; Component 4 audit thresholds deferred to S37+ pending `merdian_daily_audit.py` config schema visibility; no other ENH activity this session)",
+          "TD-S36-NEW-1 S3 FILED (`gamma_metrics` Apr-early-May 2026 row gap — residual from TD-S30-CANDIDATE-1 cleanup; ~4,300 rows DELETEd as confirmed gaps because vendor `hist_option_bars_1m` is sparse post-Apr-2026 per TD-S35-NEW-1; closeable in same recovery window as ADR-013 Breeze fallback graduation at n≥3 successful Breeze-tier backfills accumulated)",
+          "TD-S36-NEW-2 S3 FILED (`MERDIAN_Dhan_Token_Refresh` Task Scheduler task not instrumented to `script_execution_log` — surfaced during ENH-99 failure-shape diagnosis; daily audit pipeline cannot detect task-firing failures; ~30 min retrofit when next operating on token-refresh path)",
+          "TD-S36-NEW-3 S4 FILED (`dhan_token_probe_log` forward-only from 2026-05-10 — pre-S29 token incidents like 2026-05-07 Mode B storm are invisible to probe log; S26 instrumentation forward-only by design; documentation-only gap)",
+          "TD-S36-NEW-4 S3 FILED (`script_execution_log.duration_ms` is int4 — orphan-recovery durations > ~24 days exceed `2^31 - 1 = 2,147,483,647 ms` and trigger PG `22003 numeric_value_out_of_range`; write-time clamp pattern codified §D.18.4; schema migration to int8 is the proper fix, non-urgent)"
+        ],
+        "items_status_update": [
+          "ENH-99 PROPOSED → SHIPPED (Session 36 — consumed S29 reservation slot; three components shipped via 3-iteration patch history)"
+        ],
+        "operational_findings": [
+          "D.18.1 writer-state-vs-data-state diagnosis ordering — foundational methodology rule for any derived-table integrity investigation. When an aggregate-magnitude metric drifts, read the writer function body BEFORE inferring from aggregate magnitudes; aggregate magnitudes are downstream of both live-writer state and historical-data unit-mix, and aggregate evidence alone cannot discriminate between live regression and historical contamination. Reverse-order diagnosis (aggregate → live-writer-blame → action) is a known failure mode that cost 7 sessions of carry-forward on TD-S30-CANDIDATE-1.",
+          "D.18.2 capture-layer Mode A/B/C failure-shape taxonomy — every capture/ingest service has token / quota / orphan axes. Mode B (token 401) was SOLVED upstream at S29 (zero post-S29 401s in 11 instrumented days); Mode A (429 quota) is the recurring failure mode; Mode C (orphan RUNNING) is the silent third axis never reaped. Generalizable as 'instrument the failure log before extending the retry layer' pattern. The 'extend the retry budget' reflex would have burned ~12s per non-429 transient and not addressed Modes B or C.",
+          "D.18.3 PostgREST `Prefer: return=representation` interacts with RLS on PATCH path differently than read path. Header is safe to include on read-back patterns but unsafe to default-include on PATCH against RLS-protected tables when not consuming the response body. Drop the header on raw-HTTP PATCH paths.",
+          "D.18.4 `script_execution_log.duration_ms` is int4 — orphan-recovery durations exceeding `2^31 - 1 = 2,147,483,647 ms` (~24.85 days) must be clamped at write time, not at compute time after the fact. Pattern: `age_ms = min(int((now - started_at).total_seconds() * 1000), 2_147_483_647)`. Applies to any writer computing a duration delta against an old TIMESTAMPTZ.",
+          "House DB convention for Local Supabase access is raw HTTP via `requests` against `{SUPABASE_URL}/rest/v1/*` with `apikey` + `Authorization: Bearer` + `Content-Type: application/json` headers (`SUPABASE_SERVICE_ROLE_KEY` env var), not supabase-py `create_client`. Reference implementation: `ingest_option_chain_local.py`. Supabase-py package may not even be installed.",
+          "Multi-modal failure-shape diagnosis pattern — for any capture/ingest service that exhibits a recurring failure pattern, partition the failure surface against `script_execution_log` (or equivalent telemetry table) by (exit_reason, error_message, error_code) before scoping the remediation. Modes that turn out to be upstream-resolved (Mode B in this case) should be DROPPED from current-session scope to avoid masking re-regression.",
+          "Patch script discipline: regex-anchor pattern `def function_name\\(.*?raise ExceptionClass\\([^)]*\\)` with `re.DOTALL` flag is the canonical fallback when literal first-N-char anchors fail on CRLF/LF EOL straddle or deeper-body mismatch. v1 → v2 → v3 iteration cost ~3 turns; abandoning v1 at dry-run failure (rather than committing the partial INGEST+JANITOR success without RETRY_UTILS) preserved atomic commit semantics.",
+          "`MERDIAN_Orphan_Janitor` Task Scheduler registration follows the 19-task S29 convention bit-identically: Hidden=$true + MultipleInstances=IgnoreNew + ExecutionTimeLimit=5min + battery flags + Interactive Limited principal + direct `pythonw.exe orphan_run_janitor.py` action (no `.bat` wrapper). Weekly Mon-Fri 09:14 IST cadence chosen 6 min before the 09:20 first Dhan ingest cycle to clear any RUNNING rows from prior day's outages before today's runners begin writing.",
+          "Mode B (token 401) is SOLVED upstream at S29 via `pull_token_from_supabase.py` evolution (S26 instrumentation + S29 atomic-write + readback + Dhan endpoint probes + `dhan_token_probe_log` audit). 11 instrumented days of zero 401 incidents is the empirical foundation. A retry-layer 401 handler at this point would mask token re-regression and is intentionally NOT included in ENH-99 Component 1's `is_dhan_429` predicate."
+        ],
+        "settled_decisions_added": [
+          "CLAUDE.md v1.25 → v1.26 S36 settled-decisions: (1) TD-S30-CANDIDATE-1 CLOSED-MISDIAGNOSIS — writer-state-vs-data-state diagnosis ordering is foundational methodology; (2) ENH-99 SHIPPED with three components — capture-layer resilience prerequisite for Layer 1 data integrity; (3) Mode B token 401 DROPPED from retry-layer scope — upstream-resolved S29; (4) PostgREST `Prefer: return=representation` operational rule — drop on raw-HTTP PATCH against RLS-protected tables; (5) int4 `duration_ms` clamp pattern — write-time clamp at `2^31-1`; (6) Multi-modal failure-shape diagnosis pattern — instrument before retry-layer extension."
+        ],
+        "new_tds": [
+          "TD-S36-NEW-1 S3 — gamma_metrics Apr-early-May row gap (residual from TD-S30-CANDIDATE-1 cleanup; closeable in ADR-013 Breeze fallback graduation cycle)",
+          "TD-S36-NEW-2 S3 — `MERDIAN_Dhan_Token_Refresh` not instrumented to script_execution_log",
+          "TD-S36-NEW-3 S4 — `dhan_token_probe_log` forward-only from 2026-05-10",
+          "TD-S36-NEW-4 S3 — `script_execution_log.duration_ms` int4 schema constraint (clamp pattern works, int8 migration is proper fix)"
+        ],
+        "production_patches": 3,
+        "patch_scripts_new": [
+          "patch_s36_enh99.py (v1 — abandoned at dry-run RETRY_UTILS anchor failure CRLF/LF straddle; INGEST + JANITOR blocks not deployed; preserved for audit trail of patch script methodology)",
+          "patch_s36_enh99_v2.py (v2 — INGEST + JANITOR APPLIED live; RETRY_UTILS still failed deep mismatch; backup `ingest_option_chain_local_PRE_S36.py` preserved; +504 bytes net; AST validated)",
+          "patch_s36_enh99_v3.py (v3 — RETRY_UTILS APPLIED via regex-anchor `def retry_call\\(.*?raise RuntimeError\\([^)]*\\)` with re.DOTALL; backup `gamma_engine_retry_utils_PRE_S36.py` preserved; +996 bytes net; 947 matched chars replaced; AST validated)"
+        ],
+        "new_files": [
+          "orphan_run_janitor.py (NEW Local — env-aware raw HTTP per house convention via `requests` against `/rest/v1/script_execution_log`; int4 duration clamp at `2^31-1` per D.18.4; per-row error tolerant; drops `Prefer: return=representation` header per D.18.3 RLS interaction; closes any RUNNING row aged > 5 min by PATCHing `exit_reason='DATA_ERROR'` + `notes='ORPHAN_RECOVERED: age_min=N'` prefix + `finished_at=now()` + clamped `duration_ms`; smoke-fire 2026-05-25 closed 22/24 orphans + 2 REPL stragglers; final state 0 RUNNING > 5 min)"
+        ],
+        "new_task_scheduler_tasks": [
+          "MERDIAN_Orphan_Janitor (NEW S36 — weekly Mon-Fri 09:14 IST; direct `pythonw.exe orphan_run_janitor.py`; Hidden+IgnoreNew+5min execution limit + battery flags + Interactive Limited principal — same conventions as 19 other MERDIAN_* tasks established S29; smoke-fire test 2026-05-25 17:26:26 LastTaskResult=0; next scheduled run 2026-05-26 09:14 IST; task count 19 → 20)"
+        ],
+        "task_scheduler_count_before": 19,
+        "task_scheduler_count_after": 20,
+        "tables_modified_data": [
+          "gamma_metrics — 2,850 cycles overwrite-recompute on March epoch via `backfill_gamma_metrics_to_main.py --start 2026-03-02 --end 2026-05-04 --mode overwrite --symbol both`; ~4,300 rows DELETEd via `DELETE FROM gamma_metrics WHERE ts >= '2026-03-02' AND ts < '2026-05-12' AND ABS(net_gex) > 1e8` (April-early-May raw-rupees window confirmed-gaps under TD-S35-NEW-1 chain coverage residual); 1 outlier 2026-05-19 09:55:14 NIFTY DELETEd; post-cleanup single-unit Cr globally",
+          "script_execution_log — 24 orphan RUNNING rows aged 0.7-25 days PATCHed via `orphan_run_janitor.py` v3 (22 via smoke-fire + 2 REPL stragglers after int4 clamp fix); PATCH set `exit_reason='DATA_ERROR'` + `notes='ORPHAN_RECOVERED: age_min=N'` prefix + `finished_at=now()` + clamped `duration_ms`; final state 0 RUNNING > 5 min"
+        ],
+        "data_recovery_rows": 2850,
+        "orphans_recovered": 24,
+        "failure_mode_taxonomy_new": "Mode A 429 quota / Mode B 401 token / Mode C orphan RUNNING",
+        "mode_b_dropped_from_scope": "YES — upstream-resolved S29 via pull_token_from_supabase.py atomic write + readback + dhan_token_probe_log; zero post-S29 401s in 11 instrumented days",
+        "aws_deployments": 0,
+        "aws_instance_id_drift_reconcile": "S35 P0_TERTIARY carry-forward not actioned S36; `i-0e60e4ed9ce20cefb` → `i-0878c118835386ec2` reconcile remains S37+",
+        "doc_files_modified": 9,
+        "new_doc_files": [],
+        "commits": 0,
+        "tags_added": [],
+        "experiments": 0,
+        "bugs_latent_surfaced": 4,
+        "hours_operator": 3,
+        "carry_forward_to_S37": [
+          "P0_PRIMARY: TRUNCATE + full recompute of `ict_primitive_outcomes` to populate v9 SL columns across all 19,571 outcomes (S35 carry-forward; not actioned S36 due to capture-layer prioritization)",
+          "P0_SECONDARY: ADR-012 validation cohort SQL on full recompute (S35 carry-forward; n≥50 threshold target on W+D+H zone cohort)",
+          "P0_TERTIARY: MERDIAN AWS instance ID memory update (S35 carry-forward; `i-0e60e4ed9ce20cefb` → `i-0878c118835386ec2`)",
+          "P1: ENH-80 per-strike GEX writer (unblocked S29 since TD-094 RECLASSIFIED-STALE; substrate for ENH-81 Positioning Landscape + ENH-82 Pin Risk Score continuous-0-100; dominant S37+ thrust per operator's sequencing directive Layer 2 compute)",
+          "P1b: ENH-81 Positioning Landscape five scalars + dealer flow simulator (depends ENH-80)",
+          "P1c: ENH-82 Pin Risk Score continuous-0-100 + ADR-002 v2.1 amendment binary PINNED → continuous score (depends ENH-80)",
+          "P2: TD-061 6/19 pythonw remaining",
+          "P2b: TD-S35-NEW-1/2/3/4",
+          "P2c: TD-S36-NEW-1/2/3/4",
+          "P3: ENH-84, ENH-108, ENH-98 (vanna/charm), Σ-TO-EXPIRY implied-move scalar",
+          "P3b: TD-S33-NEW-1/2/3/4",
+          "P4: older items (TD-NEW-B pg_cron health-check, TD-NEW-7 MALPHA Zerodha automation, TD-NEW-C/D/9 ws_feed bundle, TD-NEW-H NULL expiry, ADR-005 + ADR-006 drafts, TD-073/074/087/095/099, ENH-95, S21+ uncommitted patches reconcile)",
+          "P5: project knowledge upload of 9 modified files + 1 new orphan_run_janitor.py + 3 patch scripts"
+        ]
+      },
       {
         "date": "2026-05-24",
         "session": 35,
@@ -1720,6 +1806,28 @@
       "cadence": "On-demand operator visual reference",
       "status": "DESCOPED — Task 5 visual MTF-breach overlay deferred to wave 1.5 with architectural redesign prerequisite per TD-S31B-NEW-1 S3 (Pine v6 6 ergonomic walls cataloged; final v5 537 lines technically renders 158 active zones but operator decision 'Its messed up. Lets drop the pine script for now.')",
       "filed_session": "Session 31-B (built v1 → v5 then descoped)"
+    },
+    "orphan_run_janitor.py": {
+      "path": "C:\\GammaEnginePython\\orphan_run_janitor.py",
+      "purpose": "Reaper of orphan RUNNING rows in script_execution_log — PATCH any RUNNING row aged > 5 min to exit_reason='DATA_ERROR' + notes='ORPHAN_RECOVERED: age_min=N' prefix + finished_at=now() + clamped duration_ms (int4 clamp at 2^31-1 per D.18.4)",
+      "introduced_session": 36,
+      "introduced_via": "ENH-99 Component 2 (TD-080 closure)",
+      "tier": "Local",
+      "runtime": "pythonw.exe (direct, no .bat wrapper)",
+      "schedule": "Windows Task Scheduler MERDIAN_Orphan_Janitor weekly Mon-Fri 09:14 IST",
+      "reads": [
+        "script_execution_log (GET /rest/v1/script_execution_log?exit_reason=eq.RUNNING)"
+      ],
+      "writes": [
+        "script_execution_log (PATCH /rest/v1/script_execution_log?id=eq.<id>)"
+      ],
+      "convention": "env-aware raw HTTP per house convention (requests + Authorization: Bearer + apikey headers); SUPABASE_SERVICE_ROLE_KEY env var; per-row error tolerance with body printing on PATCH failure",
+      "design_notes": [
+        "v1 used supabase-py — KeyError on SUPABASE_KEY; switched to raw HTTP per ingest_option_chain_local.py reference (SUPABASE_SERVICE_ROLE_KEY env var)",
+        "v2 included Prefer: return=representation — PostgREST 400 on PATCH (RLS interaction per D.18.3); v3 dropped header",
+        "v3 added int4 duration clamp (2^31-1 per D.18.4) — without clamp, ages > ~24 days overflow PG 22003 numeric_value_out_of_range",
+        "exit_reason='DATA_ERROR' (not 'ORPHANED') because chk_exit_reason_valid CHECK constraint closed set excludes 'ORPHANED' literal; notes='ORPHAN_RECOVERED:' prefix makes daily audit grep-discoverable"
+      ]
     }
   },
   "tables": {
@@ -2957,6 +3065,36 @@
   },
   "session_log": [
     {
+      "session": 36,
+      "date_close": "2026-05-25",
+      "type": "capture-layer resilience build",
+      "primary_mandate": "TD-S30-CANDIDATE-1 closure + TD-080 / ENH-99 capture-layer resilience build per S35 priority queue",
+      "primary_mandate_outcome": "BOTH RESOLVED — TD-S30-CANDIDATE-1 CLOSED-MISDIAGNOSIS via direct writer-state read (live writer never regressed; historical data unit-mix repaired via overwrite-recompute + DELETE of confirmed gaps); TD-080 CLOSED via ENH-99 SHIPPED with Components 1+2+3 (Mode B token 401 DROPPED from scope as upstream-resolved S29)",
+      "items_closed_count": 2,
+      "items_new_count": 5,
+      "items_status_update_count": 1,
+      "production_patches_count": 3,
+      "new_files_count": 1,
+      "new_task_scheduler_tasks_count": 1,
+      "doc_files_modified_count": 9,
+      "commits_count": 0,
+      "tags_added_count": 0,
+      "operator_hours": 3,
+      "git_end": "(pending S36 close commit)",
+      "carry_forward_priority_queue": [
+        "P0_PRIMARY: TRUNCATE + full recompute (S35 carry)",
+        "P0_SECONDARY: ADR-012 validation cohort (S35 carry)",
+        "P0_TERTIARY: AWS instance ID memory update (S35 carry)",
+        "P1: ENH-80 per-strike GEX",
+        "P1b: ENH-81 Positioning Landscape",
+        "P1c: ENH-82 Pin Risk Score",
+        "P2: TD-061 remaining + TD-S35-NEW-* + TD-S36-NEW-*",
+        "P3: ENH-84 / ENH-108 / ENH-98 / TD-S33-NEW-*",
+        "P4: older items",
+        "P5: project knowledge upload"
+      ]
+    },
+    {
       "date": "2026-05-17",
       "session": 30,
       "type": "diagnostic (5-version cohort progression on live signal_snapshots) + production patch deploy (5 env-flag gates via apply_s30_patches.py + commit 2604fc2 Local+AWS via git pull) + 8-file doc-close pack across 3 turns (no-crunch per Doc Protocol v4)",
@@ -3501,7 +3639,21 @@
     "MERDIAN_Market_Tape_1M": "DISABLED  --  2026-04-07",
     "MERDIAN_Intraday_Supervisor_Start": "ACTIVE  --  calls start_supervisor_clean.ps1  --  weekly Mon-Fri 08:00 + AtLogon",
     "MERDIAN_Live_Dashboard": "ACTIVE  --  merdian_live_dashboard.py v2  --  AtLogon  --  PYTHONIOENCODING=utf-8",
-    "MERDIAN_Spot_MTF_Rollup_1600": "ACTIVE  --  daily Mon-Fri 16:00 IST  --  wraps run_spot_mtf_rollup_once.bat -> python build_spot_bars_mtf.py  --  registered Session 9 (2026-04-26) closing TD-019 + TD-023 anti-pattern  --  ENH-71 instrumented; surfaces in script_execution_log"
+    "MERDIAN_Spot_MTF_Rollup_1600": "ACTIVE  --  daily Mon-Fri 16:00 IST  --  wraps run_spot_mtf_rollup_once.bat -> python build_spot_bars_mtf.py  --  registered Session 9 (2026-04-26) closing TD-019 + TD-023 anti-pattern  --  ENH-71 instrumented; surfaces in script_execution_log",
+    "MERDIAN_Orphan_Janitor": {
+      "schedule": "Weekly Mon-Fri 09:14 IST",
+      "action_execute": "pythonw.exe",
+      "action_arguments": "orphan_run_janitor.py",
+      "hidden": true,
+      "multiple_instances": "IgnoreNew",
+      "execution_time_limit": "5min",
+      "battery_flags": true,
+      "principal": "Interactive Limited",
+      "state": "Ready",
+      "introduced_session": 36,
+      "introduced_via": "ENH-99 Component 2 (TD-080 closure)",
+      "notes": "S36 NEW task — task count 19 → 20. Conventions match 19 other MERDIAN_* tasks established S29. Smoke-fire test 2026-05-25 17:26:26 LastTaskResult=0. Canonical task inventory remains in MERDIAN_Deployment_Topology.md §7.2 (this JSON entry is partial reference only — Topology §7.2 is the source of truth for full 20-task inventory)."
+    }
   },
   "research_findings": {
     "_note": "Key validated findings from Experiments 2-16 and Session 11 (Exp 34-41B). Full detail in MERDIAN_Experiment_Compendium_v1.md.",

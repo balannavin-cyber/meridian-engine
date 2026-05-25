@@ -14,30 +14,16 @@ def retry_call(
     delay_seconds: float = 5.0,
     backoff_multiplier: float = 1.0,
     retry_exceptions: tuple[type[Exception], ...] = (Exception,),
-    retry_predicate: Callable[[Exception], bool] | None = None,
     label: str = "operation",
 ) -> T:
-    """Retry a callable on exception.
-
-    retry_predicate (ENH-99 S36): optional callable inspecting the exception
-    to gate retry. If returns False, the exception re-raises immediately
-    without burning remaining retry budget. Used to distinguish transient
-    429 rate-limits (retry long) from terminal 401 auth failures (fail fast).
-    """
     last_exc = None
     current_delay = delay_seconds
+
     for attempt in range(1, attempts + 1):
         try:
             return fn()
         except retry_exceptions as exc:
             last_exc = exc
-            # ENH-99: predicate-gated retry -- bail fast on non-retryable errors
-            if retry_predicate is not None and not retry_predicate(exc):
-                print(
-                    f"[retry_call] {label} failed on attempt {attempt}/{attempts} "
-                    f"with error: {exc}. Predicate returned False -- failing fast."
-                )
-                raise
             if attempt >= attempts:
                 break
             print(
@@ -46,11 +32,8 @@ def retry_call(
             )
             time.sleep(current_delay)
             current_delay *= backoff_multiplier if backoff_multiplier > 0 else 1.0
+
     if last_exc is not None:
-        # ENH-99: final-failure tag -- daily audit greps for this
-        print(
-            f"[RETRY_BURN_DOWN] {label} exhausted {attempts} attempts. "
-            f"Final exc: {last_exc}"
-        )
         raise last_exc
+
     raise RuntimeError(f"{label} failed unexpectedly without captured exception")

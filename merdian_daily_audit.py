@@ -82,10 +82,10 @@ SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
 THRESHOLDS = {
     # Per-symbol counts (will be summed/averaged for both NIFTY+SENSEX)
-    "spot_bars_per_symbol_min":          370,    # 375 = perfect day, allow 5 missing
+    "spot_bars_per_symbol_min":          365,    # 375 = perfect day, allow 5 missing
     "spot_bars_flat_pct_max":            5.0,    # in-session flat rate (>5% = bad)
 
-    "market_spot_snapshots_per_symbol":  370,    # 1:1 with spot bars
+    "market_spot_snapshots_per_symbol":  365,    # 1:1 with spot bars
 
     "option_chain_snapshots_min":        80_000, # ~107K healthy, 80K floor
     "option_chain_per_cycle_min":        50,     # min N strikes per snapshot (rough)

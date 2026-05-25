@@ -33,7 +33,7 @@ What stayed the same:
 
 Edge case handling:
   - First cycle of the day (09:15:02 IST asking for 09:14 bar): pre-market
-    period; market-hours guard skips with reason OUTSIDE_MARKET_HOURS.
+    period; market-hours guard skips with reason OFF_HOURS (was OUTSIDE_MARKET_HOURS pre-TD-NEW-J 2026-05-14).
   - 09:16:02 -> request 09:15:00 bar: first valid bar of the day.
   - 15:30:02 -> request 15:29:00 bar: last valid bar of the day.
   - 15:31:02 -> request 15:30:00 bar: market-hours guard skips.
@@ -343,7 +343,7 @@ def main() -> int:
             f"({MARKET_OPEN_GUARD}-{MARKET_CLOSE_GUARD} IST); skipping."
         )
         return log.exit_with_reason(
-            "OUTSIDE_MARKET_HOURS",
+            "OFF_HOURS",
             notes=(
                 f"requested bar {from_ts_ist.strftime('%H:%M')} IST is "
                 f"outside {MARKET_OPEN_GUARD}-{MARKET_CLOSE_GUARD}"

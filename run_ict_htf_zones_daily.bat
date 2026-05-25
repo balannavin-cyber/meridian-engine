@@ -48,10 +48,17 @@ python build_ict_htf_zones.py --timeframe H >> logs\task_output.log 2>&1
 set RC_H=%ERRORLEVEL%
 echo --- %DATE% %TIME% [H] end (rc=%RC_H%) --- >> logs\task_output.log
 
-REM ---- Final rc: worst of the two ----
+REM ---- Call 3: Pine overlay (TD-NEW-5, S28) ----
+echo --- %DATE% %TIME% [PINE] start --- >> logs\task_output.log
+python generate_pine_overlay.py >> logs\task_output.log 2>&1
+set RC_PINE=%ERRORLEVEL%
+echo --- %DATE% %TIME% [PINE] end (rc=%RC_PINE%) --- >> logs\task_output.log
+
+REM ---- Final rc: worst of the three ----
 set RC=%RC_WD%
 if %RC_H% GTR %RC% set RC=%RC_H%
+if %RC_PINE% GTR %RC% set RC=%RC_PINE%
 
-echo === %DATE% %TIME% MERDIAN_ICT_HTF_Zones_0845 END (rc_wd=%RC_WD% rc_h=%RC_H% final=%RC%) === >> logs\task_output.log
+echo === %DATE% %TIME% MERDIAN_ICT_HTF_Zones_0845 END (rc_wd=%RC_WD% rc_h=%RC_H% rc_pine=%RC_PINE% final=%RC%) === >> logs\task_output.log
 
 exit /b %RC%

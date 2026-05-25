@@ -427,7 +427,7 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
     """Build the signal row. Returns (row, flags) tuple where flags
     tracks subsystem degradation (ict_failed, enh06_failed) for
     ExecutionLog completion notes."""
-    flags = {"ict_failed": False, "enh06_failed": False}
+    flags = {"ict_failed": False, "enh06_failed": False, "htf_failed": False}
 
     symbol = symbol.upper()
     state = latest_market_state(symbol)
@@ -911,6 +911,62 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
             out["raw"] = {}
         out["raw"]["tier_mult_disabled"] = True
 
+    # ── TD-S31-NEW-2: HTF zone attachment ──────────────────────────────────
+    # Reads ict_htf_zones (persistent W/D/H zones — the operator-visible
+    # TV-overlay zones + S30 audit denominator) and tags HTF context on the
+    # signal_snapshots row. Independent of intraday ict_zones attachment;
+    # both columns coexist. ict_pattern reflects intraday 1-min OB/FVG;
+    # htf_pattern reflects multi-session structural zone.
+    #
+    # Selection priority:
+    #   1. Highest-timeframe wins: W > D > H
+    #   2. Within same TF: tightest zone (smallest width)
+    #
+    # Status filter: only ACTIVE zones (BREACHED/EXPIRED do not attach
+    # since spot has historically left or zone is past validity).
+    # Direction filter: NONE — observational attachment, mirror of S31 P0
+    # principle for intraday.
+    try:
+        _htf_rows = (SUPABASE.table("ict_htf_zones")
+                     .select("id,pattern_type,timeframe,zone_low,zone_high,"
+                             "status,ict_tier")
+                     .eq("symbol", symbol)
+                     .eq("status", "ACTIVE")
+                     .execute().data) or []
+        _spot_htf = float(spot or 0)
+        _best_htf = None
+        if _spot_htf > 0 and _htf_rows:
+            _containing = []
+            for _hz in _htf_rows:
+                try:
+                    _hzl = float(_hz.get("zone_low", 0))
+                    _hzh = float(_hz.get("zone_high", 0))
+                except (TypeError, ValueError):
+                    continue
+                if _hzl <= _spot_htf <= _hzh:
+                    _containing.append((_hz, _hzh - _hzl))
+            if _containing:
+                _TF_RANK = {"W": 0, "D": 1, "H": 2}
+                _containing.sort(key=lambda t: (
+                    _TF_RANK.get(t[0].get("timeframe"), 9),
+                    t[1],
+                ))
+                _best_htf = _containing[0][0]
+        if _best_htf is not None:
+            out["htf_pattern"]   = _best_htf.get("pattern_type")
+            out["htf_timeframe"] = _best_htf.get("timeframe")
+            out["htf_tier"]      = _best_htf.get("ict_tier")
+        else:
+            out["htf_pattern"]   = None
+            out["htf_timeframe"] = None
+            out["htf_tier"]      = None
+    except Exception as _htf_err:
+        flags["htf_failed"] = True
+        out["htf_pattern"]   = None
+        out["htf_timeframe"] = None
+        out["htf_tier"]      = None
+    # ── end TD-S31-NEW-2 ───────────────────────────────────────────────────
+
     # ENH-06: Pre-trade cost filter
     # Validates lot sizing against current capital at signal time.
     try:
@@ -1249,6 +1305,8 @@ def main() -> int:
         completion_parts.append("ict_failed=true")
     if flags.get("enh06_failed"):
         completion_parts.append("enh06_failed=true")
+    if flags.get("htf_failed"):
+        completion_parts.append("htf_failed=true")
     completion_parts.append(f"action={row.get('action')}")
 
     return log.complete(notes=" ".join(completion_parts))

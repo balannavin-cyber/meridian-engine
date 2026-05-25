@@ -1,0 +1,532 @@
+// © MERDIAN 2026 — Canonical ICT PD-Array Primitives per ADR-004
+// Wave 1: §5.1 OB, §5.2 FVG, §6.1 Prior Period Levels, §7.1 Sweep, §7.2 Displacement
+//
+// Authoritative spec: docs/decisions/ADR-004-ict-primitive-canon.md
+// Python parity counterpart: core/ict_primitives.py (S31-B Task 1)
+// Per Amendment B: this file validates against Python detector output on
+// overlapping chart windows; mismatches are bugs in whichever side disagrees with canon.
+//
+// Architectural notes:
+//   - Single chart TF; MTF zones (W/D/H/M5) rendered via request.security.
+//   - max_bars_back default 5000 — historical M5 zones >5000 bars old won't render
+//     on chart; that's expected. Python backend is the historical archive.
+//   - Pine is authoritative for LIVE visuals; Python for the outcomes table.
+//   - All thresholds default to ADR-004 §11; per-TF overrides exposed as inputs.
+
+//@version=6
+indicator("MERDIAN ICT Primitives — Canonical (ADR-004)",
+     overlay=true,
+     max_bars_back=5000,
+     max_boxes_count=500,
+     max_lines_count=500,
+     max_labels_count=500)
+
+// ============================================================================
+// INPUTS — Display toggles
+// ============================================================================
+
+g_disp = "Display — Timeframes"
+showW   = input.bool(true,  "W",  group=g_disp, inline="tf")
+showD   = input.bool(true,  "D",  group=g_disp, inline="tf")
+showH   = input.bool(true,  "H",  group=g_disp, inline="tf")
+showM5  = input.bool(false, "M5", group=g_disp, inline="tf",
+     tooltip="M5 zones produce visual noise on slow chart TFs. Default off.")
+
+g_prim = "Display — Primitive Types"
+showOB     = input.bool(true,  "Order Blocks",      group=g_prim, inline="zones")
+showFVG    = input.bool(true,  "Fair Value Gaps",   group=g_prim, inline="zones")
+showLevels = input.bool(true,  "Prior Period Lvls", group=g_prim, inline="levels")
+showSweeps = input.bool(true,  "Sweeps",            group=g_prim, inline="events")
+showDisp   = input.bool(false, "Displacement",      group=g_prim, inline="events",
+     tooltip="Displacement markers are context for OB/FVG validity. "
+            +"Disable for cleaner chart; OBs already imply displacement.")
+
+showBroken = input.bool(true, "Show broken/swept zones (greyed)", group=g_prim,
+     tooltip="ADR §5.1 breach rule: zone becomes BREACHED but visible for context.")
+
+// ============================================================================
+// INPUTS — Per-TF parameters (default to ADR-004 §11)
+// ============================================================================
+
+g_ob = "OB — minimum body % (per TF)"
+obMinBodyW  = input.float(0.5,  "W",  group=g_ob, inline="ob", step=0.05)
+obMinBodyD  = input.float(0.3,  "D",  group=g_ob, inline="ob", step=0.05)
+obMinBodyH  = input.float(0.2,  "H",  group=g_ob, inline="ob", step=0.05)
+obMinBodyM5 = input.float(0.1,  "M5", group=g_ob, inline="ob", step=0.02)
+
+g_disp_th = "Displacement — minimum move % (per TF)"
+dispMinW  = input.float(2.0, "W",  group=g_disp_th, inline="d", step=0.1)
+dispMinD  = input.float(1.0, "D",  group=g_disp_th, inline="d", step=0.1)
+dispMinH  = input.float(0.4, "H",  group=g_disp_th, inline="d", step=0.05)
+dispMinM5 = input.float(0.2, "M5", group=g_disp_th, inline="d", step=0.02)
+
+g_fvg = "FVG — minimum gap % (per TF)"
+fvgMinW  = input.float(0.8,  "W",  group=g_fvg, inline="f", step=0.05)
+fvgMinD  = input.float(0.4,  "D",  group=g_fvg, inline="f", step=0.05)
+fvgMinH  = input.float(0.2,  "H",  group=g_fvg, inline="f", step=0.02)
+fvgMinM5 = input.float(0.08, "M5", group=g_fvg, inline="f", step=0.01)
+
+g_swp = "Sweep — minimum depth % (per TF; sweep detection runs at M5)"
+sweepMinM5 = input.float(0.025, "M5 sweep depth %", group=g_swp, step=0.005)
+
+g_lb = "Displacement lookback (bars before displacement to scan for OB)"
+obLookbackW  = input.int(3, "W",  group=g_lb, inline="lb", minval=1, maxval=20)
+obLookbackD  = input.int(3, "D",  group=g_lb, inline="lb", minval=1, maxval=20)
+obLookbackH  = input.int(3, "H",  group=g_lb, inline="lb", minval=1, maxval=20)
+obLookbackM5 = input.int(6, "M5", group=g_lb, inline="lb", minval=1, maxval=20)
+
+// ============================================================================
+// INPUTS — Colors
+// ============================================================================
+
+g_col = "Colors"
+bullZoneColor = input.color(color.new(color.teal,   80), "Bullish zone",  group=g_col)
+bearZoneColor = input.color(color.new(color.red,    80), "Bearish zone",  group=g_col)
+brokenColor   = input.color(color.new(color.gray,   85), "Broken zone",   group=g_col)
+levelBullCol  = input.color(color.new(color.green,  50), "Bull level (PDL/PWL/PML)", group=g_col)
+levelBearCol  = input.color(color.new(color.maroon, 50), "Bear level (PDH/PWH/PMH)", group=g_col)
+sweepHighCol  = input.color(color.new(color.orange, 0),  "Sweep HIGH marker", group=g_col)
+sweepLowCol   = input.color(color.new(color.aqua,   0),  "Sweep LOW marker",  group=g_col)
+dispUpCol     = input.color(color.new(color.lime,   60), "Displacement UP",   group=g_col)
+dispDownCol   = input.color(color.new(color.fuchsia,60), "Displacement DOWN", group=g_col)
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+type ZoneRow
+    string  tf
+    string  ptype       // BULL_OB | BEAR_OB | BULL_FVG | BEAR_FVG
+    int     formed_time // epoch ms of source bar
+    float   zone_low
+    float   zone_high
+    bool    active
+    box     bx
+    label   lbl
+
+type LevelRow
+    string  tf
+    string  ptype       // PDH | PDL | PWH | PWL | PMH | PML
+    float   level
+    bool    active
+    line    ln
+    label   lbl
+
+// ============================================================================
+// STATE — tracked primitives
+// ============================================================================
+
+var array<ZoneRow>  zones  = array.new<ZoneRow>()
+var array<LevelRow> levelArr = array.new<LevelRow>()
+
+// Diagnostic counter — increments each time a breach is detected.
+// If this stays at 0 across the whole chart, breach detection isn't firing.
+// If it's > 0 but broken zones aren't visually distinct, mutation isn't persisting.
+var array<int> breach_fire_count = array.from(0)
+
+// Last-seen levels per period (used to refresh lines/labels on new period only)
+var float last_pdh = na
+var float last_pdl = na
+var float last_pwh = na
+var float last_pwl = na
+var float last_pmh = na
+var float last_pml = na
+
+// ============================================================================
+// DETECTOR FUNCTIONS (called via request.security, evaluated in TF context)
+// Pine fires detection one bar AFTER formation (when next bar closes), which
+// matches the Python convention of valid_from = bar[i+1].ts.
+// ============================================================================
+
+// BULL_FVG at bar[1]: prev=bar[2], mid=bar[1], next=bar[0]
+//   bar[2].high < bar[0].low AND bar[1].close > bar[1].open AND gap >= minPct
+detect_bull_fvg(float minPct) =>
+    prevHigh  = high[2]
+    midOpen   = open[1]
+    midClose  = close[1]
+    nxtLow    = low
+    gap       = midOpen != 0 ? (nxtLow - prevHigh) / midOpen * 100.0 : 0.0
+    detected  = prevHigh < nxtLow and midClose > midOpen and gap >= minPct
+    [detected, prevHigh, nxtLow, time[1]]
+
+// BEAR_FVG at bar[1]: bar[2].low > bar[0].high AND bar[1].close < bar[1].open
+detect_bear_fvg(float minPct) =>
+    prevLow   = low[2]
+    midOpen   = open[1]
+    midClose  = close[1]
+    nxtHigh   = high
+    gap       = midOpen != 0 ? (prevLow - nxtHigh) / midOpen * 100.0 : 0.0
+    detected  = prevLow > nxtHigh and midClose < midOpen and gap >= minPct
+    [detected, nxtHigh, prevLow, time[1]]
+
+// Displacement up at bar[1] (one-bar lookback for consistency with FVG firing)
+detect_disp_up(float minPct) =>
+    movePct  = open[1] != 0 ? (close[1] - open[1]) / open[1] * 100.0 : 0.0
+    // Confirm FVG was created
+    prevHigh = high[2]
+    nxtLow   = low
+    fvgGap   = open[1] != 0 ? (nxtLow - prevHigh) / open[1] * 100.0 : 0.0
+    isDisp   = movePct >= minPct and prevHigh < nxtLow and fvgGap > 0
+    [isDisp, movePct, time[1]]
+
+detect_disp_down(float minPct) =>
+    movePct  = open[1] != 0 ? (close[1] - open[1]) / open[1] * 100.0 : 0.0
+    prevLow  = low[2]
+    nxtHigh  = high
+    fvgGap   = open[1] != 0 ? (prevLow - nxtHigh) / open[1] * 100.0 : 0.0
+    isDisp   = movePct <= -minPct and prevLow > nxtHigh and fvgGap > 0
+    [isDisp, movePct, time[1]]
+
+// BULL_OB: walk back from displacement bar (bar[1]) up to N bars looking for the
+// most recent BEAR-close candle with body >= minBody. The OB is that candle.
+detect_bull_ob(float minBody, float minDisp, int lookback) =>
+    [isDisp, dispMove, dispTime] = detect_disp_up(minDisp)
+    found     = false
+    ob_low    = 0.0
+    ob_high   = 0.0
+    ob_time   = 0
+    if isDisp
+        // Scan bar[2] .. bar[1+lookback] for BEAR opposing candle
+        for j = 2 to lookback + 1
+            if close[j] < open[j]
+                bodyPct = open[j] != 0 ? math.abs(close[j] - open[j]) / open[j] * 100.0 : 0.0
+                if bodyPct >= minBody
+                    ob_low  := math.min(open[j], close[j])
+                    ob_high := math.max(open[j], close[j])
+                    ob_time := time[j]
+                    found   := true
+                    break
+    [found, ob_low, ob_high, ob_time]
+
+// BEAR_OB: walk back from bearish displacement to most recent BULL candle
+detect_bear_ob(float minBody, float minDisp, int lookback) =>
+    [isDisp, dispMove, dispTime] = detect_disp_down(minDisp)
+    found     = false
+    ob_low    = 0.0
+    ob_high   = 0.0
+    ob_time   = 0
+    if isDisp
+        for j = 2 to lookback + 1
+            if close[j] > open[j]
+                bodyPct = open[j] != 0 ? math.abs(close[j] - open[j]) / open[j] * 100.0 : 0.0
+                if bodyPct >= minBody
+                    ob_low  := math.min(open[j], close[j])
+                    ob_high := math.max(open[j], close[j])
+                    ob_time := time[j]
+                    found   := true
+                    break
+    [found, ob_low, ob_high, ob_time]
+
+// ============================================================================
+// MTF DETECTION — fetch detector outputs per TF
+// Pine v6: request.security with custom function evaluated in TF context.
+// lookahead=barmerge.lookahead_off prevents repainting.
+// ============================================================================
+
+// FVG per TF
+[wBullFvg, wBullFvgLow, wBullFvgHigh, wBullFvgTime] = request.security(syminfo.tickerid, "W", detect_bull_fvg(fvgMinW), lookahead=barmerge.lookahead_off)
+[wBearFvg, wBearFvgLow, wBearFvgHigh, wBearFvgTime] = request.security(syminfo.tickerid, "W", detect_bear_fvg(fvgMinW), lookahead=barmerge.lookahead_off)
+[dBullFvg, dBullFvgLow, dBullFvgHigh, dBullFvgTime] = request.security(syminfo.tickerid, "D", detect_bull_fvg(fvgMinD), lookahead=barmerge.lookahead_off)
+[dBearFvg, dBearFvgLow, dBearFvgHigh, dBearFvgTime] = request.security(syminfo.tickerid, "D", detect_bear_fvg(fvgMinD), lookahead=barmerge.lookahead_off)
+[hBullFvg, hBullFvgLow, hBullFvgHigh, hBullFvgTime] = request.security(syminfo.tickerid, "60", detect_bull_fvg(fvgMinH), lookahead=barmerge.lookahead_off)
+[hBearFvg, hBearFvgLow, hBearFvgHigh, hBearFvgTime] = request.security(syminfo.tickerid, "60", detect_bear_fvg(fvgMinH), lookahead=barmerge.lookahead_off)
+[m5BullFvg, m5BullFvgLow, m5BullFvgHigh, m5BullFvgTime] = request.security(syminfo.tickerid, "5", detect_bull_fvg(fvgMinM5), lookahead=barmerge.lookahead_off)
+[m5BearFvg, m5BearFvgLow, m5BearFvgHigh, m5BearFvgTime] = request.security(syminfo.tickerid, "5", detect_bear_fvg(fvgMinM5), lookahead=barmerge.lookahead_off)
+
+// OB per TF
+[wBullOb, wBullObLow, wBullObHigh, wBullObTime] = request.security(syminfo.tickerid, "W", detect_bull_ob(obMinBodyW, dispMinW, obLookbackW), lookahead=barmerge.lookahead_off)
+[wBearOb, wBearObLow, wBearObHigh, wBearObTime] = request.security(syminfo.tickerid, "W", detect_bear_ob(obMinBodyW, dispMinW, obLookbackW), lookahead=barmerge.lookahead_off)
+[dBullOb, dBullObLow, dBullObHigh, dBullObTime] = request.security(syminfo.tickerid, "D", detect_bull_ob(obMinBodyD, dispMinD, obLookbackD), lookahead=barmerge.lookahead_off)
+[dBearOb, dBearObLow, dBearObHigh, dBearObTime] = request.security(syminfo.tickerid, "D", detect_bear_ob(obMinBodyD, dispMinD, obLookbackD), lookahead=barmerge.lookahead_off)
+[hBullOb, hBullObLow, hBullObHigh, hBullObTime] = request.security(syminfo.tickerid, "60", detect_bull_ob(obMinBodyH, dispMinH, obLookbackH), lookahead=barmerge.lookahead_off)
+[hBearOb, hBearObLow, hBearObHigh, hBearObTime] = request.security(syminfo.tickerid, "60", detect_bear_ob(obMinBodyH, dispMinH, obLookbackH), lookahead=barmerge.lookahead_off)
+[m5BullOb, m5BullObLow, m5BullObHigh, m5BullObTime] = request.security(syminfo.tickerid, "5", detect_bull_ob(obMinBodyM5, dispMinM5, obLookbackM5), lookahead=barmerge.lookahead_off)
+[m5BearOb, m5BearObLow, m5BearObHigh, m5BearObTime] = request.security(syminfo.tickerid, "5", detect_bear_ob(obMinBodyM5, dispMinM5, obLookbackM5), lookahead=barmerge.lookahead_off)
+
+// Displacement (optional rendering) per TF
+[wDispUp, wDispUpMove, _wDispUpT] = request.security(syminfo.tickerid, "W", detect_disp_up(dispMinW), lookahead=barmerge.lookahead_off)
+[wDispDn, wDispDnMove, _wDispDnT] = request.security(syminfo.tickerid, "W", detect_disp_down(dispMinW), lookahead=barmerge.lookahead_off)
+[dDispUp, dDispUpMove, _dDispUpT] = request.security(syminfo.tickerid, "D", detect_disp_up(dispMinD), lookahead=barmerge.lookahead_off)
+[dDispDn, dDispDnMove, _dDispDnT] = request.security(syminfo.tickerid, "D", detect_disp_down(dispMinD), lookahead=barmerge.lookahead_off)
+[hDispUp, hDispUpMove, _hDispUpT] = request.security(syminfo.tickerid, "60", detect_disp_up(dispMinH), lookahead=barmerge.lookahead_off)
+[hDispDn, hDispDnMove, _hDispDnT] = request.security(syminfo.tickerid, "60", detect_disp_down(dispMinH), lookahead=barmerge.lookahead_off)
+[m5DispUp, m5DispUpMove, _m5DispUpT] = request.security(syminfo.tickerid, "5", detect_disp_up(dispMinM5), lookahead=barmerge.lookahead_off)
+[m5DispDn, m5DispDnMove, _m5DispDnT] = request.security(syminfo.tickerid, "5", detect_disp_down(dispMinM5), lookahead=barmerge.lookahead_off)
+
+// ============================================================================
+// LEVEL FETCH — PDH/PDL/PWH/PWL/PMH/PML
+// Pine v6 idiom: with lookahead_off, `high` (no shift) returns the most recent
+// COMPLETED period's high. Using `high[1]` would double-shift to 2 periods ago.
+// ============================================================================
+
+[pdh, pdl] = request.security(syminfo.tickerid, "D", [high, low], lookahead=barmerge.lookahead_off)
+[pwh, pwl] = request.security(syminfo.tickerid, "W", [high, low], lookahead=barmerge.lookahead_off)
+[pmh, pml] = request.security(syminfo.tickerid, "M", [high, low], lookahead=barmerge.lookahead_off)
+
+// Per-TF closes removed — caused same-TF lookahead quirk on D chart (na returns
+// silently killed breach detection). Reverted to chart-TF close. See breach check.
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+// Add a new zone to the tracked array + draw box + label
+add_zone(string tf, string ptype, int formed_time, float zlow, float zhigh, color zone_col) =>
+    bx = box.new(left=formed_time, top=zhigh, right=time + (time - time[1]) * 50,
+         bottom=zlow, xloc=xloc.bar_time, bgcolor=zone_col, border_color=zone_col,
+         extend=extend.right)
+    lblText = tf + " " + ptype
+    lbl = label.new(x=formed_time, y=(zhigh + zlow) / 2, text=lblText,
+         xloc=xloc.bar_time, style=label.style_label_left, color=color.new(zone_col, 50),
+         textcolor=color.white, size=size.small)
+    z = ZoneRow.new(tf=tf, ptype=ptype, formed_time=formed_time, zone_low=zlow,
+         zone_high=zhigh, active=true, bx=bx, lbl=lbl)
+    array.push(zones, z)
+
+// Add or refresh a level
+add_or_refresh_level(string tf, string ptype, float lvl, color line_col) =>
+    // Search existing levels of this (tf,ptype); if exists and same level, leave alone
+    found = false
+    if array.size(levelArr) > 0
+        for i = 0 to array.size(levelArr) - 1
+            l = array.get(levelArr, i)
+            if l.tf == tf and l.ptype == ptype
+                if l.level == lvl and l.active
+                    found := true
+                    break
+                // Different level value: deactivate old, draw new below
+                if l.active
+                    l.active := false
+                    line.set_color(l.ln, brokenColor)
+                    label.set_color(l.lbl, brokenColor)
+    if not found
+        ln_new = line.new(x1=time, y1=lvl, x2=time + (time - time[1]) * 50, y2=lvl,
+             xloc=xloc.bar_time, color=line_col, width=1, style=line.style_solid,
+             extend=extend.right)
+        lbl_new = label.new(x=time, y=lvl, text=tf + " " + ptype + " " + str.tostring(lvl, format.mintick),
+             xloc=xloc.bar_time, style=label.style_label_left,
+             color=color.new(line_col, 80), textcolor=color.white, size=size.tiny)
+        new_lvl = LevelRow.new(tf=tf, ptype=ptype, level=lvl, active=true, ln=ln_new, lbl=lbl_new)
+        array.push(levelArr, new_lvl)
+
+// Breach check on chart bars — uses CHART-TF close directly.
+// Pragmatic tradeoff: when zone TF == chart TF this is canonical (W zone on W chart
+// breaches on W close, etc.). When zone TF is COARSER than chart, this marks zones
+// broken sooner than canon (premature). For canonical MTF validation, view at the
+// zone's own TF. The earlier per-TF dispatch was reverted: Pine v6's same-TF
+// request.security with close[1]+lookahead_off returned na on historical bars,
+// silently killing breach detection.
+check_zone_breach() =>
+    if array.size(zones) > 0
+        for i = 0 to array.size(zones) - 1
+            z = array.get(zones, i)
+            if z.active
+                is_breached = false
+                if z.ptype == "BULL_OB" or z.ptype == "BULL_FVG"
+                    if close < z.zone_low
+                        is_breached := true
+                else if z.ptype == "BEAR_OB" or z.ptype == "BEAR_FVG"
+                    if close > z.zone_high
+                        is_breached := true
+                if is_breached
+                    array.set(breach_fire_count, 0, array.get(breach_fire_count, 0) + 1)
+                    z.active := false
+                    array.set(zones, i, z)  // defensive: ensure mutation persists
+                    if showBroken
+                        // Orange thick border + near-empty fill: unmistakable vs active zones
+                        box.set_bgcolor(z.bx, color.new(color.orange, 92))
+                        box.set_border_color(z.bx, color.orange)
+                        box.set_border_width(z.bx, 2)
+                        box.set_extend(z.bx, extend.none)
+                        box.set_right(z.bx, time)
+                        label.set_color(z.lbl, color.new(color.orange, 30))
+                        label.set_textcolor(z.lbl, color.white)
+                    else
+                        box.delete(z.bx)
+                        label.delete(z.lbl)
+                    // ✕ marker at breach bar — standalone if (no else) — no type-compat check
+                    if showBroken
+                        breach_y = z.ptype == "BULL_OB" or z.ptype == "BULL_FVG" ? z.zone_low : z.zone_high
+                        label.new(x=time, y=breach_y,
+                             text="✕ " + z.tf + " " + z.ptype,
+                             xloc=xloc.bar_time, style=label.style_label_center,
+                             color=color.orange, textcolor=color.white,
+                             size=size.tiny)
+
+// Sweep check on chart bars — operates at chart TF (best on M5)
+check_sweeps() =>
+    if array.size(levelArr) > 0 and showSweeps
+        for i = 0 to array.size(levelArr) - 1
+            l = array.get(levelArr, i)
+            if l.active
+                // SWEEP_HIGH: wick above level, close back below
+                if l.ptype == "PDH" or l.ptype == "PWH" or l.ptype == "PMH"
+                    if high > l.level and close < l.level
+                        depth_pct = (high - l.level) / l.level * 100.0
+                        if depth_pct >= sweepMinM5
+                            label.new(x=time, y=high, text="⤓ " + l.tf + " " + l.ptype,
+                                 xloc=xloc.bar_time, yloc=yloc.price,
+                                 style=label.style_label_down, color=sweepHighCol,
+                                 textcolor=color.white, size=size.small)
+                            l.active := false
+                            line.set_color(l.ln, brokenColor)
+                            label.set_color(l.lbl, brokenColor)
+                // SWEEP_LOW: wick below level, close back above
+                if l.ptype == "PDL" or l.ptype == "PWL" or l.ptype == "PML"
+                    if low < l.level and close > l.level
+                        depth_pct = (l.level - low) / l.level * 100.0
+                        if depth_pct >= sweepMinM5
+                            label.new(x=time, y=low, text="⤒ " + l.tf + " " + l.ptype,
+                                 xloc=xloc.bar_time, yloc=yloc.price,
+                                 style=label.style_label_up, color=sweepLowCol,
+                                 textcolor=color.white, size=size.small)
+                            l.active := false
+                            line.set_color(l.ln, brokenColor)
+                            label.set_color(l.lbl, brokenColor)
+
+// Displacement marker (optional)
+draw_disp(bool fired, string tf, bool is_up, float move_pct) =>
+    if fired and showDisp
+        y_pos = is_up ? low - syminfo.mintick * 50 : high + syminfo.mintick * 50
+        marker_col = is_up ? dispUpCol : dispDownCol
+        style_dir = is_up ? label.style_triangleup : label.style_triangledown
+        label.new(x=time, y=y_pos, text="", xloc=xloc.bar_time, yloc=yloc.price,
+             style=style_dir, color=marker_col, size=size.tiny,
+             tooltip=tf + " disp " + str.tostring(move_pct, "#.##") + "%")
+
+// ============================================================================
+// EMIT ZONES on edge (rising-edge of detection signal)
+// ============================================================================
+
+// W FVGs
+if showW and showFVG and wBullFvg and not wBullFvg[1]
+    add_zone("W", "BULL_FVG", wBullFvgTime, wBullFvgLow, wBullFvgHigh, bullZoneColor)
+if showW and showFVG and wBearFvg and not wBearFvg[1]
+    add_zone("W", "BEAR_FVG", wBearFvgTime, wBearFvgLow, wBearFvgHigh, bearZoneColor)
+
+// D FVGs
+if showD and showFVG and dBullFvg and not dBullFvg[1]
+    add_zone("D", "BULL_FVG", dBullFvgTime, dBullFvgLow, dBullFvgHigh, bullZoneColor)
+if showD and showFVG and dBearFvg and not dBearFvg[1]
+    add_zone("D", "BEAR_FVG", dBearFvgTime, dBearFvgLow, dBearFvgHigh, bearZoneColor)
+
+// H FVGs
+if showH and showFVG and hBullFvg and not hBullFvg[1]
+    add_zone("H", "BULL_FVG", hBullFvgTime, hBullFvgLow, hBullFvgHigh, bullZoneColor)
+if showH and showFVG and hBearFvg and not hBearFvg[1]
+    add_zone("H", "BEAR_FVG", hBearFvgTime, hBearFvgLow, hBearFvgHigh, bearZoneColor)
+
+// M5 FVGs
+if showM5 and showFVG and m5BullFvg and not m5BullFvg[1]
+    add_zone("M5", "BULL_FVG", m5BullFvgTime, m5BullFvgLow, m5BullFvgHigh, bullZoneColor)
+if showM5 and showFVG and m5BearFvg and not m5BearFvg[1]
+    add_zone("M5", "BEAR_FVG", m5BearFvgTime, m5BearFvgLow, m5BearFvgHigh, bearZoneColor)
+
+// W OBs
+if showW and showOB and wBullOb and not wBullOb[1]
+    add_zone("W", "BULL_OB", wBullObTime, wBullObLow, wBullObHigh, bullZoneColor)
+if showW and showOB and wBearOb and not wBearOb[1]
+    add_zone("W", "BEAR_OB", wBearObTime, wBearObLow, wBearObHigh, bearZoneColor)
+
+// D OBs
+if showD and showOB and dBullOb and not dBullOb[1]
+    add_zone("D", "BULL_OB", dBullObTime, dBullObLow, dBullObHigh, bullZoneColor)
+if showD and showOB and dBearOb and not dBearOb[1]
+    add_zone("D", "BEAR_OB", dBearObTime, dBearObLow, dBearObHigh, bearZoneColor)
+
+// H OBs
+if showH and showOB and hBullOb and not hBullOb[1]
+    add_zone("H", "BULL_OB", hBullObTime, hBullObLow, hBullObHigh, bullZoneColor)
+if showH and showOB and hBearOb and not hBearOb[1]
+    add_zone("H", "BEAR_OB", hBearObTime, hBearObLow, hBearObHigh, bearZoneColor)
+
+// M5 OBs
+if showM5 and showOB and m5BullOb and not m5BullOb[1]
+    add_zone("M5", "BULL_OB", m5BullObTime, m5BullObLow, m5BullObHigh, bullZoneColor)
+if showM5 and showOB and m5BearOb and not m5BearOb[1]
+    add_zone("M5", "BEAR_OB", m5BearObTime, m5BearObLow, m5BearObHigh, bearZoneColor)
+
+// ============================================================================
+// EMIT LEVELS — refresh on each new period (period change = level value changes)
+// ============================================================================
+
+if showLevels
+    if not na(pdh) and pdh != last_pdh
+        add_or_refresh_level("D", "PDH", pdh, levelBearCol)
+        last_pdh := pdh
+    if not na(pdl) and pdl != last_pdl
+        add_or_refresh_level("D", "PDL", pdl, levelBullCol)
+        last_pdl := pdl
+    if not na(pwh) and pwh != last_pwh
+        add_or_refresh_level("W", "PWH", pwh, levelBearCol)
+        last_pwh := pwh
+    if not na(pwl) and pwl != last_pwl
+        add_or_refresh_level("W", "PWL", pwl, levelBullCol)
+        last_pwl := pwl
+    if not na(pmh) and pmh != last_pmh
+        add_or_refresh_level("M", "PMH", pmh, levelBearCol)
+        last_pmh := pmh
+    if not na(pml) and pml != last_pml
+        add_or_refresh_level("M", "PML", pml, levelBullCol)
+        last_pml := pml
+
+// ============================================================================
+// DISPLACEMENT MARKERS (optional)
+// ============================================================================
+
+if showW
+    draw_disp(wDispUp and not wDispUp[1], "W", true, wDispUpMove)
+    draw_disp(wDispDn and not wDispDn[1], "W", false, wDispDnMove)
+if showD
+    draw_disp(dDispUp and not dDispUp[1], "D", true, dDispUpMove)
+    draw_disp(dDispDn and not dDispDn[1], "D", false, dDispDnMove)
+if showH
+    draw_disp(hDispUp and not hDispUp[1], "H", true, hDispUpMove)
+    draw_disp(hDispDn and not hDispDn[1], "H", false, hDispDnMove)
+if showM5
+    draw_disp(m5DispUp and not m5DispUp[1], "M5", true, m5DispUpMove)
+    draw_disp(m5DispDn and not m5DispDn[1], "M5", false, m5DispDnMove)
+
+// ============================================================================
+// BREACH + SWEEP HANDLING (run every chart bar)
+// ============================================================================
+
+check_zone_breach()
+check_sweeps()
+
+// ============================================================================
+// DIAGNOSTIC — counts on the last bar via a label (not table, more reliable).
+// If breach_fire_count > 0 but no orange-bordered zones visible, mutation is
+// the bug. If breach_fire_count == 0, breach detection itself isn't firing.
+// Defaults visible; toggle off via showDiag input below.
+// ============================================================================
+
+showDiag = input.bool(true, "Show diagnostic counters on last bar", group="Diagnostics")
+
+if barstate.islast and showDiag
+    total = array.size(zones)
+    active_n = 0
+    broken_n = 0
+    if total > 0
+        for ii = 0 to total - 1
+            zz = array.get(zones, ii)
+            if zz.active
+                active_n := active_n + 1
+            else
+                broken_n := broken_n + 1
+    diag_text = "MERDIAN DIAG\n" +
+         "Zones total: " + str.tostring(total) + "\n" +
+         "Active: "      + str.tostring(active_n) + "\n" +
+         "Broken: "      + str.tostring(broken_n) + "\n" +
+         "Breach fires: " + str.tostring(array.get(breach_fire_count, 0)) + "\n" +
+         "Levels: "      + str.tostring(array.size(levelArr)) + "\n" +
+         "Close: "       + str.tostring(close, format.mintick)
+    label.new(x=bar_index, y=high, text=diag_text,
+         style=label.style_label_lower_left,
+         color=color.new(color.blue, 20),
+         textcolor=color.white,
+         size=size.normal)
+
+// ============================================================================
+// END OF FILE
+// ============================================================================

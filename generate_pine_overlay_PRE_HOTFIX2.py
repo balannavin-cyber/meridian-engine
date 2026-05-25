@@ -1,0 +1,450 @@
+#!/usr/bin/env python3
+"""
+generate_pine_overlay.py  --  MERDIAN ICT HTF Zones Pine Generator
+
+ENH-46-D (Session 11 extension). Generates Pine v6 overlay from ict_htf_zones.
+
+Session 11 update: proximity tier system.
+  Tier 1 (T1) -- D zones always + W zones within 2% of current spot.
+                  Full opacity, thick border, label shown.
+  Tier 2 (T2) -- W zones 2-5% from spot. Medium opacity, thinner border.
+  Tier 3 (T3) -- W zones >5% from spot. Near-invisible ghost, no label.
+
+Usage:
+    cd C:\\GammaEnginePython
+    python generate_pine_overlay.py
+
+Also importable:
+    from generate_pine_overlay import generate_pine_content
+"""
+
+import os
+import sys
+from datetime import date, timedelta
+
+from dotenv import load_dotenv
+from supabase import create_client
+
+load_dotenv()
+
+MONTH_ABBR = ["jan", "feb", "mar", "apr", "may", "jun",
+              "jul", "aug", "sep", "oct", "nov", "dec"]
+
+SYMBOLS = ["NIFTY", "SENSEX"]
+TIER1_PCT = 2.0
+TIER2_PCT = 5.0
+
+# ENH-46-D entry-band: for these pattern types the resistance entry is at
+# zone_high (bear_side=true). All others are support entries (zone_low).
+BEAR_SIDE_PATTERNS = {"BEAR_OB", "BEAR_FVG", "PDH"}
+
+SHOW_FLAG_MAP = {
+    "PDH":      "show_pdh_pdl",
+    "PDL":      "show_pdh_pdl",
+    "BULL_OB":  "show_ob",
+    "BEAR_OB":  "show_ob",
+    "BULL_FVG": "show_fvg",
+    "BEAR_FVG": "show_fvg",
+}
+
+# ── ENH-91 (Session 17): WR per pattern_type, from Exp 15 cohort ────────────
+# Source: analyze_exp15_trades.py Section 9 on exp15_trades_20260503_1342.csv
+# (post-TD-058 fix, full year cohort). Values are point estimates; CIs span
+# 50% for FVG patterns, OBs are well above coin flip.
+# Update on next major Exp 15 dump regeneration.
+WR_BY_PATTERN = {
+    "BULL_OB":  84,   # 83.7% [71.0, 91.5], N=49
+    "BEAR_OB":  92,   # 92.0% [75.0, 97.8], N=25
+    "BULL_FVG": 50,   # 50.3% [42.5, 58.1], N=155 — coin flip
+    "BEAR_FVG": 46,   # 45.7% [37.6, 54.0], N=138 — coin flip
+    # PDH / PDL: not in Exp 15 cohort as standalone signals
+}
+
+
+def label_with_wr(timeframe: str, pattern_type: str,
+                  source_bar_date: str) -> str:
+    """Build zone label and append WR if known for this pattern_type."""
+    base = zone_label(timeframe, pattern_type, source_bar_date)
+    wr = WR_BY_PATTERN.get(pattern_type)
+    if wr is not None:
+        return f"{base} (WR {wr}%)"
+    return base
+# ── end ENH-91 helper -------------------------------------------------------
+
+
+# ── ENH-92 (Session 17): intraday zone fetch from ict_zones ─────────────────
+# Reads ACTIVE zones from most recent trading day, returns rows shaped to
+# match render_symbol_block expectations (timeframe set to "M5").
+INTRADAY_CAP_PER_SYMBOL = 20   # Pine v6 box limit safety
+
+
+def fetch_intraday_zones(sb, symbol: str) -> list[dict]:
+    """Return ACTIVE intraday zones from ict_zones for the most recent
+    trading day. Shapes rows to match the structure render_symbol_block
+    expects (adds 'timeframe': 'M5', 'source_bar_date' from session_bar_ts).
+    Returns at most INTRADAY_CAP_PER_SYMBOL rows, most recent first.
+    """
+    try:
+        # Most recent trade_date with active intraday zones
+        recent = sb.table("ict_zones").select(
+            "trade_date"
+        ).eq("symbol", symbol).eq(
+            "status", "ACTIVE"
+        ).order("trade_date", desc=True).limit(1).execute().data
+        if not recent:
+            return []
+        latest_td = recent[0]["trade_date"]
+
+        rows = sb.table("ict_zones").select(
+            "pattern_type, direction, zone_high, zone_low, "
+            "session_bar_ts, ict_tier, mtf_context, trade_date"
+        ).eq("symbol", symbol).eq("status", "ACTIVE").eq(
+            "trade_date", latest_td
+        ).order("session_bar_ts", desc=True).limit(
+            INTRADAY_CAP_PER_SYMBOL
+        ).execute().data
+
+        out = []
+        for r in rows:
+            out.append({
+                "symbol":          symbol,
+                "timeframe":       "M5",
+                "pattern_type":    r["pattern_type"],
+                "direction":       r["direction"],
+                "zone_low":        r["zone_low"],
+                "zone_high":       r["zone_high"],
+                "source_bar_date": str(r["trade_date"]),
+                "valid_from":      str(r["trade_date"]),
+                "ict_tier":        r.get("ict_tier"),
+                "mtf_context":     r.get("mtf_context"),
+            })
+        return out
+    except Exception as _e:
+        # Fail-soft: if intraday read fails, generator still produces
+        # HTF-only Pine rather than crashing.
+        print(f"  Warning: intraday zone fetch failed for {symbol}: {_e}",
+              file=sys.stderr)
+        return []
+# ── end ENH-92 helper -------------------------------------------------------
+
+
+def weekdays_since(source_date_str, today=None):
+    if today is None:
+        today = date.today()
+    try:
+        d = date.fromisoformat(str(source_date_str))
+    except Exception:
+        return 30
+    if d >= today:
+        return 5
+    count = 0
+    current = d
+    while current < today:
+        if current.weekday() < 5:
+            count += 1
+        current += timedelta(days=1)
+    return max(5, count)
+
+
+def zone_label(timeframe, pattern_type, source_bar_date):
+    try:
+        d = date.fromisoformat(str(source_bar_date))
+        date_str = f"{MONTH_ABBR[d.month - 1]}-{d.day:02d}"
+    except Exception:
+        date_str = "??-??"
+    return f"{timeframe} {pattern_type} {date_str}"
+
+
+def get_tier(zone_low, zone_high, current_spot, timeframe):
+    # ENH-92: M5 intraday zones always tier 1 (close to current spot
+    # by definition since they formed during today's session).
+    if timeframe in ("D", "M5"):
+        return 1
+    zone_mid = (float(zone_low) + float(zone_high)) / 2
+    if current_spot and current_spot > 0:
+        distance_pct = abs(zone_mid - current_spot) / current_spot * 100
+        if distance_pct <= TIER1_PCT:
+            return 1
+        elif distance_pct <= TIER2_PCT:
+            return 2
+        else:
+            return 3
+    return 2
+
+
+def pine_color_vars(timeframe, pattern_type, tier):
+    if pattern_type in ("BULL_OB",):
+        family = "bull_ob"
+    elif pattern_type in ("BULL_FVG",):
+        family = "bull_fvg"
+    elif pattern_type == "BEAR_OB":
+        family = "bear_ob"
+    elif pattern_type == "BEAR_FVG":
+        family = "bear_fvg"
+    elif pattern_type == "PDH":
+        family = "pdh_d" if timeframe == "D" else "pdh_w"
+    elif pattern_type == "PDL":
+        family = "pdl_d" if timeframe == "D" else "pdl_w"
+    else:
+        family = "pdh_w"
+    return (f"c_{family}_t{tier}", f"c_{family}_t{tier}_l")
+
+
+def fetch_current_spot(sb, symbol):
+    try:
+        rows = sb.table("signal_snapshots").select("spot").eq(
+            "symbol", symbol
+        ).order("ts", desc=True).limit(1).execute().data
+        if rows:
+            return float(rows[0]["spot"])
+    except Exception:
+        pass
+    return None
+
+
+def generate_pine_content(sb):
+    rows = sb.table("ict_htf_zones").select(
+        "symbol, timeframe, pattern_type, zone_low, zone_high, source_bar_date, valid_from"
+    ).eq("status", "ACTIVE").order("symbol").order("timeframe").order(
+        "pattern_type"
+    ).order("source_bar_date").execute().data
+
+    today = date.today()
+    generated_at = today.isoformat()
+    spots = {sym: fetch_current_spot(sb, sym) for sym in SYMBOLS}
+
+    by_symbol = {s: [] for s in SYMBOLS}
+    for row in rows:
+        sym = row.get("symbol", "").upper()
+        if sym in by_symbol:
+            by_symbol[sym].append(row)
+
+    # ENH-92: merge intraday ict_zones (M5) on top of HTF rows.
+    # Most recent first, capped per INTRADAY_CAP_PER_SYMBOL.
+    for sym in SYMBOLS:
+        intraday = fetch_intraday_zones(sb, sym)
+        if intraday:
+            print(f"  {sym}: +{len(intraday)} intraday M5 zones merged",
+                  file=sys.stderr)
+            by_symbol[sym].extend(intraday)
+
+    def render_symbol_block(sym, zones):
+        if not zones:
+            return f"// {sym}: no active zones\n"
+        spot = spots.get(sym)
+        t1 = sum(1 for z in zones if get_tier(z["zone_low"], z["zone_high"], spot, z["timeframe"]) == 1)
+        t2 = sum(1 for z in zones if get_tier(z["zone_low"], z["zone_high"], spot, z["timeframe"]) == 2)
+        t3 = sum(1 for z in zones if get_tier(z["zone_low"], z["zone_high"], spot, z["timeframe"]) == 3)
+        lines = [
+            f"// =====================================================",
+            f"// {sym} -- {len(zones)} zones  T1:{t1} T2:{t2} T3:{t3}  spot={spot:.1f}" if spot else f"// {sym} -- {len(zones)} zones",
+            f"// =====================================================",
+            f"if is_{sym.lower()}",
+        ]
+        for z in zones:
+            tf = z.get("timeframe", "?")
+            pt = z.get("pattern_type", "?")
+            zlo = float(z.get("zone_low", 0))
+            zhi = float(z.get("zone_high", 0))
+            src = z.get("source_bar_date", "")
+            tier = get_tier(zlo, zhi, spot, tf)
+            bg, line_col = pine_color_vars(tf, pt, tier)
+            look_back = weekdays_since(src, today)
+            lbl = label_with_wr(tf, pt, src) if tier < 3 else ""
+            bear_side = "true" if pt in BEAR_SIDE_PATTERNS else "false"
+            # ENH-92: M5 intraday reuses show_h toggle (was placeholder)
+            if tf == "D":
+                tf_flag = "show_d"
+            elif tf in ("H", "M5"):
+                tf_flag = "show_h"
+            else:
+                tf_flag = "show_w"
+            type_flag = SHOW_FLAG_MAP.get(pt, "show_ob")
+            show_flag = f"{type_flag} and {tf_flag}"
+            is_pdh_pdl = "true" if pt in ("PDH", "PDL") else "false"
+            lines.append(
+                f"    draw_zone({zlo:.2f}, {zhi:.2f}, {bg}, {line_col}, "
+                f"\"{lbl}\", {look_back}, {bear_side}, {show_flag}, {is_pdh_pdl})"
+            )
+        return "\n".join(lines) + "\n"
+
+    nifty_block  = render_symbol_block("NIFTY",  by_symbol["NIFTY"])
+    sensex_block = render_symbol_block("SENSEX", by_symbol["SENSEX"])
+    n_nifty  = len(by_symbol["NIFTY"])
+    n_sensex = len(by_symbol["SENSEX"])
+
+    pine = f"""\
+// MERDIAN ICT HTF Zones -- PROXIMITY TIER SYSTEM
+// AUTO-GENERATED {generated_at} -- DO NOT EDIT MANUALLY
+// T1=D zones always + W within 2% | T2=W 2-5% | T3=W >5% ghost no-label
+// Total: {n_nifty + n_sensex} zones (NIFTY {n_nifty} + SENSEX {n_sensex})
+
+//@version=6
+indicator("MERDIAN ICT HTF Zones ({generated_at})", overlay=true, max_boxes_count=250, max_lines_count=250, max_labels_count=250)
+
+// ── Color legend ─────────────────────────────────────────────────────────────
+// BULL_OB   solid green   (high reliability, Exp 35C validated ~88% WR)
+// BULL_FVG  lime green    (lower reliability than OB, gap-fill bias)
+// BEAR_OB   dark crimson  (high reliability, Exp 35C validated ~88% WR)
+// BEAR_FVG  salmon/rose   (lower reliability than OB, gap-fill bias)
+// PDH/PDL   yellow (D) / orange (W)
+
+// ── T1: full opacity (D zones always + W within 2% of spot) ──────────────────
+c_bull_ob_t1    = color.new(#1B8C3E,  45)   // solid green
+c_bull_fvg_t1   = color.new(#7EC85A,  50)   // lime green
+c_bear_ob_t1    = color.new(#8B0000,  40)   // dark crimson
+c_bear_fvg_t1   = color.new(#E05555,  52)   // salmon red
+c_pdh_d_t1      = color.new(color.yellow, 52)
+c_pdl_d_t1      = color.new(color.yellow, 52)
+c_pdh_w_t1      = color.new(color.orange, 62)
+c_pdl_w_t1      = color.new(color.orange, 62)
+c_bull_ob_t1_l  = color.new(#1B8C3E,   5)
+c_bull_fvg_t1_l = color.new(#7EC85A,   8)
+c_bear_ob_t1_l  = color.new(#8B0000,   5)
+c_bear_fvg_t1_l = color.new(#E05555,   8)
+c_pdh_d_t1_l    = color.new(color.yellow,  8)
+c_pdl_d_t1_l    = color.new(color.yellow,  8)
+c_pdh_w_t1_l    = color.new(color.orange, 18)
+c_pdl_w_t1_l    = color.new(color.orange, 18)
+
+// ── T2: medium opacity (W zones 2-5% from spot) ──────────────────────────────
+c_bull_ob_t2    = color.new(#1B8C3E,  72)
+c_bull_fvg_t2   = color.new(#7EC85A,  75)
+c_bear_ob_t2    = color.new(#8B0000,  68)
+c_bear_fvg_t2   = color.new(#E05555,  72)
+c_pdh_d_t2      = color.new(color.yellow, 80)
+c_pdl_d_t2      = color.new(color.yellow, 80)
+c_pdh_w_t2      = color.new(color.orange, 84)
+c_pdl_w_t2      = color.new(color.orange, 84)
+c_bull_ob_t2_l  = color.new(#1B8C3E,  35)
+c_bull_fvg_t2_l = color.new(#7EC85A,  40)
+c_bear_ob_t2_l  = color.new(#8B0000,  30)
+c_bear_fvg_t2_l = color.new(#E05555,  38)
+c_pdh_d_t2_l    = color.new(color.yellow, 42)
+c_pdl_d_t2_l    = color.new(color.yellow, 42)
+c_pdh_w_t2_l    = color.new(color.orange, 52)
+c_pdl_w_t2_l    = color.new(color.orange, 52)
+
+// ── T3: ghost (>5% from spot, no labels) ─────────────────────────────────────
+c_bull_ob_t3    = color.new(#1B8C3E,  93)
+c_bull_fvg_t3   = color.new(#7EC85A,  93)
+c_bear_ob_t3    = color.new(#8B0000,  91)
+c_bear_fvg_t3   = color.new(#E05555,  92)
+c_pdh_d_t3      = color.new(color.yellow, 93)
+c_pdl_d_t3      = color.new(color.yellow, 93)
+c_pdh_w_t3      = color.new(color.orange, 94)
+c_pdl_w_t3      = color.new(color.orange, 94)
+c_bull_ob_t3_l  = color.new(#1B8C3E,  78)
+c_bull_fvg_t3_l = color.new(#7EC85A,  78)
+c_bear_ob_t3_l  = color.new(#8B0000,  75)
+c_bear_fvg_t3_l = color.new(#E05555,  78)
+c_pdh_d_t3_l    = color.new(color.yellow, 78)
+c_pdl_d_t3_l    = color.new(color.yellow, 78)
+c_pdh_w_t3_l    = color.new(color.orange, 80)
+c_pdl_w_t3_l    = color.new(color.orange, 80)
+
+// ── SYMBOL DETECTION (must precede draw_zone) ────────────────────────────────
+is_nifty  = str.contains(syminfo.ticker, "NIFTY")  and not str.contains(syminfo.ticker, "BANK")
+is_sensex = str.contains(syminfo.ticker, "SENSEX") or  str.contains(syminfo.ticker, "BSE")
+
+// ── SETTINGS TOGGLES ─────────────────────────────────────────────────────────
+show_w       = input.bool(true,  "Show Weekly zones",  group="Zone Filters")
+show_d       = input.bool(true,  "Show Daily zones",   group="Zone Filters")
+show_h       = input.bool(true,  "Show Intraday zones",group="Zone Filters", tooltip="Intraday M5 zones from ict_zones (live patched detector)")
+show_ob      = input.bool(true,  "Show Order Blocks",  group="Zone Filters")
+show_fvg     = input.bool(true,  "Show FVGs",          group="Zone Filters")
+show_pdh_pdl = input.bool(true,  "Show PDH / PDL",     group="Zone Filters")
+
+// ── DISPLAY OPTIONS (Session 17 readability fixes) ───────────────────────────
+label_pos       = input.string("right",  "Label Position",     options=["left", "right", "midline"], group="Display", tooltip="left = at zone start (spreads across chart); right = at right edge (stacks); midline = at zone midline")
+max_lookback    = input.int(30,          "Max Lookback Bars",  minval=5, maxval=500, group="Display", tooltip="Cap zone box leftmost bar (prevents off-screen labels)")
+pdh_pdl_as_line = input.bool(true,       "Draw PDH/PDL as lines (not boxes)", group="Display", tooltip="OFF = boxes (original). ON = thin horizontal lines, visually distinct from OB/FVG")
+label_size      = input.string("small",  "Label Size",         options=["tiny", "small", "normal"], group="Display")
+label_text_col  = input.color(color.white, "Label Text Color", group="Display", tooltip="High-contrast text against zone background")
+
+// ── HELPER ───────────────────────────────────────────────────────────────────
+// bear_side=true  -> BEAR_OB/PDH: entry at zone top, clip bottom
+// bear_side=false -> BULL_OB/PDL: entry at zone bottom, clip top
+// is_pdh_pdl=true -> render as thin horizontal line if pdh_pdl_as_line is ON
+draw_zone(float zlow, float zhigh, color bg, color line_col, string lbl, int look_back, bool bear_side, bool show, bool is_pdh_pdl) =>
+    if barstate.islast and show
+        // Cap look_back so labels stay in visible frame
+        int   capped_lb = math.min(look_back, max_lookback)
+        int   lft       = math.max(0, bar_index - capped_lb)
+        int   rgt       = bar_index + 30
+
+        // Decide zone shape
+        bool render_as_line = is_pdh_pdl and pdh_pdl_as_line
+
+        var box   bx = na
+        var label lb = na
+        var line  rl_main = na
+        var line  rl_far  = na
+        box.delete(bx)
+        label.delete(lb)
+        line.delete(rl_main)
+        line.delete(rl_far)
+
+        // Decide label x-coordinate
+        int   label_x   = label_pos == "left" ? lft : rgt
+        label_style     = label_pos == "left" ? label.style_label_right : label.style_label_left
+
+        lbl_sz = label_size == "tiny" ? size.tiny : (label_size == "normal" ? size.normal : size.small)
+
+        if render_as_line
+            // PDH/PDL as a single horizontal line at midline
+            float ry = (zlow + zhigh) / 2.0
+            rl_main := line.new(lft, ry, rgt, ry, color=line_col, width=2, style=line.style_solid, extend=extend.right)
+            if lbl != ""
+                float ly = label_pos == "midline" ? ry : ry
+                lb := label.new(label_x, ly, text=lbl, color=color.new(color.black, 80), textcolor=label_text_col, style=label_style, size=lbl_sz)
+        else
+            // OB/FVG (and PDH/PDL if user chose box mode) — rendered as box
+            float cap   = is_nifty ? 80.0 : 250.0
+            float rng   = zhigh - zlow
+            float dl    = bear_side ? math.max(zlow, zhigh - cap) : zlow
+            float dh    = bear_side ? zhigh : math.min(zhigh, zlow + cap)
+            bool  wide  = rng > cap
+
+            bx := box.new(lft, dh, rgt, dl, bgcolor=bg, border_color=line_col, border_width=1, extend=extend.right)
+            if lbl != ""
+                float ly = label_pos == "midline" ? (dh + dl) / 2 : (bear_side ? dh : dl)
+                lb := label.new(label_x, ly, text=lbl, color=color.new(color.black, 80), textcolor=label_text_col, style=label_style, size=lbl_sz)
+
+            // Far-edge marker for wide zones
+            if wide
+                float ry    = bear_side ? zlow : zhigh
+                string rlbl = lbl != "" ? lbl + " (far)" : "far"
+                rl_far := line.new(lft, ry, rgt, ry, color=color.new(line_col, 50), width=1, style=line.style_dashed, extend=extend.right)
+
+{nifty_block}
+{sensex_block}
+// ── HEADER ───────────────────────────────────────────────────────────────────
+if barstate.islast
+    var label hdr = na
+    label.delete(hdr)
+    sym_str = is_nifty ? "NIFTY" : (is_sensex ? "SENSEX" : "OTHER")
+    n_zones = is_nifty ? {n_nifty} : (is_sensex ? {n_sensex} : 0)
+    hdr := label.new(x=bar_index, y=high * 1.001, text="MERDIAN HTF | " + sym_str + " | " + str.tostring(n_zones) + " zones | entry-band | {generated_at}", color=color.new(color.black, 80), textcolor=color.white, style=label.style_label_down, size=size.small)
+"""
+    return pine
+
+
+def main():
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not url or not key:
+        sys.stderr.write("ERROR: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set\n")
+        return 1
+    sb = create_client(url, key)
+    content = generate_pine_content(sb)
+    out = "merdian_ict_htf_zones.pine"
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(content)
+    lines = [l for l in content.splitlines() if l.strip().startswith("draw_zone")]
+    print(f"Written: {out}  ({len(lines)} zones rendered with proximity tiers)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -81,3 +81,14 @@ diagnose_*.py
 
 # preflight output artifacts (Session 11 - show as M on every git status, mask real changes)
 preflight/output/
+
+# S35 cleanup ? runtime/research artifacts not for source control
+audit_results_2026*.json
+task_backups/
+backups/
+diagnostics/
+*.bak.*
+confluence.jsonl
+working_back.jsonl
+market_view.html
+market_view_data.json

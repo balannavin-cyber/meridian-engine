@@ -7,9 +7,9 @@
 | Field | Value |
 |---|---|
 | Document | `docs/registers/MERDIAN_Enhancement_Register.md` |
-| Scope | Living register of all proposed and delivered MERDIAN enhancements, ENH-01 through ENH-98 (with reserved/unused slots ENH-80/81/82/83/94 per ADR-002 v2 build sequence; ENH-97/98 filed Session 28 P2 renumbered from verbally-NEW S27 "ENH-84/85" due to slot collision). |
+| Scope | Living register of all proposed and delivered MERDIAN enhancements, ENH-01 through ENH-102 (with reserved/unused slots ENH-80/81/82/83/94 per ADR-002 v2 build sequence; ENH-97/98 filed Session 28 P2 renumbered from verbally-NEW S27 "ENH-84/85" due to slot collision; ENH-99 reserved for TD-080 Dhan 429 retry layer + circuit breaker per S29/S30 carry-forward; ENH-100/101/102 filed Session 31-B 2026-05-21 — outcomes magnitude extension + stop-loss optimization + H-FVG-retest signal isolation; ENH-100/101 skip ENH-99 reservation explicitly). |
 | Lineage | Unified from v1 (2026-03-31) through v7 (2026-04-19 v8-appended). Prior versioned files archived at `docs/registers/archive/`. |
-| Last updated | 2026-05-17 (Session 30 — **ENH-97 RE-EVALUATE-on-live-cohort queue added** (S29 SHIPPED-AS-LOGGING disposition preserved on 5m-batch cohort; live cohort re-evaluation gated on `vol_analytics` accumulation to N≥30 per ICT-pattern × RR-regime bucket, ~3 calendar months). **ENH-76 + ENH-77 + ENH-88 + tier multiplier ENV-DISABLED** via commit `2604fc2` (4 env-flag patches deployed Local + AWS via `apply_s30_patches.py`; defaults OFF; reversible per S31 per-pattern N≥30 live-cohort validation per D.13.1 cohort-translation general principle codified in Assumption Register §D.13). **ENH-99+ slot reservation preserved** for TD-080 Dhan 429 retry layer + circuit breaker (S29 carry-forward; P0_SECONDARY S31 spec). **Cross-refs new this session:** TD-S30-NEW-3 S1 (OB attachment broken at signal-builder layer — `enrich_signal_with_ict()` or callers; investigation S31 P0) blocks per-OB-pattern live-cohort re-validation including ENH-76/77 re-evaluation. TD-S30-NEW-6 S3 (replay_build_trade_signal.py lacks ENH-88; ~30 min patch) — affects ADR-008 what-if experiment validity on cohorts intersecting ENH-88 decisions. No new ENH entries this session; ENH numbering unchanged.) 2026-05-16 (Session 29 — **ENH-97 status update PROPOSED → SHIPPED-AS-LOGGING.** Stage 1 + Stage 2 vol_analytics backfill complete (19,520 + 24,758 rows full year). Phase 0b verdict on ADR-002 v2 P7 4-way regime gate = **FAIL** (χ²=1.56 p≈0.30 on 1,968 regime-tagged signals; overall WR 46.2%; RR-conditional WR not statistically distinguishable from baseline). Phase 0b salvage test on COMPRESSED veto binary = **FAIL on power** (bootstrap CI [-3.36, +17.69]pp INCLUDES ZERO; median P&L negative both buckets). Per ADR-002 v2 falsification commitment (recorded in this entry below), ENH-97 PIVOTS from signal-time gating to logging-only — `vol_analytics` regime column written for future analysis, no signal-time gate. Verdict implication: ICT cohort itself median-negative across all regimes; variance dominates the signal at this cohort size; more parameter tweaks ≠ statistical power. Codified as candidate for ADR-009 calibration-discipline content (Phase 0b FAIL means abandon dimension, not retry). **ENH-80 UNBLOCKED** by S29 TD-094 RECLASSIFIED-STALE (vendor data populated `hist_option_bars_1m.oi` 99.9% across 12 months; per-strike GEX implementable now); ENH-80 P5 S30 carry-forward. ENH-98 unchanged (PROPOSED — Phase 3 prep deferred). ENH-99+ slot reserved for TD-080 Dhan 429 retry layer + circuit breaker ENH spec (P0_SECONDARY S30 carry-forward; TD-080 PROMOTED to S1 RECURRING this session, 3rd documented occurrence). Same session also resolved 8 TDs (TD-061 + TD-063 + TD-083 + TD-NEW-A/E/F/I/J — five same-session NEW+RESOLVED setting new MERDIAN record after S28's six) and filed 4 new TDs pending S30+ (TD-NEW-B/C/D/H) + 1 S30 candidate (TD-S30-CANDIDATE-1 live writer Cr unit regression).) 2026-05-13 (Session 28 — **ENH-97 + ENH-98 NEW filed as PROPOSED** per ADR-002 v2 carry-forward from S27. P2 deferred from S27 by operator consent now closed. Renumbered from verbally-NEW "ENH-84"/"ENH-85" at formal-filing-time due to slot collision: ENH-84 slot was already occupied by SHIPPED REFRESH ZONES dashboard button (S14, 2026-04-30) and ENH-85 slot by PROPOSED-DEFERRED PO3 Session Direction Lock (S13, design space reduced via Exp 47b S15); per Doc Protocol v2 Rule 5 (monotonic, no ID reuse, REJECTED IDs keep their slot), new entries filed at next available monotonic IDs — **ENH-97 (vol_analytics + RR ratio writer, ADR-002 v2 P7, Tier 1)** and **ENH-98 (vanna/charm second-order Greeks, ADR-002 v2 P8, Tier 2)**. Cross-document rename propagation (S27/S28 references to "ENH-84"/"ENH-85" in NEW-context lines across `CURRENT.md`, `CLAUDE.md` settled-decisions S27+S28 blocks + v1.18/v1.19 footers, `MERDIAN_Assumption_Register.md` §D.10/§D.11.4, `session_log.md` S27 entry, `tech_debt.md` B21 cross-ref, `merdian_reference.json` S27 change_log entry, `MERDIAN_Deployment_Topology.md` §Update-log S28 row, and `ADR-002 v2` §P7/§P8/build-sequence) queued as **TD-NEW-15** in `tech_debt.md` — known-stale-window risk codified there; OLD-context references (S13/S14/S15 historical) preserved unchanged. Cross-linked to Assumption Register §D.10.1 (RR ratio independent edge LIVE pending Phase 0b validation = pending ENH-97) and §D.10.8 (vanna/charm Phase 1/2 consumption deferred LIVE pending Phase 3 backtest). ENH-97 build is the gating prerequisite for Phase 0b overlay calibration study (P3 carry-forward); ENH-98 build deferred until Phase 2 deployment plan committed. Same session also closed P1 broken-window `gamma_metrics` backfill (587/587 rows clean across 2026-05-08 + 2026-05-11) and resolved TD-NEW-4, TD-NEW-5, TD-NEW-6, TD-NEW-8, TD-NEW-12, TD-NEW-13.) |
+| Last updated | 2026-05-24 (Session 35 — **ENH-109 NEW filed PROPOSED P3** (next session) graduate ICICI Breeze API as canonical historical options backfill source — Phase 3 GEX time-series prerequisite per ADR-002 v2 P7/P8; full-chain capability with no ATM±N cap, 3-year lookback, 5000 calls/day / 100/min throttle, SEBI static-IP whitelist post-2026-04-01 (operator already whitelisted via MERDIAN AWS Elastic IP 13.63.27.85), SENSEX symbology `stock_code='BSESEN'` empirically discovered via 6-variant probe; replaces vendor renewal cycle dependency + S22 broken Kite backfill + Dhan rollingoption ATM±10 cap; demonstrated capability via S35 2026-04-16 surgical fill writing 107,630 HOCS rows (NIFTY 61,899 + SENSEX 45,731) `source='breeze_backfill_s35'` in 4-5min wallclock from MERDIAN AWS; full-build gating decision linked to ADR-013 PROPOSED. **ENH-106 status update v7 → v8/v8.1/v8.2 IMPLEMENTED** (dual-source chain reader: v8 per-tuple split routing at boundary 2026-04-01 UTC + `option_pnl_source TEXT` audit column; v8.1 expiry calendar UNION vendor + HOCS; v8.2 swap HOCS pagination for RPC `get_hocs_distinct_expiries(text)` STABLE function + `(symbol, expiry_date)` covering `idx_hocs_symbol_expiry` index; TRUNCATE + full re-backfill 19,571 outcomes in 2,107s — NIFTY 8,925 + SENSEX 10,646; 81% post-Apr-2026 retest recovery on zone-primitive denominator; structural residual 75 attributed to TD-S35-NEW-1 HOCS strike-coverage limit). **No new closures; no rejections; ENH numbering unchanged ENH-109 placed at next monotonic slot** (ENH-99 reservation for TD-080 Dhan 429 retry layer preserved per Doc Protocol v2 Rule 5; ENH-103-108 occupied per S33-S34). **Cross-references new this session:** TD-S35-NEW-1 S2 (HOCS strike-coverage structural limit — `ingest_option_chain_local` captures ATM±N per cycle, retests with large spot drift miss held-strike at retest moment) — recovery via ADR-013 Breeze canonical adoption decision; TD-S35-NEW-2 S1 (pre-Apr-2026 vendor uncatalogued in System Map — bus-factor-of-one institutional knowledge at risk); TD-S35-NEW-3 S4 (SENSEX `stock_code='BSESEN'` on Breeze not in public docs); TD-S35-NEW-4 S3 (`build_ict_primitives.py upsert_outcomes` INSERT-only — schema column adds require TRUNCATE+recompute or per-cohort DELETE). **ADR-012 status update ACCEPTED S34 → IMPLEMENTED S35** via writer v9 — 5 sl_* columns + SL evaluation block in `compute_retest_atm_pnl` (BULL: close < zone_low × (1−X); BEAR: close > zone_high × (1+X); X = `SL_BUFFER_PCT_DEFAULT = 0.005`); reuses v8 chain cache for SL exit premium lookups with no new DB round-trips; level primitives skip SL by design; `pnl_with_sl_pct` falls back to `option_pnl_eod` on no-trigger; single-cell n=5 verified on 2026-05-14 NIFTY M5 cohort showing BEAR SL exits 13-14pp better than held-to-EOD; full validation cohort gated on S36 TRUNCATE + full recompute. Cross-doc files modified this session: Enhancement Register (this entry + ENH-109 detail block in Part 4 + Change Log row in Part 5), session_log.md (S35 prepended), CURRENT.md (S35 Last session prepended, S34 demoted to Previous per no-crunch), tech_debt.md (4 new TDs prepended TD-S35-NEW-1/2/3/4 + TD-S34-NEW-4 Resolution row appended), merdian_reference.json v25→v26, MERDIAN_Decision_Index.md (ADR-012 IMPLEMENTED annotation + ADR-013 PROPOSED row + Pending ADRs ADR-012 status update body), MERDIAN_Assumption_Register.md (§D.17 added with 4 rows D.17.1-D.17.4 + footer update Session 34 → Session 35), CLAUDE.md v1.24→v1.25 (S35 engineering discoveries section + 5 settled-decisions added preserving full v1.24→v1.1 history verbatim). Total 10 canonical files updated per Doc Protocol v4 Rule 3 + Rule 9 session-end checklist; full file downloads no-crunch discipline maintained. Project knowledge upload pending S36.) 2026-05-21 (Session 31-B — **ENH-100 NEW filed PROPOSED P0** outcomes-magnitude profiling + ATM PnL + DTE: 13 additive columns on `ict_primitive_outcomes` (forward_5/15/60/120m_pct + forward_eod_pct + mfe_pct + mae_pct + time_to_mfe_min + atm_pnl_5/15/30/60m_pct + dte_at_formation) re-compute ~30s/symbol; gates ENH-101 stop-loss optimization and answers operator's six S31-B Q2 follow-up questions (magnitude profiling, "how far did the move go", ATM PnL + DTE, sweep reversal magnitude, optimum stop loss, optimum entry technique, D/H FVG retest distance); falsification: post-build column agreement to within 1bp of locally-computed forward returns + 5% of `hist_option_bars_1m` premium-percent change on 100-sample audit. **ENH-101 NEW filed PROPOSED P1 BLOCKED-BY-ENH-100** stop-loss optimization from MAE distribution: 90th percentile of `mae_pct` among trades profitable at canonical exit horizon per (symbol, TF, primitive_type, direction, retest_or_formation) cell with N≥30; per-cell `stop_distance_pct` table + Pine overlay annotation + live routing wire via `enrich_signal_with_ict()`; `MERDIAN_ENH101_ENABLED` env flag default OFF; falsification: 30-day audit on false-positive stops >25% relaxes threshold to 95th-pct, sub-5% drawdown-beyond-stop tightens to 85th-pct. **ENH-102 NEW filed PROPOSED P1** H-FVG-retest signal isolation: codify S31-B ADR-009 Phase-1 holdout split four-bucket finding (NIFTY H BEAR_FVG retest 75.0→85.2 +10.2; NIFTY H BULL_FVG retest 64.3→90.0 +25.7; SENSEX H BEAR_FVG retest 76.6→92.0 +15.4; SENSEX H BULL_FVG retest 70.2→80.8 +10.6 — all four hold AND strengthen on holdout) into live signal routing rule; `MERDIAN_ENH102_ENABLED` env flag default OFF pending D.13.1 cohort-translation re-validation on `signal_snapshots` runtime cohort at N≥30 per (symbol, direction) with 10pp transfer tolerance per D.8.2; integration target S31-C consumer rewire scope; live deployment additionally gated on ENH-100 (sizing/stop calibration prerequisite). **ENH numbering note:** ENH-99 reservation for TD-080 Dhan 429 retry layer + circuit breaker (S29/S30 carry-forward, P0_SECONDARY S31+) explicitly preserved — ENH-100/101/102 skip the reserved slot per Doc Protocol v2 Rule 5 monotonic-no-reuse discipline. **Source context:** S31-B Wave 1 ADR-004 ICT primitive canon backfill produced NIFTY 8838 + SENSEX 10561 primitives + outcomes rows (1:1) over 2025-04-01 → 2026-05-19 window in 156.3s total (Task 4 baseline); ADR-009 Phase-1 holdout split executed on resulting cohort produced the headline H-FVG-retest validation that justifies the entire S31-B effort; Pine v6 visual overlay Task 5 was descoped from S31-B by operator decision after multi-iteration ergonomic walls (descending for-loop `by -1` requirement, if/else type-compat CE10235, `var int` global mutation CE10088 wrapping in array.from(0), `close[1] + lookahead_off` double-shift bug on per-TF close fetches, `max_boxes_count=500` hard cap GC silently swallowing 1428 of 1928 zones); ADR-004 status **IMPLEMENTED** for Wave 1 (5 of 15 primitives — OB §5.1, FVG §5.2, PDH/PDL §6.1, Sweep §7.1, Displacement §7.2). **No ENH closures this session.** **No ENH status updates this session beyond NEW filings.** Cross-doc files modified: Enhancement Register (this entry + Part 1 status table 3 rows + Part 4 detail blocks 3 entries), session_log.md (S31-B prepended), CURRENT.md (S31-B Last session block prepended, S30 demoted to Previous session per no-crunch), tech_debt.md (TD-S31B-NEW-1 Pine visual MTF-breach with Pine v6 ergonomic catalog deferred), merdian_reference.json v22→v23, MERDIAN_Decision_Index.md (ADR-004 IMPLEMENTED row prepended above ADR-002 v2 + Pending ADRs table ADR-004 status updated), MERDIAN_Assumption_Register.md (new §D.14 added with 5 rows D.14.1-D.14.5 + cross-refs + open follow-ups), CLAUDE.md v1.21→v1.22 (S31-B engineering discoveries section + 4 settled-decisions added preserving full v1.21→v1.1 history verbatim). Total 8 canonical files updated per Doc Protocol v4 Rule 3 + Rule 9 session-end checklist; full file downloads no-crunch discipline maintained. Project knowledge upload pending S32.) 2026-05-17 (Session 30 — **ENH-97 RE-EVALUATE-on-live-cohort queue added** (S29 SHIPPED-AS-LOGGING disposition preserved on 5m-batch cohort; live cohort re-evaluation gated on `vol_analytics` accumulation to N≥30 per ICT-pattern × RR-regime bucket, ~3 calendar months). **ENH-76 + ENH-77 + ENH-88 + tier multiplier ENV-DISABLED** via commit `2604fc2` (4 env-flag patches deployed Local + AWS via `apply_s30_patches.py`; defaults OFF; reversible per S31 per-pattern N≥30 live-cohort validation per D.13.1 cohort-translation general principle codified in Assumption Register §D.13). **ENH-99+ slot reservation preserved** for TD-080 Dhan 429 retry layer + circuit breaker (S29 carry-forward; P0_SECONDARY S31 spec). **Cross-refs new this session:** TD-S30-NEW-3 S1 (OB attachment broken at signal-builder layer — `enrich_signal_with_ict()` or callers; investigation S31 P0) blocks per-OB-pattern live-cohort re-validation including ENH-76/77 re-evaluation. TD-S30-NEW-6 S3 (replay_build_trade_signal.py lacks ENH-88; ~30 min patch) — affects ADR-008 what-if experiment validity on cohorts intersecting ENH-88 decisions. No new ENH entries this session; ENH numbering unchanged.) 2026-05-16 (Session 29 — **ENH-97 status update PROPOSED → SHIPPED-AS-LOGGING.** Stage 1 + Stage 2 vol_analytics backfill complete (19,520 + 24,758 rows full year). Phase 0b verdict on ADR-002 v2 P7 4-way regime gate = **FAIL** (χ²=1.56 p≈0.30 on 1,968 regime-tagged signals; overall WR 46.2%; RR-conditional WR not statistically distinguishable from baseline). Phase 0b salvage test on COMPRESSED veto binary = **FAIL on power** (bootstrap CI [-3.36, +17.69]pp INCLUDES ZERO; median P&L negative both buckets). Per ADR-002 v2 falsification commitment (recorded in this entry below), ENH-97 PIVOTS from signal-time gating to logging-only — `vol_analytics` regime column written for future analysis, no signal-time gate. Verdict implication: ICT cohort itself median-negative across all regimes; variance dominates the signal at this cohort size; more parameter tweaks ≠ statistical power. Codified as candidate for ADR-009 calibration-discipline content (Phase 0b FAIL means abandon dimension, not retry). **ENH-80 UNBLOCKED** by S29 TD-094 RECLASSIFIED-STALE (vendor data populated `hist_option_bars_1m.oi` 99.9% across 12 months; per-strike GEX implementable now); ENH-80 P5 S30 carry-forward. ENH-98 unchanged (PROPOSED — Phase 3 prep deferred). ENH-99+ slot reserved for TD-080 Dhan 429 retry layer + circuit breaker ENH spec (P0_SECONDARY S30 carry-forward; TD-080 PROMOTED to S1 RECURRING this session, 3rd documented occurrence). Same session also resolved 8 TDs (TD-061 + TD-063 + TD-083 + TD-NEW-A/E/F/I/J — five same-session NEW+RESOLVED setting new MERDIAN record after S28's six) and filed 4 new TDs pending S30+ (TD-NEW-B/C/D/H) + 1 S30 candidate (TD-S30-CANDIDATE-1 live writer Cr unit regression).) 2026-05-13 (Session 28 — **ENH-97 + ENH-98 NEW filed as PROPOSED** per ADR-002 v2 carry-forward from S27. P2 deferred from S27 by operator consent now closed. Renumbered from verbally-NEW "ENH-84"/"ENH-85" at formal-filing-time due to slot collision: ENH-84 slot was already occupied by SHIPPED REFRESH ZONES dashboard button (S14, 2026-04-30) and ENH-85 slot by PROPOSED-DEFERRED PO3 Session Direction Lock (S13, design space reduced via Exp 47b S15); per Doc Protocol v2 Rule 5 (monotonic, no ID reuse, REJECTED IDs keep their slot), new entries filed at next available monotonic IDs — **ENH-97 (vol_analytics + RR ratio writer, ADR-002 v2 P7, Tier 1)** and **ENH-98 (vanna/charm second-order Greeks, ADR-002 v2 P8, Tier 2)**. Cross-document rename propagation (S27/S28 references to "ENH-84"/"ENH-85" in NEW-context lines across `CURRENT.md`, `CLAUDE.md` settled-decisions S27+S28 blocks + v1.18/v1.19 footers, `MERDIAN_Assumption_Register.md` §D.10/§D.11.4, `session_log.md` S27 entry, `tech_debt.md` B21 cross-ref, `merdian_reference.json` S27 change_log entry, `MERDIAN_Deployment_Topology.md` §Update-log S28 row, and `ADR-002 v2` §P7/§P8/build-sequence) queued as **TD-NEW-15** in `tech_debt.md` — known-stale-window risk codified there; OLD-context references (S13/S14/S15 historical) preserved unchanged. Cross-linked to Assumption Register §D.10.1 (RR ratio independent edge LIVE pending Phase 0b validation = pending ENH-97) and §D.10.8 (vanna/charm Phase 1/2 consumption deferred LIVE pending Phase 3 backtest). ENH-97 build is the gating prerequisite for Phase 0b overlay calibration study (P3 carry-forward); ENH-98 build deferred until Phase 2 deployment plan committed. Same session also closed P1 broken-window `gamma_metrics` backfill (587/587 rows clean across 2026-05-08 + 2026-05-11) and resolved TD-NEW-4, TD-NEW-5, TD-NEW-6, TD-NEW-8, TD-NEW-12, TD-NEW-13.) |
 | Purpose | Forward-looking and historical register of all enhancement proposals, their status, evidence, and delivery. |
 | Authority | Current operational state of each ENH. Session appendices win on session-specific rationale; this register wins on current status. |
 | Update rule | Update in-place (append or edit). Do NOT create a new versioned file. |
@@ -129,6 +129,9 @@ Sortable table of all 86 IDs. For full detail see Part 4.
 | ENH-96 | Dashboard "Gap (vs prev close)" card (prelim 09:08 + final 09:15 vs prev close 16:00) | 1 | **SHIPPED 2026-05-10** |
 | ENH-97 | vol_analytics table + RR ratio writer (ADR-002 v2 P7) | 1 | **SHIPPED-AS-LOGGING** (S29 — Phase 0b FAIL on P7 4-way regime gate + COMPRESSED salvage; pivoted from signal-time gating to logging-only; backfill 19,520 + 24,758 rows complete; **see falsification criterion realized in this entry below**) |
 | ENH-98 | Vanna/charm second-order Greeks (ADR-002 v2 P8 — Phase 3 prep) | 2 | **PROPOSED** (S28 P2 — renumbered from S27 verbally-NEW "ENH-85" due to slot collision) |
+| ENH-100 | Outcomes-magnitude profiling + ATM PnL + DTE (extend `ict_primitive_outcomes` schema 8 cols) | 1 | **PROPOSED** (S31-B P0 — gates ENH-101; answers operator's six magnitude questions; ~30s/symbol re-compute; **filed 2026-05-21**) |
+| ENH-101 | Stop-loss optimization from MAE distribution (90th pct of profitable trades per TF×type×direction) | 1 | **PROPOSED — blocked by ENH-100** (S31-B; MAE column must exist on outcomes table first) |
+| ENH-102 | H-FVG-retest signal isolation — codify ADR-009 holdout-validated edge into live routing rule | 1 | **PROPOSED** (S31-B P1 — NIFTY/SENSEX H BEAR_FVG + BULL_FVG retest all four buckets HOLD + STRENGTHEN on holdout per S31-B ADR-009 Phase-1 split; consumer-rewire integration target S31-C) |
 ---
 
 ## Part 2 -- Active Work (not yet delivered or under monitoring)
@@ -2344,6 +2347,7 @@ Append-only. Record every meaningful register edit.
 | 2026-04-20 | **unified** | 2026-04-20 outage + re-engineering programme Sessions 1+2 | 8f83859, b195499, 260c7d0 | ENH-66 COMPLETE (holiday-gate root cause); ENH-67..70 PROPOSED (view/supervisor/preflight/dashboard); ENH-68 COMPLETE tactical (runner .env reload); ENH-71 COMPLETE (write-contract layer + capture_spot_1m reference); ENH-72..74 PROPOSED (propagation, alerts, live config). Six-session re-engineering programme approved post-outage. |
 | 2026-05-13 | **unified** | +ENH-97, +ENH-98 (S28 P2 — formal Enhancement Register filing of S27 verbally-NEW entries; renumbered from "ENH-84"/"ENH-85" due to slot collision per Doc Protocol v2 Rule 5; cross-document rename propagation queued as TD-NEW-15) | (S28 close — commit pending) | ENH-97 vol_analytics + RR ratio writer (ADR-002 v2 P7, Tier 1, PROPOSED) + ENH-98 vanna/charm Phase 3 prep (ADR-002 v2 P8, Tier 2, PROPOSED). Cross-linked to Assumption Register §D.10.1 + §D.10.8. ENH-97 build gating prerequisite for Phase 0b overlay calibration study (P3 carry-forward); ENH-98 build deferred until Phase 2 deployment plan committed. Scope row bumped ENH-01..ENH-86 → ENH-01..ENH-98 (reserved/unused slots ENH-80/81/82/83/94 per ADR-002 v2 build sequence). |
 | 2026-05-17 | **unified** | ENH-97 RE-EVALUATE-on-live-cohort queue added (S29 SHIPPED-AS-LOGGING disposition preserved); ENH-76 + ENH-77 + ENH-88 + tier multiplier ENV-DISABLED via commit 2604fc2 | `2604fc2` (S30 — single-file patch deploy) | ENH-97 entry receives 2026-05-17 (S30) annotation: 5m-batch verdict stands; live cohort N=211 WR 58.3% +3.38% median POSITIVE (D.13.1 cohort-translation discipline); RE-EVALUATE on live cohort calendar-gated on `vol_analytics` N≥30 per regime × pattern (~3 months) as P1 S31 carry-forward. ENH-76 + ENH-77 + ENH-88 env-disabled via `apply_s30_patches.py` deploying 4 env-flag gates + tier mult force to `build_trade_signal_local.py` (mirror of S26 ENH-55 env-flag pattern); commit `2604fc2` 35 lines diff +30/-5; AWS sync via git pull canonical (SCP + heredoc paste failed as vectors). Status column on ENH-76/77/88 changes: was "COMPLETE SHIPPED" → now "**ENV-DISABLED (S30 — defaults OFF; reversible via `.env` flag per S31 live-cohort N≥30 per-pattern validation per D.13.1)**". ENH-99+ slot reservation preserved for TD-080 Dhan 429 retry layer (S29 carry-forward → S31 P0_SECONDARY). Cross-refs: TD-S30-NEW-3 S1 (OB attachment broken at signal-builder layer) blocks per-OB-pattern RE-EVALUATE for ENH-76/77 live-cohort validation; TD-S30-NEW-6 S3 (replay ENH-88 parity) is parallel patch ~30 min. No new ENH entries this session; ENH numbering unchanged. Scope row unchanged (still ENH-01..ENH-98). |
+| 2026-05-24 | **unified** | +ENH-109 PROPOSED (Breeze graduation); ENH-106 status v7 → v8/v8.1/v8.2 IMPLEMENTED (dual-source chain reader); ADR-012 status ACCEPTED → IMPLEMENTED via writer v9 (5 sl_* columns) | (S35 close — commit pending) | ENH-109 NEW filed PROPOSED P3 graduate ICICI Breeze API as canonical historical options backfill source (full-chain no ATM±N cap; 3-year lookback; 5000/day / 100/min throttle; SEBI static-IP whitelist via MERDIAN AWS Elastic IP 13.63.27.85; SENSEX `stock_code='BSESEN'` symbology empirically discovered via 6-variant probe per TD-S35-NEW-3; demonstrated capability via S35 2026-04-16 surgical fill writing 107,630 HOCS rows `source='breeze_backfill_s35'` in 4-5min from MERDIAN AWS). ENH-106 status update v7 → v8/v8.1/v8.2 IMPLEMENTED via dual-source chain reader: v8 per-tuple split routing at `CHAIN_TIER_BOUNDARY_UTC = 2026-04-01` + `option_pnl_source TEXT` audit column; v8.1 expiry calendar UNION vendor + HOCS via `get_hocs_distinct_expiries(text)` RPC STABLE function; v8.2 `idx_hocs_symbol_expiry` covering index (built with `SET statement_timeout=0` on direct DB connection bypassing PostgREST 8s limit; EXPLAIN ANALYZE 325ms Index Only Scan); TRUNCATE + full re-backfill 19,571 outcomes in 2,107s — NIFTY 8,925 + SENSEX 10,646; 81% post-Apr-2026 retest recovery on zone-primitive denominator with structural residual 75 attributed to TD-S35-NEW-1 HOCS strike-coverage limit. **ADR-012 status update ACCEPTED → IMPLEMENTED** via writer v9 patch (`patch_s35_adr012_v9_sl_writer.py`): 5 schema columns added (`sl_level`, `sl_buffer_pct`, `sl_triggered_ts`, `sl_exit_prem`, `pnl_with_sl_pct`); SL evaluation block in `compute_retest_atm_pnl` walks 5m clock-aligned spot bars from `first_retest_ts + 5min` through 15:25 IST EOD; BULL: close < zone_low × (1 − X); BEAR: close > zone_high × (1 + X); X = `SL_BUFFER_PCT_DEFAULT = 0.005` per ADR-012 §3; reuses v8 chain cache for SL exit premium lookups with no new DB round-trips; level primitives skip SL by design (no zone bounds); `pnl_with_sl_pct` falls back to `option_pnl_eod` on no-trigger; single-cell n=5 verified on 2026-05-14 NIFTY M5 cohort showing BEAR SL exits 13-14pp better than held-to-EOD (sl_level 23680.61 / 23637.00 verified by hand); full validation cohort gated on S36 TRUNCATE + full recompute. 4 new TDs filed: TD-S35-NEW-1 S2 (HOCS strike-coverage structural limit on MERDIAN-ingest tier), TD-S35-NEW-2 S1 (pre-Apr-2026 vendor uncatalogued in System Map), TD-S35-NEW-3 S4 (SENSEX Breeze symbology), TD-S35-NEW-4 S3 (`upsert_outcomes` INSERT-only behavior). TD-S34-NEW-4 CLOSED-MECHANICAL (post-Apr-2026 chain coverage gap; 81% recovery via v8 routing + 14 days via S35 Breeze surgical fill). Scope row bumped ENH-01..ENH-98 → ENH-01..ENH-109 (reserved/unused slots ENH-80/81/82/83/94/99 per ADR-002 v2 build sequence + TD-080 reservation; ENH-104/105/107 skipped or held per monotonic-no-reuse discipline). |
 
 ---
 
@@ -2987,3 +2991,341 @@ Quantitative thresholds locked in ADR-002 v2 §P7:
 ---
 
 *End Session 28 P2 new ENH entries block. Next session entries land below this line.*
+
+---
+
+### ENH-100 — Outcomes-magnitude profiling + ATM PnL + DTE (extend `ict_primitive_outcomes` schema 8+ cols)
+
+| Field | Detail |
+|---|---|
+| Status | **IMPLEMENTED** (v3 S32 — schema extension + initial writer against `hist_atm_option_bars_5m`; v6 mid-S33 — extended for ENH-103 retest cohort; **v7 S33 — chain-table held-strike rebuild via ADR-011**). Coverage 20-44× lift on populated M5 cells; median PnL flipped universally negative (v6) → universally positive on every directional cell with real spot edge post-v7. |
+| Filed | 2026-05-21 (Session 31-B P0 priority) |
+| Source | S31-B ADR-009 Phase-1 holdout validation produced direction-of-edge verdicts (H FVG retest VALIDATED, M5 FVG REFUTED, OB retest paradox surfaced) but the current `ict_primitive_outcomes` schema carries only `forward_30m_pct` — magnitude characterization is impossible. Operator's six follow-up questions at S31-B Q2 sanity check all gate on per-primitive magnitude data: (1) "how far did the move go?", (2) magnitude profiling by TF×type, (3) ATM PnL + DTE — what does an ATM option actually return from primitive formation?, (4) sweep visual ID + reversal magnitude, (5) optimum stop loss (blocks ENH-101), (6) optimum entry technique, (7) D/H FVG retest distance characterization. All seven questions answerable only with extended outcomes table. |
+| Priority Tier | 1 (P0 priority for S32 — gates ENH-101 + answers all six magnitude questions) |
+| Build cost | ~1 session: schema extension + outcomes re-compute + ATM option join. Re-compute cost ~30s/symbol per S31-B Task 4 baseline (NIFTY 8838 + SENSEX 10561 primitives in 156.3s combined). |
+| Blocks | ENH-101 stop-loss optimization (MAE column must exist on outcomes table first). Operator's six magnitude questions all gate here. |
+| Blocked by | None — `ict_primitive_outcomes` table exists post-S31-B Task 3 DDL deploy; schema extension is additive. |
+| Area | Market structure intelligence / outcomes characterization layer |
+
+**Context.** S31-B Wave 1 backfill produced `ict_primitives` (8838 NIFTY + 10561 SENSEX) and `ict_primitive_outcomes` (1:1 row count) over the 2025-04-01 → 2026-05-19 window. Q1 counts sanity check confirmed healthy primitive emission across W/D/H/M5; Q2 WR sanity check exposed the OB retest paradox (formation > retest for OBs) and BULL_FVG-with-OB-context lift; ADR-009 Phase-1 holdout split (train 2025-04-01 → 2026-02-28 vs holdout 2026-03-01 → 2026-05-19) returned its headline finding: NIFTY/SENSEX H BEAR_FVG + BULL_FVG retest holds AND strengthens on holdout across both symbols, both directions (+10.2 to +25.7pp deltas; train WRs 64.3-76.6%, holdout WRs 80.8-92.0%). Standalone M5 FVG refuted on holdout (at-or-below 50% baseline). The headline edge is validated; what's missing is magnitude characterization.
+
+**What this enhancement ships.**
+
+1. **Schema extension to `ict_primitive_outcomes`** — eight additive columns:
+   - `forward_5m_pct numeric` — return at +5 minutes from primitive valid_from
+   - `forward_15m_pct numeric` — return at +15 minutes
+   - `forward_60m_pct numeric` — return at +60 minutes
+   - `forward_120m_pct numeric` — return at +120 minutes
+   - `forward_eod_pct numeric` — return at session close (15:30 IST) of primitive's session
+   - `mfe_pct numeric` — maximum favorable excursion as percent (directional: positive for BULL primitives if spot moves up; positive for BEAR primitives if spot moves down)
+   - `mae_pct numeric` — maximum adverse excursion as percent (the magnitude that disqualifies trades; gates ENH-101)
+   - `time_to_mfe_min integer` — minutes from valid_from to MFE peak (answers operator's "T+10-20m flip bucket WR 64.3%" S30 finding — does the magnitude peak match the win-rate sweet spot?)
+
+2. **ATM option PnL join** — four additional columns derived from joining `option_chain_snapshots` at primitive `valid_from` timestamp to identify the at-the-money strike, then tracking that strike's CE (for BULL primitives) or PE (for BEAR primitives) forward:
+   - `atm_pnl_5m_pct numeric` — ATM option return at +5 minutes
+   - `atm_pnl_15m_pct numeric` — at +15 minutes
+   - `atm_pnl_30m_pct numeric` — at +30 minutes (parallel to existing `forward_30m_pct` spot column)
+   - `atm_pnl_60m_pct numeric` — at +60 minutes
+
+3. **DTE-at-formation column** — `dte_at_formation integer` derived from primitive valid_from timestamp against weekly expiry calendar (NIFTY Tue per NSE 2025+ change, SENSEX Thu per BSE). Answers "ATM PnL + DTE — what does an ATM option actually return?" by enabling DTE-bucketed slices of the ATM PnL columns.
+
+4. **Re-compute outcomes** — extend the S31-B Task 2 writer `build_ict_primitives.py` outcomes computation block to populate the 13 new columns per primitive. Per S31-B Task 4 baseline (156.3s for 8838+10561 primitives across NIFTY+SENSEX), expected re-compute time ~30s per symbol if option chain lookups are cached per session.
+
+5. **Schema migration discipline** — ALTER TABLE ADD COLUMN x13 + NOTIFY pgrst, 'reload schema'. Doc Protocol v4 Rule 10 trigger MET (schema-affecting change) — ENH-100 ships with **ADR-010 schema extension** (drafted at build time, accepted before code lands; lightweight since schema is additive and table is research-tier not load-bearing).
+
+**Why P0 priority.** All six of the operator's S31-B Q2 follow-up questions (magnitude profiling, "how far did the move go", ATM PnL + DTE, sweep reversal magnitude, optimum stop loss, optimum entry technique, D/H FVG retest distance) gate on this enhancement. ENH-101 stop-loss optimization is structurally blocked (MAE distribution prerequisite). ENH-102 H-FVG-retest signal isolation can begin without this but its operational sizing parameters (entry price tolerance band, stop placement, exit horizon) are calibrated from this data. Until ENH-100 ships, the holdout-validated edge cannot be turned into live trading rules.
+
+**Falsification commitment.** ENH-100 is infrastructure not a hypothesis — its only failure mode is implementation defect. Falsification criterion: post-build, the new columns must agree with locally-computed forward returns from `market_spot_snapshots` to within 1bp on a 100-sample audit; ATM PnL columns must agree with `hist_option_bars_1m` premium-percent change to within 5% on a 100-sample audit. Discrepancies beyond these thresholds indicate writer bug.
+
+**Cross-references.**
+
+- ADR-009 §Phase 1 — outcomes table is the canonical home for holdout validation; magnitude columns extend Phase 1 split into magnitude-stratified analysis.
+- ENH-101 — stop-loss optimization; blocked by ENH-100 (MAE column prerequisite).
+- ENH-102 — H-FVG-retest signal isolation; consumer of ATM PnL + MFE/MAE columns for live routing rule calibration.
+- ADR-004 (S31-A acceptance) — ICT primitive canon Wave 1 produced the 5 primitives whose outcomes get magnitude-extended here.
+- Operator S31-B follow-up questions (six). All answerable with the extended schema; none answerable with current 1-column outcomes.
+
+**History.** 2026-05-21 (Session 31-B) NEW filed as **ENH-100** during S31-B doc-close. Numbered ENH-100 to skip ENH-99 reserved slot (per S29/S30 memory: ENH-99 reserved for TD-080 Dhan 429 retry layer + circuit breaker; S31-B does not consume the reservation). Status PROPOSED. P0 priority for S32 — first item in starter prompt.
+
+---
+
+### ENH-101 — Stop-loss optimization from MAE distribution (90th pct of profitable trades per TF×type×direction)
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED — blocked by ENH-100** |
+| Filed | 2026-05-21 (Session 31-B P1 priority — blocked) |
+| Source | Operator S31-B Q2 follow-up #5 "optimum stop loss" — direct response. Methodology: for each (timeframe, primitive_type, direction) cell with N≥30, compute the 90th percentile of MAE among trades that ended profitable at the canonical exit horizon (forward_30m_pct > 0 for canonical; extensible to forward_60m for H-FVG-retest signals per ENH-102). That 90th-pct MAE value is the stop-loss threshold that would have preserved 90% of winning trades while exiting losing trades earlier. |
+| Priority Tier | 1 (P1 for S32 — blocked by ENH-100; unblocks immediately after) |
+| Build cost | ~0.5 session post-ENH-100: SQL aggregation + per-cell percentile + Pine overlay annotation (stops drawn alongside zones). |
+| Blocks | Sizing layer can use stop-distance directly for Kelly fraction adjustment. Wire to existing tier multiplier path (if re-enabled per ENH-76/77/88 D.13.1 live-cohort validation). |
+| Blocked by | **ENH-100** — MAE column must exist on `ict_primitive_outcomes` table before this query is runnable. Strict dependency, no workaround. |
+| Area | Market structure intelligence / risk model |
+
+**Context.** Standard stop-loss design in MERDIAN to date has been ad-hoc per primitive type (zone-bound, ATR-based, fixed pp). S31-B's ADR-009 Phase-1 holdout validation surfaced a structural finding: when an FVG retest signal works (H FVG retest 80-92% holdout WR), the question of "how much room to give the trade before stopping out" is answerable from the cohort's own MAE distribution. The 90th-percentile MAE of winning trades is the conservative-but-tight stop: it preserves 90% of winners while exiting the 10% of winners that had the deepest drawdowns alongside the losers that never recovered.
+
+**Methodology.**
+
+1. **Per-cell aggregation** — group by (`symbol`, `timeframe`, `primitive_type`, direction inferred from type, `retest_or_formation` based on entry semantics). Compute 90th percentile of `mae_pct` (negative-valued, so 90th pct is closer-to-zero — the larger absolute value is the 10th pct of winners). Filter to N≥30 per cell; cells below N≥30 inherit parent-cell stop (broader TF or pooled across symbols).
+
+2. **Tabular output** — per-cell stop_distance_pct table joined back to live signal builder for runtime lookup. Schema: `(symbol, tf, primitive_type, direction, mode, n, mae_p90_pct, generated_at, source_window)`. Versioned by `generated_at` for audit.
+
+3. **Pine overlay annotation** — extend `generate_pine_overlay.py` to draw stop-loss horizontal line alongside each zone's entry band (existing tier system T1/T2/T3 by spot proximity). Stop computed from zone entry price + signed `mae_p90_pct`.
+
+4. **Live routing wire** — `enrich_signal_with_ict()` adds `stop_distance_pct` to the signal payload for downstream Kelly sizing layer to consume. Reversible via `MERDIAN_ENH101_ENABLED` env flag pattern (mirror S26 ENH-55 / S30 ENH-76/77/88 reversibility per D.13.1).
+
+**Falsification commitment.** Post-deploy 30-trading-day audit: compare live MAE of trades exited at the computed stop vs. trades that would have completed at the canonical exit horizon. If the stop systematically exits trades that would have profited at horizon (false-positive stops > 25% of trades), the 90th-pct threshold is too tight and gets relaxed to 95th-pct; if it allows too many losers to deepen (drawdown beyond stop in <5% of trades not flagged), threshold tightens to 85th-pct. Threshold is a hyperparameter, not a structural finding.
+
+**Cross-references.**
+
+- ENH-100 — strict prerequisite (MAE column).
+- ENH-102 — H-FVG-retest signal isolation is the natural first consumer (highest-confidence signal class, stops most informative there).
+- ADR-009 §Phase 1 — graduated split discipline applies (Phase 1 N≥30 cells get the stop; smaller cells inherit).
+- D.13.1 cohort-translation general principle — stops computed on historical cohort require live-cohort re-validation per the N≥30 per-cell threshold; env-flag default OFF.
+
+**History.** 2026-05-21 (Session 31-B) NEW filed as **ENH-101**. Blocked by ENH-100. Status PROPOSED.
+
+---
+
+### ENH-102 — H-FVG-retest signal isolation: codify the holdout-validated edge into live routing
+
+| Field | Detail |
+|---|---|
+| Status | **PROPOSED** |
+| Filed | 2026-05-21 (Session 31-B P1 priority — independent of ENH-100/101 for filing) |
+| Source | S31-B ADR-009 Phase-1 holdout split (train 2025-04-01 → 2026-02-28 vs holdout 2026-03-01 → 2026-05-19) returned the headline finding: NIFTY/SENSEX H BEAR_FVG + BULL_FVG retest **holds AND strengthens** on holdout across both symbols, both directions: NIFTY H BEAR_FVG retest 75.0 → 85.2 (+10.2), NIFTY H BULL_FVG retest 64.3 → 90.0 (+25.7), SENSEX H BEAR_FVG retest 76.6 → 92.0 (+15.4), SENSEX H BULL_FVG retest 70.2 → 80.8 (+10.6). All four buckets simultaneously holdout-validated. **This single finding justifies the entire S31-B effort.** |
+| Priority Tier | 1 (P1 for S32 — independent of ENH-100/101 for filing; integration target is S31-C consumer-rewire) |
+| Build cost | ~1 session for routing-rule spec + env-flag gate + smoke test. Operator decision on Kelly tier / sizing posture lands at integration time. |
+| Blocks | S31-C consumer rewire scope (the validated edge is the canonical first signal to route through any rewired consumer layer). |
+| Blocked by | None for filing. **Live deployment blocked by ENH-100** (need magnitude characterization for sizing/stop) and D.13.1 cohort-translation pre-flight check (re-run on `signal_snapshots` runtime cohort before production deployment per S30 general principle). |
+| Area | Signal architecture — live routing rule |
+
+**Context.** S31-B's most consequential finding. Four conditions independently holdout-validate the same signal class: H-timeframe Fair Value Gap retests on both NIFTY and SENSEX, both BEAR and BULL direction, holdout sample N=27-30 per cell with WR 80.8-92.0%. The deltas vs train (+10.2 to +25.7pp) are large and asymmetric in the favorable direction (holdout exceeds train, opposite of overfit signature). M5 FVG standalone is at-or-below baseline in holdout (refuted as standalone). OBs are inconclusive at N. Sweeps hold modestly at ~60%. Displacement_UP holds 70-87% across TFs. The H-FVG-retest cell is the single highest-confidence edge in the entire S31-B cohort.
+
+**What this enhancement ships.**
+
+1. **Routing-rule spec** — codify the four-bucket H-FVG-retest pattern as a live signal routing preference. When a signal candidate is generated and matches (timeframe='H' AND primitive_type IN ('BULL_FVG','BEAR_FVG') AND mode='retest'), route preferentially over formation-mode entries. Sizing posture: TIER1 candidate pending ENH-101 stop calibration.
+
+2. **Env-flag gate** — `MERDIAN_ENH102_ENABLED` default OFF until D.13.1 live-cohort re-validation passes. Mirror of S30 reversibility pattern: explicit `=0` in `.env`, audit-friendly, code-path lit but inactive, reversible without code change.
+
+3. **Live-cohort re-validation pre-flight** — before flag flip to `=1`, run S30-style cohort progression on live `signal_snapshots` filtered to H-FVG-retest events. Cell N must reach ≥30 per (symbol, direction) live-cohort bucket; WR must land within 10pp of S31-B holdout WR (per D.8.2 graduated-strictness tolerance at N≥30). If transfer-confirmed, flag goes `=1`; if not, escalate to architect review.
+
+4. **Telemetry** — emit `caution_string` or `raw` field tag `enh102_route_preference` on each signal carrying the routing-preference application; downstream P&L attribution can isolate ENH-102-routed cohort from baseline.
+
+**Why P1 not P0.** The signal is validated; the operational layer to consume it cleanly does not yet exist. S31-C consumer rewire is the natural integration target; until that lands, wiring ENH-102 into the current `build_trade_signal_local.py` gate stack means it sits behind LONG_GAMMA + ENH-76/77/88 (env-disabled per S30) + DTE + confidence threshold. The holdout-validated edge would still be 99.4% rejected per S30 gate-stack-inversion finding. Cleaner integration path: wire after S31-C rewire scope clarifies the gate stack ordering.
+
+**Falsification commitment.** If live-cohort re-validation at N≥30 fails the 10pp transfer threshold per D.8.2, ENH-102 stays env-flagged off pending architect review. If live deployment passes pre-flight but produces drift in either direction (live WR >15pp from holdout WR over a 60-day window with N≥30), env-flag flips back to `=0` and ENH-102 is re-classified as cohort-specific not transferable. The signal's validity claim is graduated, not absolute.
+
+**Cross-references.**
+
+- ADR-009 §Phase 1 — holdout split discipline is the source of the validation; H-FVG-retest is the first signal to clear it cleanly.
+- D.13.1 cohort-translation general principle — applies to ENH-102 deployment; live-cohort re-validation required before flag flip.
+- D.8.2 graduated-strictness — 10pp tolerance at N≥30, 15pp at 30≤N<60.
+- ENH-100 — required for sizing/stop calibration before flag flip (entry/exit posture under-specified without magnitude data).
+- ENH-101 — provides the stop-loss threshold for the live routing rule.
+- S31-A ADR-004 §5.2 — FVG canonical detection (the H-FVG-retest signal's primitive source).
+- TD-S30-NEW-3 — OB attachment broken at signal-builder layer; affects OB-pattern signals; does NOT affect FVG patterns. ENH-102 is unblocked by TD-S30-NEW-3 because FVG attachment was empirically the highest-attachment pattern in S30 audit.
+
+**History.** 2026-05-21 (Session 31-B) NEW filed as **ENH-102**. Status PROPOSED. P1 priority for S32 — integration target S31-C.
+
+---
+
+*End Session 31-B P0/P1 new ENH entries block (ENH-100 + ENH-101 + ENH-102). Next session entries land below this line.*
+
+---
+
+### ENH-103 — Retest-anchored option PnL columns (extend `ict_primitive_outcomes` schema 5 cols)
+
+| Field | Detail |
+|---|---|
+| Status | **IMPLEMENTED** (v6 mid-S33 — schema extension + writer extension against `hist_atm_option_bars_5m`; **v7 S33 — chain-table held-strike rebuild via ADR-011**). |
+| Filed | 2026-05-22 (Session 33 mid-session, P0-derived from ENH-100 cohort analysis surfacing retest-anchor magnitude gap) |
+| Source | S33 ENH-100 cohort analysis showed retest-mode primitives had no option-PnL anchor — ATM PnL columns were formation-anchored only. Retest cohort empirical validation of ADR-009 §Phase 1 H-FVG retest finding (S31-B headline edge) requires retest-anchored option PnL to confirm spot-WR finding survives translation to real-money held-strike PnL. |
+| Priority Tier | 1 (P0 — gates ADR-009 §Phase 1 empirical confirmation cross-symbol with held-strike option PnL) |
+| Build cost | ~0.5 session combined (SQL migration + writer extension + backfill ~5 min mid-session for v6; chain-table rebuild rolled into v7 same session via ENH-106). |
+| Blocks | ENH-102 H-FVG-retest live routing (sizing/stop calibration prerequisite on retest cohort PnL distribution). |
+| Blocked by | None — `ict_primitive_outcomes` table exists post-S31-B Task 3 DDL deploy; schema extension is additive. |
+| Area | Market structure intelligence / outcomes characterization layer — retest anchor |
+
+**What this enhancement ships.**
+
+1. **Schema extension to `ict_primitive_outcomes`** — five additive columns:
+   - `option_pnl_5m_pct numeric` — ATM option return at +5 minutes from primitive retest anchor (NULL for formation-only primitives)
+   - `option_pnl_15m_pct numeric` — at +15 minutes
+   - `option_pnl_30m_pct numeric` — at +30 minutes
+   - `option_pnl_60m_pct numeric` — at +60 minutes
+   - `option_pnl_eod_pct numeric` — at session close (15:30 IST) of retest's session
+
+2. **Writer extension** — `build_ict_primitives.py::compute_retest_atm_pnl` populates the 5 new columns per retest anchor for primitives that retest (per existing `compute_retest_outcomes_zone` / `compute_retest_outcomes_level` enumeration).
+
+3. **Schema migration** — ALTER TABLE ADD COLUMN x5 + NOTIFY pgrst, 'reload schema'. Doc Protocol v4 Rule 10 trigger MET (schema-affecting change) — ENH-103 schema covered under ADR-010 v3 §"Schema extension" umbrella (ADR-011 supersedes only §"Source table choice" clause).
+
+**Why P0.** S31-B headline finding (4 H-FVG-retest buckets HOLD AND STRENGTHEN on holdout, +10.2 to +25.7pp deltas, WR 80.8-92.0%) was spot-WR-only. ADR-009 §Phase 1 calibration discipline requires empirical confirmation with real-money metrics before live-routing flag flip per D.13.1. Retest-anchored option PnL is that confirmation layer.
+
+**Falsification commitment.** Same architecture as ENH-100 — column agreement to within 5% of chain-table premium-percent change on 100-sample audit. Post-ADR-011, this criterion is tautological (writer reads chain directly); replaced with strike-rounding + expiry-calendar lookup correctness audit per TD-S33-NEW-3.
+
+**Empirical results (post-ADR-011 v7 rebuild).** Retest coverage 12%→65% of retested primitives. NIFTY D BULL_FVG retest median 30m +11.7% / median 60m +22.3% / WR 88.2% / N=17 (strongest single retest cell); NIFTY H BEAR_FVG retest +4.8% / 7.3% / 72.5% / N=51; NIFTY H BULL_FVG retest +3.8% / 2.1% / 60.0% / N=50; SENSEX H BEAR_FVG retest +9.9% / 6.3% / 75.6% / N=45; SENSEX H BULL_FVG retest +7.0% / 6.7% / 68.4% / N=38. **ADR-009 §Phase 1 H-FVG retest finding empirically confirmed cross-symbol with held-strike option PnL — two independent metrics agreeing (spot-WR S31-B + option-PnL S33).** **M5 OB retest paradox CONFIRMED at option-PnL level — FALSIFIED as edge** (NIFTY M5 BEAR_OB retest median 30m -11.1% / WR 35.3% / N=17; all M5 retest cells negative median).
+
+**Cross-references.**
+
+- ADR-009 §Phase 1 — empirical confirmation layer; D.14.1 strengthened from spot-WR-only to spot-WR + option-PnL.
+- ADR-011 — supersedes ENH-103 v6 source-table choice (`hist_atm_option_bars_5m` → `hist_option_bars_1m` chain with held strike); schema unchanged.
+- ENH-100 — co-rebuilt to v7 in the same patch; formation-anchored and retest-anchored option PnL now share chain-table architecture.
+- ENH-102 — H-FVG-retest live routing; live-deploy now has both sizing/stop magnitude (ENH-100) AND retest-cohort PnL distribution (ENH-103) as inputs.
+- D.14.3 (Assumption Register) — M5 OB retest paradox; D.14.3 promoted from investigation-queued to falsified at option-PnL level.
+- D.15.1 (Assumption Register) — chain-table canonical for held-strike PnL VALIDATED-IMPLEMENTED via this enhancement's v7 rebuild.
+
+**History.** 2026-05-22 (Session 33 mid-session) NEW filed as **ENH-103** as schema extension + writer extension v6 against `hist_atm_option_bars_5m`. Cohort analysis post-v6 showed universally-negative median option PnL — diagnosed as source-table mismatch (operator pushback on "sparse vendor data" framing → architectural diagnosis → ADR-011 + ENH-106 v7 chain-table rebuild). 2026-05-22 (Session 33) **v6 → v7 IMPLEMENTED via ENH-106** (chain-table held-strike rebuild). Status flips to IMPLEMENTED post-v7 cohort flip (universally negative → universally positive medians on directional cells).
+
+---
+
+### ENH-106 — Chain-table held-strike ATM PnL rebuild (ADR-011 implementation)
+
+| Field | Detail |
+|---|---|
+| Status | **IMPLEMENTED** (S33 v7 writer patch deployed + TRUNCATE + full re-backfill 1775.9s rebuilt 19,399 outcomes; **S35 v8/v8.1/v8.2 dual-source layer added** — `compute_retest_atm_pnl` + `compute_atm_pnl_and_dte` route per-tuple by `CHAIN_TIER_BOUNDARY_UTC = 2026-04-01` to `hist_option_bars_1m` (pre) or `historical_option_chain_snapshots` (post); `_prefetch_hocs_for_tuple` helper added; `option_pnl_source` audit column annotates outcome rows `'merdian_hist_5m'` (HOCS-sourced post-Apr-2026) or `'hist_option_bars_1m'` (vendor-sourced pre-Apr-2026); expiry calendar UNIONs vendor + HOCS via `get_hocs_distinct_expiries(text)` RPC + `idx_hocs_symbol_expiry` covering index; TRUNCATE + full re-backfill 19,571 outcomes in 2,107s — 81% post-Apr-2026 retest recovery on zone-primitive denominator). |
+| Filed | 2026-05-22 (Session 33) |
+| Source | S33 ENH-100 v3 + ENH-103 v6 cohort analyses both showed universally-negative median option PnL across every (symbol, tf, primitive_type, direction) cell — contradicting Exp 2's known +70% T+30m expectancies on BULL_OB. Operator challenged "sparse vendor data" framing with verified knowledge (12 months of chain data paid for and validated dense); architectural diagnosis within one push-back cycle: `hist_atm_option_bars_5m` is the 27k-row aggregated table built for **wick-reversal analysis** (read by `experiment_26/27/27b`), NOT for held-strike PnL across horizons. Same-strike enforcement on rolling-ATM source filters 50-70% of primitives where vendor rolled ATM — non-random self-selection against winners. Canonical source for held-strike PnL is `hist_option_bars_1m` chain (54.8M rows, dense, paid-for) with manual ATM strike picking + held strike across horizons. ADR-011 mandatory per Doc Protocol v4 Rule 10 (reversal of ADR-010 v3 settled decision). |
+| Priority Tier | 0 (P0 — architectural correction blocking trust in ENH-100/103 outputs) |
+| Build cost | 1 session — patch script (4 substitutions) + dry-run + live + TRUNCATE + full re-backfill 1775.9s (NIFTY 830.7s + SENSEX 656.3s). |
+| Blocks | None new (ENH-100/103 IMPLEMENTED status both gated on this rebuild). |
+| Blocked by | None — schema unchanged per ADR-011; chain table existed pre-session. |
+| Area | Market structure intelligence / data layer / outcomes characterization architecture |
+
+**What this enhancement ships.**
+
+1. **Writer patch via `patch_s33_enh106_chain_heldstrike_atm_pnl_writer.py`** — 4 substitutions in `C:\GammaEnginePython\build_ict_primitives.py`:
+   - **SUB1**: replaces head of `compute_atm_pnl_and_dte` through `anchor_strike_norm = str(anchor_strike)` line — v7 head computes via chain cache + returns early; trailing v3 for-loop becomes unreachable dead code (filed TD-S33-NEW-2 S4 for cleanup in next refactor).
+   - **SUB2**: replaces entire `compute_retest_atm_pnl` with v7 chain-cache version.
+   - **SUB3**: inserts 4 new helpers before `compute_outcomes`: `_load_expiry_calendar` (DISTINCT on `hist_atm_option_bars_5m.expiry_date` — small fast lookup for canonical calendar), `_nearest_weekly_expiry` (bisect_left on sorted calendar with same-day-pre-15:30-IST DTE=0 handling), `_chain_premium_at` (per-minute cache lookup keyed by minute-floored real-UTC ISO), `_prefetch_chain_for_primitives` (per-tuple range query enumeration).
+   - **SUB4**: modifies `compute_outcomes` head to call `_prefetch_chain_for_primitives(sb, primitives, events, bars_1m, idx, atm_cache)` before per-primitive loop — single pre-pass populates `atm_cache` for all (strike, expiry, type) tuples needed across formation + retest + event anchors.
+
+2. **Per-tuple range-prefetch architecture** — group I/O by tuple, amortize query overhead. Each unique `(strike, expiry, option_type)` tuple gets ONE paginated range query against `hist_option_bars_1m` covering `[min_target_ts, max_target_ts + 1min)`. NIFTY: 839 tuples / 704,272 bars in 830.7s; SENSEX: 1417 tuples / 970,904 bars in 656.3s. Live cycle path untouched (live ATM is computed differently).
+
+3. **Era-aware vendor labeling** — chain table `bar_ts` is IST-mislabeled-as-UTC (same Bug B3 era as 5m table). Existing `_vendor_bar_ts_label()` + `normalize_hist_bar_ts()` helpers reused; cache keyed by minute-floored real-UTC ISO for canonical lookup.
+
+4. **Empirical expiry calendar** — handles NSE/BSE 2025-09-01 weekday swap (NIFTY Thu→Tue / SENSEX Tue→Thu) + ~15% holiday-shifted weeks (Mon/Wed expiries) + same-week double expiries (monthly weeks). Pure DOW rule fails ~15% of weeks — empirical calendar via bisect_left is uniform.
+
+5. **Held strike across horizons** — at anchor: query chain at `(instrument_id, bar_ts, strike, expiry_date, option_type)`. At +5m/+15m/+30m/+60m/EOD: SAME `(strike, expiry, option_type)`, different `bar_ts`. No vendor-roll attrition; PnL is trader-realistic for the entry position.
+
+6. **DTE derivation** — `(expiry - valid_from.date()).days` from manually-picked expiry. Replaces v3's reliance on vendor's `dte` column.
+
+**Empirical results.** TRUNCATE + full re-backfill 1775.9s rebuilt 19,399 outcomes (NIFTY 8838 + SENSEX 10561). Coverage 20-44× lift on populated M5 cells (NIFTY M5 BEAR atm_pnl_30m 85→2650, SENSEX M5 BULL 60→2662). Retest coverage 12%→65% of retested primitives. **Median PnL flipped universally NEGATIVE (v6) → POSITIVE on every directional cell with real spot edge:** NIFTY M5 BULL_OB +17.2% median 30m / WR 82.1% / N=28; NIFTY M5 BEAR_OB +20.3% / 85.7% / N=28; SENSEX M5 BULL_OB +16.4% / 77.8% / N=45; NIFTY M5 DISPLACEMENT_DOWN +14.8% / 77.4% / N=93; NIFTY H DISPLACEMENT_DOWN +34.7% / 100% / N=17; SENSEX H DISPLACEMENT_UP +22.8% / 94.4% / N=18. M5 FVGs remain coin flips (~50% WR, ~0% median 30m) confirming D.14.2 independently of source-table choice. **DTE 3-bucket structure discovered:** DTE=0 feast-or-famine (UP median 30m +58.7% / DOWN median 60m turns negative -4.8% to -9.2% — exit at 30m); DTE=1-2 M5 sweet spot; DTE≥3 H-TF home (NIFTY H DISP_DOWN median 60m +37.5% / WR 100%). Codified D.15.3.
+
+**Why P0.** v6 "universally negative median" diagnostic was misleading — would have produced incorrect trading conclusion ("ATM options have no edge"). v6 attrition was non-random — filtered precisely the primitives where spot moved enough for vendor to roll ATM, which are the primitives where the edge plays out. Self-selection bias against winners. The architectural correction is mandatory for downstream consumers (ENH-101 sizing/stop calibration, ENH-102 H-FVG-retest live routing, ADR-009 §Phase 1 empirical validation).
+
+**Falsification commitment.** Original ENH-100 5% agreement criterion against `hist_option_bars_1m` premium-percent change now tautological (writer reads chain directly). Replaced criterion (TD-S33-NEW-3): 50-100 sample audit comparing writer's stored strike + expiry against independently-computed values via spot lookup + manual rounding + direct DOW + holiday rule. Confirms strike-rounding + expiry-calendar lookup correctness, not trivial chain-read agreement.
+
+**Cross-references.**
+
+- ADR-011 — the architectural decision document this enhancement implements. Supersedes ADR-010 v3 §"Source table choice" only; schema clauses unchanged.
+- ENH-100 v3→v7 IMPLEMENTED via this rebuild (formation-anchored ATM PnL).
+- ENH-103 v6→v7 IMPLEMENTED via this rebuild (retest-anchored option PnL).
+- ADR-009 §Phase 1 — H-FVG retest finding now empirically confirmed cross-symbol with held-strike option PnL (D.14.1 strengthened).
+- D.14.3 (Assumption Register) — M5 OB retest paradox; promoted from investigation-queued to falsified at option-PnL level.
+- D.15.1-D.15.4 (Assumption Register §D.15 NEW S33) — chain-table canonical VALIDATED-IMPLEMENTED, M5 OB retest REFUTED, DTE 3-bucket structure VALIDATED, D-TF horizon extension HYPOTHESIS.
+- TD-S32-NEW-4 — vendor cross-tier drift on `hist_atm_option_bars_5m` CLOSED via architectural retirement (writer no longer reads the drifting column).
+- TD-S33-NEW-1 — `hist_atm_option_bars_5m` reason-to-exist re-evaluation post-wick-experiment retirement (table remains read by `experiment_26/27/27b`; orphan-candidate when those retire).
+- TD-S33-NEW-2 — v6 dead code cleanup in `compute_atm_pnl_and_dte` trailing for-loop + retired `_atm_anchor_at` / `_atm_future_at` helpers (~15 min in next refactor).
+- TD-S33-NEW-3 — post-v7 falsification audit re-scope (original 5% agreement criterion now tautological).
+- TD-S33-NEW-4 — D-TF horizon extension via mfe_pct + time_to_mfe_min SQL-only analysis (D-TF cells positive spot WR ~67% but negative option PnL median at 30m/60m — theta drains before spot move materializes).
+
+**History.** 2026-05-22 (Session 33) NEW filed as **ENH-106** and IMPLEMENTED same-session via `patch_s33_enh106_chain_heldstrike_atm_pnl_writer.py`. Backup `build_ict_primitives_PRE_S33_v7.py` preserved. AST validated pre+post. Marker `ENH-106 (S33) v7` in `build_ict_primitives.py`. TRUNCATE + full re-backfill 1775.9s. Numbered ENH-106 (not ENH-103/104/105 which were used or skipped per monotonic-no-reuse discipline; ENH-99 reservation for TD-080 Dhan 429 retry layer preserved).
+
+---
+
+*End Session 33 new ENH entries block (ENH-103 + ENH-106; ENH-100 status update to IMPLEMENTED via v7 ADR-011 rebuild). Next session entries land below this line.*
+
+---
+
+### ENH-108 — Second-touch / N-touch retest detection on ICT primitives
+
+| Field | Value |
+|---|---|
+| Filed | 2026-05-24 (Session 34) |
+| Status | PROPOSED |
+| Area | Market structure intelligence / outcomes anchoring layer |
+| Related ADR | ADR-004 §10 (current single-retest schema), ADR-012 candidate (spot-anchored SL doctrine — consumer of expanded retest data) |
+| Related TD | TD-S34-NEW-4 (`hist_option_bars_1m` post-2026-04-01 coverage gap — validation cohort for ENH-108 blocked until that closes) |
+| Related ENH | ENH-100 (formation-anchored magnitude profiling — populates the same outcomes table this ENH extends), ENH-103 (retest-anchored option PnL — direct upstream consumer), ENH-106 (chain-table held-strike rebuild — same compute path will produce N-touch outcomes), ENH-107 (D-TF FVG retest signal isolation — consumer of N-touch retest hit rates for routing decisions) |
+
+**Premise.** ADR-004 §10 records `first_retest_ts` and `retest_status` (PENDING / RETESTED / NEVER_RETESTED / BREACHED_BEFORE_RETEST) on each primitive. Only the *first* retest is captured per primitive's lifetime. Subsequent touches of the same active zone — which are mechanically identical retests by ICT canon (price re-enters the zone after exiting, rejects, moves away) — are invisible to outcomes data. This is a structural model gap, not a detection deficiency.
+
+**Evidence of need.** S34 audit (2026-05-24) measured: across 119 days where the index moved ≥1% intraday and MERDIAN had at least one aligned primitive whose zone interacted with the move, **118 days were captured** (99% structural rate). But only **7 days had `first_retest_ts` falling on the move-day itself**. The remaining 112 days were powered by zones whose `first_retest_ts` was days or weeks earlier — price returned again, but the model doesn't log a new retest event. The implication: prior retest-cohort research (D-FVG retest 78-86% WR, H-FVG retest 60-76% WR per ADR-009 holdout, ENH-103+ENH-106 v7 outcomes) is **valid for the first-touch population it measured** but **systematically underweights the live universe of actionable structures**. Second-, third-, fourth-touch retests of HTF zones are the dominant trigger mechanism for ≥1% moves but carry zero outcomes data today.
+
+**Scope.** Two design alternatives — operator decision required before build:
+
+| Design | Pros | Cons |
+|---|---|---|
+| **A — Extend `ict_primitive_outcomes` in place.** Add columns `n_touches INTEGER`, `touch_history JSONB` (array of `{touch_ts, touch_depth_pct, fwd_5m_pct, fwd_15m_pct, fwd_30m_pct, fwd_60m_pct, fwd_eod_pct, option_pnl_5m/15m/30m/60m/eod_pct}`). | One row per primitive preserved; backward compatibility with existing readers; lightweight schema delta. | JSONB query patterns are awkward for cohort selection ("give me all 2nd touches across D-FVG"); aggregation requires LATERAL unnesting; N-touch indexing is harder. |
+| **B — New `ict_primitive_touches` table.** FK `primitive_id` to `ict_primitives.id`, one row per discrete touch event, columns include `touch_seq INTEGER` (1-indexed), `touch_ts`, `touch_depth_pct`, all forward + option PnL columns. | Clean relational model; trivial cohort selection ("WHERE touch_seq = 2 AND primitive_type='BULL_FVG'"); standard B-tree indexes. | New table → new joins for existing readers; ENH-106 v7 prefetch path needs to learn the new table. |
+
+**Recommendation.** Design B. Cleaner aggregation, simpler indexes, more honest about the 1:N relationship between a primitive and its touches. Existing readers continue to read `ict_primitive_outcomes` for the canonical first-touch row; downstream consumers wanting N-touch data join the new table.
+
+**Detection canon (must be defined before build).** "What counts as a discrete re-touch" — proposed canon analogous to current `first_retest_ts`: after a recorded touch (touch_seq N), the next touch (touch_seq N+1) is recognised when price first **fully exits** the zone after touch N, then **re-enters** the zone after exit. Tolerance for "fully exit" matches existing `RETEST_TOLERANCE_PCT` per timeframe (W 0.15% / D 0.08% / H 0.04% / M5 0.02%, per ADR-004 §11). Same canon as `first_retest_ts` extension — not a new ICT primitive, just N applied iteratively.
+
+**Selection-research dependency.** ENH-108 is foundational for the selection-research arc (next session-tier work item per S34 sequencing). Selection requires "is this primitive being touched right now for the Nth time, and what's the empirical hit rate by N?" — impossible to answer without per-touch outcomes data. ENH-107 (D-TF FVG retest signal isolation: BEAR=EOD, BULL=60m) can ship without ENH-108 but will be operating on first-touch cohort statistics; live signal calibration against N-touch reality requires ENH-108.
+
+**Risks.** (a) Detection logic edge cases for zones that wick in-and-out multiple times within a single 5m bar (canon needs to commit to "1m-bar resolution touch detection" or "5m-bar resolution"). Recommend 5m-bar resolution matching the primitive timeframe convention. (b) Outcomes compute cost scales linearly with N. Current 19,399 primitives → ~10-15% retested → expected 1-3 additional touches per retested primitive → ~5-10K extra outcome rows. Manageable on the ENH-106 v7 prefetch path. (c) Per-touch option-PnL requires the chain table — TD-S34-NEW-4 (post-2026-04-01 chain coverage gap) blocks the full-window backfill; partial backfill against the pre-Apr-2026 window is feasible immediately.
+
+**Cost to build.** ~2-3 sessions: 1 for detector + schema (DDL + writer extension to `build_ict_primitives.py` outcomes block), 1 for backfill (TRUNCATE + full rebuild on the pre-Apr-2026 window — chain-coverage permitting), 1 for validation + downstream consumer updates (ENH-107 routing logic if shipping concurrently; v_ict_primitive_edge cohort views).
+
+**Blocked by.** Nothing structural for the build itself. Full validation cohort blocked by TD-S34-NEW-4 closure (post-2026-04-01 chain data). Pre-Apr-2026 build + validation can start any session.
+
+**Priority.** HIGH — gates the selection-research arc, directly addresses the 112/119 invisible-retest cohort, and is the structurally honest fix for ADR-004 §10's known scope limitation.
+
+---
+
+*End Session 34 new ENH entries block (ENH-108). Next session entries land below this line.*
+
+---
+
+### ENH-109 — Graduate ICICI Breeze API as canonical historical options backfill source
+
+| Field | Value |
+|---|---|
+| Filed | 2026-05-24 (Session 35) |
+| Status | PROPOSED |
+| Area | Data layer / historical options backfill source canonicalization |
+| Related ADR | ADR-013 PROPOSED (Breeze as canonical historical backfill source — decision document this enhancement implements) |
+| Related TD | TD-S35-NEW-1 (HOCS strike-coverage structural limit — Breeze full-chain capability is the recovery vector); TD-S35-NEW-2 (pre-Apr-2026 vendor uncatalogued — Breeze graduation displaces the vendor renewal dependency); TD-S35-NEW-3 (SENSEX `stock_code='BSESEN'` symbology — codified by this build); TD-080 (Dhan 429 retry layer — Breeze cadence absorbs no retry-storm pressure from this path) |
+| Related ENH | ENH-106 v8 dual-source chain reader (downstream consumer of any Breeze-graduated source); ENH-80 per-strike GEX (Phase 3 prerequisite per ADR-002 v2 P7/P8 — full-chain history requirement) |
+| Priority Tier | 3 (P3 — Phase 3 GEX time-series prerequisite; not on S36 critical path until ADR-013 decision concludes) |
+| Build cost | ~2-3 sessions: 1 for Breeze API client + rate-limit + symbology layer (`stock_code` table + product_type + DTE strike-grid expansion logic) + auth/cookie session manager; 1 for full-window backfill across pre-Apr-2026 vendor coverage gaps + post-Apr-2026 HOCS coverage residuals (TD-S35-NEW-1) + AWS-side scheduler integration; 1 for downstream consumer wiring (ENH-106 v8 source-tier annotation extension to `'breeze_canonical'` + audit cohort validation against existing vendor data on 100-sample overlap window) |
+
+**Premise.** S22 Kite-based backfill of `hist_option_bars_1m` broke at unknown date (`oi=0` across all rows, TD-094 RECLASSIFIED-STALE S29 when vendor data superseded it). Vendor `hist_option_bars_1m` is currently the only known retail-accessible source for full-chain SENSEX history >2 years but vendor identity + contract terms + refresh cadence are not catalogued in System Map (TD-S35-NEW-2 S1, bus-factor-of-one). Dhan API used by MERDIAN-ingest (`ingest_option_chain_local.py` writing to `historical_option_chain_snapshots` aka HOCS) has structural ATM±N strike-coverage limit per cycle (TD-S35-NEW-1 — retests with large spot drift miss held-strike). Breeze (ICICI Direct retail API) demonstrated S35 capability: full-chain backfill for one trading day (2026-04-16 NIFTY + SENSEX) writing 107,630 rows in 4-5min wallclock from MERDIAN AWS with `source='breeze_backfill_s35'`. No ATM±N cap; 3-year lookback; 5000 calls/day budget + 100/min throttle; SEBI static-IP whitelist already in place via MERDIAN AWS Elastic IP 13.63.27.85.
+
+**Evidence of need.** Three concurrent gaps converged at S35: (1) post-2026-04-01 chain coverage hole in `hist_option_bars_1m` (vendor stopped delivering — diagnosed S34 TD-S34-NEW-4, closed-mechanical S35 via ENH-106 v8 routing to HOCS but routed-to-HOCS retests are gated on HOCS strike-coverage which has its own residual gap); (2) S22 Kite backfill known broken via TD-094 (vendor superseded); (3) Dhan retry-storm pattern recurring via TD-080 (3rd documented occurrence S29). A canonical historical backfill source with full-chain capability + retest-strike depth + production stability would resolve all three simultaneously. Breeze's S35 surgical-fill capability demonstrates the architectural fit empirically.
+
+**Scope.** Two functions on the Breeze API are relevant:
+
+| Function | Coverage | Best fit |
+|---|---|---|
+| `rollingoption` | ATM±N strikes per call across DTE range; 3-year lookback; high call efficiency | Buyer-side ATM PnL history (mirrors current vendor `hist_option_bars_1m` shape; ATM-only cap acceptable for ATM-anchored research) |
+| `get_historical_data_v2` | Per-strike per-expiry full granular control; 3-year lookback; lower call efficiency (one call per strike-expiry-day cell) | Full-chain backfill for gamma layer (no strike-cap restriction; matches HOCS shape; supports Phase 3 GEX time-series prerequisite) |
+
+**Recommendation.** Build both. Use `rollingoption` for cost-efficient ATM-anchored backfills (replaces broken Kite + supplements vendor); use `get_historical_data_v2` for full-chain backfills as Phase 3 GEX requires. Operator confirms `rollingoption` proven capable on S35 verification.
+
+**Symbology codification.** SENSEX on Breeze requires `stock_code='BSESEN'` not `'SENSEX'` (empirically discovered S35 via 6-variant probe; not in Breeze public docs). NIFTY uses `stock_code='NIFTY'`. F&O `product_type='options'` + `right` = `'call'` / `'put'`. `exchange_code='NFO'` (NIFTY) / `'BFO'` (SENSEX). Codified in TD-S35-NEW-3.
+
+**Falsification commitment.** Audit cohort: 100-sample overlap window where Breeze-sourced data exists alongside vendor `hist_option_bars_1m` (pre-Apr-2026 weekly NIFTY ATM strikes 2025-11 through 2026-02). Acceptance criterion: per-minute OHLC agreement within 1bp on close prices + within 5% on volume. Failure mode: per-strike systematic bias (e.g., Breeze reports stale prices) — file as TD; partial-bucket coverage (Breeze missing some dates) — file as ENH retry layer.
+
+**Cross-references.**
+
+- ADR-013 (PROPOSED 2026-05-24) — the architectural decision document this enhancement implements (Breeze as canonical historical backfill source).
+- ENH-106 v8/v8.1/v8.2 (S35 IMPLEMENTED) — downstream consumer; `option_pnl_source` audit column will need a new value `'breeze_canonical'` once ENH-109 ships.
+- ENH-80 (per-strike GEX, UNBLOCKED S29 by TD-094 RECLASSIFIED-STALE) — Phase 3 consumer of full-chain history; gating prerequisite if shipped before ENH-109 graduates Breeze canonical.
+- TD-S35-NEW-1 (HOCS strike-coverage structural limit) — recovery vector.
+- TD-S35-NEW-2 (pre-Apr-2026 vendor uncatalogued) — displaced by this graduation.
+- TD-S35-NEW-3 (SENSEX Breeze `stock_code='BSESEN'`) — codified by this build.
+- TD-080 (Dhan 429 retry layer + ENH-99 reservation) — Breeze cadence offers no retry-storm pressure on this path; orthogonal not displacing.
+
+**Blocked by.** Operator decision on ADR-013 (whether to graduate Breeze to canonical) + Phase 3 sequencing decision (whether ENH-109 ships before ENH-80 per-strike GEX or alongside).
+
+**Priority.** Tier 3 — gates Phase 3 GEX time-series build (ENH-80 / ADR-002 v2 P7/P8) but not on S36 critical path; S35 surgical-fill capability serves as architectural fallback meanwhile.
+
+**History.** 2026-05-24 (Session 35) NEW filed as **ENH-109** PROPOSED following S35 demonstrated capability (Breeze 2026-04-16 surgical fill of HOCS coverage gap via `fill_2026_04_16_breeze_v3.py` writing 107,630 rows from MERDIAN AWS in 4-5min wallclock; SENSEX symbology empirically discovered via 6-variant probe). Numbered ENH-109 — ENH-99 reservation for TD-080 preserved per Doc Protocol v2 Rule 5 monotonic-no-reuse; ENH-103/106/108 used per S33-S34; ENH-104/105/107 skipped or reserved per same discipline.
+
+---
+
+*End Session 35 new ENH entries block (ENH-109; ENH-106 status update to v8/v8.1/v8.2 IMPLEMENTED via S35 dual-source layer; ADR-012 status implication update reflected in main metadata). Next session entries land below this line.*

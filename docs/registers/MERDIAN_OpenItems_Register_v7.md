@@ -54,8 +54,9 @@
 ## Section 1 — Critical Fixes
 
 ### C-07b — Pre-open capture gap (09:00-09:08 window)
-**Status:** CLOSED — 2026-05-04 (Session 18)
-**Resolution:** Migrated to TD-064 in tech_debt.md. MERDIAN_PreOpen task restored to working state, heartbeat instrumentation added, token refresh verified working. Partial closure pending Mon 09:05 IST verification evidence.
+**Status:** OPEN
+
+Supervisor starts at 09:14 IST, missing the pre-open 09:08 capture window. AWS cron captures at 09:08 but only 4–5 snapshots per session — insufficient for bar construction. Architectural fix required.
 
 All other C-series items: CLOSED — see v5.
 
@@ -131,20 +132,38 @@ Post-gate: Phase 4 promotion decision → ENH-41 code build → Execution layer 
 
 
 ### OI-11 — HTF Zone Rebuild Not Automated on AWS
-**Status:** CLOSED — 2026-05-04 (Session 18)
-**Resolution:** Migrated to TD-065 in tech_debt.md. Local automation already exists (MERDIAN_ICT_HTF_Zones_0845 task). .bat rc-capture bug fixed. H-zone production healthy in `ict_htf_zones` table. AWS-side automation deferred pending ENH-51c relevance.
+| Field | Value |
+|---|---|
+| Priority | MEDIUM |
+| Opened | 2026-04-14 |
+| Blocking | ENH-51c (AWS primary) — if runner migrates to AWS but HTF zones not rebuilt, ICT detector uses stale zones |
+| Description | build_ict_htf_zones.py --timeframe D is currently MANUAL pre-market only. Must be added as AWS cron before AWS becomes primary compute. |
+| Fix | Add to MERDIAN AWS crontab: 30 3 * * 1-5 cd /home/ssm-user/meridian-engine && /bin/bash -lc 'set -a; . .env; set +a; python3 build_ict_htf_zones.py --timeframe D >> logs/htf_zones.log 2>&1' |
+| Build when | Before ENH-51c (AWS primary promotion) |
 
 ---
 
 ### OI-12 — market_ticks Retention Cron Not Set
-**Status:** CLOSED — 2026-05-04 (Session 18)
-**Resolution:** Migrated to TD-066 in tech_debt.md. Retention policy remains to be implemented as pg_cron job or AWS cleanup script.
+| Field | Value |
+|---|---|
+| Priority | MEDIUM |
+| Opened | 2026-04-14 |
+| Blocking | Storage growth — market_ticks grows ~1,007 rows per tick event during market hours |
+| Description | market_ticks table has no retention policy. During live market hours at full tick frequency, table will grow rapidly. 2-day retention recommended. |
+| Fix | Add Supabase pg_cron job: SELECT cron.schedule('delete-old-ticks', '0 20 * * 1-5', $$DELETE FROM market_ticks WHERE ts < now() - interval ''2 days''$$); OR add to AWS post-market cron. |
+| Build when | Before ENH-51b (pipeline reads market_ticks) |
 
 ---
 
 ### OI-13 — Telegram Credentials Not in .env
-**Status:** CLOSED — 2026-05-04 (Session 18)
-**Resolution:** Migrated to TD-067 in tech_debt.md. Exit monitor functional but requires Telegram bot setup + .env configuration.
+| Field | Value |
+|---|---|
+| Priority | MEDIUM |
+| Opened | 2026-04-14 |
+| Blocking | merdian_exit_monitor.py Telegram alerts — currently console-only |
+| Description | TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID missing from local .env. Exit monitor runs and polls correctly but cannot send Telegram alerts at T+30m. |
+| Fix | Add to C:\GammaEnginePython\.env: TELEGRAM_BOT_TOKEN=<token> and TELEGRAM_CHAT_ID=<chat_id>. Create bot via @BotFather if not already done. |
+| Build when | Next session |
 
 ---
 
@@ -191,15 +210,38 @@ New operational issues will be tracked in the Enhancement Register or session ap
 | SPO-01 | DTE null in signal_snapshots | ✅ CLOSED — 2026-04-15 |
 | HIST-02 | S3 warm tier archiver | 🔵 MOVED TO ENH-52b (deferred Phase 5) |
 
-### Final Session 18 cleanup (2026-05-04)
+**ZERO OPEN ITEMS REMAIN.**
 
-**Items migrated to tech_debt.md:**
-- C-07b → TD-064 (pre-open capture gap — PARTIAL, awaits verification)
-- OI-11 → TD-065 (HTF zone automation — RESOLVED substantively)  
-- OI-12 → TD-066 (market_ticks retention — action required)
-- OI-13 → TD-067 (Telegram credentials — action required)
+*MERDIAN Open Items Register — PERMANENTLY CLOSED 2026-04-15*
+*Superseded by operational monitoring. Future items tracked in Enhancement Register or session appendices.*
 
-**ZERO OPEN ITEMS REMAIN.** All items resolved or migrated to tech_debt.md. This register is permanently closed.
+---
 
-*MERDIAN Open Items Register — PERMANENTLY CLOSED 2026-04-15 (final cleanup 2026-05-04)*
-*Superseded by operational monitoring. Future items tracked in Enhancement Register or tech_debt.md.*
+### Session Changes (2026-05-14 — Session 29 firefighting — Re-Resolution Block)
+
+> **Why this block exists:** The Register was marked "PERMANENTLY CLOSED" on 2026-04-15. The 2026-05-14 firefighting session re-opened OI-12 because the original 2026-04-14 closure proved structurally unstable. Per the no-crunch documentation rule, the original OI-12 entry and its 2026-04-14 closure are preserved unchanged above; this block records the re-resolution.
+
+#### OI-12 — market_ticks Retention Cron Not Set (RE-RESOLVED 2026-05-14)
+
+**RE-RESOLVED via in-flight fix during Incident §1.4 (Session 29 firefighting). The original 2026-04-14 closure used a schedule design that proved unstable under accumulated load.**
+
+The original pg_cron job (`delete-old-market-ticks`, jobid 45, schedule `30 14 * * 1-5`, command `DELETE FROM public.market_ticks WHERE ts < now() - interval '2 days'`) was active from registration but **had been failing every weekday for 14+ consecutive runs since at least 2026-04-30** with `ERROR: canceling statement due to statement timeout` (Postgres error 57014). Failures were never surfaced because `cron.job_run_details` is not polled by any MERDIAN telemetry.
+
+Failed deletes left `market_ticks` accumulating without bound. By 2026-05-14 the table reached 62 GB (22 GB heap + 40 GB indexes). At that size, bulk INSERT from `ws_feed_zerodha.py` (2282 instruments × tick rate) began exceeding the same statement_timeout, producing the cascade documented in `CASE-2026-05-14-breadth-cascade-token-and-bloat.md`.
+
+**Fix applied:**
+1. `cron.unschedule(45)` — retired the broken job.
+2. `cron.schedule('prune-market-ticks', '*/30 * * * 1-5', $$DELETE FROM public.market_ticks WHERE ts < now() - interval '1 hour'$$)` — jobid 46.
+3. `TRUNCATE public.market_ticks` — reset table + indexes (DDL; instant; no REINDEX needed).
+
+**Design rationale for new schedule:** Cadence increased 1/day → 1/30min, retention horizon shortened 2 days → 1 hour. The breadth ingest reads only the last 10 min of `market_ticks`, so 1-hour horizon is safe. Worst-case DELETE workload is now 30 min of accumulation (~1 GB), well inside statement_timeout.
+
+**Forward telemetry:** Polling `cron.job_run_details` is filed as **TD-NEW-B** (S1). Until that lands, the operator session-start checklist (see `MERDIAN_Deployment_Topology.md` §6 new gotcha "pg_cron failures are silent") is the manual workaround.
+
+**Filed concurrently as TD-NEW-A** — manifest as a new incident requiring distinct attention from OI-12's original scope. Resolved same-session.
+
+**Lessons:** See `CASE-2026-05-14-breadth-cascade-token-and-bloat.md` §6 codification list. `CLAUDE.md` v1.20 adds B25 (TRUNCATE vs DELETE primitive) and B26 (pg_cron failures invisible by default).
+
+**Status:** RE-RESOLVED 2026-05-14. Forward state healthy. Verified 2026-05-15 09:30 IST first 30-min-cadence run.
+
+*OI Register update — 2026-05-14 — Session 29 firefighting close.*

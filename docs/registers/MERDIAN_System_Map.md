@@ -38,7 +38,7 @@ This is the **production** map. Research scripts (`experiment_*.py`, etc.) are n
 | `capture_market_spot_snapshot_local.py` | ✅ | ✅ | Dhan REST `/marketfeed/quote/index` | `market_spot_snapshots` | ACTIVE |
 | `capture_index_futures_snapshot_local.py` | ✅ | ✅ | Dhan REST + dynamic contract resolution | `index_futures_snapshots` | ACTIVE — V17E dynamic contract |
 | `ws_feed_zerodha.py` | ✅ | ❌ | Zerodha KiteTicker WebSocket (NIFTY full chain) | `option_chain_snapshots` (Zerodha rows) | ACTIVE — Session 13 task registered |
-| `ingest_option_chain_local.py` | ✅ | ✅ | Dhan REST option chain | `option_chain_snapshots` | ACTIVE — currently failing 401 on Local (V18A) |
+| `ingest_option_chain_local.py` | ✅ | ✅ | Dhan REST option chain | `option_chain_snapshots` (live cadence), `historical_option_chain_snapshots` (HOCS — point-in-time 5m historical archive; S35 cataloguing) | ACTIVE — currently failing 401 on Local (V18A) — name is misleading: writes both live AND historical archive |
 | `ingest_breadth_from_ticks.py` | ✅ | ✅ | Dhan tick feed | `market_breadth_intraday`, `equity_intraday_last` | ACTIVE — C-08 fix 2026-04-19 |
 | `ingest_equity_eod_local.py` | ✅ | ✅ | Dhan REST EOD | `equity_eod` | ACTIVE — cursor-gated full coverage |
 | `capture_postmarket_1600.py` | ❌ | ✅ | Dhan REST | `market_spot_snapshots` (16:00 close) | ACTIVE (AWS only) |
@@ -77,6 +77,7 @@ This is the **production** map. Research scripts (`experiment_*.py`, etc.) are n
 | `run_option_snapshot_intraday_runner.py` | ✅ | ❌ | Live 5-minute options runner — Steps 1–8 including signal build | ACTIVE — V18E CREATE_NO_WINDOW |
 | `run_merdian_shadow_runner.py` | ❌ | ✅ | AWS shadow 5-minute cycle | ACTIVE — V18E breadth ingest disabled (Guard 3) |
 | `run_market_tape_1m.py` | ✅ | ❌ | 1-minute tape (DhanError 401 every run) | DISABLED — see TD register |
+| `run_ict_htf_zones_daily.py` | ✅ | ❌ | **NEW S29 (TD-061 closure).** Python orchestrator for `MERDIAN_ICT_HTF_Zones_0845` task — replaces `.bat` chain. Runs `build_ict_htf_zones.py --timeframe both` → `--timeframe H` → `generate_pine_overlay.py` in sequence; rc-fold via `max()`; preserves bit-identical banner log format. `sys.executable` ensures pythonw propagation to child subprocesses. | ACTIVE — first scheduled fire 2026-05-15 08:45 IST |
 | `gamma_engine_supervisor.py` | ✅ | ❌ | Restarts crashed runners; emits heartbeat | ACTIVE — V17E clean exit |
 | `start_supervisor_clean.ps1` | ✅ | ❌ | Kills existing supervisor, starts fresh | ACTIVE — V18E |
 | `run_equity_eod_until_done.py` | ✅ | ✅ | EOD recovery + AWS EOD ingest | ACTIVE |
@@ -135,6 +136,13 @@ These exist on disk but are not authoritative. Listed for completeness so future
 | `run_market_tape_1m.pre_premarket_fix.DEAD` | Old market tape runner | RETIRED — DO NOT USE |
 | `run_all_experiments_overnight.py` | Overnight research batch | STABLE but research-only, not production |
 | Session-17 `_PRE_S17_TD060.py` snapshots | Pre-TD-060 detector versions | BACKUP — see CLAUDE.md Rule 22 |
+| `run_ict_htf_zones_daily.bat` | Pre-S29 bat wrapper for ICT_HTF_Zones_0845 task | **ORPHANED 2026-05-14 (S29 TD-061 closure)** — task now points to `run_ict_htf_zones_daily.py`. Delete in cleanup pass after a week of stability. |
+| `run_eod_breadth_refresh.ps1` | Pre-S29 PowerShell wrapper for EOD_Breadth_Refresh task | **ORPHANED 2026-05-14 (S29 TD-061 closure)** — task now points direct to `pythonw.exe run_equity_eod_until_done.py`. Delete in cleanup pass after a week. |
+| `run_iv_context_once.ps1` | Pre-S29 PowerShell wrapper for IV_Context_0905 task | **ORPHANED 2026-05-14 (S29 TD-061 closure)** — task now points direct to `pythonw.exe compute_iv_context_local.py`. Delete in cleanup pass after a week. |
+| `run_po3_session_bias_once.bat` | Pre-S29 bat wrapper for PO3_SessionBias_1005 task | **ORPHANED 2026-05-14 (S29 TD-061 closure)** — task now points direct to `pythonw.exe detect_po3_session_bias.py`. Delete in cleanup pass after a week. |
+| `migrate_to_pythonw.ps1` | One-off S29 migration script — bulk re-register of 18 Task Scheduler tasks to `pythonw.exe` + Hidden + IgnoreNew settings. v2 (after v1 regex bug captured shell redirection metacharacters into `pythonw` arguments). | **ONE-OFF S29 (2026-05-14)** — archive after S29 close commit. Not for ongoing use. v1 abandoned due to regex undercatch. |
+| `patch_s29_td_new_i_j.py` | v1 patch script for TD-NEW-I + TD-NEW-J | **ABANDONED S29** — regex undercaught threshold sites + risked docstring breakage. Delete after S29 close commit. Replaced by v2. |
+| `patch_s29_td_new_i_j_v2.py` | v2 patch script — applied 2026-05-14 evening | **APPLIED S29** — single-use; keep on disk for evidence trail with backups (`merdian_daily_audit_PRE_S29_TD_NEW_I_J_V2.py`, `capture_spot_1m_v2_PRE_S29_TD_NEW_I_J_V2.py`). |
 
 ---
 
@@ -150,6 +158,8 @@ All 36 currently-tracked tables in `merdian_reference.json`. Grouped by domain.
 | `market_spot_session_markers` | `capture_market_spot_snapshot_local.py` (PreOpen capture) | `build_momentum_features_local.py` for `ret_session` | ACTIVE — V18A `open_0915_ts` (NOT `open_0915` — that column does not exist) |
 | `option_chain_snapshots` | `ingest_option_chain_local.py` (Dhan REST), `ws_feed_zerodha.py` (Kite WS) | `compute_gamma_metrics_local.py`, `compute_iv_context_local.py`, `compute_volatility_metrics_local.py`, ATM bar builder | LIVE — dual cadence; Dhan currently failing 401 on Local (V18A) |
 | `index_futures_snapshots` | `capture_index_futures_snapshot_local.py` | basis computation | LIVE — V17E dynamic contract resolution |
+| `market_ticks` | `ws_feed_zerodha.py` (Kite WebSocket; AWS) | `ingest_breadth_from_ticks.py` (last 10 min only) | LIVE — high-rate ephemeral. **CRITICAL RULE (S29 codified):** retention via pg_cron `prune-market-ticks` (jobid 46) every 30 min, 1-hour horizon. Originally jobid 45 (`30 14 * * 1-5`, 2-day horizon, RETIRED 2026-05-14) which failed for 14+ consecutive weekdays causing 62 GB bloat — see `CASE-2026-05-14-breadth-cascade-token-and-bloat.md`. Worst-case DELETE workload now ~1 GB (30 min of accumulation), well inside Postgres statement_timeout. Table was previously absent from System Map B-section despite being a live tape table — the catalog gap obscured the retention-stability dependency. |
+| `historical_option_chain_snapshots` (HOCS) | `ingest_option_chain_local.py` (writer; despite name, this is a **point-in-time historical archive**, not the live `option_chain_snapshots` writer); `fill_2026_04_16_breeze_v3.py` (S35 surgical fill, `source='breeze_backfill_s35'`) | `build_ict_primitives.py` (ENH-106 v8 dual-source chain reader — `_prefetch_hocs_for_tuple` reads on post-2026-04-01 retests per `CHAIN_TIER_BOUNDARY_UTC`); ad-hoc cohort analysis | ACTIVE — post-2026-04-01 chain-history canonical (~2.67 GB / 2.67M rows / 41 trading days as of S35); keyed on `symbol` text not `instrument_id` uuid; `ltp` not `close`; 5-min cadence; `run_id` NOT NULL (backfill scripts must set; v3 generates UUID per invocation); `source` text column annotates writer provenance (`ingest_option_chain_local` for ingest cycles; `'breeze_backfill_s35'` for S35 Breeze surgical fill). **Strike-coverage structural limit (TD-S35-NEW-1):** `ingest_option_chain_local` captures ATM±N strikes per cycle; retests with large spot drift can miss held-strike. **Pre-2026-04-01 chain history is in `hist_option_bars_1m` (vendor-sourced) — that table is 54.8M rows of vendor-purchased 1m OHLC data covering pre-Apr-2026 window; ENH-106 v8 routes per-tuple to whichever table covers the anchor.** Cross-refs: ADR-013 PROPOSED (Breeze canonical adoption), ENH-109 PROPOSED (Breeze graduation), TD-S35-NEW-1/2/3, Deployment Topology §1.6. |
 
 ### B.2 Computed metrics (5-min cycle outputs)
 
@@ -555,10 +565,11 @@ V18 master appendices (V18A–H) use a 13-block structure. The schema of each bl
 | 2026-05-09 | Session 24 | Added §A.X (Replay layer scripts) and §B.X (Replay tables) per ADR-008. 11 new replay scripts in `C:\GammaEnginePython\replay\` + 10 new `*_replay` Supabase tables. Zero-touch constraint preserved (live scripts physically untouched). |
 | 2026-05-10 | Session 26 | **§B.4 ict_htf_zones + signal_snapshots + momentum_snapshots rows annotated** with S26 changes (TD-079 zone validity rewrite, ENH-88 + ENH-55 disable, TD-101 ret_session writer fix). **New §B.10 Operational instrumentation section** for `dhan_token_probe_log` table + `v_dhan_token_probe_today` view (TD-080 instrumentation, S26 commit `718ef39`). **New §A.S26 callout block** lists 4 production scripts touched Session 26 (`pull_token_from_supabase.py` AWS, `build_ict_htf_zones.py` Local, `build_trade_signal_local.py` Local two patches, `build_momentum_features_local.py` Local) with commit hashes + change descriptions. No §A row removals (all underlying scripts remain canonical at same paths). Pipeline diagrams §C unchanged (no orchestration / schedule changes Session 26). |
 | 2026-05-10 | Session 25 | §B.4 ict_htf_zones row annotated with timeframe-aware `source_bar_date` semantics (codified from TD-078 closure): W = week-start Monday, D = bar's calendar date, 1H = hour bucket date. Implicit convention in `build_ict_htf_zones.py` made explicit so future debugging of "missing row" claims doesn't waste time. No script index or pipeline diagram changes (S25 was code-light per non-AWS-touch constraint of Phase α Q3 sequencing). MERDIAN_PreOpen Local 09:05 IST task DISABLED via PowerShell (durable); no §A row removal because the underlying script `capture_spot_1m.py` retains capability — only the scheduled invocation was removed. Note for future: Topology §7.2 task inventory next pass should mark `MERDIAN_PreOpen` State=Disabled. |
+| 2026-05-24 | Session 35 | **HOCS canonical cataloguing + ENH-106 v8 dual-source reader + ADR-012 v9 SL writer.** **§B.1 expanded** — new row for `historical_option_chain_snapshots` (HOCS) catalogues it as post-2026-04-01 chain-history canonical (~2.67 GB / 2.67M rows / 41 trading days as of S35); writer identified as `ingest_option_chain_local.py` (despite name misleading — also writes the live `option_chain_snapshots`); reader identified as `build_ict_primitives.py` ENH-106 v8 `_prefetch_hocs_for_tuple` on post-Apr-2026 retests per `CHAIN_TIER_BOUNDARY_UTC = 2026-04-01`; strike-coverage structural limit codified (TD-S35-NEW-1 S2); cross-refs to ADR-013/ENH-109/TD-S35-NEW-1/2/3 + Deployment Topology §1.6. **§A.1 `ingest_option_chain_local.py` row updated** — Writes column expanded to clarify dual-write to both `option_chain_snapshots` (live cadence) AND `historical_option_chain_snapshots` (HOCS — point-in-time 5m historical archive); name described as misleading. **New §A.S35 section** — 3 production scripts touched: `build_ict_primitives.py` (4 patches applied via `patch_s35_*.py` — v8 dual-source / v8.1 calendar union / v8.2 RPC / v9 SL writer, 4 backups preserved, AST validated, smoke + single-cell n=5 validation PASS), `ingest_option_chain_local.py` (cataloguing only — no patch; name misleading codification), `fill_2026_04_16_breeze_v3.py` (NEW on MERDIAN AWS — one-shot Breeze surgical fill of 2026-04-16 HOCS gap writing 107,630 rows in 4-5min; v3 hardening UUID `run_id` + real-rows-only success log + SENSEX `stock_code='BSESEN'` per TD-S35-NEW-3; md5 `5eae3849776ec2a6061ed2100ecb0e13`; nano multi-line paste file transfer codified). S35 stale-doc updates table: TD-S34-NEW-4 CLOSED-MECHANICAL (81% post-Apr-2026 retest recovery), ADR-012 IMPLEMENTED (via writer v9). **New §B.S35 section** — 7 schema / data / RPC / index changes: `ict_primitive_outcomes` ADD COLUMN `option_pnl_source TEXT` (chain data tier audit tag) + 5 ADR-012 SL columns (`sl_level`/`sl_buffer_pct`/`sl_triggered_ts`/`sl_exit_prem`/`pnl_with_sl_pct`); writer INSERT-only behavior codified (TD-S35-NEW-4 S3); TRUNCATE + full re-backfill 19,571 outcomes in 2,107s; HOCS Breeze surgical fill 107,630 rows; new RPC `public.get_hocs_distinct_expiries(text)` STABLE function (EXPLAIN ANALYZE 325ms Index Only Scan); new covering index `idx_hocs_symbol_expiry ON (symbol, expiry_date)` ~40 MB (built via direct DB connection with `SET statement_timeout=0` bypassing PostgREST 8s limit). S35 architectural notes section codifies: HOCS as post-2026-04-01 canonical, key columns (`symbol` text not `instrument_id` uuid; `ltp` not `close`; true-UTC `bar_ts` not vendor's IST-mislabeled), `run_id` NOT NULL backfill discipline (silent-lie failure mode without explicit UUID generation), pre-Apr-2026 vendor uncatalogued (TD-S35-NEW-2 S1 — bus-factor-of-one institutional knowledge at risk; catalogue at S36). No pipeline diagram changes §C (no orchestration / schedule changes Session 35 — Breeze invocation was one-shot manual; ENH-109 graduation would add a new MERDIAN AWS cron and trigger §C/§D updates at that time). |
 
 ---
 
-*MERDIAN System Map — established Session 23, 2026-05-09. Last updated Session 26, 2026-05-10. Updated inline per Doc Protocol v4 Rule 1 + Rule 9.1. Source authority: `merdian_reference.json` for canonical file paths and statuses; this Map for human-readable architectural narrative and pipeline ordering.*
+*MERDIAN System Map — established Session 23, 2026-05-09. Last updated Session 35, 2026-05-24 (HOCS canonical cataloguing + ENH-106 v8 dual-source reader + ADR-012 v9 SL writer). Updated inline per Doc Protocol v4 Rule 1 + Rule 9.1. Source authority: `merdian_reference.json` for canonical file paths and statuses; this Map for human-readable architectural narrative and pipeline ordering.*
 
 
 ---
@@ -605,3 +616,95 @@ Created Session 24, 2026-05-09 via SQL migration `replay/migrations/001_create_r
 | `script_execution_log_replay` | `script_execution_log` | Replay audit trail; host='replay' on every row; preserved across runs (NOT truncated by orchestrator) so audit history of every experiment is retained automatically. Same ENH-72 write-contract semantics as live ExecutionLog. |
 
 **Permitted live reads from replay code (immutable historical reference per ADR-008):** `instruments`, `hist_spot_bars_1m`, `hist_option_bars_1m`, `india_vix_daily`, `option_chain_snapshots` (for OI lift only), `market_breadth_intraday`, `weighted_constituent_breadth_snapshots`, `ict_htf_zones`, `po3_session_state`, `capital_tracker`. **Live writes from replay code: PROHIBITED architecturally** (replay scripts only address `*_replay` table names; constraint is structural, not a runtime check).
+
+---
+
+## §A.S29 — Production scripts touched in Session 29
+
+> Per Doc Protocol v4 §1 (System Map update trigger). S29 had two halves: (1) firefighting on 2026-05-14 (operational + 2 production code patches + 1 new orchestrator + multiple Task Scheduler config updates), (2) backfill/dashboard build work 2026-05-14→2026-05-16 (vol_analytics backfill, Phase 0b tests, gamma_metrics backfill, market view dashboard).
+
+### S29 firefighting changes (2026-05-14)
+
+| Change | File | Detail |
+|---|---|---|
+| **NEW orchestrator** | `run_ict_htf_zones_daily.py` | Python orchestrator replacing pre-S29 `.bat` for `MERDIAN_ICT_HTF_Zones_0845`. Calls `build_ict_htf_zones.py --timeframe both`, `--timeframe H`, `generate_pine_overlay.py` via subprocess; rc-fold via `max(rc_wd, rc_h, rc_pine)`; banner format preserved bit-identical. `sys.executable` ensures pythonw propagation. Registered in §A.4. |
+| **Code patch (TD-NEW-I)** | `merdian_daily_audit.py` | Threshold reductions: `spot_bars_per_symbol_min: 370 → 365`, `market_spot_snapshots_per_symbol: 370 → 365`. Resolves spurious FAIL on 98% coverage days. Patch via `patch_s29_td_new_i_j_v2.py`; backup `merdian_daily_audit_PRE_S29_TD_NEW_I_J_V2.py`. |
+| **Code patch (TD-NEW-J = TD-083)** | `capture_spot_1m_v2.py` | Docstring L36 + call-site L346: `'OUTSIDE_MARKET_HOURS'` → `'OFF_HOURS'` (matches `chk_exit_reason_valid` closed-set constraint). Eliminates daily false-alarm CRASH rows from pre/post-market firings. Backup `capture_spot_1m_v2_PRE_S29_TD_NEW_I_J_V2.py`. |
+| **Task Scheduler config** | 9 tasks re-registered to pythonw + 18 tasks settings-hardened | See Topology §7.2 for the full 19-task state table. TD-061 + TD-063 RESOLVED. Backups under `backups\scheduler\20260514_184211\` + `\20260514_190443\`. |
+| **Migration tooling (one-off)** | `migrate_to_pythonw.ps1` | 272-line PowerShell to bulk re-register tasks. v2 (after v1 regex captured shell redirection metacharacters). Filed in §A.9 as one-off; archive after S29 close commit. |
+
+### S29 build changes (2026-05-14 → 2026-05-16)
+
+| Change | File | Detail |
+|---|---|---|
+| **NEW backfill** | `backfill_volatility_snapshots.py` | Full-year `volatility_snapshots` backfill from `hist_atm_option_bars_5m` + `hist_spot_bars_5m` with inverse-BS IV solve. Stage 1 of Phase 0b prep. 19,520 rows written. |
+| **NEW backfill** | `backfill_vol_analytics.py` | Stage 2: `vol_analytics` regime classification from backfilled `volatility_snapshots`. 24,758 rows written. Regime mix: LOW 38.1%, COMPRESSED 32.7%, FAIR 15.1%, HIGH 14.1%. |
+| **NEW analysis** | `phase0b_rr_conditional_wr.py` | Phase 0b P7 test — joins `hist_pattern_signals` × `vol_analytics` × `hist_atm_option_bars_5m`. Verdict: **FAIL** on ADR-002 v2 P7 4-way regime gate. χ²=1.56, p≈0.30 across regimes. |
+| **NEW analysis** | `phase0b_compressed_veto.py` | Salvage test — COMPRESSED-veto binary. Verdict: **FAIL on power** (right direction, variance dominates). Bootstrap CI [-3.36, +17.69]pp includes zero. |
+| **NEW analysis** | `phase0b_p5_pinned_proxy.py` | Proxy P5 PINNED test. Initial run constrained by gamma_metrics sparsity (N=3 attributed); pending re-run on backfilled gamma_metrics cohort. |
+| **NEW backfill** | `backfill_gamma_metrics_to_main.py` | Full-year `gamma_metrics` backfill from `hist_option_bars_1m` + `hist_spot_bars_1m`. Reimplements live writer math (TD-NEW-2 Parts A+B + TD-NEW-3 explicit citations to commit `241f943`). Unblocked by new DB index `ix_hist_option_bars_1m_bar_ts_strike` (created S29). |
+| **NEW dashboard** | `market_view.html` | VRDNation-replica IV view — Plus Jakarta Sans + JetBrains Mono, Chart.js, DTE pill selector 0-6, IV badge, trading insights. |
+| **NEW data builder** | `build_straddle_premium_data.py` | Generates `market_view_data.json` for the dashboard. |
+
+### S29 stale-doc updates
+
+| Item | Before | After |
+|---|---|---|
+| TD-094 ("`hist_option_bars_1m.oi` is 0 — S22 backfill broken via Kite limitation") | Active stale | **REOPENED FOR RESTATEMENT** — vendor data replaced S22's broken Kite backfill; OI populated 99.9% (verified S29 query: avg ~1M, max 66M across 12 months). TD-094 reclassified at S29 close as "stale documentation, vendor data healthy". Unblocks all gamma-context Phase 0b dimensions (P1 LONG_GAMMA, P3 flip_distance, P5 PINNED, ENH-80 per-strike GEX). |
+
+---
+
+## §B.S29 — Tables touched in Session 29
+
+| Change | Table | Detail |
+|---|---|---|
+| **CRITICAL_RULE update** | `market_ticks` | Retention cron migrated jobid 45 → jobid 46 (`*/30 * * * 1-5`, 1-hour horizon). See §B.1 entry. |
+| **Backfill writes** | `volatility_snapshots` | +19,520 rows S29 backfill (Apr 2025 → Mar 2026) |
+| **Backfill writes** | `vol_analytics` | +24,758 rows S29 backfill |
+| **Backfill writes** | `gamma_metrics` | Full-year backfill in progress at S29 close; ~29,437 pre-existing + new from full-year run |
+| **New DB index** | `hist_option_bars_1m` | `CREATE INDEX ix_hist_option_bars_1m_bar_ts_strike ON hist_option_bars_1m (bar_ts, strike, option_type)` — created via direct DB connection with `SET statement_timeout=0` (PostgREST 8s timeout doesn't apply). Unblocks per-cycle indexed lookups for gamma backfill. |
+
+---
+
+## §A.S35 — Production scripts touched in Session 35
+
+| Change | Script | Detail |
+|---|---|---|
+| **PATCHED** | `build_ict_primitives.py` (Local) | Four S35 patches applied via `patch_s35_*.py`: (1) `patch_s35_enh106_v8_dual_source.py` — adds `CHAIN_TIER_BOUNDARY_UTC = 2026-04-01`, `_source_tier()` + `_prefetch_hocs_for_tuple()` helpers, rewrites `_prefetch_chain_for_primitives` to route per-tuple by anchor timestamp; (2) `patch_s35_enh106_v8p1_expiry_calendar_union.py` — `_load_expiry_calendar` UNIONs vendor `hist_option_bars_1m.expiry_date` + HOCS expiries via new RPC; (3) `patch_s35_enh106_v8p2_hocs_expiries_rpc.py` — swaps PostgREST DISTINCT pagination for direct RPC call `get_hocs_distinct_expiries(text)`; (4) `patch_s35_adr012_v9_sl_writer.py` — adds `SL_BUFFER_PCT_DEFAULT = 0.005` constant, 5 `OutcomeRow` SL fields (`sl_level`, `sl_buffer_pct`, `sl_triggered_ts`, `sl_exit_prem`, `pnl_with_sl_pct`), SL evaluation block in `compute_retest_atm_pnl` walking aggregated 5m bars from `first_retest_ts + 5min` through 15:25 IST EOD, upsert plumbing for 5 new columns. 4 backups preserved: `build_ict_primitives_PRE_S35.py`, `_PRE_S35_v8p1.py`, `_PRE_S35_v8p2.py`, `_PRE_S35_v9.py`. AST validated pre+post each patch. Smoke test PASS after v9. Single-cell n=5 validation on 2026-05-14 NIFTY M5 cohort confirms BEAR SL exits 13-14pp better than held-to-EOD. |
+| **CALLED** | `ingest_option_chain_local.py` (Local + AWS) | Existing script — no patch; S35 cataloguing only. Name is misleading: writes both `option_chain_snapshots` (live cadence — ATM±N strikes per cycle) AND `historical_option_chain_snapshots` (HOCS — point-in-time 5m historical archive that is the post-2026-04-01 chain-history canonical). Strike-coverage structural limit (TD-S35-NEW-1 S2): retests with large spot drift can miss held-strike at retest moment. Recovery requires writer widening or ADR-013 Breeze canonical adoption. |
+| **NEW backfill** | `fill_2026_04_16_breeze_v3.py` (MERDIAN AWS) | One-shot surgical backfill of 2026-04-16 chain coverage gap in HOCS using ICICI Direct Breeze API from MERDIAN AWS (SEBI static-IP whitelist required Elastic IP `13.63.27.85`). 107,630 rows written (NIFTY 61,899 + SENSEX 45,731) `source='breeze_backfill_s35'` in 4-5min wallclock. v3 hardening: UUID `run_id` per invocation (HOCS NOT NULL); real-rows-only success log (v1/v2 silently lied via accumulator state); symbol-scoped pre-flight; SENSEX `stock_code='BSESEN'` empirically discovered via 6-variant probe per TD-S35-NEW-3. md5 `5eae3849776ec2a6061ed2100ecb0e13`. File transfer to MERDIAN AWS used nano multi-line paste (base64 single-line exceeded SSM terminal buffer ~4KB). |
+
+### S35 stale-doc updates
+
+| Item | Before | After |
+|---|---|---|
+| TD-S34-NEW-4 (post-2026-04-01 chain coverage gap in `hist_option_bars_1m`) | Filed S34 OPEN — vendor stopped delivering | **CLOSED-MECHANICAL S35** — diagnosed as two-tier architecture: pre-Apr-2026 vendor `hist_option_bars_1m` + post-Apr-2026 MERDIAN-ingest `historical_option_chain_snapshots` (HOCS). ENH-106 v8 dual-source reader routes per-tuple by 2026-04-01 UTC boundary; 81% post-Apr-2026 retest recovery on zone-primitive denominator after v8 + Breeze 2026-04-16 surgical fill. Structural residual 75 attributed to TD-S35-NEW-1 HOCS strike-coverage limit. |
+| ADR-012 (spot-anchored SL doctrine) | ACCEPTED S34 (n=7 foundation) — writer-extension pending | **IMPLEMENTED S35** via writer v9 patch (`patch_s35_adr012_v9_sl_writer.py`); 5 schema columns added; SL evaluation in `compute_retest_atm_pnl`; full validation cohort gated on S36 TRUNCATE + full recompute. |
+
+---
+
+## §B.S35 — Tables, RPCs, and indexes touched in Session 35
+
+| Change | Object | Detail |
+|---|---|---|
+| **Schema add** | `ict_primitive_outcomes` | `ADD COLUMN option_pnl_source TEXT` — chain data tier audit tag for ENH-106 v8 dual-source reader. Values: `'merdian_hist_5m'` (HOCS-sourced post-Apr-2026), `'hist_option_bars_1m'` (vendor-sourced pre-Apr-2026), or NULL (no option PnL computed). DDL: `20260524_enh106_v8_option_pnl_source.sql`. |
+| **Schema add** | `ict_primitive_outcomes` | 5 ADR-012 SL columns: `sl_level NUMERIC`, `sl_buffer_pct NUMERIC`, `sl_triggered_ts TIMESTAMPTZ`, `sl_exit_prem NUMERIC`, `pnl_with_sl_pct NUMERIC`. BULL: trigger close < zone_low × (1 − X); BEAR: trigger close > zone_high × (1 + X); X = `SL_BUFFER_PCT_DEFAULT = 0.005` per ADR-012 §3. Level primitives (PDH/PDL/PWH/etc.) skip SL by design (no zone bounds — NULL); `pnl_with_sl_pct` falls back to `option_pnl_eod` on no-trigger. DDL: `20260524_adr012_v9_sl_columns.sql`. |
+| **Writer behavior** | `ict_primitive_outcomes` | TD-S35-NEW-4 S3 codification: `build_ict_primitives.py upsert_outcomes` is INSERT-only — schema column adds do NOT backfill existing rows. New columns populate only on freshly-inserted rows; existing rows show NULL until explicitly DELETE'd or full-table TRUNCATE'd before recompute. |
+| **Data writes** | `ict_primitive_outcomes` | TRUNCATE + full re-backfill 19,571 rows (NIFTY 8,925 + SENSEX 10,646) in 2,107s wallclock. All `option_pnl_source` populated (no NULLs on chain-tier-eligible retests); ADR-012 SL columns populated on zone-primitive retests, NULL on level primitives by design. |
+| **Data writes** | `historical_option_chain_snapshots` (HOCS) | 107,630 INSERT rows from S35 Breeze 2026-04-16 surgical fill (NIFTY 61,899 + SENSEX 45,731) with `source='breeze_backfill_s35'`. Pre-existing rows untouched. Coverage post-fill: 41 trading days (2026-03-16 → 2026-05-22) including 2026-04-16 single-day outage previously empty. |
+| **New RPC function** | `public.get_hocs_distinct_expiries(_symbol text)` | `STABLE` function returning `TABLE(expiry_date date)`. Created to replace ENH-106 v8.1's PostgREST DISTINCT pagination over 2.67M HOCS rows (wrong query shape — pagination finding 10 distinct values across 2.67M is O(N) when DB-side DISTINCT can be O(log N) via covering index). EXPLAIN ANALYZE 325ms / Index Only Scan after v8.2 index build. DDL: `20260524_enh106_v8p2_hocs_distinct_expiries_rpc.sql`. |
+| **New DB index** | `historical_option_chain_snapshots` | `CREATE INDEX idx_hocs_symbol_expiry ON historical_option_chain_snapshots (symbol, expiry_date)` covering index, ~40 MB. Built via direct DB connection with `SET statement_timeout=0` (PostgREST 8s timeout doesn't apply on 2.67M-row table). Enables Index Only Scan for `get_hocs_distinct_expiries` RPC. DDL: `20260524_enh106_v8p2_hocs_expiry_index.sql`. |
+
+### S35 architectural notes
+
+- **HOCS is the post-2026-04-01 chain-history canonical**, not `hist_option_bars_1m` (which stopped at 2026-03-31). ENH-106 v8 dual-source reader routes per-tuple by `CHAIN_TIER_BOUNDARY_UTC = 2026-04-01 UTC` — choice was made because (a) vendor delivery to `hist_option_bars_1m` stopped exactly at that boundary, and (b) MERDIAN-ingest started building HOCS in earnest from 2026-03-16, providing 2-week overlap window for any future cross-source audit.
+- **HOCS key columns:** `symbol` (TEXT, not `instrument_id` uuid), `bar_ts` (TIMESTAMPTZ, true UTC not the IST-mislabeled-as-UTC vendor convention from `hist_option_bars_1m` Bug B3), `expiry_date` (DATE), `strike` (NUMERIC), `option_type` (TEXT `'CALL'`/`'PUT'`), `ltp` (NUMERIC — not `close`), `run_id` (UUID NOT NULL).
+- **`run_id` NOT NULL backfill discipline:** backfill scripts that don't set `run_id` lie silently because supabase-py wraps INSERT failures in try/except but doesn't roll back local accumulator state — codified in `fill_2026_04_16_breeze_v3.py` v3 hardening (generates UUID per invocation; real-rows-only success log).
+- **Pre-Apr-2026 vendor `hist_option_bars_1m` is uncatalogued in this Map's writer column (TD-S35-NEW-2 S1):** the vendor identity + contract terms + refresh cadence + `stock_code` mappings are not documented anywhere; bus-factor-of-one institutional knowledge at risk. Catalogue at S36.
+
+---
+
+
+
+---
+

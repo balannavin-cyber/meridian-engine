@@ -1,10 +1,10 @@
 // MERDIAN ICT HTF Zones -- PROXIMITY TIER SYSTEM
-// AUTO-GENERATED 2026-05-25 -- DO NOT EDIT MANUALLY
+// AUTO-GENERATED 2026-05-26 -- DO NOT EDIT MANUALLY
 // T1=D zones always + W within 2% | T2=W 2-5% | T3=W >5% ghost no-label
-// Total: 56 zones (NIFTY 26 + SENSEX 30)
+// Total: 47 zones (NIFTY 21 + SENSEX 26)
 
 //@version=6
-indicator("MERDIAN ICT HTF Zones (2026-05-25)", overlay=true, max_boxes_count=250, max_lines_count=250, max_labels_count=250)
+indicator("MERDIAN ICT HTF Zones (2026-05-26)", overlay=true, max_boxes_count=250, max_lines_count=250, max_labels_count=250)
 
 // ── Color legend ─────────────────────────────────────────────────────────────
 // BULL_OB   solid green   (high reliability, Exp 35C validated ~88% WR)
@@ -67,6 +67,12 @@ c_pdl_d_t3_l    = color.new(color.yellow, 78)
 c_pdh_w_t3_l    = color.new(color.orange, 80)
 c_pdl_w_t3_l    = color.new(color.orange, 80)
 
+// ── ENH-81 (S37) v1 Positioning Landscape colors ────────────────────────
+c_pin_zone    = color.new(#00FF7F, 75)   // spring green, semi-transparent
+c_pin_line    = color.new(#00FF7F, 30)
+c_accel_zone  = color.new(#FF4444, 75)   // bright red, semi-transparent
+c_accel_line  = color.new(#FF4444, 30)
+
 // ── SYMBOL DETECTION (must precede draw_zone) ────────────────────────────────
 is_nifty  = str.contains(syminfo.ticker, "NIFTY")  and not str.contains(syminfo.ticker, "BANK")
 is_sensex = str.contains(syminfo.ticker, "SENSEX") or  str.contains(syminfo.ticker, "BSE")
@@ -78,6 +84,7 @@ show_h       = input.bool(true,  "Show Intraday zones",group="Zone Filters", too
 show_ob      = input.bool(true,  "Show Order Blocks",  group="Zone Filters")
 show_fvg     = input.bool(true,  "Show FVGs",          group="Zone Filters")
 show_pdh_pdl = input.bool(true,  "Show PDH / PDL",     group="Zone Filters")
+show_positioning = input.bool(true, "Show Pin/Accel Zones (ENH-81)", group="Positioning Landscape")
 
 // ── HELPER ───────────────────────────────────────────────────────────────────
 // bear_side=true  -> BEAR_OB/PDH: entry at zone top, clip bottom
@@ -108,75 +115,92 @@ draw_zone(float zlow, float zhigh, color bg, color line_col, string lbl, int loo
             label.new(bar_index + 30, ry, text=rlbl, color=color.new(color.black, 100), textcolor=color.new(line_col, 30), style=label.style_label_left, size=size.tiny)
 
 // =====================================================
-// NIFTY -- 26 zones  T1:10 T2:6 T3:10  spot=23739.6
+// NIFTY -- 21 zones  T1:5 T2:8 T3:8  spot=24032.5
 // =====================================================
 if is_nifty
-    draw_zone(23995.60, 24284.00, c_bear_fvg_t1, c_bear_fvg_t1_l, "D BEAR_FVG may-08 (WR 46%)", 11, true, show_fvg and show_d)
-    draw_zone(23824.10, 23844.10, c_pdh_d_t1, c_pdh_d_t1_l, "D PDH may-22", 5, true, show_pdh_pdl and show_d)
-    draw_zone(23654.90, 23674.90, c_pdl_d_t1, c_pdl_d_t1_l, "D PDL may-22", 5, false, show_pdh_pdl and show_d)
+    draw_zone(23838.15, 23926.20, c_bull_fvg_t1, c_bull_fvg_t1_l, "D BULL_FVG may-22 (WR 50%)", 5, false, show_fvg and show_d)
+    draw_zone(23916.20, 23936.20, c_pdl_d_t1, c_pdl_d_t1_l, "D PDL may-25", 5, false, show_pdh_pdl and show_d)
     draw_zone(23573.85, 23645.25, c_bull_fvg_t1, c_bull_fvg_t1_l, "H BULL_FVG may-20 (WR 50%)", 5, false, show_fvg and show_h)
-    draw_zone(23341.80, 23497.45, c_bull_ob_t1, c_bull_ob_t1_l, "H BULL_OB may-18 (WR 84%)", 5, false, show_ob and show_h)
-    draw_zone(25255.30, 25331.65, c_bear_fvg_t3, c_bear_fvg_t3_l, "", 226, true, show_fvg and show_w)
-    draw_zone(24736.25, 24806.35, c_bear_fvg_t2, c_bear_fvg_t2_l, "W BEAR_FVG aug-01 (WR 46%)", 211, true, show_fvg and show_w)
-    draw_zone(24904.80, 25048.75, c_bear_fvg_t3, c_bear_fvg_t3_l, "", 171, true, show_fvg and show_w)
-    draw_zone(24989.35, 25372.70, c_bear_fvg_t3, c_bear_fvg_t3_l, "", 61, true, show_fvg and show_w)
-    draw_zone(24303.80, 25141.30, c_bear_fvg_t2, c_bear_fvg_t2_l, "W BEAR_FVG mar-06 (WR 46%)", 56, true, show_fvg and show_w)
-    draw_zone(23862.25, 24305.40, c_bear_fvg_t1, c_bear_fvg_t1_l, "W BEAR_FVG mar-13 (WR 46%)", 51, true, show_fvg and show_w)
-    draw_zone(23782.00, 23882.05, c_bear_fvg_t1, c_bear_fvg_t1_l, "W BEAR_FVG may-15 (WR 46%)", 6, true, show_fvg and show_w)
-    draw_zone(23838.15, 23882.05, c_bear_fvg_t1, c_bear_fvg_t1_l, "W BEAR_FVG may-15 (WR 46%)", 6, true, show_fvg and show_w)
-    draw_zone(24401.00, 25019.80, c_bear_ob_t2, c_bear_ob_t2_l, "W BEAR_OB may-16 (WR 92%)", 266, true, show_ob and show_w)
-    draw_zone(24669.70, 25003.05, c_bear_ob_t2, c_bear_ob_t2_l, "W BEAR_OB jun-06 (WR 92%)", 251, true, show_ob and show_w)
-    draw_zone(24939.75, 25637.80, c_bear_ob_t3, c_bear_ob_t3_l, "", 236, true, show_ob and show_w)
-    draw_zone(25125.05, 25327.05, c_bear_ob_t3, c_bear_ob_t3_l, "", 176, true, show_ob and show_w)
-    draw_zone(26128.30, 26202.95, c_bear_ob_t3, c_bear_ob_t3_l, "", 126, true, show_ob and show_w)
-    draw_zone(26063.35, 26328.55, c_bear_ob_t3, c_bear_ob_t3_l, "", 101, true, show_ob and show_w)
-    draw_zone(25669.05, 25694.35, c_bear_ob_t3, c_bear_ob_t3_l, "", 91, true, show_ob and show_w)
-    draw_zone(24796.50, 25693.70, c_bear_ob_t3, c_bear_ob_t3_l, "", 76, true, show_ob and show_w)
-    draw_zone(25427.45, 25571.25, c_bear_ob_t3, c_bear_ob_t3_l, "", 66, true, show_ob and show_w)
-    draw_zone(24063.55, 24180.50, c_bear_ob_t1, c_bear_ob_t1_l, "W BEAR_OB may-08 (WR 92%)", 11, true, show_ob and show_w)
-    draw_zone(22941.30, 23555.60, c_bull_fvg_t2, c_bull_fvg_t2_l, "W BULL_FVG apr-10 (WR 50%)", 31, false, show_fvg and show_w)
-    draw_zone(22819.60, 22824.35, c_bull_ob_t2, c_bull_ob_t2_l, "W BULL_OB mar-27 (WR 84%)", 41, false, show_ob and show_w)
-    draw_zone(23697.65, 23736.70, c_bull_fvg_t1, c_bull_fvg_t1_l, "M5 BULL_FVG may-22 (WR 50%)", 5, false, show_fvg and show_h)
+    draw_zone(25255.30, 25331.65, c_bear_fvg_t3, c_bear_fvg_t3_l, "", 227, true, show_fvg and show_w)
+    draw_zone(24736.25, 24806.35, c_bear_fvg_t2, c_bear_fvg_t2_l, "W BEAR_FVG aug-01 (WR 46%)", 212, true, show_fvg and show_w)
+    draw_zone(24904.80, 25048.75, c_bear_fvg_t2, c_bear_fvg_t2_l, "W BEAR_FVG sep-26 (WR 46%)", 172, true, show_fvg and show_w)
+    draw_zone(24989.35, 25372.70, c_bear_fvg_t2, c_bear_fvg_t2_l, "W BEAR_FVG feb-27 (WR 46%)", 62, true, show_fvg and show_w)
+    draw_zone(24303.80, 25141.30, c_bear_fvg_t2, c_bear_fvg_t2_l, "W BEAR_FVG mar-06 (WR 46%)", 57, true, show_fvg and show_w)
+    draw_zone(24401.00, 25019.80, c_bear_ob_t2, c_bear_ob_t2_l, "W BEAR_OB may-16 (WR 92%)", 267, true, show_ob and show_w)
+    draw_zone(24669.70, 25003.05, c_bear_ob_t2, c_bear_ob_t2_l, "W BEAR_OB jun-06 (WR 92%)", 252, true, show_ob and show_w)
+    draw_zone(24939.75, 25637.80, c_bear_ob_t3, c_bear_ob_t3_l, "", 237, true, show_ob and show_w)
+    draw_zone(25125.05, 25327.05, c_bear_ob_t2, c_bear_ob_t2_l, "W BEAR_OB sep-19 (WR 92%)", 177, true, show_ob and show_w)
+    draw_zone(26128.30, 26202.95, c_bear_ob_t3, c_bear_ob_t3_l, "", 127, true, show_ob and show_w)
+    draw_zone(26063.35, 26328.55, c_bear_ob_t3, c_bear_ob_t3_l, "", 102, true, show_ob and show_w)
+    draw_zone(25669.05, 25694.35, c_bear_ob_t3, c_bear_ob_t3_l, "", 92, true, show_ob and show_w)
+    draw_zone(24796.50, 25693.70, c_bear_ob_t3, c_bear_ob_t3_l, "", 77, true, show_ob and show_w)
+    draw_zone(25427.45, 25571.25, c_bear_ob_t3, c_bear_ob_t3_l, "", 67, true, show_ob and show_w)
+    draw_zone(24063.55, 24180.50, c_bear_ob_t1, c_bear_ob_t1_l, "W BEAR_OB may-08 (WR 92%)", 12, true, show_ob and show_w)
+    draw_zone(22941.30, 23555.60, c_bull_fvg_t2, c_bull_fvg_t2_l, "W BULL_FVG apr-10 (WR 50%)", 32, false, show_fvg and show_w)
+    draw_zone(22819.60, 22824.35, c_bull_ob_t3, c_bull_ob_t3_l, "", 42, false, show_ob and show_w)
+    draw_zone(23659.35, 23943.60, c_bull_ob_t1, c_bull_ob_t1_l, "W BULL_OB may-15 (WR 84%)", 7, false, show_ob and show_w)
+    if show_positioning
+        var box   pos_pin_bx = na
+        var label pos_pin_lb = na
+        box.delete(pos_pin_bx)
+        label.delete(pos_pin_lb)
+        pos_pin_bx := box.new(bar_index - 30, 24300.00, bar_index + 50, 24100.00, bgcolor=c_pin_zone, border_color=c_pin_line, border_width=1, extend=extend.right)
+        pos_pin_lb := label.new(bar_index + 90, 24300.00, text="PIN 24100-24300 (peak 24200, +580K Cr)", color=color.new(color.black, 100), textcolor=c_pin_line, style=label.style_label_lower_left, size=size.small)
+        var box   pos_accel_bx = na
+        var label pos_accel_lb = na
+        box.delete(pos_accel_bx)
+        label.delete(pos_accel_lb)
+        pos_accel_bx := box.new(bar_index - 30, 24000.00, bar_index + 50, 23800.00, bgcolor=c_accel_zone, border_color=c_accel_line, border_width=1, extend=extend.right)
+        pos_accel_lb := label.new(bar_index + 90, 23800.00, text="ACCEL 23800-24000 (trough 23950, -820K Cr)", color=color.new(color.black, 100), textcolor=c_accel_line, style=label.style_label_upper_left, size=size.small)
 
 // =====================================================
-// SENSEX -- 30 zones  T1:8 T2:5 T3:17  spot=75470.1
+// SENSEX -- 26 zones  T1:6 T2:4 T3:16  spot=76512.9
 // =====================================================
 if is_sensex
-    draw_zone(76626.71, 77713.21, c_bear_fvg_t1, c_bear_fvg_t1_l, "D BEAR_FVG may-08 (WR 46%)", 11, true, show_fvg and show_d)
-    draw_zone(75680.12, 77155.95, c_bear_fvg_t1, c_bear_fvg_t1_l, "D BEAR_FVG may-11 (WR 46%)", 10, true, show_fvg and show_d)
-    draw_zone(75797.17, 75817.17, c_pdh_d_t1, c_pdh_d_t1_l, "D PDH may-22", 5, true, show_pdh_pdl and show_d)
-    draw_zone(75222.04, 75242.04, c_pdl_d_t1, c_pdl_d_t1_l, "D PDL may-22", 5, false, show_pdh_pdl and show_d)
-    draw_zone(74197.91, 74866.20, c_bull_ob_t1, c_bull_ob_t1_l, "H BULL_OB may-18 (WR 84%)", 5, false, show_ob and show_h)
-    draw_zone(82784.53, 83016.16, c_bear_fvg_t3, c_bear_fvg_t3_l, "", 226, true, show_fvg and show_w)
-    draw_zone(81091.95, 81398.41, c_bear_fvg_t3, c_bear_fvg_t3_l, "", 211, true, show_fvg and show_w)
-    draw_zone(81251.95, 81744.70, c_bear_fvg_t3, c_bear_fvg_t3_l, "", 171, true, show_fvg and show_w)
-    draw_zone(84243.98, 84471.23, c_bear_fvg_t3, c_bear_fvg_t3_l, "", 96, true, show_fvg and show_w)
-    draw_zone(82725.71, 82861.19, c_bear_fvg_t3, c_bear_fvg_t3_l, "", 86, true, show_fvg and show_w)
-    draw_zone(80632.55, 82227.52, c_bear_fvg_t3, c_bear_fvg_t3_l, "", 61, true, show_fvg and show_w)
-    draw_zone(78470.86, 81159.60, c_bear_fvg_t3, c_bear_fvg_t3_l, "", 56, true, show_fvg and show_w)
-    draw_zone(76999.87, 78448.46, c_bear_fvg_t2, c_bear_fvg_t2_l, "W BEAR_FVG mar-13 (WR 46%)", 51, true, show_fvg and show_w)
-    draw_zone(75871.34, 76515.03, c_bear_fvg_t1, c_bear_fvg_t1_l, "W BEAR_FVG may-15 (WR 46%)", 6, true, show_fvg and show_w)
-    draw_zone(75743.50, 76515.03, c_bear_fvg_t1, c_bear_fvg_t1_l, "W BEAR_FVG may-15 (WR 46%)", 6, true, show_fvg and show_w)
-    draw_zone(80385.99, 80501.99, c_bear_ob_t3, c_bear_ob_t3_l, "", 276, true, show_ob and show_w)
-    draw_zone(80658.00, 82330.59, c_bear_ob_t3, c_bear_ob_t3_l, "", 266, true, show_ob and show_w)
-    draw_zone(81250.72, 82188.99, c_bear_ob_t3, c_bear_ob_t3_l, "", 251, true, show_ob and show_w)
-    draw_zone(81704.07, 84058.90, c_bear_ob_t3, c_bear_ob_t3_l, "", 236, true, show_ob and show_w)
-    draw_zone(81922.03, 82626.23, c_bear_ob_t3, c_bear_ob_t3_l, "", 176, true, show_ob and show_w)
-    draw_zone(85426.39, 85706.67, c_bear_ob_t3, c_bear_ob_t3_l, "", 126, true, show_ob and show_w)
-    draw_zone(85004.75, 85762.01, c_bear_ob_t3, c_bear_ob_t3_l, "", 101, true, show_ob and show_w)
-    draw_zone(83435.31, 83570.35, c_bear_ob_t3, c_bear_ob_t3_l, "", 91, true, show_ob and show_w)
-    draw_zone(80717.00, 83580.40, c_bear_ob_t3, c_bear_ob_t3_l, "", 76, true, show_ob and show_w)
-    draw_zone(82469.66, 82814.71, c_bear_ob_t3, c_bear_ob_t3_l, "", 66, true, show_ob and show_w)
-    draw_zone(78689.45, 78918.90, c_bear_ob_t2, c_bear_ob_t2_l, "W BEAR_OB mar-06 (WR 92%)", 56, true, show_ob and show_w)
-    draw_zone(75937.16, 78522.33, c_bear_ob_t2, c_bear_ob_t2_l, "W BEAR_OB apr-17 (WR 92%)", 26, true, show_ob and show_w)
-    draw_zone(77257.27, 77303.10, c_bear_ob_t2, c_bear_ob_t2_l, "W BEAR_OB may-08 (WR 92%)", 11, true, show_ob and show_w)
-    draw_zone(73583.22, 73663.27, c_bull_ob_t2, c_bull_ob_t2_l, "W BULL_OB mar-27 (WR 84%)", 41, false, show_ob and show_w)
-    draw_zone(75337.60, 75488.22, c_bull_fvg_t1, c_bull_fvg_t1_l, "M5 BULL_FVG may-22 (WR 50%)", 5, false, show_fvg and show_h)
+    draw_zone(76626.71, 77713.21, c_bear_fvg_t1, c_bear_fvg_t1_l, "D BEAR_FVG may-08 (WR 46%)", 12, true, show_fvg and show_d)
+    draw_zone(75871.34, 76133.27, c_bull_fvg_t1, c_bull_fvg_t1_l, "D BULL_FVG may-22 (WR 50%)", 5, false, show_fvg and show_d)
+    draw_zone(76123.27, 76143.27, c_pdl_d_t1, c_pdl_d_t1_l, "D PDL may-25", 5, false, show_pdh_pdl and show_d)
+    draw_zone(82784.53, 83016.16, c_bear_fvg_t3, c_bear_fvg_t3_l, "", 227, true, show_fvg and show_w)
+    draw_zone(81091.95, 81398.41, c_bear_fvg_t3, c_bear_fvg_t3_l, "", 212, true, show_fvg and show_w)
+    draw_zone(81251.95, 81744.70, c_bear_fvg_t3, c_bear_fvg_t3_l, "", 172, true, show_fvg and show_w)
+    draw_zone(84243.98, 84471.23, c_bear_fvg_t3, c_bear_fvg_t3_l, "", 97, true, show_fvg and show_w)
+    draw_zone(82725.71, 82861.19, c_bear_fvg_t3, c_bear_fvg_t3_l, "", 87, true, show_fvg and show_w)
+    draw_zone(80632.55, 82227.52, c_bear_fvg_t3, c_bear_fvg_t3_l, "", 62, true, show_fvg and show_w)
+    draw_zone(78470.86, 81159.60, c_bear_fvg_t2, c_bear_fvg_t2_l, "W BEAR_FVG mar-06 (WR 46%)", 57, true, show_fvg and show_w)
+    draw_zone(76999.87, 78448.46, c_bear_fvg_t1, c_bear_fvg_t1_l, "W BEAR_FVG mar-13 (WR 46%)", 52, true, show_fvg and show_w)
+    draw_zone(80385.99, 80501.99, c_bear_ob_t3, c_bear_ob_t3_l, "", 277, true, show_ob and show_w)
+    draw_zone(80658.00, 82330.59, c_bear_ob_t3, c_bear_ob_t3_l, "", 267, true, show_ob and show_w)
+    draw_zone(81250.72, 82188.99, c_bear_ob_t3, c_bear_ob_t3_l, "", 252, true, show_ob and show_w)
+    draw_zone(81704.07, 84058.90, c_bear_ob_t3, c_bear_ob_t3_l, "", 237, true, show_ob and show_w)
+    draw_zone(81922.03, 82626.23, c_bear_ob_t3, c_bear_ob_t3_l, "", 177, true, show_ob and show_w)
+    draw_zone(85426.39, 85706.67, c_bear_ob_t3, c_bear_ob_t3_l, "", 127, true, show_ob and show_w)
+    draw_zone(85004.75, 85762.01, c_bear_ob_t3, c_bear_ob_t3_l, "", 102, true, show_ob and show_w)
+    draw_zone(83435.31, 83570.35, c_bear_ob_t3, c_bear_ob_t3_l, "", 92, true, show_ob and show_w)
+    draw_zone(80717.00, 83580.40, c_bear_ob_t3, c_bear_ob_t3_l, "", 77, true, show_ob and show_w)
+    draw_zone(82469.66, 82814.71, c_bear_ob_t3, c_bear_ob_t3_l, "", 67, true, show_ob and show_w)
+    draw_zone(78689.45, 78918.90, c_bear_ob_t2, c_bear_ob_t2_l, "W BEAR_OB mar-06 (WR 92%)", 57, true, show_ob and show_w)
+    draw_zone(77257.27, 77303.10, c_bear_ob_t1, c_bear_ob_t1_l, "W BEAR_OB may-08 (WR 92%)", 12, true, show_ob and show_w)
+    draw_zone(73964.58, 75868.32, c_bull_fvg_t2, c_bull_fvg_t2_l, "W BULL_FVG apr-10 (WR 50%)", 32, false, show_fvg and show_w)
+    draw_zone(73583.22, 73663.27, c_bull_ob_t2, c_bull_ob_t2_l, "W BULL_OB mar-27 (WR 84%)", 42, false, show_ob and show_w)
+    draw_zone(75292.93, 76515.74, c_bull_ob_t1, c_bull_ob_t1_l, "W BULL_OB may-15 (WR 84%)", 7, false, show_ob and show_w)
+    if show_positioning
+        var box   pos_pin_bx = na
+        var label pos_pin_lb = na
+        box.delete(pos_pin_bx)
+        label.delete(pos_pin_lb)
+        pos_pin_bx := box.new(bar_index - 30, 77077.00, bar_index + 50, 76923.00, bgcolor=c_pin_zone, border_color=c_pin_line, border_width=1, extend=extend.right)
+        pos_pin_lb := label.new(bar_index + 90, 77077.00, text="PIN 77000 (single strike, +56K Cr)", color=color.new(color.black, 100), textcolor=c_pin_line, style=label.style_label_lower_left, size=size.small)
+        var box   pos_accel_bx = na
+        var label pos_accel_lb = na
+        box.delete(pos_accel_bx)
+        label.delete(pos_accel_lb)
+        pos_accel_bx := box.new(bar_index - 30, 76400.00, bar_index + 50, 76000.00, bgcolor=c_accel_zone, border_color=c_accel_line, border_width=1, extend=extend.right)
+        pos_accel_lb := label.new(bar_index + 90, 76000.00, text="ACCEL 76000-76400 (trough 76200, -98K Cr)", color=color.new(color.black, 100), textcolor=c_accel_line, style=label.style_label_upper_left, size=size.small)
 
 // ── HEADER ───────────────────────────────────────────────────────────────────
 if barstate.islast
     var label hdr = na
     label.delete(hdr)
     sym_str = is_nifty ? "NIFTY" : (is_sensex ? "SENSEX" : "OTHER")
-    n_zones = is_nifty ? 26 : (is_sensex ? 30 : 0)
-    hdr := label.new(x=bar_index, y=high * 1.001, text="MERDIAN HTF | " + sym_str + " | " + str.tostring(n_zones) + " zones | entry-band | 2026-05-25", color=color.new(color.black, 80), textcolor=color.white, style=label.style_label_down, size=size.small)
+    n_zones = is_nifty ? 21 : (is_sensex ? 26 : 0)
+    hdr := label.new(x=bar_index, y=high * 1.001, text="MERDIAN HTF | " + sym_str + " | " + str.tostring(n_zones) + " zones | entry-band | 2026-05-26", color=color.new(color.black, 80), textcolor=color.white, style=label.style_label_down, size=size.small)

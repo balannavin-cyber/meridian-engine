@@ -57,6 +57,51 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S38-NEW-1 — `MERDIAN_Intraday_Supervisor_Start` multi-trigger XML settings quirk blocks `Set-ScheduledTask` settings update
+
+| | |
+|---|---|
+| **Severity** | S4 |
+| **Filed** | 2026-05-26 (Session 38 — surfaced during TD-061 final long-tail closure review) |
+| **Symptom** | `MERDIAN_Intraday_Supervisor_Start` (Weekly Mon-Fri 08:00 IST + AtLogon = two triggers) is the one task in the 20-task MERDIAN_* set without `Hidden=$true + MultipleInstances=IgnoreNew` applied via PowerShell `Set-ScheduledTask -Settings <obj>`. S29 `migrate_to_pythonw.ps1` v2 settings pass failed on this task only due to multi-trigger XML quirk in PowerShell where the cmdlet couldn't apply Settings cleanly to a multi-trigger task. Result: 19/20 tasks hardened, 1/20 retains loose settings. |
+| **Workaround in place** | Task functions correctly otherwise; settings looseness affects only window-flash count and parallel-instance behavior — supervisor is by nature single-instance via internal lockfile so no operational impact today. Documented as known limitation in Topology §7.2. |
+| **Root cause** | PowerShell `Set-ScheduledTask -Settings <CIM>` against a task with two triggers (Weekly + AtLogon) doesn't reconcile the `<Settings>` block cleanly — XML structure expects single-trigger or supports applications via full `Register-ScheduledTask -Xml` overwrite. Workaround documented in Topology §7.2 Note: build full Register-ScheduledTask XML + Force overwrite. |
+| **Proper fix** | Build full `Register-ScheduledTask -Xml` with corrected `<Settings>` block + `-Force` overwrite. ~30 min when next operating on this task. Alternative: split into two separate tasks (one Weekly + one AtLogon) so each is single-trigger. |
+| **Impact if not fixed** | None operational. Cosmetic — last 5% of TD-061 hardening. The task is PowerShell-by-design (`merdian_morning_start.ps1`) so cannot migrate to pythonw regardless. Filed for completeness only. |
+| **Related** | TD-061 (RESOLVED-FINAL S38 — this is one of the 4 remaining non-pythonw tasks, the 1 with loose settings), Topology §7.2 (canonical 20-task inventory), CLAUDE.md v1.20 (S29 codification of the XML quirk as known limitation). |
+
+---
+
+### TD-S38-NEW-2 — Dead `TIMEOUT_LIVE_DEFAULT` + `TIMEOUT_SHADOW_DEFAULT` constants in `run_option_snapshot_intraday_runner.py`
+
+| | |
+|---|---|
+| **Severity** | S4 |
+| **Filed** | 2026-05-26 (Session 38 — surfaced during P6 read of runner source for Intraday_Session_Start migration decision) |
+| **Symptom** | `run_option_snapshot_intraday_runner.py` lines 30-31 declare module-level constants `TIMEOUT_LIVE_DEFAULT = 240` and `TIMEOUT_SHADOW_DEFAULT = 180`; these constants are **never referenced anywhere in the file**. `grep -n TIMEOUT_LIVE_DEFAULT run_option_snapshot_intraday_runner.py` returns only the declaration line. |
+| **Workaround in place** | None needed — dead constants have zero runtime impact. They appear to be leftover from an earlier iteration where per-step timeouts were computed from these defaults; the current code uses explicit per-step timeouts `TIMEOUT_BREADTH=300 / TIMEOUT_WCB=180 / TIMEOUT_INGEST=240 / TIMEOUT_ARCHIVE=180 / TIMEOUT_GAMMA=240 / TIMEOUT_VOL=240 / TIMEOUT_MOMENTUM=240 / TIMEOUT_STATE=240 / TIMEOUT_SIGNAL=240 / TIMEOUT_SHADOW_SIGNAL=180` instead. |
+| **Root cause** | Refactor leftover — likely from a transition where timeouts were per-pipeline (live vs shadow) to per-step. The defaults survived the refactor unreferenced. |
+| **Proper fix** | Either (a) delete the 2 dead lines, or (b) wire them to per-step timeouts that share the same value (e.g. `TIMEOUT_INGEST = TIMEOUT_LIVE_DEFAULT`) so the relationship is explicit. ~5 min in next writer refactor. |
+| **Impact if not fixed** | None operational. Cosmetic code hygiene. Discovery cost is in the wasted grep when future Claude reads the file expecting these constants to drive behavior. |
+| **Related** | TD-061 (RESOLVED-FINAL S38 — TD-S38-NEW-2 surfaced during the runner source read that informed Intraday_Session_Start migration option A vs B decision), `run_option_snapshot_intraday_runner.py` is the 5-min intraday cycle orchestrator (heartbeat of live pipeline). |
+
+---
+
+### TD-S38-NEW-3 — `ict_primitives × gamma_metrics` LATERAL joins need canonical helper view
+
+| | |
+|---|---|
+| **Severity** | S3 |
+| **Filed** | 2026-05-26 (Session 38 — recurrent correctness bug across Exp 53/53b/53c arc) |
+| **Symptom** | Two independent correctness bugs surfaced when writing LATERAL joins between `ict_primitives` and `gamma_metrics` for research queries: (a) **Exp 53 v1 formation-anchor bug** — used `p.level` as formation anchor for proximity computation; `level` is NULL for ALL zone primitives (OB/FVG) which use `zone_low + zone_high`. Q-Disco-8 confirmed 0 of 1098 BEAR_FVG / 0 of 142 BEAR_OB / 0 of 1053 BULL_FVG / 0 of 189 BULL_OB populate `level`. Fix required `COALESCE(p.level, (p.zone_low + p.zone_high) / 2.0)`. (b) **Exp 53b/c classifier bin collision** — when `gamma_metrics.flip_level IS NULL` (NO_FLIP regime rows), proximity_pct computation returns NULL; the bin classifier put both `flip_proximity_pct IS NULL` rows AND `regime = 'NO_FLIP'` rows into the same `no_flip_data` bucket; turned out the bucket also accidentally caught rows where LATERAL matched gamma but flip_level was null. Required splitting `no_flip_regime` (intentional NULL via NO_FLIP) from `no_gamma_data` (missed LATERAL match). |
+| **Workaround in place** | Both bugs fixed in-flight via SQL rewrites within session — Exp 53 final query uses `COALESCE` on level; Exp 53c uses split bin classifier `no_flip_regime` vs `no_gamma_data`. Future research queries that join these tables risk re-discovering both bugs. |
+| **Root cause** | Schema conventions: (a) zone primitives store bounds not midpoint; level scalar is for point primitives (SWEEP); future ICT primitive types may add other anchor conventions. (b) Lateral predicate on `gamma_metrics.flip_level IS NOT NULL` is the cleanest filter but easy to forget; `regime = 'NO_FLIP'` rows still have positioning context (gamma_concentration etc.) just no flip-derived columns. |
+| **Proper fix** | Create canonical helper view `v_ict_primitive_gamma_context` joining `ict_primitives` to `gamma_metrics` once with: (a) `COALESCE(level, (zone_low+zone_high)/2.0) AS formation_anchor` materialized; (b) `LEFT JOIN LATERAL` with `INTERVAL '2 hours'` lookback (handles M5 backward + H/D forward conventions); (c) explicit `regime` column passed through; (d) computed proximity columns for common anchors (flip_level, max_gamma_strike when ENH-80 cohort grows). Research queries then select from the view + apply filters per cohort. ~1-2 hour design + ship. |
+| **Impact if not fixed** | Future research queries will re-discover one or both bugs. Cost is per-occurrence diagnostic time (Exp 53 arc spent ~1 hour on the two bugs across the 3 iterations). Filed at S3 because pattern is recurrent across research-tier work. |
+| **Related** | Exp 53/53b/53c arc (S38 — surfaced the recurrence), ADR-004 Wave 1 (ict_primitives + ict_primitive_outcomes schema), ADR-002 v2 P5 PINNED state (NO_FLIP regime semantics), TD-S30-NEW-3 OB attachment broken at signal-builder layer (different but adjacent — same family of join-correctness issue at consumer side). |
+
+---
+
 ### TD-S37-01 — Hardcoded τ_pin = τ_accel = 0.3 in ENH-81 SQL views; formalize as `merdian_parameters` lookup when ENH-83 builds
 
 | | |
@@ -1794,6 +1839,21 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 ## Resolved (audit trail)
 
 > Closed items live here forever. Never delete — they are evidence of work done and decisions made.
+
+### TD-061 — Task Scheduler entry points spawn visible console windows (S38 FINAL LONG-TAIL CLOSURE)
+
+| | |
+|---|---|
+| **Severity at close** | RESOLVED-S29 (declared with 5 residuals documented) → RESOLVED-FINAL-S38 (3 of 5 residuals actioned, 0 live window-flash sources) |
+| **Final closure date** | 2026-05-26 (Session 38 — P6 long-tail closure) |
+| **S38 actions taken** | 3 PowerShell commands executed: (a) `MERDIAN_Dhan_Token_Refresh` migrated `python.exe → pythonw.exe` (args unchanged) via `Set-ScheduledTask -Action` with `New-ScheduledTaskAction -Execute "C:\Users\balan\AppData\Local\Programs\Python\Python312\pythonw.exe" -Argument "C:\GammaEnginePython\refresh_dhan_token.py"`; (b) `MERDIAN_Intraday_Session_Start` migrated from `cmd /c cd /d C:\GammaEnginePython && python.exe run_option_snapshot_intraday_runner.py >> logs\option_runner.log 2>&1` to direct `pythonw.exe run_option_snapshot_intraday_runner.py` after reading runner source confirmed script has internal `logs/option_snapshot_intraday_runner.log` logging making cmd-wrapper redirection duplicative; (c) `MERDIAN_Market_Tape_1M` `Disable-ScheduledTask` (broken DhanError 401 since 2026-04-07 — S23 candidate finally actioned). |
+| **S38 final state** | 16/20 actions on pythonw (was 14/20 at S36, +2 from S38); 19/20 settings hardened with `Hidden=$true + MultipleInstances=IgnoreNew` (unchanged — `MERDIAN_Intraday_Supervisor_Start` multi-trigger XML quirk still open as TD-S38-NEW-1 S4); **0 live window-flash sources** (down from 5 at S29 close). |
+| **Documented residuals (post-S38)** | 4 of 20 tasks remain non-pythonw, all legitimate: (1) `MERDIAN_Watchdog` PowerShell observer by design (`watchdog_check.ps1`); (2) `MERDIAN_Intraday_Supervisor_Start` PowerShell by design (`merdian_morning_start.ps1`) + multi-trigger XML settings quirk (TD-S38-NEW-1 S4); (3) `MERDIAN_Market_Tape_1M` DISABLED durable S38 (was broken DhanError 401); (4) `MERDIAN_WS_Feed_0900` DISABLED durable S28. None of the 4 produce live window flashes. |
+| **Lessons** | **(a) TDs declared RESOLVED with documented residuals should be re-audited at sprint cadence** — S29 listed 5 residuals as legitimate exceptions but 3 of 5 were actually trivially-actionable (Dhan_Token_Refresh + Intraday_Session_Start + Market_Tape_1M); operator session S38 P6 walked all 3 in <30 min; residuals may have moved from blocking to trivially-actionable as upstream changed. (b) Cmd-wrapper-to-direct migration decisions benefit from reading the wrapped script's source — `run_option_snapshot_intraday_runner.py` has internal `script_execution_log` + per-step logging via `log()` writing to dedicated logfile, making the cmd-wrapper's `>> logs\option_runner.log 2>&1` redirection structurally duplicative; choosing Option A (drop wrapper) over Option B (preserve wrapper for log capture) was data-driven not pattern-matched. (c) **Doc Protocol v4 Rule N alignment finally achieved** — TD-061 body-state matches footer-claim across all 20 tasks (no "footer says RESOLVED but body still has 5 residuals" divergence S29's discipline still left). |
+| **Related** | TD-061 S29 RESOLVED block (above in Resolved section — preserved verbatim per no-crunch), TD-S38-NEW-1 (the 1 remaining XML quirk residual), Topology §7.2 (canonical 20-task inventory with S38 column added), CLAUDE.md v1.28 (S38 settled-decisions including TD-061 final-state). |
+
+
+---
 
 ### TD-NEW-2 (closed) — `flip_level` regression: stuck at ~21,250 due to spurious deep-ITM CE gamma from Dhan
 

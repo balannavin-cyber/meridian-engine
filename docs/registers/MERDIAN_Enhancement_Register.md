@@ -3443,3 +3443,63 @@ Mode C — observe `script_execution_log` for orphan RUNNING rows aged > 5min ov
 ---
 
 *End Session 36 new ENH entries block (ENH-99 SHIPPED; consumes reservation slot; no other ENH activity). Next session entries land below this line.*
+
+
+---
+
+### ENH-110 — Consolidated Marketview Build (3-phase consolidation + Lovable-prompts embedded)
+
+| | |
+|---|---|
+| **Status** | PROPOSED 2026-05-26 (Session 38) |
+| **Priority** | P0 (operator-triggered build; consolidation debt surfaced via S38 live integration check) |
+| **Filed** | 2026-05-26 |
+| **Trigger** | S38 P0 live integration check surfaced 3-dashboard consolidation debt (localhost:8765 Live Dashboard + localhost:8766 SIGNAL Dashboard + Lovable) + external VRDNation max-pain; operator switching between 4 surfaces during decision flow; ADR-017 Operator Console Design Principles ACCEPTED codifies 6 principles + keyboard corollary informing the consolidation design. |
+| **Scope** | Three-phase build: **Phase 1** (Marketview + Settings consolidation) subsumes existing 3 dashboards into single Marketview decision-surface page + Settings config page; ENH-83 calibration console becomes Phase 1 Settings tab. **Phase 2** confluence detection primitive (writer comparing PIN/ACCEL strikes to active ICT zones per cycle writing overlap rows to `signal_confluence` table — surfaces both polarities per D.20.1 amendment) + IV skew surfacing + journal hooks. **Phase 3** salience signals + intelligence layers (motion replaces timestamps per ADR-017 P5; distance×time salience per ADR-017 P6). |
+| **Lovable prompts** | Marketview prompt (Appendix A) + Settings prompt (Appendix B) embedded verbatim in `docs/enhancements/ENH-110-consolidated-marketview-build.md` for direct paste at build trigger. Zero-translation build path. |
+| **Dependencies** | Phase 1 requires ENH-83 calibration console (graduates from PROPOSED build-deferred → required); Phase 2 confluence detection writer requires ENH-80 + ENH-81 already SHIPPED S37 (substrate live since 2026-05-25); Phase 3 builds on Phase 1+2. |
+| **Cost estimate** | Phase 1: ~1.5 sessions (Marketview Lovable build + Settings Lovable build + ENH-83 calibration console wiring); Phase 2: ~1 session (confluence detection writer + signal_confluence table + IV skew surfacing); Phase 3: ~1-2 sessions (salience + intelligence layers). Total ~3.5-4.5 sessions across 3-4 build sessions. |
+| **Related** | ADR-017 (6 principles + keyboard corollary informing design), ADR-002 v2 P5 PINNED state (Phase 2 confluence detection consumes), D.20.1 confluence-as-bidirectional-context (Phase 2 scope amendment — surface both polarities not just overlap-as-confirmation), TD-S37-03 Lovable anon-key brittleness (Phase 1 Marketview RLS+GRANT triplet must be documented inline), ENH-80/81 (substrate already shipped), ENH-83 (calibration console — graduates to required). |
+| **Acceptance criteria** | Phase 1 SHIPPED when single Marketview page replaces 3 existing dashboards + Settings page provides calibration + connections + manual actions; smoke-fire 4/4 falsification gates including operator can complete morning preflight + intraday-decision + end-of-day review without dashboard-switching. |
+| **History** | 2026-05-26 (S38): PROPOSED with Lovable prompts embedded; ENH-83 graduated to required dependency. |
+
+---
+
+### ENH-111 — M5 BEAR_FVG flip_proximity_pct < 0.25% anti-edge gate (holdout-validated)
+
+| | |
+|---|---|
+| **Status** | PROPOSED 2026-05-26 (Session 38) — deployable pending env-flag wiring |
+| **Priority** | P0b (deployable; ~30 min env-flag wiring in `build_trade_signal_local.py`) |
+| **Filed** | 2026-05-26 |
+| **Trigger** | Exp 53 v2 holdout-validated finding: M5 BEAR_FVG entries within 0.25% of flip level are anti-edge across train + holdout cross-symbol. Train NIFTY p1 N=85 WR 35.3% mean PnL_EOD **-10.22** median -12.15; train SENSEX p1 N=91 WR 35.2% mean **-9.71**; holdout NIFTY p1 N=12 WR 33.3% mean **-38.24**; holdout SENSEX p1 N=12 WR **16.7%** mean **-37.71**. Wilson 95% CI on combined train p1 [29.0%, 41.5%] excludes 50%. Holdout cohort losses 5-10× worse than baseline -1 to -5 = destroyer-class PnL sink, not modest gate. |
+| **Scope** | Single gate decision in `build_trade_signal_local.py` BEAR_FVG M5 routing path: if primitive type='BEAR_FVG' AND timeframe='M5' AND flip_proximity_pct < 0.25% (computed from `gamma_metrics` flip_level at signal time), then `action='DO_NOTHING'` + `out['raw']['enh111_decision']='BLOCK_ANTI_EDGE_FLIP_PROXIMITY'`. Reversible via `MERDIAN_ENH111_ENABLED=0` env flag. |
+| **Wiring** | (1) Add env flag read at module top: `ENH111_ENABLED = os.environ.get('MERDIAN_ENH111_ENABLED','0') == '1'` defaulting OFF per D.13.1 cohort-translation discipline. (2) Add proximity helper using `gamma_metrics.flip_level` joined to signal `formation_level`. (3) Gate block before `return out` flags with action+trade_allowed+out{} three-site sync. (4) `.env` adds `MERDIAN_ENH111_ENABLED=0` documented line. |
+| **Cost estimate** | ~30 min (mirror of S26 ENH-55 + S30 ENH-76/77/88 env-flag patterns). |
+| **Deployment gate** | Live N≥30 BEAR_FVG M5 signals with flip_proximity_pct<0.25% accumulated post-flag-enable per D.13.1 cohort-translation pre-flight before considering flag flip from 0 → 1. Conservative threshold consistent with ADR-009 graduated-strictness holdout discipline. |
+| **Related** | D.20.1 confluence-as-bidirectional-context (the finding is gate-direction not amplification), Exp 53 v2 holdout validation (train+holdout cross-symbol replication), ADR-009 §S30 case study (PnL framing + cohort-translation discipline), D.13.1 cohort-translation (live N≥30 deployment gate), ADR-017 P4 (confluence is bidirectional — confirms OR invalidates). |
+| **Acceptance criteria** | Patch deployed Local + AWS with env flag default OFF + AST validated + smoke-fire test confirms BEAR_FVG M5 within 0.25% of flip produces DO_NOTHING with enh111_decision='BLOCK_ANTI_EDGE_FLIP_PROXIMITY' tag in raw payload. |
+| **History** | 2026-05-26 (S38): PROPOSED with holdout-validated evidence; pending env-flag wiring S39. |
+
+---
+
+### ENH-112 — H FVG retest 30m-vs-EOD exit-window decay study (research-tier verification)
+
+| | |
+|---|---|
+| **Status** | PROPOSED 2026-05-26 (Session 38) — research-tier verification queued |
+| **Priority** | P0c (~30 min SQL extension on existing `ict_primitive_outcomes` data) |
+| **Filed** | 2026-05-26 |
+| **Trigger** | Exp 53c surprise finding from holdout `p0_no_data` cohort (rows where LATERAL still missed despite ±2h widened lookback — likely NO_FLIP regime rows where `gamma_metrics.flip_level IS NULL`): cross-symbol divergence between 30m and EOD WR. **BEAR_FVG holdout p0_no_data N=30 WR_30m=96.7% WR_EOD=50.0%** (47pp decay); **BULL_FVG holdout p0_no_data N=24 WR_30m=100.0% WR_EOD=20.8%** (79pp decay). Cross-symbol consistency in pattern direction (both BEAR + BULL show sharp EOD decay from near-100% 30m). |
+| **Hypothesis** | S31-B headline 80-92% WR on H FVG retest (codified D.14.1) reported `retest_fwd_eod_pct` outcome; the EOD measurement may have been compositionally averaging cells with different time-decay profiles. The 30-min directional move is the decisive part; EOD measurement smears the signal with subsequent mean-reversion / overnight noise. If verified, **exit-window optimization (e.g. exit at 30m) is independently actionable from proximity gating** (ENH-111) and may produce larger lift than proximity gating alone. |
+| **Scope** | SQL extension on existing `ict_primitive_outcomes` data — no new data collection needed: aggregate WR per (symbol × primitive_type × era) by `retest_fwd_5m_pct` + `retest_fwd_15m_pct` + `retest_fwd_30m_pct` + `retest_fwd_60m_pct` + `retest_fwd_120m_pct` + `retest_fwd_eod_pct` exit horizons; restrict to H timeframe FVG retests; verify cross-symbol decay pattern at N≥30 per cell. |
+| **Cost estimate** | ~30 min (single SQL query + result interpretation). Verification only — no production deployment in scope. |
+| **Deployment path if confirmed** | Separate ENH-113 (or ENH-112 extension) for production deployment with `MERDIAN_ENH112_EXIT_30M_ENABLED` env flag; integration target is order placer + Pine overlay exit-marker rendering; gated on N≥30 live signal_snapshots per D.13.1 before flag flip. |
+| **Related** | D.20.3 H FVG retest exit-window decay hypothesis (open — verification queued), ADR-009 §Phase 1 H FVG retest finding (S31-B 80-92% on EOD — may need cohort-segmentation), ADR-004 Wave 1 cohort (existing data source). |
+| **Acceptance criteria** | SQL produces decay table with N≥30 per (symbol × primitive_type × era × exit horizon) cell; cross-symbol cross-era decay pattern verified (or refuted) at p<0.05 confidence. If verified: file ENH-113 production deployment ENH. If refuted: close D.20.3 hypothesis. |
+| **History** | 2026-05-26 (S38): PROPOSED with surprise-finding evidence from Exp 53c; ~30 min verification SQL queued S39 P0c. |
+
+---
+
+
+*Last updated Session 38, 2026-05-26.*

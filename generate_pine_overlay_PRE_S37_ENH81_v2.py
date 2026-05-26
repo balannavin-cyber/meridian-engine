@@ -190,74 +190,54 @@ def fetch_positioning_landscape(sb, symbol: str):
 
 
 def _pine_positioning_render(pos):
-    """ENH-81 (S37) v2 — emit Pine code lines for pin/accel boxes.
+    """ENH-81 (S37) v1 — emit Pine code lines for pin/accel boxes.
 
-    v2 changes:
-      - Single-strike zones (lower == upper) widened visually by
-        ±step (0.1%% of strike, 50pt floor) so the box is readable;
-        label says "(single strike at N)" honestly.
-      - Labels anchored at zone edges (PIN top, ACCEL bottom) using
-        style_label_lower_left / style_label_upper_left so they sit
-        above/below the zone, off the ICT zone midpoint where ICT
-        labels live (notably dense on SENSEX, was colliding in v1).
-      - Label X anchor bar_index + 90 (was + 50) for cleaner offset
-        from ICT labels at bar_index + 30.
+    Lines inserted inside per-symbol `if is_<sym>` block. References
+    module-level Pine vars c_pin_zone / c_pin_line / c_accel_zone /
+    c_accel_line + show_positioning toggle.
     """
-    # ENH-81 (S37) v2
     if not pos:
         return []
     lines = ["    if show_positioning"]
     pin = pos.get("pin")
     if pin:
-        lo, hi = pin["lower"], pin["upper"]
-        if lo == hi:
-            step = max(50.0, hi * 0.001)
-            viz_lo, viz_hi = lo - step, hi + step
-            lbl_core = f"PIN {lo:.0f} (single strike"
-        else:
-            viz_lo, viz_hi = lo, hi
-            lbl_core = f"PIN {lo:.0f}-{hi:.0f} (peak {pin['peak_strike']:.0f}"
+        ymid = (pin["lower"] + pin["upper"]) / 2.0
         peak_str = f"+{pin['peak_gex_cr']/1000:.0f}K Cr"
-        lbl = f"{lbl_core}, {peak_str})"
+        lbl = (f"PIN {pin['lower']:.0f}-{pin['upper']:.0f} "
+               f"(peak {pin['peak_strike']:.0f} {peak_str})")
         lines.append("        var box   pos_pin_bx = na")
         lines.append("        var label pos_pin_lb = na")
         lines.append("        box.delete(pos_pin_bx)")
         lines.append("        label.delete(pos_pin_lb)")
         lines.append(
-            f"        pos_pin_bx := box.new(bar_index - 30, {viz_hi:.2f}, "
-            f"bar_index + 50, {viz_lo:.2f}, bgcolor=c_pin_zone, "
+            f"        pos_pin_bx := box.new(bar_index - 30, {pin['upper']:.2f}, "
+            f"bar_index + 50, {pin['lower']:.2f}, bgcolor=c_pin_zone, "
             f"border_color=c_pin_line, border_width=1, extend=extend.right)"
         )
         lines.append(
-            f'        pos_pin_lb := label.new(bar_index + 90, {viz_hi:.2f}, '
+            f'        pos_pin_lb := label.new(bar_index + 50, {ymid:.2f}, '
             f'text="{lbl}", color=color.new(color.black, 100), '
-            f'textcolor=c_pin_line, style=label.style_label_lower_left, size=size.small)'
+            f'textcolor=c_pin_line, style=label.style_label_left, size=size.small)'
         )
     accel = pos.get("accel")
     if accel:
-        lo, hi = accel["lower"], accel["upper"]
-        if lo == hi:
-            step = max(50.0, hi * 0.001)
-            viz_lo, viz_hi = lo - step, hi + step
-            lbl_core = f"ACCEL {lo:.0f} (single strike"
-        else:
-            viz_lo, viz_hi = lo, hi
-            lbl_core = f"ACCEL {lo:.0f}-{hi:.0f} (trough {accel['trough_strike']:.0f}"
+        ymid = (accel["lower"] + accel["upper"]) / 2.0
         trough_str = f"{accel['trough_gex_cr']/1000:.0f}K Cr"
-        lbl = f"{lbl_core}, {trough_str})"
+        lbl = (f"ACCEL {accel['lower']:.0f}-{accel['upper']:.0f} "
+               f"(trough {accel['trough_strike']:.0f} {trough_str})")
         lines.append("        var box   pos_accel_bx = na")
         lines.append("        var label pos_accel_lb = na")
         lines.append("        box.delete(pos_accel_bx)")
         lines.append("        label.delete(pos_accel_lb)")
         lines.append(
-            f"        pos_accel_bx := box.new(bar_index - 30, {viz_hi:.2f}, "
-            f"bar_index + 50, {viz_lo:.2f}, bgcolor=c_accel_zone, "
+            f"        pos_accel_bx := box.new(bar_index - 30, {accel['upper']:.2f}, "
+            f"bar_index + 50, {accel['lower']:.2f}, bgcolor=c_accel_zone, "
             f"border_color=c_accel_line, border_width=1, extend=extend.right)"
         )
         lines.append(
-            f'        pos_accel_lb := label.new(bar_index + 90, {viz_lo:.2f}, '
+            f'        pos_accel_lb := label.new(bar_index + 50, {ymid:.2f}, '
             f'text="{lbl}", color=color.new(color.black, 100), '
-            f'textcolor=c_accel_line, style=label.style_label_upper_left, size=size.small)'
+            f'textcolor=c_accel_line, style=label.style_label_left, size=size.small)'
         )
     if len(lines) == 1:
         return []   # only the show_positioning header, no actual zone

@@ -143,8 +143,6 @@ class GammaMetricsResult:
     otm_oi_velocity: float | None
     spot_vs_range: float | None
     run_type: str
-    # ENH-80 (S37) v2 — per-strike GEX row list, built in compute_gamma_metrics.
-    gss_rows: list[dict[str, Any]] | None = None
 
 
 def fetch_option_chain_rows(run_id: str, expected_symbol: str | None = None) -> list[dict[str, Any]]:
@@ -686,9 +684,6 @@ def compute_gamma_metrics(
     expansion_probability = compute_expansion_probability(gamma_concentration, flip_distance_pct, net_gex)
     regime = determine_regime(net_gex, flip_level)
 
-    # ENH-80 (S37) v2 — per-strike GEX row build (ADR-015 schema v2).
-    gss_rows = build_gss_rows(option_rows_raw, spot, symbol, ts, expiry_date, run_id)
-
     # V18B: velocity and range fields
     prior_row = fetch_prior_gamma_metrics(symbol, ts)
     straddle_velocity = compute_straddle_velocity(straddle_atm, prior_row)
@@ -715,7 +710,6 @@ def compute_gamma_metrics(
         otm_oi_velocity=otm_oi_velocity,
         spot_vs_range=spot_vs_range,
         run_type=run_type,
-        gss_rows=gss_rows,  # ENH-80 (S37) v2
     )
 
 
@@ -804,109 +798,6 @@ def upsert_gamma_metrics(result: GammaMetricsResult) -> dict[str, Any]:
     return rows[0] if rows else payload
 
 
-# =====================================================================
-# ENH-80 (S37) v2 — per-strike GEX (gex_strike_snapshots) helpers
-# ADR-015 schema v2: gamma_call + gamma_put split, no derived booleans.
-# Peak / flip / pin semantics move to query-time views (ADR-015 §F2).
-# =====================================================================
-
-def build_gss_rows(
-    option_rows_raw: list[dict[str, Any]],
-    spot: float,
-    symbol: str,
-    ts: str,
-    expiry_date: str | None,
-    run_id: str,
-) -> list[dict[str, Any]]:
-    """ENH-80 (S37) v2 — build per-strike rows for gex_strike_snapshots.
-
-    Schema v2 per ADR-015: stores gamma_call + gamma_put split (IV skew
-    preserved at strike resolution) and drops is_local_max / is_flip_zone /
-    is_pin_candidate_bool (derivations now live in query-time views).
-
-    Iterates over option_rows_raw (pre-filter) so oi_call / oi_put reflect
-    full-chain OI even when gamma=0 rows are present. signed_gamma_exposure
-    handles its own filtering (deep-ITM rejection per TD-NEW-2 Part A;
-    gamma=0 or oi<=0 returns 0). Sum of gex_cr across returned rows MUST
-    equal compute_net_gex(option_rows, spot) within rounding — falsification
-    rule from ADR-014 §2.5 (retained in ADR-015). Zero-noise strikes (no OI
-    either side AND no GEX contribution) are dropped.
-    """
-    if not option_rows_raw or spot <= 0:
-        return []
-
-    # dte reuses _dte_from_ts via SimpleNamespace stand-in; single source
-    # of truth for IST DTE math.
-    from types import SimpleNamespace
-    dte = _dte_from_ts(SimpleNamespace(ts=ts, expiry_date=expiry_date))
-
-    per_strike: dict[float, dict[str, Any]] = {}
-    for row in option_rows_raw:
-        strike = to_float(row.get("strike"))
-        if strike <= 0:
-            continue
-        opt_type = str(row.get("option_type", "")).upper()
-        oi = int(to_float(row.get("oi"), default=0.0))
-        gamma_raw = to_float(row.get("gamma"))
-        gex_contrib = signed_gamma_exposure(row, spot)
-
-        bucket = per_strike.setdefault(strike, {
-            "strike": strike,
-            "gex_cr": 0.0,
-            "oi_call": 0,
-            "oi_put": 0,
-            "gamma_call": None,
-            "gamma_put": None,
-        })
-        bucket["gex_cr"] += gex_contrib
-        if opt_type == "CE":
-            bucket["oi_call"] += oi
-            if bucket["gamma_call"] is None and gamma_raw != 0.0:
-                bucket["gamma_call"] = gamma_raw
-        elif opt_type == "PE":
-            bucket["oi_put"] += oi
-            if bucket["gamma_put"] is None and gamma_raw != 0.0:
-                bucket["gamma_put"] = gamma_raw
-
-    rows: list[dict[str, Any]] = []
-    for strike in sorted(per_strike.keys()):
-        b = per_strike[strike]
-        if b["oi_call"] == 0 and b["oi_put"] == 0 and b["gex_cr"] == 0.0:
-            continue
-        rows.append({
-            "run_id": run_id,
-            "symbol": symbol,
-            "ts": ts,
-            "expiry_date": expiry_date,
-            "dte": dte,
-            "strike": float(strike),
-            "spot": float(spot),
-            "gamma_call": b["gamma_call"],
-            "gamma_put": b["gamma_put"],
-            "oi_call": b["oi_call"],
-            "oi_put": b["oi_put"],
-            "gex_cr": float(b["gex_cr"]),
-        })
-
-    return rows
-
-
-def upsert_gex_strike_snapshots(result: GammaMetricsResult) -> int:
-    """ENH-80 (S37) v2 — bulk upsert per-strike rows to gex_strike_snapshots.
-
-    Idempotent via UNIQUE (run_id, strike, expiry_date) — retries within
-    one run_id UPSERT in place rather than duplicate. Returns the count of
-    rows sent for log.record_write.
-    """
-    rows = result.gss_rows or []
-    if not rows:
-        return 0
-    SUPABASE.table(GSS_TARGET_TABLE).upsert(
-        rows, on_conflict="run_id,strike,expiry_date"
-    ).execute()
-    return len(rows)
-
-
 # TD-NEW-12 (S28): shadow-vs-live table separation.
 # AWS shadow runner passes --shadow to redirect writes to gamma_metrics_shadow.
 # Local invocations omit it and write to gamma_metrics.
@@ -915,12 +806,6 @@ USE_SHADOW = "--shadow" in sys.argv
 if USE_SHADOW:
     sys.argv = [a for a in sys.argv if a != "--shadow"]
 TARGET_TABLE = "gamma_metrics_shadow" if USE_SHADOW else "gamma_metrics"
-
-# ENH-80 (S37) v2 — per-strike GEX shadow-aware target (ADR-015).
-# Companion to TARGET_TABLE. Shadow DDL is out of scope for S37; AWS
-# shadow runs will error against the shadow table until ADR-006
-# execution lands it. Local production writes proceed unchanged.
-GSS_TARGET_TABLE = "gex_strike_snapshots_shadow" if USE_SHADOW else "gex_strike_snapshots"
 
 
 def parse_args(argv: list[str]) -> tuple[str, Optional[str], str]:
@@ -1003,7 +888,7 @@ def main() -> int:
     # priority over opening-row completeness.
     log = ExecutionLog(
         script_name="compute_gamma_metrics_local.py",
-        expected_writes={TARGET_TABLE: 1, GSS_TARGET_TABLE: 1},  # ENH-80 (S37) v2
+        expected_writes={TARGET_TABLE: 1},
         symbol=expected_symbol,
         notes=f"run_id={run_id} run_type={run_type}",
     )
@@ -1042,18 +927,6 @@ def main() -> int:
     # The upsert returns the row (or at minimum the payload we sent).
     # Either way, one row landed in gamma_metrics.
     log.record_write(TARGET_TABLE, 1)
-
-    # ENH-80 (S37) v2 — per-strike GEX upsert (strict path; fail loud).
-    try:
-        gss_n = upsert_gex_strike_snapshots(result)
-    except Exception as e:
-        return log.exit_with_reason(
-            "DATA_ERROR",
-            exit_code=1,
-            error_message=f"upsert_gex_strike_snapshots failed: {e}",
-        )
-    log.record_write(GSS_TARGET_TABLE, gss_n)
-    print(f"gex_strike_snapshots_rows_written={gss_n}")
 
     print("=" * 72)
     print("MERDIAN - Local Python compute_gamma_metrics")

@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v27",
+    "version": "v28",
     "generated": "2026-05-16",
     "sources": [
       "Session 28 (2026-05-13): 3 production commits (72622a9 + de23467 + 447634c), tag session-28-close. P0 verification PASS 09:25 IST 2026-05-12. 8 TDs closed same-session (first 8-TD-close session): TD-NEW-12 (AWS shadow runner writing to production gamma_metrics 13 days due to silent architecture violation — --shadow flag plumbed via TARGET_TABLE constant routing SELECT + UPSERT + ExecutionLog telemetry + AWS wrapper line 479 + schema reconciliation 7 cols + UNIQUE constraint + NOTIFY pgrst), TD-NEW-4 (_dte_from_ts helper from result.ts not date.today() wall clock), TD-NEW-13 (microsecond regex normalization to 6 digits for Python 3.10 fromisoformat compatibility; 60/60 retry success), TD-NEW-8 (MERDIAN_WS_Stop pkill → pkill -9 SIGKILL config-only), TD-NEW-6 (MERDIAN_WS_Feed_0900 Local task Disabled durable), TD-NEW-5 (run_ict_htf_zones_daily.bat extended with Pine overlay Call 3 chain), TD-NEW-10 (closed filed-in-error — intentional Phase 4B Order Placer audited live), TD-NEW-11 (RESOLVED as documentation gap — merdian_order_placer.py catalogued Topology §3 + §7.1 + §8.2). 3 TDs NEW pending S29+: TD-NEW-7 S1 (MALPHA Zerodha token Supabase automation mirroring Dhan flow), TD-NEW-9 S2 (ws_feed_zerodha.py heartbeat), TD-NEW-15 S2 (ENH-97/98 cross-doc rename propagation across 8 files + ADR-002 v2). TD-NEW-14 slot soft-reserved for gamma_metrics_shadow history backfill (Topology §9 Q14 OPTIONAL). P1 broken-window gamma_metrics backfill CLOSED 587/587 rows clean across 2026-05-08 + 2026-05-11; codified D.11.4. P2 Enhancement Register filing CLOSED with renumber — ENH-97 (vol_analytics + RR ratio writer, ADR-002 v2 P7, Tier 1, PROPOSED) + ENH-98 (vanna/charm second-order Greeks, ADR-002 v2 P8, Tier 2, PROPOSED). Renumbered from S27 verbally-NEW 'ENH-84'/'ENH-85' due to slot collision at formal filing time (slots occupied by SHIPPED REFRESH ZONES button S14 + PROPOSED-DEFERRED PO3 lock S13). Per Doc Protocol v2 Rule 5 monotonic-no-reuse, new entries filed at next-available IDs. Cross-doc rename propagation queued as TD-NEW-15. MALPHA catalogued as third environment in Deployment Topology §1.5. merdian_order_placer.py catalogued as MERDIAN-AWS-only Phase 4B service. AWS shadow architecture RESTORED via TD-NEW-12 fix. CLAUDE.md v1.18 → v1.19 (B22 cross-Python compat + B23 Phase 0 closure meta-pattern + 6 S28 operational findings). Assumption Register §D.11 added (D.11.1 shadow architecture invariant; D.11.2 as-of-date from result.ts; D.11.3 cross-Python microsecond normalization; D.11.4 P1 backfill closure). 8 doc files modified. Schema changes: 1 (gamma_metrics_shadow ALTER TABLE ADD COLUMN x7 + ADD CONSTRAINT UNIQUE + NOTIFY pgrst). BUGS_LATENT_SURFACED: 4. SILENT_ARCHITECTURE_VIOLATION_DAYS: 13. CARRY_FORWARD_TO_S29: P0_PRIMARY ENH-97 vol_analytics build per ADR-002 v2 §P7; P0b S29-day shadow architecture verification; P0c project knowledge upload; P1 TD-NEW-7; P1b TD-NEW-15 ENH rename propagation; P2 Phase 0b overlay calibration; P2b Phase 0c methodology; P3 TD-NEW-9; P4 gamma_metrics_shadow history backfill OPTIONAL; P5 replay parity TD-NEW-2 + TD-NEW-12 + TD-NEW-4 + TD-NEW-13; P6 TD-080; P6b S21+ patches reconcile; P7 ADR-005 draft; P7b ADR-009 draft; P8-P14 older items.",
@@ -30,8 +30,110 @@
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
     "update_cadence": "Update this file in the same session as any meaningful change to file status, table schema, or open item status. Commit to Git immediately after update.",
     "last_updated": "2026-05-25",
-    "last_updated_by_session": "Session 36",
+    "last_updated_by_session": "Session 37",
     "change_log": [
+      {
+        "date": "2026-05-25",
+        "session": 37,
+        "type": "Layer 2 compute build — ENH-80 per-strike GEX writer SHIPPED with ADR-014 → ADR-015 same-session schema supersession + ENH-81 Positioning Landscape SHIPPED via 3 SQL views + Pine overlay v1/v2 + Lovable dashboard live + ADR-016 parameter calibration pattern PROPOSED build-deferred + GEX-as-context-not-gate decision codified per operator framing + 7-canonical-file doc-close pack per Doc Protocol v4 Rule 3 + Rule 9 + Rule 10 + Rule 11 full-file no-crunch",
+        "git_end": "(pending S37 close commit)",
+        "items_closed": [],
+        "items_new": [
+          "TD-S37-01 S3 (hardcoded τ_pin = τ_accel = 0.3 in ENH-81 SQL views; formalize as `merdian_parameters` lookup when ENH-83 builds; `// TAU_PIN — swap for ENH-83 lookup` markers in place at every site for mechanical plumb when ADR-016 graduates)",
+          "TD-S37-02 S3 (§F1 dealer-vs-positioning GEX split scaffolded via `v_oi_prev_close_snapshots` view; writer integration deferred pending design decisions on sign convention + OI-change window definition)",
+          "TD-S37-03 S3 (Lovable anon-key brittleness — RLS misconfiguration produces silent empty datasets not auth errors; per-table RLS+GRANT triplet must be documented inline in commit message + smoke-tested via direct anon-key probe before deploying any new view)"
+        ],
+        "items_status_update": [
+          "ENH-80 PROPOSED → SHIPPED (per-strike GEX writer producing `gex_strike_snapshots` rows per cycle, NIFTY 144 strikes / SENSEX 261 strikes, cross-symbol falsification PASS abs_diff ≤ 1e-10 Cr against total `gamma_metrics.net_gex`)",
+          "ENH-81 PROPOSED → SHIPPED (3 SQL views materializing PIN zone + ACCEL zone + dealer flow sim from `gex_strike_snapshots`; Pine overlay v1+v2 SHIPPED via `patch_s37_enh81_pine_overlay.py` + `_v2.py`; Lovable.ai dashboard live at lovable.dev/projects/e8fde6f9-58d0-4444-860d-508b3635b014 with NIFTY/SENSEX tabs + REGIME card + GEX-by-strike histogram with PIN/ACCEL ReferenceArea bands + summary strip + RLS+GRANT per-table; 4/4 falsification gates PASS)"
+        ],
+        "operational_findings": [
+          "Minimum-sufficient-statistic at write layer is the canonical schema design pattern when derivations are regime-conditional — ADR-014→ADR-015 same-session supersession surfaced that derived booleans `is_local_max`/`is_flip_zone`/`is_pin_candidate_bool` fire on 39%/20% of rows producing marker noise indiscriminable from signal; derivations belong in SQL views like `v_gex_strike_pin_zone`, write layer stores only what cannot be recomputed from raw inputs; generalizes beyond GEX schema to any case where a column's value depends on a relative-to-cohort threshold",
+          "IV skew evidence is material and must be preserved in schema — at NIFTY 24050 ATM `gamma_call=0.00164` vs `gamma_put=0.00234` = +43% PE-richer = put-skew regime; collapsing to single `gamma` column destroys this signal; `gamma_call`/`gamma_put` split costs one column but preserves regime classification capability",
+          "Same-session ADR supersession is a valid pattern when quant review surfaces architectural defect post smoke-fire — ADR-014 was technically correct (fidelity OK, sign convention OK) but functionally noisy; v1 patch trail + backup preserved for git audit, live schema migrated to v2 via TRUNCATE + ALTER before any consumer code locked against v1; supersession in same session is preferable to shipping v1 + planning v2 because there are no consumers yet to migrate",
+          "GEX-as-context-not-gate framing — operator's explicit 'Meridian doesn't need anymore gates. It's already gating everything' rejection of gate-mode integration is settled architectural decision per ADR-002 v2 P5/P7 + ADR-009 graduated-strictness holdout; ENH-80/81 ship as display layer only (Lovable dashboard + Pine overlay) not as routing inputs to `build_trade_signal_local.py`; operator is the integration layer for GEX-derived decisions; this framing inverts the assumption that every new signal becomes a gate — research-grade columns and views earn their place by informing operator judgment, not by silently routing trades",
+          "Calibration-deferred-by-design pattern — ADR-016 parameter calibration pattern PROPOSED but build deferred per operator until N grows enough for cohort-driven recalibration to be useful; ENH-81 views ship with hardcoded τ_pin=τ_accel=0.3 and inline `// TAU_PIN — swap for ENH-83 lookup` markers at every site for the future plumbing point; the marker pattern is the discipline that prevents τ from drifting into magic-number territory while keeping the calibration build queued",
+          "Pine v6 visual disambiguation patterns — label anchor points at zone edges (`style_label_lower_left` for top-anchor, `style_label_upper_left` for bottom-anchor) + `bar_index+90` X-offset for X-position separation prevent collision with ICT-layer labels at midpoint; single-strike PIN zone degeneracy resolved via ±0.1% of strike widening with 50pt floor — generalizable to any Pine box rendering of empirically-degenerate ranges; SENSEX 77000 single-strike PIN renders as 154pt band labeled 'PIN 77000 (single strike, +56K Cr)' with honest framing",
+          "Lovable per-table RLS pattern — anon-read access via three-line canonical pattern `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` + `CREATE POLICY ... FOR SELECT TO anon USING (true)` + `GRANT SELECT ... TO anon` is the canonical per table/view; brittleness surfaced in TD-S37-03 — Lovable client uses anon-key directly so any RLS misconfiguration silently produces empty datasets instead of explicit auth failure; mitigation is explicit policy + grant pair per object, no implicit defaults; document the exact RLS triplet inline in commit message"
+        ],
+        "settled_decisions_added": [
+          "ADR-015 ACCEPTED 2026-05-25 — Per-strike GEX schema v2 (12-col minimum-sufficient-statistic with `gamma_call`/`gamma_put` split preserving IV skew; supersedes ADR-014 same session; writer shipped via `patch_s37_enh80_writer_v2.py`; smoke-fire post-migration NIFTY abs_diff=9.8e-11 Cr / SENSEX abs_diff=1.2e-14 Cr; §F1 dealer-vs-positioning split deferred — `v_oi_prev_close_snapshots` scaffolded)",
+          "ADR-014 ACCEPTED then SUPERSEDED same session by ADR-015 (16-col v1 schema with derived booleans; v1 patch trail + backup preserved for git audit; schema migrated via TRUNCATE + ALTER 4 cols dropped + 2 added before any consumer locked)",
+          "ADR-016 PROPOSED build deferred (parameter calibration pattern — temporal-immutable `merdian_parameters` table with mandatory `change_reason`; design surfaced 9 magic-number clusters; ENH-83 build deferred until N grows for cohort-driven recalibration; ENH-81 ships with `// TAU_PIN — swap for ENH-83 lookup` markers throughout)",
+          "ENH-80 SHIPPED per-strike GEX writer (`compute_gamma_metrics_local.py` extended; NIFTY 144 strikes / SENSEX 261 strikes per cycle; falsification gate PASS abs_diff ≤ 1e-10 Cr)",
+          "ENH-81 SHIPPED Positioning Landscape (3 SQL views + Pine overlay v1+v2 + Lovable dashboard; 4/4 falsification gates PASS including direction-correctness on 12 dealer-flow scenarios)",
+          "GEX-as-context-not-gate decision codified (5 existing gating layers sufficient per operator; ENH-80/81 as display layer not routing input; operator is integration layer)",
+          "Lovable dashboard live at `lovable.dev/projects/e8fde6f9-58d0-4444-860d-508b3635b014` (NIFTY/SENSEX tabs + REGIME card + GEX-by-strike histogram with PIN/ACCEL ReferenceArea bands + summary strip + RLS+GRANT per-table)",
+          "§D.19 added to Assumption Register (3 rows D.19.1 minimum-sufficient-statistic at write layer / D.19.2 IV skew preservation via gamma_call/put split / D.19.3 GEX-as-context-not-gate framing)"
+        ],
+        "new_tds": [
+          "TD-S37-01 S3 (hardcoded τ in ENH-81 views; formalize as merdian_parameters lookup when ENH-83 builds)",
+          "TD-S37-02 S3 (§F1 dealer-vs-positioning GEX split scaffolded via `v_oi_prev_close_snapshots`; writer integration deferred)",
+          "TD-S37-03 S3 (Lovable anon-key brittleness — RLS misconfiguration produces silent empty datasets)"
+        ],
+        "production_patches": [
+          "patch_s37_enh80_writer.py v1 (ADR-014 schema; briefly deployed then schema-migrated to v2)",
+          "patch_s37_enh80_writer_v2.py (ADR-015 canonical with auto-refuse guard on v1 marker presence)",
+          "patch_s37_enh81_pine_overlay.py v1 (PIN/ACCEL boxes + midpoint labels)",
+          "patch_s37_enh81_pine_overlay_v2.py (labels at zone edges via style_label_lower_left/upper_left + bar_index+90 X-offset + single-strike widening ±0.1% with 50pt floor)"
+        ],
+        "patch_scripts_new": [
+          "patch_s37_enh80_writer.py",
+          "patch_s37_enh80_writer_v2.py",
+          "patch_s37_enh81_pine_overlay.py",
+          "patch_s37_enh81_pine_overlay_v2.py"
+        ],
+        "new_files": [
+          "compute_gamma_metrics_local_PRE_S37.py (backup pre-v1)",
+          "compute_gamma_metrics_local_PRE_S37_v2.py (backup pre-v2)",
+          "generate_pine_overlay_PRE_S37_ENH81.py (backup pre-Pine-v1)",
+          "generate_pine_overlay_PRE_S37_ENH81_v2.py (backup pre-Pine-v2)"
+        ],
+        "new_sql_files": [
+          "sql/2026-05-25_enh80_gex_strike_snapshots.sql (initial DDL ADR-014 schema)",
+          "sql/2026-05-25_enh80_schema_v2_migration.sql (TRUNCATE + ALTER drop 4 cols + add 2 cols + NOTIFY pgrst)",
+          "sql/2026-05-25_v_oi_prev_close_snapshots.sql (dealer-flow proxy scaffold per ADR-015 §F1)",
+          "sql/2026-05-25_enh81_v_gex_strike_pin_zone.sql (prominence-around-peak recursive CTE; 3,645 bytes)",
+          "sql/2026-05-25_enh81_v_gex_strike_accel_zone.sql (symmetric trough walk; 2,990 bytes)",
+          "sql/2026-05-25_enh81_v_dealer_flow_sim.sql (six-scenario grid ±0.5/1/2%)",
+          "sql/2026-05-25_enh81_falsification.sql (4 gates ALL PASS)"
+        ],
+        "new_task_scheduler_tasks": [],
+        "task_scheduler_count_before": 20,
+        "task_scheduler_count_after": 20,
+        "tables_modified_data": [
+          "gex_strike_snapshots NEW table (12-col canonical per ADR-015 v2): initial smoke-fire population then TRUNCATE during v1→v2 schema migration then re-population via v2 writer (NIFTY 144 strikes/cycle / SENSEX 261 strikes/cycle); cross-symbol falsification PASS abs_diff ≤ 1e-10 Cr"
+        ],
+        "data_recovery_rows": 0,
+        "orphans_recovered": 0,
+        "failure_mode_taxonomy_new": "N/A (build session, not failure investigation)",
+        "mode_b_dropped_from_scope": "N/A (S36 close artifact, not S37 scope)",
+        "aws_deployments": 0,
+        "aws_instance_id_drift_reconcile": "ACTIONED — MERDIAN AWS instance is `i-0878c118835386ec2` (eu-north-1, ssm-user@ip-172-31-35-90); older value `i-0e60e4ed9ce20cefb` reconfirmed stale; S35 P0_TERTIARY carry-forward closed",
+        "doc_files_modified": 7,
+        "new_doc_files": [
+          "docs/decisions/ADR-014-per-strike-gex-schema.md (per-strike GEX schema v1, SUPERSEDED-by-ADR-015 status)",
+          "docs/decisions/ADR-015-per-strike-gex-schema-v2.md (per-strike GEX schema v2, ACCEPTED canonical)",
+          "docs/decisions/ADR-016-parameter-calibration-pattern.md (parameter calibration pattern, PROPOSED build-deferred)"
+        ],
+        "commits": 0,
+        "tags_added": 0,
+        "experiments": 0,
+        "bugs_latent_surfaced": 0,
+        "hours_operator": 6,
+        "carry_forward_to_S38": [
+          "P0: Project knowledge upload of 7 modified files + 3 new ADR files + 4 patch scripts + 5 SQL migrations/views (~19 files; 9+ session backlog)",
+          "P1: Operator decision on ENH-82 Pin Risk Score continuous-0-100 build (depends on ENH-81 live cohort accumulation ~5-10 trading days)",
+          "P2: Operator decision on ENH-83 calibration console build (ADR-016 deferred S37; ~half-day; revisit when N grows)",
+          "P3: TD-S37-02 §F1 dealer-vs-positioning GEX split writer integration",
+          "P3b: Dealer flow sim Pine overlay integration (deferred per operator threshold)",
+          "P4: 1H zone regression investigation (S28 carry-forward un-actioned 9 sessions)",
+          "P5: TD-061 pythonw remaining 6/19 tasks + TD-NEW-7 MALPHA Zerodha token automation",
+          "P6: TD-S33/S35/S36-NEW backlog (12 TDs carry-forward un-actioned)",
+          "P7: Older items (TD-073/074/087/094/095/099 if still relevant, ADR-005 + ADR-006 drafts now unblocked since TD-080 closed S36)",
+          "P8: Lovable dashboard polish (Regime Read panel deployment)"
+        ]
+      },
       {
         "date": "2026-05-25",
         "session": 36,
@@ -594,7 +696,8 @@
         "compute_gamma_metrics_local_PRE_TD-NEW-12.py",
         "compute_gamma_metrics_local_PRE_TD-NEW-4.py",
         "compute_gamma_metrics_local_PRE_TD-NEW-13.py"
-      ]
+      ],
+      "s37_history": "ENH-80 per-strike GEX writer extension via `patch_s37_enh80_writer.py` v1 (ADR-014 schema, briefly deployed then schema-migrated) then `patch_s37_enh80_writer_v2.py` v2 (ADR-015 canonical with auto-refuse guard on v1 marker); writer produces `gex_strike_snapshots` rows per cycle (NIFTY 144 strikes / SENSEX 261 strikes); cross-symbol falsification PASS abs_diff ≤ 1e-10 Cr; backups `_PRE_S37.py` + `_PRE_S37_v2.py` preserved; AST-validated. Size 33,184 pristine → 38,217 post-v2."
     },
     "compute_volatility_metrics_local.py": {
       "local_path": "C:\\GammaEnginePython\\compute_volatility_metrics_local.py",
@@ -1828,6 +1931,84 @@
         "v3 added int4 duration clamp (2^31-1 per D.18.4) — without clamp, ages > ~24 days overflow PG 22003 numeric_value_out_of_range",
         "exit_reason='DATA_ERROR' (not 'ORPHANED') because chk_exit_reason_valid CHECK constraint closed set excludes 'ORPHANED' literal; notes='ORPHAN_RECOVERED:' prefix makes daily audit grep-discoverable"
       ]
+    },
+    "generate_pine_overlay.py": {
+      "s37_history": "ENH-81 Pine overlay v1 via `patch_s37_enh81_pine_overlay.py` then v2 via `patch_s37_enh81_pine_overlay_v2.py`; adds `fetch_positioning_landscape(sb, symbol)` + `_pine_positioning_render(pos)` + 5 pine inputs (c_pin_zone, c_pin_line, c_accel_zone, c_accel_line, show_positioning); v2 ships zone-edge label anchoring (style_label_lower_left/upper_left) + bar_index+90 X-offset + single-strike widening ±0.1% with 50pt floor; backups `_PRE_S37_ENH81.py` + `_v2.py` preserved; AST-validated. Size 18,040 pristine → 25,082 post-v2."
+    },
+    "patch_s37_enh80_writer.py": {
+      "purpose": "ENH-80 writer extension v1 (ADR-014 schema with single `gamma` + 3 derived booleans); briefly deployed then schema-migrated to v2 same session",
+      "size_bytes": 19509,
+      "lines": 508,
+      "anchors": 6,
+      "marker": "# ENH-80 (S37) v1",
+      "backup_produced": "compute_gamma_metrics_local_PRE_S37.py",
+      "status": "v1 patch trail preserved for git audit; v2 (`_v2.py`) is canonical",
+      "session": 37
+    },
+    "patch_s37_enh80_writer_v2.py": {
+      "purpose": "ENH-80 writer extension v2 (ADR-015 canonical schema with gamma_call/put split + 3 derived booleans dropped); canonical writer",
+      "size_bytes": 18053,
+      "marker": "# ENH-80 (S37) v2",
+      "auto_refuse_guard": "Refuses to apply if v1 marker present (prevents accidental re-application of v1 schema)",
+      "backup_produced": "compute_gamma_metrics_local_PRE_S37_v2.py",
+      "status": "CANONICAL — deployed against migrated v2 schema",
+      "session": 37
+    },
+    "patch_s37_enh81_pine_overlay.py": {
+      "purpose": "ENH-81 Pine overlay v1 — PIN/ACCEL boxes + range labels at midpoint",
+      "size_bytes": 14482,
+      "anchors": 5,
+      "marker": "# ENH-81 (S37) v1",
+      "backup_produced": "generate_pine_overlay_PRE_S37_ENH81.py",
+      "delta_chars": "+6108 (17192 → 23300)",
+      "status": "v1 — superseded by v2 same session for label collision + single-strike fix",
+      "session": 37
+    },
+    "patch_s37_enh81_pine_overlay_v2.py": {
+      "purpose": "ENH-81 Pine overlay v2 — labels at zone edges via style_label_lower_left/upper_left + bar_index+90 X-offset + single-strike widening ±0.1% with 50pt floor",
+      "size_bytes": 13287,
+      "anchors": 1,
+      "anchor_size_bytes": 2640,
+      "marker": "# ENH-81 (S37) v2",
+      "backup_produced": "generate_pine_overlay_PRE_S37_ENH81_v2.py",
+      "delta_chars": "+821 (23300 → 24121)",
+      "status": "CANONICAL — fixes v1 label collision + single-strike degeneracy + X-position separation",
+      "session": 37
+    },
+    "compute_gamma_metrics_local_PRE_S37.py": {
+      "purpose": "S37 backup snapshot preserved per patch script v3 canon (_PRE_S37.py pattern)",
+      "status": "BACKUP — do not modify; preserved for rollback + git audit",
+      "session": 37
+    },
+    "compute_gamma_metrics_local_PRE_S37_v2.py": {
+      "purpose": "S37 backup snapshot preserved per patch script v3 canon (_PRE_S37.py pattern)",
+      "status": "BACKUP — do not modify; preserved for rollback + git audit",
+      "session": 37
+    },
+    "generate_pine_overlay_PRE_S37_ENH81.py": {
+      "purpose": "S37 backup snapshot preserved per patch script v3 canon (_PRE_S37.py pattern)",
+      "status": "BACKUP — do not modify; preserved for rollback + git audit",
+      "session": 37
+    },
+    "generate_pine_overlay_PRE_S37_ENH81_v2.py": {
+      "purpose": "S37 backup snapshot preserved per patch script v3 canon (_PRE_S37.py pattern)",
+      "status": "BACKUP — do not modify; preserved for rollback + git audit",
+      "session": 37
+    },
+    "docs/decisions/ADR-014-per-strike-gex-schema.md": {
+      "purpose": "Architectural Decision Record — per-strike GEX schema v1 (16-col with derived booleans)",
+      "status": "ACCEPTED then SUPERSEDED same session by ADR-015 (S37 2026-05-25)",
+      "session": 37
+    },
+    "docs/decisions/ADR-015-per-strike-gex-schema-v2.md": {
+      "purpose": "Architectural Decision Record — per-strike GEX schema v2 (12-col minimum-sufficient-statistic with gamma_call/gamma_put split preserving IV skew); supersedes ADR-014 same session",
+      "status": "ACCEPTED (S37 2026-05-25)",
+      "session": 37
+    },
+    "docs/decisions/ADR-016-parameter-calibration-pattern.md": {
+      "purpose": "Architectural Decision Record — parameter calibration pattern (temporal-immutable merdian_parameters table with mandatory change_reason); design surfaced 9 magic-number clusters",
+      "status": "PROPOSED — build deferred per operator until N grows for cohort-driven recalibration to be useful (S37 2026-05-25)",
+      "session": 37
     }
   },
   "tables": {
@@ -2390,29 +2571,16 @@
       "open_items": []
     },
     "gex_strike_snapshots": {
-      "schema": "public",
-      "written_by": [
-        "PROPOSED -- compute_gamma_metrics_local.py (additional compute pass after ENH-80 build)"
-      ],
-      "read_by": [
-        "PROPOSED -- gamma engine force calculations (ENH-81)",
-        "Experiment 23 (local vs net GEX divergence)",
-        "ENH-82 PINNED regime threshold calibration"
-      ],
-      "constraint": "PROPOSED -- INDEX (symbol, ts DESC); INDEX (symbol, expiry_date, ts DESC); INDEX (run_id)",
-      "status": "NOT BUILT  --  ENH-80 PROPOSED. Build after ENH-75.",
-      "proposed_ddl": "CREATE TABLE IF NOT EXISTS public.gex_strike_snapshots (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), run_id uuid NOT NULL, symbol text NOT NULL, ts timestamptz NOT NULL, expiry_date date NOT NULL, dte integer NOT NULL, strike numeric NOT NULL, gex_cr numeric, oi bigint, gamma numeric, spot numeric, is_local_max boolean, is_flip_zone boolean, created_at timestamptz NOT NULL DEFAULT now());",
-      "key_columns": {
-        "run_id": "matches gamma_metrics.run_id -- links to same 5-min cycle",
-        "gex_cr": "gamma x OI x spot^2 / 1e7 (Crore). Positive = dealers long gamma at this strike. Negative = dealers short gamma.",
-        "is_local_max": "true if this strike has highest absolute GEX in its neighbourhood (pin candidate)",
-        "is_flip_zone": "true if GEX sign changes at this or adjacent strike (flip boundary)"
-      },
-      "storage_estimate": "~100 strikes x 78 runs/day x 2 symbols = ~15,600 rows/day. Full expiry week NIFTY (Thu): ~78,000 rows. SENSEX (Tue): ~62,400 rows.",
-      "rationale": "ADR-002 P1 (zones not points), P3 (trapped seller positioning), P4 (regime velocity). Foundation for ENH-81 force calculations and Experiment 23.",
-      "open_items": [
-        "ENH-80"
-      ]
+      "purpose": "Per-strike GEX snapshot table — substrate for ENH-81 Positioning Landscape (PIN zone + ACCEL zone + dealer flow simulator views) and ENH-82 Pin Risk Score continuous (future). 12-column minimum-sufficient-statistic per ADR-015 v2.",
+      "schema": "(run_id uuid, strike numeric, expiry_date date, symbol text, ts timestamptz, spot numeric, gamma_call numeric, gamma_put numeric, oi_total_calls integer, oi_total_puts integer, gex_cr numeric, source_table text)",
+      "constraints": "UNIQUE (run_id, strike, expiry_date); RLS enabled with anon SELECT policy + GRANT SELECT to anon",
+      "sign_convention": "Positive `gex_cr` = dampening (CE +base / PE -base) per ADR-015",
+      "writer": "compute_gamma_metrics_local.py (per cycle, all strikes in chain)",
+      "consumers": "v_gex_strike_pin_zone, v_gex_strike_accel_zone, v_dealer_flow_sim (read views); Lovable dashboard via PostgREST anon-read; future ENH-82 Pin Risk Score writer",
+      "created": "2026-05-25 (Session 37 via sql/2026-05-25_enh80_gex_strike_snapshots.sql then migrated v1→v2 via sql/2026-05-25_enh80_schema_v2_migration.sql)",
+      "adr": "ADR-015 (v2 canonical); ADR-014 (v1 SUPERSEDED same session)",
+      "history": "ADR-014 v1 16-col schema with single `gamma` + 3 derived booleans (is_local_max, is_flip_zone, is_pin_candidate_bool) briefly deployed; superseded same session post quant review of marker noise (39% NIFTY / 20% SENSEX fire rates); v2 schema preserves IV skew via gamma_call/put split; derivations moved to SQL views per D.19.1 minimum-sufficient-statistic at write layer",
+      "row_volume_estimate": "NIFTY ~144 strikes/cycle × ~76 cycles/day = ~11,000 rows/day; SENSEX ~261 strikes/cycle × ~76 cycles/day = ~20,000 rows/day; combined ~31,000 rows/day"
     },
     "po3_session_state": {
       "schema": "public",
@@ -2518,6 +2686,40 @@
       "ddl_source": "S31-A Task 3 DDL deploy 2026-05-20",
       "contamination_notes": "Currently only `forward_30m_pct` column for outcomes; magnitude characterization impossible — ENH-100 P0 build adds 13 columns including MAE which gates ENH-101 stop-loss optimization. Build cost ~30s/symbol re-compute per S31-B Task 4 baseline.",
       "filed_session": "Session 31-A (DDL); Session 31-B (backfill data + table added to inventory)"
+    },
+    "v_gex_strike_pin_zone": {
+      "purpose": "ENH-81 PIN zone view — prominence-around-peak walking by strike-value from gex_strike_snapshots; τ_pin=0.3 hardcoded with `// TAU_PIN — swap for ENH-83 lookup` marker per ADR-016 deferral",
+      "type": "VIEW",
+      "algorithm": "Postgres recursive CTE walking outward from peak strike with direction tracked via CASE; emits zone bounds [low_strike, high_strike] + n_strikes + peak_strike + peak_gex_cr",
+      "created": "2026-05-25 (Session 37 via sql/2026-05-25_enh81_v_gex_strike_pin_zone.sql; 3,645 bytes)",
+      "consumers": "Pine overlay (PIN box rendering); Lovable dashboard (summary strip + ReferenceArea band); future ENH-82 Pin Risk Score",
+      "tau_marker_inline": "`// TAU_PIN — swap for ENH-83 lookup` at every τ site for mechanical plumb when ADR-016 graduates",
+      "adr": "ADR-015 (depends on gex_strike_snapshots schema); ADR-016 (parameter calibration pattern; τ literal placeholder)"
+    },
+    "v_gex_strike_accel_zone": {
+      "purpose": "ENH-81 ACCEL zone view — symmetric walk around trough from gex_strike_snapshots; τ_accel=0.3 hardcoded with same `// TAU_PIN` marker convention",
+      "type": "VIEW",
+      "algorithm": "Symmetric mirror of v_gex_strike_pin_zone but anchored on minimum gex_cr (acceleration/amplification regime)",
+      "created": "2026-05-25 (Session 37 via sql/2026-05-25_enh81_v_gex_strike_accel_zone.sql; 2,990 bytes)",
+      "consumers": "Pine overlay (ACCEL box rendering); Lovable dashboard (summary strip + ReferenceArea band)",
+      "adr": "ADR-015; ADR-016"
+    },
+    "v_dealer_flow_sim": {
+      "purpose": "ENH-81 Dealer Flow Simulator view — six-scenario grid ±0.5%/±1%/±2% per ADR-002 v2 P2 force-not-direction; computes projected dealer Cr-flow at each spot scenario",
+      "type": "VIEW",
+      "scenarios": "±0.5%, ±1%, ±2% (6 scenarios)",
+      "created": "2026-05-25 (Session 37 via sql/2026-05-25_enh81_v_dealer_flow_sim.sql)",
+      "falsification": "12/12 scenarios direction-correct (NIFTY+SENSEX × 6) per sql/2026-05-25_enh81_falsification.sql",
+      "consumers": "Future Pine overlay integration deferred per operator threshold ('when I find I'm mentally computing'); future Lovable dashboard panel",
+      "adr": "ADR-002 v2 P2 force-not-direction; ADR-015"
+    },
+    "v_oi_prev_close_snapshots": {
+      "purpose": "Dealer-flow proxy scaffold per ADR-015 §F1 — computes OI-change-per-strike-per-day from option_chain_snapshots; not yet wired into gex_strike_snapshots writer",
+      "type": "VIEW",
+      "status": "SCAFFOLD — writer integration deferred (TD-S37-02)",
+      "created": "2026-05-25 (Session 37 via sql/2026-05-25_v_oi_prev_close_snapshots.sql)",
+      "consumers": "Future dealer-vs-positioning research; production writer integration deferred pending sign convention + OI-change window design",
+      "adr": "ADR-015 §F1 (scaffold for future split)"
     }
   },
   "security_ids": {
@@ -3064,6 +3266,37 @@
     }
   },
   "session_log": [
+    {
+      "session": 37,
+      "date_close": "2026-05-25",
+      "type": "Layer 2 compute build (ENH-80 + ENH-81) + 2 ADRs accepted (ADR-014 SUPERSEDED by ADR-015 same session) + 1 ADR PROPOSED build-deferred (ADR-016)",
+      "primary_mandate": "ENH-80 per-strike GEX writer build per S36 carry-forward P1 (substrate for ENH-81 Positioning Landscape + ENH-82 Pin Risk Score)",
+      "primary_mandate_outcome": "BOTH SHIPPED — ENH-80 PROPOSED→SHIPPED (per-strike GEX writer with ADR-015 v2 schema after ADR-014 v1 superseded same session); ENH-81 PROPOSED→SHIPPED (3 SQL views + Pine overlay v1+v2 + Lovable dashboard live); 4/4 falsification gates PASS; GEX-as-context-not-gate decision codified per operator framing",
+      "items_closed_count": 0,
+      "items_new_count": 3,
+      "items_status_update_count": 2,
+      "production_patches_count": 4,
+      "new_files_count": 4,
+      "new_task_scheduler_tasks_count": 0,
+      "doc_files_modified_count": 7,
+      "new_doc_files_count": 3,
+      "commits_count": 0,
+      "tags_added_count": 0,
+      "operator_hours": 6,
+      "git_end": "(pending S37 close commit)",
+      "carry_forward_priority_queue": [
+        "P0: Project knowledge upload (~19 files; 9+ session backlog)",
+        "P1: ENH-82 Pin Risk Score continuous build (operator decision)",
+        "P2: ENH-83 calibration console build (operator decision; ADR-016 deferred)",
+        "P3: TD-S37-02 §F1 dealer-vs-positioning split writer integration",
+        "P3b: Dealer flow sim Pine overlay integration (deferred per operator threshold)",
+        "P4: 1H zone regression investigation",
+        "P5: TD-061 pythonw remaining + TD-NEW-7 MALPHA Zerodha automation",
+        "P6: TD-S33/S35/S36-NEW backlog (12 TDs carry-forward)",
+        "P7: Older items + ADR-005/006 drafts (now unblocked)",
+        "P8: Lovable dashboard polish (Regime Read panel)"
+      ]
+    },
     {
       "session": 36,
       "date_close": "2026-05-25",

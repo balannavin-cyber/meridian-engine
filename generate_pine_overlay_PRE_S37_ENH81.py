@@ -128,143 +128,6 @@ def fetch_intraday_zones(sb, symbol: str) -> list[dict]:
 # ── end ENH-92 helper -------------------------------------------------------
 
 
-# ── ENH-81 (S37) v1: pin/accel zone fetch + Pine render ──────────────────────
-# Pulls latest row per symbol from v_gex_strike_pin_zone +
-# v_gex_strike_accel_zone (ENH-81 views, ADR-015 schema v2 backing).
-def fetch_positioning_landscape(sb, symbol: str):
-    """ENH-81 (S37) v1 — fetch latest pin/accel zone summary from views.
-
-    Returns dict {"pin": {...}|None, "accel": {...}|None, "spot", "ts",
-    "expiry_date"} or None if both sides empty. Fail-soft on either
-    view's failure.
-    """
-    out = {"pin": None, "accel": None, "spot": None, "ts": None, "expiry_date": None}
-    try:
-        pin_rows = sb.table("v_gex_strike_pin_zone").select(
-            "pin_lower, pin_upper, n_strikes, total_pin_gex_cr, "
-            "peak_pin_gex_cr, peak_pin_strike, tau_used, ts, expiry_date"
-        ).eq("symbol", symbol).order("ts", desc=True).limit(1).execute().data
-        if pin_rows:
-            r = pin_rows[0]
-            out["pin"] = {
-                "lower":        float(r["pin_lower"]),
-                "upper":        float(r["pin_upper"]),
-                "n_strikes":    int(r["n_strikes"]),
-                "total_gex_cr": float(r["total_pin_gex_cr"]),
-                "peak_gex_cr":  float(r["peak_pin_gex_cr"]),
-                "peak_strike":  float(r["peak_pin_strike"]),
-                "tau":          float(r["tau_used"]),
-            }
-            out["ts"]          = r.get("ts")
-            out["expiry_date"] = r.get("expiry_date")
-    except Exception as _e:
-        print(f"  Warning: pin zone fetch failed for {symbol}: {_e}",
-              file=sys.stderr)
-
-    try:
-        accel_rows = sb.table("v_gex_strike_accel_zone").select(
-            "accel_lower, accel_upper, n_strikes, total_accel_gex_cr, "
-            "trough_gex_cr, trough_strike, tau_used, ts, expiry_date"
-        ).eq("symbol", symbol).order("ts", desc=True).limit(1).execute().data
-        if accel_rows:
-            r = accel_rows[0]
-            out["accel"] = {
-                "lower":          float(r["accel_lower"]),
-                "upper":          float(r["accel_upper"]),
-                "n_strikes":      int(r["n_strikes"]),
-                "total_gex_cr":   float(r["total_accel_gex_cr"]),
-                "trough_gex_cr":  float(r["trough_gex_cr"]),
-                "trough_strike": float(r["trough_strike"]),
-                "tau":            float(r["tau_used"]),
-            }
-            if not out["ts"]:
-                out["ts"]          = r.get("ts")
-                out["expiry_date"] = r.get("expiry_date")
-    except Exception as _e:
-        print(f"  Warning: accel zone fetch failed for {symbol}: {_e}",
-              file=sys.stderr)
-
-    if not out["pin"] and not out["accel"]:
-        return None
-    return out
-
-
-def _pine_positioning_render(pos):
-    """ENH-81 (S37) v2 — emit Pine code lines for pin/accel boxes.
-
-    v2 changes:
-      - Single-strike zones (lower == upper) widened visually by
-        ±step (0.1%% of strike, 50pt floor) so the box is readable;
-        label says "(single strike at N)" honestly.
-      - Labels anchored at zone edges (PIN top, ACCEL bottom) using
-        style_label_lower_left / style_label_upper_left so they sit
-        above/below the zone, off the ICT zone midpoint where ICT
-        labels live (notably dense on SENSEX, was colliding in v1).
-      - Label X anchor bar_index + 90 (was + 50) for cleaner offset
-        from ICT labels at bar_index + 30.
-    """
-    # ENH-81 (S37) v2
-    if not pos:
-        return []
-    lines = ["    if show_positioning"]
-    pin = pos.get("pin")
-    if pin:
-        lo, hi = pin["lower"], pin["upper"]
-        if lo == hi:
-            step = max(50.0, hi * 0.001)
-            viz_lo, viz_hi = lo - step, hi + step
-            lbl_core = f"PIN {lo:.0f} (single strike"
-        else:
-            viz_lo, viz_hi = lo, hi
-            lbl_core = f"PIN {lo:.0f}-{hi:.0f} (peak {pin['peak_strike']:.0f}"
-        peak_str = f"+{pin['peak_gex_cr']/1000:.0f}K Cr"
-        lbl = f"{lbl_core}, {peak_str})"
-        lines.append("        var box   pos_pin_bx = na")
-        lines.append("        var label pos_pin_lb = na")
-        lines.append("        box.delete(pos_pin_bx)")
-        lines.append("        label.delete(pos_pin_lb)")
-        lines.append(
-            f"        pos_pin_bx := box.new(bar_index - 30, {viz_hi:.2f}, "
-            f"bar_index + 50, {viz_lo:.2f}, bgcolor=c_pin_zone, "
-            f"border_color=c_pin_line, border_width=1, extend=extend.right)"
-        )
-        lines.append(
-            f'        pos_pin_lb := label.new(bar_index + 90, {viz_hi:.2f}, '
-            f'text="{lbl}", color=color.new(color.black, 100), '
-            f'textcolor=c_pin_line, style=label.style_label_lower_left, size=size.small)'
-        )
-    accel = pos.get("accel")
-    if accel:
-        lo, hi = accel["lower"], accel["upper"]
-        if lo == hi:
-            step = max(50.0, hi * 0.001)
-            viz_lo, viz_hi = lo - step, hi + step
-            lbl_core = f"ACCEL {lo:.0f} (single strike"
-        else:
-            viz_lo, viz_hi = lo, hi
-            lbl_core = f"ACCEL {lo:.0f}-{hi:.0f} (trough {accel['trough_strike']:.0f}"
-        trough_str = f"{accel['trough_gex_cr']/1000:.0f}K Cr"
-        lbl = f"{lbl_core}, {trough_str})"
-        lines.append("        var box   pos_accel_bx = na")
-        lines.append("        var label pos_accel_lb = na")
-        lines.append("        box.delete(pos_accel_bx)")
-        lines.append("        label.delete(pos_accel_lb)")
-        lines.append(
-            f"        pos_accel_bx := box.new(bar_index - 30, {viz_hi:.2f}, "
-            f"bar_index + 50, {viz_lo:.2f}, bgcolor=c_accel_zone, "
-            f"border_color=c_accel_line, border_width=1, extend=extend.right)"
-        )
-        lines.append(
-            f'        pos_accel_lb := label.new(bar_index + 90, {viz_lo:.2f}, '
-            f'text="{lbl}", color=color.new(color.black, 100), '
-            f'textcolor=c_accel_line, style=label.style_label_upper_left, size=size.small)'
-        )
-    if len(lines) == 1:
-        return []   # only the show_positioning header, no actual zone
-    return lines
-# ── end ENH-81 helper -------------------------------------------------------
-
-
 def weekdays_since(source_date_str, today=None):
     if today is None:
         today = date.today()
@@ -349,8 +212,6 @@ def generate_pine_content(sb):
     today = date.today()
     generated_at = today.isoformat()
     spots = {sym: fetch_current_spot(sb, sym) for sym in SYMBOLS}
-    # ENH-81 (S37) v1 — fetch pin/accel landscape per symbol
-    positioning = {sym: fetch_positioning_landscape(sb, sym) for sym in SYMBOLS}
 
     by_symbol = {s: [] for s in SYMBOLS}
     for row in rows:
@@ -404,10 +265,6 @@ def generate_pine_content(sb):
                 f"    draw_zone({zlo:.2f}, {zhi:.2f}, {bg}, {line_col}, "
                 f"\"{lbl}\", {look_back}, {bear_side}, {show_flag})"
             )
-        # ENH-81 (S37) v1 — append positioning landscape render
-        pos = positioning.get(sym)
-        if pos:
-            lines.extend(_pine_positioning_render(pos))
         return "\n".join(lines) + "\n"
 
     nifty_block  = render_symbol_block("NIFTY",  by_symbol["NIFTY"])
@@ -485,12 +342,6 @@ c_pdl_d_t3_l    = color.new(color.yellow, 78)
 c_pdh_w_t3_l    = color.new(color.orange, 80)
 c_pdl_w_t3_l    = color.new(color.orange, 80)
 
-// ── ENH-81 (S37) v1 Positioning Landscape colors ────────────────────────
-c_pin_zone    = color.new(#00FF7F, 75)   // spring green, semi-transparent
-c_pin_line    = color.new(#00FF7F, 30)
-c_accel_zone  = color.new(#FF4444, 75)   // bright red, semi-transparent
-c_accel_line  = color.new(#FF4444, 30)
-
 // ── SYMBOL DETECTION (must precede draw_zone) ────────────────────────────────
 is_nifty  = str.contains(syminfo.ticker, "NIFTY")  and not str.contains(syminfo.ticker, "BANK")
 is_sensex = str.contains(syminfo.ticker, "SENSEX") or  str.contains(syminfo.ticker, "BSE")
@@ -502,7 +353,6 @@ show_h       = input.bool(true,  "Show Intraday zones",group="Zone Filters", too
 show_ob      = input.bool(true,  "Show Order Blocks",  group="Zone Filters")
 show_fvg     = input.bool(true,  "Show FVGs",          group="Zone Filters")
 show_pdh_pdl = input.bool(true,  "Show PDH / PDL",     group="Zone Filters")
-show_positioning = input.bool(true, "Show Pin/Accel Zones (ENH-81)", group="Positioning Landscape")
 
 // ── HELPER ───────────────────────────────────────────────────────────────────
 // bear_side=true  -> BEAR_OB/PDH: entry at zone top, clip bottom

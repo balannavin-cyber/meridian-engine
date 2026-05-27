@@ -57,6 +57,81 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S39-NEW-1 — Lovable auto-scaffold granted anon role FULL privileges (DELETE/INSERT/UPDATE/TRUNCATE/REFERENCES/TRIGGER/SELECT) on every consumed table+view instead of SELECT-only — REMEDIATED same-session
+
+| | |
+|---|---|
+| **Severity** | S2 (REMEDIATED same-session — filed for audit-trail visibility per Doc Protocol v4 Rule 8 same-session NEW+RESOLVED pattern) |
+| **Filed** | 2026-05-27 (Session 39 — discovered post-RLS-triplet application via 13-row anon-grants audit returning 91 rows = 7 privilege types × 13 surfaces; should have been 13 rows SELECT only) |
+| **Symptom** | After applying `2026-05-26_enh110_rls_triplets.sql` to 8 tables + 5 views in live MERDIAN Supabase, verification query `SELECT table_name, privilege_type FROM information_schema.role_table_grants WHERE grantee='anon' AND table_schema='public' AND table_name IN (...)` returned 91 rows showing anon held `DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE` on every consumed table+view. Threat model: anon key ships in browser bundle (publicly visible in any deployed dashboard via DevTools); with these grants any anon-key holder could `DELETE FROM gex_strike_snapshots` or `TRUNCATE signal_snapshots` via PostgREST regardless of RLS policies (RLS filters rows, GRANT lets role attempt operation). Counts pre-remediation: gex_strike_snapshots 44953 / gamma_metrics 39317 / signal_snapshots 9695 / ict_zones 439 / market_breadth_intraday 2790 / po3_session_state 42 / market_spot_session_markers 96 / merdian_parameters 11 — all live data intact, no exploitation observed before remediation. |
+| **Workaround in place** | REMEDIATED via PL/pgSQL DO block `FOREACH t IN ARRAY tables LOOP EXECUTE format('REVOKE ALL ON public.%I FROM anon', t); EXECUTE format('GRANT SELECT ON public.%I TO anon', t); END LOOP` across all 13 surfaces. Post-remediation grants audit returned 13 rows all `privilege_type=SELECT`. Vulnerability window closed before any exploitation. |
+| **Root cause** | Lovable's auto-scaffold behavior for tables it consumes — when Lovable connects to an existing Supabase project and references tables, it auto-issues `GRANT ALL ON public.<table> TO anon` without prompting and without surfacing in the Lovable UI. The RLS triplet pattern (`ALTER TABLE ENABLE RLS + CREATE POLICY FOR SELECT TO anon USING (true) + GRANT SELECT ON ... TO anon`) is operationally insufficient when applied AFTER Lovable has already granted ALL — the policy filters rows on SELECT but the prior grant lets DELETE/UPDATE/TRUNCATE through. |
+| **Proper fix** | (a) Add pre-deploy hygiene check to ENH-110 Phase 2+ workflow: after every Lovable schema operation against the live MERDIAN Supabase, run anon-grants audit and apply `REVOKE ALL + GRANT SELECT` remediation; (b) consider documenting RLS-triplet pattern in operator runbook as "ALTER TABLE ENABLE RLS + DROP POLICY IF EXISTS + CREATE POLICY + **REVOKE ALL FROM anon** + GRANT SELECT TO anon" — the REVOKE step before GRANT SELECT is what protects against Lovable's prior ALL grant; (c) longer-term: separate Lovable-isolated Supabase project for development with sync mechanism to live, so Lovable never touches live anon grants directly. ~30-60 min for (a) + (b); separate ENH for (c). |
+| **Impact if not fixed (recurrence)** | Same exposure pattern will recur on every Lovable schema operation that touches live MERDIAN Supabase — ENH-110 Phase 2 confluence detection writer + ENH-111/112 wiring + future ENH-110 phase work all run through Lovable and will re-issue the GRANT ALL pattern. Filed at S2 not S3 because exposure window per occurrence is hours-to-days until next audit, and the failure mode is silent (no error log, no Lovable warning, no operator-visible symptom until exploitation). |
+| **Related** | TD-S37-03 (Lovable anon-key brittleness — RLS misconfiguration produces silent empty datasets; same family of Lovable-platform-trust issue), §D.21.1 + §D.21.2 Assumption Register S39 (Lovable auto-grant safety REFUTED + anon-key-in-public-repo trust model VALIDATED), ENH-110 Phase 1 backend ship (S39 — the deployment that surfaced this), CLAUDE.md S39 settled-decisions footer. |
+
+---
+
+### TD-S39-NEW-2 — Marketview hero chart label collision residual at dense ICT-zone band area near spot
+
+| | |
+|---|---|
+| **Severity** | S3 (cosmetic — does not affect data correctness or operator decisions, only readability at high-density band areas) |
+| **Filed** | 2026-05-27 (Session 39 — operator-visible during browser verification of Marketview at http://13.63.27.85/marketview post-Lovable Turn 6 final polish) |
+| **Symptom** | Marketview hero chart renders ICT zone labels TIER2 BULL_FVG / TIER2 BEAR_FVG / TIER1 BULL_OB / SKIP BULL_FVG inside the band fills. Lovable's Turn 5 polish staggered PIN/ACCEL/max γ labels with 16px gap (resolved their collision), but ICT zone label-vs-label collision within the dense band area near spot still occurs. Example: NIFTY 23,922.6 spot with stacked labels "TIER2 BULL_FVG / TIER2 BULL_FVG" at adjacent overlapping bands. SENSEX 75,922.22 spot has 4-label stack TIER2 BULL / TIER2 / TIER / SKIP all visually overlapping inside the BULL_FVG cluster. |
+| **Workaround in place** | None — operator can still read individual zone bounds from the ICT zones nearest-10 panel (which renders cleanly as a list); hero chart labels are supplementary. |
+| **Root cause** | Lovable's polish pass for label stagger was scoped to PIN/ACCEL/max γ labels which fire at distinct strike values; ICT zone labels fire at zone midpoints which cluster within 50-100pt bands; same 16px stagger logic would need to apply to zone-label collision detection in addition. |
+| **Proper fix** | Lovable Turn 7 prompt: extend label stagger logic to ICT zone labels — when two zone labels' midpoints are within 0.5% of each other on Y-axis, alternate left/right horizontal anchor or stack vertically with 16px gap. Or simpler: show only nearest-3 zone labels on chart (rendering the full nearest-10 in the side panel still). ~5 min Lovable prompt. |
+| **Impact if not fixed** | Cosmetic. Operator-visible but does not affect decision quality — band fills + nearest-10 panel convey the information cleanly without labels. Defer until next Lovable polish session. |
+| **Related** | ENH-110 Phase 1 SHIPPED S39 (Marketview UI), Lovable Turn 5 polish prompt (which staggered PIN/ACCEL/max γ labels successfully), ADR-017 Operator Console Design Principles P5 motion-replaces-timestamps (zone labels are static so this principle doesn't help). |
+
+---
+
+### TD-S39-NEW-3 — `.env` containing live MERDIAN Supabase anon key committed to public GitHub repo `balannavin-cyber1/meridian-connect` by Lovable
+
+| | |
+|---|---|
+| **Severity** | S3 (hygiene — anon key is public-by-design and ships in browser bundle anyway; threat model bounded by RLS policies which post-S39 grant anon SELECT-only; not an active vulnerability but bad practice) |
+| **Filed** | 2026-05-27 (Session 39 — surfaced during Lovable Turn 3 commit `6b95ded Added Supabase client init` review on github.com/balannavin-cyber1/meridian-connect/blob/main/.env) |
+| **Symptom** | Lovable Turn 3 committed `.env` to repo root containing `VITE_SUPABASE_URL=https://kilmcowcikwdhvdxwofi.supabase.co` + `VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...` (full anon JWT) without prompting and without adding to `.gitignore`. Repo is public on GitHub. Any visitor to repo URL can read both values. |
+| **Workaround in place** | (a) Anon key is public-by-design — it ships in the React bundle inlined at Vite build time via `import.meta.env.VITE_SUPABASE_URL/ANON_KEY` and is therefore visible to anyone who opens DevTools on the deployed dashboard; making the key visible on GitHub adds no incremental exposure. (b) Post-S39 RLS remediation grants anon SELECT only — worst-case exploitation is reading the data already visible to anyone with the dashboard URL. (c) `.env.local` placed on AWS at `/home/ssm-user/merdian-marketview/.env.local` (chmod 600, gitignored) ensures Vite picks up correct keys regardless of what's in committed `.env`. |
+| **Root cause** | Lovable's auto-commit of `.env` is default behavior when it detects env-var usage in code — it doesn't gitignore env files by default. Differs from standard Vite scaffold which gitignores `.env*.local` patterns by default. |
+| **Proper fix** | Operator local action: `cd <local clone> && git rm --cached .env && echo '.env' >> .gitignore && git commit -m "chore: gitignore .env, remove committed env file" && git push`. Lovable can update `.gitignore` (already attempted in Turn 5 polish — `e59c0ef Added env files to .gitignore` landed) but Lovable's git environment can't issue `git rm --cached` for already-committed files; operator workstation needed for the removal commit. ~5 min operator action. |
+| **Impact if not fixed** | None operational. Hygiene-only — future security audit might flag, and key rotation costs +1 step (must also update committed `.env` if not yet removed from git history). Filed at S3 because trust model is sound but practice is sloppy. |
+| **Related** | TD-S39-NEW-1 (Lovable auto-grant exposure — same family of Lovable-platform-trust issue), §D.21.2 Assumption Register S39 (anon-key-in-public-repo trust model VALIDATED — exposure is acceptable given RLS boundary, just bad practice), Lovable's gitignore commit `e59c0ef` from Turn 5 (committed gitignore additions but didn't remove already-committed `.env`). |
+
+---
+
+### TD-S39-NEW-4 — Orphan AWS Security Group `launch-wizard-2` not attached to any EC2 instance — cleanup pending
+
+| | |
+|---|---|
+| **Severity** | S4 (cosmetic — no operational impact; orphan SG visible in AWS console but unattached) |
+| **Filed** | 2026-05-27 (Session 39 — surfaced during AWS networking debug arc when operator was editing wrong SG for hours) |
+| **Symptom** | AWS Security Group `launch-wizard-2` exists in eu-north-1 console alongside `launch-wizard-1` (which IS attached to MERDIAN EC2 `i-0878c118835386ec2`). Operator spent hours editing `launch-wizard-2` inbound rules expecting `13.63.27.85:80` to become reachable from external networks; no effect because launch-wizard-2 was orphan/unattached. Resolution via IMDSv2 token query `curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/security-groups` returned `launch-wizard-1` confirming the attached SG; adding TCP 80 from 0.0.0.0/0 to launch-wizard-1 instantly resolved the connectivity issue. |
+| **Workaround in place** | Operator now editing correct SG `launch-wizard-1`. `launch-wizard-2` remains orphan in console but unattached so its rules have no effect on any instance. |
+| **Root cause** | AWS launch-wizard flow creates a new SG per wizard run if operator selects "Create security group" instead of "Select existing"; multiple wizard runs over time leave behind orphan SGs with `launch-wizard-N` naming pattern, visually indistinguishable from active SGs in the console list. |
+| **Proper fix** | Delete `launch-wizard-2` from AWS EC2 Security Groups console (verify zero attachments first via `aws ec2 describe-instances --filters Name=instance.group-id,Values=<sg-id>`). ~2 min operator action. |
+| **Impact if not fixed** | Cosmetic. Risk is recurrence of S39's debug pattern — future SG edits to launch-wizard-2 will have no effect and waste time. The IMDSv2 token query is now in operator memory as canonical attached-SG check so recurrence risk is bounded. |
+| **Related** | §D.21.3 Assumption Register S39 (nginx default :80 inbound is sufficient for SG without verifying which SG is attached — REFUTED), ENH-110 Phase 1 AWS hosting infrastructure S39, MERDIAN_Deployment_Topology §1 (will gain note about IMDSv2 attached-SG verification pattern at S40 doc maintenance pass). |
+
+---
+
+### TD-S39-NEW-5 — Marketview "stale {N}s" badge contradicts 300s threshold setting — needs live-day verification
+
+| | |
+|---|---|
+| **Severity** | S3 (verification-pending — could be legitimate genuine staleness post-market or display threshold not applying; impacts only operator's trust in freshness indicator) |
+| **Filed** | 2026-05-27 (Session 39 — operator-visible during browser verification of Marketview at 03:36 IST post-market on a post-market data point) |
+| **Symptom** | Marketview header strip shows badge "stale 612s" / "stale 314s" / "stale 295s" across multiple post-market browser refreshes on NIFTY view despite Lovable Turn 5 polish setting stale threshold from 60s → 300s and switching the canonical freshness clock from `market_state_ts` to `signal_snapshots.ts`. If signal_snapshots.ts genuinely is 10+ minutes stale post-market (market closes 15:30 IST, browser refresh at 15:35-15:55+ IST IST during S39), the badge is correctly firing as genuine staleness. If the 300s threshold is not actually applying (Lovable's change didn't reach this code path), the badge is firing spuriously at 5-10 min post-cycle window. Browser console + Network tab during operator session did not surface a clear answer. |
+| **Workaround in place** | Operator-visible but not blocking — operator can interpret the badge as "data is N seconds stale, judge whether N is acceptable for current use case" without trusting the threshold semantics. |
+| **Root cause** | Unknown without live-day verification. Three hypotheses: (a) threshold change applied but signal_snapshots.ts is genuinely 5-10 min stale during late-day windows because intraday cycles fire on 5-min cadence — within 300s threshold for the most-recent-cycle window but spilling over between cycles (legitimate); (b) Lovable's threshold change applied to wrong code path and the original 60s threshold still drives the badge logic; (c) threshold change applied but uses `Date.now()` vs `signal_snapshots.ts` in wrong direction (sign-flip) so it shows stale-when-fresh. Need live-day Network tab + JS console inspection to discriminate. |
+| **Proper fix** | (a) S40+ live-day verification during 10:00-15:30 IST trading hours when cycles are firing every 5 min — observe whether badge stays under 300s during active cycles vs fires only after market close; (b) if badge stays under 300s during trading hours → label as legitimate post-market staleness, possibly update wording to "post-cycle Ns" or hide entirely outside market hours; (c) if badge fires spuriously during trading hours → Lovable Turn 7 prompt for debug + fix. ~15 min live-day observation + 0-15 min Lovable prompt. |
+| **Impact if not fixed** | Operator-visible noise without operational impact during trading hours (operator interprets badge value not threshold semantics). Filed at S3 because reliable freshness indicator is a Phase 2 confluence-decision-quality property — operator needs to trust the badge for ENH-110 Phase 2 confluence detection rollout. |
+| **Related** | ENH-110 Phase 1 Lovable Turn 5 polish prompt S39 (stale threshold 60s→300s + canonical clock signal_snapshots.ts), ADR-017 Operator Console Design Principles P5 motion-replaces-timestamps (badge is the motion-replacement-for-timestamp pattern; needs to be reliable to satisfy principle), Marketview surface at http://13.63.27.85/marketview. |
+
+---
+
 ### TD-S38-NEW-1 — `MERDIAN_Intraday_Supervisor_Start` multi-trigger XML settings quirk blocks `Set-ScheduledTask` settings update
 
 | | |

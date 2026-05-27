@@ -111,4 +111,4 @@ Suggested cadence — once per phase boundary or quarterly, whichever first:
 
 ---
 
-*MERDIAN Decision Index — established Session 23, 2026-05-09. Prepend-only. Do not edit existing rows except to add `[SUPERSEDED by ADR-NNN]` annotations.*
+*MERDIAN Decision Index — established Session 23, 2026-05-09. Prepend-only. Do not edit existing rows except to add `[SUPERSEDED by ADR-NNN]` annotations. Last maintenance: Session 39 (2026-05-27 — no new ADRs S39; execution against ADR-016 parameter calibration pattern + ADR-017 operator console design principles via ENH-110 Phase 1 ship).*

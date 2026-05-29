@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v30",
+    "version": "v31",
     "generated": "2026-05-16",
     "sources": [
       "Session 38 (2026-05-26): Live integration check + ADR-017 ACCEPTED + ENH-110/111/112 PROPOSED + P5 1H zone diagnostic CLOSED-NO-BUG + P6 TD-061 final long-tail closure 0 live window-flash sources + Exp 53/53b/53c confluence experiment arc (1 holdout-validated gate ENH-111 + 1 deferred resonance + 1 surprise exit-window-decay ENH-112) + 8-canonical-file doc-close pack per Doc Protocol v4 Rule 3 full-file no-crunch. ADRs new: 1 (ADR-017). ENHs new: 3 (ENH-110/111/112). ENH status updates: 1 (ENH-83 deferred → required). TDs closed: 1 (TD-061 final long-tail). TDs new pending S39+: 3 (TD-S38-NEW-1/2/3). Production patches: 0. Task Scheduler changes: 3 (Dhan_Token_Refresh pythonw migration + Intraday_Session_Start cmd-wrapper drop + Market_Tape_1M Disable). AWS deployments: 0. Commits: 0. Tags: 0. Window flash sources final: 0. Confluence hypothesis verdict: partially yes, narrowly scoped, one deployable gate.",
@@ -30,9 +30,13 @@
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files. Updated through Session 24 (2026-05-09) — ENH-93 replay/simulation harness built end-to-end across all 5 phases in single session: 10 new *_replay Supabase tables + 11 new files in C:\\GammaEnginePython\\replay\\ + 1 SQL migration + ADR-008 (~250 lines, Accepted) capturing replay architecture + canonical 'What what-if experiment means' methodology; 4 TDs filed (TD-087 hist_option_bars_1m IST-as-UTC defect with 5h30m phantom offset, TD-094 hist_option_bars_1m.oi=0 from S22 Kite backfill, TD-095 atm_iv_avg unit ambiguity, TD-096 reconstructor skips boundary 15:30); ENH-95 CANDIDATE filed (in-process orchestrator optimization, deferred until what-if campaign); ENH-93 CANDIDATE → CLOSED via ADR-008 acceptance. Phase 4b 2026-05-07 full-day run: 1056/1064 invocations (99.2%) succeeded; NIFTY 100% gamma_regime + 68% direction-bias match with live; SENSEX 91% action match (mostly DO_NOTHING tautology) + 28% gamma_regime match (structural narrow-strike-base divergence). Zero production code changes; zero writes to live tables; live scripts physically untouched. Session 23 (earlier same calendar date) was documentation consolidation; this Session 24 is the construction. Session 21 carry-forward patches still uncommitted in working tree.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
     "update_cadence": "Update this file in the same session as any meaningful change to file status, table schema, or open item status. Commit to Git immediately after update.",
-    "last_updated": "2026-05-27",
-    "last_updated_by_session": "Session 39",
+    "last_updated": "2026-05-29",
+    "last_updated_by_session": "Session 40",
     "change_log": [
+      {
+        "date": "2026-05-29",
+        "summary": "TD-S37-01 CLOSED via patch_s40_enh83_view_tau_rewrite.py v3-pattern (BOM-safe + AST-validate + EOL-preserve + idempotency guards + _PRE_S40.sql backups) — hardcoded τ=0.3 in ENH-81 PIN/ACCEL view DDLs replaced with runtime get_parameter_num('pin.tau.'||symbol) lookup against merdian_parameters per ADR-016 calibration pattern; smoke-fire verified tau_used=0.30 cross-symbol NIFTY+SENSEX. TD-S40-NEW-2 DISCOVERED-CLOSED-SAME-SESSION — update_parameter() RPC chk_valid_from_to violation root-caused to Lovable auto-scaffold valid_to DEFAULT now() returning transaction-timestamp identical to valid_from under PostgreSQL transaction-time semantics; ALTER TABLE public.merdian_parameters ALTER COLUMN valid_to DROP DEFAULT zero-downtime fix; verified 0.30→0.25→0.30 round-trip clean temporal chain. Marketview v4 atomic-card layout SHIPPED end-to-end via Lovable build prompt (515 lines, 4-iteration mockup arc v1→v4) + AWS deploy pipeline established at /home/ssm-user/meridian-connect (3-line canonical: cd ~/meridian-connect && git pull && npm run build && sudo rsync -av --delete dist/ /var/www/marketview/) + correction prompt 6 column-name schema-mismatch fixes (net_dealer_gamma_cr→net_gex, max_gamma_strike client-side derive, sigma_pct_to_expiry→flip_distance_pct proxy, atm_straddle_premium→straddle_atm, pin_probability→100-expansion_probability, regime LONG_GAMMA→POSITIVE_γ display mapping); post-correction dashboard populated end-to-end at http://13.63.27.85/marketview with bundle index-vDqPX1iO.js 537KB. v_max_pain_by_strike view created with long-format option_chain_snapshots pivot to wide via MAX(CASE WHEN option_type='CE' THEN oi END) before max-pain valley computation; NIFTY max_pain=23,900 / SENSEX max_pain=76,000 verified. 4 writer-side gaps confirmed empty by design on Marketview (carry-forward P1 to S41+): India VIX (gamma_metrics.vix NULL); WCB (market_breadth_intraday.wcb column absent); Pin Risk Score (gamma_metrics.pin_risk_score column absent); Pin Risk Timeline (depends on pin_risk_score). 3 new TDs filed S40: TD-S40-NEW-1 S4 RESOLVED-SAME-SESSION (patch script cp1252 cosmetic, ASCII-clean v2 shipped); TD-S40-NEW-2 S3 DISCOVERED-CLOSED-SAME-SESSION (update_parameter RPC valid_to DEFAULT now() bug); TD-S40-NEW-3 S2 DEFERRED (TradingView Pine overlay PIN+ACCEL extension ~30-40min when prioritized). 1 TD CLOSED S40 (TD-S37-01). 0 new ADRs S40 (execution against existing ADR-016 + ADR-017). §D.22 added to Assumption Register with 3 rows: D.22.1 Lovable temporal-immutable column DEFAULT audit pattern REFUTED + D.22.2 atomic-card layout VALIDATED + D.22.3 stacked-by-strike charts VALIDATED. AWS infrastructure update: new clone path /home/ssm-user/meridian-connect for Marketview frontend source; canonical 3-line deploy command codified. 5 new artifacts staged at /mnt/user-data/outputs/: patch_s40_enh83_view_tau_rewrite.py (ASCII-clean v2, APPLIED) + marketview_v4_mockup.html + marketview_v4_render.png (final UI mockup, APPLIED via Lovable) + lovable_build_prompt_marketview_v4.md (515 lines, APPLIED) + lovable_correction_prompt.md (APPLIED — dashboard populated post-correction). Zero production Python code patches (S40 was SQL DDL + frontend Lovable iterations + AWS deploy infra + 9-canonical-file doc-close pack). Zero git commits, zero tags (session-40-close pending operator). 9-canonical-file doc-close pack per Doc Protocol v4 Rule 3 + Rule 9 + Rule 11 full-file no-crunch discipline."
+      },
       {
         "date": "2026-05-26",
         "session": 38,
@@ -2931,6 +2935,16 @@
       "permissions": "chmod 600",
       "load_pattern": "set -a; . ./.env; set +a",
       "status": "ACTIVE"
+    },
+    "marketview_clone": {
+      "path": "/home/ssm-user/meridian-connect",
+      "source": "https://github.com/balannavin-cyber1/meridian-connect.git (public)",
+      "purpose": "Marketview frontend source-of-truth on AWS for on-AWS build pipeline (Vite + React SPA)",
+      "established_session": "Session 40 (2026-05-29)",
+      "build_command": "npm install && npm run build (npm install not npm ci because Lovable doesn't commit package-lock.json)",
+      "deploy_target": "/var/www/marketview/ (nginx-served)",
+      "canonical_3line_deploy": "cd ~/meridian-connect && git pull && npm run build && sudo rsync -av --delete dist/ /var/www/marketview/",
+      "current_bundle_at_s40_close": "index-vDqPX1iO.js (~537KB)"
     }
   },
   "aws_cron": {
@@ -3368,6 +3382,80 @@
     }
   },
   "session_log": [
+    {
+      "session": 40,
+      "date_close": "2026-05-29",
+      "type": "Operational session — TD-S37-01 closure + TD-S40-NEW-2 same-session DISCOVERED+FIXED + Marketview v4 atomic-card redesign + AWS deploy pipeline + v_max_pain_by_strike view + 9-canonical-file doc-close",
+      "primary_mandate": "P1 carry-forward from S39: TD-S37-01 closure (hardcoded τ in ENH-81 views formalize as merdian_parameters lookup per ADR-016)",
+      "primary_mandate_outcome": "PASS — TD-S37-01 CLOSED via patch_s40_enh83_view_tau_rewrite.py v3-pattern; both ENH-81 view DDLs re-applied via Supabase SQL editor with runtime get_parameter_num lookup; smoke-fire verified tau_used=0.30 cross-symbol. Marketview v4 atomic-card redesign shipped end-to-end via Lovable + AWS deploy. TD-S40-NEW-2 DISCOVERED-CLOSED-SAME-SESSION (update_parameter RPC chk_valid_from_to violation fixed via valid_to DROP DEFAULT).",
+      "tds_closed": [
+        "TD-S37-01"
+      ],
+      "tds_resolved_same_session": [
+        "TD-S40-NEW-1 (cp1252 cosmetic)",
+        "TD-S40-NEW-2 (update_parameter RPC valid_to DEFAULT now() bug)"
+      ],
+      "tds_new_pending": [
+        "TD-S40-NEW-3 S2 (TradingView Pine overlay PIN+ACCEL extension deferred S41+)"
+      ],
+      "new_adrs": [],
+      "new_enhancements": [],
+      "schema_changes": [
+        "ALTER TABLE public.merdian_parameters ALTER COLUMN valid_to DROP DEFAULT"
+      ],
+      "new_views": [
+        "v_max_pain_by_strike (long-format pivot to wide via MAX(CASE WHEN option_type='CE' THEN oi END))"
+      ],
+      "new_sql_files": [
+        "sql/v_max_pain_by_strike.sql"
+      ],
+      "patched_sql_files": [
+        "sql/2026-05-25_enh81_v_gex_strike_pin_zone.sql (tau hardcoded 0.3 → get_parameter_num runtime lookup; _PRE_S40.sql backup preserved)",
+        "sql/2026-05-25_enh81_v_gex_strike_accel_zone.sql (tau hardcoded 0.3 → get_parameter_num runtime lookup; _PRE_S40.sql backup preserved)"
+      ],
+      "patch_scripts_new": [
+        "patch_s40_enh83_view_tau_rewrite.py (v3-pattern ASCII-clean — APPLIED)"
+      ],
+      "new_artifacts": [
+        "marketview_v4_mockup.html",
+        "marketview_v4_render.png",
+        "lovable_build_prompt_marketview_v4.md (515 lines, APPLIED)",
+        "lovable_correction_prompt.md (APPLIED — dashboard populated)"
+      ],
+      "aws_infrastructure": {
+        "new_clone_path": "/home/ssm-user/meridian-connect (git clone of balannavin-cyber1/meridian-connect)",
+        "canonical_deploy_command": "cd ~/meridian-connect && git pull && npm run build && sudo rsync -av --delete dist/ /var/www/marketview/",
+        "build_target": "/var/www/marketview/ (nginx-served document root rendered at http://13.63.27.85/marketview)",
+        "build_bundle_s40": "index-vDqPX1iO.js (~537KB; Recharts+d3 cosmetic warning, not blocking)",
+        "build_tool": "vite 7.3.3, 355 packages; uses npm install not npm ci (Lovable doesn't commit package-lock.json)"
+      },
+      "marketview_live": true,
+      "marketview_url": "http://13.63.27.85/marketview",
+      "marketview_writer_side_gaps_confirmed": [
+        "gamma_metrics.vix NULL (India VIX writer needed ~30-60min)",
+        "market_breadth_intraday.wcb column absent (WCB writer + schema ADD COLUMN ~60-90min if formula settled)",
+        "gamma_metrics.pin_risk_score column absent (pin-risk score writer ~60-120min)",
+        "Pin Risk Timeline (auto-populates once pin_risk_score is shipped)"
+      ],
+      "assumption_register_new_section": "§D.22 (3 rows D.22.1-D.22.3: Lovable temporal-immutable column DEFAULT audit REFUTED + atomic-card layout VALIDATED + stacked-by-strike charts VALIDATED)",
+      "claude_md_version": "v1.29 → v1.30",
+      "production_python_patches": 0,
+      "git_commits": 0,
+      "git_tags": 0,
+      "doc_files_modified": 9,
+      "new_doc_files": 0,
+      "carry_forward_to_s41": [
+        "P0 TD-S39-NEW-3 .env removal from public GitHub repo (operator local git rm --cached .env + push; Lovable cannot push removal commits)",
+        "P0b smoke_probe_marketview_surfaces.py first run from allowlisted IP",
+        "P1 4 writer-side TDs for Marketview empty cards (India VIX, WCB, Pin Risk Score, Pin Risk Timeline)",
+        "P1b ENH-111 env-flag wiring in build_trade_signal_local.py",
+        "P2 TD-S40-NEW-3 TradingView Pine overlay PIN+ACCEL extension (~30-40min)",
+        "P3 Delete orphan launch-wizard-2 AWS Security Group (TD-S39-NEW-4 cosmetic)",
+        "P3b ADR-006 AWS migration scope draft (BLOCKED on TD-080 Dhan token refresh)",
+        "P4 12 carry-forward TDs from S39 un-actioned",
+        "P5 older items (TD-NEW-B pg_cron health, TD-NEW-C/D/9 ws_feed bundle, TD-NEW-H NULL expiry, TD-073/074/087/094/095/099, ENH-95)"
+      ]
+    },
     {
       "session": 37,
       "date_close": "2026-05-25",

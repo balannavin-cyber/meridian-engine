@@ -111,4 +111,4 @@ Suggested cadence — once per phase boundary or quarterly, whichever first:
 
 ---
 
-*MERDIAN Decision Index — established Session 23, 2026-05-09. Prepend-only. Do not edit existing rows except to add `[SUPERSEDED by ADR-NNN]` annotations. Last maintenance: Session 39 (2026-05-27 — no new ADRs S39; execution against ADR-016 parameter calibration pattern + ADR-017 operator console design principles via ENH-110 Phase 1 ship).*
+*MERDIAN Decision Index — established Session 23, 2026-05-09. Prepend-only. Do not edit existing rows except to add `[SUPERSEDED by ADR-NNN]` annotations. Last maintenance: Session 40 (2026-05-29 — no new ADRs S40; execution against ADR-016 parameter calibration pattern via TD-S37-01 closure (view-tau swap to runtime `get_parameter_num` lookup) + ADR-017 operator console design principles via Marketview v4 atomic-card redesign Lovable build + AWS deploy pipeline establishment at `/home/ssm-user/meridian-connect`). Previous maintenance: Session 39 (2026-05-27 — no new ADRs S39; execution against ADR-016 + ADR-017 via ENH-110 Phase 1 ship).*

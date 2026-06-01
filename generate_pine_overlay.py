@@ -422,7 +422,7 @@ def generate_pine_content(sb):
 // Total: {n_nifty + n_sensex} zones (NIFTY {n_nifty} + SENSEX {n_sensex})
 
 //@version=6
-indicator("MERDIAN ICT HTF Zones ({generated_at})", overlay=true, max_boxes_count=250, max_lines_count=250, max_labels_count=250)
+indicator("MERDIAN ICT HTF Zones ({generated_at})", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500)
 
 // ── Color legend ─────────────────────────────────────────────────────────────
 // BULL_OB   solid green   (high reliability, Exp 35C validated ~88% WR)
@@ -485,11 +485,15 @@ c_pdl_d_t3_l    = color.new(color.yellow, 78)
 c_pdh_w_t3_l    = color.new(color.orange, 80)
 c_pdl_w_t3_l    = color.new(color.orange, 80)
 
-// ── ENH-81 (S37) v1 Positioning Landscape colors ────────────────────────
-c_pin_zone    = color.new(#00FF7F, 75)   // spring green, semi-transparent
-c_pin_line    = color.new(#00FF7F, 30)
-c_accel_zone  = color.new(#FF4444, 75)   // bright red, semi-transparent
-c_accel_line  = color.new(#FF4444, 30)
+// ── ENH-81 (S37) v1 Positioning Landscape colors v2 cyan/magenta ────────────
+// S41 cosmetic fix: PIN/ACCEL were colliding with ICT BULL_OB (green)
+// and BEAR_OB (crimson) at 75% transparency. Cyan + magenta lie outside
+// every ICT zone color family, guaranteeing visual separation regardless
+// of which ICT layer toggles are enabled.
+c_pin_zone    = color.new(#00FFFF, 75)   // cyan, semi-transparent
+c_pin_line    = color.new(#00FFFF, 30)
+c_accel_zone  = color.new(#FF00FF, 75)   // magenta, semi-transparent
+c_accel_line  = color.new(#FF00FF, 30)
 
 // ── SYMBOL DETECTION (must precede draw_zone) ────────────────────────────────
 is_nifty  = str.contains(syminfo.ticker, "NIFTY")  and not str.contains(syminfo.ticker, "BANK")

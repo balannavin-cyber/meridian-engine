@@ -8,6 +8,13 @@ from typing import Any, Dict, List, Optional
 from core.supabase_client import SupabaseClient
 from gamma_engine_retry_utils import retry_call
 
+# ENH-72 write-contract layer. Pattern mirrored from
+# compute_gamma_metrics_local.py and capture_spot_1m.py. Added S41 to
+# close the observability gap surfaced by the Health dashboard MVP on
+# day 1 -- TD-S41-NEW-4 (writer was producing data but invisible to
+# script_execution_log because no ExecutionLog wrapper existed).
+from core.execution_log import ExecutionLog
+
 
 def to_float(value: Any) -> Optional[float]:
     if value is None:
@@ -335,11 +342,23 @@ def compute_wcb_snapshot(
     }
 
 
-def main() -> None:
+def main() -> int:
+    # S41 TD-S41-NEW-4: parse CLI args BEFORE opening ExecutionLog row.
+    # Canonical pattern from compute_gamma_metrics_local.py -- usage errors
+    # are operator/integration bugs, not pipeline failures, and should not
+    # pollute script_execution_log with RUNNING rows that never resolve.
     if len(sys.argv) != 2:
-        raise RuntimeError("Usage: python .\\build_wcb_snapshot_local.py <NIFTY|SENSEX>")
+        print(
+            "Usage: python .\\build_wcb_snapshot_local.py <NIFTY|SENSEX>",
+            file=sys.stderr,
+        )
+        return 2
 
-    index_symbol = normalize_index_symbol(sys.argv[1])
+    try:
+        index_symbol = normalize_index_symbol(sys.argv[1])
+    except RuntimeError as e:
+        print(f"[ERROR] {e}", file=sys.stderr)
+        return 2
 
     print("=" * 72)
     print("MERDIAN - Local Python build_wcb_snapshot")
@@ -347,53 +366,81 @@ def main() -> None:
     print(f"Index symbol: {index_symbol}")
     print("-" * 72)
 
-    sb = SupabaseClient()
-
-    weights_rows = fetch_active_weights(sb, index_symbol)
-    if not weights_rows:
-        raise RuntimeError(f"No active constituent weights found for {index_symbol}")
-
-    print(f"Active weight rows fetched: {len(weights_rows)}")
-
-    tickers = [str(row["ticker"]).strip().upper() for row in weights_rows if row.get("ticker")]
-    intraday_rows = fetch_latest_intraday_prices(sb, tickers)
-    daily_rows = fetch_daily_breadth_rows(sb, tickers)
-    latest_breadth_row = fetch_latest_market_breadth_intraday(sb)
-
-    print(f"Intraday rows fetched: {len(intraday_rows)}")
-    print(f"Daily breadth rows fetched: {len(daily_rows)}")
-
-    snapshot_row = compute_wcb_snapshot(
-        index_symbol=index_symbol,
-        weights_rows=weights_rows,
-        intraday_rows=intraday_rows,
-        daily_rows=daily_rows,
-        latest_breadth_row=latest_breadth_row,
+    # ENH-72 write-contract declaration. Contract: this invocation writes
+    # exactly 1 row to weighted_constituent_breadth_snapshots via UPSERT on
+    # (index_symbol, ts). Floor = expected = 1. The `symbol` field carries
+    # index_symbol via the pragmatic Choice A convention (NIFTY/SENSEX are
+    # valid values; underlying table calls it index_symbol but ENH-72
+    # contract layer does not need that distinction).
+    log = ExecutionLog(
+        script_name="build_wcb_snapshot_local.py",
+        expected_writes={"weighted_constituent_breadth_snapshots": 1},
+        symbol=index_symbol,
+        notes=f"index_symbol={index_symbol}",
     )
 
-    print("-" * 72)
-    print("Computed WCB snapshot:")
-    print(json.dumps(snapshot_row, default=str, indent=2))
+    try:
+        sb = SupabaseClient()
 
-    print("-" * 72)
-    print("Writing WCB snapshot to Supabase...")
+        weights_rows = fetch_active_weights(sb, index_symbol)
+        if not weights_rows:
+            return log.exit_with_reason(
+                "DATA_ERROR",
+                exit_code=1,
+                error_message=f"No active constituent weights found for {index_symbol}",
+            )
 
-    inserted = retry_call(
-        lambda: sb.upsert(
-            table="weighted_constituent_breadth_snapshots",
-            rows=[snapshot_row],
-            on_conflict="index_symbol,ts",
-        ),
-        attempts=3,
-        delay_seconds=5.0,
-        backoff_multiplier=1.5,
-        label=f"upsert weighted_constituent_breadth_snapshots for {index_symbol}",
-    )
+        print(f"Active weight rows fetched: {len(weights_rows)}")
 
-    inserted_count = len(inserted) if isinstance(inserted, list) else 1
-    print(f"Inserted rows returned by Supabase: {inserted_count}")
-    print("BUILD WCB SNAPSHOT COMPLETED")
+        tickers = [str(row["ticker"]).strip().upper() for row in weights_rows if row.get("ticker")]
+        intraday_rows = fetch_latest_intraday_prices(sb, tickers)
+        daily_rows = fetch_daily_breadth_rows(sb, tickers)
+        latest_breadth_row = fetch_latest_market_breadth_intraday(sb)
+
+        print(f"Intraday rows fetched: {len(intraday_rows)}")
+        print(f"Daily breadth rows fetched: {len(daily_rows)}")
+
+        snapshot_row = compute_wcb_snapshot(
+            index_symbol=index_symbol,
+            weights_rows=weights_rows,
+            intraday_rows=intraday_rows,
+            daily_rows=daily_rows,
+            latest_breadth_row=latest_breadth_row,
+        )
+
+        print("-" * 72)
+        print("Computed WCB snapshot:")
+        print(json.dumps(snapshot_row, default=str, indent=2))
+
+        print("-" * 72)
+        print("Writing WCB snapshot to Supabase...")
+
+        inserted = retry_call(
+            lambda: sb.upsert(
+                table="weighted_constituent_breadth_snapshots",
+                rows=[snapshot_row],
+                on_conflict="index_symbol,ts",
+            ),
+            attempts=3,
+            delay_seconds=5.0,
+            backoff_multiplier=1.5,
+            label=f"upsert weighted_constituent_breadth_snapshots for {index_symbol}",
+        )
+
+        inserted_count = len(inserted) if isinstance(inserted, list) else 1
+        print(f"Inserted rows returned by Supabase: {inserted_count}")
+        print("BUILD WCB SNAPSHOT COMPLETED")
+
+        log.record_write("weighted_constituent_breadth_snapshots", inserted_count)
+        return log.complete()
+
+    except Exception as e:
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"build_wcb_snapshot failed: {e}",
+        )
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -64,7 +64,7 @@ SELECT
   SUM(w.gex_cr)                                              AS total_accel_gex_cr,
   MIN(w.trough_gex_cr)                                       AS trough_gex_cr,
   (ARRAY_AGG(w.strike ORDER BY w.gex_cr ASC))[1]             AS trough_strike,
-  0.3::numeric                                               AS tau_used
+  get_parameter_num('accel.tau.' || symbol)::numeric                                               AS tau_used
 FROM walk w
 GROUP BY w.run_id, w.symbol, w.expiry_date;
 

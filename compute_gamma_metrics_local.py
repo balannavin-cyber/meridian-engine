@@ -10,6 +10,11 @@ from typing import Any, Optional
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
+# S41 P0.a -- Dhan REST for India VIX live fetch (security_id=21, IDX_I segment).
+# Mirrors capture_market_spot_snapshot.py pattern for index quotes. Aliased
+# to avoid colliding with `requests` elsewhere in the codebase namespace.
+import requests as _requests_for_vix
+
 # ENH-72 write-contract layer. See docs/MERDIAN_Master_V19.docx governance
 # rule `script_execution_log_contract`. Pattern mirrored from
 # ingest_option_chain_local.py and capture_spot_1m.py.
@@ -65,6 +70,13 @@ def _load_env() -> Client:
 
 
 SUPABASE: Client = _load_env()
+
+# S41 P0.a -- Dhan endpoint constants for India VIX fetch. Credentials are
+# read lazily from env at call time (NOT module init) so backfill / shadow
+# pipelines that never fetch VIX do not require these to be set.
+_DHAN_LTP_URL = "https://api.dhan.co/v2/marketfeed/ltp"
+_INDIA_VIX_SEGMENT = "IDX_I"
+_INDIA_VIX_SECURITY_ID = 21
 
 
 def _rows(result: Any) -> list[dict[str, Any]]:
@@ -143,6 +155,10 @@ class GammaMetricsResult:
     otm_oi_velocity: float | None
     spot_vs_range: float | None
     run_type: str
+    # S41 P0.a -- India VIX live + max_gamma_strike materialized + Pin Risk Score.
+    vix: float | None = None
+    max_gamma_strike: float | None = None
+    pin_risk_score: float | None = None
     # ENH-80 (S37) v2 — per-strike GEX row list, built in compute_gamma_metrics.
     gss_rows: list[dict[str, Any]] | None = None
 
@@ -638,6 +654,214 @@ def compute_otm_oi_snapshot(
 
 
 # ---------------------------------------------------------------------------
+# S41 P0.a -- India VIX live fetch (Dhan REST marketfeed/ltp)
+# ---------------------------------------------------------------------------
+
+def fetch_india_vix() -> float | None:
+    """S41 P0.a -- Fetch live India VIX via Dhan marketfeed/ltp.
+
+    Returns float VIX value (e.g. 14.32) on success, None on any failure.
+    Failure modes (token expired / 429 / network / unexpected payload) all
+    return None silently -- VIX is context, not gate. The gamma cycle MUST
+    NOT fail because VIX fetch failed.
+
+    Dhan scrip master row (verified S41 2026-05-30 via api-scrip-master-detailed.csv):
+        EXCH_ID=NSE, SECURITY_ID=21, INSTRUMENT=INDEX, SYMBOL_NAME=INDIA VIX
+    """
+    dhan_client_id = os.getenv("DHAN_CLIENT_ID", "").strip()
+    dhan_token = os.getenv("DHAN_API_TOKEN", "").strip()
+    if not dhan_client_id or not dhan_token:
+        return None
+    try:
+        response = _requests_for_vix.post(
+            _DHAN_LTP_URL,
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "access-token": dhan_token,
+                "client-id": dhan_client_id,
+            },
+            json={_INDIA_VIX_SEGMENT: [_INDIA_VIX_SECURITY_ID]},
+            timeout=10,
+        )
+        if response.status_code != 200:
+            return None
+        body = response.json()
+        if not isinstance(body, dict) or body.get("status") != "success":
+            return None
+        last_price = (
+            body.get("data", {})
+                .get(_INDIA_VIX_SEGMENT, {})
+                .get(str(_INDIA_VIX_SECURITY_ID), {})
+                .get("last_price")
+        )
+        return float(last_price) if last_price is not None else None
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# S41 P0.a -- max_gamma_strike + Pin Risk Score helpers
+# ---------------------------------------------------------------------------
+
+def compute_max_gamma_strike(strike_map: dict[float, float]) -> float | None:
+    """S41 P0.a FIX-1 -- strike with maximum POSITIVE gex_cr (PIN candidate).
+
+    Pin Risk Score requires the strike where dealers are LONG gamma
+    (positive net gex_cr); these strikes are the operative magnets for
+    spot pinning. Amplifying strikes (negative gex_cr) are the OPPOSITE
+    force -- they accelerate spot away from themselves, not toward them.
+
+    Aligns with the ENH-81 v_gex_strike_pin_zone SQL view convention which
+    filters `WHERE gex_cr > 0` before identifying the peak. Marketview
+    surfaces this same value as 'MAX gamma STRIKE' / 'STRONGEST DAMPEN'.
+
+    Returns None when no positive-GEX strike exists in the map -- an
+    extreme SHORT_GAMMA regime where dealers have no long-gamma anchor;
+    pin semantics undefined. compute_pin_risk_score handles this via
+    its existing renormalization path (spot_proximity_factor dropped).
+
+    Tie-break: lower strike wins (sorted ascending key iteration).
+    """
+    if not strike_map:
+        return None
+    positive_strikes = {k: v for k, v in strike_map.items() if v > 0}
+    if not positive_strikes:
+        return None
+    return max(positive_strikes.items(), key=lambda kv: kv[1])[0]
+
+
+def fetch_recent_max_gamma_strikes(
+    symbol: str, current_ts: str, n: int = 5
+) -> list[float]:
+    """S41 P0.a FIX-1 -- fetch PIN-candidate max-gamma strike for last `n` cycles.
+
+    Reads `gex_strike_snapshots`, filtered to POSITIVE gex_cr only (PIN
+    candidate convention -- see compute_max_gamma_strike docstring). Each
+    cycle's per-strike argmax over positive-GEX rows is computed in Python
+    after a bounded Supabase fetch.
+
+    Returns empty list if no history available OR if no cycle in the
+    window had any positive-GEX strikes (extreme SHORT_GAMMA regime).
+
+    Note: the current cycle's gex_strike_snapshots row is NOT yet written
+    when this runs inside compute_gamma_metrics -- that's intentional, the
+    sustained-time factor compares CURRENT (in-memory) to PRIOR (persisted)
+    cycles, never self.
+    """
+    try:
+        result = (
+            SUPABASE.table(GSS_TARGET_TABLE)
+            .select("ts,strike,gex_cr")
+            .eq("symbol", symbol)
+            .lt("ts", current_ts)
+            .gt("gex_cr", 0)  # S41 FIX-1: PIN candidates only (dealer-long-gamma)
+            .order("ts", desc=True)
+            .limit(n * 250)  # ~200 strikes/cycle ceiling; trimmed in Python
+            .execute()
+        )
+        rows = _rows(result)
+        if not rows:
+            return []
+        # Group by ts, pick argmax(positive gex_cr) per group, return last n in time order.
+        by_ts: dict[str, list[dict[str, Any]]] = {}
+        for r in rows:
+            by_ts.setdefault(str(r.get("ts")), []).append(r)
+        sorted_ts = sorted(by_ts.keys(), reverse=True)[:n]
+        out: list[float] = []
+        for ts_key in sorted_ts:
+            strikes_in_cycle = by_ts[ts_key]
+            # All rows here have gex_cr > 0; max returns the pin candidate.
+            top = max(strikes_in_cycle, key=lambda r: to_float(r.get("gex_cr")))
+            s = to_float(top.get("strike"))
+            if s > 0:
+                out.append(s)
+        return out
+    except Exception:
+        return []
+
+
+def compute_pin_risk_score(
+    gamma_concentration: float | None,
+    expansion_probability: float | None,
+    spot: float,
+    max_gamma_strike: float | None,
+    strike_step: float | None,
+    recent_max_strikes: list[float],
+) -> float | None:
+    """S41 P0.a -- additive-weighted Pin Risk Score, 0-100.
+
+    Weights (operator-confirmed S41):
+        gamma_concentration       weight 0.30 (0-1 input)
+        spot_proximity_factor     weight 0.30 (0-1 derived)
+        sustained_time_factor     weight 0.20 (0-1 derived; dropped + renorm if N<3)
+        (1 - expansion_prob/100)  weight 0.20 (0-1 derived)
+
+    Renormalization: if sustained_time_factor is unavailable (N<3 prior
+    cycles) OR spot_proximity_factor is unavailable (missing strike data),
+    the corresponding weight is dropped and remaining weights are
+    re-normalized to sum to 1.0. This preserves comparability across
+    cycles with varying history depth.
+
+    None propagation: if gamma_concentration OR expansion_probability is
+    None, the score is None -- these are core positioning measures with
+    no reasonable default.
+
+    Output: 0-100 rounded to 2 decimals, clamped at boundaries.
+    """
+    if gamma_concentration is None or expansion_probability is None:
+        return None
+
+    # spot_proximity_factor: 1 at max-gamma-strike, decays linearly to 0 at
+    # 3 strike-steps away. Strike-step normalization handles NIFTY 50pt vs
+    # SENSEX 100pt without hardcoding.
+    spot_proximity_factor: float | None = None
+    if (
+        max_gamma_strike is not None
+        and strike_step is not None
+        and strike_step > 0
+        and spot > 0
+    ):
+        proximity_distance_strikes = abs(spot - max_gamma_strike) / strike_step
+        spot_proximity_factor = max(0.0, 1.0 - proximity_distance_strikes / 3.0)
+
+    # sustained_time_factor: fraction of last N prior cycles where the
+    # max-gamma strike was within +/- 1 strike-step of CURRENT max-gamma
+    # strike. Requires N>=3 prior cycles for the factor to be meaningful
+    # (15-min window minimum given 5-min cadence).
+    sustained_time_factor: float | None = None
+    if (
+        max_gamma_strike is not None
+        and strike_step is not None
+        and len(recent_max_strikes) >= 3
+    ):
+        within_one_strike = sum(
+            1 for s in recent_max_strikes if abs(s - max_gamma_strike) <= strike_step
+        )
+        sustained_time_factor = within_one_strike / len(recent_max_strikes)
+
+    # expansion_probability is stored 0-100 by compute_expansion_probability;
+    # complement gives 0-1 contraction-likelihood (high = pin-supportive).
+    expansion_complement = 1.0 - (float(expansion_probability) / 100.0)
+
+    # Assemble components and renormalize over available weights.
+    components: list[tuple[float, float]] = []  # (weight, value)
+    components.append((0.30, float(gamma_concentration)))
+    if spot_proximity_factor is not None:
+        components.append((0.30, spot_proximity_factor))
+    if sustained_time_factor is not None:
+        components.append((0.20, sustained_time_factor))
+    components.append((0.20, expansion_complement))
+
+    weight_total = sum(w for w, _ in components)
+    if weight_total <= 0:
+        return None
+    score_01 = sum(w * v for w, v in components) / weight_total
+    score_100 = 100.0 * score_01
+    return round(max(0.0, min(100.0, score_100)), 2)
+
+
+# ---------------------------------------------------------------------------
 # Core compute function — unchanged interface, extended output
 # ---------------------------------------------------------------------------
 
@@ -695,6 +919,24 @@ def compute_gamma_metrics(
     otm_oi_velocity = compute_otm_oi_velocity(option_rows, spot, prior_row)
     spot_vs_range = fetch_spot_vs_range(symbol, ts)
 
+    # S41 P0.a -- India VIX + max_gamma_strike + Pin Risk Score.
+    # VIX is live-fetched (Dhan); failure returns None silently.
+    # max_gamma_strike derived from in-memory strike_map (no Supabase round-trip).
+    # Pin Risk Score requires sustained-time factor: queries last 5 cycles of
+    # gex_strike_snapshots BEFORE current ts (current cycle not yet persisted).
+    vix = fetch_india_vix()
+    max_gamma_strike = compute_max_gamma_strike(strike_map)
+    strike_step = infer_strike_step(option_rows)
+    recent_max_strikes = fetch_recent_max_gamma_strikes(symbol, ts, n=5)
+    pin_risk_score = compute_pin_risk_score(
+        gamma_concentration=gamma_concentration,
+        expansion_probability=expansion_probability,
+        spot=spot,
+        max_gamma_strike=max_gamma_strike,
+        strike_step=strike_step,
+        recent_max_strikes=recent_max_strikes,
+    )
+
     return GammaMetricsResult(
         run_id=run_id,
         symbol=symbol,
@@ -715,6 +957,9 @@ def compute_gamma_metrics(
         otm_oi_velocity=otm_oi_velocity,
         spot_vs_range=spot_vs_range,
         run_type=run_type,
+        vix=vix,                                 # S41 P0.a
+        max_gamma_strike=max_gamma_strike,       # S41 P0.a
+        pin_risk_score=pin_risk_score,           # S41 P0.a
         gss_rows=gss_rows,  # ENH-80 (S37) v2
     )
 
@@ -785,6 +1030,10 @@ def upsert_gamma_metrics(result: GammaMetricsResult) -> dict[str, Any]:
         "otm_oi_velocity": result.otm_oi_velocity,
         "spot_vs_range": result.spot_vs_range,
         "run_type": result.run_type,
+        # S41 P0.a -- VIX + max_gamma_strike + Pin Risk Score
+        "vix": result.vix,
+        "max_gamma_strike": result.max_gamma_strike,
+        "pin_risk_score": result.pin_risk_score,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "raw": {
             "builder": "compute_gamma_metrics_local.py",
@@ -1075,6 +1324,10 @@ def main() -> int:
     print(f"spot_vs_range={result.spot_vs_range}")
     print(f"regime={result.regime}")
     print(f"expansion_probability={result.expansion_probability}")
+    # S41 P0.a
+    print(f"vix={result.vix}")
+    print(f"max_gamma_strike={result.max_gamma_strike}")
+    print(f"pin_risk_score={result.pin_risk_score}")
     print("=" * 72)
 
     return log.complete()

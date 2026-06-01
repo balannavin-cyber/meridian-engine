@@ -79,7 +79,7 @@ SELECT
   SUM(w.gex_cr)                                              AS total_pin_gex_cr,
   MAX(w.peak_gex_cr)                                         AS peak_pin_gex_cr,
   (ARRAY_AGG(w.strike ORDER BY w.gex_cr DESC))[1]            AS peak_pin_strike,
-  0.3::numeric                                               AS tau_used
+  get_parameter_num('pin.tau.' || symbol)::numeric                                               AS tau_used
 FROM walk w
 GROUP BY w.run_id, w.symbol, w.expiry_date;
 

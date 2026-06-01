@@ -18,7 +18,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 IST      = ZoneInfo("Asia/Kolkata")
-BASE     = Path(r'C:\GammaEnginePython')
+BASE     = Path('/home/ssm-user/meridian-engine')
 RUNTIME  = BASE / 'runtime'
 LOGS     = BASE / 'logs'
 PID_FILE = RUNTIME / 'merdian_pids.json'
@@ -136,7 +136,7 @@ def start(name, force=False):
         cwd=str(BASE),
         stdout=_lf,
         stderr=subprocess.STDOUT,
-        creationflags=CREATE_NO_WINDOW,
+
     )
     time.sleep(1.5)
 

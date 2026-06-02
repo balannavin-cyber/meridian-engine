@@ -57,6 +57,22 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-NEW-14 — Four ingestion tables empty for 30+ days: `iv_context_snapshots`, `hist_atm_option_bars_5m`, `index_futures_snapshots`, `india_vix_daily`
+
+| Field | Value |
+|---|---|
+| **Severity** | S2 |
+| **Filed** | 2026-06-02 (Session 43) |
+| **Symptom** | During 2026-06-02 short-covering pattern analysis, attempted to join four supplementary tables to `gamma_metrics` for the full attribute set (IV skew, futures basis, ATM option volumes, VIX). All four tables returned 0 rows for 2026-06-02 and all dates in the prior 30 days. Diagnostic queries confirmed: `iv_context_snapshots` COUNT=0 for 2026-06-02 ± 30d; `hist_atm_option_bars_5m` COUNT=0 for 2026-06-02 ± 30d; `index_futures_snapshots` COUNT=0 for 2026-06-02 ± 30d; `india_vix_daily` COUNT=0 for 2026-06-02 ± 30d. Impact: Marketview case-file analysis degraded to gamma-only attributes (net_gex, pin_risk, straddle_atm, regime, gamma_concentration) — missing IV regime, skew, basis, VIX context that would enrich pattern recognition and validation. |
+| **Root cause** | Likely one of three: (a) Ingestion writers (`build_iv_context_snapshots.py`, `build_atm_option_bars_5m.py`, `build_futures_snapshots.py`, `build_vix_daily.py`) are not running or are silently failing to write rows; (b) Ingestion schedule is disabled or not triggered (Task Scheduler, AWS cron, or manual); (c) Schema changes, API credential rotation, or data source migration broke upstream collection without alerting. No evidence in `script_execution_log` of these writers failing — absence of evidence suggests they may not be running at all. |
+| **Workaround** | Document case files with gamma-only attributes (status quo for 2026-06-02 case). Use supplementary web queries or manual TradingView snapshots if IV/VIX/basis context needed for a specific analysis. Upgrade to full-join results once tables are populated. |
+| **Proper fix** | **Phase 1 (diagnostic):** Verify ingestion writers exist, are registered in Task Scheduler / AWS cron, and have run logs in `script_execution_log` for the past 30 days. If missing, locate source scripts or disable table references pending rebuild. **Phase 2 (validation):** Once writers confirmed running, verify they're writing to correct tables (not staging tables, not wrong schema). Confirm API tokens/credentials for data sources (NSE, Zerodha, external VIX feed) are valid and pulling fresh data. **Phase 3 (backfill):** 30-day historical backfill once writers confirmed. |
+| **Impact** | Medium — analysis capability degraded but not blocked. Case files can still stand on gamma mechanics alone. Forward-looking case files will lack full attribute context until resolved. |
+| **Related** | ENH-110 (Consolidated marketview build — likely encompasses these table builds as sub-task); ADR-002 (market structure philosophy — IV skew, basis, VIX regime are P7 attributes per ADR-002 §P7); 2026-06-02 short-covering case file (triggered discovery). |
+| **Owner check-in** | 2026-06-02 (filed) |
+
+---
+
 ### TD-S41-NEW-1 — `trading_calendar` table lacks NSE holiday pre-population; Bakri Id 2026-05-28 had no row at all
 
 | Field | Value |

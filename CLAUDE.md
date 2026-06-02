@@ -880,7 +880,7 @@ The `$env:PYTHONIOENCODING = "utf-8"` prefix is also required whenever the scrip
 - **5 production patches deployed** — compute_gamma_metrics_local.py (P0.a writer + FIX-1), build_wcb_snapshot_local.py (ExecutionLog), generate_pine_overlay.py (color + boxcount). 1 DDL (gamma_metrics 3-col add). 2 anon RLS policies (script_execution_log + dhan_token_probe_log).
 - **1 same-session NEW+RESOLVED**: TD-S41-NEW-4 (13th same-session NEW+RESOLVED pattern across MERDIAN history; after S25 TD-097, S26 TD-101, S27 TD-NEW-2/3, S28 6x, S29 5x, S40 2x).
 
-*CLAUDE.md v1.31 — Session 41, 2026-06-01. Supersedes v1.30. Full v1.30 → v1.1 history preserved verbatim below.*
+*CLAUDE.md v1.32 — Session 41, 2026-06-01. Supersedes v1.30. Full v1.30 → v1.1 history preserved verbatim below.*
 
 ---
 

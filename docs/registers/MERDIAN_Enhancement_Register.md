@@ -2328,6 +2328,23 @@ Estimated effort: 4–6 hours, repo-wide.
 ---
 
 
+
+
+---
+
+### ENH-114 — Strategy Reference Library (PROPOSED — S42)
+**Date proposed:** 2026-06-02 (S42)  
+**Status:** PROPOSED  
+**Phase:** 1 (Collar backtest; Phases 2-5 deferred S43+)  
+**Objective:** 151 active ICT formation-based strategies + Entry Criteria + Position Management + Exit Triggers; Phase 1 Collar backtest (50-window, 12-month, ~40-60h compute).
+
+### ENH-113 — AWS Capture Writer Migration (PHASE 2.c ACTIVE — S42)
+**Date proposed:** S41  
+**Status:** PHASE 2.c PARALLEL TEST ACTIVE (S42)
+**Phase:** 2.c Parallel Test — both Local + AWS firing since 2026-06-01 18:02 IST
+**Next checkpoint:** S43 post-2026-06-10 (Phase 2.d go/no-go decision)
+
+
 ## Part 5 -- Change Log
 
 Append-only. Record every meaningful register edit.

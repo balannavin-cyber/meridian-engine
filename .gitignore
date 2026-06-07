@@ -92,3 +92,10 @@ confluence.jsonl
 working_back.jsonl
 market_view.html
 market_view_data.json
+
+breeze_backfill_*.py
+backfill_spot_*.py
+fill_*.py
+find_sensex_code.py
+run_merdian_shadow_runner_S44_PATCHED.py
+run_option_snapshot_intraday_runner_PRE_S44.py

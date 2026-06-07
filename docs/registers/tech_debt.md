@@ -57,6 +57,40 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S46-NEW-1 — Breeze backfill mechanism for futures/ATM/IV/VIX snapshots (addresses TD-NEW-14 30+ day gaps)
+
+| Field | Value |
+|---|---|
+| **Severity** | S2 |
+| **Filed** | 2026-06-06 (Session 46) |
+| **Symptom** | Four supplementary tables (`iv_context_snapshots`, `hist_atm_option_bars_5m`, `index_futures_snapshots`, `india_vix_daily`) have been empty for 30+ days per TD-NEW-14 diagnostic; dependent writers or ingestion pipelines appear inactive or missing |
+| **Root cause** | Writers for these tables either (1) don't exist yet, (2) are not scheduled, or (3) have been deactivated without documentation. No evidence in `script_execution_log` of execution attempts. |
+| **Workaround** | Queries reference these tables but fall back to NULL or COALESCE defaults; Marketview card degradation to basic gamma-only attributes when these tables are empty. Backfill dependency structure: can proceed independently from other writers. |
+| **Proper fix** | **Phase 1:** Diagnostic search for source scripts (locate `build_iv_context_snapshots.py`, `build_atm_option_bars_5m.py`, `build_futures_snapshots.py`, `build_vix_daily.py` OR confirm deprecation). **Phase 2:** If scripts found, verify scheduling + credentials. If missing, design backfill via Breeze `get_historical_data_v2(stock_code, from_date, to_date, segment, exch_tsym)` API (ICICI Direct backend — replaces vendor purchase + Kite ATM±N cap + Zerodha rolling limitations). **Phase 3:** Deploy `backfill_*_via_breeze.py` suite + 30-day recovery + integration test. |
+| **Cost to fix** | 2-3 sessions (diagnostic + design + build + test) |
+| **Blocked by** | Nothing |
+| **Related** | TD-NEW-14 (original discovery); ADR-013 (Breeze as historical source); ENH-109 (Breeze graduation) |
+| **Owner check-in** | 2026-06-06 (S46 filed) |
+
+---
+
+### TD-S46-NEW-2 — S3 deployment automation wrapper scripts (reduce manual workflow)
+
+| Field | Value |
+|---|---|
+| **Severity** | S3 |
+| **Filed** | 2026-06-06 (Session 46) |
+| **Symptom** | AWS S3 deployment requires manual 6-step workflow (Local upload, AWS pull, verification); multiple commands to remember; non-idempotent if interrupted mid-cycle; no audit trail in log output |
+| **Root cause** | S3 transfer vector is recent (S46); no wrapper automation exists; manual `aws s3 cp` commands require full context awareness + error handling |
+| **Workaround** | Follow `MERDIAN_AWS_S3_Deployment_Mechanism_S46.md` documented workflow; `git pull` on AWS for code files; S3 only for non-git binary/vendor files or out-of-band backfill scripts |
+| **Proper fix** | Create two idempotent wrapper scripts: **(1) `deploy_to_aws.ps1` (Local Windows)** — uploads core/ + orchestrator to S3, verifies S3 checksums, SSH signals AWS pull (single atomic operation, safe-to-retry). **(2) `pull_from_s3.sh` (AWS EC2 bash)** — pulls core/ + orchestrator from S3, verifies checksums, makes executable, restarts systemd/cron if needed (single atomic operation, safe-to-retry). Both should log start/end timestamps + action counts to `shadow_runner.log` for audit. Estimated 60-90 min total. |
+| **Cost to fix** | 1 session (build + test on live EC2) |
+| **Blocked by** | Nothing |
+| **Related** | MERDIAN_AWS_S3_Deployment_Mechanism_S46.md (documentation); ADR-006 AWS migration scope (deployment layer); ENH-113 Phase 2.c AWS shadow runner |
+| **Owner check-in** | 2026-06-06 (S46 filed as convenience enhancement) |
+
+---
+
 ### TD-NEW-14 — Four ingestion tables empty for 30+ days: `iv_context_snapshots`, `hist_atm_option_bars_5m`, `index_futures_snapshots`, `india_vix_daily`
 
 | Field | Value |

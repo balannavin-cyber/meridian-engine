@@ -148,52 +148,52 @@ def execute_pipeline(run_id: str) -> bool:
     steps: List[tuple[List[str], str, int]] = [
         # (command, label, timeout_seconds)
         (
-            ["python", "compute_gamma_metrics_local.py", run_id, "--shadow"],
+            ["python3", "compute_gamma_metrics_local.py", run_id, "--shadow"],
             "compute_gamma_metrics",
             60,
         ),
         (
-            ["python", "compute_volatility_metrics_local.py", run_id, "--shadow"],
+            ["python3", "compute_volatility_metrics_local.py", run_id, "--shadow"],
             "compute_volatility_metrics",
             60,
         ),
         (
-            ["python", "build_momentum_features_local.py", "NIFTY"],
+            ["python3", "build_momentum_features_local.py", "NIFTY"],
             "build_momentum_features NIFTY",
             30,
         ),
         (
-            ["python", "build_momentum_features_local.py", "SENSEX"],
+            ["python3", "build_momentum_features_local.py", "SENSEX"],
             "build_momentum_features SENSEX",
             30,
         ),
         (
-            ["python", "build_wcb_snapshot_local.py", "NIFTY"],
+            ["python3", "build_wcb_snapshot_local.py", "NIFTY"],
             "build_wcb_snapshot NIFTY",
             45,
         ),
         (
-            ["python", "build_wcb_snapshot_local.py", "SENSEX"],
+            ["python3", "build_wcb_snapshot_local.py", "SENSEX"],
             "build_wcb_snapshot SENSEX",
             45,
         ),
         (
-            ["python", "build_market_state_snapshot_local.py", "NIFTY"],
+            ["python3", "build_market_state_snapshot_local.py", "NIFTY"],
             "build_market_state_snapshot NIFTY",
             30,
         ),
         (
-            ["python", "build_market_state_snapshot_local.py", "SENSEX"],
+            ["python3", "build_market_state_snapshot_local.py", "SENSEX"],
             "build_market_state_snapshot SENSEX",
             30,
         ),
         (
-            ["python", "build_trade_signal_local.py", "NIFTY"],
+            ["python3", "build_trade_signal_local.py", "NIFTY"],
             "build_trade_signal NIFTY",
             45,
         ),
         (
-            ["python", "build_trade_signal_local.py", "SENSEX"],
+            ["python3", "build_trade_signal_local.py", "SENSEX"],
             "build_trade_signal SENSEX",
             45,
         ),

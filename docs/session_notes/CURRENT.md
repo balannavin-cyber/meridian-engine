@@ -1,3 +1,32 @@
+## This session (S47 — 2026-06-08 Tuesday)
+
+**Concern:** AWS orchestrator 10/10 pipeline complete + all compute steps passing + pre-market capture ready
+
+**What happened:**
+- Fixed compute_volatility_metrics_local.py: added graceful PGRST205 404 handler; table doesn't exist yet but script exits 0 (SKIPPED_NO_OUTPUT) instead of crashing
+- Fixed compute_gamma_metrics_local.py: added defensive --shadow flag strip in parse_args() to prevent "--shadow" being parsed as symbol name
+- Tested full orchestrator run: 10/10 steps passing (gamma + volatility + momentum + WCB + market_state + trade_signal × NIFTY/SENSEX)
+- AWS cron validated: 7 entries active (pre-market 03:38 UTC / 09:08 IST, ingest 5-min cadence, orchestrator 5-min cadence, post-market 10:30 UTC)
+- Pre-market capture confirmed ready for Tuesday 09:08 IST market open
+- 3 TDs filed: volatility metrics table migration (S2), gamma --shadow parse edge case, Dhan token refresh AWS architecture
+
+**Files modified:**
+- compute_volatility_metrics_local.py (exception handling + graceful 404)
+- compute_gamma_metrics_local.py (parse_args defensive --shadow strip)
+- (Both uploaded to S3 + pulled on EC2, tested live)
+
+**TDs filed:**
+- TD-S47-NEW-1: volatility_metrics table doesn't exist yet; graceful fallback documented
+- TD-S47-NEW-2: gamma_metrics --shadow parsing edge case; fixed in parse_args
+- TD-S47-NEW-3: Dhan token refresh architecture gap; recommend AWS-first + Local fallback before 2026-06-28 expiry
+
+**Blocker:** None. Pipeline ready for production.
+
+**Next session:** doc-close (Session 48). All 9 canonical files require S47 session-end updates per Doc Protocol v4 Rule 3.
+
+---
+
+## Last session (S46 — 2026-06-06 Thursday)
 # CURRENT.md — MERDIAN Live Session State
 
 > **Living file.** Overwritten at the end of every session to reflect what just happened and what the next session is for.

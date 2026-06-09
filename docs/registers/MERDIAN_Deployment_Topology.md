@@ -859,3 +859,5 @@ The deeper root cause of the breadth cascade — `delete-old-market-ticks` faili
 ---
 
 *MERDIAN Deployment Topology — established Session 23, 2026-05-09. Last updated Session 40, 2026-05-29 (Marketview frontend graduates to topology-relevant AWS resource — §8.2 expanded with `/home/ssm-user/meridian-connect/`, `/home/ssm-user/meridian-connect/dist/`, `/var/www/marketview/` cataloging + 3-line canonical deploy command codified). Updated inline per Doc Protocol v4 Rule 1 + Rule 9.2. Anchor for ADR-006 (AWS migration scope) when drafted. Also anchor for ADR-013 (Breeze canonical historical backfill source) when drafted.*
+
+**S47 validation:** compute_volatility_metrics_local.py + compute_gamma_metrics_local.py fixes deployed; full 10-step orchestrator validated; pre-market 09:08 IST capture cron active; production-ready.

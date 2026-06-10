@@ -30,9 +30,21 @@
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files. Updated through Session 24 (2026-05-09) \u2014 ENH-93 replay/simulation harness built end-to-end across all 5 phases in single session: 10 new *_replay Supabase tables + 11 new files in C:\\GammaEnginePython\\replay\\ + 1 SQL migration + ADR-008 (~250 lines, Accepted) capturing replay architecture + canonical 'What what-if experiment means' methodology; 4 TDs filed (TD-087 hist_option_bars_1m IST-as-UTC defect with 5h30m phantom offset, TD-094 hist_option_bars_1m.oi=0 from S22 Kite backfill, TD-095 atm_iv_avg unit ambiguity, TD-096 reconstructor skips boundary 15:30); ENH-95 CANDIDATE filed (in-process orchestrator optimization, deferred until what-if campaign); ENH-93 CANDIDATE \u2192 CLOSED via ADR-008 acceptance. Phase 4b 2026-05-07 full-day run: 1056/1064 invocations (99.2%) succeeded; NIFTY 100% gamma_regime + 68% direction-bias match with live; SENSEX 91% action match (mostly DO_NOTHING tautology) + 28% gamma_regime match (structural narrow-strike-base divergence). Zero production code changes; zero writes to live tables; live scripts physically untouched. Session 23 (earlier same calendar date) was documentation consolidation; this Session 24 is the construction. Session 21 carry-forward patches still uncommitted in working tree.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
     "update_cadence": "Update this file in the same session as any meaningful change to file status, table schema, or open item status. Commit to Git immediately after update.",
-    "last_updated": "2026-06-01",
-    "last_updated_by_session": "Session 41",
+    "last_updated": "2026-06-10 S49 end (AWS-only capture deployment)",
+    "last_updated_by_session": "Session 48",
     "change_log": [
+      {
+        "session": "S48",
+        "date": "2026-06-10",
+        "type": "diagnostics + fixes",
+        "summary": "Root-caused SENSEX gamma stale data (orchestrator crontab broken) + volatility misconfigured table name + env not sourced. Fixed: (1) crontab `flock` scope (moved `cd` before `flock`), (2) added `source .env`, (3) volatility TARGET_TABLE corrected `compute_volatility_metrics` \u2192 `volatility_snapshots` (both AWS + LOCAL), (4) removed `--shadow` from volatility orchestrator call. Verification pending next cycle. Breadth stale 4h+ filed TD-S48-NEW-1. Hours: ~2. Commits: 0 (direct sed on AWS; LOCAL sync next). Docs modified: 9.",
+        "tds_filed": [
+          "TD-S48-NEW-1"
+        ],
+        "tds_closed": 0,
+        "adr_new": 0,
+        "enh_new": 0
+      },
       {
         "session": 41,
         "date": "2026-06-01",

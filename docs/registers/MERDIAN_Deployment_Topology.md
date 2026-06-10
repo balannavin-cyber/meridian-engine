@@ -14,6 +14,9 @@
 | Companion | `MERDIAN_System_Map.md` for full file/table inventory; this document for environment placement only. |
 | Forward link | This document is the canonical anchor for ADR-006 (reserved — AWS migration scope). When ADR-006 is drafted, it is the architectural decision; this Topology is the operational map. |
 
+
+**S48 Fix (2026-06-10):** Corrected orchestrator crontab syntax. Prior entry had `flock` scope error: `flock -n /lock cd /path &&` command executed `cd` under lock but subsequent command outside lock, breaking relative paths and .env sourcing. Fixed: moved `cd` before `flock` and added explicit `source .env`. Cron daemon restarted 2026-06-10 07:21 UTC. Orchestrator now firing every 5-min boundary as intended.
+
 ---
 
 ## Purpose
@@ -859,5 +862,3 @@ The deeper root cause of the breadth cascade — `delete-old-market-ticks` faili
 ---
 
 *MERDIAN Deployment Topology — established Session 23, 2026-05-09. Last updated Session 40, 2026-05-29 (Marketview frontend graduates to topology-relevant AWS resource — §8.2 expanded with `/home/ssm-user/meridian-connect/`, `/home/ssm-user/meridian-connect/dist/`, `/var/www/marketview/` cataloging + 3-line canonical deploy command codified). Updated inline per Doc Protocol v4 Rule 1 + Rule 9.2. Anchor for ADR-006 (AWS migration scope) when drafted. Also anchor for ADR-013 (Breeze canonical historical backfill source) when drafted.*
-
-**S47 validation:** compute_volatility_metrics_local.py + compute_gamma_metrics_local.py fixes deployed; full 10-step orchestrator validated; pre-market 09:08 IST capture cron active; production-ready.

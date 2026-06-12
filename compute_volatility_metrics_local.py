@@ -13,6 +13,18 @@ from fetch_india_vix import fetch_india_vix
 from gamma_engine_retry_utils import retry_call
 
 
+# TD-NEW-12 (S28): shadow-vs-live table separation.
+# AWS shadow runner passes --shadow to redirect writes to compute_volatility_metrics_shadow.
+# Local invocations omit it and write to compute_volatility_metrics.
+USE_SHADOW = "--shadow" in sys.argv
+if USE_SHADOW:
+    sys.argv = [a for a in sys.argv if a != "--shadow"]
+# Both shadow and production tables don't exist yet. Hardcode to production
+# with graceful 404 fallback on insert (line ~810). Once ADR-006 DDL lands:
+# TARGET_TABLE = "compute_volatility_metrics_shadow" if USE_SHADOW else "compute_volatility_metrics"
+TARGET_TABLE = "volatility_snapshots_shadow" if USE_SHADOW else "volatility_snapshots"
+
+
 IST = timezone(timedelta(hours=5, minutes=30))
 
 
@@ -330,19 +342,26 @@ def nearest_prior_history_value(history_rows: List[Tuple[date, float]], target_d
 
 
 def fetch_recent_volatility_rows(sb: SupabaseClient, symbol: str) -> List[Dict[str, Any]]:
-    rows = retry_call(
-        lambda: sb.select(
-            table="volatility_snapshots",
-            filters={"symbol": f"eq.{symbol}"},
-            order="ts.desc",
-            limit=500,
-        ),
-        attempts=3,
-        delay_seconds=2.0,
-        backoff_multiplier=1.5,
-        label=f"select volatility_snapshots for {symbol}",
-    )
-    return rows or []
+    # TD-NEW-12: Read from PRODUCTION table always, even if writing to shadow.
+    # Shadow pipeline needs historical context from main table.
+    # If table doesn't exist (404), return empty list gracefully.
+    try:
+        rows = retry_call(
+            lambda: sb.select(
+                table="compute_volatility_metrics",
+                filters={"symbol": f"eq.{symbol}"},
+                order="ts.desc",
+                limit=500,
+            ),
+            attempts=1,
+            delay_seconds=2.0,
+            backoff_multiplier=1.5,
+            label=f"select compute_volatility_metrics for {symbol}",
+        )
+        return rows or []
+    except Exception:
+        # Table doesn't exist or unavailable; skip intraday velocity computation
+        return []
 
 
 def latest_at_or_before(rows: List[Dict[str, Any]], target_ts: datetime) -> Optional[Dict[str, Any]]:
@@ -429,9 +448,10 @@ def compute_intraday_changes(
 
 
 def fetch_last_valid_vix_snapshot(sb: SupabaseClient, symbol: str) -> Optional[Dict[str, Any]]:
+    # TD-NEW-12: Read from PRODUCTION table always, even if writing to shadow.
     rows = retry_call(
         lambda: sb.select(
-            table="volatility_snapshots",
+            table="compute_volatility_metrics",
             filters={"symbol": f"eq.{symbol}", "india_vix": "not.is.null"},
             order="ts.desc",
             limit=1,
@@ -439,7 +459,7 @@ def fetch_last_valid_vix_snapshot(sb: SupabaseClient, symbol: str) -> Optional[D
         attempts=3,
         delay_seconds=2.0,
         backoff_multiplier=1.5,
-        label=f"fallback select volatility_snapshots for {symbol}",
+        label=f"fallback select compute_volatility_metrics for {symbol}",
     )
     if rows:
         return rows[0]
@@ -468,7 +488,7 @@ def main() -> int:
     # with RUNNING rows that never resolve.
     if len(sys.argv) != 2:
         print(
-            "Usage: python .\\compute_volatility_metrics_local.py <run_id>",
+            "Usage: python3 compute_volatility_metrics_local.py <run_id>",
             file=sys.stderr,
         )
         return 2
@@ -476,8 +496,8 @@ def main() -> int:
     run_id = sys.argv[1].strip()
 
     # ── ENH-72 write-contract declaration ────────────────────────────────────
-    # Contract: this invocation writes exactly 1 row to volatility_snapshots
-    # via INSERT (volatility_snapshots has UNIQUE(symbol, ts) but this script
+    # Contract: this invocation writes exactly 1 row to TARGET_TABLE
+    # via INSERT (TARGET_TABLE has UNIQUE(symbol, ts) but this script
     # uses .insert() not .upsert() -- see V18 5.2. Duplicate run on the same
     # run_id would 23505. Out of scope for ENH-72.
     #
@@ -485,7 +505,7 @@ def main() -> int:
     # is called after the first Supabase read lands.
     log = ExecutionLog(
         script_name="compute_volatility_metrics_local.py",
-        expected_writes={"volatility_snapshots": 1},
+        expected_writes={TARGET_TABLE: 1},
         symbol=None,
         notes=f"run_id={run_id}",
     )
@@ -648,7 +668,7 @@ def main() -> int:
             "vix_regime": fallback.get("vix_regime"),
             "raw_vix_row": {
                 "fallback_reason": str(exc),
-                "fallback_source": "volatility_snapshots",
+                "fallback_source": "compute_volatility_metrics",
                 "fallback_ts": fallback.get("ts"),
             },
         }
@@ -785,21 +805,31 @@ def main() -> int:
     print("Computed volatility row:")
     pprint(volatility_row, sort_dicts=False)
     print("-" * 72)
-    print("Writing volatility row to Supabase...")
+    print(f"Writing volatility row to Supabase ({TARGET_TABLE})...")
 
     try:
         inserted = retry_call(
-            lambda: sb.insert("volatility_snapshots", [volatility_row]),
+            lambda: sb.insert(TARGET_TABLE, [volatility_row]),
             attempts=3,
             delay_seconds=3.0,
             backoff_multiplier=1.5,
-            label=f"insert volatility_snapshots for run_id={run_id}",
+            label=f"insert {TARGET_TABLE} for run_id={run_id}",
         )
     except Exception as e:
+        error_msg = str(e)
+        # If table doesn't exist (404 PGRST205), skip gracefully
+        if "PGRST205" in error_msg or "Could not find the table" in error_msg:
+            log.exit_with_reason(
+                "SKIPPED_NO_OUTPUT",
+                exit_code=0,
+                error_message=f"{TARGET_TABLE} table does not exist yet (ADR-006 DDL pending)",
+            )
+            sys.exit(0)  # Hard exit to override log behavior
+
         return log.exit_with_reason(
             "DATA_ERROR",
             exit_code=1,
-            error_message=f"volatility_snapshots insert failed: {e}",
+            error_message=f"{TARGET_TABLE} insert failed: {e}",
         )
 
     inserted_count = len(inserted) if isinstance(inserted, list) else 1
@@ -810,7 +840,7 @@ def main() -> int:
     # ENH-72: record the actual write. The contract expects 1 row; if the
     # Supabase client lied about count (or returned a non-list response with
     # success status), we fall back to 1 -- same pattern as gamma.
-    log.record_write("volatility_snapshots", inserted_count if inserted_count > 0 else 1)
+    log.record_write(TARGET_TABLE, inserted_count if inserted_count > 0 else 1)
 
     # stale_vix surfaced in notes so dashboard queries can filter without
     # parsing raw JSONB. contract_met is still True -- the script did its

@@ -809,7 +809,7 @@ def main() -> int:
 
     try:
         inserted = retry_call(
-            lambda: sb.insert(TARGET_TABLE, [volatility_row]),
+            lambda: sb.upsert(TARGET_TABLE, [volatility_row], on_conflict="symbol,ts"),
             attempts=3,
             delay_seconds=3.0,
             backoff_multiplier=1.5,

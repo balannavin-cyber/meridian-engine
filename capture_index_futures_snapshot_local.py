@@ -47,7 +47,7 @@ REQUEST_TIMEOUT_SECONDS = 30
 MAX_RETRIES = 4
 INITIAL_BACKOFF_SECONDS = 2.0
 
-DEBUG_DIR = Path(r"C:\GammaEnginePython\debug_outputs")
+DEBUG_DIR = Path(__file__).resolve().parent / "debug_outputs"
 DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
 # One authoritative symbol map for futures capture.
@@ -243,14 +243,14 @@ def write_debug_payload(payload: Dict[str, Any]) -> None:
     path = DEBUG_DIR / "index_futures_ltp_payload.json"
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
-    print(f"[DEBUG] Wrote payload to {path.relative_to(Path(r'C:\GammaEnginePython'))}")
+    print(f"[DEBUG] Wrote payload to {path}")
 
 
 def write_debug_contracts(resolved_contracts: List[Dict[str, Any]]) -> None:
     path = DEBUG_DIR / "resolved_index_futures_contracts.json"
     with open(path, "w", encoding="utf-8") as f:
         json.dump(resolved_contracts, f, indent=2)
-    print(f"[DEBUG] Wrote contracts to {path.relative_to(Path(r'C:\GammaEnginePython'))}")
+    print(f"[DEBUG] Wrote contracts to {path}")
 
 
 def build_dhan_payload(resolved_contracts: List[Dict[str, Any]]) -> Dict[str, List[int]]:

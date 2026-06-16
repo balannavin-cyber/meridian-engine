@@ -348,7 +348,7 @@ def fetch_recent_volatility_rows(sb: SupabaseClient, symbol: str) -> List[Dict[s
     try:
         rows = retry_call(
             lambda: sb.select(
-                table="compute_volatility_metrics",
+                table="volatility_snapshots",
                 filters={"symbol": f"eq.{symbol}"},
                 order="ts.desc",
                 limit=500,
@@ -356,7 +356,7 @@ def fetch_recent_volatility_rows(sb: SupabaseClient, symbol: str) -> List[Dict[s
             attempts=1,
             delay_seconds=2.0,
             backoff_multiplier=1.5,
-            label=f"select compute_volatility_metrics for {symbol}",
+            label=f"select volatility_snapshots for {symbol}",
         )
         return rows or []
     except Exception:
@@ -451,7 +451,7 @@ def fetch_last_valid_vix_snapshot(sb: SupabaseClient, symbol: str) -> Optional[D
     # TD-NEW-12: Read from PRODUCTION table always, even if writing to shadow.
     rows = retry_call(
         lambda: sb.select(
-            table="compute_volatility_metrics",
+            table="volatility_snapshots",
             filters={"symbol": f"eq.{symbol}", "india_vix": "not.is.null"},
             order="ts.desc",
             limit=1,
@@ -459,7 +459,7 @@ def fetch_last_valid_vix_snapshot(sb: SupabaseClient, symbol: str) -> Optional[D
         attempts=3,
         delay_seconds=2.0,
         backoff_multiplier=1.5,
-        label=f"fallback select compute_volatility_metrics for {symbol}",
+        label=f"fallback select volatility_snapshots for {symbol}",
     )
     if rows:
         return rows[0]
@@ -668,7 +668,7 @@ def main() -> int:
             "vix_regime": fallback.get("vix_regime"),
             "raw_vix_row": {
                 "fallback_reason": str(exc),
-                "fallback_source": "compute_volatility_metrics",
+                "fallback_source": "volatility_snapshots",
                 "fallback_ts": fallback.get("ts"),
             },
         }

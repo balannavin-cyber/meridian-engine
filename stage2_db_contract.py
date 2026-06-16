@@ -164,17 +164,23 @@ def check_market_state_snapshots_uniqueness():
 
 def check_trading_calendar_today():
     today = datetime.date.today().isoformat()
-    rows, err = _sb_table_get("trading_calendar", f"trade_date=eq.{today}&select=trade_date,is_open")
+    rows, err = _sb_table_get("trading_calendar", f"trade_date=eq.{today}&select=trade_date,is_open,open_time")
     if err:
         return FAIL, f"Could not query trading_calendar: {err}"
     if not rows:
         return FAIL, (f"V18A-03: No trading_calendar row for today ({today}). "
                       f"ALL calendar-gated scripts will treat today as a holiday and skip. "
-                      f"INSERT a row immediately: INSERT INTO trading_calendar (trade_date, is_open) "
-                      f"VALUES ('{today}', true/false);")
+                      f"Run the seeder: python3 seed_trading_calendar.py")
     row = rows[0]
     is_open = row.get("is_open")
-    return PASS, f"trading_calendar row exists for {today}. is_open={is_open}"
+    open_time = row.get("open_time")
+    # Align with the capture gate: a row that exists but lacks open_time is a
+    # false-green -- preflight would pass while capture still skips the day.
+    if is_open and not open_time:
+        return FAIL, (f"V18A-03: trading_calendar row for {today} has open_time NULL. "
+                      f"The capture gate requires open_time IS NOT NULL, so capture will skip. "
+                      f"Run the seeder: python3 seed_trading_calendar.py")
+    return PASS, f"trading_calendar row exists for {today}. is_open={is_open}, open_time={open_time}"
 
 def check_trading_calendar_week_ahead():
     """

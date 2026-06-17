@@ -162,19 +162,16 @@ def fetch_latest_spot(symbol: str) -> float:
 
 def load_candidate_contract_rows(symbol: str) -> List[Dict[str, Any]]:
     today = today_iso_local()
-    aliases = FUTURES_SYMBOLS[symbol]["aliases"]
-
     all_rows: List[Dict[str, Any]] = []
-
-    for alias in aliases:
+    if True:  # exact UNDERLYING_SYMBOL match: one query per symbol, no alias loop
         rows = supabase_get(
             "dhan_scripmaster",
             {
                 "select": (
-                    '"SECURITY_ID","DISPLAY_NAME","INSTRUMENT_TYPE","SM_EXPIRY_DATE","SEGMENT","EXCH_ID"'
-                ),
-                '"DISPLAY_NAME"': f"ilike.*{alias}*",
-                '"INSTRUMENT_TYPE"': "ilike.*FUT*",
+                    '"SECURITY_ID","DISPLAY_NAME","INSTRUMENT","INSTRUMENT_TYPE","UNDERLYING_SYMBOL","SM_EXPIRY_DATE","SEGMENT","EXCH_ID"'
+                ),  # [S56-RESOLVER-EXACT-UNDERLYING]
+                '"UNDERLYING_SYMBOL"': f"eq.{symbol}",
+                '"INSTRUMENT"': "eq.FUTIDX",
                 '"SM_EXPIRY_DATE"': f"gte.{today}",
                 "order": '"SM_EXPIRY_DATE".asc',
                 "limit": "20",
@@ -186,20 +183,13 @@ def load_candidate_contract_rows(symbol: str) -> List[Dict[str, Any]]:
 
 
 def is_valid_contract_match(symbol: str, row: Dict[str, Any]) -> bool:
-    display_name = str(row.get("DISPLAY_NAME") or "").upper()
-    instrument_type = str(row.get("INSTRUMENT_TYPE") or "").upper()
-
-    if "FUT" not in instrument_type:
+    # [S56-RESOLVER-EXACT-UNDERLYING] exact UNDERLYING_SYMBOL + INSTRUMENT
+    underlying = str(row.get("UNDERLYING_SYMBOL") or "").upper()
+    instrument = str(row.get("INSTRUMENT") or "").upper()
+    if underlying != symbol.upper():
         return False
-
-    aliases = [a.upper() for a in FUTURES_SYMBOLS[symbol]["aliases"]]
-    if not any(alias in display_name for alias in aliases):
+    if instrument != "FUTIDX":
         return False
-
-    reject_terms = [x.upper() for x in FUTURES_SYMBOLS[symbol]["reject_if_display_contains"]]
-    if any(term in display_name for term in reject_terms):
-        return False
-
     return True
 
 

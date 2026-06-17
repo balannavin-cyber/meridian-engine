@@ -30,7 +30,9 @@ NEW_QUERY = """                "select": (
                 "limit": "20","""
 
 OLD_LOADER = '''    aliases = FUTURES_SYMBOLS[symbol]["aliases"]
+
     all_rows: List[Dict[str, Any]] = []
+
     for alias in aliases:
         rows = supabase_get(
             "dhan_scripmaster",

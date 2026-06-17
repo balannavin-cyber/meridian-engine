@@ -5,6 +5,7 @@ Repoint futures contract resolution from fragile DISPLAY_NAME substring + alias/
 blocklist to EXACT UNDERLYING_SYMBOL match. Fixes NIFTY -> NIFTYNXT50 misresolution.
 Canon-v3: read_bytes/decode utf-8-sig, EOL detect, ast.parse, _PRE_S56 backup,
 idempotency marker, dry-run default (--apply to write).
+Validator edit uses def-boundary line scan (robust to internal blank-line drift).
 """
 import argparse, ast, os, sys, datetime
 
@@ -44,20 +45,7 @@ NEW_LOADER = '''    all_rows: List[Dict[str, Any]] = []
             "dhan_scripmaster",
             {'''
 
-OLD_VALIDATOR = '''def is_valid_contract_match(symbol: str, row: Dict[str, Any]) -> bool:
-    display_name = str(row.get("DISPLAY_NAME") or "").upper()
-    instrument_type = str(row.get("INSTRUMENT_TYPE") or "").upper()
-    if "FUT" not in instrument_type:
-        return False
-    aliases = [a.upper() for a in FUTURES_SYMBOLS[symbol]["aliases"]]
-    if not any(alias in display_name for alias in aliases):
-        return False
-    reject_terms = [x.upper() for x in FUTURES_SYMBOLS[symbol]["reject_if_display_contains"]]
-    if any(term in display_name for term in reject_terms):
-        return False
-    return True'''
-
-NEW_VALIDATOR = '''def is_valid_contract_match(symbol: str, row: Dict[str, Any]) -> bool:
+NEW_VALIDATOR_BODY = '''def is_valid_contract_match(symbol: str, row: Dict[str, Any]) -> bool:
     # [S56-RESOLVER-EXACT-UNDERLYING] exact UNDERLYING_SYMBOL + INSTRUMENT
     underlying = str(row.get("UNDERLYING_SYMBOL") or "").upper()
     instrument = str(row.get("INSTRUMENT") or "").upper()
@@ -65,13 +53,44 @@ NEW_VALIDATOR = '''def is_valid_contract_match(symbol: str, row: Dict[str, Any])
         return False
     if instrument != "FUTIDX":
         return False
-    return True'''
+    return True
+'''
 
 
 def detect_eol(b):
     crlf = b.count(b"\r\n")
     lf = b.count(b"\n") - crlf
     return "\r\n" if crlf > lf else "\n"
+
+
+def replace_validator(text):
+    lines = text.split("\n")
+    start = None
+    for i, ln in enumerate(lines):
+        if ln.startswith("def is_valid_contract_match("):
+            start = i
+            break
+    if start is None:
+        return text, 0
+    end = None
+    for j in range(start + 1, len(lines)):
+        if lines[j].startswith("def "):
+            end = j
+            break
+    if end is None:
+        return text, 0
+    # preserve the blank lines that sit between this def and the next def
+    trailing = []
+    k = end - 1
+    while k > start and lines[k].strip() == "":
+        trailing.insert(0, lines[k])
+        k -= 1
+    new_block = NEW_VALIDATOR_BODY.split("\n")
+    # NEW_VALIDATOR_BODY ends with a trailing newline -> last elem is ""
+    if new_block and new_block[-1] == "":
+        new_block = new_block[:-1]
+    rebuilt = lines[:start] + new_block + trailing + lines[end:]
+    return "\n".join(rebuilt), 1
 
 
 def main():
@@ -91,19 +110,20 @@ def main():
         print("[SKIP] marker present; already patched. No change.")
         return 0
 
-    edits = [
-        ("query filter", OLD_QUERY, NEW_QUERY),
-        ("loader alias loop", OLD_LOADER, NEW_LOADER),
-        ("validator", OLD_VALIDATOR, NEW_VALIDATOR),
-    ]
     new_text = text
-    for name, old, new in edits:
+    for name, old, new in [("query filter", OLD_QUERY, NEW_QUERY), ("loader alias loop", OLD_LOADER, NEW_LOADER)]:
         n = new_text.count(old)
         if n != 1:
             print("[ERROR] block '" + name + "' matched " + str(n) + " times (need 1). Abort, no write.")
             return 1
         new_text = new_text.replace(old, new)
         print("[OK] matched + staged: " + name)
+
+    new_text, vok = replace_validator(new_text)
+    if vok != 1:
+        print("[ERROR] validator def-boundary not found. Abort, no write.")
+        return 1
+    print("[OK] matched + staged: validator (def-boundary)")
 
     try:
         ast.parse(new_text)
@@ -113,7 +133,7 @@ def main():
     print("[OK] ast.parse clean")
 
     if not args.apply:
-        print("[DRY-RUN] 3/3 blocks matched, AST valid. No write. Re-run with --apply.")
+        print("[DRY-RUN] 3/3 edits applied, AST valid. No write. Re-run with --apply.")
         return 0
 
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -121,8 +141,7 @@ def main():
     open(backup, "wb").write(raw)
     print("[BACKUP] " + backup)
 
-    out_bytes = new_text.encode("utf-8")
-    open(TARGET, "wb").write(out_bytes)
+    open(TARGET, "wb").write(new_text.encode("utf-8"))
     print("[WROTE] " + TARGET)
     return 0
 

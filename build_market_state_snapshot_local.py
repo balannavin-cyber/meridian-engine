@@ -114,6 +114,45 @@ def fetch_wcb_row(client: SupabaseRestClient, symbol: str) -> Optional[Dict[str,
     except Exception:
         return None
 
+def _apply_recency_floor(row, table_label, floor_env_var, default_floor_min):
+    """ADR-018 D2 / TD-S57-NEW-2 (closes TD-081): treat a latest row older than a
+    recency floor as ABSENT so a silently-stopped upstream self-flags STALE rather
+    than serving a stale value indefinitely. Returns (row_or_None, stale_bool).
+    ts is true-UTC for all current rows (post-2026-04-07; CLAUDE Rule 20).
+    Fails OPEN + loud on a missing/unparseable ts (a format mismatch should spam
+    the log, not silently darken breadth)."""
+    import os
+    import sys as _sys
+    from datetime import datetime, timezone
+    if not row:
+        return row, False
+    ts_raw = row.get("ts")
+    if not ts_raw:
+        print("[recency-floor] %s: row has no 'ts'; cannot age-check, passing through"
+              % table_label, file=_sys.stderr, flush=True)
+        return row, False
+    try:
+        s = str(ts_raw).strip().replace("Z", "+00:00")
+        row_ts = datetime.fromisoformat(s)
+        if row_ts.tzinfo is None:
+            row_ts = row_ts.replace(tzinfo=timezone.utc)
+    except Exception:
+        print("[recency-floor] %s: unparseable ts=%r; passing through"
+              % (table_label, ts_raw), file=_sys.stderr, flush=True)
+        return row, False
+    try:
+        floor_min = float(os.getenv(floor_env_var, str(default_floor_min)))
+    except (TypeError, ValueError):
+        floor_min = float(default_floor_min)
+    age_min = (datetime.now(timezone.utc) - row_ts).total_seconds() / 60.0
+    if age_min > floor_min:
+        print("[recency-floor] STALE %s: latest row age %.1fmin > floor %.0fmin "
+              "-> treating as ABSENT (ADR-018 D2 / TD-S57-NEW-2)"
+              % (table_label, age_min, floor_min), file=_sys.stderr, flush=True)
+        return None, True
+    return row, False
+
+
 
 def to_float(value: Any) -> Optional[float]:
     if value is None:
@@ -343,7 +382,18 @@ def main() -> int:
         # Fallback to underlying table when the VIEW is empty/stale (C-08).
         breadth_row = fetch_global_row(client, "market_breadth_intraday")
 
+    # ADR-018 D2 / TD-S57-NEW-2 (closes TD-081): null a stale breadth row so the
+    # degraded-input path fires instead of serving a silently-dead feed's last row.
+    breadth_row, breadth_stale_floored = _apply_recency_floor(
+        breadth_row, "market_breadth_intraday",
+        "MERDIAN_BREADTH_RECENCY_FLOOR_MIN", 15)
+
     wcb_row = fetch_wcb_row(client, symbol)
+
+    # ADR-018 D2 / TD-S57-NEW-2: same recency floor on the per-symbol WCB read.
+    wcb_row, wcb_stale_floored = _apply_recency_floor(
+        wcb_row, "weighted_constituent_breadth_snapshots",
+        "MERDIAN_WCB_RECENCY_FLOOR_MIN", 20)
 
     # Detect degraded-input conditions for completion notes. None of these
     # downgrade contract_met -- the contract is "1 row written to
@@ -382,6 +432,8 @@ def main() -> int:
             "volatility_source_table": "volatility_snapshots" if volatility_row else None,
             "momentum_source_table": "momentum_snapshots" if momentum_row else None,
             "wcb_source_table": "weighted_constituent_breadth_snapshots" if wcb_row else None,
+            "breadth_stale_floored": breadth_stale_floored,
+            "wcb_stale_floored": wcb_stale_floored,
             "d06_flip_distance_policy": {
                 "canonical_field": "flip_distance_pct",
                 "secondary_debug_field": "flip_distance_points",

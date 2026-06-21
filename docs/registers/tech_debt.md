@@ -57,6 +57,159 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S57-NEW-1 (S2 priority) — enable/cut over the S56-built `systemd` units onto MALPHA (ADR-018 D1)
+
+| Field | Value |
+|---|---|
+| **Severity** | S2 |
+| **Filed** | 2026-06-19 (Session 57) |
+| **Component** | `ws_feed_zerodha.py` + the S56 `deploy/systemd/` units (5) + wsfeed preflight + wsfeed alert (commits `afe8112`/`30cca59`/`b627914`); canonical host = MALPHA; WCB cron entry |
+| **Symptom** | The supervision units exist (built+committed S56) but were never enabled — the feed ran unsupervised in a detached `screen` on AWS for 23 days holding an expired Zerodha token, 403-looping, with nothing to restart it or alarm. WCB cron arg defect compounds it. |
+| **Root cause** | S56 built the `systemd` units + preflight + alert for rebuild-safety but never cut the live feed over to them; the feed kept running unsupervised on AWS (TD-NEW-L) with no single-instance enforcement (TD-NEW-M) and the Zerodha session split across two hosts (feed on AWS, token on MALPHA). |
+| **Workaround** | Live feed restored in-session (manual screen restart); not durable. |
+| **Proper fix** | ADR-018 D1 — **enable/cut over the existing S56 `deploy/systemd/` units onto MALPHA** and verify (`Restart=on-failure` + single-instance + journald), one host owns the Zerodha session end-to-end; fix the WCB cron argument in the same pass. NOT a build — the units are authored and git-tracked; the gap is cutover + verify. Closes TD-NEW-L + TD-NEW-M; mitigates TD-NEW-K. |
+| **Cost to fix** | ~0.5 session (enable the existing units on MALPHA + cron fix + verify a clean restart + a forced-kill auto-recovery; no authoring). |
+| **Blocked by** | Nothing. |
+| **Related** | ADR-018 (D1), TD-S48-NEW-1 (the outage this prevents recurring), TD-NEW-K/L/M (S29), TD-S57-NEW-2 (D2 reader guard). |
+
+### TD-S57-NEW-2 (S2 priority) — breadth/divergence readers have no recency floor; a dead feed reads as "working" (ADR-018 D2)
+
+| Field | Value |
+|---|---|
+| **Severity** | S2 |
+| **Filed** | 2026-06-19 (Session 57) |
+| **Component** | every reader of `market_breadth_intraday` / `weighted_constituent_breadth_snapshots` / (future) `structural_divergence_snapshots` — the `fetch_latest_row` no-recency-floor path |
+| **Symptom** | `fetch_latest_row` serves the last good row indefinitely with no staleness check — the reason a 23-day-dead breadth feed read as healthy. |
+| **Root cause** | No recency floor on the latest-row fetch; a silent upstream stop is invisible to consumers. |
+| **Workaround** | None — silent by construction. |
+| **Proper fix** | ADR-018 D2 — apply a recency floor on `fetch_latest_row` for every breadth/divergence reader so an upstream stop self-flags STALE within one cycle. MANDATORY; hard precondition for ENH-SDM shipping. |
+| **Cost to fix** | ~0.5 session (one guard helper, applied at each reader site). |
+| **Blocked by** | Nothing. |
+| **Related** | ADR-018 (D2), TD-S57-NEW-1 (D1), ENH-SDM (consumer that requires this guard). |
+
+### TD-S55-NEW-1 (S2 priority) — volatility compute read-path queried dead table compute_volatility_metrics (S48 fixed the write, left the reads)
+
+| Field | Value |
+|---|---|
+| **Severity** | S2 |
+| **Filed / Closed** | 2026-06-17 (Session 55) — CLOSED same session, commit e6fba1b |
+| **Component** | compute_volatility_metrics_local.py — fetch_recent_volatility_rows (L351), fetch_last_valid_vix_snapshot (L454), provenance label (L671) |
+| **Symptom** | Every cycle both reads 404 (PGRST205) on table compute_volatility_metrics; graceful handler returns [] so the script exits OK and still inserts — but every volatility row written with EMPTY intraday-change context (5m/15m/30m VIX deltas, velocity, slope) and a non-functional stale-VIX fallback. |
+| **Root cause** | S48 corrected the WRITE path (TARGET_TABLE) but left two hardcoded READ references + one provenance label pointing at the dead pre-ADR-006 table name. Masked by the IV=0 / 404 graceful fallback. |
+| **Fix** | Canon-v3 patch repointed both reads + two log labels + provenance to production volatility_snapshots (reads stay on prod per TD-NEW-12). Post-fix: no 404, history_source_rows=1000 both symbols. |
+| **Caveat** | Pre-fix volatility rows carry blank intraday-change context — not backfillable from live VIX; forward-only correctness. Note in any research consuming those fields. |
+| **Blocked by** | Nothing — closed. |
+
+### TD-S54-NEW-1 (S1 priority) — SENSEX compute (volatility/gamma/market_state) silently under-writes ~½ of cycles
+> **RESOLVED (code) Session 55 (2026-06-17), commit 1889604.** Structural root cause in run_merdian_shadow_runner_aws.py: fetch_latest_run_id() returned ONE run_id/cycle (limit=1) but a run_id maps to a SINGLE symbol ingest; gamma+volatility infer symbol from the chain, so each cycle computed only whichever symbol ingest landed last (exit 0, logged OK). Proof: 44+23=67, approx 68 cycles/day. Fix: per-symbol run_id resolution (fetch_latest_run_ids); gamma+volatility run once per symbol. gamma read path verified clean. DATA verification pending: 2026-06-17 is first full day on fixed code; confirm at EOD SENSEX distinct-ts approx NIFTY approx 68 before final close.
+
+| Field | Value |
+|---|---|
+| **Severity** | S1 |
+| **Filed** | 2026-06-16 (Session 54) |
+| **Component** | compute_volatility_metrics_local.py (+ gamma/market_state writers; identical row counts) and the orchestrator per-symbol loop in run_merdian_shadow_runner_aws.py |
+| **Symptom** | On 2026-06-15 (first full post-fix day) volatility_snapshots / gamma_metrics / market_state_snapshots each held NIFTY 44 / SENSEX 23 distinct-ts despite BOTH symbols capturing 68 distinct option_chain ts/hr. Hour-08 probe: 12 orchestrator cycles ALL log `compute_volatility_metrics OK` with advancing ts, but volatility_snapshots hour-08 = NIFTY 11 / SENSEX 1; SENSEX option_chain hour-08 = 12 distinct clean ts (capture fine). |
+| **Diagnostics done** | Ruled out (SQL): capture (SENSEX chain has 12 distinct clean ts/hr); morning-only fix-window damage (deficit spread across all hours); non-advancing-ts/upsert-merge collapse (the single surviving SENSEX hour-08 row carried a CORRECT mid-hour ts 08:35:07 matching its chain ts, and total_rows == distinct_ts for both symbols). Four SQL hypotheses each falsified by the next probe — SQL has reached its limit. |
+| **Root cause** | UNKNOWN — in CODE, not data. SENSEX compute writes are LOST silently within cycles the pipeline logs as COMPLETE. Candidate mechanisms: a shared run_id / variable where the NIFTY pass overwrites the SENSEX pass within one cycle, or a conditional that skips the SENSEX write. Echoes the S48 "SENSEX gamma not updating" pattern. |
+| **Unmasked by** | The S53 volatility insert→upsert (on_conflict=symbol,ts) correctly stopped the 409 crashes, but for SENSEX it converted a loud failure into a silent merge — turning a pre-existing defect into a quiet row deficit instead of a crash. The fix is still correct (NIFTY benefits, no crashes); it just exposed this. |
+| **Workaround** | None. NIFTY compute is unaffected; SENSEX intraday compute coverage is ~½ density. Read SENSEX spot truth from market_spot_snapshots (capture is clean). |
+| **Proper fix** | Code trace next session: read the SENSEX write path in compute_volatility_metrics_local.py and the orchestrator's per-symbol loop; instrument the SENSEX write with run_id + symbol + ts logging; confirm whether SENSEX writes occur-then-overwrite or are conditionally skipped; fix the loop/variable. Then re-run a single-day recompute and confirm SENSEX distinct-ts ≈ NIFTY ≈ ~68. |
+| **Cost to fix** | 1 session (focused code trace + fix + single-day recompute verification) |
+| **Blocked by** | Nothing |
+
+### TD-S54-NEW-2 (S3 priority) — Marketview headline SPOT reads coarse option_chain_snapshots.spot, lags the fresh 1-min spot table
+
+| Field | Value |
+|---|---|
+| **Severity** | S3 |
+| **Filed** | 2026-06-16 (Session 54) |
+| **Component** | merdian_live_dashboard.py:369 (Marketview / meridian-connect, Lovable) |
+| **Symptom** | Marketview headline SPOT froze / lagged (e.g. showed 23,957.4 from a 03:55 chain row while real spot was 23,940 and the 1-min table 23,943.9 at 04:07). Pre-open it briefly showed a junk value (24,261) from a stale pre-gate chain spot. |
+| **Root cause** | Line 369 reads headline spot from `option_chain_snapshots.spot` (the spot embedded at last chain-fetch — coarse, ingest-cadence-lagged) while the intraday chart reads fresh 1-min `market_spot_snapshots`. Two display sources at two freshnesses. DB is correct throughout; this is a frontend source-choice inconsistency, not a data bug. |
+| **Workaround** | NEW-4 (`*/5` ingest) shrank the lag from ~30 min worst-case to ≤5 min by keeping option_chain_snapshots fresh. Read true spot from market_spot_snapshots / TV for live decisions. |
+| **Proper fix** | Point the headline-spot read at `market_spot_snapshots` (1-min). The strike grid may keep the chain's spot (it is the spot GEX was computed against — correct there); only the big headline number should switch. Marketview/Lovable frontend deploy; batch with the /health status.json wiring pass. |
+| **Cost to fix** | Small (one frontend line + Lovable→GitHub→AWS deploy); batch with other Marketview frontend work |
+| **Blocked by** | Nothing (frontend deploy) |
+
+### TD-S54-NEW-3 (S2 priority) — postmarket 16:00 IST capture (capture_postmarket_1600.py) failing daily
+> **RESOLVED Session 55 (2026-06-17), commit 5b92433.** Wrapper logged only result.stderr so empty-stderr child failures produced a blank reason; rewritten to always emit exit code + stderr + stdout tail. Real failure was the futures SyntaxError (NEW-6) cascading the prerequisite gate (same root cause). Fully closes when NEW-6 contract-resolution lands.
+
+| Field | Value |
+|---|---|
+| **Severity** | S2 |
+| **Filed** | 2026-06-16 (Session 54) |
+| **Component** | capture_postmarket_1600.py (AWS cron, 16:00 IST) |
+| **Symptom** | Has FAILED daily since ≥2026-05-19; error reason blank since 2026-06-10. Ran on 2026-06-15 but still failed. |
+| **Root cause** | Unknown — long-standing, predates the S53 blackout; surfaced during the S54 audit as a separate standing failure. Blank error reason suggests a swallowed exception or a logging gap on the failure path. |
+| **Workaround** | Postmarket snapshot not captured at 16:00; downstream consumers of the postmarket row are stale for that window. |
+| **Proper fix** | Read the failure path; restore a non-blank exit_reason; diagnose the actual exception; fix. Likely independent of the cron/compute issues. |
+| **Cost to fix** | 1 session (diagnose + fix + verify next postmarket run) |
+| **Blocked by** | Nothing |
+
+### TD-S54-NEW-4 (S3 priority) — preflight false-green: V18A-03 checks calendar-row-exists but not open_time IS NOT NULL
+> **RESOLVED Session 55 (2026-06-17), commits eb052d0 + c2910e8.** Seeder half: built seed_trading_calendar.py (rule-engine-driven, full-schema idempotent upsert, skips weekends/holidays), cron 02:30 UTC daily; manual insert retired. Preflight half: V18A-03 now selects open_time and gates PASS on open_time present (FAIL points at seeder); stage-2 8/0/0/0 PASS, LIVE CANARY ALLOWED.
+
+| Field | Value |
+|---|---|
+| **Severity** | S3 |
+| **Filed** | 2026-06-16 (Session 54) |
+| **Component** | run_preflight.py (V18A-03 check) + the trading_calendar seeder |
+| **Symptom** | On 2026-06-15 a manually-inserted trading_calendar row passed preflight stage2 but capture still skipped because the holiday gate requires open_time IS NOT NULL and the row had open_time NULL. Preflight reported green on a state that the capture gate rejected. |
+| **Root cause** | V18A-03 checks only that a calendar row exists, not that open_time is populated; and the calendar seeder doesn't pre-populate open_time ahead of the trading day. The two gates disagree on what 'ready' means. |
+| **Workaround** | After inserting/seeding a calendar row, also `UPDATE trading_calendar SET open_time='09:15:00'` for the day; verify capture gate opens, not just preflight. |
+| **Proper fix** | (a) extend V18A-03 to require open_time IS NOT NULL (align preflight with the capture gate); and (b) have the calendar seeder pre-populate open_time so the manual step is unnecessary. |
+| **Cost to fix** | Small (one preflight check + seeder tweak) |
+| **Blocked by** | Nothing |
+
+### TD-S53-NEW-5 (S2 priority) — S52 observability monitors report false state (both directions) + watchdog shares the patient's failure chain
+> **UPDATED Session 55 (2026-06-17); env-independence half ALREADY satisfied, 2 logic bugs remain, OPEN.** All monitors load env via load_dotenv() (absolute-path), NOT the source .env chain. Remaining: (a) 999-on-empty clamp in refresh_health_dashboard.py get_minutes_old (returns 999 on any exception incl empty ts, false STALE); (b) monitor_orchestrator_health.py + refresh_health_dashboard.py query a script_execution_log row the orchestrator NEVER writes, permanent false no-orchestrator. A/B (decide rested): (A) self-instrument orchestrator with per-cycle ExecutionLog row (schema-safe, duration_ms=bigint) vs (B) repoint monitors at volatility_snapshots.ts. Fold Dhan-token 26h staleness monitor here.
+
+| Field | Value |
+|---|---|
+| **Severity** | S2 |
+| **Filed** | 2026-06-12 (Session 53) |
+| **Component** | refresh_health_dashboard.py (999 age-clamp), monitor_orchestrator_health.py (false-negative orchestrator check), all four S52 monitors (shared `source .env` chain) |
+| **Symptom** | Monitors report unreliable state in both directions: refresh_health_dashboard.py clamps age to 999 and reports STALE on tables that are actually fresh; monitor_orchestrator_health.py reports 'no orchestrator in last 5 min' (false-negative) after a confirmed run. Architecturally, all four monitors load env via the same `cd … && source .env` chain as the capture layer, so in S53 they died together with what they were supposed to watch (watchdog + patient). |
+| **Root cause** | 999 age-clamp logic + an over-strict/incorrect freshness window in the orchestrator check; plus a design flaw — monitors must not share the env-loading failure chain of the systems they monitor. |
+| **Workaround** | Do NOT trust the monitor labels — verify health via cron.log + Supabase row freshness directly. (The S53 SHELL fix resurrected the monitors, but their false-state logic is unfixed.) |
+| **Proper fix** | Fix the 999 age-clamp and the orchestrator-freshness window; re-architect monitor env-loading to be independent of the `source .env` chain they watch (e.g. bash-shebang self-sourcing or absolute-path env injection). |
+| **Cost to fix** | 1 session (monitor logic fixes + watchdog independence) |
+| **Blocked by** | Nothing |
+
+### TD-S53-NEW-6 (S2 priority) — futures capture script SyntaxError (Windows-path backslash in f-string) keeps futures dark on AWS
+> **PARSE-FIXED Session 55 (2026-06-17), commit 66f8252; futures still DARK pending scripmaster reload.** Three Windows-path sites (L50 DEBUG_DIR + L246/L253 relative_to f-strings); canon-v3 patch repointed DEBUG_DIR to script-dir + mkdir, dropped both relative_to calls. Futures now PARSES + RUNS on AWS (EC2 Python <=3.11). NEW open sub-issue: contract resolution fails, dhan_scripmaster STALE (no June index futures; latest NIFTY/SENSEX expiry 2026-05-26/27); resolver correct; reload_dhan_scripmaster_from_csv.py is a non-atomic delete-then-reload from a LOCAL Windows CSV with interactive prompt, never ported to AWS. Next session: port loader, reload, verify June contracts, uncomment 2 futures cron lines. Futures cron stays COMMENTED.
+
+| Field | Value |
+|---|---|
+| **Severity** | S2 |
+| **Filed** | 2026-06-12 (Session 53) |
+| **Component** | capture_index_futures_snapshot_local.py (lines 246 + 253) |
+| **Symptom** | Hard SyntaxError: `path.relative_to(Path(r'C:\GammaEnginePython'))` — a backslash inside an f-string expression plus a Windows path reference; the script has never run on AWS. Its two cron lines were commented out in S53 so futures capture is DARK. |
+| **Root cause** | Backslash inside an f-string expression (illegal pre-3.12) + a hardcoded Windows path that has no meaning on the Linux AWS host. |
+| **Workaround** | Two futures cron lines remain commented — index_futures_snapshots is intentionally empty/dark; this is the one known capture gap, by design, pending the fix. |
+| **Proper fix** | Drop the `relative_to(Path(r'C:\...'))` Windows-path reference; emit the path plainly (e.g. `print(f"...{path}")`). Deploy via Local→S3→EC2, then uncomment the two cron lines and verify a futures snapshot lands. |
+| **Cost to fix** | Small (one-file fix + deploy + uncomment 2 cron lines) |
+| **Blocked by** | Nothing |
+
+### TD-S48-NEW-1 — Breadth table `market_breadth_intraday` stale 4h+ despite orchestrator OK
+> **S57 (2026-06-19) — RE-DIAGNOSED → CLOSED-DECISION (implementation carries to S58).** The S55 contradiction is resolved: `ws_feed_zerodha.py` was NOT absent — it was running on **AWS** (not MALPHA as documented), since 06-11, in a detached `screen`, holding an **expired Zerodha token**, silently **403-looping**, writing zero-coverage rows into breadth_intraday_history while market_breadth_intraday + WCB stayed dead. That is why market_ticks read empty yet breadth "worked" through 06-11 (it was writing hollow rows, not real coverage). Remediated live: token refreshed on MALPHA → `kite.profile()`=`OK: Navin Balan OV0782` → stale AWS PID 259620 `kill -9` → clean restart (2213 instruments, Feed live, no 403s). Decision recorded as **ADR-018**: D1 feed under `systemd` on MALPHA (single host owns the Zerodha session) + WCB cron arg fix; D2 mandatory recency-floor guard on all breadth readers so a silent stop self-flags STALE. Diagnosis + decision CLOSE; the implementation (systemd unit + WCB cron + recency-floor) carries forward as TD-S57-NEW-1 + TD-S57-NEW-2, graded like NEW-6 (parse-fixed / resolution-open).
+> **RE-DIAGNOSED Session 55 (2026-06-17); original causal fields were WRONG, still OPEN.** NOT build_wcb_snapshot_local.py (that is a CONSUMER: reads latest_market_breadth_intraday, writes weighted_constituent_breadth_snapshots). Actual chain: ws_feed_zerodha.py (MALPHA) -> market_ticks -> ingest_breadth_from_ticks.py (AWS) -> breadth_intraday_history -> market_breadth_intraday. breadth_intraday_history nonzero-coverage through 06-11 then 0 from 06-12; consumer SKIPPED_NO_INPUT x2427 since 06-11; ws_feed_zerodha.py ABSENT from MALPHA filesystem (find / empty) though ZERODHA tokens present in .env. CONTRADICTION: market_ticks empty 06-09 onward yet breadth worked through 06-11, so the simple missing-feed chain does not fully reconcile. The one closing read next session: what does ingest_breadth_from_ticks.py SELECT as its tick source. Then restore feed under systemd (missing supervision is the lesson) + harden silent SKIPPED path (TD-NEW-C). No trading impact (regime context, ungated).
+
+| Field | Value |
+|---|---|
+| **Severity** | S2 |
+| **Filed** | 2026-06-10 (Session 48) |
+| **Component** | `build_wcb_snapshot_local.py` (AWS) writes to `market_breadth_intraday` |
+| **Symptom** | Table shows last_update=2026-06-10T05:25:39 IST (10:55 IST); current time 15:28 IST; 4h 32m stale. Orchestrator log shows `build_wcb_snapshot NIFTY OK` and `build_wcb_snapshot SENSEX OK` every 5-min boundary (most recent 09:45:51 UTC = 15:15 IST). Either write failing silently or UNIQUE constraint blocking inserts. |
+| **Root cause** | Unknown — requires investigation: (1) script compute succeeds but upsert fails silently, (2) UNIQUE(universe_id, ts) constraint collision if script tries to re-insert same timestamp, (3) table schema mismatch (no symbol column), or (4) Supabase connection issue during write. |
+| **Workaround** | Breadth displayed on dashboard shows stale state. WCB regime BEARISH and score -8.1 from 10:55 IST; no impact on current decisions (regime context only, not gated). Monitor for degradation if breadth>1h stale. |
+| **Proper fix** | (Phase 1) Check build_wcb_snapshot_local.py upsert call for silent failures (wrap in try-catch with error logging). (Phase 2) Verify Supabase connection/credentials during write. (Phase 3) Check if UNIQUE constraint exists and is colliding (select count DISTINCT(universe_id, ts) vs total row count). (Phase 4) Verify script actually computes new values or returns cached. |
+| **Cost to fix** | 1-2 sessions (investigation + logging + fix + verification) |
+| **Blocked by** | Nothing |
+| **Owner check-in** | 2026-06-10 (S48 filed) |
+
+---
+
 ### TD-S46-NEW-1 — Breeze backfill mechanism for futures/ATM/IV/VIX snapshots (addresses TD-NEW-14 30+ day gaps)
 
 | Field | Value |
@@ -123,6 +276,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 ---
 
 ### TD-S41-NEW-2 — Dhan token refresh suppressed across NSE holidays; cross-host single-point-of-failure where Local is sole refresh path
+> **DOWNGRADED S2->S3 Session 55 (2026-06-17).** AWS-primary Dhan token refresh confirmed WORKING: system_config.dhan_api_token refreshed 06-16 03:23 UTC (~20h fresh); consumers all read DHAN_API_TOKEN from .env, so the cron target refresh_dhan_token.py (the .env writer) is CORRECT (refresh_dhan_token_aws.py writes only Supabase and would starve them). Removed the redundant source .env from the token cron line (was the dash-killable blackout pattern; script self-loads via load_dotenv). Residual: optional >26h staleness monitor, fold into NEW-5.
 
 | Field | Value |
 |---|---|
@@ -428,6 +582,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 ---
 
 ### TD-S36-NEW-4 — `script_execution_log.duration_ms` is int4; orphan-recovery durations exceeding ~24 days overflow on PG write
+> **RESOLVED Session 55 (2026-06-17).** ALTER TABLE script_execution_log ALTER COLUMN duration_ms TYPE bigint (int4->int8 widening, non-destructive; confirmed bigint). Latent overflow removed; schema now safe for NEW-5 option-A orchestrator self-instrumentation.
 
 | | |
 |---|---|
@@ -771,6 +926,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 ---
 
 ### TD-NEW-H — `backfill_volatility_snapshots.py` NULL `expiry_date` schema violation produces 7 daily pre-market CRASHes
+> **SUPERSEDED Session 55 (2026-06-17).** Symptom (7 daily pre-market crashes) no longer exists: backfill_volatility_snapshots.py de-scheduled in the AWS migration (not in cron, no log or script_execution_log activity), and the script was rewritten to target volatility_snapshots with upsert(on_conflict=symbol,ts) and a _smallest_expiry resolver. It is a manual ENH-97 backfill tool, not a daily job. Re-verify only if reinstated.
 
 | | |
 |---|---|
@@ -2070,6 +2226,54 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 
 ## Resolved (audit trail)
 
+### TD-S53-NEW-4 — option-chain ingest :00–:29 hourly hole in hours 04–09 UTC — RESOLVED S54 via `*/5`
+
+| Field | Value |
+|---|---|
+| **Filed** | 2026-06-12 (Session 53) |
+| **Closed** | 2026-06-15 (Session 54) via crontab `*/5` |
+| **Severity** | S3 |
+| **Symptom** | Hours 04–09 UTC ingested only at minutes 30,35,40,45,50,55, leaving the :00–:29 half of every hour with no option-chain ingest — stale option_chain_snapshots feeding GEX/pin/headline-spot, and 409 collisions during the gap before the upsert landed. |
+| **Fix applied** | Changed the two 04–09 UTC ingest crontab lines' minute field from `30,35,40,45,50,55` → `*/5` (surgical minute-field-only edit; `bash run_ingest.sh NIFTY/SENSEX FULL` args untouched). Snapshot taken pre-edit; diff confirmed only the minute field moved on two lines. |
+| **Verification** | Live on 2026-06-15: `*/5` fires in the former dead zone (run_ids streaming 04:30–09:55, INGEST OPTION CHAIN COMPLETED 460/372 rows). 2026-06-15 audit: option_chain 68 distinct-min/symbol, dense `*/5` with no gaps after the mid-window flip remnant (04:00–04:25). |
+| **Residual** | Doubles Dhan option-chain calls 6→12/hr in 04–09 — watch cron.log for 429/401; if quota is tight, fall back to 10-min spacing (0,10,20,30,40,50). Tracked as a carry-forward watch item, not a TD. |
+
+### TD-S53-NEW-3 — compute_volatility_metrics_local.py lacked ON CONFLICT → 409 collisions during the ingest hole — RESOLVED via upsert
+
+| Field | Value |
+|---|---|
+| **Filed** | 2026-06-12 (Session 53) |
+| **Closed** | 2026-06-12 (Session 53) — commit cd98a87 |
+| **Severity** | S2 |
+| **Symptom** | Volatility writes used `sb.insert(...)` with no ON CONFLICT, so repeated (symbol, ts) within a window threw 409 / 23505 and failed those orchestrator cycles. |
+| **Fix applied** | `sb.insert(TARGET_TABLE,[row])` → `sb.upsert(TARGET_TABLE,[row], on_conflict="symbol,ts")`. core/supabase_client.py already had upsert (Prefer: resolution=merge-duplicates); the insert-not-upsert was punted 'out of scope for ENH-72', not deliberate. Deployed Local Notepad→commit cd98a87→EC2 `git checkout origin/main -- compute_volatility_metrics_local.py` (NOT full pull — dirty CRLF tree). |
+| **Verification** | Live: sb.upsert on disk, COMPILE OK, PIPELINE COMPLETE, no 23505. 2026-06-15 full day: 0 PIPELINE FAILED, upsert held. |
+| **Note** | Correct fix — but for SENSEX it converted a loud 409 into a silent merge, unmasking the pre-existing SENSEX compute under-write now tracked as TD-S54-NEW-1. |
+
+### TD-S53-NEW-2 — four run_ingest.sh crontab lines corrupted by the 00:47 UTC reinstall — RESOLVED S53
+
+| Field | Value |
+|---|---|
+| **Filed** | 2026-06-12 (Session 53) |
+| **Closed** | 2026-06-12 (Session 53) |
+| **Severity** | S1 |
+| **Symptom** | The 00:47 UTC 2026-06-12 crontab reinstall corrupted the four run_ingest.sh lines (command body lost) so option-chain ingest never ran. |
+| **Fix applied** | Reconstructed the 4 ingest lines to the working UNQUOTED form `cd /home/ssm-user/meridian-engine && bash run_ingest.sh NIFTY/SENSEX FULL >> cron.log 2>&1` (run_ingest.sh self-sources .env; the S49 single-quoted 'NIFTY FULL' form is NOT what's live — the unquoted form is). |
+| **Verification** | 248+ INGEST OPTION CHAIN COMPLETED post-fix; ingest firing on schedule. |
+
+### TD-S53-NEW-1 — cron `SHELL=/bin/bash` directive dropped → dash → every `source .env` chain died silently — RESOLVED S53 (root cause of the blackout)
+
+| Field | Value |
+|---|---|
+| **Filed** | 2026-06-12 (Session 53) |
+| **Closed** | 2026-06-12 (Session 53) |
+| **Severity** | S1 |
+| **Symptom** | Total capture + compute blackout since ~2026-06-11 05:03 UTC: 0 shadow_runner rows, frozen status.json, empty capture tables, all four S52 monitors silent. |
+| **Root cause** | A crontab reinstall at 00:47 UTC 2026-06-12 dropped `SHELL=/bin/bash` → cron defaulted to /bin/sh (dash) → `source` is a bash builtin dash lacks → every `cd … && source .env && python3 …` chain died with `/bin/sh: source: not found` into discarded cron mail. Capture + all 4 monitors share that chain → died identically. |
+| **Fix applied** | Added `SHELL=/bin/bash` as crontab line 1 via `crontab -e`. |
+| **Verification** | logs/monitor.log created + cron self-running within ~80s; capture + all 4 monitors resurrected at once; 05:00 UTC orchestrator cycle PIPELINE COMPLETE. |
+| **Canonical lesson** | Always verify `SHELL=/bin/bash` as crontab line 1 on AWS. Probe: `/bin/sh -c 'source .env && echo CHAIN_OK'` and `pwd; echo HOME=$HOME; SHELL=$SHELL`. Monitors must not share the env-loading failure chain of what they monitor. |
+
 ### TD-S41-NEW-4 — `build_wcb_snapshot_local.py` writer not instrumented to `script_execution_log` — DISCOVERED + CLOSED same-session
 
 | Field | Value |
@@ -2731,3 +2935,11 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 **Target completion:** Before 2026-06-28 (20-day buffer)  
 **Signed off:** S47  
 **Status:** FILED (not started)
+
+Updated Session 52 (2026-06-12 — observability infrastructure): 0 new TDs filed S52. Silent-death prevention infrastructure (health monitor, dashboard refresh, contract validator, timeout enforcer) deployed without debt. Monitoring scripts use dotenv for .env; all 4 crontab entries active + tested; Telegram integration live; status.json health snapshot every 1 min. Carry-forward S53: market-open monitoring validation + orchestrator execution log review + Telegram alert validation.
+Updated Session 53–54 (2026-06-12 → 2026-06-16 — blackout recovery + first-full-day audit): 6 TDs filed (TD-S53-NEW-1..6 + TD-S54-NEW-1..4 — net of the S53 set, S54 added NEW-1..4); 4 closed (TD-S53-NEW-1/2/3 same-session S53 root-cause + ingest + volatility upsert; TD-S53-NEW-4 closed S54 via `*/5`). Open headline: TD-S54-NEW-1 S1 SENSEX compute silent under-write (code trace pending). Still open: TD-S53-NEW-5 monitors false-state, TD-S53-NEW-6 futures SyntaxError, TD-S54-NEW-2/3/4.
+
+Updated Session 55 (2026-06-17 — carry-forward execution sweep): TDs closed 4 (S54-NEW-1 code, S55-NEW-1 vol read-path, S54-NEW-3, S54-NEW-4); S53-NEW-6 parse-fixed (futures contract-resolution open); TD-NEW-H superseded; S36-NEW-4 resolved (duration_ms bigint); S41-NEW-2 downgraded S2->S3; S48-NEW-1 re-diagnosed (breadth feed, open, narrowed to one read); 1 new TD filed+closed (S55-NEW-1).
+
+Updated Session 56 (2026-06-18 — RECONSTRUCTED at S57): futures resolver exact-match fix (8eae351) + Dhan scripmaster reloader ported to AWS with staging table + swap RPC (132eddc, 234,882 rows) + futures cron re-enabled; closed the S55 NEW-6 contract-resolution tail.
+Updated Session 57 (2026-06-19 — data audit + breadth root-cause + ADR-018): TD-S48-NEW-1 breadth RE-DIAGNOSED → CLOSED-DECISION (feed was on AWS not MALPHA, expired-token 403 loop, unsupervised; implementation carries as TD-S57-NEW-1 + TD-S57-NEW-2). 2 new TDs filed (S57-NEW-1 enable/cutover the S56-built systemd units onto MALPHA + WCB cron; S57-NEW-2 reader recency-floor guard). Correction post-S57: S56 had already built+committed the wsfeed preflight + alert + 5 deploy/systemd units (afe8112/30cca59/b627914); S57-NEW-1 is cutover, not build. SMDM retired (ADR-018 D3, evidence-based vs ENH-30 Exp 9 NEUTRAL) and rebuilt as ENH-SDM (PROPOSED). Signal-orphan disposition open for options_flow / iv_context / shadow-v3.

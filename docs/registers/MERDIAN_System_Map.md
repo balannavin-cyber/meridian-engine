@@ -51,7 +51,7 @@ This is the **production** map. Research scripts (`experiment_*.py`, etc.) are n
 | `build_market_state_snapshot_local.py` | ✅ | ✅ | `option_chain_snapshots`, `gamma_metrics`, `market_breadth_intraday`, `momentum_snapshots`, `volatility_snapshots`, `iv_context_snapshots` | `market_state_snapshots` | ACTIVE — V18A `flip_distance_pct` canonical |
 | `compute_gamma_metrics_local.py` | ✅ | ✅ | `option_chain_snapshots` | `gamma_metrics` (with V18A `gamma_zone` field) | ACTIVE |
 | `compute_iv_context_local.py` | ✅ | ✅ | `option_chain_snapshots` | `iv_context_snapshots` | ACTIVE — runs morning via `MERDIAN_IV_Context_0905` |
-| `compute_volatility_metrics_local.py` | ✅ | ✅ | `option_chain_snapshots`, India VIX | `volatility_snapshots` | ACTIVE — IV=0 filter, ATM fallback |
+| `compute_volatility_metrics_local.py` | ✅ | ✅ | `option_chain_snapshots`, India VIX | `volatility_snapshots` | ACTIVE — IV=0 filter, ATM fallback | — compute_volatility_metrics_local.py — S48 FIX: TARGET_TABLE corrected from hardcoded "compute_volatility_metrics" (non-existent, 404 graceful handler) to canonical "volatility_snapshots" per ADR-006. Reads from volatility_snapshots for prior-cycle history. Writes to volatility_snapshots (production, no shadow post-S48). Both AWS + LOCAL fixed. Silent failure for 2+ months due to 404 handler exiting exit_code=0.
 | `build_momentum_features_local.py` | ✅ | ✅ | `market_spot_snapshots`, `market_spot_session_markers` | `momentum_snapshots` | ACTIVE — `ret_session` live (ENH-01) |
 | `build_wcb_snapshot_local.py` | ✅ | ✅ | constituent ticks | `weighted_constituent_breadth_snapshots` | ACTIVE — continues even when Dhan options auth broken |
 | `build_trade_signal_local.py` | ✅ | ✅ | `market_state_snapshots`, ICT pattern context | `signal_snapshots` | ACTIVE — 6 ENH-35 changes applied (ADR-007 codification) + 4 ICT columns |
@@ -571,7 +571,9 @@ V18 master appendices (V18A–H) use a 13-block structure. The schema of each bl
 
 ---
 
-*MERDIAN System Map — established Session 23, 2026-05-09. Last updated Session 40, 2026-05-29 (TD-S37-01 closed via view-tau patch + Marketview v4 atomic-card redesign + AWS deploy pipeline established + `v_max_pain_by_strike` view created + `update_parameter` RPC `chk_valid_from_to` bug DISCOVERED+FIXED same-session via `valid_to DROP DEFAULT`). Previous: Session 36, 2026-05-25 (TD-S30-CANDIDATE-1 closed-misdiagnosis + ENH-99 SHIPPED capture-layer resilience). Updated inline per Doc Protocol v4 Rule 1 + Rule 9.1. Source authority: `merdian_reference.json` for canonical file paths and statuses; this Map for human-readable architectural narrative and pipeline ordering.*
+| 2026-06-12 / 2026-06-16 | Session 53–54 | **Crontab / orchestration recovery + ingest cadence change + first-full-day audit.** S53: dropped `SHELL=/bin/bash` directive root-caused the total capture/compute blackout (cron defaulted to dash; every `source .env` chain died silently) — SHELL line restored; 4 run_ingest.sh lines reconstructed (unquoted `bash run_ingest.sh NIFTY/SENSEX FULL` form); 2 futures cron lines commented (SyntaxError 246/253 — futures DARK); volatility writer insert→upsert(on_conflict=symbol,ts) commit cd98a87. S54: ingest 04–09 UTC minute field `30,35,40,45,50,55`→`*/5` (NEW-4 — closes :00–:29 hole; doubles Dhan calls 6→12/hr 04–09). Audit of first full post-fix day (2026-06-15): capture CLEAN (spot 370/370; option_chain 68 distinct-min/symbol dense `*/5`); 84 PIPELINE COMPLETE / 0 FAILED; upsert held. **One new bug isolated:** SENSEX compute (volatility_snapshots + gamma_metrics + market_state_snapshots, identical counts) silently under-writes ~½ of cycles — NIFTY 44 / SENSEX 23 distinct-ts/day despite 68 chain-ts/hr captured each; mechanism is in the compute write path / orchestrator per-symbol loop, not data; surviving SENSEX rows carry correct ts (rules out ts-merge collapse). TD-S54-NEW-1 (S1), code trace pending. Cross-refs: tech_debt.md TD-S53/S54-NEW-*; merdian_reference.json v34; MERDIAN_Deployment_Topology.md S53–54 row. |
+
+*MERDIAN System Map — established Session 23, 2026-05-09. Last updated Session 54, 2026-06-16 (S53–S54 crontab/orchestration recovery + ingest `*/5` + first-full-day audit isolating SENSEX compute under-write TD-S54-NEW-1); previous Session 40, 2026-05-29 (TD-S37-01 closed via view-tau patch + Marketview v4 atomic-card redesign + AWS deploy pipeline established + `v_max_pain_by_strike` view created + `update_parameter` RPC `chk_valid_from_to` bug DISCOVERED+FIXED same-session via `valid_to DROP DEFAULT`). Previous: Session 36, 2026-05-25 (TD-S30-CANDIDATE-1 closed-misdiagnosis + ENH-99 SHIPPED capture-layer resilience). Updated inline per Doc Protocol v4 Rule 1 + Rule 9.1. Source authority: `merdian_reference.json` for canonical file paths and statuses; this Map for human-readable architectural narrative and pipeline ordering.*
 
 ---
 
@@ -746,3 +748,36 @@ Created Session 24, 2026-05-09 via SQL migration `replay/migrations/001_create_r
 
 ---
 
+
+## S55 update log (2026-06-17 — carry-forward execution sweep)
+
+- **Orchestrator run_merdian_shadow_runner_aws.py — per-symbol run_id (commit 1889604).** `fetch_latest_run_id` (one run_id/cycle) → `fetch_latest_run_ids` ({NIFTY,SENSEX}); gamma + volatility now run ONCE PER SYMBOL with that symbol's run_id (labels carry the symbol). Closes the SENSEX compute under-write (TD-S54-NEW-1) at the code layer — each cycle previously computed only whichever symbol's ingest landed last in created_at order. gamma read path verified clean.
+- **compute_volatility_metrics_local.py read-path repointed (commit e6fba1b).** Two reads (L351 fetch_recent_volatility_rows, L454 fetch_last_valid_vix_snapshot) + provenance label (L671) were querying the dead table `compute_volatility_metrics` (S48 fixed the write/TARGET_TABLE, left the reads); repointed to production `volatility_snapshots` (reads stay on prod per TD-NEW-12). Closes TD-S55-NEW-1. Pre-fix rows carry blank intraday-change context (forward-only correctness).
+- **seed_trading_calendar.py — NEW script.** Rule-engine-driven (get_session_config_for_date), next-N-days, full-schema idempotent upsert on trade_date into `trading_calendar`; cron 02:30 UTC daily. Reads from trading_calendar.py (the rule engine) + trading_calendar.json (holidays). Retires the daily manual calendar insert (TD-S54-NEW-4 seeder half).
+- **stage2_db_contract.py V18A-03 tightened (commit c2910e8).** check_trading_calendar_today now selects open_time and gates PASS on open_time present (FAIL points at the seeder) — aligns preflight with the capture gate's open_time IS NOT NULL (TD-S54-NEW-4 preflight half).
+- **capture_postmarket_1600.py — non-blank exit reason (commit 5b92433).** Wrapper now emits exit code + stderr + stdout tail (TD-S54-NEW-3). Real failure was the futures SyntaxError cascading the prerequisite gate.
+- **capture_index_futures_snapshot_local.py — Windows-path fix (commit 66f8252).** Three sites: L50 DEBUG_DIR repointed to script-dir + mkdir; L246/L253 relative_to f-strings dropped. Parses + runs on AWS now; futures still DARK because dhan_scripmaster is stale (no June index futures) and reload_dhan_scripmaster_from_csv.py is not yet AWS-ported. Cron stays commented (TD-S53-NEW-6).
+- **Schema: `script_execution_log.duration_ms` migrated int4 → bigint (TD-S36-NEW-4 CLOSED).** SUPERSEDES the int4-overflow clamp note in the gotchas list above — the `min(int(age_ms), 2_147_483_647)` write-time clamp is no longer required (clamp is harmless if left in place).
+- **Reference baseline correction:** option_chain FULL rows/fire are NIFTY 460 (230 strikes × 2) and SENSEX 372 (186 strikes × 2), stable all session — retire the stale 534/606 figures.
+- **Breadth chain (TD-S48-NEW-1) re-diagnosed (OPEN):** ws_feed_zerodha.py (MALPHA) → market_ticks → ingest_breadth_from_ticks.py (AWS) → breadth_intraday_history → market_breadth_intraday. ws_feed_zerodha.py ABSENT from MALPHA; feed dark since 06-11; one closing read next session (what ingest_breadth_from_ticks SELECTs as its tick source) + restore under systemd.
+
+---
+
+
+## S56 + S57 update log (2026-06-18 / 2026-06-19)
+
+### S56 (2026-06-18 — reconstructed at S57)
+- **Futures resolver exact-match fix.** `capture_index_futures_snapshot_local.py` NIFTY → NIFTYNXT50 `DISPLAY_NAME ilike.*NIFTY*` substring bug fixed to exact `UNDERLYING_SYMBOL = eq.{symbol}` + `INSTRUMENT = eq.FUTIDX` (commit `8eae351`); 3 garbage `index_futures_snapshots` rows deleted (NIFTYNXT50, BANKNIFTY, SENSEX50, 2026-03-27 era).
+- **Scripmaster reloader ported to AWS.** NEW `reload_dhan_scripmaster.py` (commit `132eddc`) — staging table `dhan_scripmaster_staging` + transactional swap RPC `swap_dhan_scripmaster()` (TRUNCATE-in-plpgsql to bypass the safe-update guard); 234,882 rows; FUTIDX resolves through Aug 2026. Replaces the non-atomic Local Windows-CSV `reload_dhan_scripmaster_from_csv.py`. Closes the S55 NEW-6 contract-resolution tail; futures cron `*/5 04-09 UTC` re-enabled both symbols.
+- **New table:** `dhan_scripmaster_staging` (written by reload_dhan_scripmaster.py; swapped into dhan_scripmaster via the RPC).
+- **Breadth-feed supervision built (surfaced post-S57 from git log).** S56 also authored + git-tracked the supervision scaffolding for rebuild-safety: wsfeed preflight (commit `afe8112` — tolerate `.env` special chars, drop `set -u` around `source`) + wsfeed alert script + **5 `systemd` units under `deploy/systemd/`** (commits `30cca59` + `b627914`). BUILT + committed but NOT enabled on MALPHA — S57 found the feed still unsupervised in an AWS `screen`; cutover/enable = ADR-018 D1 (TD-S57-NEW-1).
+
+### S57 (2026-06-19)
+- **Data audit 06-19 CLEAN:** chain 83/83 distinct ts both symbols from 03:00; all six derived tables exact 82/82 1:1 NIFTY:SENSEX (TD-S54-NEW-1 closed on DATA); futures 144 fires/symbol, basis 0.017–0.299%.
+- **Breadth chain host correction (SUPERSEDES the S55 note above):** `ws_feed_zerodha.py` was NOT absent from MALPHA — it was running on **AWS** (not MALPHA) since 06-11 in a detached `screen`, holding an expired Zerodha token, 403-looping, writing zero-coverage rows. That hollow-write is why market_ticks read empty yet breadth "worked" through 06-11. Remediated live (token refresh MALPHA + PID 259620 kill -9 + clean restart, 2213 instruments). **Canonical home is MALPHA under `systemd`** per ADR-018 D1.
+- **ADR-018 ACCEPTED** — breadth-feed supervision (D1 systemd-on-MALPHA + WCB cron fix; D2 mandatory recency-floor reader guard) + signal-subsystem disposition (D3 SMDM retired evidence-based vs ENH-30; D4 ENH-SDM AWS orchestrator-integrated per ADR-006).
+- **SMDM RETIRED** — `compute_smdm_local.py` + `smdm_snapshots` retired (ADR-018 D3); STOP_HUNT/SQUEEZE flags + gamma-squeeze scalar dropped; manipulation-footprint + flow-velocity carried into ENH-SDM.
+- **New table (PLANNED):** `structural_divergence_snapshots` (written by `compute_structural_divergence_local.py`, ENH-SDM, AWS orchestrator-integrated; consumers must apply ADR-018 D2 recency-floor guard).
+- **Signal-subsystem orphans (S49 Local-disable):** options_flow_snapshots / iv_context_snapshots / shadow-v3 NOT migrated; disposition (port-to-AWS vs deprecate) open.
+
+---

@@ -16,10 +16,15 @@ import os, sys, json, time, socket, subprocess, psutil
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
+import sys
 
 IST      = ZoneInfo("Asia/Kolkata")
-BASE     = Path('/home/ssm-user/meridian-engine')
-RUNTIME  = BASE / 'runtime'
+# Environment detection: Windows (LOCAL) vs Linux (AWS)
+if sys.platform == 'win32':
+    BASE = Path(r'C:\GammaEnginePython')
+else:
+    BASE = Path('/home/ssm-user/meridian-engine')
+RUNTIME = BASE / 'runtime'
 LOGS     = BASE / 'logs'
 PID_FILE = RUNTIME / 'merdian_pids.json'
 PYTHON   = Path(sys.executable)

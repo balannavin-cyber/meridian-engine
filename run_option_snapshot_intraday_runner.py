@@ -46,6 +46,7 @@ TIMEOUT_MOMENTUM = 240
 TIMEOUT_STATE = 240
 TIMEOUT_SIGNAL = 240
 TIMEOUT_SHADOW_SIGNAL = 180
+TIMEOUT_FUTURES = 120
 
 SHADOW_FAILURE_IS_NON_BLOCKING = True
 
@@ -565,6 +566,15 @@ def run_full_cycle() -> None:
             step_name=f"build_wcb_snapshot_{wcb_symbol}",
             non_blocking=True,
         )
+
+    # Capture index futures (NIFTY + SENSEX) for basis calculations
+    run_with_fallbacks(
+        "capture_index_futures_snapshot_local.py",
+        [[]],
+        timeout=TIMEOUT_FUTURES,
+        step_name="capture_index_futures_snapshot",
+        non_blocking=False,
+    )
 
     for symbol in SYMBOLS:
         run_live_cycle_for_symbol(symbol)

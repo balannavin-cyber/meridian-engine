@@ -350,7 +350,19 @@ def ingest_symbol(symbol: str, mode: str, log: ExecutionLog) -> int:
             error_message=f"No expiries returned for {symbol}: {str(expiry_resp)[:500]}",
         )
 
-    expiry_date = str(expiries[0])
+    # Select first FUTURE expiry (today or later), not just first in list.
+    # This fixes SENSEX June 4 being expired on June 5+.
+    today_ist = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d")
+    future_expiries = [str(e) for e in expiries if str(e) >= today_ist]
+    
+    if not future_expiries:
+        return log.exit_with_reason(
+            "DATA_ERROR",
+            exit_code=1,
+            error_message=f"No future expiries for {symbol}. Available: {[str(e) for e in expiries[:3]]}",
+        )
+    
+    expiry_date = future_expiries[0]
     print(f"Selected expiry: {expiry_date}")
 
     # Step 2: option chain.

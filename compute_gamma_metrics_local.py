@@ -1181,6 +1181,9 @@ def parse_args(argv: list[str]) -> tuple[str, Optional[str], str]:
         compute_gamma_metrics_local.py <run_id> <symbol> PARTIAL
         compute_gamma_metrics_local.py <run_id> PARTIAL
     """
+    # Defensive: strip --shadow if it made it here (module-level should handle it)
+    argv = [a for a in argv if a != "--shadow"]
+    
     if len(argv) not in {2, 3, 4}:
         raise RuntimeError(
             "Usage: python compute_gamma_metrics_local.py <run_id> [symbol] [FULL|PARTIAL]"

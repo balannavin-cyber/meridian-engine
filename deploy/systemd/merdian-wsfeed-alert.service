@@ -1,0 +1,8 @@
+[Unit]
+Description=MERDIAN wsfeed failure alert (OnFailure handler)
+
+[Service]
+Type=oneshot
+User=ssm-user
+WorkingDirectory=/home/ssm-user/meridian-engine
+ExecStart=/home/ssm-user/meridian-engine/bin/wsfeed_alert.sh "merdian-wsfeed.service entered failed state (preflight or runtime). Feed DOWN."

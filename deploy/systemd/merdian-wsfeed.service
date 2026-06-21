@@ -1,0 +1,22 @@
+[Unit]
+Description=MERDIAN Zerodha WebSocket Feed (market_ticks)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+OnFailure=merdian-wsfeed-alert.service
+
+[Service]
+Type=simple
+User=ssm-user
+WorkingDirectory=/home/ssm-user/meridian-engine
+EnvironmentFile=/home/ssm-user/meridian-engine/.env
+ExecStartPre=/home/ssm-user/meridian-engine/bin/wsfeed_preflight.sh
+ExecStart=/usr/bin/python3 /home/ssm-user/meridian-engine/ws_feed_zerodha.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/ssm-user/meridian-engine/logs/ws_feed_zerodha.log
+StandardError=append:/home/ssm-user/meridian-engine/logs/ws_feed_zerodha.log
+
+[Install]
+WantedBy=multi-user.target

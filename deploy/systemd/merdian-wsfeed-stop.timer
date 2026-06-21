@@ -1,0 +1,10 @@
+[Unit]
+Description=Stop MERDIAN wsfeed at market close (Mon-Fri 10:05 UTC = 15:35 IST)
+
+[Timer]
+OnCalendar=Mon-Fri *-*-* 10:05:00 UTC
+Persistent=false
+Unit=merdian-wsfeed-stop.service
+
+[Install]
+WantedBy=timers.target

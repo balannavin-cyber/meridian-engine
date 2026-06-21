@@ -1,0 +1,10 @@
+[Unit]
+Description=Start MERDIAN wsfeed at market open (Mon-Fri 03:40 UTC = 09:10 IST)
+
+[Timer]
+OnCalendar=Mon-Fri *-*-* 03:40:00 UTC
+Persistent=false
+Unit=merdian-wsfeed.service
+
+[Install]
+WantedBy=timers.target

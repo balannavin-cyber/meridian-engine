@@ -1,0 +1,6 @@
+[Unit]
+Description=MERDIAN wsfeed stop (market close)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl stop merdian-wsfeed.service

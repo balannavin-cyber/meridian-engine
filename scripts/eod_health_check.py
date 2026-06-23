@@ -28,6 +28,7 @@ Exit code: 0 = all OK, 1 = one or more WARN/FAIL.
 """
 import argparse
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 

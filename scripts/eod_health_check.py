@@ -104,29 +104,30 @@ def count_rows(url, headers, table, ts_col, lo, hi, sym_col=None, sym=None):
 
 
 def edge_ts(url, headers, table, ts_col, lo, hi, order, sym_col=None, sym=None):
-    # No range-bind here (range filters proved sensitive to requests\' URL encoding,
-    # nulling some calls; counts handle the range). Fetch the latest/earliest row for
-    # the symbol, then verify in Python it falls within the session [lo, hi).
-    qs = [("select", ts_col), ("order", f"{ts_col}.{order}"), ("limit", "1")]
+    qs = [(ts_col, f"gte.{lo}"), (ts_col, f"lt.{hi}"),
+          ("select", ts_col), ("order", f"{ts_col}.{order}"), ("limit", "1")]
     if sym_col and sym:
         qs.append((sym_col, f"eq.{sym}"))
     r = requests.get(f"{url}/rest/v1/{table}", headers=headers, params=qs, timeout=60)
     r.raise_for_status()
     data = r.json()
-    if not data:
-        return None
-    val = data[0].get(ts_col)
-    # keep only if within the requested session day (string compare is safe on ISO ts)
-    if val and (str(val)[:10] < lo or str(val)[:10] >= hi):
-        return None
-    return val
+    return data[0][ts_col] if data and data[0].get(ts_col) else None
 
 
 def parse(ts):
+    # py3.10 fromisoformat (EC2 default) only accepts 3 or 6 fractional-second digits and
+    # RAISES on others; Postgres trims trailing zeros (e.g. .68213 = 5 digits). Normalize the
+    # fractional part to exactly 6 digits so all microsecond widths parse on 3.10 and 3.12.
     if not ts:
         return None
+    s = str(ts).replace("Z", "+00:00")
+    m = re.match(r"^(.*\.)(\d+)([+\-].*)?$", s)
+    if m:
+        frac = (m.group(2) + "000000")[:6]
+        s = m.group(1) + frac + (m.group(3) or "")
     try:
-        return datetime.fromisoformat(str(ts).replace("Z", "+00:00")).astimezone(UTC)
+        dt = datetime.fromisoformat(s)
+        return dt.astimezone(UTC) if dt.tzinfo else dt.replace(tzinfo=UTC)
     except Exception:
         return None
 

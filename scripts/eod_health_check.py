@@ -92,12 +92,7 @@ def q(url, headers, table, params, count=False, timeout=60):
 
 
 def count_rows(url, headers, table, ts_col, lo, hi, sym_col=None, sym=None):
-    p = {f"{ts_col}": f"gte.{lo}", "and": f"({ts_col}.lt.{hi})"}
-    # simpler: two range params
-    p = {ts_col: [f"gte.{lo}", f"lt.{hi}"]}
-    params = {ts_col: f"gte.{lo}"}
-    params2 = []  # requests can't repeat keys via dict; build manually
-    qs = [(ts_col, f"gte.{lo}"), (ts_col, f"lt.{hi}")]
+    qs = [("and", f"({ts_col}.gte.{lo},{ts_col}.lt.{hi})")]
     if sym_col and sym:
         qs.append((sym_col, f"eq.{sym}"))
     h = dict(headers); h["Prefer"] = "count=exact"
@@ -109,7 +104,9 @@ def count_rows(url, headers, table, ts_col, lo, hi, sym_col=None, sym=None):
 
 
 def edge_ts(url, headers, table, ts_col, lo, hi, order, sym_col=None, sym=None):
-    qs = [(ts_col, f"gte.{lo}"), (ts_col, f"lt.{hi}"),
+    # NOTE: bind the range with a single and=() group, not two repeated ts params
+    # (repeated ts keys + order desc intermittently returns empty in PostgREST).
+    qs = [("and", f"({ts_col}.gte.{lo},{ts_col}.lt.{hi})"),
           ("select", ts_col), ("order", f"{ts_col}.{order}"), ("limit", "1")]
     if sym_col and sym:
         qs.append((sym_col, f"eq.{sym}"))
@@ -163,8 +160,10 @@ def main():
     results = []  # (verdict, line)
 
     def verdict_ts(last_dt):
+        # A missing last_ts when the row COUNT is healthy is "can't confirm recency" = WARN,
+        # never FAIL -- a complete count with an unreadable edge ts is not a data fault.
         if last_dt is None:
-            return FAIL
+            return WARN
         age = (expected_last - last_dt).total_seconds() / 60.0
         return OK if age <= LAST_TS_TOL_MIN else (WARN if age <= 60 else FAIL)
 

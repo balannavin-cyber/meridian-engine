@@ -635,3 +635,22 @@ Three rows codifying findings from S42 writer-side gap closure (India VIX + max_
 ---
 
 *MERDIAN Assumption Register — established Session 23, 2026-05-09. Last updated Session 42, 2026-06-01. Living document. Update inline as experimental evidence resolves rows; superseded rows are annotated with the superseding ADR/Exp, never deleted.*
+
+---
+
+## §D.24 — Session 48 Operational Findings (Crontab + Environment + Graceful Handlers)
+
+**D.24.1** Cron flock scope is narrow: `flock -n /lock cd /path && command` applies lock only to `cd`, not `command`. Working directory resets for && chain. VALIDATED in S48 (broken for 2+ hours until corrected). Correct pattern: `cd /path && flock -n /lock command` or `bash -c "cd /path && flock -n /lock command"`. (ADOPTED S48)
+
+**D.24.2** Environment variables in cron do not inherit from shell rc files or .env without explicit `source`. SUPABASE_URL was empty at runtime despite present in .env. VALIDATED in S48 (SupabaseClient init failed, orchestrator marked OK despite failure). Correct pattern: `source .env && command` in cron entry. (ADOPTED S48)
+
+**D.24.3** Graceful error handlers (exit_code=0 on known failures) can hide systemic problems. `compute_volatility_metrics_local.py` caught 404 PGRST205 and exited 0 for 2+ months; orchestrator marked OK; dashboard showed stale data (expected, not alarming). Root cause invisible until SQL audit. LESSON: log the graceful degradation even on exit_code=0. (LESSON S48)
+
+**D.24.4** Production data can mask upstream failures. NIFTY gamma_metrics kept writing (success visible on dashboard), SENSEX never started (failure invisible because no dashboard alert for missing symbol). Root cause (orchestrator stopped firing) only visible from log. LESSON: monitor orchestrator health separately from output metrics. (LESSON S48)
+
+**D.24.5** Hardcoded table names in code are debt. `compute_volatility_metrics_local.py` hardcoded `"compute_volatility_metrics"` per stale comment "Once ADR-006 DDL lands". Schema evolved, comment staled, code persisted. LESSON: parameterize or version-gate schema-dependent code. Prevent via code review check: "hardcoded strings matching table names must be parameterized or have ADR reference + deadline". (LESSON S48)
+
+---
+
+**Last updated:** Session 48 (2026-06-10)  
+**Open follow-ups:** Breadth staleness root cause (TD-S48-NEW-1); dashboard cache lag.

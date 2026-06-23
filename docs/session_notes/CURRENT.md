@@ -12,6 +12,24 @@
 
 | Field | Value |
 |---|---|
+| **Date** | 2026-06-22 (Session 58 — Monday live verification of the S57 breadth fixes + ADR-018 host correction + ADR-019 orphan disposition + ENH-SDM reframe & P1 schema) |
+| **#1 systemd cutover — VERIFIED LIVE** | `merdian-wsfeed-start.timer` fired 03:40:01 UTC; service active(running); preflight `OK: OV0782` status=0; single PID 452985 (single-instance held); 2213 instruments, Feed live, zero 403s through the open. **TD-S57-NEW-1 CLOSED-VERIFIED** + TD-NEW-K/L/M. |
+| **#2 recency-floor — VERIFIED LIVE** | orchestrator builds market_state every 5-min cycle, breadth_score 44.4, zero `recency-floor STALE`; hand-run `WCB attached: YES`; newest `market_breadth_intraday.ts` 04:03:05 UTC = seconds old. 23-day outage closed end-to-end. **TD-S57-NEW-2 CLOSED-VERIFIED** + 35-session-old **TD-081**. (patch `f922524`.) |
+| **ADR-018 D1 host CORRECTION** | Unit files declare `User=ssm-user` + `/home/ssm-user/meridian-engine` → feed is supervised on **MERDIAN AWS, not MALPHA**. D1's "re-home to MALPHA" was wrong (over-rotation on a memory note); corrected — feed on AWS, MALPHA stays token gateway. S56 units enabled + cut over onto AWS this session. |
+| **ADR-019 ACCEPTED** | Signal-orphan **port-not-retire** (reverses initial deprecate). shadow-v3 RETAIN harness (rebuild vs signal_v4), iv_context RETAIN/port, options_flow RETAIN-DORMANT (ENH-02 substrate). Refines ADR-018: retire only on no-value evidence, never on an experiment verdict. momentum_v2 (5th orphan) flagged. |
+| **ENH-SDM reframe** | P0a verdict: single case (CASE-2026-06-02) justifies measuring, not acting. N≈8 (pin_risk back to 05-25, straddle to 05-08). Backward study blocked — purchased chain 2025-04→2026-03 has 0% Greeks (TD-S58-NEW-1). Reframed **observability-first** (display-not-gate). ADR-018 D4 primitives **CORRECTED** to gamma-centric (pin-risk rate / straddle-collapse vel / gamma-concentration / net_gex-regime-flip + three-wick trigger) per CASE-2026-06-02. |
+| **ENH-SDM P1 DEPLOYED** | `structural_divergence_snapshots` + `_replay` created in Supabase (true-UTC, UNIQUE(symbol,ts), display-not-gate). Migration `sql/2026-06-22_enh_sdm_structural_divergence_snapshots.sql`. |
+| **Also** | Enhancement Register folds (ΔPCR/strike-PCR→ENH-02, CoC-velocity→ENH-07; COMPLETE→IN PROGRESS corrected); ENH-115 (FII/DII) + ENH-SDM filed; TD-S57-NEW-3 (register dual-structure) + TD-S58-NEW-1 (purchased-chain Greeks gap) filed. |
+| **Type** | Verification + architecture correction + disposition + schema deploy. 1 production patch (recency-floor). 1 new ADR (019). 1 ADR corrected (018 D1+D4). 1 schema deployed. |
+| **Outcome** | PASS. Breadth-fragility class ended (verified). 3 commits pushed + EC2-pulled (f922524, 8bdf653, 963b062). |
+| **Carry-forward to S59** | (1) ENH-SDM P2 compute writer (`compute_structural_divergence_local.py`, gamma_metrics latest+prior + recency floor, wire after market_state); (2) ENH-SDM signal/modes gated on forward cohort N; (3) momentum_v2 disposition; (4) Greeks-backfill scoping (TD-S58-NEW-1, gated on ENH-07 + TD-095); (5) Assumption Register uncommitted change; (6) TD-NEW-14 empty tables; (7) TD-NEW-D log TZ labels; (8) Zerodha token rotation (plaintext in chat); (9) doc re-upload Rule 12. |
+
+---
+
+## Previous session S57
+
+| Field | Value |
+|---|---|
 | **Date** | 2026-06-19 / 2026-06-20 (Session 57 — first full clean-day data audit + breadth-chain root-cause + ADR-018 breadth-feed supervision + SMDM retire / ENH-SDM rebuild) |
 | **Concern** | **S57 mandate:** run the full-day data audit on the first clean post-S56 day; resolve the S56 breadth contradiction (market_ticks empty yet breadth wrote through 06-11); decide the signal-subsystem orphan disposition; file the deployment-topology ADR Rule 10 makes mandatory. |
 | **Data audit 06-19 — CLEAN** | option_chain 83/83 distinct ts both symbols from 03:00; **all six derived tables exact 82/82 1:1 NIFTY:SENSEX** — TD-S54-NEW-1 SENSEX compute under-write proven CLOSED on DATA (first full day the S55 per-symbol run_id fix ran clean end-to-end), not just code-correct; futures 144 fires/symbol, correct contracts (S56 scripmaster reload holding), basis 0.017–0.299% all day. 06-17 was partial (S55-outage residue). |

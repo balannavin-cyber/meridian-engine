@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v36",
+    "version": "v37",
     "generated": "2026-06-12",
     "sources": [
       "Session 52 (2026-06-12): Observability infrastructure deployment — 5 monitoring scripts (telegram_utils, monitor_orchestrator_health, refresh_health_dashboard, validate_compute_contracts, enforce_orchestrator_timeout; 761 lines total); 4 crontab entries active; Telegram integration live; status.json health snapshot every 1 min; time-to-detection <2 min for capture gaps, orchestrator failures, compute hangs, crontab typos, stale data.",
@@ -2683,7 +2683,7 @@
         "build_shadow_signal_v3_local.py"
       ],
       "constraint": "UNIQUE (symbol, ts)  --  UPSERT-safe",
-      "status": "ACTIVE  --  manual only",
+      "status": "RETAINED-DORMANT  --  ADR-019 D3: ENH-02 substrate; re-homes with ENH-02 if PCR graduates. Not deleted.",
       "open_items": []
     },
     "smdm_snapshots": {
@@ -2706,7 +2706,7 @@
         "shadow analytics"
       ],
       "constraint": "None confirmed",
-      "status": "ACTIVE  --  manual only",
+      "status": "RETAINED-PENDING-REHOME  --  ADR-019 D1: shadow-comparison harness kept (ADR-001 governance); rebuild vs signal_v4 at next signal change. Orphaned by S49 Local-disable, not retired.",
       "critical_rule": "shadow_signal_snapshots_v2 was NEVER created. All queries must target v3. Columns include: live_action, live_confidence for parallel comparison.",
       "open_items": []
     },
@@ -2718,7 +2718,7 @@
         "build_shadow_signal_v3_local.py"
       ],
       "constraint": "None confirmed",
-      "status": "ACTIVE  --  morning task via MERDIAN_IV_Context_0905",
+      "status": "RETAINED-PENDING-REHOME  --  ADR-019 D2: distinct IV-regime capability, port to AWS when wired to a live consumer. Not superseded by gamma_call/put.",
       "open_items": []
     },
     "option_execution_price_history": {
@@ -3044,13 +3044,13 @@
     },
     "structural_divergence_snapshots": {
       "written_by": [
-        "compute_structural_divergence_local.py (PLANNED, AWS orchestrator-integrated per ADR-006)"
+        "compute_structural_divergence_local.py (PLANNED P2 — gamma-centric primitives per CASE-2026-06-02; display-not-gate)"
       ],
       "read_by": [
-        "(ENH-SDM consumer — must apply ADR-018 D2 recency-floor guard)"
+        "(observability surface — must apply ADR-018 D2 recency-floor)"
       ],
-      "constraint": "TBD at ENH-SDM build",
-      "status": "PLANNED  --  ENH-SDM (ADR-018 D4); not yet created. 4 primitives + phase classifier + direction."
+      "constraint": "UNIQUE(symbol, ts); true-UTC; gen_random_uuid id; ADR-008 _replay mirror",
+      "status": "LIVE (table created S58, empty)  --  ENH-SDM P1 deployed via sql/2026-06-22_enh_sdm_structural_divergence_snapshots.sql. Primitives: pin-risk rate, straddle-collapse vel, gamma-concentration, net_gex/regime-flip + three-wick trigger. P2 writer carried to S59."
     },
     "dhan_scripmaster_staging": {
       "written_by": [
@@ -3061,6 +3061,12 @@
       ],
       "constraint": "staging table; transactionally swapped into dhan_scripmaster via swap_dhan_scripmaster() (TRUNCATE-in-plpgsql)",
       "status": "LIVE  --  S56 (commit 132eddc). 234,882 rows reload path; FUTIDX resolves through Aug 2026."
+    },
+    "structural_divergence_snapshots_replay": {
+      "written_by": [
+        "replay_compute_structural_divergence.py (FUTURE)"
+      ],
+      "status": "LIVE (created S58, empty)  --  ADR-008 replay mirror of structural_divergence_snapshots."
     }
   },
   "security_ids": {
@@ -4643,10 +4649,21 @@
       "truncated_each_run": false
     }
   },
-  "version": "v36",
-  "last_updated_session": "Session 57",
-  "last_updated_date": "2026-06-19",
+  "version": "v37",
+  "last_updated_session": "Session 58",
+  "last_updated_date": "2026-06-22",
   "change_log": [
+    {
+      "session": "S58",
+      "date": "2026-06-22",
+      "changes": [
+        "Monday live verification: #1 systemd cutover VERIFIED (timer 03:40 UTC, service active, single PID 452985, preflight OK OV0782, 2213 instruments, zero 403s) -> TD-S57-NEW-1 CLOSED-VERIFIED + TD-NEW-K/L/M. #2 recency-floor VERIFIED (market_state every cycle, zero STALE, breadth ts seconds-old) -> TD-S57-NEW-2 CLOSED-VERIFIED + TD-081. 23-day breadth outage closed end-to-end.",
+        "ADR-018 D1 HOST CORRECTION MALPHA->AWS: unit files declare User=ssm-user + /home/ssm-user/meridian-engine; feed supervised on MERDIAN AWS not MALPHA (D1 was wrong). MALPHA stays token gateway. S56 units enabled+cutover onto AWS.",
+        "ADR-019 ACCEPTED: signal-orphan port-not-retire (reverses deprecate). shadow_signal_snapshots_v3 RETAIN harness, iv_context_snapshots RETAIN/port, options_flow_snapshots RETAIN-DORMANT. Refines ADR-018: retire only on no-value evidence, never on experiment verdict. momentum_v2 (5th orphan) flagged.",
+        "ENH-SDM reframed observability-first (display-not-gate). P0a: N~8, backward study blocked (purchased chain 2025-04..2026-03 has 0% Greeks -> TD-S58-NEW-1). ADR-018 D4 primitives CORRECTED breadth/OI/VWAP -> gamma-centric (pin-risk rate, straddle-collapse vel, gamma-concentration, net_gex/regime-flip) per CASE-2026-06-02.",
+        "ENH-SDM P1 DEPLOYED: structural_divergence_snapshots + _replay created in Supabase (true-UTC, UNIQUE(symbol,ts), display-not-gate). Migration sql/2026-06-22_enh_sdm_structural_divergence_snapshots.sql. P2 compute writer carried to S59."
+      ]
+    },
     {
       "session": "S57",
       "date": "2026-06-19",

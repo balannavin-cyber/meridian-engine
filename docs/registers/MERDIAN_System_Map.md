@@ -781,3 +781,13 @@ Created Session 24, 2026-05-09 via SQL migration `replay/migrations/001_create_r
 - **Signal-subsystem orphans (S49 Local-disable):** options_flow_snapshots / iv_context_snapshots / shadow-v3 NOT migrated; disposition (port-to-AWS vs deprecate) open.
 
 ---
+
+## §S58 (2026-06-22) — breadth supervision verified + ENH-SDM P1 schema
+
+**New table — `structural_divergence_snapshots`** (+ `_replay` mirror, ADR-008): ENH-SDM observability monitor. Written by `compute_structural_divergence_local.py` (PLANNED P2); reads `gamma_metrics` (latest+prior) + spot. Gamma-centric primitives per CASE-2026-06-02: pin-risk rate, straddle-collapse velocity, gamma-concentration, net_gex/regime-flip + three-wick trigger. Display-not-gate. UNIQUE(symbol,ts), true-UTC. Migration `sql/2026-06-22_enh_sdm_structural_divergence_snapshots.sql`. Created S58 (empty); P2 writer carried to S59.
+
+**Breadth feed — host correction MALPHA→AWS.** `ws_feed_zerodha.py` is supervised on **MERDIAN AWS** under `systemd` (units `merdian-wsfeed.service` + start/stop timers, `User=ssm-user`, `/home/ssm-user/meridian-engine`), NOT MALPHA (ADR-018 D1 corrected). MALPHA = Zerodha token gateway only. Cutover + Monday-open verification done S58 (single PID, 2213 instruments, zero 403s).
+
+**Recency-floor guard** live in `build_market_state_snapshot_local.py` (the only live latest-row breadth/WCB consumer) — stale breadth/WCB nulled → existing degraded path; `*_stale_floored` raw flags. Verified zero STALE on the Monday open. Closes TD-081.
+
+**Signal orphans (ADR-019):** `shadow_signal_snapshots_v3` / `iv_context_snapshots` RETAINED-PENDING-REHOME; `options_flow_snapshots` RETAINED-DORMANT. None retired.

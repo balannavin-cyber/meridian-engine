@@ -57,7 +57,39 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S58-NEW-1 (S3 priority) — purchased options chain (2025-04→2026-03) has 0% Greeks; ENH-SDM historical study blocked behind a full IV/Greeks solve
+
+| Field | Value |
+|---|---|
+| **Severity** | S3 (research-substrate limitation, not a production break) |
+| **Filed** | 2026-06-22 (Session 58) |
+| **Component** | `hist_option_bars_1m` (purchased vendor chain); ENH-SDM backward frequency study |
+| **Symptom** | P0a coverage probe (S58): `hist_option_bars_1m.gamma` is **0.00% present across all 12 purchased months** (2025-04→2026-03) — `iv/delta/gamma/theta/vega` all NULL. Bars are continuous (3.8–5.4M/mo) and OI is 99.9% present, but Greeks are absent. In `gamma_metrics`, `pin_risk_score` traces back only to 2026-05-25 and `straddle_atm` to 2026-05-08, so only ~8 expiry days have all four ENH-SDM primitives co-present (`rows_all5_present` = 1,500 / 40,611). N≈8 cannot support a frequency study or an ADR-009 holdout. |
+| **Root cause** | The purchased vendor chain arrived Greeks-less. The live pipeline solves Greeks forward (`gamma_metrics` has gamma now), but the S29 "full-year backfill" computed `net_gex`/`gamma_concentration` from a partial pass and never solved per-strike Greeks or the pin/straddle layer over the purchased year. |
+| **Impact** | The ENH-SDM backward study (the cohort that would lift N from ~8 toward ~50) is blocked. `straddle_atm` backfill is viable standalone (no Greeks needed — just ATM CE+PE close). `pin_risk_score` + `gamma_concentration` backfill require a full per-strike IV/Greeks solve over ~55M bars first. |
+| **Workaround** | ENH-SDM ships as a **forward observability monitor** (P1 schema + P2 context-writer, display-not-gate); the cohort accrues forward from S58. No backward study, and no signal/modes build, until the Greeks backfill is funded. |
+| **Proper fix** | Scoped Greeks-backfill project: per-strike BS/Heston IV+gamma solve over `hist_option_bars_1m` 2025-04→2026-03, then recompute `pin_risk_score` + `gamma_concentration`, validated against live forward values (ADR-009-grade) before any study consumes it. |
+| **Cost to fix** | Multi-session (solve + recompute + validation over ~55M bars). |
+| **Blocked by** | Ideally ENH-07 (risk-free rate — the unresolved 6.5% hardcode would bias the IV solve) and TD-095 (IV-solver unit ambiguity) resolved first. |
+| **Related** | ENH-SDM; ADR-018 D4; CASE-2026-06-02; TD-S34-NEW-4 (post-Apr-2026 chain gap); TD-094 (historical OI — confirmed clean at 99.9% this probe); TD-095 (IV unit ambiguity). |
+
+### TD-S57-NEW-3 (S3 priority) — Enhancement Register has a dual structure with conflicting per-ENH status
+
+| Field | Value |
+|---|---|
+| **Severity** | S3 |
+| **Filed** | 2026-06-19 (Session 57) |
+| **Component** | `docs/registers/MERDIAN_Enhancement_Register.md` (+ stale duplicate `MERDIAN_Enhancement_Register_v5.md`) |
+| **Symptom** | The register layers a newer Part 1–6 structure on top of a legacy Tier/Summary-Table structure that was never reconciled, so the same ENH can carry two different statuses. Surfaced S57: ENH-02 (PCR) and ENH-07 (basis rate) read **COMPLETE** in Part 1 but **IN PROGRESS** in their Part 4 detail blocks and the legacy "Full Register" tables. The Part 4 detail is authoritative (ENH-02 writer built-but-orphaned by the S49 Local-disable; ENH-07 unbuilt) — the `v7=COMPLETE` flags were a stale bulk-flip. Corrected ENH-02/07 to IN PROGRESS this session, but the structural duplication remains. |
+| **Root cause** | The v7 unified rewrite + subsequent per-session appends left the legacy `## Summary Table` (~L956) + `## Summary Table — Full Register` (~L1407) + Tier 1–4 sections alongside the canonical Part 1 status summary; no single source of truth for status. Plus `MERDIAN_Enhancement_Register_v5.md` (max ENH-42, no last-updated) is a stale duplicate file that should not exist. |
+| **Workaround** | Treat Part 1 + Part 4 as authoritative; ignore the legacy tables. |
+| **Proper fix** | Collapse to a single status source (Part 1 ↔ Part 4 cross-checked), delete the legacy `Summary Table` / `Full Register` / Tier tables (or mark them ARCHIVE-only), and delete the stale `MERDIAN_Enhancement_Register_v5.md`. Bigger than an inline edit — a dedicated register-reconciliation pass. |
+| **Cost to fix** | ~0.5–1 session (status reconciliation audit across ~114 ENHs + table removal + duplicate-file delete). |
+| **Blocked by** | Nothing. |
+| **Related** | Surfaced during the S57 ENH-02/07 fold + ENH-115/ENH-SDM filing. |
+
 ### TD-S57-NEW-1 (S2 priority) — enable/cut over the S56-built `systemd` units onto MALPHA (ADR-018 D1)
+> **S58 (2026-06-22) — CLOSED-VERIFIED. Host corrected: the units target MERDIAN AWS (`User=ssm-user`, `/home/ssm-user/meridian-engine`), not MALPHA — ADR-018 D1's MALPHA was wrong.** Units enabled + cut over onto AWS (cp → daemon-reload → `enable --now` both timers; no manual screen to retire). Monday open verified: timer fired 03:40:01 UTC, service active(running), preflight OK OV0782, single PID 452985, 2213 instruments, zero 403s. Closes TD-NEW-K/L/M.
 
 | Field | Value |
 |---|---|
@@ -73,6 +105,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Related** | ADR-018 (D1), TD-S48-NEW-1 (the outage this prevents recurring), TD-NEW-K/L/M (S29), TD-S57-NEW-2 (D2 reader guard). |
 
 ### TD-S57-NEW-2 (S2 priority) — breadth/divergence readers have no recency floor; a dead feed reads as "working" (ADR-018 D2)
+> **S58 (2026-06-22) — CLOSED-VERIFIED.** Guard live on Local + AWS (patch `f922524`). Monday open: orchestrator built market_state every cycle, zero `recency-floor STALE` lines, newest breadth ts seconds-old (04:03:05 UTC), WCB attached. Sweep confirmed `build_market_state_snapshot_local.py` is the only live latest-row breadth consumer (momentum reads a window; replay mirrors excluded by design). Closes the 35-session-old **TD-081** (no data-freshness guard, S22).
 
 | Field | Value |
 |---|---|
@@ -2943,3 +2976,6 @@ Updated Session 55 (2026-06-17 — carry-forward execution sweep): TDs closed 4 
 
 Updated Session 56 (2026-06-18 — RECONSTRUCTED at S57): futures resolver exact-match fix (8eae351) + Dhan scripmaster reloader ported to AWS with staging table + swap RPC (132eddc, 234,882 rows) + futures cron re-enabled; closed the S55 NEW-6 contract-resolution tail.
 Updated Session 57 (2026-06-19 — data audit + breadth root-cause + ADR-018): TD-S48-NEW-1 breadth RE-DIAGNOSED → CLOSED-DECISION (feed was on AWS not MALPHA, expired-token 403 loop, unsupervised; implementation carries as TD-S57-NEW-1 + TD-S57-NEW-2). 2 new TDs filed (S57-NEW-1 enable/cutover the S56-built systemd units onto MALPHA + WCB cron; S57-NEW-2 reader recency-floor guard). Correction post-S57: S56 had already built+committed the wsfeed preflight + alert + 5 deploy/systemd units (afe8112/30cca59/b627914); S57-NEW-1 is cutover, not build. SMDM retired (ADR-018 D3, evidence-based vs ENH-30 Exp 9 NEUTRAL) and rebuilt as ENH-SDM (PROPOSED). Signal-orphan disposition open for options_flow / iv_context / shadow-v3.
+Updated Session 57 (2026-06-19 — register sync): folded ΔPCR/strike-PCR into ENH-02 + CoC/basis-velocity into ENH-07; filed ENH-115 (FII/DII positioning) + ENH-SDM (structural divergence monitor); corrected ENH-02/07 stale COMPLETE→IN PROGRESS; filed TD-S57-NEW-3 (register dual-structure inconsistency).
+Updated Session 58 (2026-06-22): filed TD-S58-NEW-1 (purchased chain 0% Greeks; ENH-SDM backward study blocked behind a Greeks solve; forward observability monitor is the unblocked path). #1 systemd cutover + #2 recency-floor verified live this session (TD-S57-NEW-1 / TD-S57-NEW-2 close on verification; TD-081 + TD-NEW-K/L/M with them).
+Updated Session 58 close (2026-06-22): TD-S57-NEW-1 + TD-S57-NEW-2 CLOSED-VERIFIED on the Monday open (breadth-fragility class ended); TD-081 + TD-NEW-K/L/M closed downstream; TD-S58-NEW-1 filed (purchased-chain 0% Greeks). ADR-018 D1 host corrected MALPHA->AWS; ADR-019 accepted (orphan port-not-retire); ENH-SDM reframed observability-first + P1 schema deployed.

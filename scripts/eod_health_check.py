@@ -1,0 +1,264 @@
+#!/usr/bin/env python3
+"""
+eod_health_check.py  --  MERDIAN end-of-day data integrity check.
+
+Confirms, across the board, that PRIMARY INGESTION and the COMPUTE UNIVERSE
+captured cleanly for a session. Designed to be run post-close (EOD) or in-session.
+
+Encodes the lessons from S58/S59:
+  * market_ticks is a ROLLING BUFFER (last ~10 min) -- it is EMPTY post-close BY DESIGN.
+    We NEVER row-count it. Tick health is INFERRED from the breadth pipeline:
+    if market_breadth_intraday has a full, fresh session, ticks demonstrably flowed.
+    (Querying market_ticks by row count outside the live window is a false-alarm trap.)
+  * Compute tables are checked PER SYMBOL with a PARITY check (NIFTY vs SENSEX),
+    because a per-symbol silent drop (one symbol stops, the other keeps writing) is
+    a known failure mode (Assumption Register D.24.4).
+  * Dashboard render != DB freshness. This checks the DATABASE (source of truth),
+    not the Marketview cards (which can lag independently -- the WCB render bug).
+
+Data ts is true-UTC (post-2026-04-07, CLAUDE Rule 20). Session runs ~03:00-10:00 UTC
+(08:30-15:30 IST). Reads SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY from .env, same
+raw-HTTP pattern as ingest_option_chain_local.py.
+
+Usage:
+  python3 eod_health_check.py                 # check today's session (IST date)
+  python3 eod_health_check.py --date 2026-06-23
+  python3 eod_health_check.py --verbose
+Exit code: 0 = all OK, 1 = one or more WARN/FAIL.
+"""
+import argparse
+import os
+import sys
+from datetime import datetime, timedelta, timezone
+
+import requests
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
+IST = timezone(timedelta(hours=5, minutes=30))
+UTC = timezone.utc
+
+# ---- session window (UTC) ---------------------------------------------------
+SESSION_OPEN_UTC = "03:45"     # NSE 09:15 IST
+SESSION_CLOSE_UTC = "10:00"    # NSE 15:30 IST
+LAST_CYCLE_OK_UTC = "09:45"    # last derived cycle should land no earlier than this
+
+# ---- tables -----------------------------------------------------------------
+# Primary ingestion (raw capture). ts column + min expected rows for a full session.
+PRIMARY = [
+    # (table, ts_col, min_rows, cadence_note)
+    ("market_spot_snapshots",   "ts", 300, "~1/min capture"),
+    ("market_breadth_intraday", "ts",  60, "~5-min cycle; ALSO the tick-health proxy"),
+    ("option_chain_snapshots",  "ts", 1000, "per-strike rows, high volume"),
+    ("index_futures_snapshots", "ts", 150, "~1/min capture"),
+]
+# Compute universe -- checked PER SYMBOL with parity.
+COMPUTE = [
+    ("gamma_metrics",          "ts", "symbol",       60),
+    ("market_state_snapshots", "ts", "symbol",       60),
+    ("volatility_snapshots",   "ts", "symbol",       60),
+    ("momentum_snapshots",     "ts", "symbol",       60),
+    ("signal_snapshots",       "ts", "symbol",       60),
+    ("weighted_constituent_breadth_snapshots", "ts", "index_symbol", 60),
+]
+SYMBOLS = ["NIFTY", "SENSEX"]
+PARITY_TOL = 4          # allowed NIFTY-vs-SENSEX row-count gap
+LAST_TS_TOL_MIN = 20    # how stale last_ts may be vs the expected last cycle
+
+OK, WARN, FAIL = "OK", "WARN", "FAIL"
+MARK = {OK: "[ OK ]", WARN: "[WARN]", FAIL: "[FAIL]"}
+
+
+def cfg():
+    url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    if not url or not key:
+        sys.exit("ERROR: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set (source .env).")
+    return url, {"apikey": key, "Authorization": f"Bearer {key}"}
+
+
+def q(url, headers, table, params, count=False, timeout=60):
+    h = dict(headers)
+    if count:
+        h["Prefer"] = "count=exact"
+        params = dict(params, select="count")
+    r = requests.get(f"{url}/rest/v1/{table}", headers=h, params=params, timeout=timeout)
+    r.raise_for_status()
+    return r.json()
+
+
+def count_rows(url, headers, table, ts_col, lo, hi, sym_col=None, sym=None):
+    p = {f"{ts_col}": f"gte.{lo}", "and": f"({ts_col}.lt.{hi})"}
+    # simpler: two range params
+    p = {ts_col: [f"gte.{lo}", f"lt.{hi}"]}
+    params = {ts_col: f"gte.{lo}"}
+    params2 = []  # requests can't repeat keys via dict; build manually
+    qs = [(ts_col, f"gte.{lo}"), (ts_col, f"lt.{hi}")]
+    if sym_col and sym:
+        qs.append((sym_col, f"eq.{sym}"))
+    h = dict(headers); h["Prefer"] = "count=exact"
+    r = requests.get(f"{url}/rest/v1/{table}", headers=h,
+                     params=qs + [("select", "count")], timeout=60)
+    r.raise_for_status()
+    data = r.json()
+    return int(data[0]["count"]) if data else 0
+
+
+def edge_ts(url, headers, table, ts_col, lo, hi, order, sym_col=None, sym=None):
+    qs = [(ts_col, f"gte.{lo}"), (ts_col, f"lt.{hi}"),
+          ("select", ts_col), ("order", f"{ts_col}.{order}"), ("limit", "1")]
+    if sym_col and sym:
+        qs.append((sym_col, f"eq.{sym}"))
+    r = requests.get(f"{url}/rest/v1/{table}", headers=headers, params=qs, timeout=60)
+    r.raise_for_status()
+    data = r.json()
+    return data[0][ts_col] if data else None
+
+
+def parse(ts):
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(str(ts).replace("Z", "+00:00")).astimezone(UTC)
+    except Exception:
+        return None
+
+
+def hhmm(s, day):
+    h, m = s.split(":")
+    return day.replace(hour=int(h), minute=int(m), second=0, microsecond=0)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--date", help="session date YYYY-MM-DD (IST); default = today IST")
+    ap.add_argument("--verbose", action="store_true")
+    args = ap.parse_args()
+
+    url, headers = cfg()
+
+    now_utc = datetime.now(UTC)
+    sess_date = (datetime.strptime(args.date, "%Y-%m-%d").date()
+                 if args.date else datetime.now(IST).date())
+    lo = sess_date.isoformat()
+    hi = (sess_date + timedelta(days=1)).isoformat()
+    day0 = datetime(sess_date.year, sess_date.month, sess_date.day, tzinfo=UTC)
+    close_utc = hhmm(SESSION_CLOSE_UTC, day0)
+    last_ok_utc = hhmm(LAST_CYCLE_OK_UTC, day0)
+
+    in_session = (hhmm(SESSION_OPEN_UTC, day0) <= now_utc <= close_utc
+                  and now_utc.date() == sess_date)
+    # expected newest cycle
+    expected_last = (now_utc - timedelta(minutes=10)) if in_session else close_utc
+
+    print("=" * 74)
+    print(f" MERDIAN EOD HEALTH CHECK  --  session {lo}  ({'IN-SESSION' if in_session else 'POST-CLOSE'})")
+    print(f" now {now_utc:%Y-%m-%d %H:%M} UTC  |  ts basis: true-UTC  |  source: DATABASE (not dashboard)")
+    print("=" * 74)
+
+    results = []  # (verdict, line)
+
+    def verdict_ts(last_dt):
+        if last_dt is None:
+            return FAIL
+        age = (expected_last - last_dt).total_seconds() / 60.0
+        return OK if age <= LAST_TS_TOL_MIN else (WARN if age <= 60 else FAIL)
+
+    # ---- PRIMARY INGESTION --------------------------------------------------
+    print("\nPRIMARY INGESTION")
+    print("-" * 74)
+    breadth_ok = False
+    breadth_rows = 0
+    for table, tsc, minrows, note in PRIMARY:
+        try:
+            n = count_rows(url, headers, table, tsc, lo, hi)
+            first = parse(edge_ts(url, headers, table, tsc, lo, hi, "asc"))
+            last = parse(edge_ts(url, headers, table, tsc, lo, hi, "desc"))
+            v = OK
+            if n == 0:
+                v = FAIL
+            elif n < minrows:
+                v = WARN
+            v = v if v == FAIL else max([v, verdict_ts(last)], key=lambda x: [OK, WARN, FAIL].index(x))
+            if table == "market_breadth_intraday":
+                breadth_ok, breadth_rows = (v == OK), n
+            f = f"{first:%H:%M}" if first else "--:--"
+            l = f"{last:%H:%M}" if last else "--:--"
+            print(f"  {MARK[v]} {table:<28} {n:>7} rows  {f}->{l} UTC  ({note})")
+            results.append(v)
+        except Exception as e:
+            print(f"  {MARK[FAIL]} {table:<28} query error: {str(e)[:60]}")
+            results.append(FAIL)
+
+    # market_ticks -- INFERRED, never row-counted
+    if breadth_ok:
+        print(f"  {MARK[OK]} {'market_ticks':<28} INFERRED-OK  (rolling buffer; breadth pipeline "
+              f"healthy @ {breadth_rows} rows -> ticks flowed)")
+        results.append(OK)
+    else:
+        print(f"  {MARK[WARN]} {'market_ticks':<28} SUSPECT  (breadth pipeline not healthy -- "
+              f"verify tick capture via cron.log / in-session, NOT a row count)")
+        results.append(WARN)
+
+    # ---- COMPUTE UNIVERSE (per symbol + parity) -----------------------------
+    print("\nCOMPUTE UNIVERSE  (per symbol; parity = |NIFTY-SENSEX| <= %d)" % PARITY_TOL)
+    print("-" * 74)
+    for table, tsc, symcol, minrows in COMPUTE:
+        counts = {}
+        try:
+            for s in SYMBOLS:
+                n = count_rows(url, headers, table, tsc, lo, hi, symcol, s)
+                last = parse(edge_ts(url, headers, table, tsc, lo, hi, "desc", symcol, s))
+                counts[s] = (n, last)
+            # per-symbol verdicts
+            line_v = OK
+            cells = []
+            for s in SYMBOLS:
+                n, last = counts[s]
+                sv = OK
+                if n == 0:
+                    sv = FAIL
+                elif n < minrows:
+                    sv = WARN
+                sv = sv if sv == FAIL else max([sv, verdict_ts(last)],
+                                               key=lambda x: [OK, WARN, FAIL].index(x))
+                line_v = max([line_v, sv], key=lambda x: [OK, WARN, FAIL].index(x))
+                l = f"{last:%H:%M}" if last else "--:--"
+                cells.append(f"{s} {n:>3}@{l}")
+            # parity
+            gap = abs(counts[SYMBOLS[0]][0] - counts[SYMBOLS[1]][0])
+            parity = "" if gap <= PARITY_TOL else f"  !! PARITY gap={gap}"
+            if parity:
+                line_v = max([line_v, WARN], key=lambda x: [OK, WARN, FAIL].index(x))
+            print(f"  {MARK[line_v]} {table:<42} {' | '.join(cells)}{parity}")
+            results.append(line_v)
+        except Exception as e:
+            print(f"  {MARK[FAIL]} {table:<42} query error: {str(e)[:50]}")
+            results.append(FAIL)
+
+    # ---- VERDICT ------------------------------------------------------------
+    print("\n" + "=" * 74)
+    nfail = results.count(FAIL)
+    nwarn = results.count(WARN)
+    if nfail:
+        overall = f"{MARK[FAIL]} {nfail} FAIL, {nwarn} WARN -- investigate above"
+        code = 1
+    elif nwarn:
+        overall = f"{MARK[WARN]} {nwarn} WARN -- review above (often benign: low-volume / boundary)"
+        code = 1
+    else:
+        overall = f"{MARK[OK]} clean session -- capture + compute complete and symmetric"
+        code = 0
+    print(" VERDICT: " + overall)
+    print("=" * 74)
+    print(" NOTE: this checks the DATABASE. Dashboard cards can lag independently")
+    print("       (WCB render bug); a green DB here does not vouch for Marketview render.")
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

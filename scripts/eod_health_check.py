@@ -92,7 +92,7 @@ def q(url, headers, table, params, count=False, timeout=60):
 
 
 def count_rows(url, headers, table, ts_col, lo, hi, sym_col=None, sym=None):
-    qs = [("and", f"({ts_col}.gte.{lo},{ts_col}.lt.{hi})")]
+    qs = [(ts_col, f"gte.{lo}"), (ts_col, f"lt.{hi}")]
     if sym_col and sym:
         qs.append((sym_col, f"eq.{sym}"))
     h = dict(headers); h["Prefer"] = "count=exact"
@@ -104,16 +104,22 @@ def count_rows(url, headers, table, ts_col, lo, hi, sym_col=None, sym=None):
 
 
 def edge_ts(url, headers, table, ts_col, lo, hi, order, sym_col=None, sym=None):
-    # NOTE: bind the range with a single and=() group, not two repeated ts params
-    # (repeated ts keys + order desc intermittently returns empty in PostgREST).
-    qs = [("and", f"({ts_col}.gte.{lo},{ts_col}.lt.{hi})"),
-          ("select", ts_col), ("order", f"{ts_col}.{order}"), ("limit", "1")]
+    # No range-bind here (range filters proved sensitive to requests\' URL encoding,
+    # nulling some calls; counts handle the range). Fetch the latest/earliest row for
+    # the symbol, then verify in Python it falls within the session [lo, hi).
+    qs = [("select", ts_col), ("order", f"{ts_col}.{order}"), ("limit", "1")]
     if sym_col and sym:
         qs.append((sym_col, f"eq.{sym}"))
     r = requests.get(f"{url}/rest/v1/{table}", headers=headers, params=qs, timeout=60)
     r.raise_for_status()
     data = r.json()
-    return data[0][ts_col] if data else None
+    if not data:
+        return None
+    val = data[0].get(ts_col)
+    # keep only if within the requested session day (string compare is safe on ISO ts)
+    if val and (str(val)[:10] < lo or str(val)[:10] >= hi):
+        return None
+    return val
 
 
 def parse(ts):

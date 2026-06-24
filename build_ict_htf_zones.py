@@ -829,10 +829,14 @@ def main():
             d_zones = detect_daily_zones(daily_ohlcv, symbol, target_date)
             # TD-031 fix: same as weekly -- OB/FVG unconditional.
             _d_ob  = [z for z in d_zones if z["pattern_type"] not in ("PDH", "PDL")]
-            _d_pdl = filter_breached_zones(
-                [z for z in d_zones if z["pattern_type"] in ("PDH", "PDL")],
-                daily_ohlcv, str(target_date)
-            )
+            # S59: daily PDH/PDL written unconditionally. detect_daily_zones emits
+            # exactly one PDH + one PDL for target_date (single prior day, no loop),
+            # so proximity-filtering is unnecessary AND wrong here: on the pre-open
+            # run current_spot = prior-day CLOSE, which on a down day sits inside the
+            # new PDL band (built from prior-day LOW) and falsely drops it as breached.
+            # (Weekly keeps filter_breached_zones -- it emits many PDH/PDL and needs
+            # the nearest-2 prune.)
+            _d_pdl = [z for z in d_zones if z["pattern_type"] in ("PDH", "PDL")]
             d_zones = _d_ob + _d_pdl
             log(f"  Detected {len(d_zones)} daily zones ({len(_d_ob)} OB/FVG + {len(_d_pdl)} PDH/PDL)")
             n = upsert_zones(sb, d_zones, dry_run)

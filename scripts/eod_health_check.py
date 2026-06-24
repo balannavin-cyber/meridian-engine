@@ -70,6 +70,15 @@ SYMBOLS = ["NIFTY", "SENSEX"]
 PARITY_TOL = 4          # allowed NIFTY-vs-SENSEX row-count gap
 LAST_TS_TOL_MIN = 20    # how stale last_ts may be vs the expected last cycle
 
+# ---- reference tables (refreshed ONCE pre-open, not row-counted in-session) --
+# equity_intraday_last holds prev-day closes, refreshed ~03:35 UTC by
+# refresh_equity_intraday_last.py. Freshness is measured on `ts` (upsert column),
+# NEVER created_at (row-birth, never moves on upsert -- TD-S59-NEW-1).
+REF_TABLE = "equity_intraday_last"
+REF_TS = "ts"
+REF_MIN_ROWS = 1200          # universe ~1385; ohlc() tail can drop a few dozen
+REF_STALE_GRACE_HRS = 30     # ts may legitimately be the 03:35 UTC slot of --date
+
 OK, WARN, FAIL = "OK", "WARN", "FAIL"
 MARK = {OK: "[ OK ]", WARN: "[WARN]", FAIL: "[FAIL]"}
 
@@ -136,6 +145,45 @@ def parse(ts):
 def hhmm(s, day):
     h, m = s.split(":")
     return day.replace(hour=int(h), minute=int(m), second=0, microsecond=0)
+
+
+def check_reference_freshness(url, headers, sess_date, day0, verbose=False):
+    """REFERENCE FRESHNESS -- was equity_intraday_last refreshed FOR sess_date?
+
+    Returns (verdict, printable_line). Anchored to the audited date, not wall-clock,
+    so a stale-baseline day FAILs even when audited weeks later (the check that would
+    have fired on 2026-05-21 for TD-S59-NEW-1). Measures `ts`, not created_at.
+    """
+    table, tsc = REF_TABLE, REF_TS
+    try:
+        # global newest ts (NOT date-bounded -- a frozen table's newest sits in the past)
+        newest = parse(edge_ts(url, headers, table, tsc, "1970-01-01",
+                               "2999-01-01", "desc"))
+        # rows whose ts falls on the audited session day
+        lo = sess_date.isoformat()
+        hi = (sess_date + timedelta(days=1)).isoformat()
+        n_today = count_rows(url, headers, table, tsc, lo, hi)
+    except Exception as e:
+        return FAIL, f"  {MARK[FAIL]} {table:<28} query error: {str(e)[:60]}"
+
+    refreshed_for_date = n_today >= 1
+    if newest is None:
+        v = FAIL
+        detail = "no readable ts -- table empty or unreadable"
+    elif not refreshed_for_date:
+        # not refreshed on the audited day -> stale baseline (the C-09 / TD-S59-NEW-1 mode)
+        age_h = (day0 - newest).total_seconds() / 3600.0
+        v = FAIL
+        detail = (f"NOT refreshed for {sess_date} -- newest ts {newest:%Y-%m-%d %H:%M} UTC "
+                  f"({age_h:.0f} h before session) -- STALE BASELINE (TD-S59-NEW-1)")
+    elif n_today < REF_MIN_ROWS:
+        v = WARN
+        detail = (f"refreshed {newest:%H:%M} UTC but only {n_today} rows "
+                  f"(< {REF_MIN_ROWS}) -- ohlc() coverage tail")
+    else:
+        v = OK
+        detail = f"refreshed {newest:%Y-%m-%d %H:%M} UTC, {n_today} rows on {sess_date}"
+    return v, f"  {MARK[v]} {table:<28} {detail}"
 
 
 def main():
@@ -246,6 +294,13 @@ def main():
         except Exception as e:
             print(f"  {MARK[FAIL]} {table:<42} query error: {str(e)[:50]}")
             results.append(FAIL)
+
+    # ---- REFERENCE FRESHNESS (prev-close baseline; not row-counted in-session) --
+    print("\nREFERENCE FRESHNESS  (prev-close baseline -- refreshed once pre-open)")
+    print("-" * 74)
+    rv, rline = check_reference_freshness(url, headers, sess_date, day0, args.verbose)
+    print(rline)
+    results.append(rv)
 
     # ---- VERDICT ------------------------------------------------------------
     print("\n" + "=" * 74)

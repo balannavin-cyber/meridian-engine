@@ -791,3 +791,15 @@ Created Session 24, 2026-05-09 via SQL migration `replay/migrations/001_create_r
 **Recency-floor guard** live in `build_market_state_snapshot_local.py` (the only live latest-row breadth/WCB consumer) — stale breadth/WCB nulled → existing degraded path; `*_stale_floored` raw flags. Verified zero STALE on the Monday open. Closes TD-081.
 
 **Signal orphans (ADR-019):** `shadow_signal_snapshots_v3` / `iv_context_snapshots` RETAINED-PENDING-REHOME; `options_flow_snapshots` RETAINED-DORMANT. None retired.
+
+---
+
+## §S59 (2026-06-24) — breadth-correctness guard + ICT daily-PDL write fix
+
+**`scripts/eod_health_check.py` — REFERENCE FRESHNESS section added** (commit `6b58587`, via `patch_s59_eod_reference_freshness.py` canon-v3, +55 lines, backup `eod_health_check_PRE_S59.py`). New section checks `equity_intraday_last` was refreshed **for the audited `--date`** (anchored to `--date`, not wall-clock) and measures the **`ts`** column, FAIL on a stale baseline. Proven live: `--date 2026-06-22` → FAIL STALE BASELINE (newest ts 2026-05-20); `--date 2026-06-23/24` → OK. This is the reference-table analogue of the ADR-018 D2 recency-floor (which guarded the feed/`market_breadth_intraday`, not the prev-close reference).
+
+**`equity_intraday_last` freshness semantics (codified §D.25).** The table has BOTH `ts` (upsert-updated by `refresh_equity_intraday_last.py` — the real freshness column) and `created_at` (row-birth `DEFAULT now()`, never moves on upsert). All freshness checks read **`ts`**. Columns: `['ticker','ts','last_price','created_at']`, `ticker` is `NSE:`-prefixed (normalize via `norm_sym()` to match bare-`symbol` keys). The breadth prev-close baseline was FROZEN 2026-05-20→2026-06-24 because the `refresh_equity_intraday_last.py` cron was never carried onto the AWS-only host — see Deployment Topology §S59 + tech_debt TD-S59-NEW-1.
+
+**`build_ict_htf_zones.py` — daily PDH/PDL now written unconditionally** (commit `2b40a4b`, `patch_s59_daily_pdl_unconditional.py` canon-v3, backup `build_ict_htf_zones_PRE_S59.py`, **Local** Task-Scheduler job — not AWS). The daily call site no longer passes the freshly-built daily PDH/PDL through `filter_breached_zones()`; `detect_daily_zones` emits exactly one PDH + one PDL per run (single prior day, no loop), so the proximity prune was unnecessary and dropped fresh PDLs on down-close days (the prior-day CLOSE used as `current_spot` sits inside the new PDL band built from the prior-day LOW). **Weekly block left filtered** (`detect_weekly_zones` loops the lookback and emits many PDH/PDL → still needs the nearest-2 prune). Verified `D PDL 23776-23796 => ACTIVE` for 06-24. See tech_debt TD-S59-NEW-3.
+
+**Clarification — `build_ict_htf_zones.py` + `generate_pine_overlay.py` run on LOCAL** (Windows Task Scheduler), not on the AWS orchestrator. Diagnostics read Supabase (shared backend), so host-of-execution is irrelevant for reads; "AWS-only" governs writers/compute.

@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v37",
+    "version": "v38",
     "generated": "2026-06-12",
     "sources": [
       "Session 52 (2026-06-12): Observability infrastructure deployment — 5 monitoring scripts (telegram_utils, monitor_orchestrator_health, refresh_health_dashboard, validate_compute_contracts, enforce_orchestrator_timeout; 761 lines total); 4 crontab entries active; Telegram integration live; status.json health snapshot every 1 min; time-to-detection <2 min for capture gaps, orchestrator failures, compute hangs, crontab typos, stale data.",
@@ -4649,10 +4649,23 @@
       "truncated_each_run": false
     }
   },
-  "version": "v37",
-  "last_updated_session": "Session 58",
-  "last_updated_date": "2026-06-22",
+  "version": "v38",
+  "last_updated_session": "Session 59",
+  "last_updated_date": "2026-06-24",
   "change_log": [
+    {
+      "session": "S59",
+      "date": "2026-06-24",
+      "changes": [
+        "Breadth-correctness defect (TD-S59-NEW-1) ROOT-CAUSED + FIXED + GUARDED + GUARD-PROVEN-LIVE: 23-Jun read BULLISH adv~882/dec~428 score~34 all session (never flipped) on a 0.37-A/D down day (VRD 534/1437) -> directionally inverted. Cause: equity_intraday_last prev-close baseline FROZEN (newest ts 2026-05-20, bulk 2026-02-22) because the 35 3 * * 1-5 refresh_equity_intraday_last.py cron was never carried onto the AWS-only host (crontab -l returned empty). Breadth marked today LTPs vs a months-old baseline -> permanent bullish skew, inverted on down days. Verbatim re-run of C-09/ADR-001 (Session 7). Cron re-added on MERDIAN AWS; baseline repopulated (1316-1317 rows, kite.profile OK OV0782); the cron then self-fired 03:35 UTC on the 06-24 open (maiden timed run, confirmed via eod_health_check --date 2026-06-24 REFERENCE FRESHNESS OK).",
+        "Durability guard shipped (commit 6b58587): scripts/eod_health_check.py REFERENCE FRESHNESS section (patch_s59_eod_reference_freshness.py, canon-v3, +55 lines) checks equity_intraday_last.ts was refreshed for the audited --date (anchored to date not wall-clock), measures ts not created_at. Proven live: --date 2026-06-22 -> FAIL STALE BASELINE; 06-23/06-24 -> OK. Closes the silent-5-week-freeze hole.",
+        "Column-semantics learning (Assumption Register D.25): equity_intraday_last has BOTH ts (upsert-updated = real freshness column) and created_at (row-birth DEFAULT now(), never moves on upsert). Freshness MUST be measured on ts. First diagnostic anchored on created_at and would false-alarm STALE forever -> corrected.",
+        "ICT daily-PDL drop (TD-S59-NEW-3) FIXED (commit 2b40a4b): build_ict_htf_zones.py filter_breached_zones proximity-filtered the fresh daily PDH/PDL against prior-day CLOSE; on a down day the close sits inside the new PDL band (built from prior-day LOW) -> support dropped as already-breached on arrival (06-24 close 23793 vs PDL top 23796, a 3pt cull); PDH survives. Fix: daily PDH/PDL written unconditionally (detect_daily_zones emits one pair/run, no loop); WEEKLY left filtered (loops lookback, emits many, needs nearest-2 prune). patch_s59_daily_pdl_unconditional.py canon-v3, Local only. Verified D PDL 23776-23796 ACTIVE.",
+        "TD-S59-NEW-2 filed (S3 OPEN): refresh_equity_intraday_last.py FAILURE-path exec_log write violates chk_exit_reason_valid (free-text exit_reason outside the closed set) -> failures persist no row -> the reason the freeze ran silently for 5 weeks. Same class as TD-083.",
+        "New diagnostic diagnose_breadth_correctness.py (Local, read-only): Part A equity_intraday_last freshness + coverage audit (ts column, norm_sym NSE:-prefix normalization, paginated past the 1000-row cap, 3.10 microsecond-safe parse) + Part B live advancing/declining names-dump fork.",
+        "AWS cron change: refresh_equity_intraday_last.py re-added (35 3 * * 1-5 = 09:05 IST / 03:35 UTC, fires after the 03:00 UTC MALPHA->AWS token sync). build_ict_htf_zones.py + generate_pine_overlay.py confirmed LOCAL (Task Scheduler), not AWS. 0 new ADRs (bug fixes excluded from ADR triggers per Doc Protocol v4 Rule 10). 0 ENH status changes (the top-5 read was not a status change). Commits: 6b58587 + 2b40a4b. Production patches: 2 (both canon-v3, _PRE_S59 backups)."
+      ]
+    },
     {
       "session": "S58",
       "date": "2026-06-22",

@@ -57,6 +57,57 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S59-NEW-1 (S1 priority) — breadth read BULLISH 882/428 on a 0.37-A/D down day; root cause = frozen `equity_intraday_last` (missing AWS cron); FIX APPLIED + guarded
+
+| Field | Value |
+|---|---|
+| **Severity** | S1 (production-impacting: breadth card was directionally inverted on a hard down day; operator is the integration layer) |
+| **Filed** | 2026-06-24 (Session 59) |
+| **Status** | **FIX APPLIED + GUARDED 2026-06-24.** Live-verify pending on next directional session. |
+| **Component** | `equity_intraday_last` (prev-close reference; refreshed by `refresh_equity_intraday_last.py`, MERDIAN AWS, Kite `ohlc()`) → `ingest_breadth_from_ticks.py` → `market_breadth_intraday` + `breadth_intraday_history` → Marketview breadth card, `build_market_state_snapshot_local.py`, signal builder |
+| **Symptom** | 23-Jun (down day, NIFTY −1.1%) `market_breadth_intraday` read advances ~882 / declines ~428, score ~34, BULLISH all session, never flipped. VRD intraday A/D at the same close: 534 / 1,437, A/D 0.37. `cron.log` looked healthy (1,384 prev-closes matched) — writer "succeeded" against stale values. |
+| **Root cause** | **CONFIRMED: stale prev-close reference caused by a MISSING AWS cron.** `diagnose_breadth_correctness.py` Part A: newest `equity_intraday_last.ts` was 2026-05-20T03:35 UTC, bulk at 2026-02-22 — refresh column frozen ~5 weeks. `crontab -l \| grep refresh_equity_intraday_last` returned EMPTY — the `35 3 * * 1-5` refresher line was never carried onto the AWS-only host. Breadth compared today's LTPs against a months-old baseline below current levels → most names mark "advancing" regardless of direction → permanent bullish skew, inverted on down days. **Verbatim re-run of C-09 / ADR-001** (Session 7); `runbook_update_kite_flow.md` pre-documents it. |
+| **Candidates ruled out** | #2 coverage — NOT the cause (diagnostic's initial 0/1385 was a bare-`symbol` vs `NSE:`-prefixed `ticker` key artifact; writer matched 1,384/1,385; `norm_sym()` fix → 1385/1385). #3 epsilon / #4 score↔count — moot once the baseline is months stale. |
+| **Relationship to feed outage** | Independent second defect. TD-S48-NEW-1 / S57–S58 fixed the live-tick input (`market_ticks`). `equity_intraday_last` is the *other* breadth input and was dead since 2026-05-20 — which is why 23-Jun read BULLISH despite the S58-verified-live feed. |
+| **Column-semantics learning** | `equity_intraday_last` has BOTH `ts` and `created_at`. The refresher upserts `ON CONFLICT DO UPDATE` touching `last_price` + **`ts`**; `created_at` is row-birth (`DEFAULT now()`, never moves on upsert). **Freshness MUST be measured on `ts`, not `created_at`** (verified S59 by direct read: `ts` newest = today, `created_at` newest = 2026-05-20). Codified Assumption Register §D.25. |
+| **Fix applied (2026-06-24)** | (1) Re-added cron on MERDIAN AWS: `35 3 * * 1-5 cd /home/ssm-user/meridian-engine && /usr/bin/python3 refresh_equity_intraday_last.py >> logs/refresh_equity_intraday_last.log 2>&1` (UTC slot = 09:05 IST, fires AFTER the 03:00 UTC MALPHA→AWS token sync). Cron verified present and **self-fired 03:35 UTC 06-24** (maiden timed run confirmed via `eod_health_check --date 2026-06-24` REFERENCE FRESHNESS = OK, refreshed 03:35 UTC). (2) Manual repopulate post-08:30 IST: `kite.profile()` OK OV0782, 1,316–1,317 rows written, no auth error. (3) Verified by direct read: `equity_intraday_last.ts` newest = today. The 05:10 IST first-attempt auth failure was an off-hours expired token (before the 03:00 UTC sync), proven by the 05:16 success. |
+| **Impact** | Breadth card + all breadth-derived reads inverted/untrustworthy ~2026-05-20 → 2026-06-24. ENH-SDM **P2 compute writer is gamma-centric** (gamma_metrics + spot bars) → not hard-gated; interpretation must not lean on breadth until live-verified. |
+| **Durability guard** | `scripts/eod_health_check.py` REFERENCE FRESHNESS section added (commit `6b58587`): checks `equity_intraday_last.ts` was refreshed for the audited `--date`, FAIL if not (anchored to date, not wall-clock). Proven live on `--date 2026-06-22` → FAIL STALE BASELINE; `--date 2026-06-23/24` → OK. Closes the silent-5-week-freeze hole. |
+| **Proper-fix tail (open)** | (a) 68-row `ohlc()` tail — refresh resolves 1,317/1,385; ~68 names Kite `ohlc()` doesn't return still carry 2026-02-22 rows (e.g. `NSE:ROADSTAR` NULL `last_price` — delisted/renamed); chase via `breadth_universe_members.nse_symbol/nse_status`. (b) exec_log FAILURE path broken — see TD-S59-NEW-2. |
+| **Live-verify** | Next directional session: compare the breadth card to VRD on a real move. If it tracks → RESOLVED. |
+| **Related** | C-09 / ADR-001; `runbook_update_kite_flow.md`; TD-S48-NEW-1 (feed liveness — distinct input); TD-S57-NEW-2 / ADR-018 D2 (recency-floor for the feed, not the reference table); TD-S59-NEW-2; ENH-SDM. |
+
+### TD-S59-NEW-2 (S3 priority) — `refresh_equity_intraday_last.py` FAILURE-path exec_log write violates `chk_exit_reason_valid` → failures are invisible
+
+| Field | Value |
+|---|---|
+| **Severity** | S3 (telemetry defect; no active data impact, but it masked TD-S59-NEW-1 for ~5 weeks) |
+| **Filed** | 2026-06-24 (Session 59) |
+| **Status** | OPEN |
+| **Component** | `refresh_equity_intraday_last.py` exec_log write on the FAILURE branch → `script_execution_log` (constraint `chk_exit_reason_valid`) |
+| **Symptom** | On the 05:10 IST manual run (expired-token failure), the exec_log INSERT was rejected: `new row for relation "script_execution_log" violates check constraint "chk_exit_reason_valid" (23514)`. The failing row carried `exit_reason = "prev_close refresh via Kite ohlc()"` / error `Incorrect api_key or access_token.` — `exit_reason` not in the constraint's closed set, so the FAILURE row never persists. |
+| **Root cause** | The script writes a free-text string into `exit_reason` on failure rather than one of the constraint's allowed enum values (same class as TD-083 / TD-NEW-J). Success path uses a valid value; failure path does not. |
+| **Impact** | Failures of this cron leave NO exec_log row. Combined with no alerting on this job, that is exactly why the 2026-05-20→2026-06-24 freeze ran silently — there was nothing to detect. |
+| **Workaround** | None — failures are silent by construction. |
+| **Proper fix** | Map the FAILURE branch's `exit_reason` to a valid member of the `chk_exit_reason_valid` set (read the constraint definition first; do not guess the allowed values), keeping the free-text detail in `error_message`. ~15 min. Bundle with the TD-S59-NEW-1 freshness guard already shipped. Also fold the `eod_health_check` negative-hours cosmetic (when newest `ts` is after the audited date the FAIL line prints "−N h before session"). |
+| **Related** | TD-S59-NEW-1 (the silent freeze this masked); TD-083 / TD-NEW-J (same exit_reason closed-set class); TD-NEW-B (job-failure alerting gap). |
+
+### TD-S59-NEW-3 (S2 priority) — daily ICT PDL silently dropped on down-close days (fresh PDH/PDL proximity-filtered against prior-day close); FIXED
+
+| Field | Value |
+|---|---|
+| **Severity** | S2 (wrong/missing ICT level on the chart — degrades a real decision surface; not a capture/correctness outage) |
+| **Filed** | 2026-06-24 (Session 59) |
+| **Status** | **FIXED 2026-06-24** (commit `2b40a4b`). Verified: D PDL now ACTIVE for 06-24. |
+| **Component** | `build_ict_htf_zones.py` daily write path (call site ~804–846) — `filter_breached_zones()` applied to the freshly-built daily PDH/PDL pair (Local job, Windows Task Scheduler) |
+| **Symptom** | Right pane (ICT-only, PDH/PDL toggle ON) showed PDH but no PDL for NIFTY 06-24. `ict_htf_zones` had `D PDH 24123-24143 ACTIVE` but no `D PDL` row; W PDH present, W PDL absent — PDH survives, PDL culled, asymmetrically. |
+| **Root cause** | `filter_breached_zones` computes `current_spot = daily_ohlcv[last_date]["close"]`. On the pre-open production run (03:19) `last_date` = prior day, so `current_spot` = **prior-day CLOSE**. A PDL is built from prior-day LOW±10; on a down day the prior close sits inside/below the new PDL band, so the support reads "already breached" and is dropped on arrival. Proven against 06-24: close 23,793 vs new PDL top 23,796 — a 3-point cull. PDH (far above spot) survives. The TD-031 fix had already exempted OB/FVG from this filter ("written unconditionally") but explicitly left PDH/PDL filtered — that exemption was the bug. |
+| **Diagnosis note** | Long detour (treated correct data as corrupt) before locating it. The decisive tell, missed early: the `--dry-run` *wrote* a PDL (`would write… NIFTY D PDL 23776-23796`) while the DB had none → write-time filter, not bad data. The data (`hist_spot_bars_1m`), the symbol→id map (`instruments`), the date logic, and the aggregation were all correct. |
+| **Fix applied** | Daily PDH/PDL now written unconditionally — `_d_pdl = [z for z in d_zones if z["pattern_type"] in ("PDH","PDL")]` (no `filter_breached_zones`). `detect_daily_zones` emits exactly one PDH + one PDL per run (single prior day, no loop), so the proximity prune is unnecessary here. **Weekly left filtered** — `detect_weekly_zones` loops the lookback and emits many PDH/PDL, so it still needs the nearest-2 prune. Patch `patch_s59_daily_pdl_unconditional.py` (canon-v3, backup `build_ict_htf_zones_PRE_S59.py`), commit `2b40a4b`, Local only. |
+| **Verify** | Post-fix re-run wrote `D PDL 23776.25-23796.25 => ACTIVE` for 06-24 (build verify block + `_pdlstatus.py` confirmed). Historical PDLs stay EXPIRED (dropped at their own build time; not backfilled — past sessions). |
+| **Open tail** | Weekly PDL exhibits the same shape if it ever surfaces (separate, more careful fix — can't simply remove the weekly filter). `datetime.utcnow()` DeprecationWarning at lines 652/662/734 (harmless now; `datetime.now(timezone.utc)` later). |
+| **Related** | TD-031 (OB/FVG unconditional-write precedent this extends); ADR-001 / TD-S59-NEW-1 (same shape: a stale/wrong reference price silently invalidating correct data). |
+
 ### TD-S58-NEW-1 (S3 priority) — purchased options chain (2025-04→2026-03) has 0% Greeks; ENH-SDM historical study blocked behind a full IV/Greeks solve
 
 | Field | Value |

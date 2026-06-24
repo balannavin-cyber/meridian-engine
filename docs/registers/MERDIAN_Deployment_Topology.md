@@ -876,3 +876,17 @@ The deeper root cause of the breadth cascade — `delete-old-market-ticks` faili
 **systemd units (on MERDIAN AWS):** `merdian-wsfeed.service` (ExecStartPre `bin/wsfeed_preflight.sh` validates `kite.profile()`; `OnFailure` Telegram alert; `Restart=always`; StartLimitBurst=3), `merdian-wsfeed-alert.service`, `merdian-wsfeed-stop.service`, `merdian-wsfeed-start.timer` (Mon-Fri 03:40 UTC), `merdian-wsfeed-stop.timer` (Mon-Fri 10:05 UTC). Installed to `/etc/systemd/system/`, both timers `enable --now`. **Verified live 2026-06-22:** start.timer fired 03:40:01 UTC, preflight OK OV0782, single PID 452985, 2213 instruments, zero 403s.
 
 **Recency-floor guard** (`build_market_state_snapshot_local.py`, both Local + AWS) verified live: zero STALE on the open, breadth ts seconds-old.
+
+---
+
+## §S59 (2026-06-24) — AWS crontab: `refresh_equity_intraday_last.py` re-added (was missing)
+
+**AWS↔Local boundary change — missing cron restored on MERDIAN AWS.** The breadth prev-close reference table `equity_intraday_last` is refreshed pre-open by `refresh_equity_intraday_last.py` (Kite `ohlc()`, writes `last_price` + `ts`). That cron line was **never carried onto the AWS-only host** — `crontab -l | grep refresh_equity_intraday_last` returned empty — so the baseline froze 2026-05-20→2026-06-24 and breadth read BULLISH on down days (TD-S59-NEW-1, a verbatim re-run of C-09 / ADR-001). Re-added this session:
+
+```
+35 3 * * 1-5 cd /home/ssm-user/meridian-engine && /usr/bin/python3 refresh_equity_intraday_last.py >> logs/refresh_equity_intraday_last.log 2>&1
+```
+
+UTC slot `35 3` = **09:05 IST**, deliberately AFTER the 03:00 UTC MALPHA→AWS token sync (a 05:10 IST manual attempt 401'd on an off-hours expired token; the 03:35 UTC slot lands after the sync). **Verified self-firing:** the cron fired autonomously at 03:35 UTC on the 06-24 open (maiden timed run) and wrote 1,316 rows — confirmed via `eod_health_check --date 2026-06-24` REFERENCE FRESHNESS = OK. Durability now double-guarded: the cron writes the baseline, and `eod_health_check`'s new REFERENCE FRESHNESS section (§S59 System Map) FAILs if it ever goes stale again.
+
+**Host clarification (no change, recorded for topology completeness):** `build_ict_htf_zones.py` + `generate_pine_overlay.py` run on **LOCAL** (Windows Task Scheduler), not the AWS orchestrator. The S59 ICT daily-PDL fix (commit `2b40a4b`) is therefore a Local-only deploy (Local → git → no EC2 pull required for that file). Zero §1 environment changes (instance `i-0878c118835386ec2`, EIP `13.63.27.85`). Cross-refs: tech_debt TD-S59-NEW-1/2/3; merdian_reference.json v38 S59 change_log; MERDIAN_System_Map.md §S59.

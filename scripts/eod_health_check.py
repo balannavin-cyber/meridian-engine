@@ -78,6 +78,12 @@ REF_TABLE = "equity_intraday_last"
 REF_TS = "ts"
 REF_MIN_ROWS = 1200          # universe ~1385; ohlc() tail can drop a few dozen
 REF_STALE_GRACE_HRS = 30     # ts may legitimately be the 03:35 UTC slot of --date
+# market_spot_session_markers feeds Marketview's spot header (prev_close_spot ->
+# client-side %-change). Stamped once daily ~16:10 IST by build_market_spot_session_markers.py
+# (cron added S60). Freshness keyed on trade_date_ist; 2 rows/day = NIFTY+SENSEX (TD-S60-NEW-1).
+MARKER_TABLE = "market_spot_session_markers"
+MARKER_DATE_COL = "trade_date_ist"
+MARKER_MIN_ROWS = 2
 
 OK, WARN, FAIL = "OK", "WARN", "FAIL"
 MARK = {OK: "[ OK ]", WARN: "[WARN]", FAIL: "[FAIL]"}
@@ -145,6 +151,36 @@ def parse(ts):
 def hhmm(s, day):
     h, m = s.split(":")
     return day.replace(hour=int(h), minute=int(m), second=0, microsecond=0)
+
+
+def check_marker_freshness(url, headers, sess_date, day0, verbose=False):
+    """REFERENCE FRESHNESS -- was market_spot_session_markers stamped FOR sess_date?
+    Marketview's spot header reads the newest trade_date_ist row and derives %-change
+    from its prev_close_spot; a frozen newest = phantom %-change on the decision surface
+    (TD-S60-NEW-1: writer unscheduled after the AWS-only migration, last wrote 2026-06-04,
+    header showed +4.34% off a 21-day-stale baseline). Keyed on trade_date_ist (a date);
+    a healthy trading day writes 2 rows (NIFTY+SENSEX).
+    """
+    table, col = MARKER_TABLE, MARKER_DATE_COL
+    try:
+        newest = edge_ts(url, headers, table, col, "1970-01-01", "2999-01-01", "desc")
+        lo = sess_date.isoformat()
+        hi = (sess_date + timedelta(days=1)).isoformat()
+        n_today = count_rows(url, headers, table, col, lo, hi)
+    except Exception as e:
+        return FAIL, f"  {MARK[FAIL]} {table:<28} query error: {str(e)[:60]}"
+    if newest is None:
+        v, detail = FAIL, "no rows -- table empty or unreadable"
+    elif n_today < 1:
+        # not stamped for the audited day -> Marketview header reads a stale baseline
+        v, detail = FAIL, (f"NOT written for {sess_date} -- newest {str(newest)[:10]} "
+                           f"-- STALE HEADER BASELINE (TD-S60-NEW-1)")
+    elif n_today < MARKER_MIN_ROWS:
+        v, detail = WARN, (f"written for {sess_date} but only {n_today} row(s) "
+                           f"(< {MARKER_MIN_ROWS} = NIFTY+SENSEX)")
+    else:
+        v, detail = OK, f"written for {sess_date}, {n_today} rows"
+    return v, f"  {MARK[v]} {table:<28} {detail}"
 
 
 def check_reference_freshness(url, headers, sess_date, day0, verbose=False):
@@ -301,6 +337,9 @@ def main():
     rv, rline = check_reference_freshness(url, headers, sess_date, day0, args.verbose)
     print(rline)
     results.append(rv)
+    mv, mline = check_marker_freshness(url, headers, sess_date, day0, args.verbose)
+    print(mline)
+    results.append(mv)
 
     # ---- VERDICT ------------------------------------------------------------
     print("\n" + "=" * 74)

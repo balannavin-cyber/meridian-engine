@@ -1,32 +1,25 @@
 {
   "holidays": [
+    {"date": "2026-01-15", "name": "Municipal Corporation Elections (Maharashtra)"},
     {"date": "2026-01-26", "name": "Republic Day"},
-    {"date": "2026-02-19", "name": "Chhatrapati Shivaji Maharaj Jayanti"},
-    {"date": "2026-03-02", "name": "Mahashivratri"},
-    {"date": "2026-03-20", "name": "Id-Ul-Fitr (Ramzan Id)"},
-    {"date": "2026-04-02", "name": "Ram Navami"},
+    {"date": "2026-03-03", "name": "Holi"},
+    {"date": "2026-03-26", "name": "Shri Ram Navami"},
+    {"date": "2026-03-31", "name": "Shri Mahavir Jayanti"},
     {"date": "2026-04-03", "name": "Good Friday"},
     {"date": "2026-04-14", "name": "Dr. Baba Saheb Ambedkar Jayanti"},
     {"date": "2026-05-01", "name": "Maharashtra Day"},
-    {"date": "2026-06-27", "name": "Bakri Id"},
-    {"date": "2026-07-06", "name": "Muharram"},
-    {"date": "2026-08-15", "name": "Independence Day"},
-    {"date": "2026-08-27", "name": "Ganesh Chaturthi"},
-    {"date": "2026-10-02", "name": "Mahatma Gandhi Jayanti / Dussehra"},
-    {"date": "2026-10-20", "name": "Diwali Laxmi Pujan"},
-    {"date": "2026-10-21", "name": "Diwali Balipratipada"},
-    {"date": "2026-11-04", "name": "Gurunanak Jayanti"},
-    {"date": "2026-11-25", "name": "Christmas"},
-    {"date": "2025-10-02", "name": "Mahatma Gandhi Jayanti"},
-    {"date": "2025-10-23", "name": "Diwali Laxmi Pujan"},
-    {"date": "2025-10-24", "name": "Diwali Balipratipada"},
-    {"date": "2025-11-05", "name": "Prakash Gurpurb Sri Guru Nanak Dev Ji"},
-    {"date": "2025-12-25", "name": "Christmas"}
+    {"date": "2026-05-28", "name": "Bakri Eid"},
+    {"date": "2026-06-26", "name": "Moharram"},
+    {"date": "2026-09-14", "name": "Ganesh Chaturthi"},
+    {"date": "2026-10-02", "name": "Mahatma Gandhi Jayanti"},
+    {"date": "2026-10-20", "name": "Dussehra"},
+    {"date": "2026-11-10", "name": "Diwali-Balipratipada"},
+    {"date": "2026-11-24", "name": "Prakash Gurpurb Sri Guru Nanak Dev"}
   ],
   "special_sessions": [
     {
-      "date": "2025-10-20",
-      "name": "Muhurat Trading 2025",
+      "date": "2026-11-08",
+      "name": "Muhurat Trading 2026 (Diwali Laxmi Pujan)",
       "open_time": "18:15",
       "close_time": "18:30"
     }

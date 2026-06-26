@@ -280,8 +280,9 @@ def build_row_for_symbol(symbol: str, trade_date: date) -> dict[str, Any]:
     notes_parts: list[str] = []
 
     if post is not None:
-        post_ts_ist = parse_ts(post["ts"]).astimezone(IST)
-        if post_ts_ist.time() != time(16, 0):
+        post_dt = parse_ts(post.get("ts"))  # _S60: guard None ts
+        post_ts_ist = post_dt.astimezone(IST) if post_dt else None
+        if post_ts_ist is not None and post_ts_ist.time() != time(16, 0):
             notes_parts.append(
                 f"Postmarket ref captured after 16:00 IST at {post_ts_ist.strftime('%H:%M:%S')}"
             )

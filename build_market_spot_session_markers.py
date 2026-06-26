@@ -161,10 +161,13 @@ def get_premarket_ref(symbol: str, trade_date: date) -> dict[str, Any] | None:
 
 
 def get_open_0915(symbol: str, trade_date: date) -> dict[str, Any] | None:
+    # _S60 TD-S60-NEW-1: dhan 1-min bars stamp end-of-minute, so the first
+    # continuous-session bar lands ~09:16 IST; old 09:14:30-09:15:59 window missed
+    # it every day. First row at/after 09:15:00, out to 09:18:00 for cadence jitter.
     return pick_first_row_in_window(
         symbol,
-        ist_dt(trade_date, 9, 14, 30),
-        ist_dt(trade_date, 9, 15, 59),
+        ist_dt(trade_date, 9, 15, 0),
+        ist_dt(trade_date, 9, 18, 0),
     )
 
 
@@ -185,28 +188,32 @@ def get_postmarket_ref(symbol: str, trade_date: date) -> dict[str, Any] | None:
 
 
 def get_prev_close_spot(symbol: str, trade_date: date) -> float | None:
-    prev_day = trade_date - timedelta(days=1)
+    # _S60 TD-S60-NEW-1: walk back to the most recent prior day that actually has
+    # spot data -- skips weekends + holidays with no calendar dependency. Old code
+    # used trade_date-1 only, so Mondays read Sunday (no data) and returned None.
+    for back in range(1, 8):
+        prev_day = trade_date - timedelta(days=back)
 
-    post_row = get_postmarket_ref(symbol, prev_day)
-    if post_row and to_float(post_row.get("spot")) is not None:
-        return to_float(post_row.get("spot"))
+        post_row = get_postmarket_ref(symbol, prev_day)
+        if post_row and to_float(post_row.get("spot")) is not None:
+            return to_float(post_row.get("spot"))
 
-    close_row = get_close_1530(symbol, prev_day)
-    if close_row and to_float(close_row.get("spot")) is not None:
-        return to_float(close_row.get("spot"))
+        close_row = get_close_1530(symbol, prev_day)
+        if close_row and to_float(close_row.get("spot")) is not None:
+            return to_float(close_row.get("spot"))
 
-    rows = select_rows(
-        "market_spot_snapshots",
-        "symbol, ts, spot",
-        filters_eq={"symbol": symbol},
-        gte=("ts", utc_iso(ist_dt(prev_day, 0, 0, 0))),
-        lte=("ts", utc_iso(ist_dt(prev_day, 23, 59, 59))),
-        order_by="ts",
-        desc=True,
-        limit=1,
-    )
-    if rows:
-        return to_float(rows[0].get("spot"))
+        rows = select_rows(
+            "market_spot_snapshots",
+            "symbol, ts, spot",
+            filters_eq={"symbol": symbol},
+            gte=("ts", utc_iso(ist_dt(prev_day, 0, 0, 0))),
+            lte=("ts", utc_iso(ist_dt(prev_day, 23, 59, 59))),
+            order_by="ts",
+            desc=True,
+            limit=1,
+        )
+        if rows and to_float(rows[0].get("spot")) is not None:
+            return to_float(rows[0].get("spot"))
 
     return None
 

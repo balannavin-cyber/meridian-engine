@@ -499,6 +499,35 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
     put_call_ratio = to_float(_flow.get("put_call_ratio"))
     chain_iv_skew  = to_float(_flow.get("chain_iv_skew"))
 
+    # --- Basis-velocity context (ENH-07 B, display-not-gate per S37/S57) ---
+    def _fetch_basis_context(sym: str) -> dict:
+        try:
+            rows = (SUPABASE.table("basis_context_snapshots")
+                    .select("ts,context_label,basis_velocity_pp,basis_pct_now")
+                    .eq("symbol", sym)
+                    .order("ts", desc=True)
+                    .limit(1)
+                    .execute().data)
+            return rows[0] if rows else {}
+        except Exception:
+            return {}
+    _basis_ctx = _fetch_basis_context(symbol)
+    # ADR-018 D2 recency floor: stale basis context must not surface as live.
+    _basis_floor_min = to_float(os.getenv("MERDIAN_BASIS_RECENCY_FLOOR_MIN", "15")) or 15.0
+    _basis_stale = False
+    if _basis_ctx:
+        try:
+            import dateutil.parser as _dpb
+            _bts = _dpb.parse(str(_basis_ctx.get("ts"))).astimezone(timezone.utc)
+            if (datetime.now(timezone.utc) - _bts).total_seconds() / 60.0 > _basis_floor_min:
+                _basis_stale = True
+                _basis_ctx = {}
+        except Exception:
+            _basis_stale = True
+            _basis_ctx = {}
+    basis_context_label = _basis_ctx.get("context_label")
+    basis_velocity_pp = to_float(_basis_ctx.get("basis_velocity_pp"))
+
     # --- WCB fields ---
     wcb_regime = breadth_features.get("wcb_regime")
     wcb_score = to_float(breadth_features.get("wcb_score"))
@@ -877,6 +906,9 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
         "chain_iv_skew":  chain_iv_skew,
         "options_flow_stale": _flow_stale,
         "basis_pct":      basis_pct,
+        "basis_context_label": basis_context_label,
+        "basis_velocity_pp":   basis_velocity_pp,
+        "basis_context_stale": _basis_stale,
         "signal_v4":      SIGNAL_V4_ENABLED,
         "ret_session":    ret_session,
     })

@@ -136,7 +136,7 @@ Sortable table of all 86 IDs. For full detail see Part 4.
 ---
 
 | ENH-115 | FII/DII Participant Positioning + Cash Flow | context | **PROPOSED** |
-| ENH-SDM | Structural Divergence Monitor (ADR-018 D4) | context | **PROPOSED** |
+| ENH-SDM | Structural Divergence Monitor (ADR-018 D4) | context | **P2 BUILT** (writer + wired + proven, S60) |
 
 ## Part 2 -- Active Work (not yet delivered or under monitoring)
 
@@ -2359,7 +2359,8 @@ Estimated effort: 4–6 hours, repo-wide.
 **Primitives (4):** breadth-divergence; OI-displacement vs drift; straddle velocity; settlement-window VWAP pressure. + phase classifier + direction.  
 **Modes:** operator-selectable offensive (fade the engineered settlement reversal aligned with the smart-money options book) / defensive (stand-aside).  
 **Governance:** every reader applies ADR-018 D2 recency-floor guard. M→V→S→P; ADR-009 out-of-sample net-of-costs on post-ban data before any capital.  
-**Spec:** `ENH-SDM_structural_divergence_monitor_spec.md` (S57).
+**Spec:** `ENH-SDM_structural_divergence_monitor_spec.md` (S57).  
+**S60 update (P2 BUILT + WIRED + PROVEN):** `compute_structural_divergence_local.py` written (commit `4bd3bf5`) reading `gamma_metrics` latest+prior+session-open, writing `structural_divergence_snapshots` (UPSERT symbol,ts). AS-BUILT primitives + classifier enums RATIFIED: `pin_risk_rate`, `straddle_collapse_pct` (cumulative from session-open straddle), `gamma_concentration_delta`, `regime_flip`; `phase` FLIP>CASCADE>CONCENTRATED>STABLE; `direction` AMPLIFYING/DAMPENING/TRANSITION/NEUTRAL (dealer-posture, not a price call); `sdm_score` 0–4 count (0–5 at P3); `divergence_mode` hard-held OBSERVE until forward N; `three_wick_reversal` NULL DEFERRED-P3 (needs spot OHLC). Recency-floor FLAGS not nulls (`source_stale_floored`, env `MERDIAN_SDM_RECENCY_FLOOR_MIN` default 15). Wired into `run_merdian_shadow_runner_aws.py execute_pipeline` after SENSEX market_state, before NIFTY trade_signal (commit `8cec587`) — non-fatal (run_compute_step catches; failed_steps tally; no abort-on-first-fail). Mechanically proven on live-shaped data; forward cohort accrues from next open (signal/modes gated on N per S58; backward study still blocked behind TD-S58-NEW-1 Greeks solve). The earlier 4-primitive list (breadth-divergence / OI-displacement / straddle velocity / settlement-VWAP) above is the ADR-018 D4 first-draft set, SUPERSEDED S58/S60 by the gamma-centric AS-BUILT set; the canonical as-built definitions are in the committed spec `docs/decisions/ENH-SDM_structural_divergence_monitor_spec.md` (S60, ratifies the enums + closes the S57 spec-debt of an authored-to-outputs-never-versioned spec).
 
 ### ENH-114 — Strategy Reference Library (PROPOSED — S42)
 **Date proposed:** 2026-06-02 (S42)  
@@ -2403,6 +2404,7 @@ Append-only. Record every meaningful register edit.
 ---
 
 | 2026-06-19 | — | S57 register sync | 963b062 | ENH-02 +ΔPCR/strike-PCR fold; ENH-07 +CoC/basis-velocity fold; ENH-02/07 **COMPLETE→IN PROGRESS** (stale v7 bulk-flip corrected); +ENH-115 FII/DII participant positioning (PROPOSED, ADR-018-supervised source); +ENH-SDM structural-divergence monitor (PROPOSED, ADR-018 D4); register dual-structure inconsistency filed as TD-S57-NEW-3. |
+| 2026-06-26 | — | S60 ENH-SDM P2 BUILT | 4bd3bf5 / 8cec587 | **ENH-SDM PROPOSED → P2 BUILT + WIRED + PROVEN.** Writer `compute_structural_divergence_local.py` (`4bd3bf5`) reads `gamma_metrics` (latest+prior+session-open), writes `structural_divergence_snapshots` (UPSERT symbol,ts); AS-BUILT classifier enums ratified (phase FLIP>CASCADE>CONCENTRATED>STABLE; direction AMPLIFYING/DAMPENING/TRANSITION/NEUTRAL; sdm_score 0–4; divergence_mode held OBSERVE; three_wick_reversal NULL DEFERRED-P3). Wired into orchestrator after market_state, before trade_signal, non-fatal (`8cec587`). Spec committed `docs/decisions/ENH-SDM_structural_divergence_monitor_spec.md` (closes the S57 spec-debt + ratifies enums). Mechanically proven; forward cohort accrues next open; signal/modes still gated on N + the TD-S58-NEW-1 Greeks solve. Display-not-gate per S37/ADR-018 D2. |
 
 ## Part 6 -- Archive References
 

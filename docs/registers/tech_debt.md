@@ -57,6 +57,82 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S60-NEW-1 (S2 priority) — Marketview spot header showed phantom SENSEX +4.34%/+3228pts; root cause = stalled `market_spot_session_markers` writer (21-day-stale prev_close baseline); CLOSED
+
+| | |
+|---|---|
+| **Severity** | S2 (false-but-plausible headline number on the live dashboard; DB/engine clean) |
+| **Discovered** | 2026-06-26 (Session 60) |
+| **Component** | `build_market_spot_session_markers.py` (writer); `meridian-connect` `pages/Marketview.tsx:716` `prev_close_spot` via `lib/queries.ts useSpotMarker` → table `market_spot_session_markers` (frontend reader) |
+| **Symptom** | Header read SENSEX +4.34% (+3228 pts) on a real ~+0.76% day; the % baseline was a frozen `prev_close_spot=74346.17` from 2026-06-04 (verified real prev close 76,991.22). |
+| **Root cause** | The marker writer stalled after 2026-06-04 (unscheduled post-AWS-migration). The frontend reads the newest `market_spot_session_markers` row's `prev_close_spot`; with no fresh marker since 06-04 it read a 21-day-stale baseline. Recurring C-09/ADR-001 shape — a stale reference silently invalidating correct data. |
+| **Workaround / Fix** | CLOSED. (1) None-guard on postmarket-ts deref (`4f676e1`); (2) backfilled markers 06-05→06-25; (3) cron added `40 10 * * 1-5` (16:10 IST, house-style no-flock); (4) marker freshness guard added to `scripts/eod_health_check.py` (`5066d81`, proven OK 06-25 / FAIL on an empty date); (5) `get_open_0915` window widened 09:15:00–09:18:00 for dhan end-of-minute stamping + `get_prev_close_spot` walks back up to 7 days (Monday-reads-Sunday bug), `c9c2ab3`. |
+| **Proper fix** | Done. Durability now guarded by the freshness check (FAILs if the baseline goes stale again). |
+| **Cost to fix** | ~1 session (closed same session). |
+| **Blocked by** | nothing. |
+| **Related** | C-09 / ADR-001 (stale-reference family); TD-S59-NEW-1 (same family, different path — breadth prev-close); ENH-SDM (marker is preserved on holidays, derived compute is not — see TD-S60-NEW-4). |
+
+### TD-S60-NEW-2 (S1 priority) — `trading_calendar.json` held 2-of-15 NSE-2026 equity holidays (one misdated) → `trading_calendar` mismarked every holiday `is_open=true` since ~April → pipeline ran the full compute chain on Muharram; CLOSED AT SOURCE + orchestrator gate belt
+
+| | |
+|---|---|
+| **Severity** | S1 (the holiday trust-anchor for the whole system was wrong; every gate fail-opens on it, so all gates were silently defeated; plausible-but-invalid rows written into production compute tables on every weekday holiday). |
+| **Discovered** | 2026-06-26 (Session 60) |
+| **Component** | `trading_calendar.json` (source of truth, read by V18E rule engine `trading_calendar.py`); `trading_calendar` table (seeded by `seed_trading_calendar.py`); `run_merdian_shadow_runner_aws.py` (ran with no holiday gate). |
+| **Symptom** | Full compute chain (gamma→volatility→momentum→WCB→market_state→SDM→trade_signal) ran on Muharram 2026-06-26 (`PIPELINE COMPLETE` 03:51 UTC, 7 gamma rows/symbol) on a closed market. `SELECT is_open FROM trading_calendar WHERE trade_date='2026-06-26'` = true. |
+| **Root cause** | `trading_calendar.json` `holidays` list held only 2 of 15 NSE-2026 equity holidays — and one was misdated (Good Friday as 04-18 vs real 04-03). So `get_session_config_for_date` correctly closed weekends (Rule 1) but every weekday holiday returned `is_open=true`. The table inherited it; every holiday gate (incl. the proven marker-writer gate) trusted it and passed on closed days. Verbatim C-09/ADR-001 at the trust-anchor level. |
+| **Workaround / Fix** | CLOSED. Regenerated `trading_calendar.json` to the 15 official NSE-2026 equity holidays (verified via web_fetch of the official Zerodha/NSE holiday calendar: 01-15, 01-26, 03-03, 03-26, 03-31, 04-03, 04-14, 05-01, 05-28, 06-26, 09-14, 10-02, 10-20, 11-10, 11-24; + Nov-8 Muhurat special session; dropped 2025 + settlement/weekend contaminants), commit `bafddc2`. Reseeded `seed_trading_calendar.py --days 220`; explicit UPDATE flipped the stale `is_open=true` holiday rows to false (seeder only writes open days, can't self-correct false-positives). Verified 06-26 closed / 06-29 (Mon) open. BELT: orchestrator holiday gate added (`af74d0c`), proven live firing on Muharram; then cut over to the shared helper (TD-S60-NEW-3). |
+| **Proper fix** | Done at source. `seed_trading_calendar.py` now propagates the correct JSON forward; the gate guards against a future recurrence. |
+| **Cost to fix** | ~1 session (closed same session). |
+| **Blocked by** | nothing. |
+| **Related** | C-09 / ADR-001; TD-S60-NEW-3 (shared gate helper); TD-S60-NEW-4 (holiday-noise repair); CLAUDE.md Rule 18 (calendar trust-anchor, S60). |
+
+### TD-S60-NEW-3 (S2 priority) — no shared holiday-gate helper (~30 entrypoints each roll their own `is_open` check); BUILT `core/trading_calendar_gate.py` + orchestrator CUT OVER; ~28 migrations remain
+
+| | |
+|---|---|
+| **Severity** | S2 (duplication/portability debt; the orchestrator gap let TD-S60-NEW-2 happen; one wrong inline copy can silently fail-open). |
+| **Discovered** | 2026-06-26 (Session 60) |
+| **Component** | `core/trading_calendar_gate.py` (NEW); `run_merdian_shadow_runner_aws.py` (cut over); ~28 other entrypoints with bespoke inline gates (+ archaeology `fix_capture_spot_holiday_gate.py`, `fix_merdian_start_calendar.py`). |
+| **Symptom** | Holiday gating was added piecemeal entrypoint-by-entrypoint as each was caught firing on a holiday; the orchestrator never got its turn; ~30 scripts each carry their own `trading_calendar` check. |
+| **Root cause** | No single shared gate. v1 of the helper (commit `2d1375c`) routed through `core.supabase_client`/`core.config.get_settings()` and silently fail-opened on AWS (smoke-test F/F/F caught it — surfaced TD-S60-NEW-5). |
+| **Workaround / Fix** | PARTIAL (built + orchestrator cut over). v2 (`3b3b8ee`) is self-sufficient: own `load_dotenv()` + raw `requests` + `os.getenv`, bypassing `core.config`; fail-open at every branch; smoke-tested F/T/F (06-26 closed, 06-29 open, 06-26 closed) with no fail-open warnings. Exposes `is_trading_day_today()`, `is_trading_day(iso)`, `assert_trading_day_or_exit(log=None)`. Orchestrator cut over (`38a82ff`, −36/+2 lines) and re-proven firing on Muharram via the helper. Marker writer deliberately left on its own working inline gate. |
+| **Proper fix** | Migrate the remaining ~28 bespoke gates onto the helper incrementally, each with its own test (a Friday big-bang over 30 gates is the Monday-failure risk). |
+| **Cost to fix** | ~2-3 sessions for the full migration sweep (incremental). |
+| **Blocked by** | nothing (helper is live). TD-S60-NEW-5 (`core.config` path) should be fixed before any gate is allowed to route through `core.config`. |
+| **Related** | TD-S60-NEW-2 (the gap this closes); TD-S60-NEW-5 (why v2 bypasses core.config); CLAUDE.md Rule 18 (import the helper, don't roll inline). |
+
+### TD-S60-NEW-4 (S2 priority) — holiday-noise compute rows on 2026-06-26 (pre-gate + SDM-test runs); CLOSED via scoped single-date DELETE
+
+| | |
+|---|---|
+| **Severity** | S2 (plausible-but-invalid rows in production compute tables on a closed day; would pollute any cohort/backtest not holiday-filtered, including ENH-SDM's forward cohort baseline). |
+| **Discovered** | 2026-06-26 (Session 60) |
+| **Component** | `gamma_metrics`, `market_state_snapshots`, `volatility_snapshots`, `momentum_snapshots`, `signal_snapshots`, `structural_divergence_snapshots`. |
+| **Symptom** | Compute rows written on Muharram (the calendar/gate bug). Per-date probe proved ALL contaminated rows were on 2026-06-26 only — no earlier holiday carried rows (the pipeline predates running this loudly), no real trading day leaked. |
+| **Root cause** | TD-S60-NEW-2 (no holiday gate over a wrong calendar) let the chain run on the holiday. |
+| **Workaround / Fix** | CLOSED. Scoped single-date DELETE (operator-approved counts: gamma 30, market_state 30, volatility 30, momentum 29, signal 34, structural_divergence 16; RETURNING matched exactly), verified 0 remaining. `market_spot_snapshots` (0 rows — holiday feed correctly didn't capture; the rows seen earlier in-session were 06-25 data, 376/symbol) and `market_spot_session_markers` (2 rows) legitimately preserved: capture on a holiday is fine, derived compute is not. |
+| **Proper fix** | Done. The gate (TD-S60-NEW-2/3) prevents recurrence. |
+| **Cost to fix** | ~0.5 session (closed same session). |
+| **Blocked by** | nothing. |
+| **Related** | TD-S60-NEW-2/3 (gate that prevents recurrence); ENH-SDM (cohort starts clean Monday). Note for backlog: ~8 past 2026 weekday holidays (Apr–Jun) ran the chain while the calendar was wrong — those older cohorts should be filtered against the corrected calendar before use (no rows existed for them in the compute tables probed this session, but any future backfill spanning them must filter). |
+
+### TD-S60-NEW-5 (S2 priority) — `core/config.py` hardcodes Windows `BASE_DIR = C:\GammaEnginePython`; loads `.env` from a path that doesn't exist on AWS; FILED
+
+| | |
+|---|---|
+| **Severity** | S2 (latent portability landmine; masked today because callers self-load or export env, but any clean `core.config`-routed invocation on AWS raises). |
+| **Discovered** | 2026-06-26 (Session 60, during the TD-S60-NEW-3 helper smoke-test) |
+| **Component** | `core/config.py` — `BASE_DIR = Path(r"C:\GammaEnginePython")`; `ENV_FILE = BASE_DIR / ".env"`; `load_dotenv(ENV_FILE)` is a no-op on AWS. |
+| **Symptom** | `get_settings()` raises `Missing required environment variable: SUPABASE_URL` on a clean AWS invocation (proven: the v1 gate via `SupabaseClient` fail-opened F/F/F because `get_settings()` found no creds). Every `core.config`/`SupabaseClient`-routed script on AWS is silently dependent on env being loaded by some other prior `load_dotenv()`. |
+| **Root cause** | Hardcoded Windows path in `core/config.py`. |
+| **Workaround** | Scripts self-load `.env` (`load_dotenv()`) or rely on exported env; the S60 gate helper deliberately bypasses `core.config` for exactly this reason. |
+| **Proper fix** | Derive `BASE_DIR` from `__file__` (repo root relative to `core/`), not a hardcoded OS path. |
+| **Cost to fix** | ~30 min, but it's load-bearing (used everywhere) so it needs a careful test pass — not a Friday change. |
+| **Blocked by** | nothing. |
+| **Related** | TD-S60-NEW-3 (surfaced it; the gate helper bypasses core.config because of it). |
+
+
 ### TD-S59-NEW-1 (S1 priority) — breadth read BULLISH 882/428 on a 0.37-A/D down day; root cause = frozen `equity_intraday_last` (missing AWS cron); FIX APPLIED + guarded
 
 | Field | Value |
@@ -78,6 +154,8 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Related** | C-09 / ADR-001; `runbook_update_kite_flow.md`; TD-S48-NEW-1 (feed liveness — distinct input); TD-S57-NEW-2 / ADR-018 D2 (recency-floor for the feed, not the reference table); TD-S59-NEW-2; ENH-SDM. |
 
 ### TD-S59-NEW-2 (S3 priority) — `refresh_equity_intraday_last.py` FAILURE-path exec_log write violates `chk_exit_reason_valid` → failures are invisible
+
+> **CARRIED TO S61 (S60 close).** This was the original S60 P0 #1 work-order and was never reached — the session was pulled into the marker/calendar/ENH-SDM cascade. Ready: `script_execution_log` schema confirmed (`exit_reason` is constrained-text VALID set {SUCCESS, HOLIDAY_GATE, OFF_HOURS, TOKEN_EXPIRED, DATA_ERROR, SKIPPED_NO_INPUT, DEPENDENCY_MISSING, CRASH, TIMEOUT, RUNNING, DRY_RUN}; `error_message` is the free-text sink). Fix: map the FAILURE branch's free-text reason to a valid enum (e.g. TOKEN_EXPIRED / DATA_ERROR) and route the detail to `error_message`. ~15 min. Operator-stated S61 priority #1.
 
 | Field | Value |
 |---|---|
@@ -3030,3 +3108,5 @@ Updated Session 57 (2026-06-19 — data audit + breadth root-cause + ADR-018): T
 Updated Session 57 (2026-06-19 — register sync): folded ΔPCR/strike-PCR into ENH-02 + CoC/basis-velocity into ENH-07; filed ENH-115 (FII/DII positioning) + ENH-SDM (structural divergence monitor); corrected ENH-02/07 stale COMPLETE→IN PROGRESS; filed TD-S57-NEW-3 (register dual-structure inconsistency).
 Updated Session 58 (2026-06-22): filed TD-S58-NEW-1 (purchased chain 0% Greeks; ENH-SDM backward study blocked behind a Greeks solve; forward observability monitor is the unblocked path). #1 systemd cutover + #2 recency-floor verified live this session (TD-S57-NEW-1 / TD-S57-NEW-2 close on verification; TD-081 + TD-NEW-K/L/M with them).
 Updated Session 58 close (2026-06-22): TD-S57-NEW-1 + TD-S57-NEW-2 CLOSED-VERIFIED on the Monday open (breadth-fragility class ended); TD-081 + TD-NEW-K/L/M closed downstream; TD-S58-NEW-1 filed (purchased-chain 0% Greeks). ADR-018 D1 host corrected MALPHA->AWS; ADR-019 accepted (orphan port-not-retire); ENH-SDM reframed observability-first + P1 schema deployed.
+
+Updated Session 60 (2026-06-26 — Muharram holiday): 5 NEW TDs filed at top of Active section. TD-S60-NEW-1 (S2) marker-header phantom +4.34% CLOSED (stalled `market_spot_session_markers` writer → 21-day-stale prev_close baseline; cron + freshness guard + open/prevclose window fixes). TD-S60-NEW-2 (S1) `trading_calendar.json` 2-of-15 holidays misdated → every NSE holiday mismarked open since ~April → pipeline ran on Muharram; CLOSED AT SOURCE (15 official holidays, `bafddc2`, reseed + stale-row UPDATE) + orchestrator gate belt (`af74d0c`). TD-S60-NEW-3 (S2) shared holiday-gate helper `core/trading_calendar_gate.py` BUILT (`3b3b8ee` self-sufficient v2) + orchestrator CUT OVER (`38a82ff`); ~28 bespoke gates migrate incrementally. TD-S60-NEW-4 (S2) holiday-noise compute rows on 06-26 CLOSED via scoped single-date DELETE (gamma 30 / market_state 30 / volatility 30 / momentum 29 / signal 34 / SDM 16; 0 remaining; spot+markers preserved). TD-S60-NEW-5 (S2) `core/config.py` Windows-hardcoded `BASE_DIR` FILED (latent AWS portability landmine; surfaced by the NEW-3 smoke-test). TD-S59-NEW-2 (exec_log exit_reason) annotated CARRIED TO S61 (operator-stated priority #1, ~15 min, schema confirmed). 4 TDs closed this session (NEW-1/-2/-4 + the calendar root cause), 1 built (NEW-3), 1 filed (NEW-5). No new ADR (bug-fixes + a compute writer + data-repair + a helper-consolidation; Doc Protocol v4 Rule 10 bar not met). 8 commits; all production patches canon-v3 with `_PRE_S60` backups.

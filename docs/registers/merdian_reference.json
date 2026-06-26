@@ -2308,11 +2308,18 @@
       "status": "LIVE  --  S56 (commit 132eddc). Atomic staging+swap; replaces non-atomic Local Windows-CSV reload_dhan_scripmaster_from_csv.py."
     },
     "compute_structural_divergence_local.py": {
-      "aws_path": "/home/ssm-user/meridian-engine/compute_structural_divergence_local.py (PLANNED)",
-      "writes": [
-        "structural_divergence_snapshots"
+      "local_path": "C:\\GammaEnginePython\\compute_structural_divergence_local.py",
+      "aws_path": "/home/ssm-user/meridian-engine/compute_structural_divergence_local.py",
+      "reads": [
+        "gamma_metrics (latest + prior + session-open per symbol)"
       ],
-      "status": "PLANNED  --  ENH-SDM (ADR-018 D4). AWS orchestrator-integrated per ADR-006. Gated on ADR-018 D1+D2 live."
+      "writes": [
+        "structural_divergence_snapshots (UPSERT on symbol,ts)"
+      ],
+      "call_signature": "<symbol>  (NIFTY|SENSEX)",
+      "cadence": "ENH-SDM P2 step in run_merdian_shadow_runner_aws.py execute_pipeline, after SENSEX market_state, before NIFTY trade_signal; non-fatal",
+      "status": "LIVE -- ENH-SDM P2 BUILT+WIRED+PROVEN S60 (commit 4bd3bf5 writer, 8cec587 wiring). Display-not-gate observability monitor. AS-BUILT enums: phase FLIP>CASCADE>CONCENTRATED>STABLE; direction AMPLIFYING/DAMPENING/TRANSITION/NEUTRAL; sdm_score 0-4; divergence_mode held OBSERVE; three_wick_reversal NULL DEFERRED-P3. Recency-floor flags via source_stale_floored (env MERDIAN_SDM_RECENCY_FLOOR_MIN default 15). Spec docs/decisions/ENH-SDM_structural_divergence_monitor_spec.md.",
+      "critical_rule": "Display-not-gate: nothing routes on it. Forward cohort accrues from next open; signal/modes gated on N (S58) + TD-S58-NEW-1 Greeks solve. three_wick_reversal deferred to P3 (needs spot OHLC)."
     },
     "deploy/systemd/ (5 units)": {
       "aws_path": "/home/ssm-user/meridian-engine/deploy/systemd/",
@@ -2325,6 +2332,18 @@
     "wsfeed_alert": {
       "aws_path": "/home/ssm-user/meridian-engine/ (deploy/) — exact filename in deploy/systemd/ area",
       "status": "BUILT  --  S56 (commits 30cca59 + b627914). Alert script for the breadth feed. Part of ADR-018 D1 supervision scaffolding."
+    },
+    "core/trading_calendar_gate.py": {
+      "local_path": "C:\\GammaEnginePython\\core\\trading_calendar_gate.py",
+      "aws_path": "/home/ssm-user/meridian-engine/core/trading_calendar_gate.py",
+      "reads": [
+        "trading_calendar (via raw requests + os.getenv; self-loads .env, bypasses core.config)"
+      ],
+      "writes": [],
+      "call_signature": "is_trading_day_today() | is_trading_day(iso) | assert_trading_day_or_exit(log=None)",
+      "cadence": "Imported by entrypoints needing a holiday gate; orchestrator cut over S60",
+      "status": "LIVE -- NEW S60 (TD-S60-NEW-3). Self-sufficient shared holiday gate (commit 3b3b8ee v2). Fail-open at every branch. Orchestrator cut over (38a82ff). ~28 other inline gates migrate incrementally.",
+      "critical_rule": "CANONICAL holiday gate -- import it, do not roll a new inline copy (CLAUDE.md Rule 18). Deliberately bypasses core.config (TD-S60-NEW-5: core/config.py hardcodes a Windows BASE_DIR and finds no .env on AWS, so a SupabaseClient-routed gate silently fail-opens). assert_trading_day_or_exit writes ExecutionLog exit_reason HOLIDAY_GATE."
     }
   },
   "tables": {
@@ -3044,13 +3063,14 @@
     },
     "structural_divergence_snapshots": {
       "written_by": [
+        "compute_structural_divergence_local.py",
         "compute_structural_divergence_local.py (PLANNED P2 — gamma-centric primitives per CASE-2026-06-02; display-not-gate)"
       ],
       "read_by": [
         "(observability surface — must apply ADR-018 D2 recency-floor)"
       ],
       "constraint": "UNIQUE(symbol, ts); true-UTC; gen_random_uuid id; ADR-008 _replay mirror",
-      "status": "LIVE (table created S58, empty)  --  ENH-SDM P1 deployed via sql/2026-06-22_enh_sdm_structural_divergence_snapshots.sql. Primitives: pin-risk rate, straddle-collapse vel, gamma-concentration, net_gex/regime-flip + three-wick trigger. P2 writer carried to S59."
+      "status": "LIVE + WRITING -- ENH-SDM P2 writer compute_structural_divergence_local.py wired into the orchestrator S60 (was P1-schema-deployed-only at S58). UPSERT on (symbol,ts). Display-not-gate. Forward cohort starts clean Monday (06-26 holiday-test rows purged, TD-S60-NEW-4). LIVE (table created S58, empty)  --  ENH-SDM P1 deployed via sql/2026-06-22_enh_sdm_structural_divergence_snapshots.sql. Primitives: pin-risk rate, straddle-collapse vel, gamma-concentration, net_gex/regime-flip + three-wick trigger. P2 writer carried to S59."
     },
     "dhan_scripmaster_staging": {
       "written_by": [
@@ -4649,10 +4669,25 @@
       "truncated_each_run": false
     }
   },
-  "version": "v38",
-  "last_updated_session": "Session 59",
-  "last_updated_date": "2026-06-24",
+  "version": "v39",
+  "last_updated_session": "Session 60",
+  "last_updated_date": "2026-06-26",
   "change_log": [
+    {
+      "session": "S60",
+      "date": "2026-06-26",
+      "changes": [
+        "Marketview spot-header phantom +4.34% (TD-S60-NEW-1) CLOSED: build_market_spot_session_markers.py stalled after 2026-06-04 (unscheduled post-AWS-migration); frontend prev_close_spot read a 21-day-stale market_spot_session_markers baseline (74346.17 vs real prev close 76991.22). Same C-09/ADR-001 stale-reference family as S59. Fixes: 4f676e1 (None-guard postmarket-ts deref), 5066d81 (marker freshness guard in scripts/eod_health_check.py), c9c2ab3 (get_open_0915 window 09:15:00-09:18:00 for dhan end-of-minute stamping + get_prev_close_spot walk-back<=7 days fixing Monday-reads-Sunday); markers backfilled 06-05..06-25; cron 40 10 * * 1-5 (16:10 IST) added on MERDIAN AWS.",
+        "trading_calendar.json (TD-S60-NEW-2) ROOT-CAUSED + FIXED AT SOURCE + ORCHESTRATOR GATE BELT: the V18E rule engine trading_calendar.py reads holidays from trading_calendar.json, which held only 2-of-15 NSE-2026 equity holidays (Good Friday misdated 04-18 vs real 04-03) -> trading_calendar table read is_open=true on every NSE holiday since ~April, and run_merdian_shadow_runner_aws.py (which had NO holiday gate) ran the full compute chain on Muharram 2026-06-26 (PIPELINE COMPLETE on a closed market). Verbatim C-09/ADR-001 at the trust-anchor level. Regenerated trading_calendar.json to the 15 official NSE-2026 equity holidays (web_fetch-verified: 01-15,01-26,03-03,03-26,03-31,04-03,04-14,05-01,05-28,06-26,09-14,10-02,10-20,11-10,11-24 + Nov-8 Muhurat special; dropped 2025 + settlement/weekend contaminants), commit bafddc2; reseeded seed_trading_calendar.py --days 220; explicit UPDATE flipped stale is_open=true holiday rows to false. Verified 06-26 closed / 06-29 (Mon) open. Orchestrator holiday gate added (af74d0c) proven firing live on Muharram, then cut over to the shared helper (38a82ff).",
+        "Shared holiday-gate helper core/trading_calendar_gate.py BUILT + CUT OVER (TD-S60-NEW-3): single source of holiday gating replacing ~30 bespoke inline is_open checks incrementally. v1 (2d1375c) routed through core.supabase_client/core.config.get_settings() and silently fail-opened on AWS (smoke F/F/F, surfaced TD-S60-NEW-5). v2 (3b3b8ee) self-sufficient: own load_dotenv() + raw requests + os.getenv, bypassing core.config; fail-open every branch; smoke F/T/F clean (06-26 closed, 06-29 open, 06-26 closed). Exposes is_trading_day_today() / is_trading_day(iso) / assert_trading_day_or_exit(log=None)->HOLIDAY_GATE. Orchestrator cut over (38a82ff, -36/+2 lines); marker writer left on its own inline gate; ~28 other gates migrate incrementally.",
+        "ENH-SDM P2 compute_structural_divergence_local.py BUILT + WIRED + PROVEN: display-not-gate observability monitor; reads gamma_metrics (latest+prior+session-open), writes structural_divergence_snapshots (UPSERT symbol,ts). AS-BUILT enums ratified (phase FLIP>CASCADE>CONCENTRATED>STABLE; direction AMPLIFYING/DAMPENING/TRANSITION/NEUTRAL dealer-posture; sdm_score 0-4 count; divergence_mode held OBSERVE; three_wick_reversal NULL DEFERRED-P3 needs spot OHLC). Recency-floor FLAGS not nulls (source_stale_floored, env MERDIAN_SDM_RECENCY_FLOOR_MIN default 15). Writer commit 4bd3bf5; wired into run_merdian_shadow_runner_aws.py execute_pipeline after SENSEX market_state, before NIFTY trade_signal (8cec587), non-fatal. Spec committed docs/decisions/ENH-SDM_structural_divergence_monitor_spec.md (closes S57 spec-debt, ratifies enums). Forward cohort accrues from next open; signal/modes gated on N + TD-S58-NEW-1 Greeks solve.",
+        "Holiday-noise data repair (TD-S60-NEW-4) CLOSED: scoped single-date DELETE of 2026-06-26 compute rows (gamma 30, market_state 30, volatility 30, momentum 29, signal 34, structural_divergence 16; RETURNING matched, 0 remaining). market_spot_snapshots (0; holiday feed correctly didn't capture) + market_spot_session_markers (2) preserved. ENH-SDM forward cohort starts clean Monday.",
+        "TD-S60-NEW-5 FILED (P2): core/config.py hardcodes BASE_DIR = C:\\\\GammaEnginePython and load_dotenv from a path nonexistent on AWS -> get_settings()/SupabaseClient raise on a clean AWS invocation; every core.config-routed script silently depends on prior env-loading. Fix: derive BASE_DIR from __file__. Surfaced by the NEW-3 smoke-test; latent (callers self-load or export env today).",
+        "TD-S59-NEW-2 (exec_log exit_reason) CARRIED to S61 (operator-stated priority #1, ~15 min, schema confirmed: exit_reason constrained-text VALID set {SUCCESS,HOLIDAY_GATE,OFF_HOURS,TOKEN_EXPIRED,DATA_ERROR,SKIPPED_NO_INPUT,DEPENDENCY_MISSING,CRASH,TIMEOUT,RUNNING,DRY_RUN}; error_message is free-text sink).",
+        "Doc-close S60 (8 files + ENH-SDM spec) per Doc Protocol v4 Rule 3 full-file no-crunch: session_log.md (S60 prepended), CLAUDE.md v1.36->v1.37 (Rule 18 calendar trust-anchor + 2 settled bullets), tech_debt.md (TD-S60-NEW-1..5 + TD-S59-NEW-2 carry), MERDIAN_Enhancement_Register.md (ENH-SDM P2 BUILT), MERDIAN_Deployment_Topology.md (S60), MERDIAN_System_Map.md (S60), this merdian_reference.json v38->v39, CURRENT.md (S60 Last session + S59 demoted). No new ADR (Rule 10 bar not met). MERDIAN_Decision_Index.md + Governance Framework + Assumption Register NOT triggered. 8 commits.",
+        "New files: compute_structural_divergence_local.py (ENH-SDM P2 writer); core/trading_calendar_gate.py (shared holiday gate). New doc: docs/decisions/ENH-SDM_structural_divergence_monitor_spec.md. Corrected file: trading_calendar.json (15 NSE-2026 holidays). Table structural_divergence_snapshots now LIVE + writing (was schema-deployed-only at S58)."
+      ]
+    },
     {
       "session": "S59",
       "date": "2026-06-24",

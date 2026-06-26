@@ -890,3 +890,23 @@ The deeper root cause of the breadth cascade — `delete-old-market-ticks` faili
 UTC slot `35 3` = **09:05 IST**, deliberately AFTER the 03:00 UTC MALPHA→AWS token sync (a 05:10 IST manual attempt 401'd on an off-hours expired token; the 03:35 UTC slot lands after the sync). **Verified self-firing:** the cron fired autonomously at 03:35 UTC on the 06-24 open (maiden timed run) and wrote 1,316 rows — confirmed via `eod_health_check --date 2026-06-24` REFERENCE FRESHNESS = OK. Durability now double-guarded: the cron writes the baseline, and `eod_health_check`'s new REFERENCE FRESHNESS section (§S59 System Map) FAILs if it ever goes stale again.
 
 **Host clarification (no change, recorded for topology completeness):** `build_ict_htf_zones.py` + `generate_pine_overlay.py` run on **LOCAL** (Windows Task Scheduler), not the AWS orchestrator. The S59 ICT daily-PDL fix (commit `2b40a4b`) is therefore a Local-only deploy (Local → git → no EC2 pull required for that file). Zero §1 environment changes (instance `i-0878c118835386ec2`, EIP `13.63.27.85`). Cross-refs: tech_debt TD-S59-NEW-1/2/3; merdian_reference.json v38 S59 change_log; MERDIAN_System_Map.md §S59.
+
+---
+
+## §S60 (2026-06-26, Muharram holiday) — marker-writer cron added + orchestrator holiday gate + shared core gate helper
+
+**1. `market_spot_session_markers` writer cron ADDED (AWS).** `build_market_spot_session_markers.py` had stalled after 2026-06-04 (unscheduled post-AWS-migration), freezing the frontend's `prev_close_spot` baseline 21 days and showing a phantom SENSEX +4.34% header (TD-S60-NEW-1). Cron added on MERDIAN AWS:
+
+```
+40 10 * * 1-5 cd /home/ssm-user/meridian-engine && /usr/bin/python3 build_market_spot_session_markers.py >> logs/market_spot_session_markers.log 2>&1
+```
+
+UTC slot `40 10` = **16:10 IST** (post-close, house-style no-flock). Backfilled markers 06-05→06-25. Durability guarded by a new freshness check in `scripts/eod_health_check.py` (commit `5066d81`). Same C-09/ADR-001 family as the S59 breadth baseline freeze — a stalled writer + a stale reference.
+
+**2. Orchestrator holiday gate ADDED, then cut over to a shared `core/` helper.** `run_merdian_shadow_runner_aws.py` had **no holiday gate** and ran the full 5-min compute chain on Muharram (`PIPELINE COMPLETE` 03:51 UTC on a closed market). Root cause was upstream in `trading_calendar.json` (2-of-15 NSE-2026 holidays, one misdated — TD-S60-NEW-2); fixed at source (commit `bafddc2`, 15 official holidays, reseed + stale-row UPDATE; 06-26 closed / 06-29 open verified). Gate belt added (`af74d0c`), proven firing live on Muharram, then **cut over** (`38a82ff`) to the new shared helper.
+
+**3. NEW shared gate helper `core/trading_calendar_gate.py` (TD-S60-NEW-3).** Single source of holiday-gating, replacing ~30 bespoke inline `is_open` checks incrementally. **Self-sufficient by design:** own `load_dotenv()` + raw `requests` + `os.getenv`, deliberately bypassing `core.config.get_settings()`/`SupabaseClient` — because `core/config.py` hardcodes a Windows `BASE_DIR` and finds no `.env` on AWS (TD-S60-NEW-5), so a SupabaseClient-routed gate would silently fail-open every day (a no-op gate; caught by smoke-test). Fail-open at every branch. Exposes `is_trading_day_today()` / `is_trading_day(iso)` / `assert_trading_day_or_exit(log=None)` (ExecutionLog → HOLIDAY_GATE). Smoke-tested F/T/F on AWS (06-26 closed, 06-29 open, 06-26 closed). Orchestrator cut over; marker writer left on its own working inline gate; ~28 other entrypoints migrate incrementally.
+
+**Holiday-noise repair (TD-S60-NEW-4):** the pre-gate + SDM-test compute rows on 2026-06-26 were DELETE'd (scoped single date; gamma 30 / market_state 30 / volatility 30 / momentum 29 / signal 34 / structural_divergence 16; 0 remaining). `market_spot_snapshots` (0, holiday feed correctly didn't capture) + `market_spot_session_markers` (2) preserved.
+
+Zero §1 environment changes (instance `i-0878c118835386ec2`, EIP `13.63.27.85`). Cross-refs: tech_debt TD-S60-NEW-1..5; merdian_reference.json v39 S60 change_log; MERDIAN_System_Map.md §S60; CLAUDE.md Rule 18.

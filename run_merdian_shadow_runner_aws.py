@@ -220,6 +220,20 @@ def execute_pipeline(run_ids: Dict[str, str]) -> bool:
             "build_market_state_snapshot SENSEX",
             30,
         ),
+        # ENH-SDM P2 (display-not-gate): reads gamma_metrics, writes
+        # structural_divergence_snapshots. Placed after market_state, before
+        # trade_signal; failure is non-fatal (failed_steps tally) and nothing
+        # downstream routes on it.
+        (
+            ["python3", "compute_structural_divergence_local.py", "NIFTY"],
+            "compute_structural_divergence NIFTY",
+            30,
+        ),
+        (
+            ["python3", "compute_structural_divergence_local.py", "SENSEX"],
+            "compute_structural_divergence SENSEX",
+            30,
+        ),
         (
             ["python3", "build_trade_signal_local.py", "NIFTY"],
             "build_trade_signal NIFTY",

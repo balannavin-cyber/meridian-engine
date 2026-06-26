@@ -50,7 +50,7 @@ def write_exec_log(sb, started_at, finished_at, ok, rows, err=None):
             "finished_at": finished_at.isoformat(),
             "duration_ms": int((finished_at - started_at).total_seconds() * 1000),
             "exit_code": 0 if ok else 1,
-            "exit_reason": "SUCCESS" if ok else "FAILURE",
+            "exit_reason": _classify_exit_reason(ok, err),
             "contract_met": ok and rows >= 1000,
             "expected_writes": {"equity_intraday_last": 1300},
             "actual_writes": {"equity_intraday_last": rows},
@@ -60,6 +60,20 @@ def write_exec_log(sb, started_at, finished_at, ok, rows, err=None):
         }).execute()
     except Exception as e:
         log(f"  WARN: exec_log write failed: {e}")
+
+def _classify_exit_reason(ok: bool, err: str) -> str:
+    """S61 / TD-S59-NEW-2: pick a VALID chk_exit_reason_valid enum.
+    'FAILURE' is not in the closed set, so failure rows were rejected
+    (23514) and never persisted -- masking the S59 5-week freeze.
+    Free-text detail stays in error_message; this only picks the bucket."""
+    if ok:
+        return "SUCCESS"
+    e = (err or "").lower()
+    if any(s in e for s in ("incorrect api_key", "access_token",
+                            "tokenexception", "invalid session")):
+        return "TOKEN_EXPIRED"
+    return "DATA_ERROR"
+
 
 def main() -> int:
     started_at = datetime.now(timezone.utc)

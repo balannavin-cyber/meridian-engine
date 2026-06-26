@@ -236,6 +236,11 @@ def execute_pipeline(run_ids: Dict[str, str]) -> bool:
             30,
         ),
         (
+            ["python3", "compute_options_flow_local.py"],
+            "compute_options_flow NIFTY+SENSEX",
+            60,
+        ),
+        (
             ["python3", "build_trade_signal_local.py", "NIFTY"],
             "build_trade_signal NIFTY",
             45,

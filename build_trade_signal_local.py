@@ -466,7 +466,7 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
     def _fetch_options_flow(sym: str) -> dict:
         try:
             rows = (SUPABASE.table("options_flow_snapshots")
-                    .select("pcr_regime,skew_regime,flow_regime,"
+                    .select("ts,pcr_regime,skew_regime,flow_regime,"
                             "put_call_ratio,chain_iv_skew,ce_vol_oi_ratio,pe_vol_oi_ratio")
                     .eq("symbol", sym)
                     .order("ts", desc=True)
@@ -476,6 +476,23 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
         except Exception:
             return {}
     _flow = _fetch_options_flow(symbol)
+    # ADR-018 D2 recency floor (TD-S61-NEW-1): the ENH-02/04 confidence
+    # modifiers below must not fire on a stale options_flow row (writer
+    # stall). If the latest row is older than the floor, drop the regimes
+    # so the modifiers fail-safe to no-op; record staleness for raw.
+    _flow_stale = False
+    _flow_floor_min = to_float(os.getenv("MERDIAN_FLOW_RECENCY_FLOOR_MIN", "15")) or 15.0
+    if _flow:
+        try:
+            import dateutil.parser as _dpf
+            _flow_ts = _dpf.parse(str(_flow.get("ts"))).astimezone(timezone.utc)
+            _flow_age_min = (datetime.now(timezone.utc) - _flow_ts).total_seconds() / 60.0
+            if _flow_age_min > _flow_floor_min:
+                _flow_stale = True
+                _flow = {}
+        except Exception:
+            _flow_stale = True
+            _flow = {}
     pcr_regime   = _flow.get("pcr_regime")
     skew_regime  = _flow.get("skew_regime")
     flow_regime  = _flow.get("flow_regime")
@@ -858,6 +875,7 @@ def build_signal(symbol: str) -> tuple[dict[str, Any], dict[str, bool]]:
         "flow_regime":    flow_regime,
         "put_call_ratio": put_call_ratio,
         "chain_iv_skew":  chain_iv_skew,
+        "options_flow_stale": _flow_stale,
         "basis_pct":      basis_pct,
         "signal_v4":      SIGNAL_V4_ENABLED,
         "ret_session":    ret_session,

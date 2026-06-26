@@ -263,6 +263,41 @@ def execute_pipeline(run_ids: Dict[str, str]) -> bool:
     return True
 
 
+def _is_market_open_today() -> bool:
+    """Holiday gate: check trading_calendar. Fail-open on any error.
+    Lifted verbatim from build_market_spot_session_markers.py (TD-S60-NEW-2).
+    """
+    try:
+        import os as _os
+        try:
+            from dotenv import load_dotenv as _lde
+            _lde()
+        except ImportError:
+            pass
+        import requests as _req
+        from datetime import datetime as _dt, timezone as _tz
+        from zoneinfo import ZoneInfo as _ZI
+        _url = _os.getenv("SUPABASE_URL", "").rstrip("/")
+        _key = _os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+        if not _url or not _key:
+            return True  # can't check -- allow run
+        _today = _dt.now(_tz.utc).astimezone(_ZI("Asia/Kolkata")).date().isoformat()
+        _r = _req.get(
+            f"{_url}/rest/v1/trading_calendar",
+            headers={"apikey": _key, "Authorization": f"Bearer {_key}"},
+            params={"trade_date": f"eq.{_today}", "select": "is_open,open_time"},
+            timeout=10,
+        )
+        if _r.status_code == 200:
+            _rows = _r.json()
+            if _rows:
+                _row = _rows[0]
+                return bool(_row.get("is_open", True)) and _row.get("open_time") is not None
+        return True  # no row -- allow run
+    except Exception:
+        return True  # error -- allow run
+
+
 def main() -> int:
     """
     Main entry point.
@@ -272,6 +307,11 @@ def main() -> int:
     4. Log results
     """
     log_message("Shadow Runner starting (S46 Phase 2.c; TD-S54-NEW-1 per-symbol run_id)")
+    # Holiday gate (TD-S60-NEW-2): reads the corrected trading_calendar; fail-open.
+    # Closes the gap that ran the full compute chain on Muharram 2026-06-26.
+    if not _is_market_open_today():
+        log_message("[HOLIDAY GATE] Market closed today -- orchestrator exiting (no compute).")
+        return 0
 
     # Initialize Supabase client
     try:

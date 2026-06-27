@@ -47,7 +47,13 @@ except Exception:
 from core.execution_log import ExecutionLog
 
 UTC = timezone.utc
-IST_SHIFT = timedelta(hours=5, minutes=30)   # futures bar_ts -= this to reach true UTC
+IST_SHIFT = timedelta(0)   # S61: hist_future_bars_1m AND hist_spot_bars_1m BOTH store
+#                            IST-clock-as-UTC (verified: same HH band on the same
+#                            trade_date). They are mutually consistent, so pairing
+#                            uses raw bar_ts with NO shift. (Both differ from the
+#                            true-UTC live index_futures_snapshots by +5h30m, which is
+#                            irrelevant here since hist never crosses live.)
+#                            See TD-S61-NEW-2 (corrected).
 
 FRONT_SERIES = {"NIFTY": 1, "SENSEX": 0}
 SYMBOLS = ["NIFTY", "SENSEX"]

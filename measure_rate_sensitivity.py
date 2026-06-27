@@ -194,16 +194,22 @@ def nifty_iid():
     return rows[0]["id"]
 
 
-def sample_dates(iid, d0, d1, n):
-    rows = sel("hist_option_bars_1m", {
-        "select": "trade_date", "instrument_id": f"eq.{iid}",
-        "and": f"(trade_date.gte.{d0},trade_date.lte.{d1})", "order": "trade_date.asc",
-    })
-    dates = sorted({r["trade_date"] for r in rows if r.get("trade_date")})
-    if not dates:
-        return []
-    step = max(1, len(dates) // n)
-    return dates[::step][:n]
+def candidate_dates(d0, d1, n):
+    """Pure-Python evenly-spaced calendar dates across [d0,d1]. No DB query.
+    Oversamples ~3x so weekends/holidays/empty-bar days can be skipped while
+    still reaching n measured cohorts. main() stops once n are measured."""
+    from datetime import date
+    start = date.fromisoformat(d0)
+    end = date.fromisoformat(d1)
+    span = (end - start).days
+    if span <= 0:
+        return [d0]
+    k = max(1, span // max(1, n * 3))
+    out, cur = [], start
+    while cur <= end:
+        out.append(cur.isoformat())
+        cur = cur + timedelta(days=k)
+    return out
 
 
 def price_at(table, iid, d, ist_hour, extra=None):
@@ -220,6 +226,71 @@ def price_at(table, iid, d, ist_hour, extra=None):
     return parse_ts(best["bar_ts"]), best
 
 
+def _measure_one(iid, d, ist_hour):
+    """Measure one cohort for trade_date d. Returns a result dict or None if
+    the date has no usable chain (weekend/holiday/empty)."""
+    bts, spot_row = price_at("hist_spot_bars_1m", iid, d, ist_hour)
+    if bts is None:
+        return None
+    spot = float(spot_row["close"])
+    _, fut_row = price_at("hist_future_bars_1m", iid, d, ist_hour,
+                          extra={"contract_series": "eq.1", "bar_ts": f"eq.{bts.isoformat()}"})
+    if not fut_row:
+        _, fut_row = price_at("hist_future_bars_1m", iid, d, ist_hour, extra={"contract_series": "eq.1"})
+    F = float(fut_row["close"]) if fut_row else None
+
+    orows = sel("hist_option_bars_1m", {
+        "select": "strike,option_type,close,oi,expiry_date",
+        "instrument_id": f"eq.{iid}", "bar_ts": f"eq.{bts.isoformat()}",
+        "order": "expiry_date.asc",
+    })
+    if not orows:
+        return None
+    exps = [r.get("expiry_date") for r in orows if r.get("expiry_date") and r["expiry_date"] >= d]
+    if not exps:
+        return None
+    expiry = min(exps)
+    chain = [r for r in orows if r.get("expiry_date") == expiry and float(r.get("close") or 0) > 0]
+    if len(chain) < 6:
+        return None
+    T = (datetime.fromisoformat(expiry).date() - datetime.fromisoformat(d).date()).days / 365.0
+    if T <= 0:
+        return None
+    rb = basis_implied_r(F, spot, T)
+    if rb is None:
+        return None
+
+    built = []
+    for r in chain:
+        K = float(r["strike"]); P = float(r["close"]); ot = str(r["option_type"])
+        oi = float(r.get("oi") or 0)
+        iv0 = implied_vol(P, spot, K, T, R_FLAT, ot)
+        ivb = implied_vol(P, spot, K, T, rb, ot)
+        if iv0 is None or ivb is None:
+            continue
+        built.append({"strike": K, "otype": ot, "oi": oi,
+                      "g0": bs_gamma(spot, K, T, R_FLAT, iv0),
+                      "gb": bs_gamma(spot, K, T, rb, ivb)})
+    if len(built) < 6:
+        return None
+
+    m0 = build_strike_map(built, spot, "g0")
+    mb = build_strike_map(built, spot, "gb")
+    ng0 = sum(m0.values()); ngb = sum(mb.values())
+    f0 = compute_flip_level(m0, spot); fb = compute_flip_level(mb, spot)
+    r0 = regime(ng0, f0); rbg = regime(ngb, fb)
+    reg_flip = r0 != rbg
+    line = (f"{d:>11} {spot:>8.0f} {F if F else 0:>8.0f} {rb*100:>7.2f}% "
+            f"{ng0:>10.2f} {ngb:>10.2f} {f0 if f0 else 0:>9.0f} {fb if fb else 0:>9.0f} "
+            f"{r0:>11} {rbg:>11} {'YES' if reg_flip else '.':>6}")
+    return {
+        "sign_flip": (ng0 >= 0) != (ngb >= 0),
+        "reg_flip": reg_flip,
+        "flip_shift": abs(fb - f0) if (f0 is not None and fb is not None) else None,
+        "line": line,
+    }
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("from_date"); ap.add_argument("to_date")
@@ -228,87 +299,36 @@ def main():
     args = ap.parse_args()
 
     iid = nifty_iid()
-    dates = sample_dates(iid, args.from_date, args.to_date, args.n)
-    if not dates:
-        print("No NIFTY option trade_dates in range."); return 1
-    print(f"Sampling {len(dates)} cohorts ({dates[0]}..{dates[-1]}) at ~{args.ist_hour:.0f}:00 IST\n")
+    candidates = candidate_dates(args.from_date, args.to_date, args.n)
+    print(f"Scanning up to {len(candidates)} candidate dates for {args.n} cohorts "
+          f"at ~{args.ist_hour:.0f}:00 IST\n", flush=True)
 
     hdr = f"{'date':>11} {'spot':>8} {'F':>8} {'r_basis':>8} {'ngex@6.5':>10} {'ngex@rb':>10} {'flip@6.5':>9} {'flip@rb':>9} {'reg@6.5':>11} {'reg@rb':>11} {'FLIP?':>6}"
-    print(hdr); print("-" * len(hdr))
+    print(hdr); print("-" * len(hdr), flush=True)
 
     cohorts = 0
     sign_flips = 0
     regime_flips = 0
     flip_shifts = []
 
-    for d in dates:
-        bts, spot_row = price_at("hist_spot_bars_1m", iid, d, args.ist_hour)
-        if bts is None:
+    for d in candidates:
+        if cohorts >= args.n:
+            break
+        try:
+            ok = _measure_one(iid, d, args.ist_hour)
+        except Exception as e:
+            print(f"{d:>11}  skip ({type(e).__name__}: {str(e)[:40]})", flush=True)
             continue
-        spot = float(spot_row["close"])
-        # futures at same minute (series 1)
-        _, fut_row = price_at("hist_future_bars_1m", iid, d, args.ist_hour,
-                              extra={"contract_series": "eq.1", "bar_ts": f"eq.{bts.isoformat()}"})
-        if not fut_row:
-            # fall back to nearest futures bar that day
-            _, fut_row = price_at("hist_future_bars_1m", iid, d, args.ist_hour, extra={"contract_series": "eq.1"})
-        F = float(fut_row["close"]) if fut_row else None
-
-        # option rows at this exact bar_ts, nearest expiry
-        orows = sel("hist_option_bars_1m", {
-            "select": "strike,option_type,close,oi,expiry_date",
-            "instrument_id": f"eq.{iid}", "bar_ts": f"eq.{bts.isoformat()}",
-            "order": "expiry_date.asc",
-        })
-        if not orows:
+        if ok is None:
             continue
-        expiry = min(e for e in (r.get("expiry_date") for r in orows) if e and e >= d) if any(r.get("expiry_date") for r in orows) else None
-        if not expiry:
-            continue
-        chain = [r for r in orows if r.get("expiry_date") == expiry and float(r.get("close") or 0) > 0]
-        if len(chain) < 6:
-            continue
-        T = (datetime.fromisoformat(expiry).date() - datetime.fromisoformat(d).date()).days / 365.0
-        if T <= 0:
-            continue
-        rb = basis_implied_r(F, spot, T)
-        if rb is None:
-            continue
-
-        # solve gamma both ways per strike
-        built = []
-        for r in chain:
-            K = float(r["strike"]); P = float(r["close"]); ot = str(r["option_type"])
-            oi = float(r.get("oi") or 0)
-            iv0 = implied_vol(P, spot, K, T, R_FLAT, ot)
-            ivb = implied_vol(P, spot, K, T, rb, ot)
-            if iv0 is None or ivb is None:
-                continue
-            built.append({"strike": K, "otype": ot, "oi": oi,
-                          "g0": bs_gamma(spot, K, T, R_FLAT, iv0),
-                          "gb": bs_gamma(spot, K, T, rb, ivb)})
-        if len(built) < 6:
-            continue
-
-        m0 = build_strike_map(built, spot, "g0")
-        mb = build_strike_map(built, spot, "gb")
-        ng0 = sum(m0.values()); ngb = sum(mb.values())
-        f0 = compute_flip_level(m0, spot); fb = compute_flip_level(mb, spot)
-        r0 = regime(ng0, f0); rbg = regime(ngb, fb)
-
         cohorts += 1
-        sign_flip = (ng0 >= 0) != (ngb >= 0)
-        reg_flip = r0 != rbg
-        if sign_flip:
+        if ok["sign_flip"]:
             sign_flips += 1
-        if reg_flip:
+        if ok["reg_flip"]:
             regime_flips += 1
-        if f0 is not None and fb is not None:
-            flip_shifts.append(abs(fb - f0))
-
-        print(f"{d:>11} {spot:>8.0f} {F if F else 0:>8.0f} {rb*100:>7.2f}% "
-              f"{ng0:>10.2f} {ngb:>10.2f} {f0 if f0 else 0:>9.0f} {fb if fb else 0:>9.0f} "
-              f"{r0:>11} {rbg:>11} {'YES' if reg_flip else '.':>6}")
+        if ok["flip_shift"] is not None:
+            flip_shifts.append(ok["flip_shift"])
+        print(ok["line"], flush=True)
 
     print("\n" + "=" * 60)
     print(f"cohorts measured      : {cohorts}")

@@ -214,7 +214,7 @@ def candidate_dates(d0, d1, n):
 
 def price_at(table, iid, d, ist_hour, extra=None):
     """nearest bar to <ist_hour>:00 on trade_date d, from `table` (close)."""
-    params = {"select": "bar_ts,close" + (",basis_pct" if "future" in table else ""),
+    params = {"select": "bar_ts,close",
               "instrument_id": f"eq.{iid}", "trade_date": f"eq.{d}", "order": "bar_ts.asc"}
     if extra:
         params.update(extra)

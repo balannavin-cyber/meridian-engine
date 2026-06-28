@@ -99,3 +99,12 @@ fill_*.py
 find_sensex_code.py
 run_merdian_shadow_runner_S44_PATCHED.py
 run_option_snapshot_intraday_runner_PRE_S44.py
+
+*_PRE_S*.py
+*.zip
+*.py.bak*
+# S61 cleanup
+_*.py
+*_PRE_S*
+*.bak
+*.bak_*

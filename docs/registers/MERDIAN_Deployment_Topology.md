@@ -910,3 +910,17 @@ UTC slot `40 10` = **16:10 IST** (post-close, house-style no-flock). Backfilled 
 **Holiday-noise repair (TD-S60-NEW-4):** the pre-gate + SDM-test compute rows on 2026-06-26 were DELETE'd (scoped single date; gamma 30 / market_state 30 / volatility 30 / momentum 29 / signal 34 / structural_divergence 16; 0 remaining). `market_spot_snapshots` (0, holiday feed correctly didn't capture) + `market_spot_session_markers` (2) preserved.
 
 Zero §1 environment changes (instance `i-0878c118835386ec2`, EIP `13.63.27.85`). Cross-refs: tech_debt TD-S60-NEW-1..5; merdian_reference.json v39 S60 change_log; MERDIAN_System_Map.md §S60; CLAUDE.md Rule 18.
+
+## §S61 (2026-06-27, Saturday market closed) — ENH-02 options-flow re-homed to AWS orchestrator + ENH-07 B basis-velocity writer wired
+
+**Orchestrator pipeline additions (MERDIAN AWS).** Two writers added to `run_merdian_shadow_runner_aws.py execute_pipeline` via the canonical Local→git→AWS `git pull` vector (no AWS-CLI/SCP):
+- `compute_options_flow_local.py` re-homed at the options_flow slot (was orphaned at the S49 migration) — ENH-02 substrate now advancing each cycle (TD-S61-NEW-1). Commits `8ddbc78` + `d16986c`.
+- `compute_basis_context_local.py` (ENH-07 B) tupled at L244-245 (after market_state, before trade_signal) — reads `index_futures_snapshots`, writes `basis_context_snapshots`. Commit `141386d`.
+
+Both readers in `build_trade_signal_local.py` carry the ADR-018 D2 recency floor (`MERDIAN_FLOW_RECENCY_FLOOR_MIN`, `MERDIAN_BASIS_RECENCY_FLOOR_MIN`, both 15-min default). Basis context is display-only into `signal_snapshots.raw` (context-not-gate).
+
+**New SQL migrations (Supabase SQL editor).** `2026-06-26_enh07b_basis_context_snapshots.sql` (live table) + `2026-06-26_enh07b_hist_basis_context.sql` (historical cohort).
+
+**Historical backfill (one-shot).** `backfill_basis_context.py` wrote `hist_basis_context` (NIFTY 92,515 / SENSEX 29,689) from `hist_future_bars_1m`×`hist_spot_bars_1m` (zero-shift pairing — TD-S61-NEW-2). Committed `3f1fe4e`.
+
+Zero §1 environment changes (instance `i-0878c118835386ec2`, EIP `13.63.27.85`). No cron/systemd changes this session (both writers run inside the existing 5-min orchestrator cycle). Cross-refs: tech_debt TD-S59-NEW-2 + TD-S61-NEW-1/2/3; merdian_reference.json v40 S61 change_log; MERDIAN_System_Map.md §S61.

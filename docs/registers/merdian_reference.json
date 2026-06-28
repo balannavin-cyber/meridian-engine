@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v38",
+    "version": "v40",
     "generated": "2026-06-12",
     "sources": [
       "Session 52 (2026-06-12): Observability infrastructure deployment — 5 monitoring scripts (telegram_utils, monitor_orchestrator_health, refresh_health_dashboard, validate_compute_contracts, enforce_orchestrator_timeout; 761 lines total); 4 crontab entries active; Telegram integration live; status.json health snapshot every 1 min; time-to-detection <2 min for capture gaps, orchestrator failures, compute hangs, crontab typos, stale data.",
@@ -31,8 +31,8 @@
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files. Updated through Session 24 (2026-05-09) — ENH-93 replay/simulation harness built end-to-end across all 5 phases in single session: 10 new *_replay Supabase tables + 11 new files in C:\\GammaEnginePython\\replay\\ + 1 SQL migration + ADR-008 (~250 lines, Accepted) capturing replay architecture + canonical 'What what-if experiment means' methodology; 4 TDs filed (TD-087 hist_option_bars_1m IST-as-UTC defect with 5h30m phantom offset, TD-094 hist_option_bars_1m.oi=0 from S22 Kite backfill, TD-095 atm_iv_avg unit ambiguity, TD-096 reconstructor skips boundary 15:30); ENH-95 CANDIDATE filed (in-process orchestrator optimization, deferred until what-if campaign); ENH-93 CANDIDATE → CLOSED via ADR-008 acceptance. Phase 4b 2026-05-07 full-day run: 1056/1064 invocations (99.2%) succeeded; NIFTY 100% gamma_regime + 68% direction-bias match with live; SENSEX 91% action match (mostly DO_NOTHING tautology) + 28% gamma_regime match (structural narrow-strike-base divergence). Zero production code changes; zero writes to live tables; live scripts physically untouched. Session 23 (earlier same calendar date) was documentation consolidation; this Session 24 is the construction. Session 21 carry-forward patches still uncommitted in working tree.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
     "update_cadence": "Update this file in the same session as any meaningful change to file status, table schema, or open item status. Commit to Git immediately after update.",
-    "last_updated": "2026-06-17 S55 end (carry-forward execution sweep; NEW-1 fixed at orchestrator layer + volatility read-path bug closed + NEW-3/NEW-6-parse/NEW-4 + ingestion audit + S48-NEW-1 re-diagnosed)",
-    "last_updated_by_session": "Session 55",
+    "last_updated": "2026-06-27 S61 end (vestigial _meta header resynced to the live top-level v40/S61 per TD-S61-NEW-3; ENH-02 wired + ENH-07 B basis-velocity context live + hist_basis_context backfill)",
+    "last_updated_by_session": "Session 61",
     "change_log": [
       {
         "session": "S55",
@@ -705,6 +705,47 @@
     }
   },
   "files": {
+    "compute_basis_context_local.py": {
+      "local_path": "C:\\GammaEnginePython\\compute_basis_context_local.py",
+      "aws_path": "/home/ssm-user/meridian-engine/compute_basis_context_local.py",
+      "reads": [
+        "index_futures_snapshots"
+      ],
+      "writes": [
+        "basis_context_snapshots"
+      ],
+      "call_signature": "none (orchestrator subprocess)",
+      "cadence": "LIVE  --  AWS orchestrator 5-min cycle (run_merdian_shadow_runner_aws.py L244-245)",
+      "status": "LIVE (ENH-07 B, S61). Reads ONLY index_futures_snapshots (spot+basis atomic, no join skew); labels LONG_BUILD/WEAK_LONG/SHORT_BUILD/WEAK_SHORT/NEUTRAL via spot/velocity deadbands. Display-not-gate: reader _fetch_basis_context surfaces basis_context_label/basis_velocity_pp/basis_context_stale into signal_snapshots.raw, no confidence modifier. Env MERDIAN_BASIS_VELOCITY_WINDOW_MIN/_SPOT_DEADBAND_PCT/_VEL_DEADBAND_PP/_RECENCY_FLOOR_MIN. Commit 141386d.",
+      "open_items": []
+    },
+    "backfill_basis_context.py": {
+      "local_path": "C:\\GammaEnginePython\\backfill_basis_context.py",
+      "aws_path": "/home/ssm-user/meridian-engine/backfill_basis_context.py",
+      "reads": [
+        "hist_future_bars_1m",
+        "hist_spot_bars_1m"
+      ],
+      "writes": [
+        "hist_basis_context"
+      ],
+      "call_signature": "backfill_basis_context.py <from> <to> [--symbol NIFTY|SENSEX] [--window-min 15] [--dry-run] [--force]",
+      "cadence": "one-shot (research backfill)",
+      "status": "DONE (ENH-07 B, S61). Pairs hist_future_bars_1m x hist_spot_bars_1m per exact minute (ZERO shift, TD-S61-NEW-2 -- both tables IST-clock-as-UTC), per-symbol front-month selector (NIFTY contract_series=1 expiry-NULL + liquidity preflight; SENSEX contract_series=0 expiry-populated). Wrote NIFTY 92,515 (96.0% labelled) / SENSEX 29,689 (77.1% labelled; abs(basis_pct_now)<1.0 MANDATORY -> SENSEX secondary, NIFTY reference). Commit 3f1fe4e.",
+      "open_items": []
+    },
+    "core/bs_engine.py": {
+      "local_path": "C:\\GammaEnginePython\\core\\bs_engine.py",
+      "aws_path": null,
+      "reads": [],
+      "writes": [],
+      "call_signature": "module (import)",
+      "cadence": "n/a (library)",
+      "status": "BUILT + VALIDATED (ENH-07 A substrate, S61). Black-Scholes IV/greeks solver; validated S=25218,K=24000,P=18,T=8/365,r=6.5% -> IV=21.45%, gamma=0.000134. ENH-07 A reframed: NO live BS solver/rate (live gamma engine reads vendor Dhan greeks); the risk-free rate only matters inside the TD-S58-NEW-1 historical Greeks backfill, where this is the substrate.",
+      "open_items": [
+        "ENH-07 A: replace hardcoded 6.5% rate + full per-strike IV/greeks backfill over hist_option_bars_1m (TD-S58-NEW-1 / TD-095)"
+      ]
+    },
     "run_market_tape_1m.py": {
       "local_path": "C:\\GammaEnginePython\\run_market_tape_1m.py",
       "aws_path": null,
@@ -2347,6 +2388,53 @@
     }
   },
   "tables": {
+    "basis_context_snapshots": {
+      "written_by": [
+        "compute_basis_context_local.py"
+      ],
+      "read_by": [
+        "build_trade_signal_local.py (_fetch_basis_context, display-only into signal_snapshots.raw)"
+      ],
+      "constraint": "UNIQUE(symbol,ts) + context_label CHECK",
+      "status": "LIVE  --  ENH-07 B (S61); AWS orchestrator 5-min cycle",
+      "critical_rule": "Display-not-gate: surfaced into signal_snapshots.raw with NO confidence modifier (context-not-gate per S37 / ADR-018 D2). Reader carries the ADR-018 D2 recency floor MERDIAN_BASIS_RECENCY_FLOOR_MIN (15 min).",
+      "columns": [
+        "symbol",
+        "ts",
+        "context_label",
+        "basis_velocity_pp",
+        "spot_delta",
+        "window_min"
+      ]
+    },
+    "hist_basis_context": {
+      "written_by": [
+        "backfill_basis_context.py"
+      ],
+      "read_by": [
+        "(research)"
+      ],
+      "constraint": "UNIQUE(symbol,ts) + context_label CHECK; source DEFAULT 'hist_backfill'",
+      "status": "DONE  --  ENH-07 B research cohort (S61); NIFTY 92,515 / SENSEX 29,689",
+      "critical_rule": "SENSEX is secondary (series-0 thin; abs(basis_pct_now)<1.0 filter MANDATORY -- ~69% of raw prints >|1%| contaminated); NIFTY is the reference cohort. Coverage bounded by hist futures (NIFTY 2025-04-01..2026-03-30, SENSEX 2025-05-02..2026-03-30; ~3-month Apr-Jun 2026 hole).",
+      "columns": [
+        "id",
+        "ts",
+        "symbol",
+        "contract_series",
+        "expiry_date",
+        "basis",
+        "basis_pct_now",
+        "basis_pct_prev",
+        "basis_velocity_pp",
+        "window_min",
+        "spot_now",
+        "spot_delta",
+        "context_label",
+        "source",
+        "created_at"
+      ]
+    },
     "market_spot_snapshots": {
       "written_by": [
         "capture_market_spot_snapshot_local.py"
@@ -4669,10 +4757,24 @@
       "truncated_each_run": false
     }
   },
-  "version": "v39",
-  "last_updated_session": "Session 60",
-  "last_updated_date": "2026-06-26",
+  "version": "v40",
+  "last_updated_session": "Session 61",
+  "last_updated_date": "2026-06-27",
   "change_log": [
+    {
+      "session": "S61",
+      "date": "2026-06-27",
+      "changes": [
+        "TD-S59-NEW-2 CLOSED (commit 3533d22): refresh_equity_intraday_last.py wrote a free-text exit_reason on the FAILURE branch, rejected by chk_exit_reason_valid (23514), so every failure left NO script_execution_log row (the silent hole behind the S59 5-week breadth freeze). Fix: module-level _classify_exit_reason(ok,err) maps the FAILURE branch to a valid enum (TOKEN_EXPIRED on api_key/access_token errors, else DATA_ERROR) with detail routed to error_message; eod_health_check negative-hours cosmetic folded in. canon-v3, _PRE_S61. Operator's stated #1.",
+        "ENH-02 WIRED + TD-S61-NEW-1 NEW+CLOSED (commits 8ddbc78 + d16986c): compute_options_flow_local.py (orphaned at the S49 migration) re-homed into run_merdian_shadow_runner_aws.py execute_pipeline at the canonical options_flow slot. build_trade_signal_local.py _fetch_options_flow had no recency floor and had been applying the ENH-02/04 confidence modifiers (+/-3/4/5 on pcr_regime/skew_regime/flow_regime) off a ~24-day-stale options_flow_snapshots row since S49. Added ADR-018 D2 floor MERDIAN_FLOW_RECENCY_FLOOR_MIN (default 15 min); stale -> modifiers suppressed.",
+        "ENH-07 (B) basis-velocity context BUILT + DEPLOYED Local->git->AWS (commit 141386d, +336): new compute_basis_context_local.py (299 ln) reads ONLY index_futures_snapshots; labels LONG_BUILD/WEAK_LONG/SHORT_BUILD/WEAK_SHORT/NEUTRAL via spot/velocity deadbands; writes basis_context_snapshots (UPSERT symbol,ts). _fetch_basis_context reader (build_trade_signal_local.py L516, ADR-018 D2 floor) surfaces display-only basis_context_label/basis_velocity_pp/basis_context_stale into signal_snapshots.raw with NO confidence modifier (context-not-gate per S37). Orchestrator tuple L244-245. Env MERDIAN_BASIS_VELOCITY_WINDOW_MIN=15 / _SPOT_DEADBAND_PCT=0.0002 / _VEL_DEADBAND_PP=0.005 / _RECENCY_FLOOR_MIN=15. RLS triplet + Marketview tile deferred (meridian-connect).",
+        "Historical cohort hist_basis_context (backfill_basis_context.py, commit 3f1fe4e): pairs hist_future_bars_1m x hist_spot_bars_1m per exact minute (zero shift, TD-S61-NEW-2), per-symbol front-month selector (NIFTY contract_series=1 expiry-NULL with liquidity preflight; SENSEX contract_series=0 expiry-populated). Wrote NIFTY 92,515 (96.0% labelled, avg basis_pct 0.283%) / SENSEX 29,689 (77.1% labelled; abs(basis_pct_now)<1.0 MANDATORY -> SENSEX secondary, NIFTY reference). Coverage NIFTY 2025-04-01..2026-03-30 / SENSEX 2025-05-02..2026-03-30; ~3-month Apr-Jun 2026 hole (no hist futures; live accrues forward).",
+        "TD-S61-NEW-2 NEW+CLOSED: the assumed -5h30m futures shift was WRONG. A UTC-forced diagnostic proved BOTH hist_future_bars_1m and hist_spot_bars_1m store IST-clock-as-UTC (hours 9-15) and are mutually consistent, so pairing needs ZERO shift (the -5h30m shift gave 14% yield ~269/day; zero-shift gives ~99% ~376/day). Refines the TD-087 -5h30m note for the bar-pairing case.",
+        "ENH-07 (A) REFRAMED: the live gamma engine reads VENDOR (Dhan) Greeks; there is no live BS solver and no live risk-free-rate parameter -> ENH-07 A has zero live blast radius; the rate is a parameter inside the TD-S58-NEW-1 historical Greeks backfill only. core/bs_engine.py built + validated (S=25218, K=24000, P=18, T=8/365, r=6.5% -> IV=21.45%, gamma=0.000134); A stays a historical/shadow track gated on TD-S58-NEW-1.",
+        "TD-S61-NEW-3 FILED + resynced: merdian_reference.json carries a vestigial _meta header (v38/S55) alongside the maintained top-level header (now v40/S61); the body was already current. _meta.version + _meta.last_updated_by_session resynced this close; proper fix (retire/auto-generate the duplicate _meta) deferred.",
+        "New files: compute_basis_context_local.py (LIVE), backfill_basis_context.py (one-shot), core/bs_engine.py (built+validated, ENH-07 A substrate) + 2 SQL migrations (2026-06-26_enh07b_basis_context_snapshots.sql, 2026-06-26_enh07b_hist_basis_context.sql). New tables: basis_context_snapshots (LIVE), hist_basis_context. No new ADR (Doc Protocol v4 Rule 10 bar not met). CLAUDE.md v1.37->v1.38. 8-file doc-close per Doc Protocol v4 Rule 3 full-file no-crunch."
+      ]
+    },
     {
       "session": "S60",
       "date": "2026-06-26",

@@ -12,6 +12,34 @@
 
 | Field | Value |
 |---|---|
+| **Date** | 2026-06-27 (Session 61 — Saturday, market closed; carry-forward execution sweep) |
+| **Shape** | Cleared the operator's #1 (TD-S59-NEW-2), wired ENH-02, shipped ENH-07 B basis-velocity context Local→git→AWS, built the historical basis cohort, and reframed ENH-07 A. All code BUILT + PROVEN + deployed. |
+| **TD-S59-NEW-2 — exec_log `exit_reason` — CLOSED** | The operator's #1. `refresh_equity_intraday_last.py` wrote a free-text `exit_reason` on the FAILURE branch, rejected by `chk_exit_reason_valid` (23514), so every failure left NO `script_execution_log` row — the silent hole behind the S59 5-week breadth freeze. Fix: module-level `_classify_exit_reason(ok, err)` → `TOKEN_EXPIRED` (api_key/access_token errors) / `DATA_ERROR`, detail → `error_message`; `eod_health_check` negative-hours cosmetic folded in. `3533d22` (canon-v3, `_PRE_S61`). |
+| **ENH-02 WIRED + TD-S61-NEW-1 — NEW+CLOSED** | `compute_options_flow_local.py` (orphaned at the S49 migration) re-homed into `run_merdian_shadow_runner_aws.py execute_pipeline`. `_fetch_options_flow()` carried NO recency floor — the ENH-02/04 confidence modifiers (±3/4/5 on pcr/skew/flow regime) had been firing off a ~24-day-stale `options_flow_snapshots` row since S49. ADR-018 D2 floor `MERDIAN_FLOW_RECENCY_FLOOR_MIN`=15 added; stale → modifiers suppressed. `8ddbc78` + `d16986c`. |
+| **ENH-07 (B) basis-velocity context — BUILT + DEPLOYED** | New `compute_basis_context_local.py` (299 ln) reads ONLY `index_futures_snapshots`; labels LONG_BUILD/WEAK_LONG/SHORT_BUILD/WEAK_SHORT/NEUTRAL via spot/velocity deadbands; writes `basis_context_snapshots` (UPSERT symbol,ts). `_fetch_basis_context()` reader (L516, ADR-018 D2 floor) surfaces **display-only** `basis_context_label`/`basis_velocity_pp`/`basis_context_stale` into `signal_snapshots.raw` — NO confidence modifier (context-not-gate per S37). Orchestrator L244-245. `141386d` (+336). Env `MERDIAN_BASIS_VELOCITY_WINDOW_MIN`=15 / `_SPOT_DEADBAND_PCT`=0.0002 / `_VEL_DEADBAND_PP`=0.005 / `_RECENCY_FLOOR_MIN`=15. |
+| **Historical cohort `hist_basis_context`** | `backfill_basis_context.py` pairs `hist_future_bars_1m`×`hist_spot_bars_1m` per exact minute (zero shift, TD-S61-NEW-2), per-symbol front-month selector (NIFTY `contract_series`=1 expiry-NULL + liquidity preflight; SENSEX `contract_series`=0 expiry-populated). Wrote **NIFTY 92,515** (96.0% labelled, avg basis_pct 0.283%) / **SENSEX 29,689** (77.1% labelled; `abs(basis_pct_now)<1.0` MANDATORY → SENSEX secondary, NIFTY reference). Coverage NIFTY 2025-04-01→2026-03-30 / SENSEX 2025-05-02→2026-03-30; ~3-mo Apr—Jun 2026 hole. Committed `3f1fe4e`. |
+| **TD-S61-NEW-2 — hist bar pairing — CLOSED** | The assumed —5h30m futures shift was WRONG: a UTC-forced diagnostic proved BOTH `hist_future_bars_1m` and `hist_spot_bars_1m` store IST-clock-as-UTC (hours 9—15) and are mutually consistent → **zero shift** (the —5h30m shift gave 14% pairing yield ~269/day; zero-shift ~99% ~376/day). Refines the TD-087 note for bar-pairing. |
+| **ENH-07 (A) — REFRAMED** | The live gamma engine reads VENDOR (Dhan) Greeks — no live BS solver, no live rate parameter → zero live blast radius. The risk-free rate only matters inside the TD-S58-NEW-1 historical Greeks backfill. `core/bs_engine.py` built+validated (S=25218, K=24000, P=18, T=8/365, r=6.5% → IV=21.45%, γ=0.000134); A stays open as the historical/shadow track. |
+| **TD-S61-NEW-3 — reference.json `_meta` drift — FILED** | `merdian_reference.json` carries a vestigial `_meta` header (v38/S55) beside the maintained top-level (v39/S60); the body was already current. `_meta` resynced this close; proper fix (retire/auto-gen the duplicate) deferred. |
+| **Type** | 4 code commits (`3533d22`, `8ddbc78`, `d16986c`, `141386d`) + backfill; all production patches canon-v3 with `_PRE_S61` backups. 2 SQL migrations. 0 new ADR (Doc Protocol v4 Rule 10 bar not met). 1 ENH WIRED (ENH-02) + 1 ENH SHIPPED-Measure (ENH-07 B). 3 new files + 2 new tables. |
+| **Outcome** | PASS. Operator's #1 closed; ENH-02 live and floored; ENH-07 B basis-velocity context live (display-only) + historical cohort built; ENH-07 A reframed with `core/bs_engine.py` as substrate; CLAUDE.md v1.37→v1.38. |
+| **Carry-forward to S62** | (1) **ENH-07 A** full per-strike IV/Greeks backfill over `hist_option_bars_1m` (TD-S58-NEW-1 / TD-095) — the big structural item; gates ENH-SDM→signal and N→~50; `core/bs_engine.py` is the substrate. (2) **ENH-SDM** `three_wick_reversal` P3 (needs spot OHLC). (3) **ENH-115** FII/DII positioning — scope. (4) **TD-S61-NEW-3** proper fix (retire/auto-gen the vestigial `_meta`). **Banked backlog (S60 carry):** TD-S60-NEW-5 (`core/config.py` Windows `BASE_DIR`); ~28 gate migrations (TD-S60-NEW-3 continuation); Local-drift cleanup (`*_PRE_S*` gitignore + root-level `eod_health_check.py` shadow); ~8 past-holiday noise rows in older cohorts; Zerodha token rotation (plaintext in chats); `datetime.utcnow()` deprecation build_ict_htf_zones.py 652/662/734; momentum vwap-unit scaling; 68-row `ohlc()` coverage tail; doc re-upload Rule 12. |
+
+---
+
+## This session (S62)
+
+| Field | Value |
+|---|---|
+| **Goal** | TBD at S62 open. |
+| **Reading order before acting** | `CLAUDE.md` (now v1.38) → this `CURRENT.md` → `tech_debt.md` → `MERDIAN_System_Map.md` → `merdian_reference.json` (v40). |
+
+---
+
+## Previous session S60
+
+| Field | Value |
+|---|---|
 | **Date** | 2026-06-26 (Session 60 — Muharram holiday; market closed) |
 | **Shape** | Opened as a Marketview phantom-header trace; cascaded into a five-item data-integrity sweep + an ENH-SDM P2 build/wire/prove + a shared holiday-gate helper + a trading_calendar root-cause fix. All code BUILT + PROVEN and deployed Local → git → AWS. |
 | **TD-S60-NEW-1 — Marketview spot-header phantom +4.34% — CLOSED** | Header showed SENSEX +4.34% (+3228 pts) on a real ~+0.76% day. Root cause: `build_market_spot_session_markers.py` stalled after 2026-06-04 (unscheduled post-AWS-migration); the frontend read a 21-day-stale `market_spot_session_markers.prev_close_spot=74346.17` (real prev close 76,991.22). Same C-09/ADR-001 stale-reference family as S59, different path. Fixes: `4f676e1` (None-guard postmarket-ts deref), `5066d81` (marker freshness guard in `scripts/eod_health_check.py`), `c9c2ab3` (`get_open_0915` window 09:15:00–09:18:00 + `get_prev_close_spot` walk-back ≤7 days fixing Monday-reads-Sunday); markers backfilled 06-05→06-25; cron `40 10 * * 1-5` (16:10 IST) added on AWS. |
@@ -23,15 +51,6 @@
 | **Type** | 8 commits; all production patches canon-v3 with `_PRE_S60` backups. 1 cron change (marker writer). 2 manual SQL (calendar stale-row UPDATE; holiday-noise DELETE). 0 new ADR (bug-fixes + a compute writer + data-repair + a helper-consolidation — Doc Protocol v4 Rule 10 bar not met). 1 ENH BUILT (ENH-SDM P2). 2 new files + 1 spec + 1 corrected file. |
 | **Outcome** | PASS. Five data-integrity items closed/filed; ENH-SDM P2 live and proven; the trading_calendar trust-anchor fixed at source with a shared gate belt; CLAUDE.md Rule 18 added (calendar trust-anchor). |
 | **Carry-forward to S61** | (operator-stated order) (1) **TD-S59-NEW-2** exec_log `exit_reason` constraint fix (~15 min; map FAILURE branch to a valid enum e.g. TOKEN_EXPIRED/DATA_ERROR, free-text → `error_message`; schema confirmed); (2) **ENH-02** PCR signal — wire not build (`options_flow` substrate); (3) **ENH-07** basis-implied risk-free rate — genuinely unbuilt, P1; (4) **ENH-115** FII/DII positioning — scope; (5) **TD-S58-NEW-1** Greeks backfill — purchased chain 0.00% Greeks across 12mo, full per-strike IV/Greeks solve, the big structural item, gates ENH-SDM→signal and N→~50. **Banked backlog:** TD-S60-NEW-5 (core.config path); TD-S60-NEW-3 continuation (~28 gate migrations); Local-drift cleanup (.gitignore `*_PRE_S*` + uncommitted .gitignore/.pine + root-level `eod_health_check.py` shadow of `scripts/eod_health_check.py`); ENH-SDM three_wick_reversal P3 (needs spot OHLC); ~8 past-holiday noise rows in older cohorts (Apr–Jun, cohort-filter on the corrected calendar); Zerodha token rotation (plaintext in chats); `datetime.utcnow()` deprecation build_ict_htf_zones.py 652/662/734; momentum vwap-unit scaling; 68-row `ohlc()` coverage tail; doc re-upload Rule 12. |
-
----
-
-## This session (S61)
-
-| Field | Value |
-|---|---|
-| **Goal** | TBD at S61 open. Operator-stated priority #1 is **TD-S59-NEW-2** (exec_log `exit_reason` constraint fix, ~15 min, schema confirmed — the original S60 P0 that the marker/calendar/ENH-SDM cascade pre-empted). |
-| **Reading order before acting** | `CLAUDE.md` (now v1.37 — note Rule 18 calendar trust-anchor) → this `CURRENT.md` → `tech_debt.md` → `MERDIAN_System_Map.md` → `merdian_reference.json` (v39). |
 
 ---
 

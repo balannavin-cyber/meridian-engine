@@ -57,6 +57,41 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S61-NEW-1 (S2 priority) — `build_trade_signal_local.py::_fetch_options_flow()` had no recency floor → ENH-02/04 confidence modifiers fired off a ~24-day-stale row; CLOSED
+
+| Field | Value |
+|---|---|
+| **Severity** | S2 (live confidence modifiers running on stale data; no crash, silent mis-scoring) |
+| **Filed / Closed** | 2026-06-27 (Session 61) — NEW + CLOSED same session (commits `8ddbc78` + `d16986c`) |
+| **Component** | `build_trade_signal_local.py::_fetch_options_flow()` reading `options_flow_snapshots` |
+| **Symptom** | `compute_options_flow_local.py` was orphaned at the S49 migration (never re-homed in the AWS orchestrator), so `options_flow_snapshots` stopped advancing; the newest row was ~24 days old. `_fetch_options_flow()` read it with no freshness guard, so the ENH-02/04 modifiers (±3/4/5 on `pcr_regime`/`skew_regime`/`flow_regime`) were applied to every live BUY signal off that stale row. |
+| **Root cause** | Two-part: (a) the writer was orphaned (S49 migration-scope gap, same family as the ADR-019 orphans); (b) the reader carried no ADR-018 D2 recency floor. |
+| **Fix** | (a) `compute_options_flow_local.py` re-homed into `run_merdian_shadow_runner_aws.py execute_pipeline` at the canonical options_flow slot; (b) ADR-018 D2 floor added to `_fetch_options_flow()` — `MERDIAN_FLOW_RECENCY_FLOOR_MIN` (default 15 min); stale → modifiers suppressed. Commits `8ddbc78` + `d16986c` (canon-v3, `_PRE_S61`). |
+| **Related** | ADR-018 D2 (recency-floor on all signal readers); ADR-019 (S49 migration orphans); ENH-02; TD-S57-NEW-2 (the feed-side floor analogue). |
+
+### TD-S61-NEW-2 (S3 priority) — hist bar timestamp pairing: the −5h30m futures shift was wrong; both bar tables are IST-clock-as-UTC → ZERO shift; CLOSED
+
+| Field | Value |
+|---|---|
+| **Severity** | S3 (research-substrate correctness; surfaced + fixed during the ENH-07 B backfill, no production impact) |
+| **Filed / Closed** | 2026-06-27 (Session 61) — NEW + CLOSED same session |
+| **Component** | `hist_future_bars_1m` × `hist_spot_bars_1m` pairing in `backfill_basis_context.py` |
+| **Symptom** | Pairing futures bars to spot bars with the assumed −5h30m futures→true-UTC shift yielded only ~14% matches (~269 pairs/day). |
+| **Root cause** | The −5h30m assumption (carried from the TD-087 vendor-chain note) was wrong for these two tables. A UTC-forced diagnostic showed BOTH tables store **IST-clock-as-UTC** (hours 9–15) and are mutually consistent, so no shift is needed. |
+| **Fix** | Pair on the raw bar_ts with **zero shift** → ~99% match (~376 pairs/day, e.g. 1,879 over 5 days). Read-time only; source unchanged. Also catalogued the per-symbol `contract_series` wart (NIFTY 1/2/3 expiry-NULL vs SENSEX 0 expiry-populated) — handled in the front-month selector. |
+| **Related** | TD-087 (the −5h30m vendor-chain note this refines for bar-pairing); ENH-07 B; CLAUDE.md v1.38 settled bullet. |
+
+### TD-S61-NEW-3 (S4 priority) — `merdian_reference.json` vestigial `_meta` header stale (v38/S55) alongside the live top-level header; resynced
+
+| Field | Value |
+|---|---|
+| **Severity** | S4 (cosmetic/confusing; the live top-level header `version`/`last_updated_session`/`change_log` is correct and current) |
+| **Filed** | 2026-06-27 (Session 61) |
+| **Component** | `merdian_reference.json` `_meta` object |
+| **Symptom** | The file has TWO header blocks: the maintained top-level (`version`, `last_updated_session`, `change_log`) and a vestigial `_meta` (`version`, `last_updated`, `_meta.change_log`) that stopped being updated ~S55 (read v38/S55 while the body was current at v39/S60). A reader inspecting `_meta` alone would mis-judge the file 5 sessions stale. |
+| **Fix** | `_meta.version` / `_meta.last_updated_by_session` resynced to the top-level at the S61 close. Proper fix (deferred): retire the duplicate `_meta` header or generate it from the top-level. |
+| **Related** | Doc Protocol v4 Rule 12 (doc re-upload / drift hygiene). |
+
 ### TD-S60-NEW-1 (S2 priority) — Marketview spot header showed phantom SENSEX +4.34%/+3228pts; root cause = stalled `market_spot_session_markers` writer (21-day-stale prev_close baseline); CLOSED
 
 | | |
@@ -153,15 +188,15 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Live-verify** | Next directional session: compare the breadth card to VRD on a real move. If it tracks → RESOLVED. |
 | **Related** | C-09 / ADR-001; `runbook_update_kite_flow.md`; TD-S48-NEW-1 (feed liveness — distinct input); TD-S57-NEW-2 / ADR-018 D2 (recency-floor for the feed, not the reference table); TD-S59-NEW-2; ENH-SDM. |
 
-### TD-S59-NEW-2 (S3 priority) — `refresh_equity_intraday_last.py` FAILURE-path exec_log write violates `chk_exit_reason_valid` → failures are invisible
+### TD-S59-NEW-2 (S3 priority) — `refresh_equity_intraday_last.py` FAILURE-path exec_log write violates `chk_exit_reason_valid` → failures are invisible; CLOSED
 
-> **CARRIED TO S61 (S60 close).** This was the original S60 P0 #1 work-order and was never reached — the session was pulled into the marker/calendar/ENH-SDM cascade. Ready: `script_execution_log` schema confirmed (`exit_reason` is constrained-text VALID set {SUCCESS, HOLIDAY_GATE, OFF_HOURS, TOKEN_EXPIRED, DATA_ERROR, SKIPPED_NO_INPUT, DEPENDENCY_MISSING, CRASH, TIMEOUT, RUNNING, DRY_RUN}; `error_message` is the free-text sink). Fix: map the FAILURE branch's free-text reason to a valid enum (e.g. TOKEN_EXPIRED / DATA_ERROR) and route the detail to `error_message`. ~15 min. Operator-stated S61 priority #1.
+> **CLOSED 2026-06-27 (S61, commit `3533d22`).** The operator's #1. A module-level `_classify_exit_reason(ok, err)` now maps the FAILURE branch to a valid `chk_exit_reason_valid` member — `TOKEN_EXPIRED` on `api_key`/`access_token` errors, else `DATA_ERROR` — with the free-text detail routed to `error_message`; the `eod_health_check` negative-hours cosmetic was folded in. canon-v3, `_PRE_S61`. This closes the silent-failure hole that masked the S59 5-week breadth freeze (no exec_log row was being written on failure).
 
 | Field | Value |
 |---|---|
 | **Severity** | S3 (telemetry defect; no active data impact, but it masked TD-S59-NEW-1 for ~5 weeks) |
 | **Filed** | 2026-06-24 (Session 59) |
-| **Status** | OPEN |
+| **Status** | **CLOSED 2026-06-27 (S61, `3533d22`)** — module-level `_classify_exit_reason(ok, err)` → `TOKEN_EXPIRED`/`DATA_ERROR`, detail → `error_message`; `eod_health_check` negative-hours folded in. canon-v3, `_PRE_S61`. |
 | **Component** | `refresh_equity_intraday_last.py` exec_log write on the FAILURE branch → `script_execution_log` (constraint `chk_exit_reason_valid`) |
 | **Symptom** | On the 05:10 IST manual run (expired-token failure), the exec_log INSERT was rejected: `new row for relation "script_execution_log" violates check constraint "chk_exit_reason_valid" (23514)`. The failing row carried `exit_reason = "prev_close refresh via Kite ohlc()"` / error `Incorrect api_key or access_token.` — `exit_reason` not in the constraint's closed set, so the FAILURE row never persists. |
 | **Root cause** | The script writes a free-text string into `exit_reason` on failure rather than one of the constraint's allowed enum values (same class as TD-083 / TD-NEW-J). Success path uses a valid value; failure path does not. |
@@ -3110,3 +3145,5 @@ Updated Session 58 (2026-06-22): filed TD-S58-NEW-1 (purchased chain 0% Greeks; 
 Updated Session 58 close (2026-06-22): TD-S57-NEW-1 + TD-S57-NEW-2 CLOSED-VERIFIED on the Monday open (breadth-fragility class ended); TD-081 + TD-NEW-K/L/M closed downstream; TD-S58-NEW-1 filed (purchased-chain 0% Greeks). ADR-018 D1 host corrected MALPHA->AWS; ADR-019 accepted (orphan port-not-retire); ENH-SDM reframed observability-first + P1 schema deployed.
 
 Updated Session 60 (2026-06-26 — Muharram holiday): 5 NEW TDs filed at top of Active section. TD-S60-NEW-1 (S2) marker-header phantom +4.34% CLOSED (stalled `market_spot_session_markers` writer → 21-day-stale prev_close baseline; cron + freshness guard + open/prevclose window fixes). TD-S60-NEW-2 (S1) `trading_calendar.json` 2-of-15 holidays misdated → every NSE holiday mismarked open since ~April → pipeline ran on Muharram; CLOSED AT SOURCE (15 official holidays, `bafddc2`, reseed + stale-row UPDATE) + orchestrator gate belt (`af74d0c`). TD-S60-NEW-3 (S2) shared holiday-gate helper `core/trading_calendar_gate.py` BUILT (`3b3b8ee` self-sufficient v2) + orchestrator CUT OVER (`38a82ff`); ~28 bespoke gates migrate incrementally. TD-S60-NEW-4 (S2) holiday-noise compute rows on 06-26 CLOSED via scoped single-date DELETE (gamma 30 / market_state 30 / volatility 30 / momentum 29 / signal 34 / SDM 16; 0 remaining; spot+markers preserved). TD-S60-NEW-5 (S2) `core/config.py` Windows-hardcoded `BASE_DIR` FILED (latent AWS portability landmine; surfaced by the NEW-3 smoke-test). TD-S59-NEW-2 (exec_log exit_reason) annotated CARRIED TO S61 (operator-stated priority #1, ~15 min, schema confirmed). 4 TDs closed this session (NEW-1/-2/-4 + the calendar root cause), 1 built (NEW-3), 1 filed (NEW-5). No new ADR (bug-fixes + a compute writer + data-repair + a helper-consolidation; Doc Protocol v4 Rule 10 bar not met). 8 commits; all production patches canon-v3 with `_PRE_S60` backups.
+
+Updated Session 61 (2026-06-27 — carry-forward execution sweep): **TD-S59-NEW-2 CLOSED** (exec_log `exit_reason` → `_classify_exit_reason` valid enum, `3533d22` — the operator's #1; closes the silent-failure hole behind the S59 breadth freeze). **ENH-02 WIRED** (`compute_options_flow_local.py` re-homed to the orchestrator) + **TD-S61-NEW-1 NEW+CLOSED** (ADR-018 D2 floor `MERDIAN_FLOW_RECENCY_FLOOR_MIN` on `_fetch_options_flow` — the ENH-02/04 ±3/4/5 modifiers had run off a ~24-day-stale row since S49; `8ddbc78`+`d16986c`). **ENH-07 B basis-velocity context BUILT+DEPLOYED** (`compute_basis_context_local.py` → `basis_context_snapshots`, display-only context-not-gate, `141386d`) + `hist_basis_context` backfill (NIFTY 92,515 / SENSEX 29,689, zero-shift pairing). **TD-S61-NEW-2 NEW+CLOSED** (hist bar pairing IST-clock-as-UTC zero-shift, 14%→~99%). **TD-S61-NEW-3 FILED** (reference.json `_meta` vestigial-header drift; resynced). **ENH-07 A reframed** (no live BS solver/rate; `core/bs_engine.py` built+validated). 3 TDs closed (TD-S59-NEW-2 + TD-S61-NEW-1/-2), 3 filed (TD-S61-NEW-1/2/3). No new ADR. 4 commits + backfill; all production patches canon-v3 with `_PRE_S61` backups.

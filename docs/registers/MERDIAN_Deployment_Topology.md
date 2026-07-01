@@ -924,3 +924,26 @@ Both readers in `build_trade_signal_local.py` carry the ADR-018 D2 recency floor
 **Historical backfill (one-shot).** `backfill_basis_context.py` wrote `hist_basis_context` (NIFTY 92,515 / SENSEX 29,689) from `hist_future_bars_1m`×`hist_spot_bars_1m` (zero-shift pairing — TD-S61-NEW-2). Committed `3f1fe4e`.
 
 Zero §1 environment changes (instance `i-0878c118835386ec2`, EIP `13.63.27.85`). No cron/systemd changes this session (both writers run inside the existing 5-min orchestrator cycle). Cross-refs: tech_debt TD-S59-NEW-2 + TD-S61-NEW-1/2/3; merdian_reference.json v40 S61 change_log; MERDIAN_System_Map.md §S61.
+
+## §S62 (2026-07-01) — historical per-strike Greeks + `gamma_concentration` backfill run to completion (both symbols); ENH-116 spec; flip-bug diagnosis
+
+**No production-runtime topology change.** S62 was a historical/research backfill run, an ENH spec, and a parity diagnosis — no live writer, cron, systemd, orchestrator, or environment change. Instance `i-0878c118835386ec2` / EIP `13.63.27.85` unchanged. All backfill work ran **Local** (`C:\GammaEnginePython`, Python 3.12) against Supabase over raw HTTP; it is **token-independent** (Supabase-only, no Kite/Dhan token) and safe across the 6 AM Kite-expiry and midnight boundaries.
+
+**New Local backfill scripts (staged, not yet git-committed — carry to S63):**
+- `backfill_hist_greeks.py` — vectorized numpy IV bisection over vendor `hist_option_bars_1m` (NOT mutated); reproduces `signed_gex_vec` verbatim (deep-ITM reject `|K−S|/S>0.05 AND |γ|>5e-5→0`; PE flip; `γ·oi·S²/1e7`); writes lean `iv`+`gamma` sidecar `hist_option_greeks_1m`. `--validate` gate sign≥98/sreg≥94/mag 0.9–1.1; `SKIP_EXPIRY` sentinel + `status=SKIPPED_EXPIRY` for same-day expiry (0-DTE flat-vol net_gex unreconstructible; live-sourced instead).
+- `fill_gamma_concentration.py` — computes `gamma_concentration = max|gex|/sum|gex|` (verbatim `compute_gamma_concentration`; Herfindahl, scale-invariant) and idempotently PATCHes ONLY that column on the pre-existing `hist_gamma_metrics` rows, matched on (symbol, bar_ts). `--validate` reproduces existing-table net_gex.
+- `run_fullwindow.py` — per-month solve+fill orchestration wrapper: timestamped heartbeat, tee to `fullwindow_backfill.log`, loud non-zero-exit abort + resume instruction, per-day resume granularity, token-independent.
+- Diagnostics/patches (Local): `diag_1125.py` (0-DTE reconstructibility probe), `patch_expiry_skip.py` (canon-v3, `_PRE_EXPIRYSKIP`).
+
+**New / filled tables:**
+- `hist_option_greeks_1m` — **NEW** per-strike sidecar (lean `iv`+`gamma`; iv is the master key, every Greek recomputes from it). Vendor `hist_option_bars_1m` left unmutated.
+- `hist_gamma_metrics` — **PRE-EXISTING** full-window (Apr 2025–Mar 2026) both-symbol 1-minute series (~91,325 NIFTY / 91,136 SENSEX rows; net_gex stored UNSCALED ×1e7 vs live /1e7 Cr). **This session's discovery:** it already carried net_gex/flip_level/regime etc.; its **one** empty column `gamma_concentration` was filled full-window for both symbols. NIFTY COMPLETE; SENSEX COMPLETE (`ALL DONE symbol=SENSEX total 1145.4 min`) **bar 2026-01-19** (SSLError mid-solve — TD-S62-NEW-2, one-line resume filed).
+
+**New SQL (Supabase SQL editor):** `hist_option_greeks_1m` DDL; `chk_backfill_status_valid` CHECK widened to include `SKIPPED_EXPIRY`.
+
+**New spec doc:** `docs/decisions/ENH-116-ambient-environment-intelligence.md` (301 ln / 18,762 B) — ENH-116 PROPOSED (P2).
+
+**Diagnosis (no code change):** TD-S62-NEW — SENSEX `compute_flip_level` resolves to a spurious deep-tail flip (~−6.75%/−7.11%) under NEGATIVE_γ; isolated by StockMojo cross-engine parity as the sole divergent field. Fix (walk rewrite + short-γ display guard) carried to S63.
+
+Cross-refs: tech_debt TD-S58-NEW-1 (RESOLVED) + TD-S62-NEW + TD-S62-NEW-2; Enhancement Register ENH-07 A CLOSED + ENH-116 PROPOSED; merdian_reference.json v41 S62 change_log; MERDIAN_System_Map.md §S62; CLAUDE.md v1.39.
+

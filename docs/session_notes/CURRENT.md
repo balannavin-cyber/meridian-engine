@@ -12,6 +12,37 @@
 
 | Field | Value |
 |---|---|
+| **Date** | 2026-07-01 (Session 62 — historical Greeks/concentration backfill run to completion + ENH-116 spec + flip-bug diagnosis; doc-close) |
+| **Shape** | Closed ENH-07 A as a no-op; built + validated a historical per-strike Greeks sidecar; DISCOVERED the pre-existing full-window `hist_gamma_metrics` series and filled its one empty column `gamma_concentration` for BOTH symbols to completion; abandoned a proven-divergent fast-path; specced ENH-116; StockMojo-parity-diagnosed a `compute_flip_level` bug. No git commits (backfill scripts + spec staged, carry to S63). |
+| **ENH-07 A — CLOSED (no-op, flat r)** | Supersedes the S61 REFRAMED/open status on two grounds: (1) empirical — flat r=6.5% BS reconstruction validated vs live `gamma_metrics` (sign 99% / magnitude 0.96× / sign-regime 95%), basis-implied rate immaterial; (2) architectural — the live engine reads vendor (Dhan) Greeks with no rate injection, so there is no live rate parameter. The historical backfill solves at flat r=6.5%. `core/bs_engine.py` is the substrate. |
+| **Per-strike Greeks sidecar — BUILT + VALIDATED** | `backfill_hist_greeks.py` (vectorized numpy IV bisection over vendor `hist_option_bars_1m`, NOT mutated) reproduces `signed_gex_vec` verbatim (deep-ITM reject `|K−S|/S>0.05 AND |γ|>5e-5→0`; PE flip; `γ·oi·S²/1e7`); writes lean `iv`+`gamma` sidecar `hist_option_greeks_1m` (iv is the master key — every Greek recomputes from iv; concentration is scale-invariant, needs only gamma). `--validate` sign≥98/sreg≥94/mag 0.9–1.1; PASS 2025-09-19 (100/100/1.00) + 2025-09-29 (99/95/0.96). |
+| **Expiry-day 0-DTE — explicit logged skip** | `diag_1125.py` on 2025-11-25 proved 0-DTE flat-vol net_gex is numerically UNRECONSTRUCTIBLE intraday (afternoon ratio-chaos −7×/+181M as T→0). `patch_expiry_skip.py` (canon-v3, `_PRE_EXPIRYSKIP`): `SKIP_EXPIRY` sentinel, `status=SKIPPED_EXPIRY` logged (not a silent 0-row dry), resume skips `in.(DONE,SKIPPED_EXPIRY)`, `chk_backfill_status_valid` widened. Expiry days are LIVE-SOURCED (`source=live_gamma_expiry`), not reconstructed. |
+| **KEY DISCOVERY — `hist_gamma_metrics` already existed** | A pre-existing full-window (Apr 2025–Mar 2026) both-symbol 1-minute series (~91,325 NIFTY / 91,136 SENSEX rows; net_gex, flip_level, regime, gamma_zone, expansion_probability, …) with net_gex stored UNSCALED (×1e7 vs live /1e7 Cr; median ratio ~1.007e7), ~93% sign agreement, expiry days handled CLEANLY (real vendor Greeks — no 0-DTE disease). Clock: hist `bar_ts` IST-as-UTC `:59` vs live `ts` real UTC `:00`; shift −5h30m + truncate-to-minute. **The ONE gap: `gamma_concentration` 100% empty.** This table IS the historical source of truth; the new-table sidecar recompute was redundant. Concentration recoverable ONLY by re-deriving per-strike gamma from raw bars — what the sidecar does. |
+| **Concentration fill — BUILT + VALIDATED + RUN** | `fill_gamma_concentration.py` — `gamma_concentration = max|gex|/sum|gex|` (verbatim from operator-pasted `compute_gamma_concentration`; Herfindahl dominance ratio, scale-invariant → 1e7 convention moot). `--validate` PASS 2025-08-01 (sign 376/376=100%, conc min 0.135/med 0.190/max 0.217). Fill = idempotent PATCH of ONLY `gamma_concentration`, matched on (symbol, bar_ts). |
+| **Fast-path — DIVERGENT, ABANDONED** | A `--fast` day-batched path failed `--verify` (max |diff| 0.0754); six rounds fixed oi-join/expiry-keying but a residual persisted despite gamma/oi/strikes/expiry bit-identical. Per "correct-and-slower beats fast-and-subtly-wrong," ABANDONED as dead code behind `--fast`; slow validated fill is the path. Gate held — abandoned, NOT loosened. |
+| **Full-window backfill — RUN TO COMPLETION** | `run_fullwindow.py` (per-month solve+fill, heartbeat, loud-abort+resume, per-day granularity, token-independent). **NIFTY COMPLETE** (12 mo, ~71,900 conc rows, ~19,500 expiry nulls; loud-abort on empty 2026-04; Diwali 61-bar 2025-10-21 filled). **SENSEX COMPLETE** — `ALL DONE symbol=SENSEX total 1145.4 min` (~19h, `--to-month 2026-03`). ONE GAP: **2026-01-19 SSLError mid-solve** (no DONE row, unfilled) → TD-S62-NEW-2, one-line resume filed. |
+| **ENH-116 Ambient Environment Intelligence — SPECCED (PROPOSED, P2)** | `docs/decisions/ENH-116-ambient-environment-intelligence.md` (301 ln): post-market compiler / light pre-market reconciler; four regime lenses (gamma-positioning, breadth-trajectory, cycle-OI/participant, macro USDINR/crude/gold) with pairwise-divergence flags; three-phase expiry-memory (`expiry_outcomes` event-store → base rates → analog retrieval, never gates); three-tier View/Console (Verdict headline / divergence-first lens strip / expiry-memory distribution + show-analogs); two schemas; M→V→S→P, display-not-gate first year. Grounded in ADR-002 v2 P4/P5, ADR-017 P4/P3/P1, ADR-018, ENH-115, ENH-SDM. BLOCKED-BY SENSEX backfill + expiry-memory seed; enabled specifically by this session. |
+| **TD-S62-NEW — SENSEX flip-level bug (StockMojo parity)** | Live SENSEX flip −6.75%/−7.11% (~71,750/71,529) far below spot (~76,850) across two timestamps; StockMojo put the real flip at 76,847 / cross 76,812 (near spot). Parity confirmed ALL other readings match StockMojo exactly (regime, accel 76,300–76,900, amplify 76,500, wall 77,000–77,500) — flip is the SOLE outlier → MERDIAN `compute_flip_level` bug. In NEGATIVE_γ the near-spot region is a uniform short-γ pit with no near-spot zero-crossing, so the ATM-outward walk falls through to a spurious deep-tail crossing instead of the pit→wall boundary at 77,000 (above spot). Deterministic. Fix direction: near-spot sign-change walk + "flip ill-defined under short-γ" display guard. |
+| **TD-S58-NEW-1 — RESOLVED** | Historical per-strike Greeks + concentration backfill built and run to completion both symbols; `hist_gamma_metrics.gamma_concentration` filled full-window (bar the single 2026-01-19 SENSEX day → TD-S62-NEW-2). The big structural item that gated ENH-SDM→signal and the expiry-memory seed. |
+| **Type** | 0 git commits (backfill scripts + ENH-116 spec staged, carry to S63). 3 canon-v3 patches earlier in the sidecar build (`_PRE_EXPIRYSKIP` etc.). 0 new ADR (ENH-116 is a PROPOSED spec, ENH-07 A close is a no-op ruling — Doc Protocol v4 Rule 10 bar not met). 1 ENH CLOSED (ENH-07 A no-op) + 1 ENH PROPOSED (ENH-116 P2). 3 new scripts + 1 spec + SQL DDLs. 1 new sidecar table + 1 pre-existing table filled. |
+| **Outcome** | PASS. ENH-07 A closed; the historical Greeks/concentration substrate is COMPLETE both symbols (bar one SENSEX day); ENH-116 is a frozen register candidate; the flip-bug is diagnosed with cross-engine parity evidence and ready to fix. CLAUDE.md v1.38→v1.39. |
+| **Carry-forward to S63** | (1) **SENSEX 2026-01-19** concentration resume (TD-S62-NEW-2, one line: `python run_fullwindow.py --symbol SENSEX --months 2026-01`); (2) **TD-S62-NEW** flip-bug per-strike diagnosis + fix (near-spot sign-change walk + short-γ display guard); (3) **ENH-116 build** when unblocked (post SENSEX-complete + this S63 doc-close); (4) **three undocumented ENH-07 A Phase-2 commits** on `main` from S61 still need documenting; (5) **git-commit** the S62 backfill scripts + ENH-116 spec. **Banked backlog (carry):** TD-S60-NEW-5 (core.config Windows BASE_DIR); ~28 gate migrations; Local-drift cleanup (`*_PRE_S*` gitignore); ENH-115 FII/DII scope; ENH-SDM `three_wick_reversal` P3; Zerodha token rotation; `datetime.utcnow()` deprecation; momentum vwap-unit scaling; 68-row `ohlc()` tail; doc re-upload Rule 12. |
+
+---
+
+## This session (S63)
+
+| Field | Value |
+|---|---|
+| **Goal** | TBD at S63 open. Priority carry-ins: TD-S62-NEW-2 (SENSEX 2026-01-19 concentration resume, one line); TD-S62-NEW (flip-bug per-strike diagnosis + fix); document the three undocumented ENH-07 A Phase-2 commits on `main`; git-commit the S62 backfill scripts + ENH-116 spec; ENH-116 build is unblocked once SENSEX resume lands. |
+| **Reading order before acting** | `CLAUDE.md` (now v1.39) → this `CURRENT.md` → `tech_debt.md` → `MERDIAN_System_Map.md` → `merdian_reference.json` (v41). |
+
+---
+
+## Previous session S61
+
+| Field | Value |
+|---|---|
 | **Date** | 2026-06-27 (Session 61 — Saturday, market closed; carry-forward execution sweep) |
 | **Shape** | Cleared the operator's #1 (TD-S59-NEW-2), wired ENH-02, shipped ENH-07 B basis-velocity context Local→git→AWS, built the historical basis cohort, and reframed ENH-07 A. All code BUILT + PROVEN + deployed. |
 | **TD-S59-NEW-2 — exec_log `exit_reason` — CLOSED** | The operator's #1. `refresh_equity_intraday_last.py` wrote a free-text `exit_reason` on the FAILURE branch, rejected by `chk_exit_reason_valid` (23514), so every failure left NO `script_execution_log` row — the silent hole behind the S59 5-week breadth freeze. Fix: module-level `_classify_exit_reason(ok, err)` → `TOKEN_EXPIRED` (api_key/access_token errors) / `DATA_ERROR`, detail → `error_message`; `eod_health_check` negative-hours cosmetic folded in. `3533d22` (canon-v3, `_PRE_S61`). |
@@ -24,15 +55,6 @@
 | **Type** | 4 code commits (`3533d22`, `8ddbc78`, `d16986c`, `141386d`) + backfill; all production patches canon-v3 with `_PRE_S61` backups. 2 SQL migrations. 0 new ADR (Doc Protocol v4 Rule 10 bar not met). 1 ENH WIRED (ENH-02) + 1 ENH SHIPPED-Measure (ENH-07 B). 3 new files + 2 new tables. |
 | **Outcome** | PASS. Operator's #1 closed; ENH-02 live and floored; ENH-07 B basis-velocity context live (display-only) + historical cohort built; ENH-07 A reframed with `core/bs_engine.py` as substrate; CLAUDE.md v1.37→v1.38. |
 | **Carry-forward to S62** | (1) **ENH-07 A** full per-strike IV/Greeks backfill over `hist_option_bars_1m` (TD-S58-NEW-1 / TD-095) — the big structural item; gates ENH-SDM→signal and N→~50; `core/bs_engine.py` is the substrate. (2) **ENH-SDM** `three_wick_reversal` P3 (needs spot OHLC). (3) **ENH-115** FII/DII positioning — scope. (4) **TD-S61-NEW-3** proper fix (retire/auto-gen the vestigial `_meta`). **Banked backlog (S60 carry):** TD-S60-NEW-5 (`core/config.py` Windows `BASE_DIR`); ~28 gate migrations (TD-S60-NEW-3 continuation); Local-drift cleanup (`*_PRE_S*` gitignore + root-level `eod_health_check.py` shadow); ~8 past-holiday noise rows in older cohorts; Zerodha token rotation (plaintext in chats); `datetime.utcnow()` deprecation build_ict_htf_zones.py 652/662/734; momentum vwap-unit scaling; 68-row `ohlc()` coverage tail; doc re-upload Rule 12. |
-
----
-
-## This session (S62)
-
-| Field | Value |
-|---|---|
-| **Goal** | TBD at S62 open. |
-| **Reading order before acting** | `CLAUDE.md` (now v1.38) → this `CURRENT.md` → `tech_debt.md` → `MERDIAN_System_Map.md` → `merdian_reference.json` (v40). |
 
 ---
 

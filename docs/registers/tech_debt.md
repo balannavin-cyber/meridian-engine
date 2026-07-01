@@ -57,6 +57,37 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S62-NEW (S2 priority) — SENSEX `compute_flip_level` resolves to a spurious deep-tail flip (~−6.75%/−7.11%) under NEGATIVE_γ; StockMojo parity isolates it as the sole outlier
+
+| Field | Value |
+|---|---|
+| **Severity** | S2 (a headline dashboard number is materially wrong on short-γ SENSEX boards; misleading, not a data-corruption or pipeline break) |
+| **Filed** | 2026-07-01 (Session 62) |
+| **Component** | `compute_gamma_metrics_local.py::compute_flip_level` (ATM-outward cumulative-GEX walk) |
+| **Symptom** | On the 2026-07-02-eve monthly SENSEX board (NEGATIVE_γ), the live dash showed `flip_level` **71,754.95 (−6.75% from spot)** at 10:57 and **71,529.03 (−7.11%)** at 14:16 — ~5,000 pts below spot (~76,850). StockMojo (independent GEX engine) put the real **Gamma Flip at 76,847** / **Net-GEX-Cross at 76,812**, i.e. near spot. |
+| **Cross-engine parity (isolates the bug)** | Every OTHER reading matches StockMojo exactly at the same timestamps: regime NEGATIVE_γ (agree); accel zone **76,300–76,900** (exact); strongest amplify **76,500** (exact); call-wall / max-γ **77,000–77,500** (same cluster; MERDIAN names 77,500, StockMojo Call Wall 77,000 — both peaks inside the one long-γ wall, immaterial). The flip is the **sole** divergent field → confirmed MERDIAN-side bug, not data/chain/regime. |
+| **Root cause** | In a NEGATIVE_γ regime the near-spot region is a **uniform short-gamma pit** (76,300–76,900 all negative) with no internal zero-crossing; the only long-γ wall (77,000+) sits **above** spot. `compute_flip_level` walks outward from ATM and returns the crossing nearest spot, but with no near crossing on either side it **falls through to a spurious deep-tail zero (~71,500)** far below, instead of the operative pit→wall boundary at 77,000. Deterministic (recomputes wrong every cycle; both timestamps ~5,300 pts low). Confirmed by reading the walk logic + the StockMojo per-strike bar chart (red pit 76,200–76,900, green wall 77,000+, curve crosses zero ~76,850). |
+| **Impact** | Display-only today (GEX-as-context-not-gate; flip does not route trades), but a −6.75% flip presented as a precise level is actively misleading on exactly the short-γ boards where break-direction matters most. Related in kind to the S41/2026-05-08 deep-strike flip regression (single bad far strike anchoring the walk) — same failure family, different trigger. |
+| **Workaround** | Read the flip skeptically on NEGATIVE_γ boards; trust StockMojo / the near-spot pit→wall structure over the emitted far number until fixed. |
+| **Proper fix** | Two-part: (a) **near-spot sign-change walk** (StockMojo-style — scan outward for the first cumulative-GEX sign change on each side, take the nearest; should catch the 77,000 wall above spot); (b) a **"flip ill-defined under short-γ" display guard** — when regime is NEGATIVE_γ and no clean near-spot crossing exists, label/suppress rather than emit a far actionable level (e.g. "flip: ill-defined (short-γ; wall 77,000 above)"). Per-strike arithmetic confirmation (which deep strike the walk latches onto) deferred until after the SENSEX backfill (now complete) so the DB is not queried mid-write. |
+| **Cost to fix** | ~1 session (walk rewrite + guard + cross-symbol re-validation; the S37/ENH-81 flip family and the S41 deep-strike guard are prior art). |
+| **Related** | S41 cross-vendor StockMojo note (flip_level cumulative-zero vs per-strike sign-change); 2026-05-08 deep-strike flip regression; GEX-as-context-not-gate (ADR-002 v2 / S37); ENH-116 (the ambient layer would label short-γ boards as expansion-favored, pin/flip unreliable). |
+
+### TD-S62-NEW-2 (S3 priority) — SENSEX historical `gamma_concentration` unfilled for 2026-01-19 (SSLError mid-solve during the full-window backfill); one-line resume filed
+
+| Field | Value |
+|---|---|
+| **Severity** | S3 (a single missing day in a completed full-window backfill; trivially resumable) |
+| **Filed** | 2026-07-01 (Session 62) |
+| **Component** | `run_fullwindow.py` / `backfill_hist_greeks.py` (SENSEX 2026-01); `hist_gamma_metrics.gamma_concentration` |
+| **Symptom** | During the ~19h SENSEX full-window run, **2026-01-19 hit `SSLError: HTTPSConnectionPool(host='…supabase.co') Max retries`** mid-solve (a transient Supabase connection drop). The run logged the ERROR and **continued** to 2026-01-20 onward (by design — a single-day network blip should not abort a 12-month job), so 2026-01-19 has no `DONE` log row and its per-strike sidecar + `gamma_concentration` are unfilled. All other SENSEX days completed (`ALL DONE symbol=SENSEX total 1145.4 min`). |
+| **Root cause** | Transient TLS/connection drop to Supabase during one day's solve; not a data or logic defect. The wrapper's per-day resume granularity means the loss is bounded to exactly that one day. |
+| **Impact** | One trading day of SENSEX `gamma_concentration` is NULL where it should be filled (2026-01-19 was a non-expiry Monday). Negligible for aggregate/regime work; matters only if that specific day is analyzed. |
+| **Workaround** | Treat SENSEX historical concentration as complete except 2026-01-19 until resumed. |
+| **Proper fix** | One-line resume (skips the 20 already-DONE Jan days, solves+fills only 2026-01-19): `python run_fullwindow.py --symbol SENSEX --months 2026-01`. Run when not mid-live-feed / not during a doc-close. |
+| **Cost to fix** | ~2 minutes (single-day recompute). |
+| **Related** | TD-S58-NEW-1 (RESOLVED — the parent backfill); `run_fullwindow.py` resume design; the deliberate loud-log-but-continue-on-transient-blip behaviour. |
+
 ### TD-S61-NEW-1 (S2 priority) — `build_trade_signal_local.py::_fetch_options_flow()` had no recency floor → ENH-02/04 confidence modifiers fired off a ~24-day-stale row; CLOSED
 
 | Field | Value |
@@ -220,22 +251,6 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Verify** | Post-fix re-run wrote `D PDL 23776.25-23796.25 => ACTIVE` for 06-24 (build verify block + `_pdlstatus.py` confirmed). Historical PDLs stay EXPIRED (dropped at their own build time; not backfilled — past sessions). |
 | **Open tail** | Weekly PDL exhibits the same shape if it ever surfaces (separate, more careful fix — can't simply remove the weekly filter). `datetime.utcnow()` DeprecationWarning at lines 652/662/734 (harmless now; `datetime.now(timezone.utc)` later). |
 | **Related** | TD-031 (OB/FVG unconditional-write precedent this extends); ADR-001 / TD-S59-NEW-1 (same shape: a stale/wrong reference price silently invalidating correct data). |
-
-### TD-S58-NEW-1 (S3 priority) — purchased options chain (2025-04→2026-03) has 0% Greeks; ENH-SDM historical study blocked behind a full IV/Greeks solve
-
-| Field | Value |
-|---|---|
-| **Severity** | S3 (research-substrate limitation, not a production break) |
-| **Filed** | 2026-06-22 (Session 58) |
-| **Component** | `hist_option_bars_1m` (purchased vendor chain); ENH-SDM backward frequency study |
-| **Symptom** | P0a coverage probe (S58): `hist_option_bars_1m.gamma` is **0.00% present across all 12 purchased months** (2025-04→2026-03) — `iv/delta/gamma/theta/vega` all NULL. Bars are continuous (3.8–5.4M/mo) and OI is 99.9% present, but Greeks are absent. In `gamma_metrics`, `pin_risk_score` traces back only to 2026-05-25 and `straddle_atm` to 2026-05-08, so only ~8 expiry days have all four ENH-SDM primitives co-present (`rows_all5_present` = 1,500 / 40,611). N≈8 cannot support a frequency study or an ADR-009 holdout. |
-| **Root cause** | The purchased vendor chain arrived Greeks-less. The live pipeline solves Greeks forward (`gamma_metrics` has gamma now), but the S29 "full-year backfill" computed `net_gex`/`gamma_concentration` from a partial pass and never solved per-strike Greeks or the pin/straddle layer over the purchased year. |
-| **Impact** | The ENH-SDM backward study (the cohort that would lift N from ~8 toward ~50) is blocked. `straddle_atm` backfill is viable standalone (no Greeks needed — just ATM CE+PE close). `pin_risk_score` + `gamma_concentration` backfill require a full per-strike IV/Greeks solve over ~55M bars first. |
-| **Workaround** | ENH-SDM ships as a **forward observability monitor** (P1 schema + P2 context-writer, display-not-gate); the cohort accrues forward from S58. No backward study, and no signal/modes build, until the Greeks backfill is funded. |
-| **Proper fix** | Scoped Greeks-backfill project: per-strike BS/Heston IV+gamma solve over `hist_option_bars_1m` 2025-04→2026-03, then recompute `pin_risk_score` + `gamma_concentration`, validated against live forward values (ADR-009-grade) before any study consumes it. |
-| **Cost to fix** | Multi-session (solve + recompute + validation over ~55M bars). |
-| **Blocked by** | Ideally ENH-07 (risk-free rate — the unresolved 6.5% hardcode would bias the IV solve) and TD-095 (IV-solver unit ambiguity) resolved first. |
-| **Related** | ENH-SDM; ADR-018 D4; CASE-2026-06-02; TD-S34-NEW-4 (post-Apr-2026 chain gap); TD-094 (historical OI — confirmed clean at 99.9% this probe); TD-095 (IV unit ambiguity). |
 
 ### TD-S57-NEW-3 (S3 priority) — Enhancement Register has a dual structure with conflicting per-ENH status
 
@@ -2423,6 +2438,27 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 
 ## Resolved (audit trail)
 
+### TD-S58-NEW-1 — purchased options chain (2025-04→2026-03) has 0% Greeks; historical per-strike IV/Greeks + concentration solve — RESOLVED S62
+
+| Field | Value |
+|---|---|
+| **Severity** | S3 (research-substrate limitation, not a production break) |
+| **Filed** | 2026-06-22 (Session 58) |
+| **Component** | `hist_option_bars_1m` (purchased vendor chain); ENH-SDM backward frequency study |
+| **Symptom** | P0a coverage probe (S58): `hist_option_bars_1m.gamma` is **0.00% present across all 12 purchased months** (2025-04→2026-03) — `iv/delta/gamma/theta/vega` all NULL. Bars are continuous (3.8–5.4M/mo) and OI is 99.9% present, but Greeks are absent. In `gamma_metrics`, `pin_risk_score` traces back only to 2026-05-25 and `straddle_atm` to 2026-05-08, so only ~8 expiry days have all four ENH-SDM primitives co-present (`rows_all5_present` = 1,500 / 40,611). N≈8 cannot support a frequency study or an ADR-009 holdout. |
+| **Root cause** | The purchased vendor chain arrived Greeks-less. The live pipeline solves Greeks forward (`gamma_metrics` has gamma now), but the S29 "full-year backfill" computed `net_gex`/`gamma_concentration` from a partial pass and never solved per-strike Greeks or the pin/straddle layer over the purchased year. |
+| **Impact** | The ENH-SDM backward study (the cohort that would lift N from ~8 toward ~50) is blocked. `straddle_atm` backfill is viable standalone (no Greeks needed — just ATM CE+PE close). `pin_risk_score` + `gamma_concentration` backfill require a full per-strike IV/Greeks solve over ~55M bars first. |
+| **Workaround** | ENH-SDM ships as a **forward observability monitor** (P1 schema + P2 context-writer, display-not-gate); the cohort accrues forward from S58. No backward study, and no signal/modes build, until the Greeks backfill is funded. |
+| **Proper fix** | Scoped Greeks-backfill project: per-strike BS/Heston IV+gamma solve over `hist_option_bars_1m` 2025-04→2026-03, then recompute `pin_risk_score` + `gamma_concentration`, validated against live forward values (ADR-009-grade) before any study consumes it. |
+| **Cost to fix** | Multi-session (solve + recompute + validation over ~55M bars). |
+| **Blocked by** | Ideally ENH-07 (risk-free rate — the unresolved 6.5% hardcode would bias the IV solve) and TD-095 (IV-solver unit ambiguity) resolved first. |
+| **Related** | ENH-SDM; ADR-018 D4; CASE-2026-06-02; TD-S34-NEW-4 (post-Apr-2026 chain gap); TD-094 (historical OI — confirmed clean at 99.9% this probe); TD-095 (IV unit ambiguity). |
+| **Closed** | 2026-07-01 (Session 62) |
+| **Resolution** | Built + ran the historical per-strike solve to completion. `backfill_hist_greeks.py` (vectorized numpy IV bisection over `hist_option_bars_1m`, NOT mutated; reproduces `signed_gex_vec` verbatim; deep-ITM reject + PE flip + `γ·oi·S²/1e7`) writes a lean `iv`+`gamma` sidecar `hist_option_greeks_1m`. **KEY DISCOVERY:** a pre-existing full-window (Apr 2025–Mar 2026) both-symbol 1-minute `hist_gamma_metrics` series already carried `net_gex`/`flip_level`/`regime` etc. with its **one** empty column being `gamma_concentration` — so the task collapsed from "recompute everything" to "fill that one column." `fill_gamma_concentration.py` computes `gamma_concentration = max|gex|/sum|gex|` (verbatim from `compute_gamma_concentration`; Herfindahl, scale-invariant) and idempotently PATCHes only that column on (symbol, bar_ts). `run_fullwindow.py` orchestrated per-month solve+fill, token-independent, resumable. Expiry days handled as an explicit `SKIPPED_EXPIRY` (0-DTE flat-vol net_gex is numerically unreconstructible — `diag_1125.py`; live-sourced instead). Flat r=6.5% (ENH-07 A closed no-op). |
+| **Verification** | `--validate` gates PASS: sidecar sign≥98/sreg≥94/mag 0.9–1.1 on 2025-09-19 (100/100/1.00) + 2025-09-29 (99/95/0.96); concentration reconstruction reproduces existing-table net_gex on 2025-08-01 (sign 376/376=100%; conc min 0.135/med 0.190/max 0.217 — sane index dominance). **NIFTY COMPLETE** (12 mo, ~71,900 conc rows, expiry-day nulls exactly on the expiry Tuesdays). **SENSEX COMPLETE** — `ALL DONE symbol=SENSEX total 1145.4 min`. A proven-DIVERGENT `--fast` path was ABANDONED (not loosened) per "correct-and-slower beats fast-and-subtly-wrong." |
+| **Residual** | ONE day: SENSEX 2026-01-19 unfilled (SSLError mid-solve) → filed as **TD-S62-NEW-2** with a one-line resume. Apr 2026+ has no raw bars (backfill correctly loud-aborts there). |
+| **Enables** | The expiry-memory seed for ENH-116 (PROPOSED, P2) and any future ENH-SDM backward study. |
+
 ### TD-S53-NEW-4 — option-chain ingest :00–:29 hourly hole in hours 04–09 UTC — RESOLVED S54 via `*/5`
 
 | Field | Value |
@@ -3147,3 +3183,5 @@ Updated Session 58 close (2026-06-22): TD-S57-NEW-1 + TD-S57-NEW-2 CLOSED-VERIFI
 Updated Session 60 (2026-06-26 — Muharram holiday): 5 NEW TDs filed at top of Active section. TD-S60-NEW-1 (S2) marker-header phantom +4.34% CLOSED (stalled `market_spot_session_markers` writer → 21-day-stale prev_close baseline; cron + freshness guard + open/prevclose window fixes). TD-S60-NEW-2 (S1) `trading_calendar.json` 2-of-15 holidays misdated → every NSE holiday mismarked open since ~April → pipeline ran on Muharram; CLOSED AT SOURCE (15 official holidays, `bafddc2`, reseed + stale-row UPDATE) + orchestrator gate belt (`af74d0c`). TD-S60-NEW-3 (S2) shared holiday-gate helper `core/trading_calendar_gate.py` BUILT (`3b3b8ee` self-sufficient v2) + orchestrator CUT OVER (`38a82ff`); ~28 bespoke gates migrate incrementally. TD-S60-NEW-4 (S2) holiday-noise compute rows on 06-26 CLOSED via scoped single-date DELETE (gamma 30 / market_state 30 / volatility 30 / momentum 29 / signal 34 / SDM 16; 0 remaining; spot+markers preserved). TD-S60-NEW-5 (S2) `core/config.py` Windows-hardcoded `BASE_DIR` FILED (latent AWS portability landmine; surfaced by the NEW-3 smoke-test). TD-S59-NEW-2 (exec_log exit_reason) annotated CARRIED TO S61 (operator-stated priority #1, ~15 min, schema confirmed). 4 TDs closed this session (NEW-1/-2/-4 + the calendar root cause), 1 built (NEW-3), 1 filed (NEW-5). No new ADR (bug-fixes + a compute writer + data-repair + a helper-consolidation; Doc Protocol v4 Rule 10 bar not met). 8 commits; all production patches canon-v3 with `_PRE_S60` backups.
 
 Updated Session 61 (2026-06-27 — carry-forward execution sweep): **TD-S59-NEW-2 CLOSED** (exec_log `exit_reason` → `_classify_exit_reason` valid enum, `3533d22` — the operator's #1; closes the silent-failure hole behind the S59 breadth freeze). **ENH-02 WIRED** (`compute_options_flow_local.py` re-homed to the orchestrator) + **TD-S61-NEW-1 NEW+CLOSED** (ADR-018 D2 floor `MERDIAN_FLOW_RECENCY_FLOOR_MIN` on `_fetch_options_flow` — the ENH-02/04 ±3/4/5 modifiers had run off a ~24-day-stale row since S49; `8ddbc78`+`d16986c`). **ENH-07 B basis-velocity context BUILT+DEPLOYED** (`compute_basis_context_local.py` → `basis_context_snapshots`, display-only context-not-gate, `141386d`) + `hist_basis_context` backfill (NIFTY 92,515 / SENSEX 29,689, zero-shift pairing). **TD-S61-NEW-2 NEW+CLOSED** (hist bar pairing IST-clock-as-UTC zero-shift, 14%→~99%). **TD-S61-NEW-3 FILED** (reference.json `_meta` vestigial-header drift; resynced). **ENH-07 A reframed** (no live BS solver/rate; `core/bs_engine.py` built+validated). 3 TDs closed (TD-S59-NEW-2 + TD-S61-NEW-1/-2), 3 filed (TD-S61-NEW-1/2/3). No new ADR. 4 commits + backfill; all production patches canon-v3 with `_PRE_S61` backups.
+
+Updated Session 62 (2026-07-01): 2 NEW TDs at top of Active — **TD-S62-NEW (S2)** SENSEX `compute_flip_level` spurious deep-tail flip (−6.75%/−7.11%) under NEGATIVE_γ, isolated by StockMojo parity as the sole divergent field (all other readings match exactly); root cause = ATM-outward walk falls through a uniform short-γ near-spot pit to a deep-tail crossing; fix = near-spot sign-change walk + short-γ display guard; per-strike confirmation deferred post-backfill. **TD-S62-NEW-2 (S3)** SENSEX 2026-01-19 `gamma_concentration` unfilled (SSLError mid-solve); one-line resume filed. **TD-S58-NEW-1 CLOSED** and MOVED to Resolved with evidence — historical per-strike Greeks sidecar (`backfill_hist_greeks.py`) + the DISCOVERY that a full-window `hist_gamma_metrics` series already existed needing only its `gamma_concentration` column filled (`fill_gamma_concentration.py`, `run_fullwindow.py`); NIFTY + SENSEX run to completion (bar 2026-01-19 → TD-S62-NEW-2); a divergent `--fast` path abandoned not loosened. No new ADR (ENH-116 is a PROPOSED spec; ENH-07 A close is a no-op ruling — Doc Protocol v4 Rule 10 bar not met). 0 git commits (backfill scripts + ENH-116 spec staged, carry to S63).

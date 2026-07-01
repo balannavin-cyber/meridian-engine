@@ -95,7 +95,7 @@ market_view_data.json
 
 breeze_backfill_*.py
 backfill_spot_*.py
-fill_*.py
+fill_2026_*.py
 find_sensex_code.py
 run_merdian_shadow_runner_S44_PATCHED.py
 run_option_snapshot_intraday_runner_PRE_S44.py
@@ -108,3 +108,5 @@ _*.py
 *_PRE_S*
 *.bak
 *.bak_*
+*_PRE_*.py
+*_PRE_*.sql

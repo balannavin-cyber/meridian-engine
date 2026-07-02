@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v41",
+    "version": "v42",
     "generated": "2026-06-12",
     "sources": [
       "Session 52 (2026-06-12): Observability infrastructure deployment — 5 monitoring scripts (telegram_utils, monitor_orchestrator_health, refresh_health_dashboard, validate_compute_contracts, enforce_orchestrator_timeout; 761 lines total); 4 crontab entries active; Telegram integration live; status.json health snapshot every 1 min; time-to-detection <2 min for capture gaps, orchestrator failures, compute hangs, crontab typos, stale data.",
@@ -31,8 +31,8 @@
     "purpose": "Machine-queryable operational lookup layer. Use for fast session resume context injection. Authoritative on current operational state. For architectural intent and decisions see master docx files. Updated through Session 24 (2026-05-09) — ENH-93 replay/simulation harness built end-to-end across all 5 phases in single session: 10 new *_replay Supabase tables + 11 new files in C:\\GammaEnginePython\\replay\\ + 1 SQL migration + ADR-008 (~250 lines, Accepted) capturing replay architecture + canonical 'What what-if experiment means' methodology; 4 TDs filed (TD-087 hist_option_bars_1m IST-as-UTC defect with 5h30m phantom offset, TD-094 hist_option_bars_1m.oi=0 from S22 Kite backfill, TD-095 atm_iv_avg unit ambiguity, TD-096 reconstructor skips boundary 15:30); ENH-95 CANDIDATE filed (in-process orchestrator optimization, deferred until what-if campaign); ENH-93 CANDIDATE → CLOSED via ADR-008 acceptance. Phase 4b 2026-05-07 full-day run: 1056/1064 invocations (99.2%) succeeded; NIFTY 100% gamma_regime + 68% direction-bias match with live; SENSEX 91% action match (mostly DO_NOTHING tautology) + 28% gamma_regime match (structural narrow-strike-base divergence). Zero production code changes; zero writes to live tables; live scripts physically untouched. Session 23 (earlier same calendar date) was documentation consolidation; this Session 24 is the construction. Session 21 carry-forward patches still uncommitted in working tree.",
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
     "update_cadence": "Update this file in the same session as any meaningful change to file status, table schema, or open item status. Commit to Git immediately after update.",
-    "last_updated": "2026-07-01 S62 end (ENH-07 A CLOSED no-op flat r; historical per-strike Greeks sidecar hist_option_greeks_1m + the DISCOVERY that hist_gamma_metrics already existed needing only gamma_concentration filled -> filled full-window both symbols bar 2026-01-19 SENSEX; ENH-116 PROPOSED P2; TD-S58-NEW-1 RESOLVED; TD-S62-NEW flip bug + TD-S62-NEW-2 the 01-19 gap filed)",
-    "last_updated_by_session": "Session 61",
+    "last_updated": "2026-07-02 S63 end (TD-S62-NEW SENSEX compute_flip_level fix DEPLOYED dc63bb3 [regime-conditional near-spot sign-change walk + short-gamma display guard; StockMojo parity near-spot; TD-S62-NEW RESOLVED]; ENH-115 P1 BUILT [FII/DII participant-positioning writer live 5 rows 2026-07-01 + 270-day backfill + consolidated cash leg + 2 Mon-Fri AWS cron lines; participant OI NSE-only, cash consolidated NSE+BSE+MSEI, BSE participant stub dropped; new tables participant_oi_daily/fii_dii_cash_daily/v_participant_oi_latest]; three ENH-07 A Phase-2 commits 894332a->cd7078d->0f997c7 documented; TD-S62-NEW-2 SENSEX 2026-01-19 resume CARRIED to S64)",
+    "last_updated_by_session": "Session 63",
     "change_log": [
       {
         "session": "S55",
@@ -705,6 +705,16 @@
     }
   },
   "files": {
+    "measure_rate_sensitivity.py": {
+      "local_path": "C:\\GammaEnginePython\\measure_rate_sensitivity.py",
+      "aws_path": "/home/ssm-user/meridian-engine/measure_rate_sensitivity.py",
+      "reads": ["hist_future_bars_1m", "hist_option_bars_1m (historical IV/GEX sensitivity sweep)"],
+      "writes": [],
+      "call_signature": "read-only research probe (no DB writes)",
+      "cadence": "one-shot research (ENH-07 A Phase 2)",
+      "status": "RESEARCH / READ-ONLY (ENH-07 A Phase 2, S61; documented S63). Rate-sensitivity probe measuring how the historical IV/GEX solve moves as the risk-free rate is varied across the window. Its 'rate immaterial' finding is the empirical basis of the S62 ENH-07 A no-op close. Three main commits 894332a (initial probe +328) -> cd7078d (perf rework: drop million-row sample_dates -> pure-python candidates + early-stop, SSM-timeout-proof) -> 0f997c7 (drop nonexistent basis_pct column from hist_future_bars_1m select). Doc-close-omitted at S61/S62; documented S63. No production path.",
+      "open_items": ["Working-copy edit uncommitted on top of 0f997c7 (main<->Local diverge on this file) -- banked Local-drift cleanup"]
+    },
     "compute_basis_context_local.py": {
       "local_path": "C:\\GammaEnginePython\\compute_basis_context_local.py",
       "aws_path": "/home/ssm-user/meridian-engine/compute_basis_context_local.py",
@@ -4757,10 +4767,26 @@
       "truncated_each_run": false
     }
   },
-  "version": "v41",
-  "last_updated_session": "Session 62",
-  "last_updated_date": "2026-07-01",
+  "version": "v42",
+  "last_updated_session": "Session 63",
+  "last_updated_date": "2026-07-02",
   "change_log": [
+    {
+      "session": "S63",
+      "date": "2026-07-02",
+      "type": "bug-fix deploy + ENH-115 P1 FII/DII participant-positioning build + ENH-07 A Phase-2 commit documentation",
+      "summary": "TD-S62-NEW SENSEX compute_flip_level fix DEPLOYED (dc63bb3): regime-conditional near-spot sign-change walk + short-gamma display guard; SENSEX flip resolves near-spot; StockMojo cross-engine parity confirms; TD-S62-NEW RESOLVED. ENH-115 P1 BUILT end-to-end: participant-wise OI is NSE(NSCCL)-only (no BSE equivalent; BSE participant stub dropped), FII/DII cash is ONE consolidated NSE+BSE+MSEI fiidiiTradeReact report; parse_participant_oi.py + ingest_participant_positioning.py (EOD writer, trading-day gate, participant + non-fatal cash legs) + backfill_participant_oi.py; writer live-proven 5 rows 2026-07-01 TOTAL long==short==18953033; backfill 270 trading days 2025-05-28..2026-07-01 0 failures 17 weekday-holiday MISSes (cross-checked vs NSE calendar) seeding the ENH-116 expiry-memory cohort; cash dry-run reproduces StockMojo FII -1140.5 / DII +3159.24 (2026-07-01); two Mon-Fri AWS cron lines 14:00 + 15:30 UTC. Backfill Rule-18 corollary: dropped the DB trading_calendar gate (fail-opens on historical dates the reseeded table lacks -> 382-day inflation) for a local Mon-Fri weekday filter + NSE 404 as holiday ground truth; list-of-tuples PostgREST params. Three ENH-07 A Phase-2 commits 894332a->cd7078d->0f997c7 (measure_rate_sensitivity.py, read-only rate-sensitivity probe; the rate-immaterial finding underpins the S62 ENH-07 A no-op close) documented into the Enhancement Register + this file; ENH-07 A CLOSED no-op / B SHIPPED-Measure Part-1 reconciled.",
+      "commits": ["dc63bb3", "48e25c4", "afa273a", "31713c7", "f00eca9"],
+      "new_files": ["parse_participant_oi.py", "ingest_participant_positioning.py", "backfill_participant_oi.py", "sql/2026-07-02_enh115_participant_positioning.sql"],
+      "new_tables": ["participant_oi_daily", "fii_dii_cash_daily", "v_participant_oi_latest (freshness view)"],
+      "cron_changes": "2 Mon-Fri lines on MERDIAN AWS for ingest_participant_positioning.py (0 14 * * 1-5 + 30 15 * * 1-5, UTC)",
+      "tds_resolved": ["TD-S62-NEW (SENSEX flip fix, dc63bb3)"],
+      "tds_carried": ["TD-S62-NEW-2 (SENSEX 2026-01-19 gamma_concentration resume)"],
+      "adrs_new": 0,
+      "enh": "ENH-115 P1 BUILT; ENH-07 A CLOSED no-op / B SHIPPED-Measure (Part-1 reconciled) + three Phase-2 commits documented",
+      "claude_md": "v1.39 -> v1.40",
+      "docs_updated": ["session_log.md", "CURRENT.md", "tech_debt.md", "MERDIAN_Enhancement_Register.md", "MERDIAN_Deployment_Topology.md", "MERDIAN_System_Map.md", "merdian_reference.json", "CLAUDE.md"]
+    },
     {
       "session": "S62",
       "date": "2026-07-01",

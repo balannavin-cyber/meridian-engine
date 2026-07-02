@@ -12,6 +12,24 @@
 
 | Field | Value |
 |---|---|
+| **Date** | 2026-07-02 (Session 63 — SENSEX flip fix deployed + ENH-115 P1 FII/DII participant positioning built/live/backfilled + three ENH-07 A Phase-2 commits documented; doc-close) |
+| **Shape** | Deployed the SENSEX `compute_flip_level` fix (`dc63bb3`); built ENH-115 P1 end-to-end (participant-OI writer live + 270-day backfill + consolidated FII/DII cash leg + daily AWS cron); documented the three carried ENH-07 A Phase-2 research commits. 5 git commits. |
+| **TD-S62-NEW flip fix — DEPLOYED (`dc63bb3`) → RESOLVED** | `compute_flip_level` now regime-conditional: near-spot sign-change walk (first cumulative-GEX sign change on each side, nearest spot — catches the 77,000 pit→wall boundary above spot) + a short-γ display guard (label the flip ill-defined under NEGATIVE_γ when no clean near crossing exists). SENSEX flip resolves near-spot; StockMojo cross-engine parity confirms (the flip was the sole divergent field). |
+| **ENH-115 P1 — BUILT + LIVE + BACKFILLED** | Scope resolved: participant-wise OI is **NSE(NSCCL)-only** (no BSE equivalent — BSE participant stub dropped); FII/DII cash is **ONE consolidated NSE+BSE+MSEI** `fiidiiTradeReact` report. `parse_participant_oi.py` + `ingest_participant_positioning.py` (EOD writer, trading-day gate, participant + non-fatal cash legs) + `backfill_participant_oi.py`. Schema `participant_oi_daily` + `fii_dii_cash_daily` + view `v_participant_oi_latest` (`sql/2026-07-02_enh115_participant_positioning.sql`). Writer live-proven (5 rows 2026-07-01, TOTAL long==short==18,953,033). Commits `48e25c4`→`afa273a`→`31713c7`→`f00eca9`. |
+| **ENH-115 backfill + Rule-18 corollary** | 269 filled + 1 present = **270 trading days** 2025-05-28→2026-07-01, 0 failures, 17 weekday-holiday MISSes (all cross-checked vs the NSE-2026 calendar) — seeds the ENH-116 expiry-memory cohort. KEY FIX: dropped the DB `trading_calendar` gate (fail-opens on historical dates the reseeded table doesn't cover → 382-day inflation + 400 slow lookups) → local Mon–Fri weekday filter + NSE 404 as holiday ground truth (MISS≠FAIL); duplicate `trade_date` params-dict key → list-of-tuples. |
+| **ENH-115 cash leg + cron** | Cash `fiidiiTradeReact` dry-run confirmed live keys (`category`/`date`/`buyValue`/`sellValue`/`netValue`; `FII/FPI` + `DII`); `parse_cash` reproduces StockMojo (FII net −1140.5 / DII net +3159.24, 2026-07-01); non-fatal after the participant write. Cron: two Mon–Fri lines on MERDIAN AWS (14:00 UTC/19:30 IST primary + 15:30 UTC/21:00 IST expiry re-fire), snapshot-first, `SHELL=/bin/bash` line 1, idempotent. Display-not-gate; feeds ENH-116 Lens 3. |
+| **ENH-07 A Phase-2 commits — DOCUMENTED** | `894332a`→`cd7078d`→`0f997c7` (all `measure_rate_sensitivity.py`, a read-only rate-sensitivity probe; the "rate immaterial" finding underpins the S62 ENH-07 A no-op close; doc-close-omitted at S61/S62). Enhancement Register Part-4 + Part-1 reconciled (A CLOSED no-op / B SHIPPED-Measure); `merdian_reference.json` artifact added. |
+| **Type** | 5 git commits (`dc63bb3` flip; `48e25c4`/`afa273a`/`31713c7`/`f00eca9` ENH-115). 0 new ADR (bug-fix + ENH build + doc task — Rule 10 bar not met). 1 ENH built (ENH-115 P1) + ENH-07 A/B Part-1 reconciled. 3 new scripts + 1 SQL DDL. 2 new tables + 1 view. 2 cron lines. CLAUDE.md v1.39→v1.40, `merdian_reference.json` v41→v42. |
+| **TDs** | **TD-S62-NEW RESOLVED** (flip fix deployed `dc63bb3`). **TD-S62-NEW-2 CARRIED** to S64 (SENSEX 2026-01-19 concentration resume not run this session). No new TDs (ENH-115 built clean). |
+| **Outcome** | PASS. Flip bug fixed live; ENH-115 P1 participant/cash EOD source live + backfilled + cron'd (feeds ENH-116 Lens 3); ENH-07 commit documentation cleared. Eight-file doc-close per Doc Protocol v4 Rule 3 full-file no-crunch. |
+| **Carry-forward to S64** | (1) **SENSEX 2026-01-19** concentration resume (TD-S62-NEW-2, `python run_fullwindow.py --symbol SENSEX --months 2026-01`); (2) **ENH-116 build** + Lens 3 participant wiring + **ENH-115 P2** Marketview participant-tilt card; (3) **commit** the uncommitted `measure_rate_sensitivity.py` Local-drift edit. **Banked backlog (carry):** TD-S60-NEW-5 (core.config Windows BASE_DIR); ~28 gate migrations; `*_PRE_S*` gitignore; ENH-SDM `three_wick_reversal` P3; Zerodha token rotation; `datetime.utcnow()` deprecation; momentum vwap-unit scaling; 68-row `ohlc()` tail; doc re-upload Rule 12. |
+
+---
+
+## Previous session
+
+| Field | Value |
+|---|---|
 | **Date** | 2026-07-01 (Session 62 — historical Greeks/concentration backfill run to completion + ENH-116 spec + flip-bug diagnosis; doc-close) |
 | **Shape** | Closed ENH-07 A as a no-op; built + validated a historical per-strike Greeks sidecar; DISCOVERED the pre-existing full-window `hist_gamma_metrics` series and filled its one empty column `gamma_concentration` for BOTH symbols to completion; abandoned a proven-divergent fast-path; specced ENH-116; StockMojo-parity-diagnosed a `compute_flip_level` bug. No git commits (backfill scripts + spec staged, carry to S63). |
 | **ENH-07 A — CLOSED (no-op, flat r)** | Supersedes the S61 REFRAMED/open status on two grounds: (1) empirical — flat r=6.5% BS reconstruction validated vs live `gamma_metrics` (sign 99% / magnitude 0.96× / sign-regime 95%), basis-implied rate immaterial; (2) architectural — the live engine reads vendor (Dhan) Greeks with no rate injection, so there is no live rate parameter. The historical backfill solves at flat r=6.5%. `core/bs_engine.py` is the substrate. |
@@ -30,12 +48,12 @@
 
 ---
 
-## This session (S63)
+## This session (S64)
 
 | Field | Value |
 |---|---|
-| **Goal** | TBD at S63 open. Priority carry-ins: TD-S62-NEW-2 (SENSEX 2026-01-19 concentration resume, one line); TD-S62-NEW (flip-bug per-strike diagnosis + fix); document the three undocumented ENH-07 A Phase-2 commits on `main`; git-commit the S62 backfill scripts + ENH-116 spec; ENH-116 build is unblocked once SENSEX resume lands. |
-| **Reading order before acting** | `CLAUDE.md` (now v1.39) → this `CURRENT.md` → `tech_debt.md` → `MERDIAN_System_Map.md` → `merdian_reference.json` (v41). |
+| **Goal** | TBD at S64 open. Priority carry-ins: SENSEX 2026-01-19 concentration resume (TD-S62-NEW-2, `python run_fullwindow.py --symbol SENSEX --months 2026-01`); ENH-116 build + Lens 3 participant wiring + ENH-115 P2 Marketview participant-tilt card; commit the uncommitted `measure_rate_sensitivity.py` Local-drift edit. |
+| **Reading order before acting** | `CLAUDE.md` (now v1.40) → this `CURRENT.md` → `tech_debt.md` → `MERDIAN_System_Map.md` → `merdian_reference.json` (v42). |
 
 ---
 

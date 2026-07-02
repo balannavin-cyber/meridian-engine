@@ -20,22 +20,26 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+from datetime import date
+
 from core.execution_log import ExecutionLog
-from core.trading_calendar_gate import is_trading_day
 from ingest_participant_positioning import _env, _fetch_nse_participant_csv, _upsert
 from parse_participant_oi import parse_nse_participant_oi
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
 
-def plan_dates(start_iso: str, end_iso: str, present: set[str], is_trading_fn) -> list[str]:
-    """Pure, testable: trading days in [start,end] not already present, ascending."""
-    d = datetime.fromisoformat(start_iso).date()
-    end = datetime.fromisoformat(end_iso).date()
+def plan_dates(start_iso: str, end_iso: str, present: set[str]) -> list[str]:
+    """Pure, testable: WEEKDAYS in [start,end] not already present, ascending.
+    Holidays are not filtered here — NSE is ground truth: a weekday holiday 404s
+    the archive and is recorded as a benign MISS. No trading-calendar dependency
+    (that table's historical coverage isn't guaranteed; it fail-opens — Rule 18)."""
+    d = date.fromisoformat(start_iso)
+    end = date.fromisoformat(end_iso)
     out = []
     while d <= end:
         iso = d.isoformat()
-        if is_trading_fn(iso) and iso not in present:
+        if d.weekday() < 5 and iso not in present:   # Mon-Fri only
             out.append(iso)
         d += timedelta(days=1)
     return out
@@ -67,7 +71,7 @@ def main() -> int:
 
     url, key = _env()
     present = _present_dates(url, key, args.start, args.end)
-    todo = plan_dates(args.start, args.end, present, is_trading_day)
+    todo = plan_dates(args.start, args.end, present)
 
     print(f"[plan] {args.start}..{args.end}: {len(todo)} trading days to fetch "
           f"({len(present)} already present, skipped)")
@@ -83,13 +87,14 @@ def main() -> int:
     )
 
     filled = 0
-    failed: list[tuple[str, str]] = []
+    missing: list[str] = []                         # no archive file -> weekday holiday
+    failed: list[tuple[str, str]] = []              # real fetch/parse/upsert error
     for i, iso in enumerate(todo, 1):
         try:
             csv_text = _fetch_nse_participant_csv(iso)
             if csv_text is None:
-                failed.append((iso, "no archive file (404/empty)"))
-                print(f"  [{i}/{len(todo)}] {iso}  MISS (no file)")
+                missing.append(iso)
+                print(f"  [{i}/{len(todo)}] {iso}  MISS (no file - holiday)")
             else:
                 _, rows = parse_nse_participant_oi(csv_text, exchange="NSE")
                 n = _upsert(url, key, "participant_oi_daily", rows,
@@ -103,11 +108,13 @@ def main() -> int:
 
     log.record_write("participant_oi_daily", filled * 5)
     print(f"\n[done] filled={filled}  present_skipped={len(present)}  "
-          f"failed={len(failed)}")
+          f"missing_holidays={len(missing)}  failed={len(failed)}")
     if failed:
-        print("[failed dates] (re-run to retry; upsert makes it safe):")
+        print("[FAILED dates] (real errors; re-run retries, upsert makes it safe):")
         for iso, why in failed:
             print(f"    {iso}  {why}")
+    if missing:
+        print(f"[missing dates] (weekday holidays, expected): {', '.join(missing)}")
     return log.complete()
 
 

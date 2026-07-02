@@ -37,6 +37,7 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 # NSE archive is date-templated and generally served without the www cookie dance.
 NSE_PARTICIPANT_URL = "https://archives.nseindia.com/content/nsccl/fao_participant_oi_{ddmmyyyy}.csv"
 NSE_HOME = "https://www.nseindia.com"
+NSE_CASH_URL = "https://www.nseindia.com/api/fiidiiTradeReact"  # consolidated NSE+BSE+MSEI cash
 
 
 def _env():
@@ -88,6 +89,63 @@ def _upsert(url: str, key: str, table: str, rows: list[dict], on_conflict: str) 
     return len(rows)
 
 
+def _fetch_nse_cash():
+    """Fetch the consolidated FII/DII cash JSON. www host needs the cookie
+    warm-up (unlike the permissive archives host). Returns parsed JSON or None."""
+    s = requests.Session()
+    s.headers.update({"User-Agent": UA, "Accept": "application/json,*/*",
+                      "Referer": "https://www.nseindia.com/reports/fii-dii"})
+    s.get(NSE_HOME, timeout=30)                     # warm cookies
+    r = s.get(NSE_CASH_URL, timeout=30)
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    try:
+        data = r.json()
+    except Exception:
+        return None
+    return data or None
+
+
+def parse_cash(data, requested_date=None):
+    """Map fiidiiTradeReact rows -> one fii_dii_cash_daily record.
+    Rows carry category (FII/FPI, DII), date (e.g. '01-Jul-2026'), buy/sell/net."""
+    def num(x):
+        try:
+            return float(str(x).replace(",", "").strip())
+        except Exception:
+            return None
+
+    fii = dii = None
+    trade_date = None
+    for row in data:
+        cat = str(row.get("category", "")).upper()
+        d = str(row.get("date", "")).strip()
+        if d and trade_date is None:
+            try:
+                trade_date = datetime.strptime(d, "%d-%b-%Y").date().isoformat()
+            except Exception:
+                pass
+        if "FII" in cat or "FPI" in cat:
+            fii = row
+        elif "DII" in cat:
+            dii = row
+    if fii is None and dii is None:
+        return None, None
+    rec = {
+        "trade_date": trade_date or requested_date,
+        "scope": "NSE_BSE_MSEI",
+        "fii_buy_cr": num(fii.get("buyValue")) if fii else None,
+        "fii_sell_cr": num(fii.get("sellValue")) if fii else None,
+        "fii_net_cr": num(fii.get("netValue")) if fii else None,
+        "dii_buy_cr": num(dii.get("buyValue")) if dii else None,
+        "dii_sell_cr": num(dii.get("sellValue")) if dii else None,
+        "dii_net_cr": num(dii.get("netValue")) if dii else None,
+        "source": "nse_fiidiiTradeReact",
+    }
+    return rec["trade_date"], rec
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", default=datetime.now(IST).date().isoformat(),
@@ -132,6 +190,17 @@ def main() -> int:
         print(f"[DRY-RUN] {trade_date} NSE: {len(rows)} participant rows parsed; no write.")
         for r in rows:
             print(f"  {r['participant']:<6} fut_idx {r['fut_idx_long']}/{r['fut_idx_short']}")
+        print("\n[DRY-RUN] cash probe (fiidiiTradeReact) — raw then parsed:")
+        try:
+            cash_raw = _fetch_nse_cash()
+            import json as _json
+            print(_json.dumps(cash_raw, indent=2)[:1200] if cash_raw else "  (no cash payload)")
+            if cash_raw:
+                cdate, crow = parse_cash(cash_raw, requested_date=args.date)
+                print(f"  parsed -> date={cdate} fii_net={crow['fii_net_cr']} "
+                      f"dii_net={crow['dii_net_cr']}")
+        except Exception as e:
+            print(f"  cash probe error: {e}")
         return 0
 
     url, key = _env()
@@ -143,15 +212,30 @@ def main() -> int:
     log.record_write("participant_oi_daily", n)
     print(f"participant_oi_daily NSE {trade_date}: upserted {n} rows")
 
-    # --- BSE participant OI (exchange='BSE') ---------------------------------
-    # TODO(P1): wire once the live BSE derivative-disclosure report format is captured.
-    # BSE publishes its own participant-wise OI (SENSEX/BANKEX) via bseindia.com
-    # derivatives disclosures; exact CSV path + header to be confirmed at first run,
-    # then mapped through the same participant_oi_daily shape with exchange='BSE'.
-
     # --- Consolidated FII/DII cash (scope='NSE_BSE_MSEI') --------------------
-    # TODO(P1): wire the NSE "FII/FPI & DII trading activity on NSE, BSE and MSEI"
-    # CSV once its live header is captured -> fii_dii_cash_daily.
+    # Best-effort: a cash failure must NOT undo the participant write above.
+    try:
+        cash_raw = _fetch_nse_cash()
+        if cash_raw:
+            cdate, crow = parse_cash(cash_raw, requested_date=args.date)
+            if crow and crow["trade_date"] == args.date:
+                m = _upsert(url, key, "fii_dii_cash_daily", [crow],
+                            on_conflict="trade_date,scope")
+                log.record_write("fii_dii_cash_daily", m)
+                print(f"fii_dii_cash_daily {cdate}: upserted {m} row "
+                      f"(fii_net={crow['fii_net_cr']} dii_net={crow['dii_net_cr']})")
+            else:
+                got = crow["trade_date"] if crow else None
+                print(f"[cash] skipped — payload date {got} != {args.date} (not yet updated)")
+        else:
+            print("[cash] no payload (not yet published) — skipped, non-fatal")
+    except Exception as e:
+        print(f"[cash] non-fatal error, participant write stands: {e}")
+
+    # --- BSE participant OI (exchange='BSE') ---------------------------------
+    # Dropped for P1: participant-wise OI is an NSE/NSCCL-only report; BSE has no
+    # equivalent board. BSE (+SENSEX) exposure is covered by the consolidated cash
+    # above. exchange='BSE' remains a harmless schema capability for the future.
 
     return log.complete()
 

@@ -294,36 +294,80 @@ def compute_gamma_concentration(strike_map: dict[float, float]) -> float | None:
     return max_abs / total_abs if max_abs > 0 else None
 
 
+# TD-S62-NEW (S63) dominance floor for the SHORT-gamma per-strike walk:
+# ignore strikes whose |GEX| is a negligible fraction of the peak, so a single
+# tiny opposite-sign strike cannot create a false sign boundary. 0.01 = 1%.
+_FLIP_DOMINANCE_EPS_FRAC = 0.01
+
+
+def _flip_short_gamma_perstrike(strikes: list[float], strike_map: dict[float, float], spot: float) -> float | None:
+    """TD-S62-NEW: per-strike signed-GEX sign boundary nearest spot.
+
+    Used only under NEGATIVE gamma, where the cumulative-from-min_strike sum
+    has no near-spot zero-crossing (net is negative) and the legacy walk falls
+    through to a spurious deep-tail level (SENSEX 2026-07-01: ~71,500 vs spot
+    ~76,900). The per-strike sign boundary is the operative pit->wall level
+    near spot (StockMojo Gamma Flip 76,847 / Net-GEX-Cross 76,812).
+    """
+    values = [strike_map[s] for s in strikes]
+    max_abs = max(abs(v) for v in values)
+    if max_abs <= 0.0:
+        return None
+    eps = _FLIP_DOMINANCE_EPS_FRAC * max_abs
+    sig = [(s, v) for s, v in zip(strikes, values) if abs(v) >= eps]
+    if len(sig) < 2:
+        return None
+    crossings: list[float] = []
+    for i in range(1, len(sig)):
+        s_prev, v_prev = sig[i - 1]
+        s_curr, v_curr = sig[i]
+        if v_prev == 0.0:
+            crossings.append(s_prev)
+        elif v_curr == 0.0:
+            crossings.append(s_curr)
+        elif (v_prev < 0.0 < v_curr) or (v_prev > 0.0 > v_curr):
+            denom = v_curr - v_prev
+            if denom != 0.0:
+                frac = -v_prev / denom
+                crossings.append(s_prev + frac * (s_curr - s_prev))
+    if not crossings:
+        return None
+    return min(crossings, key=lambda x: abs(x - spot))
+
+
 def compute_flip_level(strike_map: dict[float, float], spot: float | None = None) -> float | None:
     """Find the operational gamma flip strike.
 
-    TD-NEW-2 Part B: walk outward from ATM in both directions and return the
-    zero-crossing closest to spot. The original bottom-up walk returned the
-    first zero-crossing from min_strike, which is fragile to spurious
-    contributions at deep-ITM strikes (see 2026-05-08 regression where a
-    single bad row at strike 21,250 made flip_level resolve to 21,250 instead
-    of the real ~24,800).
+    Regime-conditional (TD-S62-NEW, S63):
+      * net_gex >= 0 (LONG gamma): the cumulative-from-min_strike walk-from-ATM
+        introduced by TD-NEW-2 Part B -- UNCHANGED. This path already resolves
+        near spot on clean data (SENSEX 2026-07-01 healthy: 76,975 / 77,453).
+      * net_gex <  0 (SHORT gamma): the per-strike sign boundary nearest spot
+        (_flip_short_gamma_perstrike). The cumulative walk has no near-spot
+        crossing under NEGATIVE gamma and returns a spurious deep-tail level;
+        the per-strike boundary is the operative near-spot flip.
 
-    spot parameter is keyword-optional for backward compatibility with any
-    caller that hasn't been updated; when omitted, falls back to the legacy
-    bottom-up walk. New code should pass spot.
+    net_gex == sum(strike_map.values()); no signature change. LONG-gamma cycles
+    run the identical code they ran before this patch -- zero regression by
+    construction.
+
+    spot=None keeps the legacy bottom-up cumulative walk for backward
+    compatibility with callers that don't pass spot (production passes spot).
     """
     if not strike_map:
         return None
 
     strikes = sorted(strike_map.keys())
-    cumulative_points: list[tuple[float, float]] = []
-
-    running = 0.0
-    for strike in strikes:
-        running += strike_map[strike]
-        cumulative_points.append((strike, running))
-
-    if len(cumulative_points) < 2:
+    if len(strikes) < 2:
         return None
 
     # Legacy fallback: caller didn't supply spot. Preserve original behavior.
     if spot is None or spot <= 0:
+        running = 0.0
+        cumulative_points: list[tuple[float, float]] = []
+        for strike in strikes:
+            running += strike_map[strike]
+            cumulative_points.append((strike, running))
         for i in range(1, len(cumulative_points)):
             strike_prev, cum_prev = cumulative_points[i - 1]
             strike_curr, cum_curr = cumulative_points[i]
@@ -339,12 +383,22 @@ def compute_flip_level(strike_map: dict[float, float], spot: float | None = None
                 return strike_prev + frac * (strike_curr - strike_prev)
         return None
 
-    # Walk-from-ATM: collect candidate flip strikes on both sides of spot,
-    # return the one closest to spot (operational flip definition).
+    net_gex = sum(strike_map.values())
+
+    # SHORT gamma: per-strike sign boundary (TD-S62-NEW).
+    if net_gex < 0.0:
+        return _flip_short_gamma_perstrike(strikes, strike_map, spot)
+
+    # LONG gamma: unchanged cumulative walk-from-ATM (TD-NEW-2 Part B).
+    cumulative_points = []
+    running = 0.0
+    for strike in strikes:
+        running += strike_map[strike]
+        cumulative_points.append((strike, running))
+
     atm_idx = min(range(len(strikes)), key=lambda i: abs(strikes[i] - spot))
     candidates: list[float] = []
 
-    # Walk downward from ATM toward min_strike
     for i in range(atm_idx, 0, -1):
         strike_curr, cum_curr = cumulative_points[i]
         strike_prev, cum_prev = cumulative_points[i - 1]
@@ -361,7 +415,6 @@ def compute_flip_level(strike_map: dict[float, float], spot: float | None = None
                 candidates.append(strike_prev + frac * (strike_curr - strike_prev))
             break
 
-    # Walk upward from ATM toward max_strike
     for i in range(atm_idx, len(cumulative_points) - 1):
         strike_curr, cum_curr = cumulative_points[i]
         strike_next, cum_next = cumulative_points[i + 1]
@@ -381,8 +434,6 @@ def compute_flip_level(strike_map: dict[float, float], spot: float | None = None
     if not candidates:
         return None
     return min(candidates, key=lambda x: abs(x - spot))
-
-    return None
 
 
 def find_atm_strike(option_rows: list[dict[str, Any]], spot: float) -> float | None:

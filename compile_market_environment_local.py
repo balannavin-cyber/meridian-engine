@@ -230,31 +230,75 @@ def lens2_breadth(breadth_daily, wcb_daily, gamma_daily):
     }
 
 
-def reconcile(l1, l2):
-    """First-pass reconciliation (v1, tunable — display-not-gate).
+def _participant_tilt(l3):
+    """L3 -> BULLISH / BEARISH / NEUTRAL, or None when the board is stale (abstains).
+    v1 vote (tunable): FII index-fut long-build is the primary directional money (w=1.0);
+    put-heavy call/put asym = floor = bullish and Pro call-lean = bullish (w=0.5 each)."""
+    fii = l3.get("fii_index_fut_ls_delta_5d")
+    asym = l3.get("cycle_oi_call_put_asym")
+    pro = l3.get("pro_options_imbalance")
+    if fii is None and asym is None and pro is None:
+        return None
+    def sgn(x):
+        return 0 if not x else (1 if x > 0 else -1)
+    score = sgn(fii) * 1.0 - sgn(asym) * 0.5 + sgn(pro) * 0.5   # -asym: call-heavy=ceiling=bearish
+    return "BULLISH" if score > 0.5 else "BEARISH" if score < -0.5 else "NEUTRAL"
 
-    With only L1+L2 active: divergence is driven by price-vs-breadth; regime maps
-    gamma sign x breadth direction to the ADR-002 ambient enum. L3/L4 will refine
-    alignment once wired. This mapping is the tunable core of the product.
-    """
+
+def _breadth_dir(l2):
     div = l2["price_vs_breadth_div"]
-    reg = l1["net_gex_regime"]
-
-    lens_alignment = "DIVERGENT" if div in ("BEARISH_DIV", "BULLISH_DIV") else "ALIGNED"
-
     if div == "BEARISH_DIV":
-        ambient = "DISTRIBUTION"
-    elif div == "BULLISH_DIV":
-        ambient = "ACCUMULATION"
-    elif reg == "POSITIVE_γ":
-        ambient = "RANGE"           # long-γ cage + breadth confirming = range/coil
-    elif reg == "NEGATIVE_γ":
-        ambient = "UNSTABLE"        # short-γ + aligned trend = expansion-prone
+        return "BEARISH"
+    if div == "BULLISH_DIV":
+        return "BULLISH"
+    if div == "CONFIRM":
+        return "BULLISH" if (l2.get("wcb_slope_5d") or 0) > 0 else "BEARISH"
+    return "NEUTRAL"
+
+
+def reconcile(l1, l2, l3):
+    """v2 four-lens reconciliation (display-not-gate, tunable core of the product).
+
+    Directional lenses are breadth (L2) and participant (L3); their agreement is the
+    verdict's conviction and their opposition is the divergence flag ("the room is
+    changing" — spec §reconciliation). Gamma (L1) is the amplification modifier
+    (short-γ trends, long-γ cages / distributes), never a direction. L4 macro pending.
+    When L3 is stale it abstains and this degrades to the prior L1+L2 mapping.
+    """
+    reg = l1["net_gex_regime"]
+    div = l2["price_vs_breadth_div"]
+    p_tilt = _participant_tilt(l3)
+
+    if p_tilt is None:                       # stale board -> L1+L2 fallback (prior behavior)
+        lens_alignment = "DIVERGENT" if div in ("BEARISH_DIV", "BULLISH_DIV") else "ALIGNED"
+        ambient = ("DISTRIBUTION" if div == "BEARISH_DIV" else
+                   "ACCUMULATION" if div == "BULLISH_DIV" else
+                   "RANGE" if reg == "POSITIVE_γ" else "UNSTABLE")
+        note = (f"{ambient} · lenses {lens_alignment} · gamma {reg or 'n/a'} · "
+                f"breadth {div} · participant abstain(stale) · (L4 pending)")
+        return {"ambient_regime": ambient, "lens_alignment": lens_alignment,
+                "session_prior": note}
+
+    b_dir = _breadth_dir(l2)
+    dirs = [d for d in (b_dir, p_tilt) if d in ("BULLISH", "BEARISH")]
+    if "BULLISH" in dirs and "BEARISH" in dirs:
+        lens_alignment, direction = "DIVERGENT", "MIXED"
     else:
-        ambient = "RANGE"
+        lens_alignment = "ALIGNED"
+        direction = ("BULLISH" if "BULLISH" in dirs else
+                     "BEARISH" if "BEARISH" in dirs else "NEUTRAL")
+
+    if direction == "MIXED":
+        ambient = "UNSTABLE"                 # lenses diverge -> reduce conviction
+    elif direction == "BEARISH":
+        ambient = "TREND_DOWN" if reg == "NEGATIVE_γ" else "DISTRIBUTION"
+    elif direction == "BULLISH":
+        ambient = "TREND_UP" if reg == "NEGATIVE_γ" else "ACCUMULATION"
+    else:                                    # no directional conviction
+        ambient = "RANGE" if reg == "POSITIVE_γ" else "UNSTABLE"
 
     note = (f"{ambient} · lenses {lens_alignment} · gamma {reg or 'n/a'} · "
-            f"breadth {div} · (L3/L4 pending)")
+            f"breadth {div}/{b_dir} · participant {p_tilt} · (L4 pending)")
     return {"ambient_regime": ambient, "lens_alignment": lens_alignment,
             "session_prior": note}
 
@@ -348,7 +392,7 @@ def compile_symbol(symbol, as_of_date, for_session_date, since_iso, l3):
 
     l1 = lens1_gamma(gamma_daily)
     l2 = lens2_breadth(breadth_daily, wcb_daily, gamma_daily)
-    rec = reconcile(l1, l2)
+    rec = reconcile(l1, l2, l3)
 
     row = {
         "symbol": symbol,
@@ -426,7 +470,7 @@ def main():
             l2 = lens2_breadth(fetch_breadth_daily(since_iso),
                                fetch_wcb_daily(sym, since_iso), gd)
             l3v = {k: v for k, v in l3.items() if not k.startswith("_")}
-            log(f"[dry] {sym}: {json.dumps({**l1, **l2, **l3v, **reconcile(l1, l2)})}")
+            log(f"[dry] {sym}: {json.dumps({**l1, **l2, **l3v, **reconcile(l1, l2, l3v)})}")
         return 0
 
     # ---- real run: ENH-72 ExecutionLog (row INSERTs at construction) ----

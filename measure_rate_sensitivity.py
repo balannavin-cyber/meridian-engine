@@ -42,6 +42,7 @@ except Exception:
 
 UTC = timezone.utc
 R_FLAT = 0.065
+RATE_FLOOR_DAYS = 25   # ENH-07A-P2 rate-floor v1
 FRONT_FUT_SERIES = 1   # NIFTY
 
 
@@ -256,7 +257,9 @@ def _measure_one(iid, d, ist_hour):
     T = (datetime.fromisoformat(expiry).date() - datetime.fromisoformat(d).date()).days / 365.0
     if T <= 0:
         return None
-    rb = basis_implied_r(F, spot, T)
+    dte_days = (datetime.fromisoformat(expiry).date() - datetime.fromisoformat(d).date()).days
+    T_rate = max(dte_days, RATE_FLOOR_DAYS) / 365.0   # ENH-07A-P2 rate-floor v1
+    rb = basis_implied_r(F, spot, T_rate)
     if rb is None:
         return None
 

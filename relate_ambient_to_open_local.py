@@ -111,6 +111,10 @@ def relate_symbol(symbol, for_session, latest_gamma=False):
               f"{open_regime} pin {pin} flip {flip} -> {conviction}.")
 
     base = amb.get("session_prior") or ""
+    # idempotent: drop any existing relate-segment(s) before appending a fresh one,
+    # so a manual run + the cron (or any retry) replace the relate-line, not stack it.
+    kept = [seg for seg in base.split("  ||  ") if not seg.startswith("OPEN ")]
+    base = "  ||  ".join(kept)
     new_prior = f"{base}  ||  {relate}" if base else relate
     _patch_prior(symbol, for_session.isoformat(), new_prior)
     log(f"{symbol}: {verdict} (settled {settled_regime} / open {open_regime})")

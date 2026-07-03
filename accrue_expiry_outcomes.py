@@ -193,13 +193,18 @@ def main():
         log(f"{as_of} is not a trading day — nothing to accrue")
         return 0
 
+    from core.execution_log import ExecutionLog
+    xlog = ExecutionLog(script_name="accrue_expiry_outcomes.py",
+                        expected_writes={}, dry_run=args.dry_run)
     labeled = 0
     for sym in SYMBOLS:
         try:
             if label_if_expiry(sym, as_of, args.pin_threshold_pct, args.dry_run):
+                xlog.record_write("expiry_outcomes", 1)
                 labeled += 1
         except Exception as e:
             log(f"{sym}: ERROR {e} — continuing")
+    xlog.complete(notes=f"labeled {labeled}")
     log(f"DONE labeled={labeled}" + (" (dry-run)" if args.dry_run else ""))
     return 0
 

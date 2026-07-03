@@ -139,11 +139,20 @@ def main():
 
     for_session = (datetime.fromisoformat(args.for_session).date()
                    if args.for_session else now_ist().date())
+
+    from core.execution_log import ExecutionLog
+    xlog = ExecutionLog(script_name="relate_ambient_to_open_local.py",
+                        expected_writes={"market_environment_snapshots": len(SYMBOLS)},
+                        dry_run=proof)
+    patched = 0
     for sym in SYMBOLS:
         try:
-            relate_symbol(sym, for_session, args.latest_gamma)
+            if relate_symbol(sym, for_session, args.latest_gamma):
+                xlog.record_write("market_environment_snapshots", 1)
+                patched += 1
         except Exception as e:
             log(f"{sym}: ERROR {e} — continuing")
+    xlog.complete(notes=f"patched {patched}/{len(SYMBOLS)}")
     log("DONE")
     return 0
 

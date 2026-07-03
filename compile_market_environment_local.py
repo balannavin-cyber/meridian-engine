@@ -532,7 +532,7 @@ def main():
     from core.execution_log import ExecutionLog
     try:
         xlog = ExecutionLog(
-            script_name="compile_market_environment_local",
+            script_name="compile_market_environment_local.py",
             symbol=None,
             expected_writes={"market_environment_snapshots": len(SYMBOLS)},
         )

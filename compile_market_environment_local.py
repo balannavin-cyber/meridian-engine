@@ -259,8 +259,85 @@ def reconcile(l1, l2):
             "session_prior": note}
 
 
+# ---------------------------------------------------------------- lens 3 (participant)
+def fetch_participant_nse(as_of):
+    """NSE participant-wise OI, last ~2 weeks of sessions (participant OI is NSE-only,
+    S63; BSE stub dropped). Recency-guarded by lens3_participant, not here."""
+    lo = (as_of - timedelta(days=14)).isoformat()
+    return _get("participant_oi_daily", [
+        ("exchange", "eq.NSE"),
+        ("trade_date", f"gte.{lo}"), ("trade_date", f"lte.{as_of.isoformat()}"),
+        ("select", "trade_date,participant,fut_idx_long,fut_idx_short,"
+                   "opt_idx_call_long,opt_idx_put_long,opt_idx_call_short,opt_idx_put_short"),
+        ("order", "trade_date.asc"),
+    ])
+
+
+def lens3_participant(part_rows, as_of):
+    """Lens 3 (participant positioning) from NSE participant_oi_daily.
+
+    ADR-018 D2 recency guard — MANDATED by the ENH-115 DDL ("compare trade_date to the
+    trading calendar and flag, never silently tilt on a stale board"): if the freshest
+    board is older than the settled session, return NULLs + STALE rather than tilting.
+
+    v1 formulas (tunable, display-not-gate):
+      cycle_oi_call_put_asym    = (call_oi - put_oi)/(call_oi + put_oi) from the TOTAL
+                                  index-option board. +ve = call-side (ceiling) building.
+      fii_index_fut_ls_delta_5d = FII (fut_idx_long - fut_idx_short) net change over the
+                                  last ~5 sessions. +ve = FII adding net index-fut longs.
+      pro_options_imbalance     = Pro normalized (net-call - net-put) in [-1,1].
+                                  +ve = Pro leaning call-long / put-short.
+    """
+    null3 = {"cycle_oi_call_put_asym": None,
+             "fii_index_fut_ls_delta_5d": None,
+             "pro_options_imbalance": None}
+    if not part_rows:
+        return {**null3, "_note": "no participant board"}
+
+    dates = sorted({r["trade_date"] for r in part_rows})
+    latest = dates[-1]
+    if latest != as_of.isoformat():          # ADR-018 D2: stale -> do not tilt
+        return {**null3, "_note": f"STALE participant board (latest {latest})"}
+
+    def row(part, d):
+        return next((r for r in part_rows
+                     if r["participant"] == part and r["trade_date"] == d), None)
+
+    tot = row("TOTAL", latest)
+    asym = None
+    if tot:
+        c = _f(tot.get("opt_idx_call_long")) or 0.0
+        p = _f(tot.get("opt_idx_put_long")) or 0.0
+        if (c + p) > 0:
+            asym = round((c - p) / (c + p), 4)
+
+    def fii_net(d):
+        r = row("FII", d)
+        if not r:
+            return None
+        l, s = _f(r.get("fut_idx_long")), _f(r.get("fut_idx_short"))
+        return None if (l is None or s is None) else (l - s)
+    ref = dates[-6] if len(dates) >= 6 else dates[0]      # ~5 sessions back
+    n_now, n_ref = fii_net(latest), fii_net(ref)
+    fii_delta = round(n_now - n_ref, 1) if (n_now is not None and n_ref is not None) else None
+
+    pro = row("Pro", latest)
+    pro_imb = None
+    if pro:
+        ncall = (_f(pro.get("opt_idx_call_long")) or 0) - (_f(pro.get("opt_idx_call_short")) or 0)
+        nput = (_f(pro.get("opt_idx_put_long")) or 0) - (_f(pro.get("opt_idx_put_short")) or 0)
+        denom = abs(ncall) + abs(nput)
+        if denom > 0:
+            pro_imb = round((ncall - nput) / denom, 4)
+
+    return {"cycle_oi_call_put_asym": asym,
+            "fii_index_fut_ls_delta_5d": fii_delta,
+            "pro_options_imbalance": pro_imb,
+            "_note": f"fresh ({latest})"}
+
+
 # ---------------------------------------------------------------- main
-def compile_symbol(symbol, as_of_date, for_session_date, since_iso):
+def compile_symbol(symbol, as_of_date, for_session_date, since_iso, l3):
     gamma_daily = fetch_gamma_daily(symbol, since_iso)
     breadth_daily = fetch_breadth_daily(since_iso)
     wcb_daily = fetch_wcb_daily(symbol, since_iso)
@@ -278,10 +355,10 @@ def compile_symbol(symbol, as_of_date, for_session_date, since_iso):
         "as_of_date": as_of_date.isoformat(),
         "for_session_date": for_session_date.isoformat(),
         **l1, **l2,
-        # Lens 3 (participant) — NULL until ENH-115 schema confirmed
-        "cycle_oi_call_put_asym": None,
-        "fii_index_fut_ls_delta_5d": None,
-        "pro_options_imbalance": None,
+        # Lens 3 (participant, NSE) — recency-guarded (ADR-018 D2)
+        "cycle_oi_call_put_asym": l3.get("cycle_oi_call_put_asym"),
+        "fii_index_fut_ls_delta_5d": l3.get("fii_index_fut_ls_delta_5d"),
+        "pro_options_imbalance": l3.get("pro_options_imbalance"),
         # Lens 4 (macro) — NULL until feed chosen
         "usdinr_trend_5d": None, "crude_trend_5d": None,
         "gold_trend_5d": None, "macro_tilt": None,
@@ -291,8 +368,8 @@ def compile_symbol(symbol, as_of_date, for_session_date, since_iso):
     }
     _upsert("market_environment_snapshots", row)
     log(f"{symbol}: {rec['ambient_regime']} / {rec['lens_alignment']} "
-        f"(persist={l1['gex_regime_persistence_20d']} div={l2['price_vs_breadth_div']}) "
-        f"-> for {for_session_date}")
+        f"(persist={l1['gex_regime_persistence_20d']} div={l2['price_vs_breadth_div']} "
+        f"asym={l3.get('cycle_oi_call_put_asym')}) -> for {for_session_date}")
     return row
 
 
@@ -334,6 +411,10 @@ def main():
 
     log(f"compile as_of={as_of} for_session={for_session} since={since_iso}")
 
+    # Lens 3 participant board is market-wide (NSE) — computed once, applied to both symbols
+    l3 = lens3_participant(fetch_participant_nse(as_of), as_of)
+    log(f"participant (NSE): {l3.get('_note')}")
+
     # ---- dry-run: pure compute + print, no instrumentation, no writes ----
     if args.dry_run:
         for sym in SYMBOLS:
@@ -344,7 +425,8 @@ def main():
             l1 = lens1_gamma(gd)
             l2 = lens2_breadth(fetch_breadth_daily(since_iso),
                                fetch_wcb_daily(sym, since_iso), gd)
-            log(f"[dry] {sym}: {json.dumps({**l1, **l2, **reconcile(l1, l2)})}")
+            l3v = {k: v for k, v in l3.items() if not k.startswith("_")}
+            log(f"[dry] {sym}: {json.dumps({**l1, **l2, **l3v, **reconcile(l1, l2)})}")
         return 0
 
     # ---- real run: ENH-72 ExecutionLog (row INSERTs at construction) ----
@@ -375,7 +457,7 @@ def main():
     try:
         written = 0
         for sym in SYMBOLS:
-            if compile_symbol(sym, as_of, for_session, since_iso):
+            if compile_symbol(sym, as_of, for_session, since_iso, l3):
                 _rec(1)
                 written += 1
         if xlog is not None:

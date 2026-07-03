@@ -110,3 +110,15 @@ _*.py
 *.bak_*
 *_PRE_*.py
 *_PRE_*.sql
+
+# --- S64 ENH-116 triage: S62/S63 one-shot patch/verify/backfill + inspection scratch
+# (outputs already committed or in-DB; git add -f individually if any becomes canonical)
+_inspect/
+fix_td_s62_new_flip.py
+verify_td_s62_new_flip.py
+recompute_hist_gamma.py
+backfill_index_futures_via_breeze.py
+backfill_index_futures_breeze_corrected.py
+backfill_india_vix_daily_and_writer.py
+backfill_india_vix_daily_v2.py
+extend_hist_atm_option_bars.py

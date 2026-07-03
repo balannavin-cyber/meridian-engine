@@ -30,7 +30,7 @@ import os
 import sys
 import json
 import argparse
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, date, timezone, timedelta
 
 import requests
 from dotenv import load_dotenv
@@ -145,7 +145,7 @@ def fetch_gamma_daily(symbol, since_iso):
     rows = _get("gamma_metrics", [
         ("symbol", f"eq.{symbol}"),
         ("ts", f"gte.{since_iso}"),
-        ("select", "ts,spot,net_gex,gamma_concentration,regime,max_gamma_strike"),
+        ("select", "ts,spot,net_gex,gamma_concentration,regime,max_gamma_strike,expiry_date"),
         ("order", "ts.asc"),
     ])
     return _daily_last(rows, "ts")
@@ -381,8 +381,49 @@ def lens3_participant(part_rows, as_of):
 
 
 # ---------------------------------------------------------------- main
-def compile_symbol(symbol, as_of_date, for_session_date, since_iso, l3):
-    gamma_daily = fetch_gamma_daily(symbol, since_iso)
+# ---------------------------------------------------------------- Phase B receipt
+BASE_RATE_N_FLOOR = 8   # below this, the cell reads "insufficient N" rather than a rate
+
+
+def _next_expiry_type(front_expiry_iso):
+    """v1 forward heuristic (matches accrue_expiry_outcomes): MONTHLY if next week
+    crosses into a new month, else WEEKLY. None if no front expiry."""
+    if not front_expiry_iso:
+        return None
+    e = date.fromisoformat(front_expiry_iso)
+    return "MONTHLY" if (e + timedelta(days=7)).month != e.month else "WEEKLY"
+
+
+def fetch_base_rate(ambient_regime, lens_alignment, expiry_type):
+    """Read the pooled base-rate cell from v_expiry_base_rates for this conditioning key."""
+    if not (ambient_regime and lens_alignment and expiry_type):
+        return None
+    rows = _get("v_expiry_base_rates", [
+        ("ambient_regime", f"eq.{ambient_regime}"),
+        ("lens_alignment", f"eq.{lens_alignment}"),
+        ("expiry_type", f"eq.{expiry_type}"),
+        ("select", "n,pinned_pct,broke_up_pct,broke_down_pct,dominant_break"),
+        ("limit", "1"),
+    ])
+    return rows[0] if rows else None
+
+
+def phaseb_note(ambient_regime, lens_alignment, expiry_type):
+    """Format the Tier-1 base-rate receipt for regime_conditional_note, N-floored."""
+    if not expiry_type:
+        return None
+    cell = fetch_base_rate(ambient_regime, lens_alignment, expiry_type)
+    if not cell:
+        return f"{expiry_type}: no prior expiries at {ambient_regime}/{lens_alignment}"
+    n = cell.get("n") or 0
+    if n < BASE_RATE_N_FLOOR:
+        return f"{expiry_type} {ambient_regime}/{lens_alignment}: insufficient N (N={n})"
+    return (f"{expiry_type} {ambient_regime}/{lens_alignment}: PIN {cell.get('pinned_pct')}% · "
+            f"break↑{cell.get('broke_up_pct')}/↓{cell.get('broke_down_pct')}% · "
+            f"resolve {cell.get('dominant_break')} (N={n})")
+
+
+
     breadth_daily = fetch_breadth_daily(since_iso)
     wcb_daily = fetch_wcb_daily(symbol, since_iso)
 
@@ -393,6 +434,10 @@ def compile_symbol(symbol, as_of_date, for_session_date, since_iso, l3):
     l1 = lens1_gamma(gamma_daily)
     l2 = lens2_breadth(breadth_daily, wcb_daily, gamma_daily)
     rec = reconcile(l1, l2, l3)
+
+    # Phase-B receipt: base rate for (this verdict's regime/alignment, next expiry type)
+    next_exp_type = _next_expiry_type(gamma_daily[-1].get("expiry_date"))
+    cond_note = phaseb_note(rec["ambient_regime"], rec["lens_alignment"], next_exp_type)
 
     row = {
         "symbol": symbol,
@@ -407,13 +452,13 @@ def compile_symbol(symbol, as_of_date, for_session_date, since_iso, l3):
         "usdinr_trend_5d": None, "crude_trend_5d": None,
         "gold_trend_5d": None, "macro_tilt": None,
         **rec,
-        "regime_conditional_note": None,   # Phase-B fills later
+        "regime_conditional_note": cond_note,
         "source": SOURCE,
     }
     _upsert("market_environment_snapshots", row)
     log(f"{symbol}: {rec['ambient_regime']} / {rec['lens_alignment']} "
         f"(persist={l1['gex_regime_persistence_20d']} div={l2['price_vs_breadth_div']} "
-        f"asym={l3.get('cycle_oi_call_put_asym')}) -> for {for_session_date}")
+        f"asym={l3.get('cycle_oi_call_put_asym')}) [{cond_note}] -> for {for_session_date}")
     return row
 
 
@@ -470,7 +515,10 @@ def main():
             l2 = lens2_breadth(fetch_breadth_daily(since_iso),
                                fetch_wcb_daily(sym, since_iso), gd)
             l3v = {k: v for k, v in l3.items() if not k.startswith("_")}
-            log(f"[dry] {sym}: {json.dumps({**l1, **l2, **l3v, **reconcile(l1, l2, l3v)})}")
+            rec = reconcile(l1, l2, l3v)
+            note = phaseb_note(rec["ambient_regime"], rec["lens_alignment"],
+                               _next_expiry_type(gd[-1].get("expiry_date")))
+            log(f"[dry] {sym}: {json.dumps({**l1, **l2, **l3v, **rec, 'regime_conditional_note': note})}")
         return 0
 
     # ---- real run: ENH-72 ExecutionLog (row INSERTs at construction) ----

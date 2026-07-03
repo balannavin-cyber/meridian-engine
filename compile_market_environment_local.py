@@ -423,7 +423,8 @@ def phaseb_note(ambient_regime, lens_alignment, expiry_type):
             f"resolve {cell.get('dominant_break')} (N={n})")
 
 
-
+def compile_symbol(symbol, as_of_date, for_session_date, since_iso, l3):
+    gamma_daily = fetch_gamma_daily(symbol, since_iso)
     breadth_daily = fetch_breadth_daily(since_iso)
     wcb_daily = fetch_wcb_daily(symbol, since_iso)
 

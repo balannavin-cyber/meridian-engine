@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v42",
+    "version": "v43",
     "generated": "2026-06-12",
     "sources": [
       "Session 52 (2026-06-12): Observability infrastructure deployment — 5 monitoring scripts (telegram_utils, monitor_orchestrator_health, refresh_health_dashboard, validate_compute_contracts, enforce_orchestrator_timeout; 761 lines total); 4 crontab entries active; Telegram integration live; status.json health snapshot every 1 min; time-to-detection <2 min for capture gaps, orchestrator failures, compute hangs, crontab typos, stale data.",
@@ -32,7 +32,7 @@
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
     "update_cadence": "Update this file in the same session as any meaningful change to file status, table schema, or open item status. Commit to Git immediately after update.",
     "last_updated": "2026-07-02 S63 end (TD-S62-NEW SENSEX compute_flip_level fix DEPLOYED dc63bb3 [regime-conditional near-spot sign-change walk + short-gamma display guard; StockMojo parity near-spot; TD-S62-NEW RESOLVED]; ENH-115 P1 BUILT [FII/DII participant-positioning writer live 5 rows 2026-07-01 + 270-day backfill + consolidated cash leg + 2 Mon-Fri AWS cron lines; participant OI NSE-only, cash consolidated NSE+BSE+MSEI, BSE participant stub dropped; new tables participant_oi_daily/fii_dii_cash_daily/v_participant_oi_latest]; three ENH-07 A Phase-2 commits 894332a->cd7078d->0f997c7 documented; TD-S62-NEW-2 SENSEX 2026-01-19 resume CARRIED to S64)",
-    "last_updated_by_session": "Session 63",
+    "last_updated_by_session": "Session 64",
     "change_log": [
       {
         "session": "S55",
@@ -4767,10 +4767,61 @@
       "truncated_each_run": false
     }
   },
-  "version": "v42",
-  "last_updated_session": "Session 63",
-  "last_updated_date": "2026-07-02",
+  "version": "v43",
+  "last_updated_session": "Session 64",
+  "last_updated_date": "2026-07-04",
   "change_log": [
+    {
+      "session": "S64",
+      "date": "2026-07-04",
+      "type": "ENH-116 Ambient Environment Intelligence build+deploy (end-to-end backend) + Marketview v5 six-page restructure + public TLS/Google-auth domain",
+      "summary": "ENH-116 PROPOSED(S62) -> BUILT+DEPLOYED end-to-end (backend). Schemas market_environment_snapshots (nightly four-lens verdict: L1 gamma-regime persistence / L2 price-vs-breadth divergence / L3 participant tilt from participant_oi_daily [cycle_oi_call_put_asym, fii_index_fut_ls_delta_5d, pro_options_imbalance] under ADR-018 D2 recency guard STALE->NULL / L4 macro NULL; reconcile v2 verdict; regime_conditional_note Phase-B receipt; session_prior relate-line) + expiry_outcomes (65-row retroactive seed 29 NIFTY/36 SENSEX, forward-accruing; seed all ambient_regime=RANGE, forward accrual varies it) + view v_expiry_base_rates (grouped (ambient_regime, lens_alignment, expiry_type) -> pinned/broke rates + N + dominant break, N raw at read). Writers compile_market_environment_local.py (post-market compiler; reconcile v2: breadth-vs-participant divergence pair, gamma amplification; NIFTY UNSTABLE / SENSEX TREND_UP) + relate_ambient_to_open_local.py (pre-market reconciler, idempotent) + backfill_expiry_outcomes.py (seed) + accrue_expiry_outcomes.py (forward labeler, source=expiry_memory_live); all three loop scripts ExecutionLog-instrumented. Three MERDIAN-AWS crons: compile 0 16, accrue 15 16, relate 55 3 (Mon-Fri, SHELL=/bin/bash line1, flock+timeout). Carry-in commits: ENH-07A Phase-2 rate-floor max(DTE,25)/365 (RATE_FLOOR_DAYS=25, 21b08d9) closing the S61 open; S62/S63 one-shot patch/verify/backfill + _inspect gitignored (cbbe81e); ICT HTF zones regen 2026-07-02 (81 zones NIFTY 35 + SENSEX 46, 62cd2de); runtime-safety fix restoring def compile_symbol header (61df758). Marketview v5 (meridian-connect, Lovable->GitHub->AWS nginx) LIVE: left-rail six-page terminal (Home/Positioning/Max Pain/Breadth/Structure/Expiry Memory) + ops sections, global NIFTY/SENSEX toggle, 60s auto-refresh + updated-Ns-ago ticker; Home ambient verdict + four-lens strip + expiry-memory base rates + open-shift callout; max pain windowed +/-20 strikes; Net Dealer gamma intraday card. Public access: GoDaddy A-record marketview.meridianalpha.in -> 13.63.27.85; TCP 443 on the SG attached to i-0878c118835386ec2; certbot Let's-Encrypt TLS + http->https redirect; oauth2-proxy Google gate with authenticated_emails_file allow-list, auth_request at server level on the serving 443 block (proven by cross-browser no-session test after a two-attempt orphan-block bug). ENH-117 filed (Marketview-branded oauth2-proxy sign-in page, PROPOSED P3; custom_templates_dir -> branded sign_in.html preserving provider button / {{.SignInMessage}}; folds in Google client_secret rotation + non-allow-list denial test). ENH-115 P2 subsumed into Marketview v5 + Lens 3 wired. TD-S62-NEW-2 RESOLVED (operator ran run_fullwindow.py --symbol SENSEX --months 2026-01; SENSEX 2026-01-19 gamma_concentration 375/375 bars, 0 null, conc 0.0563-0.1136). No new ADR (Rule 10 bar not met); no new TD. Engine HEAD 61ab702, AWS ff-synced. Carry to S65: commit console anon-grants SQL + 3 Lovable prompt docs; deploy intraday-drift banner; Lens 4 macro feed; ENH-117; rotate Google client_secret + non-allow-list denial test.",
+      "commits": [
+        "43176b8",
+        "21b08d9",
+        "cbbe81e",
+        "62cd2de",
+        "0ff8c04",
+        "7250b11",
+        "185c48e",
+        "dae1799",
+        "1da0af6",
+        "1be5239",
+        "61df758",
+        "61ab702"
+      ],
+      "new_files": [
+        "compile_market_environment_local.py",
+        "relate_ambient_to_open_local.py",
+        "backfill_expiry_outcomes.py",
+        "accrue_expiry_outcomes.py",
+        "sql/ ENH-116 Phase-1 DDL",
+        "sql/ v_expiry_base_rates DDL"
+      ],
+      "new_tables": [
+        "market_environment_snapshots",
+        "expiry_outcomes",
+        "v_expiry_base_rates (view)"
+      ],
+      "cron_changes": "3 Mon-Fri lines on MERDIAN AWS: compile_market_environment_local.py (0 16 * * 1-5), accrue_expiry_outcomes.py (15 16 * * 1-5), relate_ambient_to_open_local.py (55 3 * * 1-5), all UTC",
+      "tds_resolved": [
+        "TD-S62-NEW-2 (SENSEX 2026-01-19 gamma_concentration filled 375/375, 0 null, conc 0.0563-0.1136)"
+      ],
+      "tds_carried": [],
+      "adrs_new": 0,
+      "enh": "ENH-116 BUILT+DEPLOYED end-to-end (backend); ENH-117 FILED PROPOSED P3 (branded sign-in); ENH-115 P2 subsumed into Marketview v5 + Lens 3 wired; ENH-07A Phase-2 rate-floor committed (21b08d9)",
+      "claude_md": "v1.40 -> v1.41",
+      "docs_updated": [
+        "session_log.md",
+        "CURRENT.md",
+        "tech_debt.md",
+        "MERDIAN_Enhancement_Register.md",
+        "MERDIAN_Deployment_Topology.md",
+        "MERDIAN_System_Map.md",
+        "merdian_reference.json",
+        "CLAUDE.md"
+      ]
+    },
     {
       "session": "S63",
       "date": "2026-07-02",

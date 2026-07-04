@@ -12,6 +12,24 @@
 
 | Field | Value |
 |---|---|
+| **Date** | 2026-07-04 (Session 64 — Wed–Sat 2026-07-02→07-04 — ENH-116 Ambient Environment Intelligence BUILT + DEPLOYED end-to-end; Marketview v5 six-page terminal; marketview.meridianalpha.in domain + TLS + Google-auth gate; doc-close) |
+| **Shape** | Built ENH-116 backend end-to-end (schemas + compiler L1+L2+L3 + reconcile v2 + idempotent reconciler + 65-row seed + forward-accrual labeler + Phase-B base-rate view + Phase-B receipt + observability), installed its three AWS crons, restructured Marketview into a six-page terminal (Lovable→GitHub→AWS, live), and stood up a public TLS + Google-auth-gated domain for it. 12 engine commits; HEAD `61ab702` AWS-synced. |
+| **ENH-116 — BUILT + DEPLOYED (backend)** | `market_environment_snapshots` (nightly four-lens verdict) + `expiry_outcomes` (65-row seed 29 NIFTY / 36 SENSEX, forward-accruing) + `v_expiry_base_rates`. Writers: `compile_market_environment_local.py` (L1 gamma-persistence / L2 price-vs-breadth / L3 participant tilt with ADR-018 D2 recency guard / L4 macro NULL; reconcile v2 folds L3 — NIFTY UNSTABLE, SENSEX TREND_UP; writes N-floored `regime_conditional_note`), `relate_ambient_to_open_local.py` (pre-market reconciler, idempotent), `backfill_expiry_outcomes.py` (seed), `accrue_expiry_outcomes.py` (forward labeler, `source=expiry_memory_live`). All three loop scripts `ExecutionLog`-instrumented. Commits `43176b8`/`0ff8c04`/`7250b11`/`185c48e`/`dae1799`/`1da0af6`/`1be5239`/`61df758`/`61ab702`. Seed all `ambient_regime=RANGE` (degeneracy forward accrual fixes). Remaining: Lens 4 macro (feed-blocked), Phase-C (deferred). |
+| **ENH-116 crons (MERDIAN AWS, Mon–Fri)** | compile `0 16` (16:00 UTC/21:30 IST, after ENH-115 participant ingest for fresh L3) · accrue `15 16` (16:15 UTC, expiry-days only) · relate `55 3` (03:55 UTC/09:25 IST, at open). All installed, `SHELL=/bin/bash` line 1, flock+timeout, `crontab -l` confirmed. |
+| **Marketview v5 — LIVE** | Six-page left-rail terminal (Home / Positioning / Max Pain / Breadth / Structure / Expiry Memory) + ops sections (Health / Order / Journal / Calibration), global NIFTY/SENSEX toggle, 60s auto-refresh + “updated Ns ago” ticker. Home = ambient verdict + four-lens strip + expiry-memory base rates + open-shift callout. Max pain windowed ±20 strikes. Net Dealer γ intraday card (Rising/Falling/Flat). Verdicts render matching backend exactly (NIFTY UNSTABLE/ALIGNED, SENSEX ACCUMULATION/ALIGNED). meridian-connect via Lovable→GitHub→AWS nginx. |
+| **Public access (marketview.meridianalpha.in)** | GoDaddy A-record `marketview` → `13.63.27.85`; TCP 443 on the SG attached to `i-0878c118835386ec2`; certbot Let’s-Encrypt TLS + http→https redirect; oauth2-proxy Google gate with `authenticated_emails_file` allow-list, `auth_request` at server level on the 443 block (after a two-attempt orphan-block bug caught only by the cross-browser no-session test). `/home` bounces to Google sign-in. |
+| **Carry-ins cleared** | ENH-07A Phase-2 rate-floor `max(DTE,25)/365` committed (`21b08d9`); S62/S63 one-shot scripts + `_inspect` gitignored (`cbbe81e`); ICT HTF zones regenerated (81 zones, `62cd2de`); **TD-S62-NEW-2 RESOLVED in fact** (operator ran the resume; SENSEX 2026-01-19 `gamma_concentration` 375/375 bars, 0 null, conc 0.0563–0.1136). |
+| **Type** | 12 engine commits (`43176b8`→`61ab702`), HEAD `61ab702` AWS-synced. Marketview v5 via meridian-connect. 3 ambient crons + domain/TLS/oauth2-proxy on MERDIAN AWS. 2 new tables + 1 view. 4 new engine writers. **ENH-116 built/deployed; ENH-117 filed** (P3). **0 new ADR** (ENH build/deploy + frontend + infra + carry-in bug-fix — Rule 10 bar not met). **0 new TD.** CLAUDE.md v1.40→v1.41; `merdian_reference.json` v42→v43. |
+| **TDs** | **TD-S62-NEW-2 RESOLVED** (SENSEX 2026-01-19 concentration filled). No new TDs. |
+| **Outcome** | PASS. ENH-116 ambient layer live end-to-end and self-running on cron; Marketview v5 restructured and public behind Google auth; the whole ENH-116 arc is now on a screen. Eight-file doc-close per Doc Protocol v4 Rule 3 full-file no-crunch. |
+| **Carry-forward to S65** | (1) commit the uncommitted console **anon-grants SQL** + the 3 **Lovable prompt `.md` docs** to a repo home; (2) deploy the **intraday-drift banner** (live-vs-settled, prompt produced); (3) **Lens 4 macro** feed (blocked); (4) **ENH-117** branded sign-in; (5) rotate the exposed Google **`client_secret`** + run the **non-allow-list denial test**. **Banked backlog:** TD-S60-NEW-5 (core.config Windows BASE_DIR); ~28 gate migrations; `*_PRE_S*` gitignore; ENH-SDM `three_wick_reversal` P3; Zerodha token rotation; `datetime.utcnow()` deprecation; momentum vwap-unit scaling; 68-row `ohlc()` tail; doc re-upload Rule 12. |
+
+---
+
+## Previous session
+
+| Field | Value |
+|---|---|
 | **Date** | 2026-07-02 (Session 63 — SENSEX flip fix deployed + ENH-115 P1 FII/DII participant positioning built/live/backfilled + three ENH-07 A Phase-2 commits documented; doc-close) |
 | **Shape** | Deployed the SENSEX `compute_flip_level` fix (`dc63bb3`); built ENH-115 P1 end-to-end (participant-OI writer live + 270-day backfill + consolidated FII/DII cash leg + daily AWS cron); documented the three carried ENH-07 A Phase-2 research commits. 5 git commits. |
 | **TD-S62-NEW flip fix — DEPLOYED (`dc63bb3`) → RESOLVED** | `compute_flip_level` now regime-conditional: near-spot sign-change walk (first cumulative-GEX sign change on each side, nearest spot — catches the 77,000 pit→wall boundary above spot) + a short-γ display guard (label the flip ill-defined under NEGATIVE_γ when no clean near crossing exists). SENSEX flip resolves near-spot; StockMojo cross-engine parity confirms (the flip was the sole divergent field). |
@@ -26,7 +44,7 @@
 
 ---
 
-## Previous session
+## Previous session S62
 
 | Field | Value |
 |---|---|
@@ -48,12 +66,12 @@
 
 ---
 
-## This session (S64)
+## This session (S65)
 
 | Field | Value |
 |---|---|
-| **Goal** | TBD at S64 open. Priority carry-ins: SENSEX 2026-01-19 concentration resume (TD-S62-NEW-2, `python run_fullwindow.py --symbol SENSEX --months 2026-01`); ENH-116 build + Lens 3 participant wiring + ENH-115 P2 Marketview participant-tilt card; commit the uncommitted `measure_rate_sensitivity.py` Local-drift edit. |
-| **Reading order before acting** | `CLAUDE.md` (now v1.40) → this `CURRENT.md` → `tech_debt.md` → `MERDIAN_System_Map.md` → `merdian_reference.json` (v42). |
+| **Goal** | TBD at S65 open. Priority carry-ins: commit the console anon-grants SQL + 3 Lovable prompt docs to a repo home; deploy the Marketview intraday-drift banner (live-vs-settled); Lens 4 macro feed; ENH-117 branded sign-in; rotate the Google client_secret + non-allow-list denial test. |
+| **Reading order before acting** | `CLAUDE.md` (now v1.41) → this `CURRENT.md` → `tech_debt.md` → `MERDIAN_System_Map.md` → `merdian_reference.json` (v43, targeted lookup only). Enhancement Register only if touching proposals. |
 
 ---
 

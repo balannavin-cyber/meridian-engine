@@ -76,6 +76,8 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 
 ### TD-S62-NEW-2 (S3 priority) — SENSEX historical `gamma_concentration` unfilled for 2026-01-19 (SSLError mid-solve during the full-window backfill); one-line resume filed
 
+**RESOLVED Session 64 (2026-07-04).** The operator ran the one-line resume `python run_fullwindow.py --symbol SENSEX --months 2026-01`; SENSEX 2026-01-19 `gamma_concentration` is now filled full-window — **375/375 bars, 0 null, concentration 0.0563–0.1136** (verified against the live `hist_gamma_metrics` row). The full-window historical gamma substrate is COMPLETE for both symbols with no remaining gaps; the ENH-116 expiry-memory SENSEX-backfill precondition is fully clear (not just “close enough”). Kept in place per the S63 RESOLVED-in-place precedent; nothing to re-run.
+
 | Field | Value |
 |---|---|
 | **Severity** | S3 (a single missing day in a completed full-window backfill; trivially resumable) |

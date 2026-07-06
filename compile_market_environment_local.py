@@ -58,6 +58,32 @@ LOOKBACK_DAYS = 30                    # calendar days pulled to build ~20 tradin
 WCB_INDEX_SYMBOL = {"NIFTY": "NIFTY", "SENSEX": "SENSEX"}
 
 
+# _PARSE_ISO_HARDENED_S65 - tolerant ISO parser. Postgres trims trailing-zero
+# microseconds, so timestamptz renders like '2026-06-09T06:35:06.1573+00:00'
+# (4 fractional digits) which bare datetime.fromisoformat rejects before Py3.11.
+def _parse_iso(s):
+    from datetime import datetime as _dt, date as _date
+    import re as _re
+    if s is None:
+        return None
+    if isinstance(s, (_dt, _date)):
+        return s
+    t = str(s).strip()
+    if not t:
+        return None
+    t = t.replace('Z', '+00:00').replace('z', '+00:00')
+    if ' ' in t and 'T' not in t:
+        t = t.replace(' ', 'T', 1)
+    def _fix(m):
+        frac = m.group(1)[1:]
+        return '.' + (frac + '000000')[:6]
+    t = _re.sub(r'(\.\d+)', _fix, t, count=1)
+    try:
+        return _dt.fromisoformat(t)
+    except ValueError:
+        return _dt.fromisoformat(_re.sub(r'(\.\d+)', '', t, count=1))
+
+
 def now_ist():
     return datetime.now(IST)
 
@@ -98,7 +124,7 @@ def _ist_date(ts_iso):
     """PostgREST timestamptz (real UTC) -> IST calendar date."""
     s = ts_iso.replace("Z", "+00:00")
     # normalise fractional seconds / short offsets defensively
-    dt = datetime.fromisoformat(s)
+    dt = _parse_iso(s)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return dt.astimezone(IST).date()
@@ -485,7 +511,7 @@ def main():
     # [VP-2] trading-day gate — canonical shared gate (S60)
     from core.trading_calendar_gate import is_trading_day, assert_trading_day_or_exit
 
-    as_of = (datetime.fromisoformat(args.as_of).date()
+    as_of = (_parse_iso(args.as_of).date()
              if args.as_of else now_ist().date())
 
     if not args.as_of:

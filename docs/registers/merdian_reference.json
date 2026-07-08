@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v43",
+    "version": "v44",
     "generated": "2026-06-12",
     "sources": [
       "Session 52 (2026-06-12): Observability infrastructure deployment — 5 monitoring scripts (telegram_utils, monitor_orchestrator_health, refresh_health_dashboard, validate_compute_contracts, enforce_orchestrator_timeout; 761 lines total); 4 crontab entries active; Telegram integration live; status.json health snapshot every 1 min; time-to-detection <2 min for capture gaps, orchestrator failures, compute hangs, crontab typos, stale data.",
@@ -4767,10 +4767,31 @@
       "truncated_each_run": false
     }
   },
-  "version": "v43",
-  "last_updated_session": "Session 64",
-  "last_updated_date": "2026-07-04",
+  "version": "v44",
+  "last_updated_session": "Session 65",
+  "last_updated_date": "2026-07-07",
   "change_log": [
+    {
+      "session": "S65",
+      "date": "2026-07-04 to 2026-07-07",
+      "type": "S64->S65 carry items 1-3 (OAuth credential rotation APPLIED; anon-grants SQL + 5 Lovable prompt docs STAGED; intraday-drift banner prompt-ready) + breadth/equity_eod thread resolved (Dhan publish-lag, not a bug). PARTIAL.",
+      "summary": "Item 1 OAuth credential rotation APPLIED (ENH-117 security fold): the client_secret leaked plaintext in the S64 nginx-config dump was rotated by creating a NEW Google OAuth client (MeridianAlpha project) -> changes BOTH client_id and client_secret, not just the secret; redirect URI https://marketview.meridianalpha.in/oauth2/callback (char-for-char to redirect_url); Authorised JavaScript origins cleared (server-side flow); /etc/oauth2-proxy.cfg updated on i-0878c118835386ec2 (both client_id+client_secret; provider/redirect_url/cookie_secret/authenticated_emails_file untouched); systemctl restart oauth2-proxy -> active (running) PID 710516 @ 2026-07-04 08:05:42 UTC; closeout PENDING (incognito login-verify + delete old client in Google Console + non-allow-list denial test) -- exposure closes only on old-client delete. Item 2 STAGED, miscount corrected 3->5: sql/2026-07-03_enh116_console_anon_grants.sql live-in-Supabase-but-untracked; the S64 carry said 3 Lovable prompt docs but actual=5 (enh116_ambient_console, marketview_v5_restructure, marketview_v5_home_refinement, marketview_v5_intraday_drift, health_add_ambient_writers), all reproduced from the S64 transcript (two had nested-fence deploy lines that truncated the extractor), homed docs/lovable_prompts/; commit+push+AWS ff-sync sequence provided, git-land unconfirmed. Item 3 PROMPT READY: intraday-drift (live-vs-settled) banner for meridian-connect Home-Ambient (live gamma regime vs settled net_gex_regime; on divergence amber INTRADAY DRIFT banner under OPEN SHIFT); deploy pending. Breadth/equity_eod thread RESOLVED (not a bug): 07-03/07-06 absent from equity_eod = Dhan EOD publish-lag; compute_date_window() confirmed correct (T-1 lookback to=today-1 from=to-220; on 07-07 the window 2025-11..2026-07-06 includes 07-03/07-06; no lower-bound pin, no cursor exclusion); self-heals on the next EOD run (MERDIAN_EOD 16:10 cron); EOD_SAFE_LAG_DAYS exists for exactly this. Grounded final state: token freeze 06-04->07-06 fixed (stale .env token); universe achievable ceiling ~1,159 active (not 1,385), COMPLETE_EOD_THRESHOLD_PCT=95 clears against the active universe; DMA fresh to 07-02 rebuilt clean at 100% active. TD-S65-NEW-1 filed (check_eod_coverage_freshness.py mis-tuned: denominator nominal ~1,385 vs active ~1,159, staleness 5-day vs last-trading-day+~3-day Dhan-lag -> /1 false-OK; guard-correctness only, display-not-gate). 0 confirmed git commits. 0 new ADR (Rule 10 bar not met). CLAUDE.md v1.41->v1.42; this file v43->v44. PARTIAL. 8-file doc-close per Doc Protocol v4 Rule 3 full-file no-crunch.",
+      "commits": [],
+      "new_files": [
+        "docs/lovable_prompts/lovable_prompt_enh116_ambient_console.md",
+        "docs/lovable_prompts/lovable_prompt_marketview_v5_restructure.md",
+        "docs/lovable_prompts/lovable_prompt_marketview_v5_home_refinement.md",
+        "docs/lovable_prompts/lovable_prompt_marketview_v5_intraday_drift.md",
+        "docs/lovable_prompts/lovable_prompt_health_add_ambient_writers.md"
+      ],
+      "sql_staged": "sql/2026-07-03_enh116_console_anon_grants.sql (live in Supabase; homed/committed this session)",
+      "guard_tune_pending": "check_eod_coverage_freshness.py (TD-S65-NEW-1): denominator -> active-universe/latest-EOD-date ticker count ~1,159; staleness off last trading day; ~3-day Dhan-lag tolerance",
+      "oauth_rotation": "new Google OAuth client -> /etc/oauth2-proxy.cfg client_id+client_secret; oauth2-proxy active(running) PID 710516 @ 2026-07-04 08:05:42 UTC; old-client delete + denial test pending",
+      "tds_filed": ["TD-S65-NEW-1"],
+      "tds_closed": 0,
+      "adrs_new": 0,
+      "outcome": "PARTIAL"
+    },
     {
       "session": "S64",
       "date": "2026-07-04",

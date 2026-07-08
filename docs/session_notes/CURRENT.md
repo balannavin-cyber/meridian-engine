@@ -12,6 +12,23 @@
 
 | Field | Value |
 |---|---|
+| **Date** | 2026-07-04→07 (Session 65 — executed the S64→S65 carry items 1–3 + resolved the breadth/`equity_eod` thread; doc-close) |
+| **Shape** | Rotated the exposed Google OAuth credential (new client → oauth2-proxy `active (running)`), corrected the “3→5” Lovable-prompt-doc miscount and reproduced all five, teed up the anon-grants SQL + prompt-doc commit and the intraday-drift banner deploy, and resolved the breadth/`equity_eod` thread (07-03/07-06 = Dhan publish-lag, not a bug). PARTIAL — rotation applied + breadth resolved; three carries open. 0 confirmed commits. |
+| **Item 1 — OAuth credential rotation (ENH-117 security fold) — APPLIED** | The `client_secret` leaked plaintext in the S64 nginx-config dump was rotated by creating a NEW OAuth client (MeridianAlpha project) — a new client changes BOTH `client_id` and `client_secret`. Redirect URI `https://marketview.meridianalpha.in/oauth2/callback` (char-for-char to `redirect_url`); JS origins cleared. `/etc/oauth2-proxy.cfg` updated on `i-0878c118835386ec2` (both id+secret; provider/redirect_url/cookie_secret/emails-file untouched); `systemctl restart oauth2-proxy` → `active (running)` (PID 710516) @ 2026-07-04 08:05:42 UTC. **Closeout pending (exposure closes on OLD-client delete):** login-verify → delete old client → non-allow-list denial test. |
+| **Item 2 — anon-grants SQL + Lovable prompts — STAGED, miscount corrected** | `sql/2026-07-03_enh116_console_anon_grants.sql` live in Supabase but untracked (repo≠live drift). CORRECTION: the S64 carry said “3 Lovable prompt docs”; actual = **5** (`enh116_ambient_console`, `marketview_v5_restructure`, `marketview_v5_home_refinement`, `marketview_v5_intraday_drift`, `health_add_ambient_writers`), all reproduced from the S64 transcript (two had nested-fence deploy lines that truncated the extractor; completed with the canonical pipeline line). Home `docs/lovable_prompts/`. Commit + push + AWS ff-sync sequence given; git-land not confirmed → carry. |
+| **Item 3 — intraday-drift banner — PROMPT READY, deploy pending** | ENH-116 correctness gap: the verdict is once-nightly, so an intraday regime flip (07-03 settled `NEGATIVE_γ` vs live `POSITIVE_γ`) renders as two unconnected tiles, settled headline silently stale until the next recompile. `lovable_prompt_marketview_v5_intraday_drift.md` → meridian-connect Lovable (read-only Home—Ambient add; live gamma [Key-Params] vs settled `net_gex_regime` [four-lens]; on divergence → amber `INTRADAY DRIFT` banner under `OPEN SHIFT`, else nothing). Deploy content-only via the meridian-connect pipeline; Lovable iterate + deploy not confirmed → carry. |
+| **Breadth / `equity_eod` thread — RESOLVED (not a bug)** | 07-03/07-06 absent from `equity_eod` = **Dhan-side EOD availability lag, not a code bug.** `compute_date_window()` confirmed correct: fixed T−1 lookback (`to = today−1`, `from = to−220`); on 07-07 the window 2025-11-…→2026-07-06 INCLUDES 07-03/07-06; no lower-bound pin, no cursor exclusion. Dhan's daily historical endpoint routinely lags 1–3 days on settled EOD (`EOD_SAFE_LAG_DAYS` exists for this); self-heals on the next EOD run (`MERDIAN_EOD` 16:10 cron). No patch/denominator change/A-04 work. Grounded final state: token freeze (06-04→07-06) fixed (stale `.env` token); universe ceiling ~**1,159 active** (not 1,385), `COMPLETE_EOD_THRESHOLD_PCT=95` clears against the *active* universe; DMA fresh to 07-02, rebuilt clean at 100% active. |
+| **Type** | 0 confirmed git commits (item-2 commit sequence provided, land unconfirmed). 5 Lovable prompt docs reproduced + homed (`docs/lovable_prompts/`); `sql/2026-07-03_enh116_console_anon_grants.sql` staged. OAuth client rotated on-box. 0 new ADR (OAuth rotation + banner + breadth diagnosis + guard-tune — Rule 10 bar not met). CLAUDE.md v1.41→v1.42; `merdian_reference.json` v43→v44. |
+| **TDs** | **TD-S65-NEW-1 NEW (S3)** — `check_eod_coverage_freshness.py` mis-tuned (denominator was the nominal ~1,385 universe, should be the active-universe/latest-EOD-date ticker count ~1,159; staleness ~5 days, should be off the last trading day with a ~3-day Dhan-lag tolerance; produced a `/1` false-OK). The ingest itself is correct; guard-correctness only, display-not-gate. No TDs closed. |
+| **Outcome** | PARTIAL. OAuth credential rotated (new client + service `active (running)`); the breadth/`equity_eod` thread resolved to Dhan publish-lag (not a bug) with `compute_date_window` proven correct and the universe ceiling grounded at ~1,159 active; the “3→5” prompt-doc miscount corrected and all five reproduced. Three carries open (item-2 commit land, banner deploy, OAuth closeout) + the guard tune (TD-S65-NEW-1). Eight-file doc-close per Doc Protocol v4 Rule 3 full-file no-crunch. |
+| **Carry-forward to S66** | (1) confirm/land the item-2 commit (anon-grants SQL + 5 prompt docs) + AWS ff-sync; (2) deploy the **intraday-drift banner**; (3) finish the **OAuth closeout** (login-verify + delete old client + non-allow-list denial test); (4) finalize **`check_eod_coverage_freshness.py`** (TD-S65-NEW-1) with the grounded 1,159 / last-trading-day / 3-day-lag values; (5) **Lens 4 macro** feed; (6) **ENH-117** branded sign-in page. **Banked backlog:** TD-S60-NEW-5 (core.config Windows BASE_DIR); ~28 gate migrations; `*_PRE_S*` gitignore; ENH-SDM `three_wick_reversal` P3; Zerodha token rotation; `datetime.utcnow()` deprecation; momentum vwap-unit scaling; 68-row `ohlc()` tail; doc re-upload Rule 12. |
+
+---
+
+## Previous session
+
+| Field | Value |
+|---|---|
 | **Date** | 2026-07-04 (Session 64 — Wed–Sat 2026-07-02→07-04 — ENH-116 Ambient Environment Intelligence BUILT + DEPLOYED end-to-end; Marketview v5 six-page terminal; marketview.meridianalpha.in domain + TLS + Google-auth gate; doc-close) |
 | **Shape** | Built ENH-116 backend end-to-end (schemas + compiler L1+L2+L3 + reconcile v2 + idempotent reconciler + 65-row seed + forward-accrual labeler + Phase-B base-rate view + Phase-B receipt + observability), installed its three AWS crons, restructured Marketview into a six-page terminal (Lovable→GitHub→AWS, live), and stood up a public TLS + Google-auth-gated domain for it. 12 engine commits; HEAD `61ab702` AWS-synced. |
 | **ENH-116 — BUILT + DEPLOYED (backend)** | `market_environment_snapshots` (nightly four-lens verdict) + `expiry_outcomes` (65-row seed 29 NIFTY / 36 SENSEX, forward-accruing) + `v_expiry_base_rates`. Writers: `compile_market_environment_local.py` (L1 gamma-persistence / L2 price-vs-breadth / L3 participant tilt with ADR-018 D2 recency guard / L4 macro NULL; reconcile v2 folds L3 — NIFTY UNSTABLE, SENSEX TREND_UP; writes N-floored `regime_conditional_note`), `relate_ambient_to_open_local.py` (pre-market reconciler, idempotent), `backfill_expiry_outcomes.py` (seed), `accrue_expiry_outcomes.py` (forward labeler, `source=expiry_memory_live`). All three loop scripts `ExecutionLog`-instrumented. Commits `43176b8`/`0ff8c04`/`7250b11`/`185c48e`/`dae1799`/`1da0af6`/`1be5239`/`61df758`/`61ab702`. Seed all `ambient_regime=RANGE` (degeneracy forward accrual fixes). Remaining: Lens 4 macro (feed-blocked), Phase-C (deferred). |
@@ -26,7 +43,7 @@
 
 ---
 
-## Previous session
+## Previous session S63
 
 | Field | Value |
 |---|---|
@@ -66,12 +83,12 @@
 
 ---
 
-## This session (S65)
+## This session (S66)
 
 | Field | Value |
 |---|---|
-| **Goal** | TBD at S65 open. Priority carry-ins: commit the console anon-grants SQL + 3 Lovable prompt docs to a repo home; deploy the Marketview intraday-drift banner (live-vs-settled); Lens 4 macro feed; ENH-117 branded sign-in; rotate the Google client_secret + non-allow-list denial test. |
-| **Reading order before acting** | `CLAUDE.md` (now v1.41) → this `CURRENT.md` → `tech_debt.md` → `MERDIAN_System_Map.md` → `merdian_reference.json` (v43, targeted lookup only). Enhancement Register only if touching proposals. |
+| **Goal** | TBD at S66 open. Priority carry-ins: confirm/land the anon-grants SQL + 5 Lovable prompt-doc commit + AWS ff-sync; deploy the Marketview intraday-drift banner (live-vs-settled); finish the OAuth closeout (login-verify + delete old client + non-allow-list denial test); finalize `check_eod_coverage_freshness.py` (TD-S65-NEW-1) with the grounded 1,159 / last-trading-day / 3-day-lag values; Lens 4 macro feed; ENH-117 branded sign-in. |
+| **Reading order before acting** | `CLAUDE.md` (now v1.42) → this `CURRENT.md` → `tech_debt.md` → `MERDIAN_System_Map.md` → `merdian_reference.json` (v44, targeted lookup only). Enhancement Register only if touching proposals. |
 
 ---
 

@@ -3680,3 +3680,14 @@ Net assessment: typed-column variant strictly dominates at MERDIAN's parameter s
 ---
 
 *End Session 39 new ENH entries block (ENH-110 Phase 1 SHIPPED + ENH-83 SHIPPED; ENH-111 + ENH-112 untouched per operator redirect). Next session entries land below this line.*
+
+---
+
+## S66 (2026-07-09) — ENH-116 base-rate cohort segregation + ambient trajectory view (Objective 1) designed
+
+**ENH-116 base-rate publishing — cohort segregation SHIPPED (`4d25733`).** `v_expiry_base_rates` amended to `source = 'expiry_memory_live'` only. Rationale: the 65-row seed is degenerate by construction — `backfill_expiry_outcomes.py` calls `reconcile(net_gex_regime, "NEUTRAL")` with `div` HARDCODED NEUTRAL ([M4], breadth/participant NULL for the seed window), so DISTRIBUTION/ACCUMULATION/DIVERGENT are structurally unreachable, every seed row is RANGE/ALIGNED, and `--force` reproduces the identical all-RANGE table. Seed re-label is a DEAD END; forward accrual is the only path (do-not-re-run-the-seed holds). This ends seed/live blending in `regime_conditional_note`. **Correction to the S64 record:** Phase-B base-rate engine is BUILT + DEPLOYED (`1da0af6` view / `1be5239` receipt) — the compiler already reads the view nightly and holds the N-floored note ("get latest and hold" was already the design); it was mischaracterized as unstarted mid-session.
+
+**ENH-116 ambient trajectory view (Objective 1) — DESIGNED, build blocked.** Operator split the ambient-publishing goal into two products: **Objective 1** = show the weekly/monthly/daily ambient trajectory — three clocks (Clock-3 session / Clock-2 cycle-so-far / Clock-1 positioning) plotted over the price/futures track, with the divergence between the clock-lines as the headline "trend / no-trend / fade-risk" read for a PM. Clock-3 + Clock-1 draw from stored `market_environment_snapshots` rows; Clock-2 needs a per-cycle regime emit the compiler does not yet write (one addition). **Objective 2** = pattern/predict (Phase-C analog retrieval) — N-gated, forward-accrual only, deferred. Objective 1 is buildable now BUT is parked behind trustworthy breadth: Lens 2's slopes read the frozen-since-06-04 `breadth_indicators_daily` DMA layer (TD-S66-NEW-4), so a trajectory drawn today would render a 06-04-based breadth line. Lens 4 (macro) remains parked by operator choice (not USDINR now).
+
+### Change Log
+- **2026-07-09 (S66):** ENH-116 base-rate view segregated to live cohort (`4d25733`); seed-degeneracy-by-construction documented (re-label dead end); Phase-B "built not unstarted" correction; ambient trajectory view (Objective 1) designed, build blocked on the breadth/DMA freeze (TD-S66-NEW-4). Last-updated: S66.

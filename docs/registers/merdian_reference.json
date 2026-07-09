@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v44",
+    "version": "v45",
     "generated": "2026-06-12",
     "sources": [
       "Session 52 (2026-06-12): Observability infrastructure deployment — 5 monitoring scripts (telegram_utils, monitor_orchestrator_health, refresh_health_dashboard, validate_compute_contracts, enforce_orchestrator_timeout; 761 lines total); 4 crontab entries active; Telegram integration live; status.json health snapshot every 1 min; time-to-detection <2 min for capture gaps, orchestrator failures, compute hangs, crontab typos, stale data.",
@@ -32,8 +32,35 @@
     "authority_note": "When this JSON conflicts with a master docx: JSON wins on current operational state. Docx wins on architecture, governance, and decisions.",
     "update_cadence": "Update this file in the same session as any meaningful change to file status, table schema, or open item status. Commit to Git immediately after update.",
     "last_updated": "2026-07-02 S63 end (TD-S62-NEW SENSEX compute_flip_level fix DEPLOYED dc63bb3 [regime-conditional near-spot sign-change walk + short-gamma display guard; StockMojo parity near-spot; TD-S62-NEW RESOLVED]; ENH-115 P1 BUILT [FII/DII participant-positioning writer live 5 rows 2026-07-01 + 270-day backfill + consolidated cash leg + 2 Mon-Fri AWS cron lines; participant OI NSE-only, cash consolidated NSE+BSE+MSEI, BSE participant stub dropped; new tables participant_oi_daily/fii_dii_cash_daily/v_participant_oi_latest]; three ENH-07 A Phase-2 commits 894332a->cd7078d->0f997c7 documented; TD-S62-NEW-2 SENSEX 2026-01-19 resume CARRIED to S64)",
-    "last_updated_by_session": "Session 64",
+    "last_updated_by_session": "Session 66",
     "change_log": [
+      {
+        "session": "S66",
+        "date": "2026-07-09",
+        "type": "SENSEX-expiry-day: closed 3 S65 carries on evidence + shipped guard + ENH-116 base-rate cohort fix (3 commits); uncovered a live month-long breadth/DMA freeze (2 layers OPEN)",
+        "summary": "P0 OAuth exposure CLOSED (old Google client deleted; console 1 client = live cfg client_id 1041...kop; leaked S64 client_secret dead). P1 item-2 commit CONFIRMED in pushed e2d58a1 via git ls-tree -r origin/main. P2a intraday-drift banner CONFIRMED deployed (INTRADAY DRIFT in bundle; commit 14698ac). P2b TD-S65-NEW-1 guard TUNED+COMMITTED 5de5c85: denominator=live active-universe ceiling ~1159 (peak distinct-ticker count over published-EOD window; no hardcoded 1385/no numerator-as-denominator), staleness in trading days off last SETTLED trading day (excludes current unsettled day, off-by-one caught), 3td Dhan-lag tolerance, fail-loud on unresolvable denominator (kills /1); green on live 07-08. ENH-116 base-rate cohort segregation LIVE+COMMITTED 4d25733 (sql/2026-07-09_enh116_base_rates_live_cohort.sql): v_expiry_base_rates + WHERE resolved IS NOT NULL AND source='expiry_memory_live'; seed degenerate by construction (backfill_expiry_outcomes reconcile hardcoded div=NEUTRAL [M4] -> DISTRIBUTION/ACCUMULATION/DIVERGENT unreachable, all seed RANGE/ALIGNED, --force reproduces identical -> re-label DEAD END, forward accrual only); view returns 1 forward row (ACCUMULATION/WEEKLY n=1). CORRECTION: Phase-B engine IS built (1da0af6/1be5239). Pine regen 4699e41 (86 zones N37+S49). Ambient trajectory view (Obj 1) DESIGNED not built; Obj 2 (Phase-C) N-gated deferred. MAJOR OPEN: ~91% equity daily universe (breadth_indicators_daily ~1211/1383) stranded 06-04; six wrong theories fell; ground truth Dhan token/URL/refresh HEALTHY (/v2/charts/historical serves RELIANCE through 07-08 with live .env token), 11:58 DH-901 401 = transient stale-token-timing of L18 load-once DHAN_API_TOKEN global; 26-lap re-run cleared auth (0x401, residual DH-905 tail) but drained ~49/1260 because equity_eod (RELIANCE max 07-06) and breadth_indicators_daily (RELIANCE max 06-04) DECOUPLED (candles!=DMA rebuild). Two frozen layers OPEN: breadth_indicators_daily per-ticker DMA builder (dead 06-04, writer unidentified) + equity_eod frontier 07-06 vs API-07-08. S65 'DMA clean to 07-02 at 100% active' REFUTED -> re-verify. Session halted on operator call after hallucinated equity_eod.trade_date column.",
+        "commits": [
+          "5de5c85",
+          "4d25733",
+          "4699e41"
+        ],
+        "head_both_sides": "4d257336d91eb044563c4bd6e609719c56e1de86",
+        "supabase_live_ddl": "v_expiry_base_rates amended to live-cohort-only (source=expiry_memory_live)",
+        "tds_closed": [
+          "TD-S65-NEW-1"
+        ],
+        "tds_new": [
+          "TD-S66-NEW-1 (S1) load-once DHAN_API_TOKEN global L18 (fix read-at-use)",
+          "TD-S66-NEW-2 (S1) build_daily_map no recency floor + false 98.3% coverage (ADR-018 D2)",
+          "TD-S66-NEW-3 (S1) check_eod_coverage_freshness.py table-max not per-ticker coverage",
+          "TD-S66-NEW-4 (S1) breadth_indicators_daily DMA builder frozen 06-04 (writer unidentified)",
+          "TD-S66-NEW-5 (S2) equity_eod frontier 07-06 vs API-07-08"
+        ],
+        "adrs_new": 0,
+        "doc_versions": "CLAUDE.md v1.42->v1.43; merdian_reference.json v44->v45",
+        "carry_forward_to_s67": "revive breadth_indicators_daily DMA builder (NEW-4); diagnose equity_eod 07-06 frontier (NEW-5); harden read-at-use token (NEW-1)+build_daily_map recency floor (NEW-2)+per-ticker coverage guard (NEW-3); re-verify 100%-active-to-07-02; capture DH-905 tail; then ambient trajectory view (Obj 1); Phase-C deferred.",
+        "docs_updated": "yes"
+      },
       {
         "session": "S55",
         "date": "2026-06-16 to 2026-06-17",
@@ -4767,7 +4794,7 @@
       "truncated_each_run": false
     }
   },
-  "version": "v44",
+  "version": "v45",
   "last_updated_session": "Session 65",
   "last_updated_date": "2026-07-07",
   "change_log": [

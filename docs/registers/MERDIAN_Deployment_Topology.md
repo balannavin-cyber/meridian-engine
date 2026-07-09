@@ -968,3 +968,15 @@ Cross-refs: tech_debt TD-S58-NEW-1 (RESOLVED) + TD-S62-NEW + TD-S62-NEW-2; Enhan
 **New Supabase tables (writer targets):** `participant_oi_daily` (NSE/NSCCL participant-wise long/short OI; UPSERT on `(trade_date, participant)`; 5 rows/day: CLIENT/DII/FII/PRO/TOTAL), `fii_dii_cash_daily` (consolidated NSE+BSE+MSEI FII/FPI + DII buy/sell/net cash, from `fiidiiTradeReact`), `v_participant_oi_latest` (freshness view). Scope: participant-wise OI is **NSE-only** (no BSE equivalent — BSE participant stub dropped); FII/DII cash is **ONE consolidated report** (no separate BSE fetch). Deploy vector: Local → git → EC2 `git pull --ff-only`. Display-not-gate source; feeds ENH-116 Lens 3.
 
 **Backfill (one-shot, not scheduled):** `backfill_participant_oi.py` ran 270 trading days 2025-05-28→2026-07-01 (0 failures). It deliberately does **not** use the DB `trading_calendar` gate (fail-opens on historical dates the reseeded table doesn't cover) — local Mon–Fri weekday filter + NSE archive 404 as holiday ground truth (Rule 18 corollary).
+
+---
+
+## S66 (2026-07-09) — Dhan token flow reality (dual-writer) + the load-once-global hazard
+
+**Two writers maintain the Dhan token; both are healthy.** (1) `pull_token_from_supabase.py` — daily, pulls the canonical token from Supabase `system_config` (key `dhan_api_token`), writes `~/meridian-engine/.env` `DHAN_API_TOKEN=` **atomically with a readback verify**, then probes `/v2/marketfeed/ltp` + `/v2/optionchain/expirylist` (logs `pull_write` / `post_write_probe` to `dhan_token_probe_log`, columns `ts`/`http_status`/`token_prefix`/`token_suffix`/`token_source`). (2) `refresh_dhan_token.py` — cron `5 3 * * 1-5` (03:05 UTC), self-mints via PIN + TOTP seed against `https://auth.dhan.co/app/generateAccessToken` and writes both Supabase and `.env`. Verified S66: token healthy end-to-end (probes 200; `/v2/charts/historical` served RELIANCE candles through 07-08 with the live `.env` token).
+
+**HAZARD (TD-S66-NEW-1) — load-once token global.** `ingest_equity_eod_local.py` reads `DHAN_API_TOKEN = os.getenv(...)` once at module load (L18) and uses it at L113. A run that starts before, and crosses, the daily rotation sends a token that rotated underneath it → `DH-901` 401 on the whole sweep, silently (`breadth_ingest_state.last_status=PARTIAL_OK`), while the token itself is valid for a fresh process. Durable fix = read the token at USE (pull from `system_config` per cycle like the probe does), not at import.
+
+**Probe coverage gap.** The daily token probe validates `/v2/marketfeed/ltp` and `/v2/optionchain/expirylist` but NOT `/v2/charts/historical` (the endpoint the equity/breadth EOD sweep uses) — so a historical-endpoint problem would not surface on the green probe. (This session the historical endpoint was fine; the freeze was the load-once-global timing + the decoupled DMA builder, not the endpoint.)
+
+**Update log:** S66 — Dhan token dual-writer flow catalogued; load-once-global hazard (TD-S66-NEW-1) + probe-coverage gap recorded. Footer S66. Cross-refs: CLAUDE.md v1.43, System Map §S66, tech_debt TD-S66-NEW-1..5.

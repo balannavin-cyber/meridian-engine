@@ -865,3 +865,19 @@ Cross-refs: tech_debt TD-S58-NEW-1 (RESOLVED) + TD-S62-NEW + TD-S62-NEW-2; Enhan
 **ENH-07 A Phase-2 commits documented.** `894332a → cd7078d → 0f997c7` (all `measure_rate_sensitivity.py`, a read-only rate-sensitivity probe) — the "rate immaterial" finding underpins the S62 ENH-07 A no-op close; Enhancement Register Part-4 + Part-1 reconciled (A CLOSED no-op / B SHIPPED-Measure), reference.json artifact added.
 
 Cross-refs: tech_debt TD-S62-NEW (RESOLVED) + TD-S62-NEW-2 (carried); Enhancement Register ENH-115 P1 BUILT + ENH-07 A/B reconciled; merdian_reference.json v42 S63 change_log; Deployment Topology §S63; CLAUDE.md v1.40.
+
+---
+
+## S66 (2026-07-09) — guard tune, base-rate view cohort-fix, and the equity/breadth write-path decoupling
+
+**`check_eod_coverage_freshness.py` — TUNED + LIVE (`5de5c85`, TD-S65-NEW-1 CLOSED).** Denominator = live active-universe ceiling (peak distinct-ticker count over a trailing window of published EOD dates, self-discovers ≈1,159; no hardcoded 1,385, no numerator-as-denominator); staleness in trading days off the last SETTLED trading day (excludes the current unsettled day); ~3-td Dhan-lag tolerance; fail-loud on unresolvable denominator. **KNOWN GAP (TD-S66-NEW-3):** it reads table-MAX trade_date, not per-ticker coverage %, so it flashes green over a table where 91% of tickers are a month stale.
+
+**`v_expiry_base_rates` — amended live (`4d25733`, `sql/2026-07-09_enh116_base_rates_live_cohort.sql`).** Now `WHERE resolved IS NOT NULL AND source = 'expiry_memory_live'` — the base-rate surface (feeds the compiler's `regime_conditional_note` AND the Marketview expiry-memory panel) is live-cohort-only; the gamma-only 65-row seed (all RANGE/ALIGNED by construction) no longer blends into the four-lens note. View currently returns 1 forward row (ACCUMULATION/WEEKLY, n=1).
+
+**KEY STRUCTURAL FINDING — the equity daily-breadth write path is TWO decoupled chains (do not conflate):**
+- `ingest_equity_eod_local.py` — reads Dhan `/v2/charts/historical`, writes **`equity_eod`** (raw per-ticker OHLC candles). Cursored 50/run via `breadth_ingest_state`. Reads `DHAN_API_TOKEN` once at module load (L18 global) — a mid-run token rotation strands the sweep (TD-S66-NEW-1). Frontier stuck at 07-06 despite the API serving 07-08 (TD-S66-NEW-5).
+- **`breadth_indicators_daily`** (per-ticker DMA10/20/40 + prev_close + above-flags) is written by a SEPARATE, currently-unidentified builder that has been dead since 06-04 (TD-S66-NEW-4). Re-running the EOD candle sweep does NOT rebuild this table. ~1,211/1,383 tickers stranded at 06-04.
+- `build_wcb_snapshot_local.py` — CONSUMER: `fetch_daily_breadth_rows` selects `breadth_indicators_daily` by ticker; `build_daily_map` keeps each ticker's max-`trade_date` row with NO recency floor (TD-S66-NEW-2, serves 34-day-old DMAs as current + false 98.3% coverage); reads `latest_market_breadth_intraday`; writes `weighted_constituent_breadth_snapshots`. Feeds ENH-116 Lens 2.
+- The tick-derived A/D breadth chain (`ws_feed_zerodha.py` → `market_ticks` → `ingest_breadth_from_ticks.py` → `market_breadth_intraday`) is a THIRD, independent lineage and was LIVE this session (89% declining on the SENSEX expiry day).
+
+Cross-refs: tech_debt TD-S66-NEW-1..5 + TD-S65-NEW-1 (CLOSED); Enhancement Register ENH-116 S66 note; merdian_reference.json v45 S66 change_log; Deployment Topology §S66; CLAUDE.md v1.43.

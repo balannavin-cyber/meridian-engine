@@ -57,6 +57,66 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S66-NEW-1 (S1 priority) — `ingest_equity_eod_local.py` reads `DHAN_API_TOKEN` once at module load (L18 global) → a run that crosses a token rotation authenticates with a token that rotated underneath it and 401s the whole sweep
+
+| Field | Value |
+|---|---|
+| **Priority** | S1 (this is the ROOT cause of the S66 breadth/DMA freeze — a load-time token capture strands the equity sweep silently). |
+| **Discovered** | Session 66 (2026-07-09), diagnosing why ~91% of `breadth_indicators_daily` is stranded at 06-04. |
+| **Symptom** | `breadth_ingest_state.last_status=PARTIAL_OK` at 11:58 with a wall of `DH-901` "access token invalid or expired" 401s, while the *same* `.env` token probed 200 on `/v2/marketfeed/ltp`, `/v2/optionchain/expirylist` AND `/v2/charts/historical` (RELIANCE candles through 07-08) minutes earlier and later. Token healthy; the failing run held a stale one. |
+| **Root cause** | `DHAN_API_TOKEN = os.getenv("DHAN_API_TOKEN", "")` at module load (L18), used in the request header (L113). The token is captured once at import and never re-read; a long-lived run (or one that started before the 01:19/03:05 daily rotation) sends a token that has since rotated. The Dhan token/URL/refresh pipeline is otherwise HEALTHY — `pull_token_from_supabase.py` refreshes daily (probe 200, `.env` atomic-write + readback), `refresh_dhan_token.py` (03:05 self-mint) writes Supabase too. |
+| **Fix** | Read the token at USE, not at import — pull from Supabase `system_config` (the source the probe trusts) or re-read `.env` per request cycle, so a mid-run rotation can't strand the sweep. This is the durable fix; every Dhan writer that reads a load-time `.env` global has the same latent bug. |
+| **Workaround** | Re-run `ingest_equity_eod_local.py` after a token rotation (a fresh process reads the current `.env`); the manual 26-lap re-run this session cleared auth (0×401). |
+| **Status** | OPEN (S66) — root-caused + reproduced; read-at-use fix carried to S67. |
+
+### TD-S66-NEW-2 (S1 priority) — `build_daily_map` (`build_wcb_snapshot_local.py`) has no recency floor: its `>=`-max selection silently serves month-old per-ticker DMAs as "current" and reports 98.3% coverage over a 91%-stale table (violates ADR-018 D2)
+
+| Field | Value |
+|---|---|
+| **Priority** | S1 (this is why the freeze stayed INVISIBLE — a stale-serving reader with a falsely-reassuring coverage number). |
+| **Discovered** | Session 66 (2026-07-09). |
+| **Symptom** | The Marketview WCB / %-above-DMA panel rendered `coverage 98.3%` and normal-looking `>10/20/40DMA` figures while ~1,211/1,383 constituents' DMAs were frozen at 2026-06-04. Tell in the data: constituent `above_10/20/40` flags computed on the 06-04 `prev_close`, not the live `last_price` (HDFCBANK `last_price 829.3` above all DMAs yet all flags `false` vs `prev_close 754.2`). |
+| **Root cause** | `build_daily_map` keeps each ticker's row with the max `trade_date` (`if new_td >= existing_td`) with NO lower bound. If `breadth_indicators_daily` has no row past 06-04 for a ticker, the map serves the 06-04 row as "latest," so every downstream weighted-DMA stat is computed on stale rows — and the ticker still counts toward "coverage." ADR-018 D2 mandates a recency-floor guard on breadth readers so a silent stall self-flags STALE; this reader has none. |
+| **Fix** | Add a recency floor: drop any ticker whose newest daily row is older than N trading days off the `breadth_indicators_daily` frontier into `missing_daily` (so the snapshot reports honest coverage and flags STALE) rather than silently weighting a month-old close. |
+| **Workaround** | None; the panel is untrustworthy for the stale window. A/D breadth (tick-derived) is unaffected and remains live. |
+| **Status** | OPEN (S66) — carried to S67. |
+
+### TD-S66-NEW-3 (S1 priority) — `check_eod_coverage_freshness.py` (shipped S66, `5de5c85`) measures table-MAX trade_date, not per-ticker coverage % — it reads green over a table where 91% of tickers are a month stale
+
+| Field | Value |
+|---|---|
+| **Priority** | S1 (the guard we just shipped has the wrong denominator for the S66 failure class). |
+| **Discovered** | Session 66 (2026-07-09), immediately after shipping the S65-tuned guard. |
+| **Symptom** | The tuned guard reads `breadth_indicators_daily` / `equity_eod` MAX trade_date (07-05/07-06, within the 3td lag tolerance → RESULT OK) while a coverage histogram shows 1,211/1,383 tickers stranded at 06-04. A table-max read cannot see a per-ticker coverage collapse. |
+| **Root cause** | The S65 tune correctly fixed the denominator for a *uniform* freeze (whole-table max date) but the S66 freeze is a *per-ticker coverage* collapse — a partial-population failure the table-max metric is structurally blind to. |
+| **Fix** | Add a per-ticker coverage dimension: fraction of the active universe whose newest `breadth_indicators_daily` row is within N trading days of the frontier; FAIL if that fraction < threshold. This is complementary to the shipped table-max/staleness checks, not a replacement. |
+| **Workaround** | Run the coverage-bucket query manually (`CASE WHEN mx>=… THEN 'fresh' WHEN mx='2026-06-04' THEN 'stranded'`). |
+| **Status** | OPEN (S66) — carried to S67; supersedes the "guard closes this class" assumption. |
+
+### TD-S66-NEW-4 (S1 priority) — the per-ticker DMA builder that writes `breadth_indicators_daily` is frozen since 06-04 (distinct writer, NOT yet identified; NOT `ingest_equity_eod`)
+
+| Field | Value |
+|---|---|
+| **Priority** | S1 (the ACTUAL Lens-2 unfreeze — re-fetching EOD candles does not touch this table). |
+| **Discovered** | Session 66 (2026-07-09). |
+| **Symptom** | For RELIANCE, `equity_eod` max = 07-06 but `breadth_indicators_daily` max = 06-04. Re-running `ingest_equity_eod_local.py` (which fetches EOD candles) 26× drained only ~49 of 1,260 stranded tickers — because the DMA table is written by a different step that has not run for the stranded set since 06-04. |
+| **Root cause** | `equity_eod` (raw OHLC candles) and `breadth_indicators_daily` (per-ticker DMA10/20/40 + prev_close + above-flags) are DECOUPLED. `build_wcb_snapshot_local.py` reads `breadth_indicators_daily` (per-ticker via `ticker in (...)`), so Lens-2 stays frozen no matter how many EOD candle laps run. The writer that computes `breadth_indicators_daily` from `equity_eod` was NOT identified this session (the grep for its writer was not completed before the session halt). |
+| **Fix** | Identify the `breadth_indicators_daily` per-ticker DMA writer (grep `~/meridian-engine/*.py` for insert/upsert into `breadth_indicators_daily`, excluding `build_wcb`), determine why it's dead since 06-04 (likely not cron'd on AWS, or died in the 06-04 window), revive it, and let it rebuild DMAs over the now-fresher `equity_eod` candles. |
+| **Workaround** | None; Lens-2 / WCB DMA breadth is untrustworthy until this runs. |
+| **Status** | OPEN (S66) — the primary S67 item. |
+
+### TD-S66-NEW-5 (S2 priority) — `equity_eod` frontier stuck at 07-06 even for tickers the Dhan API serves through 07-08 (recent-day writes not extending max date)
+
+| Field | Value |
+|---|---|
+| **Priority** | S2 (secondary to NEW-4; the raw candle layer isn't fully current either). |
+| **Discovered** | Session 66 (2026-07-09). |
+| **Symptom** | A direct POST to `/v2/charts/historical` returns RELIANCE candles through 07-08, and the 26-lap ingest re-run reported `candles_upserted` with `Failures 0` — yet `equity_eod` max for RELIANCE = 07-06. The stored frontier is not advancing to what the API serves. |
+| **Root cause** | Not diagnosed (session halted before the universe-wide `equity_eod` frontier query — which errored on a hallucinated `trade_date` column name, `equity_eod` uses different column names). Candidate: the `DHAN_FROM_DAYS_BACK=220` window writes historical bars but the recent-end candle is being dropped, or the upsert isn't extending the max date. Loops back to this-morning's 07-03/07-06 lag thread but with the API now proven to have the data. |
+| **Fix** | Confirm `equity_eod`'s actual column names (`information_schema`), then diagnose why the recent trading days aren't landing despite a 200 candle response. |
+| **Workaround** | None yet. |
+| **Status** | OPEN (S66) — carried to S67. |
+
 ### TD-S65-NEW-1 (S3 priority) — `check_eod_coverage_freshness.py` EOD-coverage guard mis-tuned (denominator = nominal ~1,385 universe over a 5-day window → `/1` false-OK); should be the active-universe / latest-EOD-date ticker count (~1,159) measured off the last *trading* day with a ~3-day Dhan-lag tolerance
 
 | Field | Value |
@@ -67,7 +127,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Root cause** | The denominator and staleness window were guessed (~1,385 / 5 days). The *achievable* universe ceiling is ~**1,159 active** (the DMA layer rebuilt clean at 100% of active to 07-02); `COMPLETE_EOD_THRESHOLD_PCT=95` is correct because it measures against the active universe. Separately, the 07-03/07-06 `equity_eod` hole is **Dhan-side EOD publish-lag, not a bug** — `compute_date_window()` is correct (T−1 lookback `to = today−1`, `from = to−220`; on 07-07 the window includes 07-03/07-06; no lower-bound pin, no cursor exclusion) and the hole self-heals on the next EOD run. |
 | **Fix (teed up, not finalized)** | Tune `check_eod_coverage_freshness.py`: denominator = the active-universe / latest-EOD-date ticker count (~1,159, read live — not a hard-coded 1,385); measure staleness off the last *trading* day; set tolerance to ~3 days so it swallows Dhan's normal publish-lag but still fires on a genuine multi-day freeze. Replaces the 1,385/5-day guesses that produced the `/1` false-OK. |
 | **Workaround** | None needed — the ingest (`compute_date_window` + the EOD writer) is correct; the guard only mis-reports. The 07-03/07-06 hole self-heals on the next `MERDIAN_EOD` 16:10 cron run or a manual sweep. |
-| **Status** | OPEN (S65) — grounded numbers in hand; guard edit deferred to S66. |
+| **Status** | CLOSED (S66, `5de5c85`) — guard tuned (live ~1,159 ceiling / last-settled-trading-day / 3td Dhan-lag / fail-loud on unresolvable denominator) + proven green on live 07-08. NOTE: the shipped guard reads table-MAX not per-ticker coverage, so it is blind to the S66 per-ticker DMA freeze — that gap is TD-S66-NEW-3. |
 
 ### TD-S62-NEW (S2 priority) — SENSEX `compute_flip_level` resolves to a spurious deep-tail flip (~−6.75%/−7.11%) under NEGATIVE_γ; StockMojo parity isolates it as the sole outlier — RESOLVED (S63, `dc63bb3`)
 

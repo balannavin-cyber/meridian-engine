@@ -180,8 +180,12 @@ def main():
             break
 
         if daily_rc not in (0, None):
-            print(f"Stopping because daily rebuild script returned non-zero exit code: {daily_rc}")
-            break
+            # S67: builder rc!=0 is EXPECTED on a cold day (equity_eod below the
+            # 95% gate before the cursored ingest finishes). Do NOT stop the loop;
+            # the ingest cursor must drain to completion, then the builder succeeds
+            # idempotently on the lap the day crosses 95%. Only ingest failure /
+            # cursor completion end the loop.
+            print(f"[S67] daily rebuild rc={daily_rc} (non-fatal, continuing cursor drain)")
 
         if coverage_rc not in (0, None):
             print(f"Stopping because coverage script returned non-zero exit code: {coverage_rc}")

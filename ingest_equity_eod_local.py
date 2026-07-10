@@ -106,11 +106,24 @@ def get_ticker_batch(cursor: int, limit_per_run: int) -> List[Dict[str, Any]]:
     return data
 
 
+def _current_dhan_token() -> str:
+    """S67/TD-S66-NEW-1: read the token AT USE. Re-load .env (override=True) so a
+    rotation written mid-run by pull_token_from_supabase.py / refresh_dhan_token.py
+    is picked up on the next request, instead of using the import-time L18 global
+    that rotated underneath a long-running sweep and 401'd it. Falls back to the
+    module global if the re-read yields nothing."""
+    try:
+        load_dotenv(override=True)
+    except Exception:
+        pass
+    return os.getenv("DHAN_API_TOKEN", "") or DHAN_API_TOKEN
+
+
 def fetch_dhan_daily_once(security_id: str, from_date: str, to_date: str) -> Dict[str, Any]:
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "access-token": DHAN_API_TOKEN,
+        "access-token": _current_dhan_token(),
     }
     if DHAN_CLIENT_ID:
         headers["client-id"] = DHAN_CLIENT_ID

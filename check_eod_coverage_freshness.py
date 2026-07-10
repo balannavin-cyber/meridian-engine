@@ -69,6 +69,29 @@ def _count_on_date(table, date_str):
     return int(total) if total.isdigit() else None
 
 
+def _active_universe_count():
+    """TRUE active-universe denominator (S67/TD-S66-NEW-3): live count of
+    dhan_scrip_map rows using the SAME filter the builder's get_active_universe
+    uses (exchange=NSE, is_active=true, dhan_security_id not null). This is what
+    the EOD builder TRIES to cover -- the correct denominator -- as opposed to
+    the trailing-window peak (what happened to arrive), which excludes the DH-905
+    dead tail and moves with the numerator. Returns int, or None on failure."""
+    r = requests.get(
+        f"{SUPABASE_URL}/rest/v1/dhan_scrip_map",
+        headers={**HDRS, "Prefer": "count=exact", "Range-Unit": "items", "Range": "0-0"},
+        params={
+            "select": "ticker",
+            "exchange": "eq.NSE",
+            "is_active": "eq.true",
+            "dhan_security_id": "not.is.null",
+        },
+        timeout=30,
+    )
+    r.raise_for_status()
+    total = r.headers.get("Content-Range", "").split("/")[-1]
+    return int(total) if total.isdigit() else None
+
+
 def _last_trading_day(d):
     """Most recent weekday on/before d (weekday anchor; Rule 18 corollary). Holiday-
     generous by design -- the lag tolerance absorbs a holiday landing on this day."""
@@ -109,8 +132,8 @@ def main():
                     help="audited trade date (default: today IST). Anchor is --date, never wall-clock (S59 rule).")
     ap.add_argument("--lag-trading-days", type=int, default=3,
                     help="Dhan publish-lag tolerance in TRADING days off the last trading day (default 3).")
-    ap.add_argument("--min-coverage-pct", type=float, default=95.0,
-                    help="min coverage vs the live active-universe ceiling (default 95 = COMPLETE_EOD_THRESHOLD_PCT).")
+    ap.add_argument("--min-coverage-pct", type=float, default=92.0,
+                    help="min coverage vs the true active universe (default 92; true ceiling ~97.8% due to the ~28 permanent DH-905 dead security_ids).")
     ap.add_argument("--universe-floor", type=int, default=500,
                     help="minimum believable ceiling; below this the guard FAILS LOUD rather than dividing by a degenerate denominator.")
     args = ap.parse_args()
@@ -140,12 +163,16 @@ def main():
         print("  [FAIL] equity_eod: no rows in lookback window")
     else:
         eod_latest = max(window)            # iso date strings sort chronologically
-        ceiling = max(window.values())      # active-universe ceiling, read live (~1,159)
+        window_peak = max(window.values())  # S67: demoted to sanity cross-check only
+        ceiling = _active_universe_count()  # S67/TD-S66-NEW-3: TRUE active universe (dhan_scrip_map, ~1385)
         cov = window[eod_latest]
         gap = _trading_gap(_d(eod_latest), ltd)
         pct = 100.0 * cov / ceiling if ceiling else 0.0
+        if ceiling and window_peak > ceiling:
+            print(f"  [WARN] window_peak {window_peak} > active-universe ceiling {ceiling} "
+                  f"(dhan_scrip_map may be under-counting active tickers)")
 
-        if ceiling < args.universe_floor:
+        if ceiling is None or ceiling < args.universe_floor:
             fails.append(f"equity_eod: ceiling {ceiling} < floor {args.universe_floor} "
                          f"(denominator unresolved -- refusing to report OK)")
             print(f"  [FAIL] equity_eod: ceiling={ceiling} implausibly low (<{args.universe_floor})")

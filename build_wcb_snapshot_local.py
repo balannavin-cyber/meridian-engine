@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from core.supabase_client import SupabaseClient
@@ -145,6 +145,28 @@ def build_price_map(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     return out
 
 
+RECENCY_FLOOR_TRADING_DAYS = 3  # S67/TD-S66-NEW-2: DMAs older than this many
+# settled trading days behind the breadth frontier are treated as stale (dropped
+# -> missing_daily) rather than served as current. Matches the Dhan-lag tolerance
+# used by check_eod_coverage_freshness.py.
+
+
+def _weekdays_back(iso_date: str, n: int) -> str:
+    """Return the ISO date n weekdays (Mon-Fri) before iso_date. Approximates
+    settled trading days; ignores holidays, so it fails LENIENT (floor slightly
+    older than a true trading-day floor) -- acceptable for a staleness gate."""
+    try:
+        d = datetime.strptime(iso_date, "%Y-%m-%d").date()
+    except Exception:
+        return iso_date
+    stepped = 0
+    while stepped < n:
+        d -= timedelta(days=1)
+        if d.weekday() < 5:
+            stepped += 1
+    return d.isoformat()
+
+
 def build_daily_map(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     out: Dict[str, Dict[str, Any]] = {}
     for row in rows:
@@ -161,6 +183,27 @@ def build_daily_map(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         new_td = str(row.get("trade_date") or "")
         if new_td >= existing_td:
             out[ticker] = row
+
+    # S67/TD-S66-NEW-2: recency floor. Frontier = newest trade_date across the
+    # map; drop tickers whose newest DMA row is older than the floor so the
+    # consumer routes them to missing_daily instead of serving a stale DMA.
+    trade_dates = [
+        str(v.get("trade_date") or "") for v in out.values() if v.get("trade_date")
+    ]
+    if trade_dates:
+        frontier = max(trade_dates)
+        floor_date = _weekdays_back(frontier, RECENCY_FLOOR_TRADING_DAYS)
+        stale = [
+            t for t, v in out.items()
+            if str(v.get("trade_date") or "") < floor_date
+        ]
+        for t in stale:
+            del out[t]
+        if stale:
+            print(
+                f"[WCB] recency floor: frontier={frontier} floor={floor_date} "
+                f"dropped {len(stale)} stale-DMA tickers -> missing_daily"
+            )
 
     return out
 

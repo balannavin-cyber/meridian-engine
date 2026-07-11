@@ -122,3 +122,6 @@ backfill_index_futures_breeze_corrected.py
 backfill_india_vix_daily_and_writer.py
 backfill_india_vix_daily_v2.py
 extend_hist_atm_option_bars.py
+
+# S68: keep the rebuild-grade crontab manifest tracked despite *.txt
+!docs/registers/aws_crontab.txt

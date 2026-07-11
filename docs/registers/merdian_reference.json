@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v45",
+    "version": "v46",
     "generated": "2026-06-12",
     "sources": [
       "Session 52 (2026-06-12): Observability infrastructure deployment — 5 monitoring scripts (telegram_utils, monitor_orchestrator_health, refresh_health_dashboard, validate_compute_contracts, enforce_orchestrator_timeout; 761 lines total); 4 crontab entries active; Telegram integration live; status.json health snapshot every 1 min; time-to-detection <2 min for capture gaps, orchestrator failures, compute hangs, crontab typos, stale data.",
@@ -4794,10 +4794,36 @@
       "truncated_each_run": false
     }
   },
-  "version": "v45",
-  "last_updated_session": "Session 65",
-  "last_updated_date": "2026-07-07",
+  "version": "v46",
+  "last_updated_session": "Session 67",
+  "last_updated_date": "2026-07-10",
   "change_log": [
+      {
+        "session": "S67",
+        "date": "2026-07-10",
+        "type": "S66 breadth/DMA freeze RESOLVED (root cause corrected: NOT decoupled/unidentified writer -- Local-retired scheduler gap + self-aborting loop) + 3 defects hardened + git reconciled. PASS.",
+        "summary": "Closed the month-long breadth/DMA freeze carried from S66. The S66 framing was WRONG on two counts, both refuted by reading source/state: (1) the DMA writer is build_breadth_indicators_daily_local.py (upserts breadth_indicators_daily on_conflict=universe_id,ticker,trade_date; greps missed it because the table string and 'upsert' never share a line), NOT unidentified; it is invoked by run_equity_eod_until_done.py as DAILY_REBUILD_SCRIPT and reads equity_eod from Supabase (no Dhan token). (2) The freeze was NOT caused by decoupling: Local was retired at AWS migration (~Jun 7; all 22 MERDIAN_* Local scheduled tasks correctly Disabled per ADR-006 -- do NOT re-enable). The canonical AWS cron '40 10 * * 1-5 run_equity_eod_until_done.py >> logs/eod.log' existed all along and the cron daemon fires (sentinel-tested: cron-alive landed within the minute) -- but every scheduled run self-aborted at lap 1: on a cold day the cursored ingest (50/lap) had not filled equity_eod to the builder's 95% gate, the builder raised rc=1, and run_equity_eod_until_done.py L182 broke the whole loop on that rc, truncating the sweep before the cursor drained. logs/eod.log last-written Jul 7 12:38 (last manual completion); table frozen at 06-04 (last date to clear 95% before the loop began self-aborting). FIX (item 1, f5b9afd): builder rc!=0 made non-fatal in the loop (L182-188); only ingest failure / cursor==0 end it; builder succeeds idempotently on the lap the day crosses 95%. Verified: 14-lap sweep cursor 700->0, DMAs rebuilt 06-04->07-06 at 1,355 rows / 97.83%. Lens-2 unfrozen. THREE DEFECTS HARDENED (item 2, each Canon-v3 with _PRE_S67 backup, verified live): TD-S66-NEW-2 build_wcb_snapshot_local.py build_daily_map 3-trading-day recency floor (RECENCY_FLOOR_TRADING_DAYS + _weekdays_back) -> stale-DMA tickers to missing_daily (ADR-018 D2); TD-S66-NEW-3 check_eod_coverage_freshness.py denominator re-anchored to _active_universe_count() (live dhan_scrip_map = 1,385 active, NOT the ~1,159 trailing-window peak which the S65 entry mis-stated as the ceiling), window-peak demoted to sanity cross-check, min-coverage 95->92 (true ceiling 97.83% = ~28 DH-905 dead security_ids + 2 no-history), live run RESULT OK exit 0; TD-S66-NEW-1 ingest_equity_eod_local.py token read-at-use (_current_dhan_token() re-loads .env per fetch at L113, L18/L34 kept for startup validation), verified fetch_dhan_daily_once('2885',...) -> 6 RELIANCE candles auth 200. TD-S66-NEW-5 REFRAMED not-a-bug: 07-07 was unfilled (climbed 28->94% as sweeps + an unattended writer filled it); the 95% gate correctly held DMAs at the last complete date; Dhan 1-3 day publish lag + no-sweep-since-Jun-7; equity_eod.trade_date column DOES exist (date type) -- the S66 hallucinated-column halt was itself the error. CORRECTED GROUNDED FIGURES: active equity universe = 1,385 (dhan_scrip_map is_active + dhan_security_id not null), NOT ~1,159 (guard trailing-window peak, ~200 low); true EOD coverage ceiling = 97.83% (structural DH-905 tail), not a shortfall and not '100% active'. GIT RECONCILED (item 3): the four in-place EC2 edits committed f5b9afd (4 files, +95/-8; rate_sens.out/status.json artifacts excluded; *_PRE_S67 backups gitignored), pushed to origin (after a 0-byte/expired ~/.git-credentials PAT blocked the first attempts; re-primed with a fresh repo-scoped token via hidden read -rs, never exposed), Local git pull --ff-only clean -> Local == EC2 == origin == f5b9afd; canonical Local->git->EC2 vector restored (this session inverted it once as a documented exception since the diagnosis had to run on the box). SECURITY: a ghp_ PAT was pasted in cleartext mid-session during push troubleshooting; operator confirmed old/leaked tokens expired (inert) + generated a fresh token -- treat exposed value as dead. TD-S66-NEW-1/2/3/4 CLOSED, NEW-5 reframed. 0 new ADR (all bug-fixes/hardening -- Rule 10 excludes bug fixes; breadth root-cause is operational). CLAUDE.md v1.43->v1.44; this file v45->v46. PASS. 7-file doc-close per Doc Protocol v4 Rule 3 full-file no-crunch (surgical edit -> complete verified file, line+byte checked against S66 disk baseline). Carry to S68: canonical crontab source (track the 40 10 cron in-repo); unidentified AWS equity_eod writer (backfilled 07-07 mid-session, benign untraced); credential durability (PAT expiry / SSH deploy key); ENH-116 Objective 1 ambient trajectory view now UNBLOCKED (breadth trustworthy + self-guarding).",
+        "commits": [
+          "f5b9afd"
+        ],
+        "files_modified": [
+          "run_equity_eod_until_done.py (loop builder-rc non-fatal, L182-188)",
+          "build_wcb_snapshot_local.py (build_daily_map recency floor, TD-S66-NEW-2)",
+          "check_eod_coverage_freshness.py (true-active-universe denominator 1385 + min-cov 92, TD-S66-NEW-3)",
+          "ingest_equity_eod_local.py (token read-at-use, TD-S66-NEW-1)"
+        ],
+        "doc_versions": "CLAUDE.md v1.43->v1.44; merdian_reference.json v45->v46",
+        "td_closed": [
+          "TD-S66-NEW-1",
+          "TD-S66-NEW-2",
+          "TD-S66-NEW-3",
+          "TD-S66-NEW-4"
+        ],
+        "td_reframed": [
+          "TD-S66-NEW-5 (not-a-bug; ingest-layer residual carried)"
+        ],
+        "adrs_new": []
+      },
     {
       "session": "S65",
       "date": "2026-07-04 to 2026-07-07",

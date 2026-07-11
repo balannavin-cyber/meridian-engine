@@ -470,6 +470,9 @@ def compile_symbol(symbol, as_of_date, for_session_date, since_iso, l3):
         "symbol": symbol,
         "as_of_date": as_of_date.isoformat(),
         "for_session_date": for_session_date.isoformat(),
+        # Clock-2 cycle anchor (S68 Clock-2 cycle anchor) — front expiry already in
+        # hand; view derives DTE + cycle-progress + rollover boundaries from the series.
+        "front_expiry": gamma_daily[-1].get("expiry_date"),
         **l1, **l2,
         # Lens 3 (participant, NSE) — recency-guarded (ADR-018 D2)
         "cycle_oi_call_put_asym": l3.get("cycle_oi_call_put_asym"),

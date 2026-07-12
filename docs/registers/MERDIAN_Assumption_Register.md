@@ -661,3 +661,19 @@ Three rows codifying findings from S42 writer-side gap closure (India VIX + max_
 
 **Last updated:** Session 59 (2026-06-24)  
 **Open follow-ups:** Breadth staleness root cause (TD-S48-NEW-1); dashboard cache lag.
+
+
+---
+
+## §D.26 — Calendar-absence semantics + fetch-window binding (Session 68, 2026-07-12)
+
+| ID | Assumption | Status | Evidence | Consequence |
+|---|---|---|---|---|
+| **D.26.1** | *“A missing `trading_calendar` row is safe to treat as OPEN (fail-open).”* | **REFUTED — SUPERSEDED by ADR-020** | `seed_trading_calendar.py` deliberately writes **only open days** (“a missing row is correctly read as closed”, its own docstring), while `core/trading_calendar_gate.py` read the same absence as **allow**. Live probe: every row-absent weekend returned `True`; the one holiday that *had* a row (06-26) returned `False` correctly — absence, not data, was the discriminator. | Every unseeded weekend and every NSE holiday read as a **trading day** for ~6 live consumers from S60 to S68. Missing-row resolution now routes through the V18E rule engine; fail-open retained for genuine errors only. |
+| **D.26.2** | *“Two modules can each document their own contract for a shared value, as long as each is internally correct.”* | **REFUTED (general principle B30)** | Both the gate and the seeder were coherent, correct, and explicitly documented — and held **opposite** contracts. Nothing in either file looked wrong. The defect lived in the **boundary**, which no file owned. | **A boundary between two modules is itself an artifact that must be specified.** When two components define the semantics of the same absent value, they will disagree silently. |
+| **D.26.3** | *“Weekend ⇒ closed is a safe short-circuit for a calendar gate.”* | **REJECTED** | `trading_calendar.py` Rule 3 evaluates `special_sessions` **before** the weekend rule — **Muhurat trading** (2026-11-08, a Sunday) is a genuine capital-at-risk session. | Closure must remain a **computed** statement, never inferred from calendar shape. A dow hardcode would block a real session — the same error class as the bug it would “fix”. |
+| **D.26.4** | *“A `gte`-only time filter is an adequate lookback window.”* | **REFUTED** | `fetch_gamma_daily`/`fetch_breadth_daily`/`fetch_wcb_daily` bound only the lower end → window `[as_of−30d, ∞)`. Harmless when `as_of = today`; on backfill, `gamma_daily[-1]` resolved to the **latest bar in the table**. 15 backfilled sessions all carried identical `eod_spot` / `front_expiry` / persistence / `wcb_slope`. | **Time-range fetchers must bind BOTH ends.** Generalised to CLAUDE.md. |
+| **D.26.5** | *(method)* A contaminated backfill announces itself in the **variance structure**, not the exit code. | **VALIDATED** | Every affected column was frozen across 15 rows; `cycle_oi_call_put_asym` was the **only** one that moved — and `fetch_participant_nse()` is the **only** fetcher binding both `gte` and `lte`. The asymmetry *was* the diagnosis; no inference required. | When a backfill exits clean, **read the data it wrote**. A column that varies while its neighbours are frozen is pointing at the bug. |
+| **D.26.6** | *(display)* A NULL produced by a recency guard may be rendered as 0. | **REJECTED** | ADR-018 D2 makes Lens-3 **abstain** on a stale participant board (→ NULL). Drawing that as `0.0` on the Clock-2 axis asserts “perfectly balanced OI” — a measurement that never happened. | **NULL is a gap, never a zero.** Hard styling rule in the Marketview trajectory panel. |
+
+**Update log — Session 68 (2026-07-12):** §D.26 added (6 rows). D.26.1 supersedes the implicit S60 fail-open-on-missing-row assumption recorded with TD-S60-NEW-3. D.26.2 promoted to general principle **B30** (boundary-as-artifact). Cross-refs: **ADR-020**, ENH-116 Objective 1, CLAUDE.md v1.45 settled-decisions, System Map §S68, tech_debt §S68 footer.

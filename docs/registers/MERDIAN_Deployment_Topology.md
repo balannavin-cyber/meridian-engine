@@ -1000,3 +1000,41 @@ Cross-refs: tech_debt TD-S58-NEW-1 (RESOLVED) + TD-S62-NEW + TD-S62-NEW-2; Enhan
 **Carry to S68 (topology-relevant):** (1) **the `40 10` EOD cron is not in a repo-tracked file** — it lives only in live `crontab -l`; the S53–S54 crontab-recovery pattern says the canonical crontab should be tracked in-repo (candidate: a `docs/` crontab manifest) so a disaster-rebuild reproduces it. (2) An **unidentified AWS writer** backfilled `equity_eod` 07-07 mid-session (73%→94%) with no locatable cron — benign but untraced. (3) **Credential durability** — `~/.git-credentials` was found 0-byte/expired mid-session (blocked the S67 push until re-primed with a fresh `repo`-scoped PAT); a PAT expiry or repeat truncation will silently break the box's git push/pull again — SSH deploy key is the durable fix.
 
 **Update log:** S67 — EOD chain's true AWS cron topology documented (`40 10` `run_equity_eod_until_done.py`, cron daemon confirmed firing); Local `MERDIAN_EOD_Breadth_Refresh` + all 22 Local tasks confirmed correctly Disabled per ADR-006 (do-not-re-enable); TD-S66-NEW-1 load-once-global CLOSED (read-at-use); §S66 "decoupled builder" phrasing corrected (writer = `build_breadth_indicators_daily_local.py`, invoked by the runner; freeze = self-aborting loop, not decoupling). Footer S67. Cross-refs: CLAUDE.md v1.44, System Map §S67, tech_debt TD-S66-NEW-1..5 (updated), merdian_reference.json v46.
+
+
+---
+
+## §S68 (2026-07-12) — update log
+
+**EC2 git authentication — PAT → SSH deploy key (durable fix for a recurring failure).**
+
+The box's git auth was PAT-over-HTTPS in `~/.git-credentials`. PATs expire, and on expiry the file was observed **0-byte/truncated**, silently breaking `git pull`/`git push` on `i-0878c118835386ec2` (S67 blocked mid-session; the `meridian-aws` PAT expired 2026-07-03). Replaced with an **SSH ed25519 deploy key**:
+
+| Item | Value |
+|---|---|
+| Key | `~/.ssh/id_ed25519_meridian` (non-default name so it cannot clobber an existing `id_ed25519`) |
+| Comment / GitHub title | `meridian-engine-ec2-deploy` |
+| Pinned via | `~/.ssh/config` — `Host github.com` / `IdentityFile ~/.ssh/id_ed25519_meridian` / `IdentitiesOnly yes` |
+| Passphrase | none (unattended cron pulls must not prompt) |
+| GitHub | repo `balannavin-cyber/meridian-engine` → Settings → **Deploy keys** (per-repo, NOT account-level PATs) — **Allow write access** checked |
+| Remote | `origin` = `git@github.com:balannavin-cyber/meridian-engine.git` |
+| Verified | `ssh -T git@github.com` authenticated; **write proven end-to-end** (empty commit pushed `d3b02bb..bbd72ad`, then `--force-with-lease` rewound to `d3b02bb` — no remote residue) |
+
+Deploy keys do not expire. **Residual: `meridian-connect` on the box still pulls HTTPS+PAT** — a deploy key attaches to exactly one repo, so that clone needs its own key. **P3, carried to S69.**
+
+**AWS crontab is now repo-tracked and rebuild-grade (`d3b02bb`).**
+
+The canonical `40 10 * * 1-5 run_equity_eod_until_done.py` EOD chain (and every other line) existed **only** in live `crontab -l` — the documented snapshot convention wrote to `logs/aws_crontab_snapshot.txt`, which is untracked. A disaster rebuild would not have reproduced the cron layer. Live crontab captured and committed to **`docs/registers/aws_crontab.txt`**.
+
+- **Restore:** `crontab /home/ssm-user/meridian-engine/docs/registers/aws_crontab.txt`, then verify with `crontab -l | head -30`. **Never** interactive `crontab -e` (S53 lesson).
+- **`SHELL=/bin/bash` MUST remain line 1** — dropping it makes cron default to `/bin/sh`, `source` fails silently, and the result is a total capture/compute blackout (the S53 root cause).
+- Landing the file required a **`.gitignore` negation** (`!docs/registers/aws_crontab.txt`): line 44's `*.txt` was swallowing it with *no untracked listing at all* in `git status`. `git check-ignore -v <path>` was the only tell. Fixed with a negation rather than `git add -f`, so future re-snapshots do not silently drop.
+- Two observations from the captured dump: **`40 10` is double-booked** (marker writer `build_market_spot_session_markers.py` + the EOD chain runner `run_equity_eod_until_done.py`) — different scripts, tables and locks, so no collision; the EOD sweep is the heavy one in that slot. The manifest **matches** the `aws_cron` block already recorded in `merdian_reference.json` — no drift to reconcile.
+
+**No cron changes this session.** The three ENH-116 crons (`0 16` compile / `15 16` accrue / `55 3` relate) are unchanged; the compiler's new emits and its fetch-window fix are picked up automatically on the next nightly run.
+
+**Marketview — 4 deploys this session** via the canonical pipeline (`cd ~/meridian-connect && git pull && npm run build && sudo rsync -av --delete dist/ /var/www/marketview/ && sudo systemctl reload nginx`). Ambient Trajectory panel (`src/components/AmbientTrajectory.tsx`, NEW) is now the Home hero. Bundle hashes per build; `npm install` not `npm ci` (Lovable emits no `package-lock.json`).
+
+**Trading-calendar gate (ADR-020, `f8e287b`) — a topology-relevant behavioural change**, because it alters what **~6 scheduled AWS consumers** do on closed days: `run_merdian_shadow_runner_aws.py` (`*/5` orchestrator), `ingest_participant_positioning.py` (`0 14` / `30 15`), `accrue_expiry_outcomes.py` (`15 16`), `relate_ambient_to_open_local.py` (`55 3`), `compile_market_environment_local.py` (`0 16`), plus every `assert_trading_day_or_exit()` caller. Until this fix, a missing `trading_calendar` row read as **open** — so every unseeded weekend and, critically, **every weekday NSE holiday beyond the seeder's 14-day horizon** would have run the full chain on a closed market. The weekday crons are `1-5`-restricted so weekends never bit; **holidays would have**. Next holiday: 2026-09-14 (outside the seed horizon — guaranteed unseeded). First live proof of the fix came on the S68 backfill: `2026-05-28: no row; rule engine says CLOSED (Bakri Eid)`.
+
+*Deployment Topology updated Session 68, 2026-07-12 (§S68 — EC2 git auth moved to an SSH ed25519 deploy key `meridian-engine-ec2-deploy` [PAT expiry / `~/.git-credentials` 0-byte truncation was a recurring silent breakage]; AWS crontab captured to `docs/registers/aws_crontab.txt` + `.gitignore` negation, cron layer now rebuild-grade; `equity_eod` confirmed single-writer/single-slot [S67 “untraced writer” closed — it was manual sweeps, and no systemd timer touches it]; trading-calendar gate now resolves missing rows via the rule engine per ADR-020, changing closed-day behaviour for ~6 scheduled consumers; 4 Marketview deploys. Zero cron changes. Zero MALPHA changes. Commits `d3b02bb`, `f8e287b`.)*

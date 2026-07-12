@@ -903,3 +903,47 @@ Cross-refs: tech_debt TD-S66-NEW-1..5 + TD-S65-NEW-1 (CLOSED); Enhancement Regis
 **Corrected write-path model (supersedes §S66's "two decoupled chains"):** `run_equity_eod_until_done.py` is the EOD **chain runner** — it loops ingest (`ingest_equity_eod_local.py` → `equity_eod`) → build (`build_breadth_indicators_daily_local.py` → `breadth_indicators_daily`) → coverage (`coverage_check.py`), cursored, until the universe is drained. The builder gates on 95% of `equity_eod` per date; the consumer `build_wcb_snapshot_local.py` reads `breadth_indicators_daily` for Lens-2. All three now run daily under the `40 10` AWS cron (which the S67 loop-fix made able to complete). The tick-derived A/D breadth chain (§S66 bullet 3) remains a separate, independent lineage — that part of §S66 stands.
 
 TD-S66-NEW-1/2/3/4 CLOSED, NEW-5 reframed. No new ADR (bug-fixes/hardening — Rule 10 excludes bug fixes; breadth root-cause is a scheduler gap, operational). Cross-refs: tech_debt TD-S66-NEW-1..5 (updated); merdian_reference.json v46 S67 change_log; Deployment Topology §S67; CLAUDE.md v1.44. **Carry to S68:** track the `40 10` cron in a repo file (canonical crontab source); trace the unidentified AWS `equity_eod` writer; credential durability (PAT expiry / SSH deploy key).
+
+
+---
+
+## §S68 (2026-07-12) — update log
+
+**Schema — `market_environment_snapshots` gains two columns (ENH-116 Objective 1):**
+
+| Column | Type | Purpose | Commit |
+|---|---|---|---|
+| `front_expiry` | `date` | **Clock-2 cycle-position anchor.** Front expiry as of that settled session. The view derives DTE, cycle-progress AND rollover boundaries from the stored series — the raw date is strictly richer than a derived `dte` scalar. Per-symbol (NIFTY and SENSEX carry different expiries). | `ddd7077` |
+| `eod_spot` | `numeric` | **Settled price anchor.** The three-clock panel plots over price; the table previously had no price column, forcing a client-side join + intraday→daily collapse. Value was already in hand at row-assembly. | `403cf4f` |
+
+Table is now **26 columns**. No new grant needed — `GRANT SELECT` is table-level, so the anon/frontend read covers new columns automatically.
+
+**Writers — `compile_market_environment_local.py` (fetch-window correctness fix, `177aa3a`):**
+
+`fetch_gamma_daily` / `fetch_breadth_daily` / `fetch_wcb_daily` were **`gte`-only** — an open-ended forward window `[as_of−30d, ∞)`. Harmless on the nightly `0 16` cron (as_of = today → the newest row IS today's), **silently wrong on any `--as-of` backfill**, where `gamma_daily[-1]` resolved to the latest bar in the *table* rather than the as-of bar — stamping current values onto historical rows. Now bounded: `main()` sets module-level `UNTIL_ISO` (as_of IST end-of-day → UTC) and all three fetchers are wrapped in `_ts_window()`, which appends `("ts", f"lte.{UNTIL_ISO}")`. `fetch_participant_nse()` already bound both ends and was never affected — which is exactly how the bug was diagnosed (it was the only column that varied across a contaminated backfill).
+
+> **General rule (now in CLAUDE.md):** a time-range fetcher must bind BOTH ends. A `gte`-only PostgREST filter is an open-ended window.
+
+**Gate — `core/trading_calendar_gate.py` (ADR-020, `f8e287b`):**
+
+`is_trading_day()` no longer returns `True` on a missing `trading_calendar` row. Missing-row resolution now routes through the **V18E rule engine** `trading_calendar.get_session_config_for_date()` via a new `_resolve_absent_day()` helper (lazy import, exception-wrapped):
+
+| Input | Old behaviour | New behaviour |
+|---|---|---|
+| Row present | authoritative | **unchanged** — authoritative |
+| **No row**, weekend | `True` (allow) ❌ | **`False`** (closed) ✅ |
+| **No row**, NSE holiday | `True` (allow) ❌ | **`False`** (closed) ✅ |
+| **No row**, Muhurat special session | `True` | **`True`** — a real weekend session is never blocked |
+| **No row**, normal weekday | `True` | `True` |
+| Rule engine unavailable (json missing / import fails) | n/a | **`True`** — fail-open contract preserved |
+| HTTP non-200 / no creds / exception | `True` | `True` — unchanged |
+
+**Why:** the gate and `seed_trading_calendar.py` held opposite contracts for what an absent row means — the seeder omits closed days *because* it reads absence as closed; the gate read absence as open. Every unseeded weekend and every NSE holiday therefore read as a trading day for **~6 live consumers** (`run_merdian_shadow_runner_aws.py`, `ingest_participant_positioning.py`, `accrue_expiry_outcomes.py`, `relate_ambient_to_open_local.py`, `compile_market_environment_local.py`, + `assert_trading_day_or_exit()` callers) since S60. See **ADR-020**.
+
+**Registers — new tracked file:** `docs/registers/aws_crontab.txt` (`d3b02bb`) — the live AWS crontab, captured and committed. Previously the `40 10` EOD chain existed **only** in live `crontab -l`; the documented snapshot convention wrote to untracked `logs/`. Restore = `crontab docs/registers/aws_crontab.txt`. `SHELL=/bin/bash` must remain line 1 (S53 root cause). Required a `.gitignore` negation (`!docs/registers/aws_crontab.txt`) — line 44's `*.txt` was silently swallowing it.
+
+**`equity_eod` writer inventory — CONFIRMED SINGLE (S67 “untraced writer” closed).** Exactly one writer (`ingest_equity_eod_local.py`), invoked by exactly one caller (`run_equity_eod_until_done.py`), scheduled at exactly one slot (`40 10 * * 1-5`). `systemctl list-timers` shows no systemd timer touches it (the three units are `merdian-wsfeed-start/stop` — ADR-018 D1 breadth lineage — plus certbot). The S67 off-slot writes were manual sweeps.
+
+**Frontend — `meridian-connect` `src/components/AmbientTrajectory.tsx` (NEW).** Three stacked lanes (price / Clock-2 cycle / Clock-1 regime) sharing one x-axis with cycle dividers spanning all lanes; per-lane autoscaling; MONTH/CYCLE/WEEK timeframe switcher where each view promotes one clock. Reads `market_environment_snapshots` (settled series) + `gamma_metrics` (live Clock-3). Home is now: verdict → trajectory hero → drill-down.
+
+*System Map updated Session 68, 2026-07-12 (§S68 — `market_environment_snapshots` +`front_expiry` +`eod_spot`; ambient compiler fetch-window bounded at as_of; `core/trading_calendar_gate.py` resolves missing rows via the V18E rule engine per ADR-020; `docs/registers/aws_crontab.txt` tracked; `equity_eod` single-writer confirmed; `AmbientTrajectory.tsx` shipped). Commits `d3b02bb`, `ddd7077`, `f8e287b`, `403cf4f`, `177aa3a`. Cross-refs: ADR-020, ENH-116 (Objective 1 COMPLETE), tech_debt §S68 footer, CLAUDE.md v1.45.*

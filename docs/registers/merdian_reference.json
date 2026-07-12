@@ -1,9 +1,10 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v46",
+    "version": "v47",
     "generated": "2026-06-12",
     "sources": [
+      "Session 68 (2026-07-12): All four S67 DO-FIRST carries CLOSED + ENH-116 Objective 1 SHIPPED end-to-end + ADR-020 ACCEPTED. CARRIES: (1) PK re-upload verified already current at S67 (cleared on evidence). (2) AWS crontab captured to docs/registers/aws_crontab.txt (d3b02bb) - the 40 10 EOD chain lived ONLY in live crontab -l; required a .gitignore negation because line 44 *.txt was silently swallowing it (git status showed NO untracked file; git check-ignore -v was the only tell). Cron layer now rebuild-grade. (3) 'Untraced equity_eod writer' CLOSED - no rogue writer exists: exactly ONE writer (ingest_equity_eod_local.py) invoked by ONE caller (run_equity_eod_until_done.py) at ONE slot (40 10); systemctl list-timers shows no systemd timer; the S67 off-slot writes (10:26 UTC 07-08, 04:15 UTC 07-09) were the operator's own manual sweeps. (4) EC2 git auth moved from expiring PAT-over-HTTPS to an SSH ed25519 deploy key (meridian-engine-ec2-deploy); write access proven end-to-end (push + force-with-lease rewind, no remote residue). Deploy keys don't expire - the recurring ~/.git-credentials 0-byte failure class is closed. Residual: meridian-connect on the box still uses HTTPS+PAT (one key per repo). ENH-116 OBJECTIVE 1: three Canon-v3 patches to compile_market_environment_local.py - front_expiry emit (ddd7077, Clock-2 cycle-position anchor; the raw date beats a derived dte because the view derives DTE + cycle-progress + rollover boundaries from the stored series; verified per-symbol NIFTY 07-14 / SENSEX 07-16), eod_spot emit (403cf4f, settled price anchor - the table had NO price column and the panel plots three clocks OVER price), and a LATENT CORRECTNESS FIX (177aa3a): fetch_gamma_daily/fetch_breadth_daily/fetch_wcb_daily were gte-ONLY (window [as_of-30d, INFINITY)) - harmless nightly (as_of=today) but on ANY --as-of backfill gamma_daily[-1] resolved to the LATEST bar in the table, stamping today's values onto every historical row (15 backfilled sessions all carried identical eod_spot=24203.5 / front_expiry=2026-07-14 / persistence=0.85; a 06-19 row claiming a 07-14 WEEKLY expiry = dte 25, impossible). THE DIAGNOSTIC TELL REQUIRED NO INFERENCE: cycle_oi_call_put_asym was the ONLY column that varied - and fetch_participant_nse() is the ONLY fetcher binding BOTH gte and lte. Fixed by binding UNTIL_ISO (as_of IST end-of-day -> UTC) + _ts_window() on all three. Post-fix every value moved (persistence 0.85->0.5556; max-gamma drift -60->+90; pct_above_20dma_slope null->-2.31; participant NEUTRAL->BULLISH; div BULLISH_DIV->CONFIRM) and SENSEX resolved MONTHLY where NIFTY read WEEKLY. DATA: 44 settled sessions 2026-05-08 -> 2026-07-10, asym_present=44 / asym_null=0; front_expiry STEPS with dte sawtoothing to 0 at each expiry (06-23->06-30->07-07->07-14); Clock-1 persistence shows a genuine multi-week arc (SENSEX ~100% early May -> 37% mid-May -> 75% July, a full cage-break-and-rebuild). expiry_outcomes verified CLEAN (no re-accrual): the two live rows were written by the 15 16 cron ON the expiry day (as_of=today, so the open-ended window terminated at today anyway); id-66 matches the corrected 07-06 row exactly. ADR-020 ACCEPTED (Rule 10 mandatory - architecture + trust-anchor semantics): core/trading_calendar_gate.py ('no row -> allow, fail-open by contract') and seed_trading_calendar.py ('only OPEN days get a row - a missing row is correctly read as closed') held OPPOSITE, individually-correct, individually-documented contracts for what an absent trading_calendar row means. Composed: EVERY unseeded weekend and EVERY NSE holiday read as a TRADING DAY for ~6 live consumers since S60. Decision: ABSENCE IS NOT A VERDICT - missing-row resolution routes through the V18E rule engine (weekend->closed, holiday->closed, Muhurat special session->OPEN, weekday->open); fail-open preserved for GENUINE errors only (missing json / unparseable date / import failure -> True); lazy engine import so the gate keeps its self-sufficiency (TD-S60-NEW-5). weekday>=5 => closed was EXPLICITLY REJECTED (it would block Muhurat, a real weekend session). 10/10 fixture scenarios pass. Live proof: 2026-05-28 -> CLOSED (Bakri Eid), a WEEKDAY holiday the old gate would have passed straight through. REMEDIATION: 14 phantom market_environment_snapshots rows (weekend as_of/for_session, all ambient_compiler_s62, all from this session's own backfill) swept + deleted; 3 genuinely-settled sessions mis-routed to Saturdays recompiled (06-25->06-29, 07-03->07-06, 07-10->07-13). Holiday axis came back EMPTY - timing luck, not gate soundness (the compiler only began writing at S62; of 15 NSE-2026 holidays only 06-26 fell in its lifetime and it HAD a row). Next holiday 2026-09-14 sits beyond the seeder's 14-day horizon. MARKETVIEW v6->v9 (production): Home restructured to verdict -> three-clocks-over-price HERO -> everything else one-click drill-down. Four Lovable prompt docs homed (377239b v6, 4976343 v7, e5232b5 v8, + v9 label pass). v7 fixed a real frontend bug caught by reading rendered values against the DB: verdict card + four-lens strip were reading data[0] of an ASCENDING array (the OLDEST row) - the page rendered beautifully and was three weeks stale (as-of 19 Jun, asym 0.0362); fixed to newest-row, verified as-of 10 Jul / asym -0.0972. Three stacked lanes sharing one x-axis with cycle dividers spanning all; EVERY lane autoscaled to observed range (both clocks had been flat smears - +/-0.15 data on a +/-1 axis, 0.50-0.85 persistence on a 0-1 axis); MONTH/CYCLE/WEEK switcher where EACH TIMEFRAME PROMOTES ONE CLOCK (MONTH->Clock-1 top+tallest, CYCLE[default]->Clock-2, WEEK->Clock-3 live furniture + Clock-1 collapses to a chip). NULL asym renders as a GAP, never zero (a stale participant board ABSTAINED per ADR-018 D2; drawing 0 would assert 'perfectly balanced OI'). v8 fixed a flaw in the v7 spec: scoping WEEK to strictly the current cycle made it degenerate right after every rollover (SENSEX rolled 07-09 -> '1 settled session in week window') - floored to >=6 sessions extending into the dimmed prior cycle. TDs_NEW=0. TDs_CLOSED=0 (both bugs fixed same-session; one escalated to ADR-020 - architecture, not debt). ADRs_NEW=1 (ADR-020). COMMITS=8 (d3b02bb, ddd7077, f8e287b, 403cf4f, 177aa3a, 377239b, 4976343, e5232b5) + 4 meridian-connect builds. CLAUDE.md v1.44->v1.45; merdian_reference.json v46->v47. Ten-file doc-close per Doc Protocol v4 Rule 3 + Rule 11 full-file no-crunch. CARRY_FORWARD_TO_S69: (1) ~28 bespoke inline calendar gates still to migrate onto core/trading_calendar_gate.py - NOW A CORRECTNESS ITEM, not tidiness: every unmigrated gate is a module that does NOT inherit ADR-020; (2) optional ADR-020 belt - have seed_trading_calendar.py also write closed days (is_open=false) so the table is self-describing for direct readers (P3); (3) ENH-116 remaining objectives (Lens-4 macro feed - operator: not USDINR now; pairwise-divergence flags; expiry memory beyond Phase-B); (4) ENH-116 Objective 2 / Phase-C is a WAIT not a build - real N ~= 1 per regime cell because the S62 retro-seed is degenerate (RANGE/ALIGNED with NULL lenses, div hardcoded NEUTRAL); grows only by forward accrual; DO NOT re-run the seed; (5) ENH-118 vol-regime / Vega-crush ambient lens (P0 India VIX writer -> Phase A into ENH-116); (6) watch the >=2-consecutive-DIVERGENT-session callout - not yet fired on live data; first live run is worth a CASE file if it precedes a real move; (7) meridian-connect on the box still pulls HTTPS+PAT - needs its own deploy key. BANKED BACKLOG (unchanged): TD-S60-NEW-5 (core.config Windows BASE_DIR); ENH-SDM three_wick_reversal P3; Zerodha token rotation (TD-NEW-7); datetime.utcnow() deprecation; momentum vwap-unit scaling; 68-row ohlc() tail; ENH-117 branded oauth2-proxy sign-in.",
       "Session 52 (2026-06-12): Observability infrastructure deployment — 5 monitoring scripts (telegram_utils, monitor_orchestrator_health, refresh_health_dashboard, validate_compute_contracts, enforce_orchestrator_timeout; 761 lines total); 4 crontab entries active; Telegram integration live; status.json health snapshot every 1 min; time-to-detection <2 min for capture gaps, orchestrator failures, compute hangs, crontab typos, stale data.",
       "Session 38 (2026-05-26): Live integration check + ADR-017 ACCEPTED + ENH-110/111/112 PROPOSED + P5 1H zone diagnostic CLOSED-NO-BUG + P6 TD-061 final long-tail closure 0 live window-flash sources + Exp 53/53b/53c confluence experiment arc (1 holdout-validated gate ENH-111 + 1 deferred resonance + 1 surprise exit-window-decay ENH-112) + 8-canonical-file doc-close pack per Doc Protocol v4 Rule 3 full-file no-crunch. ADRs new: 1 (ADR-017). ENHs new: 3 (ENH-110/111/112). ENH status updates: 1 (ENH-83 deferred → required). TDs closed: 1 (TD-061 final long-tail). TDs new pending S39+: 3 (TD-S38-NEW-1/2/3). Production patches: 0. Task Scheduler changes: 3 (Dhan_Token_Refresh pythonw migration + Intraday_Session_Start cmd-wrapper drop + Market_Tape_1M Disable). AWS deployments: 0. Commits: 0. Tags: 0. Window flash sources final: 0. Confluence hypothesis verdict: partially yes, narrowly scoped, one deployable gate.",
       "Session 28 (2026-05-13): 3 production commits (72622a9 + de23467 + 447634c), tag session-28-close. P0 verification PASS 09:25 IST 2026-05-12. 8 TDs closed same-session (first 8-TD-close session): TD-NEW-12 (AWS shadow runner writing to production gamma_metrics 13 days due to silent architecture violation — --shadow flag plumbed via TARGET_TABLE constant routing SELECT + UPSERT + ExecutionLog telemetry + AWS wrapper line 479 + schema reconciliation 7 cols + UNIQUE constraint + NOTIFY pgrst), TD-NEW-4 (_dte_from_ts helper from result.ts not date.today() wall clock), TD-NEW-13 (microsecond regex normalization to 6 digits for Python 3.10 fromisoformat compatibility; 60/60 retry success), TD-NEW-8 (MERDIAN_WS_Stop pkill → pkill -9 SIGKILL config-only), TD-NEW-6 (MERDIAN_WS_Feed_0900 Local task Disabled durable), TD-NEW-5 (run_ict_htf_zones_daily.bat extended with Pine overlay Call 3 chain), TD-NEW-10 (closed filed-in-error — intentional Phase 4B Order Placer audited live), TD-NEW-11 (RESOLVED as documentation gap — merdian_order_placer.py catalogued Topology §3 + §7.1 + §8.2). 3 TDs NEW pending S29+: TD-NEW-7 S1 (MALPHA Zerodha token Supabase automation mirroring Dhan flow), TD-NEW-9 S2 (ws_feed_zerodha.py heartbeat), TD-NEW-15 S2 (ENH-97/98 cross-doc rename propagation across 8 files + ADR-002 v2). TD-NEW-14 slot soft-reserved for gamma_metrics_shadow history backfill (Topology §9 Q14 OPTIONAL). P1 broken-window gamma_metrics backfill CLOSED 587/587 rows clean across 2026-05-08 + 2026-05-11; codified D.11.4. P2 Enhancement Register filing CLOSED with renumber — ENH-97 (vol_analytics + RR ratio writer, ADR-002 v2 P7, Tier 1, PROPOSED) + ENH-98 (vanna/charm second-order Greeks, ADR-002 v2 P8, Tier 2, PROPOSED). Renumbered from S27 verbally-NEW 'ENH-84'/'ENH-85' due to slot collision at formal filing time (slots occupied by SHIPPED REFRESH ZONES button S14 + PROPOSED-DEFERRED PO3 lock S13). Per Doc Protocol v2 Rule 5 monotonic-no-reuse, new entries filed at next-available IDs. Cross-doc rename propagation queued as TD-NEW-15. MALPHA catalogued as third environment in Deployment Topology §1.5. merdian_order_placer.py catalogued as MERDIAN-AWS-only Phase 4B service. AWS shadow architecture RESTORED via TD-NEW-12 fix. CLAUDE.md v1.18 → v1.19 (B22 cross-Python compat + B23 Phase 0 closure meta-pattern + 6 S28 operational findings). Assumption Register §D.11 added (D.11.1 shadow architecture invariant; D.11.2 as-of-date from result.ts; D.11.3 cross-Python microsecond normalization; D.11.4 P1 backfill closure). 8 doc files modified. Schema changes: 1 (gamma_metrics_shadow ALTER TABLE ADD COLUMN x7 + ADD CONSTRAINT UNIQUE + NOTIFY pgrst). BUGS_LATENT_SURFACED: 4. SILENT_ARCHITECTURE_VIOLATION_DAYS: 13. CARRY_FORWARD_TO_S29: P0_PRIMARY ENH-97 vol_analytics build per ADR-002 v2 §P7; P0b S29-day shadow architecture verification; P0c project knowledge upload; P1 TD-NEW-7; P1b TD-NEW-15 ENH rename propagation; P2 Phase 0b overlay calibration; P2b Phase 0c methodology; P3 TD-NEW-9; P4 gamma_metrics_shadow history backfill OPTIONAL; P5 replay parity TD-NEW-2 + TD-NEW-12 + TD-NEW-4 + TD-NEW-13; P6 TD-080; P6b S21+ patches reconcile; P7 ADR-005 draft; P7b ADR-009 draft; P8-P14 older items.",
@@ -735,12 +736,17 @@
     "measure_rate_sensitivity.py": {
       "local_path": "C:\\GammaEnginePython\\measure_rate_sensitivity.py",
       "aws_path": "/home/ssm-user/meridian-engine/measure_rate_sensitivity.py",
-      "reads": ["hist_future_bars_1m", "hist_option_bars_1m (historical IV/GEX sensitivity sweep)"],
+      "reads": [
+        "hist_future_bars_1m",
+        "hist_option_bars_1m (historical IV/GEX sensitivity sweep)"
+      ],
       "writes": [],
       "call_signature": "read-only research probe (no DB writes)",
       "cadence": "one-shot research (ENH-07 A Phase 2)",
       "status": "RESEARCH / READ-ONLY (ENH-07 A Phase 2, S61; documented S63). Rate-sensitivity probe measuring how the historical IV/GEX solve moves as the risk-free rate is varied across the window. Its 'rate immaterial' finding is the empirical basis of the S62 ENH-07 A no-op close. Three main commits 894332a (initial probe +328) -> cd7078d (perf rework: drop million-row sample_dates -> pure-python candidates + early-stop, SSM-timeout-proof) -> 0f997c7 (drop nonexistent basis_pct column from hist_future_bars_1m select). Doc-close-omitted at S61/S62; documented S63. No production path.",
-      "open_items": ["Working-copy edit uncommitted on top of 0f997c7 (main<->Local diverge on this file) -- banked Local-drift cleanup"]
+      "open_items": [
+        "Working-copy edit uncommitted on top of 0f997c7 (main<->Local diverge on this file) -- banked Local-drift cleanup"
+      ]
     },
     "compute_basis_context_local.py": {
       "local_path": "C:\\GammaEnginePython\\compute_basis_context_local.py",
@@ -4794,36 +4800,36 @@
       "truncated_each_run": false
     }
   },
-  "version": "v46",
+  "version": "v47",
   "last_updated_session": "Session 67",
   "last_updated_date": "2026-07-10",
   "change_log": [
-      {
-        "session": "S67",
-        "date": "2026-07-10",
-        "type": "S66 breadth/DMA freeze RESOLVED (root cause corrected: NOT decoupled/unidentified writer -- Local-retired scheduler gap + self-aborting loop) + 3 defects hardened + git reconciled. PASS.",
-        "summary": "Closed the month-long breadth/DMA freeze carried from S66. The S66 framing was WRONG on two counts, both refuted by reading source/state: (1) the DMA writer is build_breadth_indicators_daily_local.py (upserts breadth_indicators_daily on_conflict=universe_id,ticker,trade_date; greps missed it because the table string and 'upsert' never share a line), NOT unidentified; it is invoked by run_equity_eod_until_done.py as DAILY_REBUILD_SCRIPT and reads equity_eod from Supabase (no Dhan token). (2) The freeze was NOT caused by decoupling: Local was retired at AWS migration (~Jun 7; all 22 MERDIAN_* Local scheduled tasks correctly Disabled per ADR-006 -- do NOT re-enable). The canonical AWS cron '40 10 * * 1-5 run_equity_eod_until_done.py >> logs/eod.log' existed all along and the cron daemon fires (sentinel-tested: cron-alive landed within the minute) -- but every scheduled run self-aborted at lap 1: on a cold day the cursored ingest (50/lap) had not filled equity_eod to the builder's 95% gate, the builder raised rc=1, and run_equity_eod_until_done.py L182 broke the whole loop on that rc, truncating the sweep before the cursor drained. logs/eod.log last-written Jul 7 12:38 (last manual completion); table frozen at 06-04 (last date to clear 95% before the loop began self-aborting). FIX (item 1, f5b9afd): builder rc!=0 made non-fatal in the loop (L182-188); only ingest failure / cursor==0 end it; builder succeeds idempotently on the lap the day crosses 95%. Verified: 14-lap sweep cursor 700->0, DMAs rebuilt 06-04->07-06 at 1,355 rows / 97.83%. Lens-2 unfrozen. THREE DEFECTS HARDENED (item 2, each Canon-v3 with _PRE_S67 backup, verified live): TD-S66-NEW-2 build_wcb_snapshot_local.py build_daily_map 3-trading-day recency floor (RECENCY_FLOOR_TRADING_DAYS + _weekdays_back) -> stale-DMA tickers to missing_daily (ADR-018 D2); TD-S66-NEW-3 check_eod_coverage_freshness.py denominator re-anchored to _active_universe_count() (live dhan_scrip_map = 1,385 active, NOT the ~1,159 trailing-window peak which the S65 entry mis-stated as the ceiling), window-peak demoted to sanity cross-check, min-coverage 95->92 (true ceiling 97.83% = ~28 DH-905 dead security_ids + 2 no-history), live run RESULT OK exit 0; TD-S66-NEW-1 ingest_equity_eod_local.py token read-at-use (_current_dhan_token() re-loads .env per fetch at L113, L18/L34 kept for startup validation), verified fetch_dhan_daily_once('2885',...) -> 6 RELIANCE candles auth 200. TD-S66-NEW-5 REFRAMED not-a-bug: 07-07 was unfilled (climbed 28->94% as sweeps + an unattended writer filled it); the 95% gate correctly held DMAs at the last complete date; Dhan 1-3 day publish lag + no-sweep-since-Jun-7; equity_eod.trade_date column DOES exist (date type) -- the S66 hallucinated-column halt was itself the error. CORRECTED GROUNDED FIGURES: active equity universe = 1,385 (dhan_scrip_map is_active + dhan_security_id not null), NOT ~1,159 (guard trailing-window peak, ~200 low); true EOD coverage ceiling = 97.83% (structural DH-905 tail), not a shortfall and not '100% active'. GIT RECONCILED (item 3): the four in-place EC2 edits committed f5b9afd (4 files, +95/-8; rate_sens.out/status.json artifacts excluded; *_PRE_S67 backups gitignored), pushed to origin (after a 0-byte/expired ~/.git-credentials PAT blocked the first attempts; re-primed with a fresh repo-scoped token via hidden read -rs, never exposed), Local git pull --ff-only clean -> Local == EC2 == origin == f5b9afd; canonical Local->git->EC2 vector restored (this session inverted it once as a documented exception since the diagnosis had to run on the box). SECURITY: a ghp_ PAT was pasted in cleartext mid-session during push troubleshooting; operator confirmed old/leaked tokens expired (inert) + generated a fresh token -- treat exposed value as dead. TD-S66-NEW-1/2/3/4 CLOSED, NEW-5 reframed. 0 new ADR (all bug-fixes/hardening -- Rule 10 excludes bug fixes; breadth root-cause is operational). CLAUDE.md v1.43->v1.44; this file v45->v46. PASS. 7-file doc-close per Doc Protocol v4 Rule 3 full-file no-crunch (surgical edit -> complete verified file, line+byte checked against S66 disk baseline). Carry to S68: canonical crontab source (track the 40 10 cron in-repo); unidentified AWS equity_eod writer (backfilled 07-07 mid-session, benign untraced); credential durability (PAT expiry / SSH deploy key); ENH-116 Objective 1 ambient trajectory view now UNBLOCKED (breadth trustworthy + self-guarding).",
-        "commits": [
-          "f5b9afd"
-        ],
-        "files_modified": [
-          "run_equity_eod_until_done.py (loop builder-rc non-fatal, L182-188)",
-          "build_wcb_snapshot_local.py (build_daily_map recency floor, TD-S66-NEW-2)",
-          "check_eod_coverage_freshness.py (true-active-universe denominator 1385 + min-cov 92, TD-S66-NEW-3)",
-          "ingest_equity_eod_local.py (token read-at-use, TD-S66-NEW-1)"
-        ],
-        "doc_versions": "CLAUDE.md v1.43->v1.44; merdian_reference.json v45->v46",
-        "td_closed": [
-          "TD-S66-NEW-1",
-          "TD-S66-NEW-2",
-          "TD-S66-NEW-3",
-          "TD-S66-NEW-4"
-        ],
-        "td_reframed": [
-          "TD-S66-NEW-5 (not-a-bug; ingest-layer residual carried)"
-        ],
-        "adrs_new": []
-      },
+    {
+      "session": "S67",
+      "date": "2026-07-10",
+      "type": "S66 breadth/DMA freeze RESOLVED (root cause corrected: NOT decoupled/unidentified writer -- Local-retired scheduler gap + self-aborting loop) + 3 defects hardened + git reconciled. PASS.",
+      "summary": "Closed the month-long breadth/DMA freeze carried from S66. The S66 framing was WRONG on two counts, both refuted by reading source/state: (1) the DMA writer is build_breadth_indicators_daily_local.py (upserts breadth_indicators_daily on_conflict=universe_id,ticker,trade_date; greps missed it because the table string and 'upsert' never share a line), NOT unidentified; it is invoked by run_equity_eod_until_done.py as DAILY_REBUILD_SCRIPT and reads equity_eod from Supabase (no Dhan token). (2) The freeze was NOT caused by decoupling: Local was retired at AWS migration (~Jun 7; all 22 MERDIAN_* Local scheduled tasks correctly Disabled per ADR-006 -- do NOT re-enable). The canonical AWS cron '40 10 * * 1-5 run_equity_eod_until_done.py >> logs/eod.log' existed all along and the cron daemon fires (sentinel-tested: cron-alive landed within the minute) -- but every scheduled run self-aborted at lap 1: on a cold day the cursored ingest (50/lap) had not filled equity_eod to the builder's 95% gate, the builder raised rc=1, and run_equity_eod_until_done.py L182 broke the whole loop on that rc, truncating the sweep before the cursor drained. logs/eod.log last-written Jul 7 12:38 (last manual completion); table frozen at 06-04 (last date to clear 95% before the loop began self-aborting). FIX (item 1, f5b9afd): builder rc!=0 made non-fatal in the loop (L182-188); only ingest failure / cursor==0 end it; builder succeeds idempotently on the lap the day crosses 95%. Verified: 14-lap sweep cursor 700->0, DMAs rebuilt 06-04->07-06 at 1,355 rows / 97.83%. Lens-2 unfrozen. THREE DEFECTS HARDENED (item 2, each Canon-v3 with _PRE_S67 backup, verified live): TD-S66-NEW-2 build_wcb_snapshot_local.py build_daily_map 3-trading-day recency floor (RECENCY_FLOOR_TRADING_DAYS + _weekdays_back) -> stale-DMA tickers to missing_daily (ADR-018 D2); TD-S66-NEW-3 check_eod_coverage_freshness.py denominator re-anchored to _active_universe_count() (live dhan_scrip_map = 1,385 active, NOT the ~1,159 trailing-window peak which the S65 entry mis-stated as the ceiling), window-peak demoted to sanity cross-check, min-coverage 95->92 (true ceiling 97.83% = ~28 DH-905 dead security_ids + 2 no-history), live run RESULT OK exit 0; TD-S66-NEW-1 ingest_equity_eod_local.py token read-at-use (_current_dhan_token() re-loads .env per fetch at L113, L18/L34 kept for startup validation), verified fetch_dhan_daily_once('2885',...) -> 6 RELIANCE candles auth 200. TD-S66-NEW-5 REFRAMED not-a-bug: 07-07 was unfilled (climbed 28->94% as sweeps + an unattended writer filled it); the 95% gate correctly held DMAs at the last complete date; Dhan 1-3 day publish lag + no-sweep-since-Jun-7; equity_eod.trade_date column DOES exist (date type) -- the S66 hallucinated-column halt was itself the error. CORRECTED GROUNDED FIGURES: active equity universe = 1,385 (dhan_scrip_map is_active + dhan_security_id not null), NOT ~1,159 (guard trailing-window peak, ~200 low); true EOD coverage ceiling = 97.83% (structural DH-905 tail), not a shortfall and not '100% active'. GIT RECONCILED (item 3): the four in-place EC2 edits committed f5b9afd (4 files, +95/-8; rate_sens.out/status.json artifacts excluded; *_PRE_S67 backups gitignored), pushed to origin (after a 0-byte/expired ~/.git-credentials PAT blocked the first attempts; re-primed with a fresh repo-scoped token via hidden read -rs, never exposed), Local git pull --ff-only clean -> Local == EC2 == origin == f5b9afd; canonical Local->git->EC2 vector restored (this session inverted it once as a documented exception since the diagnosis had to run on the box). SECURITY: a ghp_ PAT was pasted in cleartext mid-session during push troubleshooting; operator confirmed old/leaked tokens expired (inert) + generated a fresh token -- treat exposed value as dead. TD-S66-NEW-1/2/3/4 CLOSED, NEW-5 reframed. 0 new ADR (all bug-fixes/hardening -- Rule 10 excludes bug fixes; breadth root-cause is operational). CLAUDE.md v1.43->v1.44; this file v45->v46. PASS. 7-file doc-close per Doc Protocol v4 Rule 3 full-file no-crunch (surgical edit -> complete verified file, line+byte checked against S66 disk baseline). Carry to S68: canonical crontab source (track the 40 10 cron in-repo); unidentified AWS equity_eod writer (backfilled 07-07 mid-session, benign untraced); credential durability (PAT expiry / SSH deploy key); ENH-116 Objective 1 ambient trajectory view now UNBLOCKED (breadth trustworthy + self-guarding).",
+      "commits": [
+        "f5b9afd"
+      ],
+      "files_modified": [
+        "run_equity_eod_until_done.py (loop builder-rc non-fatal, L182-188)",
+        "build_wcb_snapshot_local.py (build_daily_map recency floor, TD-S66-NEW-2)",
+        "check_eod_coverage_freshness.py (true-active-universe denominator 1385 + min-cov 92, TD-S66-NEW-3)",
+        "ingest_equity_eod_local.py (token read-at-use, TD-S66-NEW-1)"
+      ],
+      "doc_versions": "CLAUDE.md v1.43->v1.44; merdian_reference.json v45->v46",
+      "td_closed": [
+        "TD-S66-NEW-1",
+        "TD-S66-NEW-2",
+        "TD-S66-NEW-3",
+        "TD-S66-NEW-4"
+      ],
+      "td_reframed": [
+        "TD-S66-NEW-5 (not-a-bug; ingest-layer residual carried)"
+      ],
+      "adrs_new": []
+    },
     {
       "session": "S65",
       "date": "2026-07-04 to 2026-07-07",
@@ -4840,7 +4846,9 @@
       "sql_staged": "sql/2026-07-03_enh116_console_anon_grants.sql (live in Supabase; homed/committed this session)",
       "guard_tune_pending": "check_eod_coverage_freshness.py (TD-S65-NEW-1): denominator -> active-universe/latest-EOD-date ticker count ~1,159; staleness off last trading day; ~3-day Dhan-lag tolerance",
       "oauth_rotation": "new Google OAuth client -> /etc/oauth2-proxy.cfg client_id+client_secret; oauth2-proxy active(running) PID 710516 @ 2026-07-04 08:05:42 UTC; old-client delete + denial test pending",
-      "tds_filed": ["TD-S65-NEW-1"],
+      "tds_filed": [
+        "TD-S65-NEW-1"
+      ],
       "tds_closed": 0,
       "adrs_new": 0,
       "outcome": "PARTIAL"
@@ -4901,16 +4909,44 @@
       "date": "2026-07-02",
       "type": "bug-fix deploy + ENH-115 P1 FII/DII participant-positioning build + ENH-07 A Phase-2 commit documentation",
       "summary": "TD-S62-NEW SENSEX compute_flip_level fix DEPLOYED (dc63bb3): regime-conditional near-spot sign-change walk + short-gamma display guard; SENSEX flip resolves near-spot; StockMojo cross-engine parity confirms; TD-S62-NEW RESOLVED. ENH-115 P1 BUILT end-to-end: participant-wise OI is NSE(NSCCL)-only (no BSE equivalent; BSE participant stub dropped), FII/DII cash is ONE consolidated NSE+BSE+MSEI fiidiiTradeReact report; parse_participant_oi.py + ingest_participant_positioning.py (EOD writer, trading-day gate, participant + non-fatal cash legs) + backfill_participant_oi.py; writer live-proven 5 rows 2026-07-01 TOTAL long==short==18953033; backfill 270 trading days 2025-05-28..2026-07-01 0 failures 17 weekday-holiday MISSes (cross-checked vs NSE calendar) seeding the ENH-116 expiry-memory cohort; cash dry-run reproduces StockMojo FII -1140.5 / DII +3159.24 (2026-07-01); two Mon-Fri AWS cron lines 14:00 + 15:30 UTC. Backfill Rule-18 corollary: dropped the DB trading_calendar gate (fail-opens on historical dates the reseeded table lacks -> 382-day inflation) for a local Mon-Fri weekday filter + NSE 404 as holiday ground truth; list-of-tuples PostgREST params. Three ENH-07 A Phase-2 commits 894332a->cd7078d->0f997c7 (measure_rate_sensitivity.py, read-only rate-sensitivity probe; the rate-immaterial finding underpins the S62 ENH-07 A no-op close) documented into the Enhancement Register + this file; ENH-07 A CLOSED no-op / B SHIPPED-Measure Part-1 reconciled.",
-      "commits": ["dc63bb3", "48e25c4", "afa273a", "31713c7", "f00eca9"],
-      "new_files": ["parse_participant_oi.py", "ingest_participant_positioning.py", "backfill_participant_oi.py", "sql/2026-07-02_enh115_participant_positioning.sql"],
-      "new_tables": ["participant_oi_daily", "fii_dii_cash_daily", "v_participant_oi_latest (freshness view)"],
+      "commits": [
+        "dc63bb3",
+        "48e25c4",
+        "afa273a",
+        "31713c7",
+        "f00eca9"
+      ],
+      "new_files": [
+        "parse_participant_oi.py",
+        "ingest_participant_positioning.py",
+        "backfill_participant_oi.py",
+        "sql/2026-07-02_enh115_participant_positioning.sql"
+      ],
+      "new_tables": [
+        "participant_oi_daily",
+        "fii_dii_cash_daily",
+        "v_participant_oi_latest (freshness view)"
+      ],
       "cron_changes": "2 Mon-Fri lines on MERDIAN AWS for ingest_participant_positioning.py (0 14 * * 1-5 + 30 15 * * 1-5, UTC)",
-      "tds_resolved": ["TD-S62-NEW (SENSEX flip fix, dc63bb3)"],
-      "tds_carried": ["TD-S62-NEW-2 (SENSEX 2026-01-19 gamma_concentration resume)"],
+      "tds_resolved": [
+        "TD-S62-NEW (SENSEX flip fix, dc63bb3)"
+      ],
+      "tds_carried": [
+        "TD-S62-NEW-2 (SENSEX 2026-01-19 gamma_concentration resume)"
+      ],
       "adrs_new": 0,
       "enh": "ENH-115 P1 BUILT; ENH-07 A CLOSED no-op / B SHIPPED-Measure (Part-1 reconciled) + three Phase-2 commits documented",
       "claude_md": "v1.39 -> v1.40",
-      "docs_updated": ["session_log.md", "CURRENT.md", "tech_debt.md", "MERDIAN_Enhancement_Register.md", "MERDIAN_Deployment_Topology.md", "MERDIAN_System_Map.md", "merdian_reference.json", "CLAUDE.md"]
+      "docs_updated": [
+        "session_log.md",
+        "CURRENT.md",
+        "tech_debt.md",
+        "MERDIAN_Enhancement_Register.md",
+        "MERDIAN_Deployment_Topology.md",
+        "MERDIAN_System_Map.md",
+        "merdian_reference.json",
+        "CLAUDE.md"
+      ]
     },
     {
       "session": "S62",
@@ -5016,5 +5052,25 @@
         "TD-S41-NEW-1/2/3/5 filed"
       ]
     }
-  ]
+  ],
+  "_s68_addendum": {
+    "adr": "ADR-020 - Calendar absence is not a verdict: the gate must resolve missing rows through the rule engine, never fail open (ACCEPTED 2026-07-12, commit f8e287b)",
+    "schema_changes": {
+      "market_environment_snapshots": {
+        "front_expiry": "date - Clock-2 cycle-position anchor (ENH-116 Obj-1, ddd7077). View derives DTE + cycle-progress + rollover boundaries from the stored series.",
+        "eod_spot": "numeric - settled EOD spot, the price the three clocks are plotted against (ENH-116 Obj-1, 403cf4f).",
+        "note": "table now 26 columns; GRANT SELECT is table-level so no new anon grant was needed"
+      }
+    },
+    "new_tracked_files": {
+      "docs/registers/aws_crontab.txt": "live AWS crontab, committed d3b02bb. Restore: crontab docs/registers/aws_crontab.txt. SHELL=/bin/bash MUST be line 1 (S53 root cause). Required .gitignore negation - line 44 *.txt was swallowing it.",
+      "docs/decisions/ADR-020-calendar-absence-is-not-a-verdict.md": "ADR-020",
+      "docs/lovable_prompts/lovable_prompt_marketview_v6_ambient_trajectory.md": "377239b",
+      "docs/lovable_prompts/lovable_prompt_marketview_v7_trajectory_declutter.md": "4976343",
+      "docs/lovable_prompts/lovable_prompt_marketview_v8_trajectory_polish.md": "e5232b5"
+    },
+    "ec2_git_auth": "SSH ed25519 deploy key ~/.ssh/id_ed25519_meridian (title meridian-engine-ec2-deploy, write access enabled, IdentitiesOnly yes, no passphrase). origin = git@github.com:balannavin-cyber/meridian-engine.git. PATs no longer used for meridian-engine.",
+    "compiler_fetch_window": "compile_market_environment_local.py: main() binds module-level UNTIL_ISO (as_of IST end-of-day -> UTC); fetch_gamma_daily/fetch_breadth_daily/fetch_wcb_daily wrapped in _ts_window() which appends ('ts','lte.<UNTIL_ISO>'). fetch_participant_nse() already bound both ends. Commit 177aa3a.",
+    "gate_semantics": "core/trading_calendar_gate.py::is_trading_day() - row present = authoritative; NO ROW -> _resolve_absent_day() defers to trading_calendar.get_session_config_for_date() (weekend/holiday -> closed; Muhurat special session -> OPEN); rule-engine failure -> True (fail-open contract preserved); non-200/no-creds/exception -> True (unchanged). Commit f8e287b, ADR-020."
+  }
 }

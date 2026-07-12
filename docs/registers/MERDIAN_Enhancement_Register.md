@@ -3683,11 +3683,61 @@ Net assessment: typed-column variant strictly dominates at MERDIAN's parameter s
 
 ---
 
-## S66 (2026-07-09) — ENH-116 base-rate cohort segregation + ambient trajectory view (Objective 1) designed
+## ENH-116 — S68 (2026-07-12): **Objective 1 (Ambient Trajectory) SHIPPED end-to-end**
 
-**ENH-116 base-rate publishing — cohort segregation SHIPPED (`4d25733`).** `v_expiry_base_rates` amended to `source = 'expiry_memory_live'` only. Rationale: the 65-row seed is degenerate by construction — `backfill_expiry_outcomes.py` calls `reconcile(net_gex_regime, "NEUTRAL")` with `div` HARDCODED NEUTRAL ([M4], breadth/participant NULL for the seed window), so DISTRIBUTION/ACCUMULATION/DIVERGENT are structurally unreachable, every seed row is RANGE/ALIGNED, and `--force` reproduces the identical all-RANGE table. Seed re-label is a DEAD END; forward accrual is the only path (do-not-re-run-the-seed holds). This ends seed/live blending in `regime_conditional_note`. **Correction to the S64 record:** Phase-B base-rate engine is BUILT + DEPLOYED (`1da0af6` view / `1be5239` receipt) — the compiler already reads the view nightly and holds the N-floored note ("get latest and hold" was already the design); it was mischaracterized as unstarted mid-session.
+**Status: Objective 1 COMPLETE (compiler → data → production panel). Objective 2 / Phase-C remains N-GATED (a wait, not a build).**
 
-**ENH-116 ambient trajectory view (Objective 1) — DESIGNED, build blocked.** Operator split the ambient-publishing goal into two products: **Objective 1** = show the weekly/monthly/daily ambient trajectory — three clocks (Clock-3 session / Clock-2 cycle-so-far / Clock-1 positioning) plotted over the price/futures track, with the divergence between the clock-lines as the headline "trend / no-trend / fade-risk" read for a PM. Clock-3 + Clock-1 draw from stored `market_environment_snapshots` rows; Clock-2 needs a per-cycle regime emit the compiler does not yet write (one addition). **Objective 2** = pattern/predict (Phase-C analog retrieval) — N-gated, forward-accrual only, deferred. Objective 1 is buildable now BUT is parked behind trustworthy breadth: Lens 2's slopes read the frozen-since-06-04 `breadth_indicators_daily` DMA layer (TD-S66-NEW-4), so a trajectory drawn today would render a 06-04-based breadth line. Lens 4 (macro) remains parked by operator choice (not USDINR now).
+### What shipped
 
-### Change Log
-- **2026-07-09 (S66):** ENH-116 base-rate view segregated to live cohort (`4d25733`); seed-degeneracy-by-construction documented (re-label dead end); Phase-B "built not unstarted" correction; ambient trajectory view (Objective 1) designed, build blocked on the breadth/DMA freeze (TD-S66-NEW-4). Last-updated: S66.
+The ambient loop had been emitting a *snapshot* verdict since S64. What it could not do was show **how the room got here** — the trajectory. S68 closed that.
+
+**Compiler (`compile_market_environment_local.py`), three Canon-v3 patches:**
+
+| Emit | Commit | Why it was the missing piece |
+|---|---|---|
+| **`front_expiry`** (date) | `ddd7077` | **Clock-2's cycle *position* anchor.** `cycle_oi_call_put_asym` already gave Clock-2's *magnitude*, but there was no x-axis — nothing said *where in the expiry cycle* a row sat, so the cycle hand could not be drawn and rollovers were invisible. The front expiry was already fetched (`gamma_metrics.expiry_date`), used once by `_next_expiry_type`, then discarded. Storing the **raw date** is strictly richer than a derived `dte` scalar: the view derives DTE **and** cycle-progress **and** rollover boundaries from the stored series. Verified per-symbol — NIFTY 2026-07-14 / SENSEX 2026-07-16. |
+| **`eod_spot`** (numeric) | `403cf4f` | **The settled price anchor.** The panel plots three clocks *over price* and `market_environment_snapshots` had **no price column** — the frontend would have needed a client-side join against `gamma_metrics` plus an intraday→daily collapse on every refresh. The settled spot was already in hand at row-assembly (`gamma_daily[-1]["spot"]`, the same series lens2 slopes on). Panel is now a single-table read. |
+| **Fetch-window bound** | `177aa3a` | **A latent correctness bug the backfill exposed** — see below. |
+
+### The bug the build surfaced
+
+`fetch_gamma_daily` / `fetch_breadth_daily` / `fetch_wcb_daily` were **`gte`-only**: the window ran `[as_of−30d, ∞)`. On the nightly cron (as_of = today) this is harmless — the newest row IS today's, which is why it survived unnoticed since S62. On **any `--as-of` backfill** it pulls rows right up to NOW, so `gamma_daily[-1]` is the **latest bar in the table, not the as-of bar** — stamping today's values onto every historical row.
+
+Observed: 15 backfilled NIFTY sessions all carrying `eod_spot=24203.5`, `front_expiry=2026-07-14`, `gex_regime_persistence_20d=0.85`, `wcb_slope_5d=7.176085` — **identical**. A 06-19 row cannot have a 07-14 *weekly* front expiry (dte=25 on a weekly cycle).
+
+**The diagnostic tell required no inference:** `cycle_oi_call_put_asym` was the **only** column that varied — and `fetch_participant_nse()` is the **only** fetcher that bounds *both* ends (`gte` lo / `lte` as_of). Lens 3 was correct throughout; the asymmetry *was* the proof. Fixed by binding `UNTIL_ISO` (as_of IST end-of-day → UTC) in `main()` and wrapping all three fetchers in `_ts_window()`. Nightly behaviour unchanged.
+
+Post-fix, every value moved: persistence 0.85→0.5556, max-γ drift −60→+90, `wcb_slope` 7.176→0.550, `pct_above_20dma_slope` **null→−2.31** (Lens-2 had been silently degraded too), participant tilt NEUTRAL→BULLISH, divergence BULLISH_DIV→CONFIRM — and SENSEX resolved **MONTHLY** where NIFTY read **WEEKLY**, a per-symbol distinction that was structurally impossible before.
+
+### Data state (post-fix, verified)
+
+- **44 settled sessions**, 2026-05-08 → 2026-07-10. `asym_present = 44`, `asym_null = 0` (the participant feed reaches back further than expected — Clock-2 has **no gaps** in the deep window).
+- `eod_spot` tracks a real path; `front_expiry` **steps** with `dte` sawtoothing to 0 at each expiry (06-23 → 06-30 → 07-07 → 07-14 — clean rollovers).
+- Clock-1 persistence shows a genuine **multi-week arc**: SENSEX ~100% early May → collapse to **37%** mid-May → rebuild to **75%** by July. A full cage-break-and-rebuild cycle, with the divergence markers clustering exactly where the cage broke. *This read did not exist in the system before S68.*
+- Verdicts differentiate (ACCUMULATION / TREND_UP / DISTRIBUTION / UNSTABLE) where the contaminated series had been frozen on two values.
+
+### `expiry_outcomes` — checked, CLEAN, no re-accrual needed
+
+The two live rows were written by the `15 16` cron **on the expiry day itself** (`created_at` 07-07 / 07-09 16:15, `source=expiry_memory_live`) — when `as_of = today`, the open-ended window terminated at today anyway. Cross-check: id-66 (NIFTY, expiry 07-07) carries `gex_regime_persistence 0.7368` + ACCUMULATION/ALIGNED + `breadth_div_at_open=CONFIRM` — an **exact match** to the corrected 07-06 backfill row. The bug never reached the labels.
+
+### Marketview — the trajectory panel is now the Home hero (v6 → v9, production)
+
+Home restructured per operator direction: **verdict line → three-clocks-over-price hero → everything else one click away** (four-lens strip, expiry memory, key params, net-γ intraday all demoted to drill-down). Four Lovable prompt docs homed at `docs/lovable_prompts/` (`377239b` v6, `4976343` v7, `e5232b5` v8, + v9 label pass).
+
+Design decisions worth keeping:
+
+- **The timeframe selector IS the clock selector.** MONTH promotes Clock-1 (positioning, multi-week) to the top and tallest lane; CYCLE (default) promotes Clock-2 (cycle-so-far); WEEK promotes Clock-3 (live session furniture — flip level, max-γ, pin zone) and collapses Clock-1 to a chip. Three clocks running at three speeds cannot share one zoom; each view lets one lead and the others recede.
+- **Three stacked lanes**, one shared x-axis, cycle dividers spanning all three — not one overloaded canvas.
+- **Autoscale every lane to observed range.** `cycle_oi_call_put_asym` (real range ±0.15) on a fixed ±1 axis and persistence (0.50–0.85) on a fixed 0–1 both rendered as **dead flat lines**. A correct value on the wrong axis is an invisible value.
+- **NULL is a gap, never a zero.** When the ADR-018 D2 recency guard makes Lens-3 *abstain*, drawing 0 would assert “perfectly balanced OI” — a statement that was never measured. Hard styling rule.
+- **WEEK must never be degenerate.** My own v7 spec scoped it to *strictly* the current cycle, which breaks immediately after every rollover (SENSEX rolled 07-09 → “1 settled session in week window”) — exactly when the operator most wants to see what the *last* cycle did. Floored to ≥6 sessions, extending into the prior cycle (dimmed, divider crisp).
+
+**Frontend bug caught by reading the rendered values against the DB:** v6 shipped with the verdict card, as-of/for line and four-lens strip reading `data[0]` of an **ascending** array — the *oldest* row — while the Clock-1 chip correctly read the last element. The page rendered beautifully and was **three weeks stale** (`as-of 19 Jun`, asym `0.0362`). Fixed to newest-row (v7); verified `as-of 10 Jul → for 13 Jul`, asym `−0.0972`. *A screenshot is evidence; “it renders” is not.*
+
+### Remaining ENH-116 scope
+
+- **Lens-4 (macro)** — still NULL; operator has ruled out USDINR for now. Blocked on feed selection.
+- **Pairwise-divergence flags** beyond the current breadth-vs-participant pair.
+- **Expiry memory beyond Phase-B** (the N-floored base-rate receipt is live and correctly says “insufficient N”).
+- **Objective 2 / Phase-C (analog retrieval) — genuinely a WAIT, not a build.** Real N ≈ **1 per regime cell**: the `expiry_memory_s62` retro-seed (ids 48–65) is **degenerate by construction** — every row RANGE/ALIGNED with NULL lenses, because the backfiller hardcoded `div=NEUTRAL` (breadth/participant unavailable historically). The genuine regimes therefore have N≈1 while the RANGE/ALIGNED bucket is full of non-labels. Forward accrual is the only path, exactly as the ENH-116 spec anticipated. **Do not re-run the seed.**
+- **Watch item:** the ≥2-consecutive-DIVERGENT-session callout has **not yet fired on live data** (the DIVERGENT sessions in the backfill are scattered, not consecutive). The first live run is worth a CASE file if it precedes a real move.

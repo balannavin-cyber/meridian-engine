@@ -101,9 +101,45 @@ def is_trading_day(trade_date_iso: str) -> bool:
             if rows:
                 row = rows[0]
                 return bool(row.get("is_open", True)) and row.get("open_time") is not None
-        return True  # no row / non-200 -> allow run (fail-open)
+            # _RESOLVE_ABSENCE_S68 -- no row: the seeder only writes OPEN days
+            # ("absence == closed" doctrine), so allowing here made every unseeded
+            # weekend / NSE holiday read as a trading day. Resolve absence against
+            # the V18E rule engine (the seeder's own source of truth) instead of
+            # guessing. Weekend/holiday -> closed; Muhurat special session -> open.
+            # Fail-open contract preserved: ONLY a computed is_open=False returns
+            # False; any engine error falls through to the allow below.
+            return _resolve_absent_day(trade_date_iso)
+        return True  # non-200 -> allow run (fail-open)
     except Exception as e:  # noqa: BLE001 -- fail-open is the contract
         print(f"[trading_calendar_gate] check failed ({e}); failing open (allow run)",
+              file=sys.stderr, flush=True)
+        return True
+
+
+def _resolve_absent_day(trade_date_iso: str) -> bool:
+    """_RESOLVE_ABSENCE_S68 -- decide a date with NO trading_calendar row.
+
+    Defers to the V18E rule engine (trading_calendar.get_session_config_for_date),
+    which encodes: weekend -> closed, NSE holiday (trading_calendar.json) -> closed,
+    special session (muhurat) -> OPEN, else open. This is the same authority
+    seed_trading_calendar.py uses, so gate and seeder can no longer disagree.
+
+    Import is lazy and every failure path returns True: the gate must never block a
+    live session because the rule engine could not be loaded or a date could not be
+    parsed. Only a confidently-computed closure returns False.
+    """
+    try:
+        from trading_calendar import get_session_config_for_date
+        cfg = get_session_config_for_date(trade_date_iso)
+        if not cfg.is_open:
+            print(f"[trading_calendar_gate] {trade_date_iso}: no row; rule engine says "
+                  f"CLOSED ({getattr(cfg, 'notes', 'closed')})",
+                  file=sys.stderr, flush=True)
+            return False
+        return True
+    except Exception as e:  # noqa: BLE001 -- fail-open is the contract
+        print(f"[trading_calendar_gate] {trade_date_iso}: no row and rule engine "
+              f"unavailable ({e}); failing open (allow run)",
               file=sys.stderr, flush=True)
         return True
 

@@ -473,6 +473,9 @@ def compile_symbol(symbol, as_of_date, for_session_date, since_iso, l3):
         # Clock-2 cycle anchor (S68 Clock-2 cycle anchor) — front expiry already in
         # hand; view derives DTE + cycle-progress + rollover boundaries from the series.
         "front_expiry": gamma_daily[-1].get("expiry_date"),
+        # Settled price anchor (S68 settled price anchor) — the EOD spot the clocks
+        # are plotted against; already in hand, same series lens2 slopes on.
+        "eod_spot": _f(gamma_daily[-1].get("spot")),
         **l1, **l2,
         # Lens 3 (participant, NSE) — recency-guarded (ADR-018 D2)
         "cycle_oi_call_put_asym": l3.get("cycle_oi_call_put_asym"),

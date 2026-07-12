@@ -57,6 +57,21 @@ LOOKBACK_DAYS = 30                    # calendar days pulled to build ~20 tradin
 # [VD-1] confirm the exact index_symbol literals in weighted_constituent_breadth_snapshots
 WCB_INDEX_SYMBOL = {"NIFTY": "NIFTY", "SENSEX": "SENSEX"}
 
+# _WINDOW_UPPER_BOUND_S68 — the ts-fetchers below were gte-only, so the window ran
+# [as_of-30d, INFINITY) and a --as-of backfill saw rows up to NOW: gamma_daily[-1]
+# was the LATEST bar, not the as-of bar, stamping today's values onto history.
+# Set in main() to the as_of IST end-of-day expressed in UTC. Nightly (as_of=today)
+# is unchanged. Lens 3 already bounded both ends and was never affected.
+UNTIL_ISO = None
+
+
+def _ts_window(params):
+    """Append the as-of upper bound to a ts-filtered PostgREST param list."""
+    p = list(params)
+    if UNTIL_ISO:
+        p.append(("ts", f"lte.{UNTIL_ISO}"))
+    return p
+
 
 # _PARSE_ISO_HARDENED_S65 - tolerant ISO parser. Postgres trims trailing-zero
 # microseconds, so timestamptz renders like '2026-06-09T06:35:06.1573+00:00'
@@ -168,34 +183,34 @@ def _f(v):
 
 # ---------------------------------------------------------------- fetchers
 def fetch_gamma_daily(symbol, since_iso):
-    rows = _get("gamma_metrics", [
+    rows = _get("gamma_metrics", _ts_window([
         ("symbol", f"eq.{symbol}"),
         ("ts", f"gte.{since_iso}"),
         ("select", "ts,spot,net_gex,gamma_concentration,regime,max_gamma_strike,expiry_date"),
         ("order", "ts.asc"),
-    ])
+    ]))
     return _daily_last(rows, "ts")
 
 
 def fetch_breadth_daily(since_iso):
     # [VD-2] market_breadth_intraday is market-wide (universe_id keyed), not per index.
     # Guard against 9999 test-pollution; take last clean row per IST date.
-    rows = _get("market_breadth_intraday", [
+    rows = _get("market_breadth_intraday", _ts_window([
         ("ts", f"gte.{since_iso}"),
         ("select", "ts,universe_count,pct_above_20dma,breadth_score,advances,declines"),
         ("order", "ts.asc"),
-    ])
+    ]))
     rows = [r for r in rows if (r.get("universe_count") or 0) < 5000]
     return _daily_last(rows, "ts")
 
 
 def fetch_wcb_daily(symbol, since_iso):
-    rows = _get("weighted_constituent_breadth_snapshots", [
+    rows = _get("weighted_constituent_breadth_snapshots", _ts_window([
         ("index_symbol", f"eq.{WCB_INDEX_SYMBOL[symbol]}"),
         ("ts", f"gte.{since_iso}"),
         ("select", "ts,wcb_score"),
         ("order", "ts.asc"),
-    ])
+    ]))
     return _daily_last(rows, "ts")
 
 
@@ -530,6 +545,11 @@ def main():
     for_session = next_trading_day(as_of, is_trading_day)
     since_iso = (datetime.combine(as_of, datetime.min.time(), tzinfo=IST)
                  - timedelta(days=LOOKBACK_DAYS)).astimezone(UTC).isoformat()
+
+    # _WINDOW_UPPER_BOUND_S68: close the window at the as-of session end (IST EOD).
+    global UNTIL_ISO
+    UNTIL_ISO = (datetime.combine(as_of, datetime.max.time(), tzinfo=IST)
+                 .astimezone(UTC).isoformat())
 
     log(f"compile as_of={as_of} for_session={for_session} since={since_iso}")
 

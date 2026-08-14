@@ -544,6 +544,135 @@ def detect_daily_zones(daily_ohlcv, symbol, target_date):
     return zones
 
 
+# S69-C1-DAILY-HISTORY ------------------------------------------------
+def detect_daily_zones_history(daily_ohlcv, symbol, target_date,
+                               lookback=None):
+    """Apply the daily OB/FVG rule across the DAILY_LOOKBACK window.
+
+    detect_daily_zones() evaluates exactly ONE prior session. DAILY_LOOKBACK
+    (60) was defined but never referenced, so the daily layer could never
+    accumulate the way the weekly layer does -- detect_weekly_zones() walks
+    `for i in range(1, n)` across 52 weeks and holds ~19 live zones, while
+    the daily detector held 1.
+
+    This function emits OB/FVG ONLY. PDH/PDL is deliberately excluded and
+    remains the single-prior-day emission from detect_daily_zones(): main()
+    writes daily PDH/PDL unconditionally on the strength of that
+    single-emission precondition (S59). Looping them here would produce
+    ~120 unfiltered levels per symbol and silently reverse that fix.
+
+    The detection rule is IDENTICAL to detect_daily_zones() -- same
+    OB_MIN_MOVE_PCT body test, same prior-bar-as-OB definition (the
+    non-standard-ICT S2.a deviation is preserved on purpose), same
+    FVG_D_MIN_PCT gap test, same 3-bar K/K+1/K+2 convention, same
+    valid_to=None per ADR-005 / TD-079. Only the number of sessions
+    evaluated changes, so the Exp 15 cohort behind WR_BY_PATTERN stays
+    valid (ADR-009 cohort-translation).
+
+    Returns list of zone dicts. Caller must dedup by upsert conflict key
+    before batching -- see TD-070 v2 / Postgres 21000.
+    """
+    if lookback is None:
+        lookback = DAILY_LOOKBACK
+
+    target_str = str(target_date)
+    dates = sorted(d for d in daily_ohlcv.keys() if d <= target_str)
+    zones = []
+
+    # Each session from index 1 onward has at least one prior day.
+    # Trim to the most recent `lookback` evaluable sessions.
+    evaluable = list(range(1, len(dates)))
+    if lookback and len(evaluable) > lookback:
+        evaluable = evaluable[-lookback:]
+
+    for i in evaluable:
+        session_str = dates[i]
+        prior_str   = dates[i - 1]
+        prior       = daily_ohlcv[prior_str]
+
+        # Zone becomes tradeable on the session AFTER the bar that formed
+        # it -- mirrors detect_daily_zones(), where valid_from is
+        # target_date and source_bar_date is the prior session.
+        valid_from = session_str
+        src_date   = prior_str
+
+        prior_move = pct(prior["open"], prior["close"])
+
+        if prior_move >= OB_MIN_MOVE_PCT:
+            zones.append({
+                "symbol":       symbol,
+                "timeframe":    "D",
+                "pattern_type": "BULL_OB",
+                "direction":    +1,
+                "zone_high":    max(prior["open"], prior["close"]),
+                "zone_low":     min(prior["open"], prior["close"]),
+                "valid_from":   valid_from,
+                "valid_to":     None,  # ADR-005 / TD-079: price-breach only
+                "source_bar_date": src_date,
+                "status":       "ACTIVE",
+            })
+
+        if prior_move <= -OB_MIN_MOVE_PCT:
+            zones.append({
+                "symbol":       symbol,
+                "timeframe":    "D",
+                "pattern_type": "BEAR_OB",
+                "direction":    -1,
+                "zone_high":    max(prior["open"], prior["close"]),
+                "zone_low":     min(prior["open"], prior["close"]),
+                "valid_from":   valid_from,
+                "valid_to":     None,  # ADR-005 / TD-079: price-breach only
+                "source_bar_date": src_date,
+                "status":       "ACTIVE",
+            })
+
+        # D-FVG needs 3 consecutive prior sessions relative to session i:
+        #   K = dates[i-3], K+1 = dates[i-2], K+2 = dates[i-1]
+        # source_bar_date is K+1 (the displacement bar) -- same convention
+        # as detect_daily_zones().
+        if i >= 3:
+            k   = daily_ohlcv[dates[i - 3]]
+            k1_str = dates[i - 2]
+            k1  = daily_ohlcv[k1_str]
+            k2  = daily_ohlcv[dates[i - 1]]
+            ref = k1["open"]
+
+            if k["high"] < k2["low"]:
+                gap_pct = (k2["low"] - k["high"]) / ref * 100
+                if gap_pct >= FVG_D_MIN_PCT:
+                    zones.append({
+                        "symbol":       symbol,
+                        "timeframe":    "D",
+                        "pattern_type": "BULL_FVG",
+                        "direction":    +1,
+                        "zone_high":    k2["low"],
+                        "zone_low":     k["high"],
+                        "valid_from":   valid_from,
+                        "valid_to":     None,
+                        "source_bar_date": k1_str,
+                        "status":       "ACTIVE",
+                    })
+
+            if k["low"] > k2["high"]:
+                gap_pct = (k["low"] - k2["high"]) / ref * 100
+                if gap_pct >= FVG_D_MIN_PCT:
+                    zones.append({
+                        "symbol":       symbol,
+                        "timeframe":    "D",
+                        "pattern_type": "BEAR_FVG",
+                        "direction":    -1,
+                        "zone_high":    k["low"],
+                        "zone_low":     k2["high"],
+                        "valid_from":   valid_from,
+                        "valid_to":     None,
+                        "source_bar_date": k1_str,
+                        "status":       "ACTIVE",
+                    })
+
+    return zones
+# end S69-C1-DAILY-HISTORY --------------------------------------------
+
+
 # ── DB write ──────────────────────────────────────────────────────────────────
 
 
@@ -827,6 +956,23 @@ def main():
         if do_daily:
             log("  Building daily zones...")
             d_zones = detect_daily_zones(daily_ohlcv, symbol, target_date)
+            # S69-C1-DAILY-HISTORY: DAILY_LOOKBACK was defined and never
+            # referenced -- the daily layer only ever saw ONE prior session
+            # while the weekly detector walked 52 weeks. Sweep the same
+            # unchanged OB/FVG rule across the lookback window.
+            # PDH/PDL is NOT swept: main()'s unconditional daily PDH/PDL
+            # write (S59) depends on detect_daily_zones() emitting exactly
+            # one of each.
+            _d_hist = detect_daily_zones_history(
+                daily_ohlcv, symbol, target_date
+            )
+            log(f"  D history sweep: {len(_d_hist)} OB/FVG candidates "
+                f"across {DAILY_LOOKBACK}-session lookback")
+            d_zones = d_zones + _d_hist
+            # TD-070 v2 / Postgres 21000: repeated sessions resolve to the
+            # same upsert ON CONFLICT key. Collapse before batching, exactly
+            # as detect_weekly_zones() does internally.
+            d_zones = _dedup_zones_by_conflict_key(d_zones)
             # TD-031 fix: same as weekly -- OB/FVG unconditional.
             _d_ob  = [z for z in d_zones if z["pattern_type"] not in ("PDH", "PDL")]
             # S59: daily PDH/PDL written unconditionally. detect_daily_zones emits

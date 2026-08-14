@@ -5,7 +5,7 @@
 | Document | `docs/session_notes/S69_incident_carryforward.md` |
 | Type | **Interim capture — NOT the doc-close.** Records this session's incident findings + undocumented items so nothing is lost. Full formalisation (ADRs, register updates, CLAUDE.md, reference.json bump) is **carried to S70**. |
 | Session shape | Live incident response + two source-level bug fixes shipped. Not a build session. |
-| HEAD at capture | `60642fc` (unchanged — code fixes this session were **DB migration + Local Pine patch**, not engine commits yet; see §5 "not yet committed") |
+| HEAD at capture | `60642fc` at first write; **updated `4326f25`** after end-of-session commits (see §5). Commits this session: `a4bdb4c` (build_ict_htf_zones daily-history fix), `4326f25` (this capture + pin/accel migration + dashboard guide). Local == origin == EC2. |
 | Why interim | Per Doc Protocol v4 Rule 3, an incident session's findings are captured at close and formalised next session. Operator explicitly deferred full doc-close to S70. |
 
 ---
@@ -21,6 +21,7 @@ Operator reported "no pin/accel zones on TradingView for days." Pulling that thr
 3. **Pine `bar_index` render bug** — pin/accel boxes anchored to `bar_index ± bar_count`, so they rendered on 15m but fell off-canvas on 1h (the "empty left pane"). **FIXED** via a time-anchor patch to `generate_pine_overlay.py` (§3).
 4. **M5 ICT detector frozen since June 2** — `ict_zones` newest row is 2026-06-02 (53 trading days). Detector task runs and succeeds but writes nothing. **NOT FIXED — carried (§4).**
 5. **CAS market-structure change (SEBI, live 2026-08-03)** — invalidates fixed 15:30-close timing assumptions across the EOD pipeline. **NEW FINDING, NOT FIXED — carried, and it is the lead P0 (§4).**
+6. **Daily OB/FVG layer held only 1 prior session** — `build_ict_htf_zones.py` defined `DAILY_LOOKBACK=60` but never used it; the daily detector evaluated a single prior day while the weekly walked 52 weeks (~19 zones). A **second, independent cause** of the thin daily structure we otherwise attributed to M5 staleness. **FIXED this session** (`detect_daily_zones_history()`, commit `a4bdb4c`, S69-C1). See §2b.
 
 ---
 
@@ -52,6 +53,21 @@ Operator reported "no pin/accel zones on TradingView for days." Pulling that thr
 
 **Related pre-existing debt surfaced (do not lose):**
 - `τ_pin` / `τ_accel` still **hardcoded 0.3** in the views. The ENH-83 parameterisation (`get_parameter_num('pin.tau.'||symbol)`) is *selected* in the output but the walk still uses literal `0.3` — the closure patch `patch_s39_enh83_view_tau_rewrite.py` **has not run** (TD-S37-01). Noted in the generator source comments.
+
+---
+
+## 2b. FIX SHIPPED & COMMITTED — daily-history OB/FVG (`build_ict_htf_zones.py`, `a4bdb4c`)
+
+**Discovered after the initial capture was written**, while reviewing `git status` at session close. `build_ict_htf_zones.py` had an uncommitted, undocumented change (`# S69-C1-DAILY-HISTORY`) — a real fix, not an accident.
+
+**Problem:** `detect_daily_zones()` evaluates exactly ONE prior session. `DAILY_LOOKBACK = 60` was defined but never referenced, so the daily OB/FVG layer could never accumulate the way the weekly layer does (`detect_weekly_zones()` walks 52 weeks, holds ~19 live zones; the daily held 1). This is a **second, independent cause** of the thin daily intraday structure — distinct from the M5 detector freeze (§4 P0-CARRY-2). We spent much of the session attributing thin intraday structure to M5 staleness; this lookback bug was also contributing.
+
+**Fix:** new `detect_daily_zones_history(daily_ohlcv, symbol, target_date, lookback=DAILY_LOOKBACK)` emitting **OB/FVG only** across the 60-session window. Carefully bounded:
+- **PDH/PDL deliberately excluded** — remains the single-prior-day emission from `detect_daily_zones()` (S59 single-emission precondition; looping it would produce ~120 unfiltered levels/symbol and silently reverse that fix).
+- **Detection rule identical** to `detect_daily_zones()` — same `OB_MIN_MOVE_PCT` body test, same (non-standard-ICT S2.a) prior-bar-as-OB definition, same `FVG_D_MIN_PCT`, same 3-bar convention, `valid_to=None` (ADR-005/TD-079). Only the session count changes, so the **Exp-15 cohort behind `WR_BY_PATTERN` stays valid** (ADR-009 cohort-translation).
+- **Dedup required** by upsert conflict key before batching (TD-070 v2 / Postgres 21000).
+
+**Committed** `a4bdb4c` as its own logical change. **S70 obligation:** this is a signal-affecting code change — evaluate whether it needs a TD entry or ADR note (Rule 10), and verify the daily layer now accumulates as intended on the next build (watch for the TD-070 dedup path firing).
 
 ---
 
@@ -121,12 +137,19 @@ The 08-12 corruption came from a `sed` on a full disk with an unquoted value and
 
 ## 5. NOT YET COMMITTED — git state for S70
 
-Two artifacts were **applied but not committed** this session:
+**UPDATE (end of session):** the SQL migration and the daily-history fix **were committed** before close. Current state:
 
-1. `sql/2026-08-13_s69_gex_pin_accel_latest_run_scope.sql` — applied to Supabase (live), not in git.
-2. `generate_pine_overlay.py` time-anchor patch — applied on **Local** (`_PRE_S69` backup exists), not committed, **not yet on the box** (box still runs the old generator).
+**COMMITTED this session** (HEAD `4326f25`, Local == origin == EC2):
+- `build_ict_htf_zones.py` daily-history fix — `a4bdb4c`.
+- `sql/2026-08-13_s69_gex_pin_accel_latest_run_scope.sql` (pin/accel view scoping) — `4326f25`. **Already applied to Supabase live earlier in the session**, now also in git.
+- `docs/session_notes/S69_incident_carryforward.md` (this file, v1) + `docs/runbooks/reading_the_ambient_trajectory_dashboard.md` — `4326f25`.
 
-**S70 must:** commit both via the canonical Local→git→EC2 vector; deploy the patched generator to the box (or formally designate Local as canonical and stop generating on the box); then run the full doc-close.
+**STILL UNCOMMITTED — carried to S70 (deliberately held):**
+1. `generate_pine_overlay.py` time-anchor patch — applied on **Local** (`_PRE_S69` backup), **not committed**, **not on the box** (box still runs the old generator). Held because Local↔box generator divergence is unreconciled (§3) — committing now commits the divergence. **S70 must decide the canonical host, then commit + deploy.**
+2. `merdian_ict_htf_zones.pine` (regenerated overlay) — Local working copy, uncommitted (follows the generator decision).
+3. `merdian_eod_ict.bat` — untracked; part of the M5-detector-orphan cleanup (§4 P0-CARRY-2).
+
+**Also note:** this v1 capture file was committed with a now-stale §0 HEAD line and no mention of the `a4bdb4c` daily-history fix (both discovered/committed after it was written). **This v2 corrects both.** If S70 sees only the committed v1, these two deltas are the correction.
 
 ---
 
@@ -138,6 +161,7 @@ When S70 completes documentation, the following are owed per Doc Protocol v4 Rul
 - **ADR-022** — CAS EOD-timing invalidation (external market-structure change). Decision Index + CLAUDE.md footer + Deployment Topology (cron re-timing).
 - **ADR-016 follow-through** — `OB_MIN_MOVE_PCT` recalibration, with `docs/research/` SQL per ADR-009 before any register entry.
 - **tech_debt.md** — TD entries for: disk resize (P0), health-check coverage gap, `fetch_positioning_landscape` freshness floor, τ hardcode (TD-S37-01 still open), Local↔box generator divergence, M5-detector-as-AWS-orphan.
+- **`build_ict_htf_zones` daily-history (`a4bdb4c`, S69-C1)** — evaluate for a TD/ADR note (signal-affecting, Rule 10); confirm the daily layer accumulates and the TD-070 dedup path holds. Update `WR_BY_PATTERN` provenance note if the daily cohort N changes.
 - **MERDIAN_System_Map.md** — new/changed views; `gex_strike_snapshots` row count + new index; canonical Pine host.
 - **MERDIAN_Deployment_Topology.md** — CAS cron re-timing; disk incident + journal cap; EBS resize when done.
 - **MERDIAN_Assumption_Register.md** — refute "15:30 = settled close"; record "token is manually rotated, not auto-refreshed."

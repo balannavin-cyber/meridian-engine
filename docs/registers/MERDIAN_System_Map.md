@@ -947,3 +947,87 @@ Table is now **26 columns**. No new grant needed — `GRANT SELECT` is table-lev
 **Frontend — `meridian-connect` `src/components/AmbientTrajectory.tsx` (NEW).** Three stacked lanes (price / Clock-2 cycle / Clock-1 regime) sharing one x-axis with cycle dividers spanning all lanes; per-lane autoscaling; MONTH/CYCLE/WEEK timeframe switcher where each view promotes one clock. Reads `market_environment_snapshots` (settled series) + `gamma_metrics` (live Clock-3). Home is now: verdict → trajectory hero → drill-down.
 
 *System Map updated Session 68, 2026-07-12 (§S68 — `market_environment_snapshots` +`front_expiry` +`eod_spot`; ambient compiler fetch-window bounded at as_of; `core/trading_calendar_gate.py` resolves missing rows via the V18E rule engine per ADR-020; `docs/registers/aws_crontab.txt` tracked; `equity_eod` single-writer confirmed; `AmbientTrajectory.tsx` shipped). Commits `d3b02bb`, `ddd7077`, `f8e287b`, `403cf4f`, `177aa3a`. Cross-refs: ADR-020, ENH-116 (Objective 1 COMPLETE), tech_debt §S68 footer, CLAUDE.md v1.45.*
+
+---
+
+## §S69 (2026-08-12/13) — update log
+
+Incident session. Two source-level fixes shipped; five failures root-caused, three carried. Written at the **S70** doc-close from `docs/session_notes/S69_incident_carryforward.md`.
+
+### Views — `v_gex_strike_pin_zone` / `v_gex_strike_accel_zone` rewritten, scoped to the latest run (ADR-021)
+
+| Field | Value |
+|---|---|
+| **Migration** | `sql/2026-08-13_s69_gex_pin_accel_latest_run_scope.sql` — applied to Supabase mid-session 2026-08-13, **committed at session close (`4326f25`)** |
+| **Original** | ENH-81, 2026-05-25 (S37). `strike_step` → `peak`/`trough` → recursive `walk` over **all** of `gex_strike_snapshots` |
+| **Change** | Two leading CTEs: `latest_run` (`SELECT DISTINCT ON (symbol) symbol, ts, run_id … ORDER BY symbol, ts DESC`) and `scoped` (inner join of `gex_strike_snapshots` to `latest_run` on `symbol` + `ts`). Every downstream CTE reads `scoped`. |
+| **Index added** | `ix_gex_strike_snap_sym_ts ON gex_strike_snapshots (symbol, ts DESC)` |
+| **Working set** | 1,060,000+ rows (250+ sessions) → **~80 strikes per symbol** |
+| **Output contract** | **Byte-identical for the latest snapshot** — the only thing the views stop producing is pin/accel for historical snapshots nobody reads |
+| **Was** | `57014` statement timeout (>8s PostgREST ceiling) → `fetch_positioning_landscape()` failed → pin/accel silently absent from the Pine overlay |
+| **Now** | returns immediately. NIFTY PIN 24,450–24,700 · ACCEL 24,200–24,350 · SENSEX PIN 78,100–78,700 · ACCEL 77,400–77,800 |
+
+**Caveat that must not be rediscovered by surprise:** these views now encode "newest per symbol" invisibly in their output. Historical pin/accel study is no longer possible by selecting a past `ts` out of the live view — it needs a parameterised function or a separate `_hist` view. The `latest_run` CTE keys on `(symbol, ts)`, not a global max, so an asymmetric writer (NIFTY written, SENSEX lagging) still serves each symbol its own newest snapshot rather than blanking the lagging one.
+
+**Debt that survived the rewrite unchanged — TD-S37-01 (still OPEN):** `τ_pin` / `τ_accel` remain **hardcoded `0.3`** inside the recursive walk. The ENH-83 lookup `get_parameter_num('pin.tau.'||symbol)` is *selected into the output* but not *used by the walk*; the closure patch `patch_s39_enh83_view_tau_rewrite.py` has still never run. This migration deliberately did not fold it in — one change per migration.
+
+### `gex_strike_snapshots` — table state
+
+| Field | Value |
+|---|---|
+| **Row count (2026-08-13)** | **~1.06M** across 250+ sessions (was 44,953 at S39) |
+| **Growth** | every 5-minute cycle, both symbols, ~80 strikes each — unbounded, no retention policy |
+| **New index** | `ix_gex_strike_snap_sym_ts (symbol, ts DESC)` |
+| **Note** | This table plus rolling `market_ticks` is the principal consumer of the 7.6 GB EC2 root volume (TD-S69-NEW-1). Retention is filed as independent debt, **not** as the ADR-021 fix — the historical series is a research asset ADR-015 exists to preserve. |
+
+### `generate_pine_overlay.py` — positioning boxes re-anchored to time (Local)
+
+| Field | Value |
+|---|---|
+| **Patch** | `patch_s69_pine_positioning_time_anchor.py` — Canon-v3, `_PRE_S69` backup, 4/4 `count==1`, `ast.parse` clean, idempotent. Applied on **Local**; **deliberately NOT committed and not deployed to the box** — committing it would commit the unreconciled Local↔box divergence below. The regenerated `merdian_ict_htf_zones.pine` is likewise held as a Local working copy. |
+| **Was** | pin/accel `box.new` / `label.new` used `bar_index - 30` / `bar_index + 50` / `bar_index + 90` — bar-**count** offsets, i.e. N × timeframe-minutes of chart space |
+| **Symptom** | on-screen at 15m (~12h of future space); ~50h off the right edge at 1h → boxes and labels rendered off-canvas → the operator's "empty left pane" on the 1h TV pane |
+| **Now** | four render lines use `xloc=xloc.bar_time` with millisecond offsets `time - 172800000` / `time + 259200000` / `time + 432000000` (−2d / +3d / +5d), which are timeframe-independent. `extend=extend.right` unchanged. |
+| **Verification** | fixture-tested; **live 1h TV pane re-render not yet confirmed by the operator at capture time** |
+
+**Canonical Pine-generation host is now ambiguous and must be resolved (TD-S69-NEW-4).** Local runs the current generator and emits **106–110 zones (honest)**; the box runs an **older** generator and emits **139 zones**, the extra count coming from stale M5 zones merged in — i.e. the box's output *masks* the M5 freeze rather than exposing it. Until Local↔box is reconciled, the two hosts do not produce the same overlay.
+
+### `fetch_intraday_zones` / `fetch_positioning_landscape` — asymmetric hardening
+
+S69 added a recency floor to `fetch_intraday_zones` (drops stale M5 zones — this is what made the Local generator's 106–110 count honest). The **same floor was not added to `fetch_positioning_landscape`**. With the views now fast this is latent, but if the GEX writer ever stalls, the generator will emit stale pin/accel *quickly and silently* instead of failing loud — the exact failure ADR-021's speed fix could otherwise create. Filed **TD-S69-NEW-3**; ADR-018 D2 applies.
+
+### `ict_zones` — frozen, writer healthy
+
+| Field | Value |
+|---|---|
+| **Newest ACTIVE `trade_date`** | **2026-06-02** (53 trading days stale at capture) |
+| **Writer** | `detect_ict_patterns_runner.py`, last modified 2026-05-17 |
+| **Scheduler** | Local Windows Task `MERDIAN_ICT_EOD`, Mon–Fri 15:35 IST → `merdian_eod_ict.bat` |
+| **Task state** | `State: Ready`, `LastTaskResult: 0`, `LastRunTime: 2026-08-13 17:13` — **runs and succeeds, writes nothing** |
+| **Root cause (near-certain)** | `OB_MIN_MOVE_PCT = 0.40%` is empirically unreachable — 30-session maxima NIFTY **0.366%** / SENSEX **0.369%**. Zero order blocks qualify on any run; 06-02 was the last day a move exceeded 0.40%. ADR-016 recalibration, candidate **0.25%**, bound by ADR-009 discipline (SQL to `docs/research/` first — the change invalidates the WR cohort behind every `WR 84%` / `WR 92%` label). |
+| **Second, stacked defect** | the 15:35 slot now fires **inside** the CAS auction / extended-derivatives window (ADR-022). Recalibrating the threshold without re-timing the job would have produced confidently wrong zones off auction-contaminated bars. |
+| **Orchestration gap** | the detector is an **AWS orphan** — it has only ever run on Local Windows Task Scheduler, is not in the AWS crontab, and has no runner log on EC2 (ADR-019 disposition context). A subsystem that depends on the operator's desktop being powered on at 15:35 is fragile. **TD-S69-NEW-5.** |
+
+### `build_ict_htf_zones.py` — daily detector now sweeps the full 60-session lookback (`a4bdb4c`, S69-C1)
+
+| Field | Value |
+|---|---|
+| **Commit** | `a4bdb4c` — committed as its own logical change |
+| **Was** | `detect_daily_zones()` evaluated **exactly one prior session**. `DAILY_LOOKBACK = 60` was defined at module level and **never referenced anywhere**. The daily OB/FVG layer could therefore never accumulate: the weekly detector (`detect_weekly_zones()`) walks 52 weeks and holds ~19 live zones; the daily held **1**. |
+| **Now** | New `detect_daily_zones_history(daily_ohlcv, symbol, target_date, lookback=DAILY_LOOKBACK)` emits **OB/FVG only** across the full 60-session window. Expected zone count moves from ~1 to roughly 45–52 per symbol. |
+| **Deliberately excluded — PDH/PDL** | PDH/PDL remain the single-prior-day emission from `detect_daily_zones()`. Looping them across 60 sessions would produce ~120 unfiltered levels per symbol and **silently reverse the S59 single-emission fix** (TD-S59-NEW-3). This exclusion is the load-bearing part of the change. |
+| **Detection rule** | **Identical** to `detect_daily_zones()` — same `OB_MIN_MOVE_PCT` body test, same (non-standard-ICT, S2.a) prior-bar-as-OB definition, same `FVG_D_MIN_PCT`, same 3-bar convention, `valid_to=None` per ADR-005/TD-079. **Only the session count changes**, which is what preserves the Exp-15 cohort behind every `WR_BY_PATTERN` label (ADR-009 cohort-translation). |
+| **Write path** | Dedup on the upsert conflict key **before** batching, per TD-070 v2 / Postgres `21000`. |
+| **Why it matters beyond the count** | This is a **second, independent cause** of thin daily intraday structure, distinct from the M5 detector freeze below. Most of S69 attributed thin structure entirely to M5 staleness; the lookback bug was contributing in parallel. Two causes, one symptom. |
+| **Rule 10 ruling** | **NO ADR.** A constant defined and never referenced is a bug, and Doc Protocol v4 Rule 10 excludes bug fixes. Borderline only because the change is signal-affecting — and it is held out of ADR territory precisely by the two bounding decisions above (PDH/PDL excluded, detection rule untouched). |
+| **Verification still open** | Confirm on the next build that the daily layer actually accumulates to the expected ~45–52 zones/symbol and that the TD-070 dedup path fires cleanly. **TD-S69-NEW-8.** |
+
+### New tracked file — `docs/runbooks/reading_the_ambient_trajectory_dashboard.md` (`4326f25`)
+
+Operator-facing guide to reading the ENH-116 ambient trajectory panel (the three-clock hero shipped S68). Committed alongside the S69 capture.
+
+### `eod_health_check.py` — coverage gap (TD-S69-NEW-2)
+
+Returned **`[OK]` on 2026-08-12** while pin/accel views, the M5 detector, and the GEX read path were all broken, because it asserts on none of them. Its own disclaimer already says a green DB does not vouch for the Marketview render. Required assertions: freshness on `ict_zones`, freshness on `gex_strike_snapshots`, and **non-empty return** from `v_gex_strike_pin_zone` and `v_gex_strike_accel_zone`. Had these existed, the pin/accel timeout would have alerted weeks before it was found by looking at TradingView.
+
+*System Map updated Session 69, 2026-08-12/13 (§S69 — `v_gex_strike_pin_zone`/`v_gex_strike_accel_zone` scoped to `latest_run` per ADR-021 + index `ix_gex_strike_snap_sym_ts`, committed `4326f25`; `gex_strike_snapshots` at ~1.06M rows with no retention policy; **`build_ict_htf_zones.py` daily detector now sweeps the full 60-session `DAILY_LOOKBACK` via `detect_daily_zones_history()`, `a4bdb4c`** — OB/FVG only, PDH/PDL deliberately excluded; `generate_pine_overlay.py` positioning boxes re-anchored `bar_index`→`xloc.bar_time` on Local and deliberately held uncommitted; Local↔box generator divergence 106–110 vs 139 zones recorded; `ict_zones` frozen at 06-02 with a healthy writer, root cause `OB_MIN_MOVE_PCT` unreachable + a stacked CAS timing defect per ADR-022; `eod_health_check.py` coverage gap; new runbook `docs/runbooks/reading_the_ambient_trajectory_dashboard.md`). Written at the S70 doc-close from the S69 interim capture v2. HEAD `4326f25`, Local == origin == EC2. Previous: Session 68, 2026-07-12 (§S68).*

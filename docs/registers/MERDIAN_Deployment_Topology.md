@@ -1038,3 +1038,90 @@ The canonical `40 10 * * 1-5 run_equity_eod_until_done.py` EOD chain (and every 
 **Trading-calendar gate (ADR-020, `f8e287b`) — a topology-relevant behavioural change**, because it alters what **~6 scheduled AWS consumers** do on closed days: `run_merdian_shadow_runner_aws.py` (`*/5` orchestrator), `ingest_participant_positioning.py` (`0 14` / `30 15`), `accrue_expiry_outcomes.py` (`15 16`), `relate_ambient_to_open_local.py` (`55 3`), `compile_market_environment_local.py` (`0 16`), plus every `assert_trading_day_or_exit()` caller. Until this fix, a missing `trading_calendar` row read as **open** — so every unseeded weekend and, critically, **every weekday NSE holiday beyond the seeder's 14-day horizon** would have run the full chain on a closed market. The weekday crons are `1-5`-restricted so weekends never bit; **holidays would have**. Next holiday: 2026-09-14 (outside the seed horizon — guaranteed unseeded). First live proof of the fix came on the S68 backfill: `2026-05-28: no row; rule engine says CLOSED (Bakri Eid)`.
 
 *Deployment Topology updated Session 68, 2026-07-12 (§S68 — EC2 git auth moved to an SSH ed25519 deploy key `meridian-engine-ec2-deploy` [PAT expiry / `~/.git-credentials` 0-byte truncation was a recurring silent breakage]; AWS crontab captured to `docs/registers/aws_crontab.txt` + `.gitignore` negation, cron layer now rebuild-grade; `equity_eod` confirmed single-writer/single-slot [S67 “untraced writer” closed — it was manual sweeps, and no systemd timer touches it]; trading-calendar gate now resolves missing rows via the rule engine per ADR-020, changing closed-day behaviour for ~6 scheduled consumers; 4 Marketview deploys. Zero cron changes. Zero MALPHA changes. Commits `d3b02bb`, `f8e287b`.)*
+
+---
+
+## §S69 (2026-08-12/13) — update log
+
+Incident session. Written at the **S70** doc-close from `docs/session_notes/S69_incident_carryforward.md`.
+
+### NEW EXTERNAL BOUNDARY — SEBI Closing Auction Session, live 2026-08-03 (ADR-022)
+
+**This is the reference table. No job schedule is to be reasoned about from memory of "15:30".**
+
+| Segment | Before 2026-08-03 | From 2026-08-03 |
+|---|---|---|
+| Category-I (F&O) stocks — continuous trading | 09:15 → 15:30 | 09:15 → **15:15** |
+| Category-I closing price | VWAP of 15:00–15:30 | **CAS equilibrium price.** Auction **15:15–15:35** — order collection 15:15–15:30, matching + publication 15:30–15:35. Reference price = VWAP **15:00–15:15**. Band ±3% of reference. Limit + market orders only (no SL, no iceberg). |
+| Category-II (non-F&O) stocks | 09:15 → 15:30, VWAP 15:00–15:30 | **unchanged** |
+| **Equity derivatives (index + stock F&O) — MERDIAN's instruments** | 09:15 → 15:30 | 09:15 → **15:40** |
+| Post-close | 15:40–16:00 | **15:50–16:00** |
+| Pre-open | 09:00–09:15 | **restructured from 2026-09-07** — 09:00–09:05 market+limit · 09:05–09:10 limit-only with system-driven **random close 09:08–09:10** · 09:10–09:12 matching · 09:12–09:15 transition |
+
+Applies across **NSE, BSE and MSEI**. Commodity and currency segments untouched. Market open time unchanged.
+
+**Why this reaches MERDIAN's own instruments:** NIFTY and SENSEX are computed from Category-I constituents, so the index's settled level is now derived from CAS equilibrium prices published in the 15:30–15:35 window, and index derivatives keep trading to 15:40. **There is no longer any instant at 15:30 at which "today's close" exists.**
+
+**Boundary in force (ADR-022 D1): no EOD-anchored job may fire before 15:40 IST. Safe anchor ≥ 15:45 IST.**
+
+### CAS exposure inventory — the D1/D2 audit scope
+
+| Job | Host | Schedule | Status |
+|---|---|---|---|
+| `MERDIAN_ICT_EOD` → `detect_ict_patterns_runner.py` | **Local Windows Task Scheduler** | **15:35 IST** Mon–Fri | **EXPOSED — fires inside the auction / extended-derivatives window. Must move ≥ 15:45. P0.** |
+| `build_ict_htf_zones.py` daily-close logic | Local | EOD | **EXPOSED (definition)** — daily OHLC may be assembled mid-auction; the D-timeframe close definition changed for F&O-linked instruments. |
+| ambient compiler `eod_spot` / settlement anchor (`compile_market_environment_local.py`) | MERDIAN AWS | `0 16` cron (16:00 IST) | **Wall-clock SAFE, definition UNVERIFIED** — must be confirmed to read the CAS-settled value, not an intraday-derived one. |
+| `capture_postmarket_1600.py` | MERDIAN AWS | `30 10` UTC (16:00 IST) | **Probably safe, CONFIRM** — post-close now *ends* at 16:00 rather than starting at 15:40. |
+| `market_spot_session_markers` | MERDIAN AWS | `40 10` UTC (16:10 IST) | **Wall-clock safe, semantics UNCONFIRMED** — which value becomes `prev_close`. |
+| Any pre-open-anchored logic | — | — | **DATED EXPOSURE 2026-09-07.** The random close 09:08–09:10 removes the fixed pre-open instant. Audit before that date, not after. |
+
+**Also required (D2):** establish the vendor's settled-close definition and publication time for Category-I instruments post-CAS — Dhan daily OHLC and Zerodha historical. D2 cannot be verified without it.
+
+### MERDIAN AWS EC2 — disk incident 2026-08-12 (root cause of the whole cascade)
+
+| Item | Value |
+|---|---|
+| **Instance** | `i-0878c118835386ec2` (eu-north-1, EIP `13.63.27.85`) |
+| **Root volume** | **7.6 GB total** — hit **100%** at ~03:35 UTC |
+| **Blast radius** | (1) `merdian-wsfeed.service` crashed and then hit the systemd rate-limit latch; (2) the morning token rotation's `sed -i` wrote the literal placeholder `<real-token>` into `.env` line 24, and the unquoted `<` also produced a shell "newline unexpected" parse error on **every** `.env` source thereafter; (3) the `35 3` UTC breadth-baseline cron (`refresh_equity_intraday_last.py`) failed silently → `equity_intraday_last` 92h stale (last write 08-07) |
+| **Recovery** | `journalctl --vacuum-size=100M` (freed 672M) + `npm cache clean --force` (freed 871M) + `truncate -s 0 logs/*.log` (302M → 36K) → **74%, 1.9G free** |
+| **Durable guard added** | `SystemMaxUse=200M` in `/etc/systemd/journald.conf` |
+| **Standing risk** | The journal cap only **delays** recurrence. Rolling `market_ticks` + `gex_strike_snapshots` (~1.06M rows, unbounded growth) + npm/apt caches will refill 7.6 GB. **Grow the EBS volume and/or add DB-side retention — TD-S69-NEW-1, P0.** This is the fix that prevents a repeat of 08-12. |
+
+### `merdian-wsfeed.service` — recovery procedure confirmed (re-affirms ADR-018 D1 operational canon)
+
+- The unit was `failed` from the disk-full crash **plus** a systemd rate-limit latch from repeated start attempts. `systemctl reset-failed` is required before `start` will do anything.
+- Manual restarts left **duplicate feed PIDs**, producing `1006` WebSocket churn — **Zerodha permits one WebSocket per API key**.
+- Duplicates must be cleared with **`kill -9`**. `SIGTERM` is caught by the reconnect handler (as is Ctrl-C), so `pkill` restarts the feed rather than killing it.
+- Post-recovery confirmation: **280k+ ticks / 10 min** under systemd supervision.
+
+### Token rotation — corrected model (removes a wrong item from the priority list)
+
+**The Zerodha token is rotated MANUALLY by the operator every morning, 06:00–06:30 IST. It is not, and was never, a MALPHA auto-refresh mechanism.** The 08-12 "dead token" was `.env` **corruption** from the full-disk `sed`, not expiry. This **removes "MALPHA token pipeline broken" / "Zerodha auto-refresh failing" from the carry list** — it was never a mechanism that existed to break.
+
+Hardening owed to the 06:00 routine (runbook, not code — **TD-S69-NEW-6**): `df -h` guard → `cp .env .env.bak` → write the value **quoted** (`KITE_ACCESS_TOKEN="..."`) → validate with `KiteConnect.profile()` before walking away. Never `sed -i` on a near-full disk. Post-repair validation this session returned `OK: Navin Balan`.
+
+### Deploy state at S69 close — HEAD `4326f25`, Local == origin == EC2
+
+**Committed this session:**
+
+| Artifact | Commit | Note |
+|---|---|---|
+| `build_ict_htf_zones.py` daily-history fix (S69-C1) | **`a4bdb4c`** | Committed as its own logical change. |
+| `sql/2026-08-13_s69_gex_pin_accel_latest_run_scope.sql` | **`4326f25`** | Applied to Supabase **live earlier in the session**; committed at close. DB and git are now in agreement. |
+| `docs/session_notes/S69_incident_carryforward.md` (v1) | **`4326f25`** | **Committed with a now-stale HEAD line and no mention of `a4bdb4c`** — both were discovered/committed after v1 was written. Capture **v2** (the source for this doc-close) carries the corrections. If a future session finds only the committed v1, those two deltas are the correction. |
+| `docs/runbooks/reading_the_ambient_trajectory_dashboard.md` | **`4326f25`** | New operator-facing runbook for the ENH-116 ambient trajectory panel. |
+
+**Deliberately held OUT of the commit — carried to S70:**
+
+| Artifact | State | Why held |
+|---|---|---|
+| `generate_pine_overlay.py` time-anchor patch | Local only, `_PRE_S69` backup, **not on the box** | **Committing it would commit the unreconciled Local↔box divergence.** The box still runs an older generator emitting 139 zones (stale M5 merged in) against Local's honest 106–110. **S70 must decide the canonical Pine host first, then commit + deploy.** |
+| `merdian_ict_htf_zones.pine` (regenerated overlay) | Local working copy, uncommitted | Follows the generator decision. |
+| `merdian_eod_ict.bat` | **untracked** | Part of the M5-detector-orphan cleanup (TD-S69-NEW-5). |
+
+**Canonical vector reminder:** Local → git → EC2 `git pull` (EC2 remote is the SSH ed25519 deploy key `meridian-engine-ec2-deploy` since S68).
+
+**Git provenance gap (narrowed):** the session opened at HEAD **`60642fc`** and closed at **`4326f25`** via `a4bdb4c`, both accounted for. What is **not** accounted for is the range **`e5232b5` → `60642fc`** — `e5232b5` was the S68 close, `60642fc` was the S69 open, and nothing in `session_log.md` describes what landed in between. Those commits are real and in production. Filed **TD-S69-NEW-7**.
+
+*Deployment Topology updated Session 69, 2026-08-12/13 (§S69 — SEBI CAS session-timing table added as the reference boundary per ADR-022, with the six-job exposure inventory and the dated 2026-09-07 pre-open follow-up; EC2 root-disk 100% incident recorded with recovery, the `SystemMaxUse=200M` journal cap, and the standing 7.6 GB undersize risk; `merdian-wsfeed` `reset-failed` + `kill -9` recovery canon re-affirmed; Zerodha token rotation corrected to MANUAL-by-operator — "MALPHA auto-refresh broken" removed from the carry list; deploy state recorded at HEAD `4326f25` with the Pine generator deliberately held uncommitted pending the canonical-host decision; `e5232b5`→`60642fc` commit-provenance gap filed). Written at the S70 doc-close from the S69 interim capture v2. Previous: Session 68, 2026-07-12 (§S68).*

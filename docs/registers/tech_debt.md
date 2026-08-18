@@ -57,6 +57,129 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S69-NEW-1 (S1 priority) — MERDIAN AWS EC2 root volume is 7.6 GB and hit 100% on 2026-08-12, cascading into a feed crash + `.env` corruption + a silently-failed breadth cron; the journal cap only delays recurrence
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1 — this is the true infra root cause of the entire 08-12 incident.** Every other same-day failure descends from it. |
+| **Discovered** | Session 69 (2026-08-12), while diagnosing "no pin/accel zones on TradingView for days". |
+| **Component** | `i-0878c118835386ec2` (eu-north-1) root EBS volume · `market_ticks` · `gex_strike_snapshots` · journald · npm/apt caches |
+| **Symptom** | Root filesystem at 100% (7.6 GB total). Downstream, all on the same morning: `merdian-wsfeed.service` crashed and then latched on the systemd start rate-limit; the operator's 06:00 token rotation `sed -i` wrote the literal placeholder `<real-token>` into `.env` line 24 **and** the unquoted `<` broke every subsequent `.env` source with a shell "newline unexpected" parse error; the `35 3` UTC `refresh_equity_intraday_last.py` cron failed with no alert, leaving the breadth prev-close baseline 92h stale (last write 08-07). |
+| **Root cause** | The volume is undersized for what the system now writes. Principal consumers: rolling `market_ticks`, `gex_strike_snapshots` (**~1.06M rows and growing every 5-minute cycle, no retention policy**), unbounded journald, npm and apt caches, and `logs/*.log`. |
+| **Workaround (applied, partial)** | `journalctl --vacuum-size=100M` (freed 672M) + `npm cache clean --force` (freed 871M) + `truncate -s 0 logs/*.log` (302M → 36K) → **74%, 1.9G free**. Durable guard added: `SystemMaxUse=200M` in `/etc/systemd/journald.conf`. |
+| **Proper fix** | **Grow the EBS root volume**, and/or add DB-side retention on `market_ticks` and `gex_strike_snapshots`. Retention on `gex_strike_snapshots` must be decided deliberately — the historical series is a research asset ADR-015 exists to preserve (this is why ADR-021 explicitly *rejected* pruning as the pin/accel fix). Add a disk-headroom check to the EOD health check so the next approach to the ceiling alerts. |
+| **Cost to fix** | ~1 session (EBS grow + `growpart`/`resize2fs` + retention decision). |
+| **Blocked by** | nothing. |
+| **Cross-ref** | ADR-021 (rejected pruning as the view fix) · TD-S69-NEW-2 (health-check coverage) · TD-S69-NEW-6 (token-rotation routine) · Deployment Topology §S69. |
+| **Status** | **OPEN — P0 into S70.** The cleanup bought headroom; it did not raise the ceiling. |
+
+### TD-S69-NEW-2 (S1 priority) — `scripts/eod_health_check.py` returned `[OK]` on 2026-08-12 while pin/accel, the M5 detector and the GEX read path were all broken: it asserts on none of them
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** This is why a total loss of pin/accel zones ran for weeks and was found by staring at TradingView rather than by an alert. |
+| **Discovered** | Session 69 (2026-08-12). |
+| **Component** | `scripts/eod_health_check.py` |
+| **Symptom** | Clean `[OK]` for the 08-12 session while `v_gex_strike_pin_zone` / `v_gex_strike_accel_zone` were returning `57014`, `ict_zones` was 53 trading days stale, and the Pine overlay had been rendering without positioning zones for weeks. |
+| **Root cause** | The check covers base-table freshness for the tables it knows about and explicitly disclaims the rest ("a green DB here does not vouch for Marketview render"). **It does not look at derived surfaces at all**, and it does not look at `ict_zones`. Writer-state and read-path-state are independent facts (Assumption Register D.27.5). |
+| **Proper fix** | Extend to assert: (a) freshness on `ict_zones`; (b) freshness on `gex_strike_snapshots`; (c) **non-empty return** from `v_gex_strike_pin_zone` and `v_gex_strike_accel_zone` — the assertion must be "rows came back", not "the table has data", because the whole failure mode was a healthy table behind a timing-out view; (d) disk headroom on the box (TD-S69-NEW-1). |
+| **Workaround** | None. The gap is the defect. |
+| **Cost to fix** | ~0.5 session. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | ADR-021 open follow-up 3 · Assumption Register D.27.5 · §D.18.2 (instrument the failure before extending the layer). |
+| **Status** | **OPEN — P1 into S70.** |
+
+### TD-S69-NEW-3 (S2 priority) — `fetch_positioning_landscape` has no ADR-018 D2 recency floor; the ADR-021 speed fix converts a loud timeout into a silent stale read
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2 — latent, but created by a fix.** |
+| **Discovered** | Session 69 (2026-08-13), immediately after applying the ADR-021 migration. |
+| **Component** | `generate_pine_overlay.py::fetch_positioning_landscape()` |
+| **Symptom** | None yet — latent. If the GEX writer stalls, the generator will emit **stale pin/accel zones, returned instantly**, instead of failing loud. |
+| **Root cause** | S69 added a recency floor to `fetch_intraday_zones` (this is what made the Local generator's 106–110 zone count honest) but **not** to `fetch_positioning_landscape`. Before ADR-021 a stalled writer produced a `57014` timeout — loud. After ADR-021 the same stall produces plausible, fast, wrong output. |
+| **Proper fix** | Add the same `ts >= today` guard, per ADR-018 D2. Generalise the rule: **every latency fix on a read path ships with its recency floor** — speed without a freshness floor manufactures exactly the ADR-001 stable lie the system exists to refuse. |
+| **Cost to fix** | ~15 min, same file, same Canon-v3 patch pass as the time-anchor fix. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | ADR-021 open follow-up 1 · ADR-018 D2 · ADR-001 · Assumption Register D.27.8. |
+| **Status** | **OPEN — do it in the same pass that commits the S69 Pine patch.** |
+
+### TD-S69-NEW-4 (S2 priority) — Local↔box `generate_pine_overlay.py` divergence: the box runs an older generator that emits 139 zones (stale M5 merged in) vs Local's honest 106–110; no canonical Pine host is declared
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Two hosts produce different overlays, and the box's version *masks* the M5 freeze rather than exposing it. |
+| **Discovered** | Session 69 (2026-08-13). |
+| **Component** | `generate_pine_overlay.py` — Local (`C:\GammaEnginePython\`) vs MERDIAN AWS (`~/meridian-engine`) |
+| **Symptom** | Local emits **106–110 zones** (recency floor applied, stale M5 dropped). The box emits **139 zones** — the extra count is stale M5 zones merged in from a generator that predates the floor. The two hosts do not produce the same TradingView overlay. |
+| **Root cause** | The S69 time-anchor patch and the `fetch_intraday_zones` recency floor were applied **on Local only**. S69 then **deliberately held them out of the commit** — committing would have committed the divergence itself. Underneath that, the repo has never designated which host is canonical for Pine generation. |
+| **Proper fix** | Commit both Local changes via the canonical Local → git → EC2 vector, then **either** deploy the patched generator to the box **or** formally designate Local as the canonical Pine-generation host and stop generating on the box. Record the decision in the System Map either way. Note the box's higher zone count is not "more coverage" — it is stale data presented as current. |
+| **Cost to fix** | ~0.5 session, mostly the commit + deploy discipline. |
+| **Blocked by** | Nothing technically — but it lands in the same pass as the deliberately-held Pine patch, so it waits on the canonical-host decision. |
+| **Cross-ref** | System Map §S69 · Deployment Topology §S69 · TD-S69-NEW-5 (the M5 freeze the box's output masks). |
+| **Status** | **OPEN — P1 into S70.** |
+
+### TD-S69-NEW-5 (S2 priority) — the M5 ICT detector is an AWS orphan: `MERDIAN_ICT_EOD` has only ever run on Local Windows Task Scheduler, so the subsystem silently depends on the operator's desktop being powered on at 15:35
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2 (orchestration).** Separate from, and outliving, the threshold defect that currently freezes the table. |
+| **Discovered** | Session 69 (2026-08-13), confirming the ADR-019 orphan disposition against live state. |
+| **Component** | `detect_ict_patterns_runner.py` · Windows Task `MERDIAN_ICT_EOD` (Mon–Fri 15:35 IST → `merdian_eod_ict.bat`) · `ict_zones` |
+| **Symptom** | The detector is **not in the AWS crontab** and has **no runner log on EC2**. `ict_zones` production depends on a desktop being awake at a fixed local time. Separately, the table is frozen at `trade_date = 2026-06-02` (53 trading days) with a task that reports `State: Ready`, `LastTaskResult: 0` and writes nothing. |
+| **Root cause** | Two stacked, independent defects on one job. **(a) Threshold:** `OB_MIN_MOVE_PCT = 0.40%` is empirically unreachable — 30-session maxima NIFTY **0.366%** / SENSEX **0.369%**; zero order blocks qualify on any run, and 06-02 was the last day a move cleared 0.40%. **(b) Orchestration:** the job never migrated to AWS at the ADR-006 cutover, so it is a Local-only survivor of a retired host class. |
+| **Proper fix** | **Ordered, and the order is a correctness property.** (1) Re-time the job past **15:40** per ADR-022 D1 — do this **first**, or a corrected threshold starts writing auction-contaminated bars. (2) ADR-016 recalibration of `OB_MIN_MOVE_PCT` (candidate **0.25%**) under **ADR-009** discipline: the validating SQL is committed to `docs/research/` **before** any ADR or Assumption Register entry, because the change invalidates the WR cohort behind every `WR 84%` / `WR 92%` label. (3) Migrate the runner to the box under the AWS crontab so it stops depending on a desktop. |
+| **Workaround** | The Windows task exists and fires; it simply has nothing to write. |
+| **Cost to fix** | ~1–2 sessions (the recalibration is the expensive part — it is a research task, not an edit). |
+| **Blocked by** | Step 2 blocked by step 1 (ADR-022 D1). |
+| **Cross-ref** | ADR-016 · ADR-019 (retire only on evidence of no value — silence here is a defect, not a verdict) · ADR-009 · ADR-022 · Assumption Register D.27.6. |
+| **Status** | **OPEN — P0 into S70 (step 1 is the cheapest P0 in the stack).** |
+
+### TD-S69-NEW-6 (S3 priority) — the operator's 06:00 Zerodha token-rotation routine has no disk guard, no backup, no quoting and no post-write validation; on a full disk it corrupted `.env`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3 — runbook, not code.** Low severity, but it is the proximate cause of a same-day production outage. |
+| **Discovered** | Session 69 (2026-08-12). |
+| **Component** | Operator morning routine (06:00–06:30 IST) · `~/meridian-engine/.env` on `i-0878c118835386ec2` |
+| **Symptom** | `sed -i` on a 100%-full disk wrote the literal placeholder `<real-token>` into `.env` line 24. The unquoted `<` then produced a shell "newline unexpected" parse error on **every** subsequent `.env` source, so the corruption presented as a broken environment rather than a bad token. |
+| **Root cause** | Three missing guards in one line: no free-space check before an in-place edit, no backup, and an unquoted value containing a shell redirect operator. Compounded by no validation after the write. |
+| **Proper fix** | Fold the disk-safe pattern into the runbook: `df -h` guard → `cp .env .env.bak` → write the value **quoted** (`KITE_ACCESS_TOKEN="..."`) → validate with `KiteConnect.profile()` before walking away. **Never `sed -i` on a near-full disk.** Prefer the `read -rs` hidden-input method for entering the credential (existing house convention). |
+| **Cost to fix** | ~30 min (runbook edit + one rehearsal). |
+| **Blocked by** | nothing. |
+| **Cross-ref** | TD-S69-NEW-1 (the full disk) · Assumption Register D.27.7 (the token is manually rotated — there is no auto-refresh mechanism and never was). |
+| **Status** | **OPEN — P2 into S70.** |
+
+### TD-S69-NEW-7 (S3 priority) — git provenance gap: HEAD moved `e5232b5` → `60642fc` between the S68 close and the S69 open with no `session_log.md` entry accounting for it
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3 (documentation integrity).** Not a runtime defect; a rebuild-grade defect. |
+| **Discovered** | Session 70 (2026-08-14), reconciling the S69 interim capture against `session_log.md` during the doc-close. |
+| **Component** | `session_log.md` · `docs/session_notes/` · repo `balannavin-cyber/meridian-engine` |
+| **Symptom** | S68 closed with HEAD at **`e5232b5`**. S69 *opened* at **`60642fc`** (capture v2 §0 records it as HEAD at first write, unchanged until the session's own commits). The intervening commits are therefore real, are in production, and are described nowhere. Everything from `60642fc` forward is accounted for: `a4bdb4c` (daily-history) then `4326f25` (SQL migration + capture v1 + dashboard runbook), Local == origin == EC2. |
+| **Root cause** | Unknown pending `git log e5232b5..60642fc`. Candidates: work done between sessions without a session record, or a session that closed without a log entry. Doc Protocol v4 Rule 1 requires a `session_log.md` line for **every** session, no exceptions. |
+| **Proper fix** | Run `git log --oneline --stat e5232b5..60642fc`, reconcile against `CURRENT.md` and the registers, and file either a retrospective `session_log.md` entry or a `docs/session_notes/` note covering the window. |
+| **Cost to fix** | ~20 min. |
+| **Blocked by** | nothing (needs a repo the doc-close does not have access to). |
+| **Cross-ref** | Doc Protocol v4 Rule 1 + Rule 4 · Deployment Topology §S69. |
+| **Status** | **OPEN — do this before anything else in S70; an unreconciled HEAD makes every other "current state" claim provisional.** |
+
+### TD-S69-NEW-8 (S2 priority) — verify the widened daily OB/FVG lookback actually accumulates, and that the TD-070 dedup path holds (`a4bdb4c` / S69-C1 verification obligation)
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2 — a signal-affecting change shipped without post-build confirmation.** |
+| **Discovered** | Session 69 (2026-08-13) — filed as the verification obligation attached to `a4bdb4c`. |
+| **Component** | `build_ict_htf_zones.py::detect_daily_zones_history()` · `ict_zones` · `WR_BY_PATTERN` provenance |
+| **Symptom** | None yet — the fix is committed but its effect is unconfirmed. `DAILY_LOOKBACK = 60` was defined and never referenced, so the daily OB/FVG layer evaluated exactly one prior session (weekly walks 52 weeks, ~19 live zones; daily held **1**). The new function sweeps the full 60-session window, but no build has been observed since. |
+| **What must be verified** | (a) the daily layer accumulates to the expected **~45–52 zones per symbol**, not ~1 and not ~120 (the latter would mean PDH/PDL leaked into the loop); (b) the **TD-070 v2 dedup path fires cleanly** — dedup on the upsert conflict key before batching, no Postgres `21000`; (c) PDH/PDL remain a **single-prior-day emission** from `detect_daily_zones()`, i.e. the S59 single-emission fix (TD-S59-NEW-3) is intact; (d) if the daily cohort N changes materially, update the `WR_BY_PATTERN` provenance note. |
+| **Why it is not an ADR** | Rule 10 excludes bug fixes, and a constant defined-but-never-referenced is a bug. The change stays a bug fix **because of its bounding**: detection rule byte-identical (same `OB_MIN_MOVE_PCT` body test, same prior-bar-as-OB definition, same `FVG_D_MIN_PCT`, same 3-bar convention, `valid_to=None` per ADR-005/TD-079), so only the session count moves and the Exp-15 cohort behind `WR_BY_PATTERN` survives (ADR-009 cohort-translation). Had the rule moved, this would be ADR-grade. |
+| **Cost to fix** | ~20 min (one build + three queries). |
+| **Blocked by** | nothing — do it on the next HTF zone build. |
+| **Cross-ref** | ADR-009 (cohort-translation) · ADR-005/TD-079 · TD-070 v2 · TD-S59-NEW-3 · Assumption Register D.27.9/D.27.10 · System Map §S69. |
+| **Status** | **OPEN — P1 into S70. Until verified, treat the daily zone count as an expectation, not a fact.** |
+
 ### TD-S66-NEW-1 (S1 priority) — `ingest_equity_eod_local.py` reads `DHAN_API_TOKEN` once at module load (L18 global) → a run that crosses a token rotation authenticates with a token that rotated underneath it and 401s the whole sweep
 
 | Field | Value |
@@ -3288,3 +3411,5 @@ Updated Session 67 (2026-07-10 — breadth/DMA freeze RESOLVED + three-defect ha
 - Cosmetic: the seeder writes `notes: "Normal trading day"` onto `is_open=false` rows (visible on the legacy 06-26 row). Harmless, but a smell in row construction. **P4.**
 
 **Ops debt closed this session (was carry, not TD):** canonical AWS crontab is now repo-tracked and rebuild-grade (`docs/registers/aws_crontab.txt`, `d3b02bb`); EC2 git auth moved from an expiring PAT to an SSH ed25519 deploy key (the recurring `~/.git-credentials` 0-byte failure class is closed). **Residual:** `meridian-connect` on the box still pulls HTTPS+PAT — it needs its own deploy key (a deploy key attaches to exactly one repo). **P3.**
+
+**S69 (2026-08-12/13) — 8 new items filed (TD-S69-NEW-1..8), 0 closed.** Filed at the S70 doc-close from interim capture v2. Ordering note: **TD-S69-NEW-7** (the `e5232b5`→`60642fc` provenance gap) comes first — an unreconciled HEAD makes every other current-state claim provisional. **TD-S69-NEW-4** is the blocker for TD-S69-NEW-3 and for committing the held Pine artifacts: the canonical Pine host must be decided before the time-anchor patch and `merdian_ict_htf_zones.pine` can land, because committing them now commits the Local↔box divergence. **TD-S69-NEW-5** step 1 (re-time `MERDIAN_ICT_EOD` past 15:40, ADR-022 D1) must precede step 2 (ADR-016 `OB_MIN_MOVE_PCT` recalibration) — the repair order is a correctness property, not a preference. **Still open from earlier sessions and re-surfaced by ADR-021:** TD-S37-01 — `τ_pin`/`τ_accel` remain hardcoded `0.3` inside the recursive walk; the ENH-83 `get_parameter_num` value is *selected* into the view output but never *used* by the walk, and `patch_s39_enh83_view_tau_rewrite.py` has still never run. Now cheap to close: the scoped views are small enough to test end-to-end in seconds.

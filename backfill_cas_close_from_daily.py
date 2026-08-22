@@ -368,7 +368,10 @@ def main() -> int:
     # ── Write ─────────────────────────────────────────────────────────────────
     bar_rows: List[Dict] = []
     snap_rows: List[Dict] = []
-    capture_ts = datetime.now(IST).astimezone(timezone.utc).isoformat()
+    # S71 (TD-S70-NEW-3): ts is derived PER ROW from that row's bar_ist.
+    # A single batch capture_ts collided on the (symbol, ts, source_table)
+    # unique key -- 14 rows, one instant, 23505. The run's own wall-clock
+    # is already preserved in market_spot_snapshots.created_at (row-birth).
 
     for d, symbol, close in to_write:
         day = datetime.strptime(d, "%Y-%m-%d").date()
@@ -388,7 +391,7 @@ def main() -> int:
             "is_pre_market": False,
         })
         snap_rows.append({
-            "ts":           capture_ts,
+            "ts":           bar_ist.astimezone(timezone.utc).isoformat(),
             "symbol":       symbol,
             "spot":         close,
             "source_table": "dhan_charts_historical",
@@ -431,3 +434,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+# S71-CAS-CORRECTIONS

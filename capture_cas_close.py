@@ -39,11 +39,17 @@ Guards, in order:
   2. Bar-timestamp assertion: the returned bar MUST be stamped 15:29 IST.
      Anything else means the vendor's shape changed -- refuse and exit
      DATA_ERROR rather than write a bar of unknown provenance.
-  3. Settled-vs-frozen check: a genuine settled bar has close != open.
-     If close == open the auction result has not landed yet; exit
-     SKIPPED_NO_INPUT so a later manual run can retry. Never write a
-     frozen value as the close (ADR-001: a plausible wrong close is worse
-     than a missing one).
+  3. Flat-bar provisional marking (S71, TD-S70-NEW-2). A flat 15:29 bar
+     (close == open) is NOT evidence the auction has not landed -- it is
+     the common case on a quiet close, where the auction settles at the
+     price the index was already frozen at. The original guard rejected
+     10 of 28 symbol-days that already held the correct settled close
+     (Assumption Register D.28.3). Dhan's daily endpoint is the authority
+     but does not publish same-day (verified 2026-08-21 18:32 IST), so no
+     same-day cross-check exists. The bar is therefore WRITTEN and marked
+     flat_bar_provisional=true in raw; backfill_cas_close_from_daily.py
+     reconciles it against the daily close on the next run and reports any
+     MISMATCH without auto-correcting.
 
 Writes the 15:29 bar to hist_spot_bars_1m (upsert on instrument_id,bar_ts)
 and market_spot_snapshots, matching capture_spot_1m_v2's row shapes exactly.
@@ -101,6 +107,12 @@ CAS_WINDOW_TO   = (15, 35)
 
 # The bar we expect back. Assertion, not a preference.
 CAS_CLOSE_BAR   = (15, 29)
+
+# S71 (TD-S70-NEW-2): the assertion accepts a known-good SET of slots, not a
+# single one. Sessions 2026-08-03/04/05 placed the last bar at 15:34 -- the
+# exchange/vendor window differed in the first CAS week. Refusing a bar of
+# unknown provenance is still the job; the set is what "known" means.
+CAS_CLOSE_BAR_SLOTS = {(15, 29), (15, 34)}
 
 INSTRUMENTS = {
     "NIFTY": {
@@ -286,6 +298,7 @@ def main() -> int:
     errors: List[str] = []
     auth_failed = False
     rejects: List[str] = []
+    provisional: List[str] = []   # S71: flat bars written pending daily recon
 
     for symbol in INSTRUMENTS:
         try:
@@ -297,22 +310,26 @@ def main() -> int:
 
             bar_ist = datetime.fromtimestamp(bar["timestamp"], IST)
 
-            # Guard 2 -- bar-timestamp assertion.
-            if (bar_ist.hour, bar_ist.minute) != CAS_CLOSE_BAR:
+            # Guard 2 -- bar-timestamp assertion (S71: known-good slot set).
+            if (bar_ist.hour, bar_ist.minute) not in CAS_CLOSE_BAR_SLOTS:
+                _slots = ", ".join(f"{h:02d}:{m:02d}"
+                                   for h, m in sorted(CAS_CLOSE_BAR_SLOTS))
                 msg = (f"{symbol}: last bar is {bar_ist.strftime('%H:%M')} IST, "
-                       f"expected {CAS_CLOSE_BAR[0]:02d}:{CAS_CLOSE_BAR[1]:02d} "
+                       f"expected one of {{{_slots}}} "
                        f"-- vendor bar shape changed, refusing to write")
                 print(f"  [REJECT] {msg}", file=sys.stderr)
                 rejects.append(f"{symbol}:wrong_bar_{bar_ist.strftime('%H:%M')}")
                 continue
 
-            # Guard 3 -- settled vs still-frozen.
-            if bar["close"] == bar["open"]:
-                msg = (f"{symbol}: 15:29 bar still frozen "
-                       f"(O=C={bar['close']:.2f}); auction result not landed")
-                print(f"  [REJECT] {msg}")
-                rejects.append(f"{symbol}:frozen")
-                continue
+            # Guard 3 -- S71 (TD-S70-NEW-2). A flat bar is settled-at-the-frozen
+            # -price, not unsettled. Write it, mark it provisional, and let
+            # the next-day daily reconciliation confirm or flag it.
+            bar["provisional_flat"] = (bar["close"] == bar["open"])
+            if bar["provisional_flat"]:
+                print(f"  [PROVISIONAL] {symbol}: flat 15:29 bar "
+                      f"(O=C={bar['close']:.2f}) -- written, pending daily "
+                      f"reconciliation")
+                provisional.append(symbol)
 
             bars[symbol] = bar
             print(f"  {symbol}: bar={bar_ist.strftime('%H:%M')} IST  "
@@ -372,6 +389,8 @@ def main() -> int:
                 "frozen_open":      bar["open"],
                 "settled_close":    bar["close"],
                 "settled_move":     round(bar["close"] - bar["open"], 4),
+                "flat_bar_provisional": bool(bar.get("provisional_flat")),
+                "bar_slot_ist":     bar_ist.strftime("%H:%M"),
                 "ohlc_open":        bar["open"],
                 "ohlc_high":        bar["high"],
                 "ohlc_low":         bar["low"],
@@ -414,6 +433,10 @@ def main() -> int:
 
     if rejects:
         print(f"  NOTE: {len(rejects)} symbol(s) rejected: {rejects}")
+    if provisional:
+        print(f"  NOTE: {len(provisional)} flat bar(s) written PROVISIONAL: "
+              f"{provisional} -- run backfill_cas_close_from_daily.py "
+              f"tomorrow to reconcile.")
 
     print("  Done.")
     return log.complete()
@@ -421,3 +444,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+# S71-CAS-CORRECTIONS

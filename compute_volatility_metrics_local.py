@@ -276,9 +276,26 @@ def extract_history_vix(row: Dict[str, Any]) -> Optional[float]:
     return None
 
 
+# S71 (TD-S70-NEW-5). Age bound on the VIX reference distribution. 7 calendar
+# days tolerates a long weekend plus a holiday; anything beyond that means the
+# history table has stopped being written and vix_percentile is being scored
+# against a distribution that no longer describes the market.
+VIX_HISTORY_MAX_AGE_DAYS = 7
+
+# PostgREST returns at most this many rows per request regardless of the limit
+# parameter. A candidate reporting exactly this count was truncated.
+VIX_PAGE_CAP = 1000
+
+
 def load_vix_history_rows(sb: SupabaseClient) -> List[Tuple[date, float]]:
+    # S71 (TD-S70-NEW-5): a source-selection function must record which source
+    # answered and how many rows it returned. Selection logic below is
+    # UNCHANGED -- this is observability, not behaviour.
     candidates = ["india_vix_daily", "india_vix_history", "vix_percentile_reference"]
     parsed: List[Tuple[date, float]] = []
+    resolved_source: Optional[str] = None
+    probes: List[str] = []
+    capped: List[str] = []
 
     for table_name in candidates:
         try:
@@ -292,9 +309,16 @@ def load_vix_history_rows(sb: SupabaseClient) -> List[Tuple[date, float]]:
                 backoff_multiplier=1.5,
                 label=f"select {table_name}",
             )
-        except Exception:
+        except Exception as _vix_exc:
+            # S71: was a bare `continue`. A swallowed exception must say what
+            # it swallowed, or the fallback chain is indistinguishable from
+            # an empty table.
+            probes.append(f"{table_name}=ERROR:{type(_vix_exc).__name__}")
             continue
 
+        _raw_n = len(rows or [])
+        if _raw_n >= VIX_PAGE_CAP:
+            capped.append(table_name)
         temp: List[Tuple[date, float]] = []
         for row in rows or []:
             d = extract_history_date(row)
@@ -302,14 +326,39 @@ def load_vix_history_rows(sb: SupabaseClient) -> List[Tuple[date, float]]:
             if d is not None and v is not None:
                 temp.append((d, v))
 
+        probes.append(f"{table_name}=raw:{_raw_n}/usable:{len(temp)}")
         if len(temp) > len(parsed):
             parsed = temp
+            resolved_source = table_name
 
     dedup: Dict[date, float] = {}
     for d, v in parsed:
         dedup[d] = v
 
     out = sorted(dedup.items(), key=lambda x: x[0])
+
+    # S71 (TD-S70-NEW-5): emit the resolution on every call.
+    _probe_str = ", ".join(probes) if probes else "none"
+    if out:
+        _oldest, _newest = out[0][0], out[-1][0]
+        _age_days = (date.today() - _newest).days
+        print(f"  [VIX-HISTORY] resolved={resolved_source} rows={len(out)} "
+              f"range={_oldest}..{_newest} age_days={_age_days} "
+              f"probes[{_probe_str}]")
+        if _age_days > VIX_HISTORY_MAX_AGE_DAYS:
+            print(f"  [WARN] [VIX-HISTORY] newest row {_newest} is {_age_days}d "
+                  f"old (floor {VIX_HISTORY_MAX_AGE_DAYS}d). vix_percentile is "
+                  f"scored against a stale reference distribution -- "
+                  f"TD-S70-NEW-4 (no writer on the history table).")
+    else:
+        print(f"  [WARN] [VIX-HISTORY] no usable rows from any candidate; "
+              f"probes[{_probe_str}]. vix_percentile will be None.")
+    if capped:
+        print(f"  [WARN] [VIX-HISTORY] candidate(s) {capped} returned the "
+              f"PostgREST page cap ({VIX_PAGE_CAP}) -- the read is TRUNCATED "
+              f"and, with no order clause, the retained rows are not "
+              f"necessarily the newest. The percentile window may be anchored "
+              f"far from the table's true tail.")
     return out
 
 
@@ -855,3 +904,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+# S71-VIX-SOURCE-LOGGING

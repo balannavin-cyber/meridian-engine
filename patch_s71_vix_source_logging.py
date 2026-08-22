@@ -95,6 +95,7 @@ def load_vix_history_rows(sb: SupabaseClient) -> List[Tuple[date, float]]:""",
         "probe accumulators",
         """    candidates = ["india_vix_daily", "india_vix_history", "vix_percentile_reference"]
     parsed: List[Tuple[date, float]] = []
+
     for table_name in candidates:""",
         """    # S71 (TD-S70-NEW-5): a source-selection function must record which source
     # answered and how many rows it returned. Selection logic below is
@@ -104,6 +105,7 @@ def load_vix_history_rows(sb: SupabaseClient) -> List[Tuple[date, float]]:""",
     resolved_source: Optional[str] = None
     probes: List[str] = []
     capped: List[str] = []
+
     for table_name in candidates:""",
     ),
     (
@@ -142,8 +144,7 @@ def load_vix_history_rows(sb: SupabaseClient) -> List[Tuple[date, float]]:""",
     ),
     (
         "emit resolution",
-        """    out = sorted(dedup.items(), key=lambda x: x[0])
-    return out""",
+        """    out = sorted(dedup.items(), key=lambda x: x[0])""",
         """    out = sorted(dedup.items(), key=lambda x: x[0])
 
     # S71 (TD-S70-NEW-5): emit the resolution on every call.
@@ -167,9 +168,7 @@ def load_vix_history_rows(sb: SupabaseClient) -> List[Tuple[date, float]]:""",
               f"PostgREST page cap ({VIX_PAGE_CAP}) -- the read is TRUNCATED "
               f"and, with no order clause, the retained rows are not "
               f"necessarily the newest. The percentile window may be anchored "
-              f"far from the table's true tail.")
-
-    return out""",
+              f"far from the table's true tail.")""",
     ),
 ]
 

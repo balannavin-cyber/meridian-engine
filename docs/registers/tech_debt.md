@@ -57,6 +57,153 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S70-NEW-1 (S2 priority) — `CURRENT.md` is 661 KB of which 98% is superseded session blocks, and it is read second at every session open
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Not a runtime defect; a per-session cost paid forever. |
+| **Discovered** | Session 70 (2026-08-22), when the PK viewer refused to render the file. |
+| **Component** | `docs/session_notes/CURRENT.md` |
+| **Symptom** | 684 KB / 2,890 lines. **45 `## Previous session` blocks.** The portion matching the file's actual job — Last session + This session — is **~11 KB**; the other **~650 KB** is an archive duplicating `session_log.md`. The file exceeds the render threshold in both the project-knowledge viewer and the chat file pane, so it cannot be skimmed by eye. |
+| **Root cause** | The file's own header states *"Living file. Overwritten at the end of every session."* It has not been overwritten — each close prepends a new block and demotes the old one, so it is append-only in practice. Doc Protocol v4 Rule 7 describes it as the live session resume and does not specify a retention bound. |
+| **Cost of leaving it** | CLAUDE.md's reading order sends every session to `CURRENT.md` second, before `tech_debt.md` and the System Map. Every session therefore pays context on ~650 KB of superseded state. That is the real cost, ahead of the render problem. |
+| **Proper fix** | Retain **Last session + This session**, plus at most one Previous for continuity. Everything older already lives in `session_log.md`, the archive of record. Expected result ~20 KB. **Two preconditions:** (a) verify each dropped block's content is genuinely represented in `session_log.md` — the log entry is one dense line where the CURRENT block is a table, so the *format* differs even where content does not, and any detail the log dropped must move first; (b) add a retention bound to Doc Protocol v4 Rule 7, or it silently re-accretes. |
+| **Data-integrity note** | The blocks are **not sequential** — S64 is missing between S65 and S63, and the tail stops at S51 while the file contains 45 blocks. Some are duplicated or out of order. An archive nobody can open is an archive nobody audits. |
+| **Cost to fix** | ~1 session (the `session_log.md` coverage check is the work; the truncation is minutes). |
+| **Blocked by** | nothing. |
+| **Cross-ref** | Doc Protocol v4 Rule 7 · `session_log.md` as archive of record. |
+| **Status** | **OPEN.** |
+
+### TD-S70-NEW-2 (S2 priority) — `capture_cas_close.py` Guard 3 is over-fitted: `close == open` was read as "auction not settled" when it means "settled at the frozen price"
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Conservative failure — it rejects rather than corrupts — but it rejected 10 of 28 symbol-days that were correct. |
+| **Discovered** | Session 70 (2026-08-22), immediately, in the first backfill run of the script it belongs to. |
+| **Component** | `capture_cas_close.py` — Guard 3 |
+| **Symptom** | The 2026-08-03→08-21 backfill rejected 10 symbol-days with `15:29 bar still frozen (O=C=…); auction result not landed`. Cross-checking Dhan's daily endpoint showed **every rejected value was already the correct settled close**: 08-06 NIFTY 24636.00, 08-10 SENSEX 78542.44, 08-11 SENSEX 78154.25, 08-12 NIFTY 24435.95, 08-14 NIFTY 24366.00, 08-17 both, 08-18 SENSEX 77235.46. |
+| **Root cause** | The guard was designed from two hand-picked samples (08-20, 08-21) in which the settled price happened to differ from the frozen price, and it generalised `close != open` into a settlement test. **On a quiet close the auction settles at the price the index was already frozen at, and the bar is legitimately flat.** The guard encodes an assumption about price movement, not about settlement. |
+| **Secondary finding, same run** | Sessions 2026-08-03/04/05 place the last bar at **15:34 IST, not 15:29**, so the bar-timestamp assertion rejected those six symbol-days too. The exchange/vendor window differed in the first CAS week. The assertion is correct to exist — it refuses to write a bar of unknown provenance — but it needs to accept a small set of known-good slots rather than a single one. |
+| **Proper fix** | Replace the movement heuristic with an **authority cross-check**: compare the 15:29 bar's close against Dhan's daily endpoint where available, and accept a flat bar that matches. Same-day this is unavailable (daily does not publish until the next morning — verified 2026-08-21 18:32 IST returning only 08-20), so the same-day path should **accept the flat bar and mark it provisional**, with `backfill_cas_close_from_daily.py` reconciling the next day. Widen the bar-slot assertion to `{15:29, 15:34}`. |
+| **Mitigation in place** | `backfill_cas_close_from_daily.py` catches every rejected day on its next run, so the series is correct in aggregate today. The guard costs completeness, not correctness. |
+| **Cost to fix** | ~30 min. |
+| **Blocked by** | nothing. Ship with the ADR-023 D1 floor in one pass. |
+| **Cross-ref** | ADR-022 D2 · `backfill_cas_close_from_daily.py` · Assumption Register D.28.3. |
+| **Status** | **OPEN.** |
+
+### TD-S70-NEW-3 (S3 priority) — `backfill_cas_close_from_daily.py` computes one `capture_ts` for the whole batch, so multi-row `market_spot_snapshots` inserts collide on the unique key
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Audit-trail loss only; the bars themselves write correctly. |
+| **Discovered** | Session 70 (2026-08-22), on the first live backfill run. |
+| **Component** | `backfill_cas_close_from_daily.py` |
+| **Symptom** | `Supabase INSERT market_spot_snapshots failed: 409 {"code":"23505","details":"Key (symbol, ts, source_table)=(NIFTY, 2026-08-22 00:17:55.225618+00, dhan_charts_historical) already exists."}` — 14 rows shared a single `capture_ts` and collided on `(symbol, ts, source_table)`. |
+| **Root cause** | `capture_ts` is computed once before the write loop. Correct for `capture_cas_close.py`, which writes two rows for one instant; wrong for a backfill writing many sessions in one pass. |
+| **Impact** | `hist_spot_bars_1m` wrote all 14 rows cleanly (it keys on `bar_ts`, which is per-session). Only the `market_spot_snapshots` audit rows are missing, so the backfilled closes are not individually traceable in the snapshot table. Nothing downstream reads those rows. |
+| **Proper fix** | Derive `ts` per row from that row's `bar_ist` rather than from `now()`. One line. |
+| **Cost to fix** | ~10 min. |
+| **Blocked by** | nothing. Do it before the next reconciliation run. |
+| **Cross-ref** | ADR-022 D2 · TD-S70-NEW-2 (same pass). |
+| **Status** | **OPEN.** |
+
+### TD-S70-NEW-4 (S2 priority) — `india_vix_history` has no writer and has been frozen at 2026-03-11 for five months; `vix_percentile` is scored against a stale reference distribution
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2 — downgraded from S1 on evidence.** Not a gating defect; see below. |
+| **Discovered** | Session 70 (2026-08-22), during the ingestion-health sweep. |
+| **Component** | `india_vix_history` · `india_vix_daily` (**0 rows**) · `vix_percentile_reference` (**0 rows**) · `compute_volatility_metrics_local.py::load_vix_history_rows` |
+| **Symptom** | `india_vix_history` holds 1,782 rows, newest `2026-03-11`. A `grep` for writers returns only `fetch_india_vix.py` (live NSE `allIndices` scrape, returns the current value) and readers — **nothing writes the history table.** It was loaded once and abandoned. `compute_vix_percentile()` therefore ranks today's VIX against a distribution ending in March. |
+| **Why it is NOT S1** | `build_trade_signal_local.py:462` reads `prefer(vol_features["vix_regime"], vol_features["vix_context_regime"])`. `prefer()` returns the first non-`None`/non-empty value; `vix_regime` is computed directly from the live NSE value via fixed bands and is always populated. **`vix_context_regime` is therefore unreachable on the gating path**, and no signal decision has been made on the stale distribution. The operator's own observation — that Marketview's VIX matches TradingView — is correct and was the tell. |
+| **What is still wrong** | `vix_percentile` and `vix_percentile_regime` are written to `volatility_snapshots` and `signal_snapshots` every cycle and are surfaced by `measurement_health_snapshot_local.py`. A plausible, well-formed, wrong column sitting in a research table is how a cohort gets quietly poisoned later. |
+| **Proper fix** | ENH-118 P0 (India VIX writer) is the right home. Minimal form: a ~20-line `capture_india_vix_eod.py` writing `(trade_date, vix_value)` after close on the AWS crontab, plus a 2026-03-11→present backfill (Kite `historical_data` on the INDIA VIX instrument token is the likely source; NSE `allIndices` is spot-only). **Open design question: rolling 252-day window or all-history for the percentile reference** — all-history means the 2020 and 2026-03 spikes permanently compress today's percentile. Operator's call; it changes the writer's retention behaviour. |
+| **Schema note** | The column is `vix_value`, not `vix_close`. `extract_history_vix()` tries eight name variants, which is itself how a wrong-schema assumption still resolved. |
+| **Cost to fix** | ~1 session including backfill. |
+| **Blocked by** | the rolling-vs-all-history decision. |
+| **Cross-ref** | ENH-118 P0 · TD-S70-NEW-5 (the mechanism that hid it) · Assumption Register D.28.5. |
+| **Status** | **OPEN.** |
+
+### TD-S70-NEW-5 (S2 priority) — `load_vix_history_rows()` selects silently among three candidate tables and logs nothing, which is the mechanism that hid a five-month staleness
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2 — this is the generalisable defect, above the VIX instance itself.** |
+| **Discovered** | Session 70 (2026-08-22). |
+| **Component** | `compute_volatility_metrics_local.py::load_vix_history_rows` (line ~278) |
+| **Symptom** | The function iterates `["india_vix_daily", "india_vix_history", "vix_percentile_reference"]`, swallows every exception with `continue`, keeps whichever result is longest (`if len(temp) > len(parsed)`), and **never logs which table answered or how many rows it returned**. Two of the three are empty; the third is five months stale. Everything downstream works, reports nothing, and is wrong. |
+| **Root cause** | Defensive source-selection without observability. The `.pre_vix_repair_backup.py` shows the candidate list was *extended* from two entries to three at some prior repair — i.e. the fallback was the fix, and the empty table was never repopulated. Each layer of defensiveness made the failure quieter. |
+| **Proper fix** | Log the resolved source and row count on every call — `resolved=india_vix_history rows=1782 newest=2026-03-11`. Escalate to a `WARN` when the newest row is older than a threshold. **This is worth more than the VIX writer**: the pattern will hide the next stale reference source exactly as it hid this one. |
+| **Generalisation** | Audit for the same shape elsewhere: any function that tries a list of sources and picks by size or first-success without recording the choice. |
+| **Cost to fix** | ~10 min for the log line; ~30 min for the audit. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | TD-S70-NEW-4 · ADR-001 (a quiet wrong answer) · ADR-023 (freshness must be visible in the artefact). |
+| **Status** | **OPEN — do the log line before the writer.** |
+
+### TD-S70-NEW-6 (S2 priority) — the intraday capture cron window ends at hour `09` UTC, leaving 15:30–15:40 IST uncovered for every `*/5` and `*/1` job
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Second CAS exposure on the capture layer, distinct from the auction-window gap. |
+| **Discovered** | Session 70 (2026-08-22), reading the AWS crontab. |
+| **Component** | AWS crontab — `capture_spot_1m_v2.py`, `capture_market_spot_snapshot_local.py`, `capture_index_futures_snapshot_local.py`, `run_ingest.sh`, `build_wcb_snapshot_local.py`, `ingest_breadth_from_ticks.py`, `run_merdian_shadow_runner_aws.py` |
+| **Symptom** | Every intraday capture line is bounded `03-09` or `03,04,…,09` UTC. Hour 09 ends at 09:59 UTC = **15:29 IST**. Index **derivatives trade to 15:40** under ADR-022, and the CAS equilibrium publishes 15:30–15:35. Nothing is captured in that window. |
+| **Relationship to the CAS close fix** | Separate. `capture_cas_close.py` retrieves the settled *close* at 16:20 IST. This TD is about the ~10 minutes of *derivatives* activity after the cash close, which no job observes at all. |
+| **Proper fix** | Extend the hour ranges `09` → `10` (coverage to 10:55 UTC = 16:25 IST) **as part of the ADR-022 D1 job-by-job audit**, not as a standalone edit — it touches seven live ingest lines and each needs its own verdict on whether post-close data is meaningful for that series. |
+| **Cost to fix** | ~0.5 session, bundled with the D1 audit. |
+| **Blocked by** | the ADR-022 D1 audit ordering. |
+| **Cross-ref** | ADR-022 D1 · Deployment Topology §S70 · `docs/registers/aws_crontab.txt`. |
+| **Status** | **OPEN.** |
+
+### TD-S70-NEW-7 (S3 priority) — the generated `merdian_ict_htf_zones.pine` is tracked in git and collides on every pull where both hosts have run the generator
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Operational friction, no data impact. |
+| **Discovered** | Session 70 (2026-08-22): `git pull --ff-only` on the box aborted with *"Your local changes to the following files would be overwritten by merge: merdian_ict_htf_zones.pine"*. |
+| **Component** | `merdian_ict_htf_zones.pine` |
+| **Root cause** | It is a **build artefact**, not source — regenerated by `generate_pine_overlay.py` on whichever host runs it. Tracking it guarantees a conflict whenever Local and the box have both generated. |
+| **Proper fix** | `.gitignore` it and publish the canonical copy elsewhere, or generate only on the box (which is now the canonical Pine host per TD-S69-NEW-4's closure) and treat the file as ephemeral. Decide alongside the Pine-host convention rather than separately. |
+| **Workaround** | `git checkout -- merdian_ict_htf_zones.pine` before pulling. |
+| **Cost to fix** | ~15 min. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | TD-S69-NEW-4 (CLOSED S70). |
+| **Status** | **OPEN.** |
+
+### TD-S70-NEW-8 (S2 priority) — the "`OB_MIN_MOVE_PCT = 0.40%` is empirically unreachable" finding was measured against the wrong quantity and must be struck, not carried
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2 (research integrity).** A wrong measurement in the registers is worse than no measurement. |
+| **Discovered** | Session 70 (2026-08-22), on reading `detect_ict_patterns_runner.py:160`. |
+| **Component** | TD-S69-NEW-5 · ADR-022 Evidence section · ADR-016 recalibration premise |
+| **What was claimed** | That `ict_zones` is frozen because `OB_MIN_MOVE_PCT = 0.40%` cannot be reached — supported by 30-session maxima of NIFTY 0.366% / SENSEX 0.369%. |
+| **Why it is invalid** | The runner's own comment states the test is **`OB_MIN_MOVE_PCT=0.40%` over 5 bars** — an impulse across five M5 bars (~25 min). The measurement taken was **single-bar body** `abs(close-open)/open`. A one-month re-measurement returned max single-bar body 0.261% / 0.225% and `clears_040 = 0` — but that number says nothing about a 25-minute impulse, which will very likely clear 0.40%. **The measurement never addressed the threshold it was used to indict.** |
+| **Independent refutation** | The S70 zone rebuild produced **38 daily OB/FVG zones per symbol** against the same `OB_MIN_MOVE_PCT = 0.40%` constant in `build_ict_htf_zones.py`. The threshold is demonstrably reachable on the HTF path. |
+| **What is actually still unexplained** | Why the **M5** layer writes nothing while the HTF layer writes 38 zones per symbol on the same constant. Four clean AWS runs (08-19, 08-20, both symbols) each read ~360 bars, aggregated to ~72 M5 bars, and reported `No new patterns detected`. Note the message is *"No **new** patterns"* — whether it is dedup-aware is unread; if it is, patterns may be found and suppressed, which is a different problem entirely. |
+| **Proper fix** | (a) Strike the unreachable-threshold claim from TD-S69-NEW-5 and note it in ADR-022's Evidence section — it is not load-bearing for ADR-022's decision, which rests on the timing finding. (b) Read the `No new patterns detected` emit site and its gate. (c) Only then re-measure, against the 5-bar impulse definition, with the SQL committed to `docs/research/` **before** any register entry, per ADR-009. |
+| **Cost to fix** | ~30 min for (a) and (b); the re-measurement is a research task. |
+| **Blocked by** | nothing. **ADR-016 recalibration must not proceed until this is settled** — it would be recalibrating against a premise that has been withdrawn. |
+| **Cross-ref** | TD-S69-NEW-5 · ADR-016 · ADR-009 (calibration discipline) · Assumption Register D.28.4. |
+| **Status** | **OPEN — claim withdrawn, cause unexplained.** |
+
+### TD-S70-NEW-9 (S3 priority) — 2026-08-17 capture degraded before the token failure and is unexplained
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** One session, historical, no ongoing exposure. |
+| **Discovered** | Session 70 (2026-08-22), in the bar-continuity audit. |
+| **Component** | `capture_spot_1m_v2.py` · `hist_spot_bars_1m` · `market_spot_snapshots` |
+| **Symptom** | 2026-08-17 holds **324 bars per symbol ending 15:08 IST**, against the CAS-era norm of 360 ending 15:14. Both short **and** early, and unlike every other day since 08-03 it has genuine interior gaps. `market_spot_snapshots` last wrote 15:06 that day. The `capture_spot_1m_v2` crash query returns **no rows at all for 08-17** while every other session since 08-03 shows 13–14. |
+| **Why it matters** | 08-17 is the day before the Zerodha token failure that took out the feed on 08-18. Capture was already degrading a day earlier, from a different cause, and nothing reported it. |
+| **Root cause** | Unknown. Candidates: an earlier token/auth degradation, a Dhan-side outage, or the EC2 disk pressure that peaked around then. |
+| **Proper fix** | Read `cron.log` and `script_execution_log` for 2026-08-17 09:30–10:30 UTC. If it was auth, it strengthens the TD-NEW-7 case; if vendor-side, it is a data note only. |
+| **Recovery state** | The settled close for 08-17 was recovered from the daily endpoint (NIFTY 24287.65 / SENSEX 77728.16), so the daily bar is correct. The missing intraday minutes are not recoverable and are unlikely to matter. |
+| **Cost to fix** | ~20 min of log reading. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | TD-NEW-7 · TD-S69-NEW-1 (EC2 disk). |
+| **Status** | **OPEN.** |
+
 ### TD-S69-NEW-1 (S1 priority) — MERDIAN AWS EC2 root volume is 7.6 GB and hit 100% on 2026-08-12, cascading into a feed crash + `.env` corruption + a silently-failed breadth cron; the journal cap only delays recurrence
 
 | Field | Value |
@@ -3413,3 +3560,43 @@ Updated Session 67 (2026-07-10 — breadth/DMA freeze RESOLVED + three-defect ha
 **Ops debt closed this session (was carry, not TD):** canonical AWS crontab is now repo-tracked and rebuild-grade (`docs/registers/aws_crontab.txt`, `d3b02bb`); EC2 git auth moved from an expiring PAT to an SSH ed25519 deploy key (the recurring `~/.git-credentials` 0-byte failure class is closed). **Residual:** `meridian-connect` on the box still pulls HTTPS+PAT — it needs its own deploy key (a deploy key attaches to exactly one repo). **P3.**
 
 **S69 (2026-08-12/13) — 8 new items filed (TD-S69-NEW-1..8), 0 closed.** Filed at the S70 doc-close from interim capture v2. Ordering note: **TD-S69-NEW-7 was CLOSED at the S70 doc-close (2026-08-14) before any other item was touched** — `git log` on both suspect ranges returned one commit each (S68's own doc-close `60642fc`, and the capture-v2 correction `22ed45c`), so no undocumented work existed. It resolved into a convention artifact instead: a session's doc-close commit cannot appear inside the docs it commits, so the recorded "HEAD at close" is always one commit stale by construction. **With TD-7 closed, the first live item is TD-S69-NEW-5 step 1** — re-time `MERDIAN_ICT_EOD` past 15:40 per ADR-022 D1. **TD-S69-NEW-4** is the blocker for TD-S69-NEW-3 and for committing the held Pine artifacts: the canonical Pine host must be decided before the time-anchor patch and `merdian_ict_htf_zones.pine` can land, because committing them now commits the Local↔box divergence. **TD-S69-NEW-5** step 1 (re-time `MERDIAN_ICT_EOD` past 15:40, ADR-022 D1) must precede step 2 (ADR-016 `OB_MIN_MOVE_PCT` recalibration) — the repair order is a correctness property, not a preference. **Still open from earlier sessions and re-surfaced by ADR-021:** TD-S37-01 — `τ_pin`/`τ_accel` remain hardcoded `0.3` inside the recursive walk; the ENH-83 `get_parameter_num` value is *selected* into the view output but never *used* by the walk, and `patch_s39_enh83_view_tau_rewrite.py` has still never run. Now cheap to close: the scoped views are small enough to test end-to-end in seconds.
+
+---
+
+## S70 closures (2026-08-22)
+
+### TD-S69-NEW-4 — CLOSED (S70, `75de1bb`) — Local↔box `generate_pine_overlay.py` divergence resolved; the box is the canonical Pine host
+
+Closed by doctrine plus deployment, in that order. The operator's statement that **"all these tasks are to run on EC2 only — MERDIAN is 100% AWS"** removed the decision this TD was waiting on: there is no canonical-host question, only a deployment. The Windows Task Scheduler audit corroborated it — **18 of 19 `MERDIAN_*` tasks Disabled, one Ready** — i.e. the Local host class was retired at the ADR-006 cutover and only the ICT detector survived.
+
+`75de1bb` shipped the held S69 artifacts: `generate_pine_overlay.py` (+176 lines — the `bar_index`→`xloc.bar_time` time-anchor fix and the `fetch_intraday_zones` recency floor) and the regenerated `merdian_ict_htf_zones.pine`. Both hosts now run the same generator; the 106–110 vs 139 zone split is gone, and the box no longer masks M5 staleness by merging stale zones.
+
+Residual filed separately as **TD-S70-NEW-7**: the generated `.pine` is tracked in git and collides on pull whenever both hosts have run the generator. Artefact-vs-source problem, not a divergence problem.
+
+### TD-S69-NEW-7 — CLOSED (S70, `155430e`) — both provenance ranges reconciled; no undocumented work existed
+
+`git log --oneline --stat e5232b5..60642fc` returns **exactly one commit**: `60642fc`, S68's own doc-close (ADR-020 accepted, 11 files). `git log 4326f25..22ed45c` returns **exactly one commit**: `22ed45c`, the S69 carry-forward v2 correction. Both windows fully accounted for; no retrospective `session_log.md` entry is owed.
+
+The root cause is a **convention artifact, not a defect**: a session's doc-close commit cannot appear inside the docs it commits. When the S68 block was written, `60642fc` did not exist, so the highest hash available was the last *code* commit `e5232b5`. It recurred immediately — the S69 doc-close was written stating HEAD `4326f25` and was itself committed as `8bc25b6`, which appears in none of its eleven files. **"HEAD at session close" as recorded in MERDIAN's docs is always one commit stale by construction**, and every future reconciliation will surface the same phantom gap unless the field is renamed.
+
+Convention fix carried to S71: record it as **"HEAD at close (pre-doc-close commit)"**, or state the expected next hash.
+
+### TD-S69-NEW-8 — CLOSED (S70) — the widened daily lookback is verified working
+
+`build_ict_htf_zones.py --timeframe both`, run 2026-08-22 against the CAS-corrected bar series:
+
+```
+NIFTY   D history sweep: 37 OB/FVG candidates across 60-session lookback
+        Detected 40 daily zones (38 OB/FVG + 2 PDH/PDL)
+SENSEX  D history sweep: 38 OB/FVG candidates across 60-session lookback
+        Detected 41 daily zones (39 OB/FVG + 2 PDH/PDL)
+        166 total zones written
+```
+
+All four verification conditions met. **(a)** The daily layer accumulates — 38/39 OB/FVG per symbol against the pre-`a4bdb4c` count of ~1. **(b)** PDH/PDL remain **2 per symbol**, so the S59 single-emission fix (TD-S59-NEW-3) is intact and PDH/PDL did not leak into the 60-session loop. **(c)** No Postgres `21000`; the TD-070 v2 dedup path held. **(d)** All four pattern types now fire on D — BEAR_FVG, BEAR_OB, BULL_FVG, BULL_OB — where the pre-fix daily layer emitted almost nothing.
+
+**Consequence beyond the verification:** 38 daily OB/FVG per symbol clear `OB_MIN_MOVE_PCT = 0.40%`, which independently refutes the "0.40% is empirically unreachable" claim carried in TD-S69-NEW-5 and ADR-022's Evidence section. Withdrawn and re-filed as **TD-S70-NEW-8**.
+
+
+**S70 (2026-08-22) — 9 new items filed (TD-S70-NEW-1..9), 3 closed (TD-S69-NEW-4, TD-S69-NEW-7, TD-S69-NEW-8).** Ordering note: **TD-S70-NEW-5** (silent source-selection in `load_vix_history_rows`) comes before **TD-S70-NEW-4** (the VIX writer itself) — the logging defect is the mechanism that hid a five-month staleness and will hide the next one, so it is worth more than the instance it concealed. **TD-S70-NEW-2 and TD-S70-NEW-3 ship in one pass with ADR-023 D1**, all three being small corrections to the same CAS/read-path work. **TD-S70-NEW-8 blocks the ADR-016 recalibration** — the premise behind it has been withdrawn, and recalibrating against a withdrawn premise is worse than not recalibrating. **TD-S70-NEW-6** is deliberately bundled into the ADR-022 D1 job audit rather than actioned alone: it touches seven live ingest cron lines and each needs its own verdict. **Still open and unchanged from S69:** TD-S69-NEW-1 (EBS root 7.6 GB — the true root cause of the 08-12 cascade, still the largest infra item), TD-S69-NEW-2 (`eod_health_check.py` coverage — note S70 confirmed it reports `[OK]` on a session missing its last 14 minutes, because a first→last range check cannot see a truncated tail), TD-S69-NEW-3 (now escalated to **ADR-023 D1**), TD-S69-NEW-5 (M5 detector — orchestration half CLOSED by the AWS migration, threshold half withdrawn per TD-S70-NEW-8), TD-S69-NEW-6 (token-rotation runbook), TD-S37-01 (τ still hardcoded `0.3`). **Carried from S28 and now three outages old: TD-NEW-7** (S1, MALPHA→Supabase Zerodha token propagation) — the fix has been fully designed since 2026-05-13 and the precursor "C-10 Kite token propagation manual" dates to Session 7; outages 2026-04-22, 2026-05-12, 2026-08-18. It is the oldest live S1 in the register.
+

@@ -1125,3 +1125,86 @@ Hardening owed to the 06:00 routine (runbook, not code — **TD-S69-NEW-6**): `d
 **Git provenance gap (narrowed):** the session opened at HEAD **`60642fc`** and closed at **`4326f25`** via `a4bdb4c`, both accounted for. What is **not** accounted for is the range **`e5232b5` → `60642fc`** — `e5232b5` was the S68 close, `60642fc` was the S69 open, and nothing in `session_log.md` describes what landed in between. Those commits are real and in production. Filed **TD-S69-NEW-7**.
 
 *Deployment Topology updated Session 69, 2026-08-12/13 (§S69 — SEBI CAS session-timing table added as the reference boundary per ADR-022, with the six-job exposure inventory and the dated 2026-09-07 pre-open follow-up; EC2 root-disk 100% incident recorded with recovery, the `SystemMaxUse=200M` journal cap, and the standing 7.6 GB undersize risk; `merdian-wsfeed` `reset-failed` + `kill -9` recovery canon re-affirmed; Zerodha token rotation corrected to MANUAL-by-operator — "MALPHA auto-refresh broken" removed from the carry list; deploy state recorded at HEAD `4326f25` with the Pine generator deliberately held uncommitted pending the canonical-host decision; `e5232b5`→`60642fc` commit-provenance gap filed). Written at the S70 doc-close from the S69 interim capture v2. Previous: Session 68, 2026-07-12 (§S68).*
+
+---
+
+## §S70 (2026-08-22) — update log
+
+**ADR-006 is now complete.** The last Local-resident production job moved to AWS this session.
+
+### `MERDIAN_ICT_EOD` — migrated Local → AWS
+
+| Field | Before | After |
+|---|---|---|
+| **Host** | Local Windows Task Scheduler | **MERDIAN AWS crontab** |
+| **Trigger** | `MERDIAN_ICT_EOD`, Mon–Fri **15:35 IST**, → `merdian_eod_ict.bat` | `20 10` + `22 10` UTC = **15:50 / 15:52 IST** |
+| **Entry point** | `merdian_eod_ict.bat` (3 lines: NIFTY, SENSEX, Pine) | two crontab lines calling `detect_ict_patterns_runner.py` directly |
+| **State** | `Ready` | **`Disabled`** on Local (durable) |
+
+```
+# S70: ICT M5 detector - migrated off Local Task Scheduler (completes ADR-006), re-timed past the CAS 15:40 derivatives close (ADR-022 D1)
+20 10 * * 1-5 cd /home/ssm-user/meridian-engine && source .env && /usr/bin/python3 detect_ict_patterns_runner.py NIFTY  >> logs/ict_eod.log 2>&1
+22 10 * * 1-5 cd /home/ssm-user/meridian-engine && source .env && /usr/bin/python3 detect_ict_patterns_runner.py SENSEX >> logs/ict_eod.log 2>&1
+```
+
+**The Task Scheduler audit that settled it** — 19 `MERDIAN_*` tasks, **18 Disabled, 1 Ready**, and the one Ready was the ICT detector. The Local host class was retired wholesale at the ADR-006 cutover; this job never made the trip and had been the sole survivor. It is also why nobody noticed the freeze: no sibling task was failing beside it.
+
+**First AWS runs (08-19, 08-20, both symbols) — all clean:** ~360 bars read, aggregated to ~72 M5 bars, `1H zones: 2 written (2 detected)`, Kelly lots computed. **This retires the Local `Insufficient bars (0)` framing** — that was a host-specific data-path failure, not a detector defect. The box reaches detection every run.
+
+**Gap day: 2026-08-18.** Local was disabled ~10:00 IST on 08-18 and the crontab landed 06:20 IST on 08-19, so no detector ran on 08-18. Practical loss nil (nothing had been written since 06-02), but the log should not imply continuity.
+
+**Windows Task Scheduler history is disabled** on this host, which is why the 08-17 `LastTaskResult: 1` has no detail behind it. Enable via Actions → *Enable All Tasks History* if Local scheduling is ever revived.
+
+### NEW — `capture_cas_close.py` on the AWS crontab
+
+```
+# S70: CAS settled-close bar (15:29 IST) -- ADR-022 D2. Auction freezes the index 15:15-15:28; the settled close lands in the 15:29 bar. Daily OHLC endpoint does not carry the same-day close (verified 18:32 IST), so intraday is the only source.
+50 10 * * 1-5 cd /home/ssm-user/meridian-engine && source .env && /usr/bin/python3 capture_cas_close.py >> logs/cas_close.log 2>&1
+```
+
+**`50 10` UTC = 16:20 IST, chosen to avoid a slot collision**, not because 16:20 is optimal. `20 10`/`22 10` are the detector and `30 10`/`40 10` are the postmarket capture and marker writer.
+
+**Known ordering defect, deliberate for now:** at 16:20 the CAS close is written **after** the 15:50/15:52 detector runs, so the detector still reads a session ending at 15:14. Correct ordering is close-then-detector. Move to `10 10` (15:40 IST) once the mechanism has a week of unattended success — 15:40 is the earliest the settled value could exist and it has only ever been observed retrospectively. Guard 3 refuses a frozen bar, so a too-early run fails safe.
+
+### `.env` sourcing under cron — a portability note
+
+Both new lines use `source .env`, matching the `*/5` capture lines. `source` is a bashism and cron runs `/bin/sh`; this works only because **`SHELL=/bin/bash` is set at the top of the crontab**. The `40 10` EOD line hedges differently with `/bin/bash -lc 'set -a; . ./.env; set +a; …'`. Not portable if the crontab is ever rebuilt without the `SHELL` line — noted, not changed.
+
+### Intraday capture window — second CAS exposure, NOT in the ADR-022 inventory
+
+Every `*/1` and `*/5` intraday line is bounded `03-09` or `03,04,…,09` UTC. **Hour 09 ends at 09:59 UTC = 15:29 IST.** Index derivatives trade to **15:40** and the CAS equilibrium publishes 15:30–15:35, so nothing is captured in that window: `capture_spot_1m_v2.py`, `capture_market_spot_snapshot_local.py`, `capture_index_futures_snapshot_local.py`, `run_ingest.sh`, `build_wcb_snapshot_local.py`, `ingest_breadth_from_ticks.py`, `run_merdian_shadow_runner_aws.py`.
+
+**ADR-022's six-job exposure inventory covered EOD-anchored jobs and did not audit the intraday capture layer.** That is an inventory gap, filed **TD-S70-NEW-6**, and the extension `09` → `10` belongs inside the D1 job-by-job audit rather than as a standalone cron edit — seven live ingest lines, each needing its own verdict on whether post-close data is meaningful for that series.
+
+### Deploy state at S70 close
+
+| Commit | Contents |
+|---|---|
+| `8bc25b6` | S69 twelve-file doc-close (tagged `session-69-docclose`) |
+| `155430e` | TD-S69-NEW-7 closure (tech_debt, CURRENT) |
+| `75de1bb` | `capture_cas_close.py` NEW + `capture_spot_1m_v2.py` guard + **the held S69 Pine artifacts** (`generate_pine_overlay.py` +176, regenerated `.pine`) |
+| `bfd7113` | `backfill_cas_close_from_daily.py` NEW |
+
+**HEAD `bfd7113`; Local == origin == EC2.** Nothing held back this session.
+
+**Commit-message BOM:** `8bc25b6` carries a leading U+FEFF. PowerShell 5.1's `Out-File -Encoding utf8` writes **with** BOM — only PS7 omits it, and the house convention assumed PS7. Corrected going forward to `[System.IO.File]::WriteAllText($path, $msg, (New-Object System.Text.UTF8Encoding $false))`, which is version-independent. Verified clean on `155430e` onward. Fold into the git-workflow runbook.
+
+**Pull collision:** `git pull --ff-only` on the box aborted on `merdian_ict_htf_zones.pine` — a **build artefact** tracked in git, regenerated by whichever host runs the generator. `git checkout -- merdian_ict_htf_zones.pine` clears it. TD-S70-NEW-7.
+
+### Zerodha token propagation — third documented outage
+
+| Date | Effect |
+|---|---|
+| 2026-04-22 | outage |
+| 2026-05-12 | outage |
+| **2026-08-18** | feed dead from 09:10 IST; `equity_intraday_last` 92h stale; breadth wrote **zero-coverage rows every minute all session** |
+
+**The fix has been designed since 2026-05-13 (TD-NEW-7, S1).** Dhan propagates automatically — refresh on Local → Supabase `system_config` → `pull_token_from_supabase.py` on the box. Zerodha does not: refresh on MALPHA → MALPHA's `.env` → **the operator reads it with `grep` and pastes it into a `sed` on MERDIAN.** A human is the transport layer, and there is no mechanism that could notice the step being missed.
+
+`grep -rn ZERODHA_ACCESS_TOKEN` returns three files — `wsfeed_preflight.sh`, `refresh_equity_intraday_last.py`, `ws_feed_zerodha.py` — **all consumers**. `pull_token_from_supabase.py` is not among them; the Zerodha token never reaches Supabase at all.
+
+**MALPHA has no token log** (`ls ~/meridian-alpha/logs/*token*` → nothing), so the 08-18 sequence is unreconstructable. The automation must write a `script_execution_log` row so the next occurrence is diagnosable rather than inferred.
+
+**Rejected hypothesis, recorded so it is not re-adopted:** a Kite token-flush window (5:00–7:30 IST) was proposed as the cause. **Falsified** — a token generated 06:37 IST on 08-19 was still valid at 08:19 and the feed ran 1h38m across the boundary. The propagation gap is the documented cause; rotation timing is not.
+
+*Deployment Topology updated Session 70, 2026-08-22 (§S70 — `MERDIAN_ICT_EOD` migrated Local→AWS completing ADR-006 and executing ADR-022 D1, with the 18-of-19-Disabled Task Scheduler audit that settled it; `capture_cas_close.py` added at `50 10` UTC with its known ordering defect recorded; the intraday capture window `09`-hour bound identified as a second CAS exposure absent from the ADR-022 inventory; deploy state at `bfd7113` with nothing held; the commit-message BOM cause and fix; the Zerodha propagation gap recorded at its third outage with the flush-window hypothesis falsified). Previous: Session 69, 2026-08-12/13 (§S69).*

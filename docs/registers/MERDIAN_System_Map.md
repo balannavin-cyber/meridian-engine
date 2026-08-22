@@ -1031,3 +1031,90 @@ Operator-facing guide to reading the ENH-116 ambient trajectory panel (the three
 Returned **`[OK]` on 2026-08-12** while pin/accel views, the M5 detector, and the GEX read path were all broken, because it asserts on none of them. Its own disclaimer already says a green DB does not vouch for the Marketview render. Required assertions: freshness on `ict_zones`, freshness on `gex_strike_snapshots`, and **non-empty return** from `v_gex_strike_pin_zone` and `v_gex_strike_accel_zone`. Had these existed, the pin/accel timeout would have alerted weeks before it was found by looking at TradingView.
 
 *System Map updated Session 69, 2026-08-12/13 (§S69 — `v_gex_strike_pin_zone`/`v_gex_strike_accel_zone` scoped to `latest_run` per ADR-021 + index `ix_gex_strike_snap_sym_ts`, committed `4326f25`; `gex_strike_snapshots` at ~1.06M rows with no retention policy; **`build_ict_htf_zones.py` daily detector now sweeps the full 60-session `DAILY_LOOKBACK` via `detect_daily_zones_history()`, `a4bdb4c`** — OB/FVG only, PDH/PDL deliberately excluded; `generate_pine_overlay.py` positioning boxes re-anchored `bar_index`→`xloc.bar_time` on Local and deliberately held uncommitted; Local↔box generator divergence 106–110 vs 139 zones recorded; `ict_zones` frozen at 06-02 with a healthy writer, root cause `OB_MIN_MOVE_PCT` unreachable + a stacked CAS timing defect per ADR-022; `eod_health_check.py` coverage gap; new runbook `docs/runbooks/reading_the_ambient_trajectory_dashboard.md`). Written at the S70 doc-close from the S69 interim capture v2. HEAD `4326f25`, Local == origin == EC2. Previous: Session 68, 2026-07-12 (§S68).*
+
+---
+
+## §S70 (2026-08-22) — update log
+
+Doc-close of S69 plus an ingestion-integrity sweep. Three new scripts, one patched, one register-grade correction.
+
+### NEW — `capture_cas_close.py` (`75de1bb`)
+
+| Field | Value |
+|---|---|
+| **Purpose** | Capture the CAS settled close, which `capture_spot_1m_v2.py` structurally cannot reach. ADR-022 D2. |
+| **Schedule** | AWS crontab `50 10 * * 1-5` UTC = **16:20 IST** |
+| **Reads** | Dhan `/v2/charts/intraday`, wide window **15:25–15:35 IST**. Wide on purpose: single-minute requests inside the auction return an empty array. Takes the **last** bar. |
+| **Writes** | `hist_spot_bars_1m` (upsert on `instrument_id,bar_ts`) + `market_spot_snapshots` |
+| **Guards** | (1) holiday gate; (2) **bar-timestamp assertion** — the bar must be stamped 15:29 or it refuses, rather than writing a bar of unknown provenance; (3) settled-vs-frozen — **over-fitted, see TD-S70-NEW-2**. |
+| **Flags** | `--date YYYY-MM-DD` backfill · `--dry-run` |
+
+**The empirical basis, probed on two sessions (08-20 and 08-21, both symbols):**
+
+```
+15:06-15:14   real varying OHLC, volume 1.2-3.0M        <- continuous trading
+15:15-15:28   O=H=L=C frozen, volume = the 15:14 bar's  <- index frozen, constituents in auction
+15:29         open = frozen value, close = SETTLED      <- the settled close lands here
+```
+
+08-20 NIFTY `24211.60 → 24231.85`; 08-21 NIFTY `24234.75 → 24252.00`, SENSEX `77522.47 → 77540.83`.
+
+**Why the index freezes rather than auctions:** CAS applies to Category-I *stocks*. NIFTY and SENSEX are not auctioned — they are **computed** from constituents. While those constituents are in the auction the index has no continuous input and repeats its last value; when the equilibrium prices publish, the index recomputes.
+
+### NEW — `backfill_cas_close_from_daily.py` (`bfd7113`)
+
+| Field | Value |
+|---|---|
+| **Purpose** | Reconcile CAS closes against Dhan's **daily** endpoint, the authority. Backfill and weekly recon. |
+| **Reads** | Dhan `/v2/charts/historical` (daily) + existing 15:29 bars from `hist_spot_bars_1m` |
+| **Classification** | **MATCH** (agrees, no write) · **MISSING** (upsert) · **MISMATCH** (**never auto-corrected**) |
+| **Why MISMATCH is not corrected** | A disagreement means one of two sources is wrong. Overwriting one with the other destroys the evidence needed to determine which. Reported, left alone, decided deliberately. |
+| **Row shape** | O/H/L set equal to close — this row is the **closing print**, not a range bar; the session's real intraday range lives in the 09:15–15:14 bars. |
+| **Provenance** | `source_script=backfill_cas_close_from_daily`, `cas_source=daily_endpoint`, `synthesised=true` in `market_spot_snapshots.raw` — a backfilled close stays distinguishable from a live capture permanently. |
+| **Usage** | `--from YYYY-MM-DD --to YYYY-MM-DD [--dry-run]` |
+
+**Authority established, not assumed:** all 18 independently-captured intraday 15:29 bars were cross-checked against the daily endpoint — **18/18 exact match, 0 mismatches**. The daily endpoint is authoritative for backfill; it is **not** usable same-day (verified 2026-08-21 18:32 IST, still returning only 08-20), which is why the intraday 15:29 path exists at all.
+
+### PATCHED — `capture_spot_1m_v2.py` (`75de1bb`, `patch_s70_cas_window_guard.py`, `_PRE_S70` backup)
+
+Two edits, 19,273B → 19,876B, `ast.parse` clean, idempotency marker `# S70-CAS-WINDOW-GUARD`.
+
+1. **`MARKET_CLOSE_GUARD` 15:30 → 15:15.** Stops 14 futile API calls and 14 log rows per session.
+2. **`NO_DATA` → `SKIPPED_NO_INPUT`.** `NO_DATA` is **not in `chk_exit_reason_valid`**, so the row was rejected and every benign auction-window skip was recorded as **CRASH**. A **TD-083 residual** — S29 fixed the `OUTSIDE_MARKET_HOURS` sibling and missed this one.
+
+**Note the failure was never in the fetch logic.** `is_filler_bar()` requires `volume == 0` **and** flat; the auction plateau carries the 15:14 bar's volume, so it was never classified as filler. The bars simply came back as an empty array.
+
+### `hist_spot_bars_1m` — series corrected 2026-08-03 → 2026-08-21
+
+Every session in that range now ends at `09:59:00` UTC (15:29 IST) on a verified settled close. Bar counts ~721 (both symbols) where they were ~720 truncated at 15:14; 2026-08-17 remains short at 650 (TD-S70-NEW-9) but now closes correctly.
+
+14 sessions were repaired via the daily endpoint after `capture_cas_close.py`'s Guard 3 rejected them (TD-S70-NEW-2): 08-03/04/05 both symbols (last bar at **15:34**, not 15:29 — the exchange window differed in the first CAS week), plus eight flat-but-settled bars.
+
+### `ict_htf_zones` — rebuilt on the corrected series, 166 zones
+
+First correct ICT levels since `ict_zones` froze on 2026-06-02.
+
+| Symbol | Weekly | Daily | ACTIVE |
+|---|---|---|---|
+| NIFTY | 42 (38 OB/FVG + 4 PDH/PDL) | 40 (38 OB/FVG + 2 PDH/PDL) | 10 |
+| SENSEX | 43 (39 OB/FVG + 4 PDH/PDL) | 41 (39 OB/FVG + 2 PDH/PDL) | 10 |
+
+**`DAILY_LOOKBACK` verified (TD-S69-NEW-8 CLOSED):** `D history sweep: 37/38 OB/FVG candidates across 60-session lookback`, PDH/PDL held at 2 per symbol, no `21000`, all four pattern types firing on D.
+
+**Consequence:** 38 daily OB/FVG per symbol clear `OB_MIN_MOVE_PCT = 0.40%`, which independently refutes the "0.40% is empirically unreachable" claim. Withdrawn, TD-S70-NEW-8.
+
+### `india_vix_history` / `india_vix_daily` / `vix_percentile_reference` — the VIX reference chain
+
+| Table | Rows | Newest | Writer |
+|---|---|---|---|
+| `india_vix_daily` | **0** | — | none |
+| `india_vix_history` | 1,782 | **2026-03-11** | **none — loaded once, abandoned** |
+| `vix_percentile_reference` | **0** | — | none |
+
+`load_vix_history_rows()` tries all three, swallows exceptions, keeps the longest, and **logs nothing**. Column is `vix_value` (not `vix_close`); `extract_history_vix()` tries eight name variants. Live VIX is correct throughout — `fetch_india_vix()` scrapes NSE `allIndices` per cycle — so only `vix_percentile` and its derived regimes are affected, and `prefer(vix_regime, vix_context_regime)` means the percentile-derived regime is **unreachable on the gating path**. TD-S70-NEW-4 / TD-S70-NEW-5.
+
+### `detect_ict_patterns_runner.py` — now AWS-resident
+
+Migrated off Windows Task Scheduler (see Deployment Topology §S70). Four clean AWS runs 08-19/08-20 both symbols: ~360 bars → ~72 M5 bars, `1H zones: 2 written`, Kelly lots computed. **M5 still writes zero patterns and the cause is now unexplained** — the threshold theory was withdrawn (TD-S70-NEW-8), and the `No new patterns detected` emit site has not been read to determine whether it is dedup-aware.
+
+*System Map updated Session 70, 2026-08-22 (§S70 — `capture_cas_close.py` NEW + `backfill_cas_close_from_daily.py` NEW + `capture_spot_1m_v2.py` CAS window guard and the `NO_DATA` exit-reason correction; `hist_spot_bars_1m` corrected 08-03→08-21 with the settled close verified 18/18 against the daily endpoint; `ict_htf_zones` rebuilt to 166 zones with `DAILY_LOOKBACK` verified and the `OB_MIN_MOVE_PCT`-unreachable claim withdrawn; the VIX reference chain documented as writerless since 2026-03-11; the M5 detector recorded as AWS-resident with its silence unexplained). HEAD `bfd7113`, Local == origin == EC2. Previous: Session 69, 2026-08-12/13 (§S69).*

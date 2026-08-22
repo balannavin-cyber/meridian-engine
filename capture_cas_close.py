@@ -326,7 +326,8 @@ def main() -> int:
             # the next-day daily reconciliation confirm or flag it.
             bar["provisional_flat"] = (bar["close"] == bar["open"])
             if bar["provisional_flat"]:
-                print(f"  [PROVISIONAL] {symbol}: flat 15:29 bar "
+                print(f"  [PROVISIONAL] {symbol}: flat "
+                      f"{bar_ist.strftime('%H:%M')} bar "
                       f"(O=C={bar['close']:.2f}) -- written, pending daily "
                       f"reconciliation")
                 provisional.append(symbol)
@@ -409,8 +410,18 @@ def main() -> int:
     # ── 2. hist_spot_bars_1m ─────────────────────────────────────────────────
     bar_rows = []
     for symbol, bar in bars.items():
-        bar_ts_utc = datetime.fromtimestamp(
-            bar["timestamp"], IST).astimezone(timezone.utc).isoformat()
+        # S71: the accepted-slot SET governs acceptance; the canonical slot
+        # governs STORAGE. Writing a 15:34 bar at 15:34 would put a second
+        # closing bar in sessions the S70 daily backfill already wrote at
+        # 15:29, shift max(bar_ts) for those sessions, and make the row
+        # invisible to backfill_cas_close_from_daily.py (which reads the
+        # 15:29 slot only). True vendor slot is preserved in
+        # raw.bar_slot_ist.
+        bar_ts_utc = (
+            datetime.combine(trade_day, datetime.min.time(), IST)
+            .replace(hour=CAS_CLOSE_BAR[0], minute=CAS_CLOSE_BAR[1])
+            .astimezone(timezone.utc).isoformat()
+        )
         bar_rows.append({
             "instrument_id": INSTRUMENTS[symbol]["instrument_id"],
             "trade_date":    today_str,
@@ -446,3 +457,5 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # S71-CAS-CORRECTIONS
+
+# S71-CAS-SLOT-NORMALISE

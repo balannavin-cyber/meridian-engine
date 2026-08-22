@@ -96,7 +96,12 @@ IST = ZoneInfo("Asia/Kolkata")
 # When now=15:30:02 we request 15:29 -> guard accepts. When now=15:31:02
 # we request 15:30 -> guard rejects.
 MARKET_OPEN_GUARD  = dtime(9, 15)   # inclusive
-MARKET_CLOSE_GUARD = dtime(15, 30)  # exclusive (15:29 valid, 15:30 not)
+MARKET_CLOSE_GUARD = dtime(15, 15)  # # S70-CAS-WINDOW-GUARD exclusive; 15:14 last
+# CAS (SEBI, live 2026-08-03): NIFTY/SENSEX freeze at 15:15 while their
+# Category-I constituents are in the closing auction. Dhan returns an
+# EMPTY array for single-minute windows in 15:15-15:28, so every call in
+# that range is wasted. The settled close lands in the 15:29 bar and is
+# captured by capture_cas_close.py at 15:50 IST. See ADR-022 D1/D2.
 
 # Instrument identifiers.
 # securityId / exchangeSegment / instrument follow the v2 charts/intraday
@@ -401,7 +406,10 @@ def main() -> int:
     if not bars_by_symbol:
         # All symbols returned empty/filler/error. Pre-market gap is the
         # most common cause; not a hard failure unless fetch errored.
-        reason = "DATA_ERROR" if fetch_errors else "NO_DATA"
+        # # S70-CAS-WINDOW-GUARD NO_DATA is not in chk_exit_reason_valid; the row is
+        # rejected and the run lands as CRASH. TD-083 fixed the sibling
+        # OUTSIDE_MARKET_HOURS -> OFF_HOURS in S29 and missed this one.
+        reason = "DATA_ERROR" if fetch_errors else "SKIPPED_NO_INPUT"
         return log.exit_with_reason(
             reason,
             exit_code=(1 if fetch_errors else 0),

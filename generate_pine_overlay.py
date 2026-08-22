@@ -77,6 +77,43 @@ def label_with_wr(timeframe: str, pattern_type: str,
 # match render_symbol_block expectations (timeframe set to "M5").
 INTRADAY_CAP_PER_SYMBOL = 20   # Pine v6 box limit safety
 
+# S69-HARDENING (ADR-018 D2 recency floor).
+# fetch_intraday_zones() had NO age bound: it took the most recent ACTIVE
+# trade_date in ict_zones whatever its age. On 2026-07-20 that was
+# 2026-06-02 -- seven weeks stale, rendered as "today's session" zones.
+# Same defect shape as TD-S66-NEW-2 (build_daily_map, fixed S67); the
+# fix was never propagated to this consumer.
+# Floor is 2 trading days: the generator commonly runs pre-market Monday
+# off Friday's zones, so 1 would false-flag every Monday.
+INTRADAY_MAX_AGE_TRADING_DAYS = 2
+
+# S69-HARDENING. Freshness bound on the ENH-81 positioning views.
+POSITIONING_MAX_AGE_MIN = 1440   # 24h -- views are EOD-ish, not intraday
+
+# S69-HARDENING. Freshness bound on the spot anchor driving the tier system.
+SPOT_MAX_AGE_MIN = 1080
+
+
+def _trading_days_between(d_from, d_to):
+    """Weekday count between two dates, exclusive of d_from.
+
+    DELIBERATELY calendar-blind (no trading_calendar consult): an NSE
+    holiday is counted as a trading day, so the computed age is >= the
+    true age. For a STALENESS floor that errs strictly -- the safe
+    direction. Migrating this to core/trading_calendar_gate.py is part
+    of the ~28-gate batch (ADR-020), not this patch.
+    """
+    from datetime import timedelta as _td
+    if d_to <= d_from:
+        return 0
+    count = 0
+    cur = d_from
+    while cur < d_to:
+        cur += _td(days=1)
+        if cur.weekday() < 5:
+            count += 1
+    return count
+
 
 def fetch_intraday_zones(sb, symbol: str) -> list[dict]:
     """Return ACTIVE intraday zones from ict_zones for the most recent
@@ -94,6 +131,25 @@ def fetch_intraday_zones(sb, symbol: str) -> list[dict]:
         if not recent:
             return []
         latest_td = recent[0]["trade_date"]
+
+        # S69-HARDENING: ADR-018 D2 recency floor. A dead upstream writer
+        # must self-flag STALE, not render seven-week-old zones as current.
+        try:
+            _latest_d = date.fromisoformat(str(latest_td))
+            _age = _trading_days_between(_latest_d, date.today())
+            if _age > INTRADAY_MAX_AGE_TRADING_DAYS:
+                print(
+                    f"  STALE: {symbol} ict_zones newest ACTIVE trade_date is "
+                    f"{latest_td} ({_age} trading days old, floor "
+                    f"{INTRADAY_MAX_AGE_TRADING_DAYS}). Intraday M5 layer "
+                    f"DROPPED. The detector is not writing -- check "
+                    f"detect_ict_patterns_runner.py.",
+                    file=sys.stderr,
+                )
+                return []
+        except Exception as _age_err:
+            print(f"  Warning: {symbol} intraday recency check failed: "
+                  f"{_age_err}", file=sys.stderr)
 
         rows = sb.table("ict_zones").select(
             "pattern_type, direction, zone_high, zone_low, "
@@ -186,6 +242,27 @@ def fetch_positioning_landscape(sb, symbol: str):
 
     if not out["pin"] and not out["accel"]:
         return None
+
+    # S69-HARDENING: neither view read was time-bounded (order-by-ts desc
+    # + limit 1, no lower bound), and out["ts"] was captured then never
+    # used. A frozen ENH-81 view rendered as current with no tell.
+    if out.get("ts"):
+        try:
+            from datetime import datetime, timezone
+            _t = datetime.fromisoformat(str(out["ts"]).replace("Z", "+00:00"))
+            if _t.tzinfo is None:
+                _t = _t.replace(tzinfo=timezone.utc)
+            _age = (datetime.now(timezone.utc) - _t).total_seconds() / 60.0
+            if _age > POSITIONING_MAX_AGE_MIN:
+                print(
+                    f"  STALE: {symbol} positioning views newest ts is "
+                    f"{out['ts']} ({_age/60:.1f}h old, floor "
+                    f"{POSITIONING_MAX_AGE_MIN/60:.0f}h). PIN/ACCEL zones "
+                    f"are not current.",
+                    file=sys.stderr,
+                )
+        except Exception:
+            pass
     return out
 
 
@@ -206,7 +283,13 @@ def _pine_positioning_render(pos):
     # ENH-81 (S37) v2
     if not pos:
         return []
-    lines = ["    if show_positioning"]
+    # S69-HARDENING: stamp the positioning as-of into the generated Pine
+    # so the artifact itself carries its own vintage.
+    _pos_ts = pos.get("ts") or "unknown"
+    lines = [
+        f"    // ENH-81 positioning as-of {_pos_ts}",
+        "    if show_positioning",
+    ]
     pin = pos.get("pin")
     if pin:
         lo, hi = pin["lower"], pin["upper"]
@@ -217,19 +300,26 @@ def _pine_positioning_render(pos):
         else:
             viz_lo, viz_hi = lo, hi
             lbl_core = f"PIN {lo:.0f}-{hi:.0f} (peak {pin['peak_strike']:.0f}"
-        peak_str = f"+{pin['peak_gex_cr']/1000:.0f}K Cr"
-        lbl = f"{lbl_core}, {peak_str})"
+        # S69-HARDENING: total_gex_cr and tau_used were fetched and then
+        # DISCARDED. "+391K Cr" reads as a zone total but is the single
+        # peak strike's GEX. tau shapes the zone bounds and was invisible
+        # -- and it is still hardcoded 0.3 in the views (TD-S37-01; the
+        # closure patch patch_s39_enh83_view_tau_rewrite.py has not run).
+        peak_str = f"peak +{pin['peak_gex_cr']/1000:.0f}K Cr"
+        zone_str = f"zone +{pin['total_gex_cr']/1000:.0f}K Cr"
+        tau_str  = f"T{pin['tau']:.2f}"
+        lbl = f"{lbl_core}, {peak_str}, {zone_str}, {tau_str})"
         lines.append("        var box   pos_pin_bx = na")
         lines.append("        var label pos_pin_lb = na")
         lines.append("        box.delete(pos_pin_bx)")
         lines.append("        label.delete(pos_pin_lb)")
         lines.append(
-            f"        pos_pin_bx := box.new(bar_index - 30, {viz_hi:.2f}, "
-            f"bar_index + 50, {viz_lo:.2f}, bgcolor=c_pin_zone, "
+            f"        pos_pin_bx := box.new(time - 172800000, {viz_hi:.2f}, "
+            f"time + 259200000, {viz_lo:.2f}, xloc=xloc.bar_time, bgcolor=c_pin_zone, "
             f"border_color=c_pin_line, border_width=1, extend=extend.right)"
         )
         lines.append(
-            f'        pos_pin_lb := label.new(bar_index + 90, {viz_hi:.2f}, '
+            f'        pos_pin_lb := label.new(time + 432000000, {viz_hi:.2f}, xloc=xloc.bar_time, '
             f'text="{lbl}", color=color.new(color.black, 100), '
             f'textcolor=c_pin_line, style=label.style_label_lower_left, size=size.small)'
         )
@@ -243,19 +333,22 @@ def _pine_positioning_render(pos):
         else:
             viz_lo, viz_hi = lo, hi
             lbl_core = f"ACCEL {lo:.0f}-{hi:.0f} (trough {accel['trough_strike']:.0f}"
-        trough_str = f"{accel['trough_gex_cr']/1000:.0f}K Cr"
-        lbl = f"{lbl_core}, {trough_str})"
+        # S69-HARDENING: see PIN branch above -- same discarded fields.
+        trough_str = f"trough {accel['trough_gex_cr']/1000:.0f}K Cr"
+        zone_str   = f"zone {accel['total_gex_cr']/1000:.0f}K Cr"
+        tau_str    = f"T{accel['tau']:.2f}"
+        lbl = f"{lbl_core}, {trough_str}, {zone_str}, {tau_str})"
         lines.append("        var box   pos_accel_bx = na")
         lines.append("        var label pos_accel_lb = na")
         lines.append("        box.delete(pos_accel_bx)")
         lines.append("        label.delete(pos_accel_lb)")
         lines.append(
-            f"        pos_accel_bx := box.new(bar_index - 30, {viz_hi:.2f}, "
-            f"bar_index + 50, {viz_lo:.2f}, bgcolor=c_accel_zone, "
+            f"        pos_accel_bx := box.new(time - 172800000, {viz_hi:.2f}, "
+            f"time + 259200000, {viz_lo:.2f}, xloc=xloc.bar_time, bgcolor=c_accel_zone, "
             f"border_color=c_accel_line, border_width=1, extend=extend.right)"
         )
         lines.append(
-            f'        pos_accel_lb := label.new(bar_index + 90, {viz_lo:.2f}, '
+            f'        pos_accel_lb := label.new(time + 432000000, {viz_lo:.2f}, xloc=xloc.bar_time, '
             f'text="{lbl}", color=color.new(color.black, 100), '
             f'textcolor=c_accel_line, style=label.style_label_upper_left, size=size.small)'
         )
@@ -293,10 +386,15 @@ def zone_label(timeframe, pattern_type, source_bar_date):
 
 
 def get_tier(zone_low, zone_high, current_spot, timeframe):
-    # ENH-92: M5 intraday zones always tier 1 (close to current spot
-    # by definition since they formed during today's session).
-    if timeframe in ("D", "M5"):
-        return 1
+    # S69-HARDENING: M5 removed from the always-T1 clause.
+    # The original justification -- "close to current spot by definition
+    # since they formed during today's session" -- is sound ONLY if the
+    # session precondition holds. fetch_intraday_zones() never enforced
+    # it, so stale zones 3-5% from spot rendered at MAXIMUM prominence,
+    # exactly inverting ADR-017 P6 (salience must reflect distance x time).
+    # M5 now tiers by distance like W. Self-correcting: genuinely
+    # intraday zones sit near spot and land in T1 on merit.
+    # D also tiers by distance (S69-C1): the daily layer now spans a
     zone_mid = (float(zone_low) + float(zone_high)) / 2
     if current_spot and current_spot > 0:
         distance_pct = abs(zone_mid - current_spot) / current_spot * 100
@@ -328,11 +426,57 @@ def pine_color_vars(timeframe, pattern_type, tier):
 
 
 def fetch_current_spot(sb, symbol):
+    """S69-HARDENING: spot anchor moved off signal_snapshots.
+
+    signal_snapshots is the most heavily-gated table in the system --
+    build_trade_signal_local.py records ~2 invocations on a live day
+    against ~300 for every other cycle script, because the signal engine
+    gates hard. The spot driving the ENTIRE proximity tier system was
+    read from the table least likely to hold a recent row, with no
+    freshness check at all.
+
+    market_spot_snapshots writes on the 5-min cadence. Freshness is
+    measured on `ts` (the update column), never created_at -- ADR-001.
+    signal_snapshots is retained as a logged fallback so the generator
+    degrades rather than hard-fails.
+    """
+    from datetime import datetime, timezone
+
+    def _age_min(ts_str):
+        try:
+            t = datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - t).total_seconds() / 60.0
+        except Exception:
+            return None
+
+    try:
+        rows = sb.table("market_spot_snapshots").select("spot, ts").eq(
+            "symbol", symbol
+        ).order("ts", desc=True).limit(1).execute().data
+        if rows:
+            age = _age_min(rows[0].get("ts"))
+            if age is not None and age > SPOT_MAX_AGE_MIN:
+                print(
+                    f"  STALE: {symbol} market_spot_snapshots newest ts is "
+                    f"{rows[0].get('ts')} ({age:.0f} min old, floor "
+                    f"{SPOT_MAX_AGE_MIN}). Tier assignment is anchored on a "
+                    f"stale spot.",
+                    file=sys.stderr,
+                )
+            return float(rows[0]["spot"])
+    except Exception as _e:
+        print(f"  Warning: market_spot_snapshots read failed for {symbol}: "
+              f"{_e}", file=sys.stderr)
+
     try:
         rows = sb.table("signal_snapshots").select("spot").eq(
             "symbol", symbol
         ).order("ts", desc=True).limit(1).execute().data
         if rows:
+            print(f"  Note: {symbol} spot fell back to signal_snapshots "
+                  f"(gated table -- may be stale).", file=sys.stderr)
             return float(rows[0]["spot"])
     except Exception:
         pass
@@ -418,7 +562,7 @@ def generate_pine_content(sb):
     pine = f"""\
 // MERDIAN ICT HTF Zones -- PROXIMITY TIER SYSTEM
 // AUTO-GENERATED {generated_at} -- DO NOT EDIT MANUALLY
-// T1=D zones always + W within 2% | T2=W 2-5% | T3=W >5% ghost no-label
+// T1=within 2% of spot | T2=2-5% | T3=>5% ghost no-label | all timeframes
 // Total: {n_nifty + n_sensex} zones (NIFTY {n_nifty} + SENSEX {n_sensex})
 
 //@version=6

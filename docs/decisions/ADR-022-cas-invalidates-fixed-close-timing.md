@@ -98,6 +98,38 @@ That is the generalisable point: **an external timing change is invisible to eve
 - **ADR-019** — retirement requires evidence of no value. The M5 detector's silence is a threshold + timing defect, not evidence of worthlessness; it is repaired, not retired.
 - **Rule 18** (`trading_calendar` is a trust-anchor, validate against the official NSE source) — this ADR is the same lesson one level up: **session *timings* are as much an external trust-anchor as session *dates*.**
 
+## AMENDMENT 1 (Session 71, 2026-08-29) — D1 answered; exchange hours confirmed; the 15:29 bar is a vendor artefact
+
+### A1.1 — D1 CLOSED: the intraday window audit, job by job
+
+Eight job groups audited against the CAS window. **Five lines extended, four deliberately not** — see System Map §S71.B for the full verdict table. Extended to `0,5,10 10 * * 1-5` (15:30 / 15:35 / 15:40 IST): index futures ×2, `run_ingest.sh` ×2, breadth at `0-10 10`. Not extended: `capture_spot_1m_v2` (index frozen, guard already at 15:15), the hour-`03` ingest pair, `build_wcb_snapshot_local` (chain consumer), the shadow runner (contracts written against different semantics).
+
+A blanket `09` → `10` — the form TD-S70-NEW-6 proposed — would have polled to 16:25 IST and collided with the detectors at `10:20`/`10:22` and `capture_cas_close.py` at `10:50`.
+
+### A1.2 — Exchange hours CONFIRMED against NSE
+
+**Equity Derivatives Segment: 9:15 am – 3:40 pm.** Non-CAS cash continuous trading: 9:15 – 3:30. Corroborated operationally by Zerodha (F&O GTT orders and price alerts trigger until 3:40 PM, versus 3:30 PM for non-F&O). Rationale: F&O contracts settle against the equity cash closing price, which CAS now finalises later, so derivatives were extended ten minutes to keep cash and F&O aligned.
+
+The register's 15:40 figure was correct. The Session 71 scepticism about it was wrong, and is recorded as such.
+
+### A1.3 — The "15:29 bar" in this ADR describes a Dhan artefact, not the exchange schedule
+
+This ADR states that the settled close lands in the 15:29 bar. NSE publishes the CAS equilibrium price **between 3:30 and 3:35**. MERDIAN's own observations: the settled close arrives in the **15:34** bar on 2026-08-03/04/05 and in the **15:29** bar from 08-20 onward.
+
+The 15:34 observations match the exchange schedule. The 15:29 ones do not — which means the change is in **Dhan's bar timestamping**, not in the auction. The ADR's rationale should be read as describing the vendor's presentation of an exchange event, and any future vendor change will move it again.
+
+`capture_cas_close.py` now handles both: the accepted-slot set `{15:29, 15:34}` governs **acceptance**, and the canonical `CAS_CLOSE_BAR` governs **storage**, with the true vendor slot preserved as `raw.bar_slot_ist`. That separation is what keeps a vendor timestamping shift from becoming a second closing bar per session.
+
+### A1.4 — The auction window is a semantic discontinuity, and it is a READ-path concern
+
+During the auction all Category-I constituents are in the auction, so the index has no continuous input and does not move, while options and futures keep trading against it. GEX computed against a pinned spot is not the same quantity as GEX computed against a live one — same column, different meaning.
+
+A write-path marker was proposed and **rejected on reading the code**: `ingest_option_chain_local.py:223` stores `"raw": option_raw`, the vendor payload verbatim, and annotating it would destroy that field's only property. The window is in any case a pure function of `ts`, which every row already carries.
+
+**Consumers scope the 15:15–15:40 discontinuity on `ts` at read time**, per the ADR-021 derived-view pattern. No schema change, no new column, no ingest-path code.
+
+---
+
 ## Governance language
 
 > **The settled close is an announced equilibrium price, not a wall-clock constant (ADR-022, S69).** SEBI's Closing Auction Session (live 2026-08-03) ended continuous trading for F&O stocks at 15:15, sets the close by auction 15:15–15:35 (reference = VWAP 15:00–15:15), and extends index/stock derivatives to **15:40** (post-close 15:50–16:00; pre-open restructured 2026-09-07). NIFTY/SENSEX are built from Category-I constituents, so the index close now lands ~15:35–15:40. **No EOD job may fire before 15:40; safe anchor ≥ 15:45** — `MERDIAN_ICT_EOD` moves off 15:35. "Close" for an F&O-linked instrument means the CAS equilibrium price, never a 15:00–15:30 VWAP. An external market-structure change is a first-class audit trigger: it is invisible to every health check MERDIAN owns and surfaces only as slightly-wrong data.

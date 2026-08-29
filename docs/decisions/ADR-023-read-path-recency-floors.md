@@ -88,6 +88,54 @@ This is not a data-driven decision — there is no cohort to measure. It rests o
 - **Assumption Register D.27.8** — "making a slow read path fast is a strictly safe change" was rejected at S69. This ADR is the standing rule that follows from that rejection.
 - **TD-S69-NEW-2** — health-check coverage. Complementary: the health check catches the writer stalling; the floor prevents the consumer from acting on it in the meantime.
 
+## AMENDMENT 1 (Session 71, 2026-08-29) — the Context was overstated and D1's default was derived from the wrong cadence
+
+This ADR is **not reversed**. D2 and D3 stand unchanged, as does the fail-to-absent principle. Three corrections, all discovered while attempting to implement D1.
+
+### A1.1 — The GEX floor already exists. It is warn-only.
+
+The Context of this ADR, TD-S69-NEW-3, and the Decision Index row all state that the positioning-view floor is "still not written." It **was** written, in S69, at `generate_pine_overlay.py:244–266`. It computes the age, prints `STALE: {symbol} positioning views newest ts is …` to stderr, and then executes `return out` **unconditionally**, against a hardcoded `POSITIONING_MAX_AGE_MIN = 1440`.
+
+So the gap is not absence. It is that the floor **warns and returns the stale data anyway** — precisely the failure mode this ADR's D2 ("fail to absent, never to stale") was written to forbid. D1 is therefore a **correction to an existing block**, not new code, and it must not introduce a second idiom alongside it.
+
+D3 is separately and honestly already satisfied for the healthy path: `_pine_positioning_render` emits `// ENH-81 positioning as-of {ts}` into the generated Pine.
+
+### A1.2 — A recency floor is calibrated against the CONSUMER's cadence, never the writer's
+
+D1 specifies a 15-minute default and justifies it as "the tightest value that tolerates ordinary jitter" given the GEX writer's 5-minute cycle. **That is the writer's cadence. The floor binds the consumer.**
+
+`generate_pine_overlay.py` is the consumer. Measured gaps between the newest `gex_strike_snapshots` row and a generation run:
+
+| Generation timing | Newest GEX | Age at generation |
+|---|---|---|
+| Post-close, after `capture_cas_close.py` (`50 10` UTC) | ~15:25 IST | **~57 min** |
+| Pre-market Monday (observed 2026-08-24) | Friday 15:25 IST | **~17 h** |
+
+A 15-minute floor rejects **every** run under both schedules, making PIN/ACCEL permanently absent. The existing 1440 constant's own comment — *"views are EOD-ish, not intraday"* — is correct about the consumer and was written by someone reasoning about the right quantity.
+
+**Amended D1 default: `MERDIAN_GEX_RECENCY_FLOOR_MIN`, default `120`.** Two writer-hours of headroom against the ~57-minute post-close gap; tight enough to catch a mid-session GEX stall; env-tunable so it moves without a commit.
+
+This default is **coupled to a scheduling decision** that does not yet exist. `generate_pine_overlay.py` has had **no scheduled invoker** since the S70 migration dropped the third line of `merdian_eod_ict.bat` (TD-S71-NEW-7). The recommended invoker is `52 10 * * 1-5` (16:22 IST), after the detectors and after the CAS close write. **The floor value and the schedule must be decided together or the floor is uncalibrated again.**
+
+This is the third instance of one error shape in three sessions: Guard 3 generalised from N=2; `OB_MIN_MOVE_PCT` measured a single-bar body against a 5-bar definition; D1 took the writer's cadence for the consumer's. **The easy-to-reason-about quantity substituted for the one that actually binds.**
+
+### A1.3 — D1 is widened: fail-soft must be visible in the artefact, not only stale-soft
+
+Observed 2026-08-28. A `57014` statement timeout on `v_gex_strike_pin_zone` was caught by `fetch_positioning_landscape`'s per-side `except`, which printed a warning to stderr and continued with `out["pin"] = None`. The accel side succeeded. The generated Pine therefore contained:
+
+- a NIFTY **ACCEL** box and **no PIN** box, and
+- `// ENH-81 positioning as-of 2026-08-27T09:50:05` — a stamp taken from the *surviving* side.
+
+The artefact asserts complete, current positioning while half of it is missing, and **"no pin zone today" is a legitimate reading of that file**. Staleness and absence are different defects with the same consequence: a consumer that cannot tell.
+
+**D1 therefore also requires:** when either side is unavailable — whether by recency floor or by fetch failure — the generated Pine carries an explicit marker (`// ENH-81 PIN UNAVAILABLE — <reason>`), and the as-of stamp is **per-side or suppressed**, never inherited from the surviving half.
+
+### A1.4 — Status
+
+D1 remains **NOT IMPLEMENTED**, deliberately, pending the `52 10` + 120-minute decision. Implementing it against the original 15-minute default would have removed PIN/ACCEL from every overlay. Recording a non-delivery on evidence is the correct outcome here, not a missed carry.
+
+---
+
 ## Governance language
 
 > **A read path made fast must be made fresh in the same pass (ADR-023, S70).** Every derived read path carries an explicit recency floor, and the floor ships in the same commit as any change to that path's latency or scope — filing it as a follow-up TD is not sufficient (TD-S69-NEW-3 stayed open across two sessions with the exposure live). `fetch_positioning_landscape()` takes a `MERDIAN_GEX_RECENCY_FLOOR_MIN` floor, default 15 minutes, and **fails to absent, never to stale**: an overlay with no positioning boxes is a true statement about what MERDIAN knows; an overlay with week-old boxes is a false one. Staleness is recorded in the artefact, not only in a log, so the operator can tell "writer stalled" from "no zones today."

@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v49",
+    "version": "v50",
     "generated": "2026-06-12",
     "sources": [
       "Session 69 (2026-08-12/13): LIVE INCIDENT SESSION - one reported symptom (no pin/accel zones on TradingView) resolved into six largely independent failures, four pre-existing. THREE FIXED AT SOURCE: (1) disk-full cascade on the 7.6 GB EC2 root at 100% - killed merdian-wsfeed.service, corrupted .env line 24 via a sed -i that wrote a literal <real-token> (the unquoted < also broke every subsequent .env source), and silently failed the 35 3 UTC breadth-baseline cron leaving equity_intraday_last 92h stale; recovered via journal vacuum 672M + npm cache clean 871M + log truncate 302M->36K to 74%/1.9G free, journal capped SystemMaxUse=200M, token rewritten QUOTED and validated with KiteConnect.profile(), systemctl reset-failed then start, duplicate feed PIDs cleared with kill -9 (SIGTERM is caught by the reconnect handler), 280k+ ticks/10min confirmed. (2) ADR-021 pin/accel view scoping (4326f25) - v_gex_strike_pin_zone/v_gex_strike_accel_zone ran a recursive walk across ALL of gex_strike_snapshots (1.06M rows, 250+ sessions) then the sole caller kept ORDER BY ts DESC LIMIT 1; cost crossed the PostgREST 8s ceiling -> 57014 -> fetch_positioning_landscape failed -> pin/accel silently absent from the overlay for WEEKS. Fixed with latest_run (DISTINCT ON (symbol)) + scoped CTEs, working set 1.06M -> ~80 strikes/symbol, output byte-identical, plus index ix_gex_strike_snap_sym_ts. (3) a4bdb4c S69-C1 daily-history - build_ict_htf_zones.py had DAILY_LOOKBACK=60 defined and NEVER REFERENCED, so detect_daily_zones() evaluated exactly ONE prior session while the weekly walked 52 weeks (~19 zones vs 1); new detect_daily_zones_history() sweeps 60 sessions emitting OB/FVG ONLY, PDH/PDL deliberately excluded (would emit ~120 unfiltered levels/symbol and reverse the S59 single-emission fix), detection rule byte-identical so the Exp-15 cohort behind WR_BY_PATTERN survives per ADR-009. A SECOND INDEPENDENT CAUSE of thin daily structure otherwise attributed entirely to M5 staleness. Rule 10: NO ADR (defined-but-unused constant is a bug fix). CARRIED, NOT FIXED: ADR-022 SEBI Closing Auction Session live 2026-08-03 (NSE+BSE+MSEI) - F&O continuous trading ends 15:15, auction 15:15-15:35 sets the close by equilibrium price (reference = VWAP 15:00-15:15, band +/-3%, limit+market only), index AND stock derivatives extend to 15:40, post-close 15:50-16:00, pre-open restructured 2026-09-07 with random close 09:08-09:10; NIFTY/SENSEX are built from Category-I constituents so the index close now lands ~15:35-15:40 and NO fixed 15:30 anchor is valid - MERDIAN_ICT_EOD fires at 15:35 INSIDE the window and has since 08-03. M5 ICT detector frozen 53 trading days at ict_zones trade_date 2026-06-02 with a HEALTHY task (State Ready, LastTaskResult 0) writing nothing - OB_MIN_MOVE_PCT=0.40% is empirically unreachable (30-session maxima NIFTY 0.366% / SENSEX 0.369%); the ADR-016 recalibration to a candidate 0.25% must land AFTER the ADR-022 re-timing or it measures auction-contaminated bars. KEY CORRECTION: the Zerodha token is rotated MANUALLY by the operator every morning 06:00-06:30 IST - there is no MALPHA auto-refresh and there never was; the 08-12 dead token was .env corruption, not expiry. This REMOVES MALPHA-token-pipeline-broken from the priority list. 2 new ADRs (ADR-021, ADR-022). 8 new TDs (TD-S69-NEW-1..8). HEAD 4326f25, Local == origin == EC2; session opened at 60642fc and the range e5232b5->60642fc is unaccounted for (TD-S69-NEW-7). Pine time-anchor patch + regenerated merdian_ict_htf_zones.pine DELIBERATELY held uncommitted pending the canonical-host decision (committing them commits the Local<->box divergence, Local 106-110 honest zones vs box 139 with stale M5 merged); merdian_eod_ict.bat untracked. New tracked file docs/runbooks/reading_the_ambient_trajectory_dashboard.md. The original S69 P0 (ENH-119 momentum layer) never started.",
@@ -4801,9 +4801,9 @@
       "truncated_each_run": false
     }
   },
-  "version": "v49",
-  "last_updated_session": "Session 67",
-  "last_updated_date": "2026-07-10",
+  "version": "v50",
+  "last_updated_session": "Session 71",
+  "last_updated_date": "2026-08-29",
   "change_log": [
     {
       "session": "S70",
@@ -5124,7 +5124,73 @@
       },
       "still_open_TD_S37_01": "tau_pin / tau_accel remain HARDCODED 0.3 inside the recursive walk. The ENH-83 get_parameter_num('pin.tau.'||symbol) lookup is SELECTED into the view output but NOT USED by the walk; patch_s39_enh83_view_tau_rewrite.py has still never run. The ADR-021 migration deliberately did not fold it in (one change per migration). Now cheap to close - the scoped views test end-to-end in seconds."
     },
-    "_s70_addendum": {
+    "_s71_addendum": {
+    "_note": "Session 71 (2026-08-22 -> 2026-08-29). Header freshness fields were three sessions stale at S71 open (version v49 but Session 67 / 2026-07-10) - TD-S71-NEW-2; all three are now bumped together. Registry coverage gaps identified as TD-S71-NEW-1 and partially closed here.",
+    "coverage_gap_TD_S71_NEW_1": {
+      "problem": "CLAUDE.md forbids asking the operator for file locations on the grounds that files.<filename> holds them. At S71 open, files had 129 entries and tables 50, and neither covered the artefacts S71's own priorities touched.",
+      "files_absent_at_S71_open": [
+        "pull_token_from_supabase.py",
+        "capture_cas_close.py",
+        "backfill_cas_close_from_daily.py",
+        "capture_spot_1m_v2.py",
+        "eod_health_check.py",
+        "refresh_equity_intraday_last.py",
+        "wsfeed_preflight.sh",
+        "generate_pine_overlay.py",
+        "reload_dhan_scripmaster.py",
+        "capture_index_futures_snapshot_local.py"
+      ],
+      "tables_absent_at_S71_open": [
+        "system_config",
+        "script_execution_log",
+        "hist_spot_bars_1m",
+        "india_vix_history",
+        "india_vix_daily",
+        "vix_percentile_reference",
+        "dhan_scripmaster",
+        "index_futures_snapshots"
+      ],
+      "root_cause": "New artefacts are recorded in session-scoped addenda (_s7N_addendum.new_scripts) rather than promoted into files/tables. The addendum is a changelog; the map never absorbs it.",
+      "proper_fix": "Promote every _s7N_addendum.new_scripts entry into files at doc-close, then add a coverage assertion: every .py at repo root must appear in files."
+    },
+    "scripts_modified": {
+      "capture_cas_close.py": "Guard 3 close!=open replaced by flat-bar provisional marking (raw.flat_bar_provisional); bar-slot assertion widened to the SET {15:29, 15:34}; storage normalised to canonical CAS_CLOSE_BAR whatever known-good slot the vendor returns, true slot kept as raw.bar_slot_ist. Commits 382ac34 + 79a04d4.",
+      "backfill_cas_close_from_daily.py": "capture_ts derived per row from bar_ist (was one batch value colliding 14 rows on (symbol, ts, source_table) with 23505). Commit 382ac34.",
+      "compute_volatility_metrics_local.py": "load_vix_history_rows() source-selection observability: resolved source, per-candidate probe incl. swallowed exception type, raw/usable counts, date range, age, 7-day staleness WARN, PostgREST page-cap WARN. Behaviour unchanged. Commit 9f1e41c."
+    },
+    "scripts_with_no_scheduled_invoker": {
+      "_note": "Third instance in one session. All three produced a plausible empty or stale result rather than an error. Standing reconciliation required: every production script at repo root against the crontab.",
+      "generate_pine_overlay.py": "No cron entry since the S70 migration dropped the third line of merdian_eod_ict.bat. EC2 artefact stale at 2026-08-18/104 zones vs Local 2026-08-24/106. TD-S71-NEW-7. Recommended invoker 52 10 * * 1-5, coupled to the ADR-023 amendment.",
+      "reload_dhan_scripmaster.py": "Not in any crontab; reloaded by hand. dhan_scripmaster expired at the 2026-08-27 roll -> four symbol-sessions of index_futures_snapshots lost. TD-S71-NEW-14. Cron added 30 01 1,15 * *.",
+      "capture_premarket_0908.py": "Orphan wrapper; cron calls capture_market_spot_snapshot_local.py directly. Filename encodes an instant retired 2026-09-07. TD-S71-NEW-8."
+    },
+    "crontab": {
+      "lines": 52,
+      "prior": 35,
+      "changes": "ADR-022 D1 CAS window +5 lines at 0,5,10 10 and 0-10 10 (15:30/15:35/15:40 IST); pre-open 38 3 -> 41 3 (09:08 -> 09:11 IST, ahead of the 2026-09-07 restructure); scripmaster reload 30 01 1,15 * *.",
+      "backup": "docs/registers/aws_crontab_PRE_S71_20260824T012332Z.txt - swallowed by .gitignore:108 (*_PRE_S*), exists only on EBS. TD-S71-NEW-12."
+    },
+    "data_loss": {
+      "index_futures_snapshots": "PERMANENT. NIFTY 2026-08-26/27/28 and SENSEX 2026-08-28. Each symbol dropped out the session after its OWN contract expired (NIFTY 08-25, SENSEX 08-27) because dhan_scripmaster held only expired FUTIDX rows. Not backfillable: the script captures a live LTP, hist_future_bars_1m has nothing since 08-25, and the August SECURITY_IDs were replaced by the reload swap. basis_context_snapshots and every ENH-07 derivative carry a NIFTY gap. eod_health_check reported [ OK ] 151 rows on 08-26 and 08-27 because PRIMARY INGESTION counts totals with no per-symbol parity - TD-S71-NEW-15."
+    },
+    "security_incident": {
+      "TD-S71-NEW-11": "Operator .env printed in full to the session transcript by an assistant-issued `bash -x bin/wsfeed_preflight.sh` (line 4 of that script is `. ./.env`). Exposed DHAN_TOTP_SEED, DHAN_PIN, SUPABASE_SERVICE_ROLE_KEY (exp 2036), BREEZE_API_KEY/SECRET, ZERODHA_API_KEY, TELEGRAM_BOT_TOKEN, and both daily tokens. Rotation OUTSTANDING, operator-owned. Codified as CLAUDE.md Rule 19."
+    },
+    "infrastructure": {
+      "ec2_root_volume": "78% -> 66%, 1.7G -> 2.7G free, NO resize. TD-S69-NEW-1's root-cause row named market_ticks and gex_strike_snapshots, which are Supabase tables and cannot occupy an EC2 volume. Actual occupants: /usr 2.4G, /var/lib/snapd 1.3G, apt 438M. Growth ~17 MB/day ~= 100 days headroom.",
+      "logrotate": "/etc/logrotate.d/meridian NEW - daily, rotate 7, compress, delaycompress, copytruncate (cron jobs hold append handles open), su ssm-user. Previously fourteen distro-default rules and NONE covering MERDIAN logs.",
+      "withdrawn": "Removing snapd - amazon-ssm-agent IS a snap and is the sole access path; certbot holds Marketview TLS. Deleting /var/lib/snapd/cache/* freed zero (hardlinks into snaps/).",
+      "kernel_gap": "Running 6.8.0-1052-aws; /boot/vmlinuz now points at 1061. Next reboot boots an untested kernel under GRUB_FORCE_PARTUUID initrdless boot."
+    },
+    "malpha_token_sync": {
+      "mechanism": "MALPHA crontab 0 3 * * 1-5, direct SSH to ssm-user@172.31.35.90, sed-replaces ZERODHA_ACCESS_TOKEN in MERDIAN's .env. SSH trust dated 2026-04-15 on both hosts.",
+      "status": "Automated and working. Fires every weekday (verified in MALPHA syslog 08-17 -> 08-29); token SHA-256 identical on both hosts. Succeeds SILENTLY - grep|ssh emits nothing on success, so an empty token_sync log is the healthy state.",
+      "contradicts": "The documented SSM-only access model for MERDIAN AWS - port 22 open from MALPHA's SG and an authorized_keys entry for ssm-user, neither recorded in Deployment Topology §1.",
+      "residual_hazard": "The sync overwrites MERDIAN from MALPHA unconditionally. Refreshing MERDIAN directly without also refreshing MALPHA leaves a stale value that lands next morning at 03:00 and fails the 03:40 preflight.",
+      "TD_NEW_7": "RECLASSIFIED to documentation correction. Its designed fix (Supabase mirror because no automation exists) targets a world that ended 2026-04-15."
+    }
+  },
+  "_s70_addendum": {
       "adr_023": "A read path made fast must be made fresh in the same pass (ACCEPTED 2026-08-22). D1: fetch_positioning_landscape takes MERDIAN_GEX_RECENCY_FLOOR_MIN (default 15 min vs 5-min writer cadence), drops pin/accel entirely on a stale row so the renderer no-ops, records pin_accel_stale + observed age. Fails to ABSENT, never to STALE. D2: the floor is a CONSTRUCTION OBLIGATION -- any change making a derived read path faster, narrowing its scope, or adding a consumer must land the floor in the SAME COMMIT; filing it as a follow-up TD is explicitly insufficient (TD-S69-NEW-3 stayed open across two sessions with the exposure live). D3: staleness is recorded in the artefact the operator sees, not only in a log. Generalises ADR-018 D2 from a subsystem guard into a construction rule. Written BEFORE the code per Rule 10 -- first clean instance of that ordering since v4 introduced it.",
       "adr_022_d2_ANSWERED": "The CAS settled close lands in the 15:29 IST intraday bar. Dhan /charts/intraday shape across the auction, two sessions, both symbols: 15:06-15:14 real OHLC; 15:15-15:28 index frozen at the 15:14 value carrying that bar volume; 15:29 = settled close. Dhan /charts/historical (daily) is AUTHORITATIVE for backfill -- 18/18 exact match against independently-captured intraday bars, zero mismatches -- but does NOT publish same-day (verified 2026-08-21 18:32 IST returning only 08-20). Therefore: intraday 15:29 for live capture, daily for backfill and next-day reconciliation. ADR-022 open follow-up 3 CLOSED.",
       "cas_index_mechanism": "CAS auctions Category-I STOCKS in the equity cash segment. NIFTY and SENSEX are COMPUTED from those constituents, not auctioned. While constituents are in the auction the index has no continuous input and repeats its last value; when equilibrium prices publish, the index recomputes in one step. This is why the plateau carries the 15:14 bar VOLUME rather than zero, and why is_filler_bar (volume==0 AND flat) never fired on it. Any future index-level reasoning about CAS starts from: the index is a derived series.",

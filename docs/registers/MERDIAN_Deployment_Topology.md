@@ -1128,6 +1128,77 @@ Hardening owed to the 06:00 routine (runbook, not code — **TD-S69-NEW-6**): `d
 
 ---
 
+## §S71 — Session 71 topology changes (2026-08-22→29)
+
+### S71.1 — MALPHA → MERDIAN token sync: the mechanism, finally documented
+
+§1.5 and §S70 both describe this hop as manual. **It is automated and has been since 2026-04-15.** MALPHA crontab:
+
+```
+0 3 * * 1-5 grep "ZERODHA_ACCESS_TOKEN" /home/ubuntu/meridian-alpha/.env | ssh -o StrictHostKeyChecking=no ssm-user@172.31.35.90 "cat > /tmp/ztoken && sed -i 's|^ZERODHA_ACCESS_TOKEN=.*|'$(cat /tmp/ztoken)'|' /home/ssm-user/meridian-engine/.env && rm /tmp/ztoken" >> /home/ubuntu/meridian-alpha/logs/token_sync_$(date +\%Y\%m).log 2>&1
+```
+
+| Property | Value |
+|---|---|
+| **Transport** | Direct SSH, MALPHA → MERDIAN, key `~/.ssh/id_rsa` (RSA) on MALPHA against `~/.ssh/authorized_keys` on MERDIAN. Both files dated **2026-04-15**. |
+| **Contradicts** | The documented SSM-only access model for MERDIAN AWS. Port 22 is open from MALPHA's SG and `ssm-user` has an `authorized_keys` entry, neither of which §1 records. |
+| **Schedule** | `0 3 * * 1-5` = 08:30 IST, **after** the operator's ~06:00 IST manual refresh and **40 min before** the wsfeed timer at 03:40 UTC. |
+| **Observed** | Fires every weekday, verified in MALPHA syslog 08-17 → 08-29. Token SHA-256 identical on both hosts. |
+| **Why it looked broken** | `grep \| ssh` emits nothing on success, so `logs/token_sync_YYYYMM.log` stays empty. The 47-byte file holds one hand-typed `g36 redirect test` line from 08-17 — the day the `>> …log 2>&1` redirect was added, visible mid-series in syslog. **An empty log is the healthy state.** |
+| **Residual hazard (recorded, not fixed)** | The sync overwrites MERDIAN from MALPHA **unconditionally**. Refreshing MERDIAN directly without also refreshing MALPHA leaves a stale value that lands the next morning at 03:00 and fails the 03:40 preflight. Operator has declared token refresh out of scope for automation; no code written. |
+| **Unquoted-substitution risk** | If `/tmp/ztoken` is ever empty the `sed` expression collapses to `s\|^ZERODHA_ACCESS_TOKEN=.*\|\|`, blanking the line. Not observed; noted. |
+
+### S71.2 — MERDIAN AWS crontab: 35 → 52 lines
+
+| Change | Lines | Rationale |
+|---|---|---|
+| **CAS window coverage** (ADR-022 D1) | +5 at `0,5,10 10 * * 1-5` and `0-10 10` | 15:30/15:35/15:40 IST — the derivatives window. `capture_index_futures_snapshot_local.py` ×2, `run_ingest.sh` ×2, `ingest_breadth_from_ticks.py`. Deliberately **not** extended: `capture_spot_1m_v2` (index frozen, guard at 15:15), the hour-`03` ingest pair (pre-open), `build_wcb_snapshot_local` (chain consumer), the shadow runner (contracts written against different semantics). |
+| **Pre-open move** | `38 3` → `41 3` | 09:08 → 09:11 IST, ahead of the 2026-09-07 restructure randomising the close to 09:08–09:10. No hardcoded instant exists in the script; the 09:08 came entirely from the crontab minute field. |
+| **Scripmaster reload** (TD-S71-NEW-14) | +1 at `30 01 1,15 * *` | `reload_dhan_scripmaster.py --apply`. Twice monthly so a single failed run is not a month of exposure. |
+
+Backup of the pre-change crontab: `docs/registers/aws_crontab_PRE_S71_20260824T012332Z.txt`. **Note:** that file is swallowed by `.gitignore:108` (`*_PRE_S*`) and therefore exists only on the box's EBS volume — TD-S71-NEW-12.
+
+### S71.3 — Log rotation, installed for the first time
+
+`/etc/logrotate.d/meridian`: `daily`, `rotate 7`, `compress`, `delaycompress`, `copytruncate`, `su ssm-user ssm-user`, covering `cron.log` and `logs/*.log`. **`copytruncate` is required** — every cron job holds its append handle open across the rotation.
+
+Before this, `/etc/logrotate.d/` held fourteen rules, all distro defaults, **none covering MERDIAN logs**. The ~107 MB regrowth since S69's `truncate -s 0` was unmanaged by design. This rule is what preserved the 08-18 and 08-25 preflight evidence into `.1` when the forced first rotation ran.
+
+Dead log artefacts now being rotated for nothing: `logs/ws_feed.log` and `logs/websocketLogs.log` are both 0 bytes and untouched since 2026-08-03 — the feed logs to `ws_feed_zerodha.log` via the unit's `StandardOutput=append:`.
+
+### S71.4 — EC2 root volume: 78% → 66%, no resize
+
+| Item | Freed | Note |
+|---|---|---|
+| `apt --fix-broken install` then `autoremove --purge` | ~330 MB | A missing `linux-aws-6.8-headers-6.8.0-1061` had been silently blocking `autoremove`, stranding two stale kernel header sets. |
+| `node_modules` ×2 | 592 MB | `~/meridian-connect` and `~/merdian-marketview` are **build staging only** — nginx serves `/var/www/marketview`. Rebuildable with `bun install`. |
+| 6 disabled snap revisions | (space returned asynchronously) | `snap remove --revision=` per package. |
+| logrotate first cycle | ~90 MB into `.1` | Compresses on the next cycle under `delaycompress`. |
+| **WITHDRAWN — removing `snapd`** | — | `amazon-ssm-agent` **is a snap** and is the sole access path; `certbot` holds Marketview TLS. Also: deleting `/var/lib/snapd/cache/*` freed **zero** — hardlinks into `snaps/`. |
+
+**Structural occupants after cleanup:** `/usr` 2.4 G, `/var/lib/snapd` 1.3 G (982 M → 578 M `snaps/` + 306 M `seed/`), `/var/lib/apt` 306 M. Measured growth ~17 MB/day ≈ 100 days headroom. **No EBS resize required.**
+
+**Open condition, not caused by this session:** the running kernel is `6.8.0-1052-aws` while `/boot/vmlinuz` now points at `1061`. The next reboot boots a kernel this instance has never booted, under `GRUB_FORCE_PARTUUID` initrdless boot. A reboot would also clear the deferred `snap.amazon-ssm-agent`, `dbus` and `systemd-logind` restarts left by needrestart.
+
+### S71.5 — Supabase footprint (separate ceiling, separate bill)
+
+| Table | Size | Note |
+|---|---|---|
+| `hist_option_bars_1m` | 19 GB | 54.8 M rows. |
+| `hist_option_greeks_1m` | 5,015 MB | 19.3 M rows. |
+| `historical_option_chain_snapshots` | 2,488 MB | |
+| `eq_price_daily` + `_v2` + `_backup_20260618` | 1,185 + 814 + 510 MB | **Three copies of one series, ~2.5 GB**, including a June backup still resident. `eq_price_daily` has `last_autovacuum = null` with 389 K dead tuples. |
+| `market_ticks` | 980 MB | **`n_live_tup = 0`** — allocated but unreclaimed. `VACUUM FULL` or `TRUNCATE` returns it. |
+| `gex_strike_snapshots` | 438 MB | **Tenth largest.** TD-S69-NEW-1 named it a principal consumer; measurement says otherwise, and ADR-021's decision not to prune it now has evidence behind it. |
+
+### S71.6 — `dhan_scripmaster` reload path (TD-S71-NEW-14)
+
+`reload_dhan_scripmaster.py` (AWS port) fetches `https://images.dhan.co/api-data/api-scrip-master-detailed.csv` (~33 MB, 197,254 usable rows), stages in `dhan_scripmaster_staging`, validates that NIFTY and SENSEX both have FUTIDX and OPTIDX contracts with `latest_expiry >= current month`, then calls the transactional RPC `swap_dhan_scripmaster()`. **Dry-run by default; `--apply` required.** The gate aborts before any write on validation failure, and the atomic swap means the live table is never empty mid-reload — hardening that exists because an earlier DELETE-then-INSERT version could strand it empty.
+
+Applied 2026-08-29: 197,254 rows swapped, NIFTY FUTIDX 2026-09-29→11-23, SENSEX 2026-09-24→11-26.
+
+---
+
 ## §S70 (2026-08-22) — update log
 
 **ADR-006 is now complete.** The last Local-resident production job moved to AWS this session.

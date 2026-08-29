@@ -57,6 +57,237 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S71-NEW-14 (S1 priority) — `dhan_scripmaster` has no scheduled reload, and futures contract resolution has no fallback: the table silently expires at every roll
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1 at discovery.** Four symbol-sessions of primary ingestion lost, unrecoverable. Cron fix applied same session; the class remains. |
+| **Discovered** | Session 71 (2026-08-29), from `eod_health_check --date 2026-08-28` reporting `index_futures_snapshots 0 rows`. |
+| **Component** | `dhan_scripmaster` · `capture_index_futures_snapshot_local.py` (S56 resolver) · `reload_dhan_scripmaster.py` |
+| **Symptom** | `[WARN] Could not resolve contract for NIFTY: No non-expired valid futures contract found in dhan_scripmaster` — both symbols, `rc=1`. |
+| **Root cause** | The resolver filters `INSTRUMENT = 'FUTIDX'`, `UNDERLYING_SYMBOL = <symbol>`, `SM_EXPIRY_DATE >= today`, and takes the nearest. `dhan_scripmaster` held only NIFTY to **2026-08-25** and SENSEX to **2026-08-27** — every contract expired. **Neither `reload_dhan_scripmaster.py` nor `reload_dhan_scripmaster_from_csv.py` was in any crontab.** The table had been reloaded by hand, and the 2026-08-27 roll is the first that was missed. |
+| **Measured loss — per symbol, not per session** | Row counts decoded as one symbol dropping out the session after **its own** contract expired: 08-24 NIFTY 151 + SENSEX 151 · 08-25 both 151 · **08-26 SENSEX only** · **08-27 SENSEX only** · **08-28 neither**. So the loss is **four symbol-sessions**: NIFTY 08-26/27/28 and SENSEX 08-28 — not the single session the FAIL implied. |
+| **Not backfillable** | The script captures a live Dhan LTP; there is no historical equivalent. `hist_future_bars_1m` has no rows since 08-25, so no reconstruction path. The expired August `SECURITY_ID`s were replaced by the reload swap. **`basis_context_snapshots` and every ENH-07 derivative carry a permanent NIFTY gap across 08-26→08-28.** |
+| **Fix applied** | `reload_dhan_scripmaster.py --apply` run 2026-08-29: 197,254 rows staged and swapped through the transactional `swap_dhan_scripmaster()` RPC (staging + RPC swap, so the live table is never empty mid-reload). NIFTY FUTIDX now 2026-09-29→11-23, SENSEX 2026-09-24→11-26. Both captures resolve the September contract and write. Crontab 46 → **52 lines**, new entry `30 01 1,15 * * … reload_dhan_scripmaster.py --apply >> logs/scripmaster.log`. Twice monthly so one failed run is not a month of exposure; the loader is idempotent and its contract gate aborts before any write if NIFTY/SENSEX FUTIDX validation fails. |
+| **Residual — the class, not the instance** | This is the **third** unscheduled-invoker finding in Session 71, after the Pine generator (TD-S71-NEW-7) and the S70 migration's dropped third `.bat` line. All three produced a plausible empty or stale result rather than an error. **Proper fix: a standing reconciliation of every production script at repo root against the crontab, listing those with neither a cron entry nor a documented manual trigger.** |
+| **Also observed, filed here** | `capture_index_futures_snapshot_local.py` **ignores its symbol argument** — invoked with `NIFTY` it resolves and writes both symbols. The paired NIFTY/SENSEX crontab lines therefore duplicate every call. Harmless but wasteful; the pair should collapse to one line. |
+| **Cross-ref** | TD-S71-NEW-15 (the health check that passed it) · TD-S69-NEW-2 · TD-S71-NEW-7 · ENH-07 (basis). |
+| **Status** | **OPEN** — cron fix applied; the unscheduled-invoker reconciliation and the duplicate-invocation cleanup remain. |
+
+### TD-S71-NEW-15 (S2 priority) — `eod_health_check.py` PRIMARY INGESTION asserts total row counts with no per-symbol parity, so a 50% loss reports `[ OK ]`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** It reported healthy through two sessions of a live outage that was already half-failed. |
+| **Discovered** | Session 71 (2026-08-29), reconstructing the TD-S71-NEW-14 timeline. |
+| **Component** | `scripts/eod_health_check.py` — PRIMARY INGESTION block |
+| **Symptom** | 2026-08-26 and 2026-08-27 both reported `[ OK ] index_futures_snapshots 151 rows 04:00->10:30 UTC (~1/min capture)`. NIFTY was **entirely absent** on both days; 151 is one symbol, 302 is two. Only the total-zero day tripped a FAIL, two sessions later. |
+| **Root cause** | PRIMARY INGESTION counts rows and checks a first→last time range. It does not group by symbol. A first→last range is satisfied by one symbol alone, and 151 is not obviously wrong without the 302 baseline. |
+| **Why it is close to free to fix** | The same script **already applies** `parity = |NIFTY-SENSEX| <= 4` in its COMPUTE UNIVERSE block. The rule exists, is written, and is simply not applied to primary ingestion. |
+| **Proper fix** | Extend per-symbol parity to every dual-symbol primary-ingestion table, and add the continuity assertion TD-S69-NEW-2 already calls for (expected rows per symbol per session, so a truncated tail or a halved count fails rather than passing on range). |
+| **Cost to fix** | ~45 min. |
+| **Blocked by** | nothing. Merge into the TD-S69-NEW-2 pass. |
+| **Cross-ref** | TD-S69-NEW-2 — **three** S71 findings now feed it: this one, `merdian-wsfeed`'s `Result: timeout` normal-end state (TD-S71-NEW-4), and the 08-25 check reporting 3 FAILs for one upstream cause. |
+| **Status** | **OPEN.** |
+
+### TD-S71-NEW-1 (S2 priority) — `merdian_reference.json` does not cover the files and tables the register's own read-rule points at
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Not a runtime defect. It silently invalidates a governance rule that sessions rely on. |
+| **Discovered** | Session 71 (2026-08-22), at session open, probing the registry for the files S71's own priorities 1–3 would touch. |
+| **Component** | `docs/registers/merdian_reference.json` → `files` (129 entries) and `tables` (50 entries) |
+| **Symptom** | Absent from `files`: `pull_token_from_supabase.py`, `capture_cas_close.py`, `backfill_cas_close_from_daily.py`, `capture_spot_1m_v2.py`, `eod_health_check.py`, `refresh_equity_intraday_last.py`, `wsfeed_preflight.sh`. Absent from `tables`: `system_config`, `script_execution_log`, `hist_spot_bars_1m`, `india_vix_history`, `india_vix_daily`, `vix_percentile_reference`. |
+| **Root cause** | New artefacts are recorded in session-scoped addenda (`_s70_addendum.new_scripts`) rather than promoted into `files`/`tables`. The addendum is a changelog; the map never absorbs it. |
+| **Why it matters** | CLAUDE.md forbids asking the operator for file locations *on the grounds that* `files.<filename>` holds them. The rule rests on coverage the registry does not have, so the failure mode is a session that either guesses a path or burns a round trip asking for one the rule says not to ask for. |
+| **Proper fix** | Promote every `_s7N_addendum.new_scripts` entry into `files` at doc-close, and add the six tables. Then add a coverage assertion: every `.py` at repo root must appear in `files`. |
+| **Cost to fix** | ~45 min for the backfill; the assertion is ~15 min. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | TD-S71-NEW-2 (same file, header freshness) · TD-S61-NEW-3 (vestigial `_meta`). |
+| **Status** | **OPEN.** |
+
+### TD-S71-NEW-2 (S3 priority) — `merdian_reference.json`'s canonical freshness header is three sessions stale while its body is current
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Cosmetic in effect, but it is wrong in the one field a reader checks first. |
+| **Discovered** | Session 71 (2026-08-22), at session open. |
+| **Component** | `docs/registers/merdian_reference.json` → top-level header |
+| **Symptom** | `version: "v49"` is correct and `change_log[0]` is the S70 entry, so the body is current. But `last_updated_session: "Session 67"` and `last_updated_date: "2026-07-10"` were never bumped. |
+| **Root cause** | Doc-close bumps `version` and prepends `change_log` but does not touch the sibling freshness fields. |
+| **Why it matters** | The top-level header is documented as the canonical freshness indicator (superseding the vestigial `_meta` block, TD-S61-NEW-3). Two of its three fields disagree with the third, so the indicator most likely to be trusted is the one that is wrong. |
+| **Proper fix** | Bump all three together at doc-close; ideally derive `last_updated_session`/`last_updated_date` from `change_log[0]` so they cannot diverge. |
+| **Cost to fix** | ~10 min. |
+| **Blocked by** | nothing. |
+| **Status** | **OPEN.** |
+
+### TD-S71-NEW-3 (S3 priority) — the VIX history read has no `ORDER BY`; its correctness depends on unspecified row ordering
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Currently benign. It is correct by accident, not by construction. |
+| **Discovered** | Session 71 (2026-08-24), by the TD-S70-NEW-5 instrumentation on its first live run. |
+| **Component** | `compute_volatility_metrics_local.py::load_vix_history_rows()` |
+| **Symptom** | `sb.select(table=…, limit=5000)` with **no order clause**, against a PostgREST hard cap of 1,000 rows. `india_vix_history` holds 1,782, so 782 are silently dropped. Measured: the retained 1,000 are the **newest** (`range=2022-02-28..2026-03-11`), so `compute_vix_percentile`'s `eligible[-252:]` is correctly anchored at the table's tail **today**. |
+| **Root cause** | Physical row order happens to be insertion order and the read happens to return the tail. Nothing guarantees it. |
+| **Why it matters** | A rewrite, `VACUUM FULL`, or a bulk backfill of the 2019–2022 range could shift which 1,000 rows come back. If the retained set moved toward the old end, the 252-day percentile window would move with it silently. |
+| **Proper fix** | Add an explicit descending order on the date column and cap the fetch at what the computation needs (252 rows suffices). Requires reading `core/supabase_client.py::select()`'s signature first — not guessed. |
+| **Cost to fix** | ~20 min. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | TD-S70-NEW-4 (the frozen writer) · TD-S70-NEW-5 (RESOLVED, spawned this). |
+| **Status** | **OPEN.** |
+
+### TD-S71-NEW-4 (S2 priority) — `merdian-wsfeed`'s **normal** daily shutdown lands in `failed`, so `systemctl is-active` can never answer "is the feed healthy?"
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** It defeats the cheapest possible health probe and has already misled one live diagnosis. |
+| **Discovered** | Session 71 (2026-08-22), when `is-active` returned `failed` and was initially read as a live outage. |
+| **Component** | `/etc/systemd/system/merdian-wsfeed.service` · `ws_feed_zerodha.py` |
+| **Symptom** | Every trading day: start `03:40` UTC, stop `10:05`, `State 'stop-sigterm' timed out. Killing.`, SIGKILL `10:06`, `Result: timeout`. Identical on 08-19, 08-20, 08-21. The service is **designed** to end each session in `failed`. |
+| **Root cause** | `ws_feed_zerodha.py` catches SIGTERM in its reconnect handler (documented: `kill -9` required), so the clean stop path always escalates to SIGKILL and systemd records a timeout failure. |
+| **Why it matters** | A genuine hang and a normal shutdown produce **the same** unit state. Any monitor built on `is-active` — or any operator reading it — cannot distinguish them. In this session it produced a false alarm on a Sunday and, separately, the 08-25 real outage was only distinguishable by reading the journal. |
+| **Proper fix** | `KillSignal=SIGKILL` plus `SuccessExitStatus=SIGKILL` (or an `ExecStop` that sends SIGKILL directly) so the normal path exits clean and `failed` is reserved for actual failures. |
+| **Cost to fix** | ~20 min including one trading day of observation. |
+| **Blocked by** | nothing. Feeds TD-S69-NEW-2. |
+| **Cross-ref** | TD-S69-NEW-2 (health-check coverage) · TD-S69-NEW-6 (token rotation routine). |
+| **Status** | **OPEN.** |
+
+### TD-S71-NEW-5 (S3 priority) — `run_ingest.sh` `set -eo pipefail` makes its own `END … rc=` line unreachable on failure
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Small, and it degrades exactly the log an outage reconstruction reaches for. |
+| **Discovered** | Session 71 (2026-08-24), reading the wrapper during the ADR-022 D1 audit. |
+| **Component** | `run_ingest.sh` |
+| **Symptom** | `set -eo pipefail` terminates the script the moment `ingest_option_chain_local.py` exits non-zero, so `rc=$?` and the `[run_ingest.sh] … END symbol=… rc=…` line never execute. Successful runs log START **and** END; failed runs log START and stop. |
+| **Why it matters** | In `cron.log` a crash and a hang are **indistinguishable** — both look like a START with no END. `run_ingest.sh` is invoked by six crontab lines, so this is the dominant shape in that file. |
+| **Proper fix** | Capture `rc` with the errexit trap disabled around the call (`set +e; python3 …; rc=$?; set -e`) so the END line always writes, then exit `$rc`. |
+| **Cost to fix** | ~10 min. |
+| **Blocked by** | nothing. |
+| **Status** | **OPEN.** |
+
+### TD-S71-NEW-6 (S3 priority) — `SPOT_MAX_AGE_MIN` is weekend-blind and false-flags every Monday pre-market run, in the same file where the sibling floor documents that exact trap
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Cosmetic noise now; corrosive because it trains the operator to ignore a `STALE:` line. |
+| **Discovered** | Session 71 (2026-08-24), running the generator pre-market on a Monday. |
+| **Component** | `generate_pine_overlay.py` → `SPOT_MAX_AGE_MIN = 1080` |
+| **Symptom** | `STALE: NIFTY market_spot_snapshots newest ts is 2026-08-22T00:08:14 (3065 min old, floor 1080). Tier assignment is anchored on a stale spot.` — fires on both symbols. 3,065 minutes is simply Friday-to-Monday; an 18-hour wall-clock floor cannot span a weekend. |
+| **Root cause** | S69 made the intraday floor weekend-aware (`INTRADAY_MAX_AGE_TRADING_DAYS = 2`) and wrote the reason directly above it — *"the generator commonly runs pre-market Monday off Friday's zones, so 1 would false-flag every Monday."* The spot floor was then defined a few lines below in **wall-clock minutes**, reintroducing the bug the comment warns about. |
+| **Why it matters** | The warning is correct in substance on any weekday and wrong on every Monday. A floor that cries wolf weekly stops being read. |
+| **Proper fix** | Express the spot floor in trading days via `_trading_days_between()`, as the intraday floor already does. |
+| **Cost to fix** | ~15 min. |
+| **Blocked by** | nothing. Ship with the ADR-023 D1 pass. |
+| **Cross-ref** | ADR-023 · TD-S69-NEW-3. |
+| **Status** | **OPEN.** |
+
+### TD-S71-NEW-7 (S2 priority) — `generate_pine_overlay.py` has had no scheduled invoker since the S70 migration dropped the third `.bat` line
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** A silently unscheduled artefact generator that produces a *plausible* stale file. |
+| **Discovered** | Session 71 (2026-08-24), auditing the AWS crontab; confirmed live 2026-08-26. |
+| **Component** | `generate_pine_overlay.py` · AWS crontab · `merdian_ict_htf_zones.pine` |
+| **Symptom** | No crontab line anywhere invokes the generator. Deployment Topology §S70 records the migration in its own before/after table — `merdian_eod_ict.bat` (**3 lines: NIFTY, SENSEX, Pine**) → **two** crontab lines calling `detect_ict_patterns_runner.py` — and the dropped Pine call went unnoticed. |
+| **Measured consequence** | The EC2 `.pine` was stamped **2026-08-18 / 104 zones**, carrying PIN 24350–24600 from six-day-old gamma positioning. A Local regeneration on 08-24 produced **106 zones** with positioning as-of `03:05` that morning. `ict_htf_zones` was also rewritten 2026-08-22, so daily/weekly levels had moved too. The stale artefact was one step from being pasted into a live chart. |
+| **Root cause** | The migration was verified by counting *tasks disabled*, not by checking that every call site the retired `.bat` contained had a new home. |
+| **Proper fix** | Reinstate the invoker. Recommended `52 10 * * 1-5` (16:22 IST — after the detectors at `10:20`/`10:22` and after `capture_cas_close.py` at `10:50`, so the overlay is built on the settled close). This decision also fixes the consumer cadence that ADR-023 D1's floor must be calibrated against. |
+| **Cost to fix** | ~15 min, but **coupled to the ADR-023 amendment**. |
+| **Blocked by** | ADR-023 amendment (floor value depends on the chosen cadence). |
+| **Cross-ref** | ADR-023 · TD-S69-NEW-3 · TD-S70-NEW-7 (the artefact is also tracked in git). |
+| **Status** | **OPEN.** |
+
+### TD-S71-NEW-8 (S3 priority) — `capture_premarket_0908.py` is an orphan whose filename encodes an instant that ceases to exist on 2026-09-07
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Dead code, but dead code that looks authoritative. |
+| **Discovered** | Session 71 (2026-08-24), grepping for pre-open anchors ahead of the dated audit. |
+| **Component** | `capture_premarket_0908.py` |
+| **Symptom** | A 33-line wrapper that shells out to `capture_market_spot_snapshot_local.py`. **Nothing invokes it** — the crontab calls the target directly (now `41 3`). Its filename asserts a 09:08 pre-open instant that the 2026-09-07 restructure replaces with a randomised 09:08–09:10 close. |
+| **Why it matters** | A future session grepping for the pre-open path finds a file named for the exact instant and may treat it as the live entrypoint. |
+| **Proper fix** | Delete, or move to an `archive/` path with a header noting its supersession. |
+| **Cost to fix** | ~5 min. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | The 2026-09-07 dated audit — seven other live files still anchor on the pre-open instant, including `build_momentum_features_local.py`, which is **ENH-119's own input**. |
+| **Status** | **OPEN.** |
+
+### TD-S71-NEW-9 (S3 priority) — the Pine generator reports two different zone counts in one run
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Off-by-one, but it means two code paths disagree about what counts as a zone. |
+| **Discovered** | Session 71 (2026-08-24). |
+| **Component** | `generate_pine_overlay.py` |
+| **Symptom** | Console: `Written: merdian_ict_htf_zones.pine (107 zones rendered with proximity tiers)`. Generated header: `// Total: 106 zones (NIFTY 50 + SENSEX 56)`. |
+| **Root cause** | Unknown. One count evidently includes something the other filters — likely a symbol-unattributed or tier-excluded row. |
+| **Proper fix** | Reconcile the two counters to one source. |
+| **Cost to fix** | ~15 min. |
+| **Blocked by** | nothing. |
+| **Status** | **OPEN.** |
+
+### TD-S71-NEW-10 (S3 priority) — "ADR-006 COMPLETE" is overstated: a production token script is still operator-invoked on Local Windows
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Documentation accuracy, not a runtime defect — but it is a settled-decision claim. |
+| **Discovered** | Session 71 (2026-08-22), from the operator's own daily routine and corroborated in `system_config`. |
+| **Component** | `refresh_dhan_token.py` · CLAUDE.md v1.47 settled-decisions · Decision Index ADR-006 · `_s70_addendum` |
+| **Symptom** | The documented daily flow ends `cd C:\GammaEnginePython; python refresh_dhan_token.py`. `system_config.dhan_api_token` shows `updated_by = local_token_refresh`, `updated_at` 01:13 UTC = **06:43 IST** — a manual run from Windows. Meanwhile the box crontab carries `5 3 * * 1-5 refresh_dhan_token.py` **and** a `refresh_dhan_token_aws.py` exists, so the same job lives in three places and the Local one is the effective writer. |
+| **Root cause** | The S70 audit certified ADR-006 by enumerating **Task Scheduler tasks** (18 of 19 disabled, 1 ready). An operator-invoked script was never in the sample, so the method could not have found it. |
+| **Note** | `updated_by` is hardcoded `'local_token_refresh'` even in the copy that runs on AWS — the field a responder would read first is unreliable. |
+| **Proper fix** | Either bring the token refresh into the AWS-scheduled set (operator has declared token refresh out of scope for automation), or **amend the ADR-006 completion claim** to state the exception explicitly. The latter is the honest minimum. |
+| **Cost to fix** | ~20 min (documentation). |
+| **Blocked by** | nothing. |
+| **Status** | **OPEN.** |
+
+### TD-S71-NEW-11 (S1 priority) — SECURITY: operator `.env` was printed in full to a session transcript; long-lived credentials require rotation
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** Live credential exposure. Several of the exposed secrets do not expire. |
+| **Discovered** | Session 71 (2026-08-24), immediately, by the assistant that caused it. |
+| **Component** | `bin/wsfeed_preflight.sh` · `.env` on MERDIAN AWS |
+| **Symptom** | The assistant instructed `bash -x bin/wsfeed_preflight.sh`. Line 4 of that script is `. ./.env`, and `-x` traces sourcing **variable by variable**. The full environment printed to the transcript. |
+| **Exposed, by remaining exposure life** | `DHAN_TOTP_SEED` + `DHAN_PIN` (standing 2FA bypass, indefinite — worst item) · `SUPABASE_SERVICE_ROLE_KEY` (RLS bypass, `exp` 2036) · `BREEZE_API_KEY` / `BREEZE_API_SECRET` (SEBI-whitelisted IP) · `ZERODHA_API_KEY` · `TELEGRAM_BOT_TOKEN` · `DHAN_API_TOKEN` and `ZERODHA_ACCESS_TOKEN` (roll at the next daily refresh, lowest concern). |
+| **Root cause** | The assistant had the script's contents on screen when it composed the command. The trace was the entire point of `-x`; the consequence was foreseeable and not checked. |
+| **Correct form of the same diagnostic** | Run the Python check alone with the environment already loaded, or wrap the sourcing block in `set +x` / `set -x`. Both yield the identical result — which was `rc=0`. |
+| **Proper fix** | Operator-owned rotation in the order above. |
+| **Prevention shipped** | New CLAUDE.md non-negotiable: never `bash -x`, `set -x`, `cat`, or `grep` against `.env` or any script that sources it. Existence checks use `[ -n "$VAR" ] && echo set`. |
+| **Blocked by** | nothing. |
+| **Status** | **OPEN — rotation outstanding.** |
+
+### TD-S71-NEW-12 (S3 priority) — `.gitignore` `*_PRE_S*` silently swallows the crontab backups it was never written for
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The backup exists; it just isn't durable. |
+| **Discovered** | Session 71 (2026-08-24), when the new crontab backup did not appear as untracked. |
+| **Component** | `.gitignore:108` (`*_PRE_S*`) · `docs/registers/aws_crontab_PRE_S71_*.txt` |
+| **Symptom** | `git check-ignore -v` → `.gitignore:108:*_PRE_S*`. The rule was written for `_PRE_S<N>.py` code backups and also matches the crontab backup, which therefore lives only on the box's EBS volume. |
+| **Why it matters** | That volume is the subject of TD-S69-NEW-1. A rollback artefact for a 46-line production crontab should not be single-copy on the machine it protects. |
+| **Proper fix** | Name crontab snapshots outside the pattern (e.g. `aws_crontab_S71_20260824.txt`) so they commit, or add a negation for `docs/registers/aws_crontab_*`. |
+| **Cost to fix** | ~5 min. |
+| **Blocked by** | nothing. |
+| **Status** | **OPEN.** |
+
+### TD-S71-NEW-13 (S3 priority) — VERIFY: deep-ITM option `ltp` prints below intrinsic value; anything computing extrinsic from `ltp` inherits it
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3** pending measurement — could rise if any live consumer derives extrinsic or moneyness from `ltp`. |
+| **Discovered** | Session 71 (2026-08-27), from an operator screenshot of the Dhan positions view on SENSEX expiry morning. **Not yet verified against MERDIAN data.** |
+| **Component** | `option_chain_snapshots.ltp` · any consumer computing extrinsic, moneyness, or synthetic spot |
+| **Symptom** | At SENSEX 77,456.27, the 78200 PUT printed `707.65` against intrinsic 744, and the 78500 PUT `1,002.85` against intrinsic 1,044 — both ~40 points **below intrinsic**, which is not an executable price. The ITM calls at the same instant carried normal positive extrinsic (77000C 506.95 vs 456 intrinsic). |
+| **Probable cause** | Stale last-traded prints on thin far-ITM BSE weekly strikes. `ltp` is the last trade, not a live quote; `bid`/`ask` would be current. Asymmetric here because the put side was the illiquid one. |
+| **Why it matters** | A negative computed extrinsic is a silent nonsense value. If it flows into any tier, ranking, or context field it will bias toward the least liquid strikes. |
+| **Proper fix** | First **measure**: `select count(*) from option_chain_snapshots where option_type='PE' and ltp < (strike - spot) and strike > spot` (and the CE mirror), by symbol and moneyness bucket, SQL committed to `docs/research/` per ADR-009. Then decide whether to prefer mid-of-`bid`/`ask` for far-ITM strikes. |
+| **Cost to fix** | ~30 min to measure; fix scoped after. |
+| **Blocked by** | nothing. |
+| **Status** | **OPEN — unverified.** |
+
 ### TD-S70-NEW-1 (S2 priority) — `CURRENT.md` is 661 KB of which 98% is superseded session blocks, and it is read second at every session open
 
 | Field | Value |
@@ -72,39 +303,6 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Cost to fix** | ~1 session (the `session_log.md` coverage check is the work; the truncation is minutes). |
 | **Blocked by** | nothing. |
 | **Cross-ref** | Doc Protocol v4 Rule 7 · `session_log.md` as archive of record. |
-| **Status** | **OPEN.** |
-
-### TD-S70-NEW-2 (S2 priority) — `capture_cas_close.py` Guard 3 is over-fitted: `close == open` was read as "auction not settled" when it means "settled at the frozen price"
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** Conservative failure — it rejects rather than corrupts — but it rejected 10 of 28 symbol-days that were correct. |
-| **Discovered** | Session 70 (2026-08-22), immediately, in the first backfill run of the script it belongs to. |
-| **Component** | `capture_cas_close.py` — Guard 3 |
-| **Symptom** | The 2026-08-03→08-21 backfill rejected 10 symbol-days with `15:29 bar still frozen (O=C=…); auction result not landed`. Cross-checking Dhan's daily endpoint showed **every rejected value was already the correct settled close**: 08-06 NIFTY 24636.00, 08-10 SENSEX 78542.44, 08-11 SENSEX 78154.25, 08-12 NIFTY 24435.95, 08-14 NIFTY 24366.00, 08-17 both, 08-18 SENSEX 77235.46. |
-| **Root cause** | The guard was designed from two hand-picked samples (08-20, 08-21) in which the settled price happened to differ from the frozen price, and it generalised `close != open` into a settlement test. **On a quiet close the auction settles at the price the index was already frozen at, and the bar is legitimately flat.** The guard encodes an assumption about price movement, not about settlement. |
-| **Secondary finding, same run** | Sessions 2026-08-03/04/05 place the last bar at **15:34 IST, not 15:29**, so the bar-timestamp assertion rejected those six symbol-days too. The exchange/vendor window differed in the first CAS week. The assertion is correct to exist — it refuses to write a bar of unknown provenance — but it needs to accept a small set of known-good slots rather than a single one. |
-| **Proper fix** | Replace the movement heuristic with an **authority cross-check**: compare the 15:29 bar's close against Dhan's daily endpoint where available, and accept a flat bar that matches. Same-day this is unavailable (daily does not publish until the next morning — verified 2026-08-21 18:32 IST returning only 08-20), so the same-day path should **accept the flat bar and mark it provisional**, with `backfill_cas_close_from_daily.py` reconciling the next day. Widen the bar-slot assertion to `{15:29, 15:34}`. |
-| **Mitigation in place** | `backfill_cas_close_from_daily.py` catches every rejected day on its next run, so the series is correct in aggregate today. The guard costs completeness, not correctness. |
-| **Cost to fix** | ~30 min. |
-| **Blocked by** | nothing. Ship with the ADR-023 D1 floor in one pass. |
-| **Cross-ref** | ADR-022 D2 · `backfill_cas_close_from_daily.py` · Assumption Register D.28.3. |
-| **Status** | **OPEN.** |
-
-### TD-S70-NEW-3 (S3 priority) — `backfill_cas_close_from_daily.py` computes one `capture_ts` for the whole batch, so multi-row `market_spot_snapshots` inserts collide on the unique key
-
-| Field | Value |
-|---|---|
-| **Priority** | **S3.** Audit-trail loss only; the bars themselves write correctly. |
-| **Discovered** | Session 70 (2026-08-22), on the first live backfill run. |
-| **Component** | `backfill_cas_close_from_daily.py` |
-| **Symptom** | `Supabase INSERT market_spot_snapshots failed: 409 {"code":"23505","details":"Key (symbol, ts, source_table)=(NIFTY, 2026-08-22 00:17:55.225618+00, dhan_charts_historical) already exists."}` — 14 rows shared a single `capture_ts` and collided on `(symbol, ts, source_table)`. |
-| **Root cause** | `capture_ts` is computed once before the write loop. Correct for `capture_cas_close.py`, which writes two rows for one instant; wrong for a backfill writing many sessions in one pass. |
-| **Impact** | `hist_spot_bars_1m` wrote all 14 rows cleanly (it keys on `bar_ts`, which is per-session). Only the `market_spot_snapshots` audit rows are missing, so the backfilled closes are not individually traceable in the snapshot table. Nothing downstream reads those rows. |
-| **Proper fix** | Derive `ts` per row from that row's `bar_ist` rather than from `now()`. One line. |
-| **Cost to fix** | ~10 min. |
-| **Blocked by** | nothing. Do it before the next reconciliation run. |
-| **Cross-ref** | ADR-022 D2 · TD-S70-NEW-2 (same pass). |
 | **Status** | **OPEN.** |
 
 ### TD-S70-NEW-4 (S2 priority) — `india_vix_history` has no writer and has been frozen at 2026-03-11 for five months; `vix_percentile` is scored against a stale reference distribution
@@ -124,37 +322,6 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Cross-ref** | ENH-118 P0 · TD-S70-NEW-5 (the mechanism that hid it) · Assumption Register D.28.5. |
 | **Status** | **OPEN.** |
 
-### TD-S70-NEW-5 (S2 priority) — `load_vix_history_rows()` selects silently among three candidate tables and logs nothing, which is the mechanism that hid a five-month staleness
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2 — this is the generalisable defect, above the VIX instance itself.** |
-| **Discovered** | Session 70 (2026-08-22). |
-| **Component** | `compute_volatility_metrics_local.py::load_vix_history_rows` (line ~278) |
-| **Symptom** | The function iterates `["india_vix_daily", "india_vix_history", "vix_percentile_reference"]`, swallows every exception with `continue`, keeps whichever result is longest (`if len(temp) > len(parsed)`), and **never logs which table answered or how many rows it returned**. Two of the three are empty; the third is five months stale. Everything downstream works, reports nothing, and is wrong. |
-| **Root cause** | Defensive source-selection without observability. The `.pre_vix_repair_backup.py` shows the candidate list was *extended* from two entries to three at some prior repair — i.e. the fallback was the fix, and the empty table was never repopulated. Each layer of defensiveness made the failure quieter. |
-| **Proper fix** | Log the resolved source and row count on every call — `resolved=india_vix_history rows=1782 newest=2026-03-11`. Escalate to a `WARN` when the newest row is older than a threshold. **This is worth more than the VIX writer**: the pattern will hide the next stale reference source exactly as it hid this one. |
-| **Generalisation** | Audit for the same shape elsewhere: any function that tries a list of sources and picks by size or first-success without recording the choice. |
-| **Cost to fix** | ~10 min for the log line; ~30 min for the audit. |
-| **Blocked by** | nothing. |
-| **Cross-ref** | TD-S70-NEW-4 · ADR-001 (a quiet wrong answer) · ADR-023 (freshness must be visible in the artefact). |
-| **Status** | **OPEN — do the log line before the writer.** |
-
-### TD-S70-NEW-6 (S2 priority) — the intraday capture cron window ends at hour `09` UTC, leaving 15:30–15:40 IST uncovered for every `*/5` and `*/1` job
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** Second CAS exposure on the capture layer, distinct from the auction-window gap. |
-| **Discovered** | Session 70 (2026-08-22), reading the AWS crontab. |
-| **Component** | AWS crontab — `capture_spot_1m_v2.py`, `capture_market_spot_snapshot_local.py`, `capture_index_futures_snapshot_local.py`, `run_ingest.sh`, `build_wcb_snapshot_local.py`, `ingest_breadth_from_ticks.py`, `run_merdian_shadow_runner_aws.py` |
-| **Symptom** | Every intraday capture line is bounded `03-09` or `03,04,…,09` UTC. Hour 09 ends at 09:59 UTC = **15:29 IST**. Index **derivatives trade to 15:40** under ADR-022, and the CAS equilibrium publishes 15:30–15:35. Nothing is captured in that window. |
-| **Relationship to the CAS close fix** | Separate. `capture_cas_close.py` retrieves the settled *close* at 16:20 IST. This TD is about the ~10 minutes of *derivatives* activity after the cash close, which no job observes at all. |
-| **Proper fix** | Extend the hour ranges `09` → `10` (coverage to 10:55 UTC = 16:25 IST) **as part of the ADR-022 D1 job-by-job audit**, not as a standalone edit — it touches seven live ingest lines and each needs its own verdict on whether post-close data is meaningful for that series. |
-| **Cost to fix** | ~0.5 session, bundled with the D1 audit. |
-| **Blocked by** | the ADR-022 D1 audit ordering. |
-| **Cross-ref** | ADR-022 D1 · Deployment Topology §S70 · `docs/registers/aws_crontab.txt`. |
-| **Status** | **OPEN.** |
-
 ### TD-S70-NEW-7 (S3 priority) — the generated `merdian_ict_htf_zones.pine` is tracked in git and collides on every pull where both hosts have run the generator
 
 | Field | Value |
@@ -170,7 +337,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Cross-ref** | TD-S69-NEW-4 (CLOSED S70). |
 | **Status** | **OPEN.** |
 
-### TD-S70-NEW-8 (S2 priority) — the "`OB_MIN_MOVE_PCT = 0.40%` is empirically unreachable" finding was measured against the wrong quantity and must be struck, not carried
+### TD-S70-NEW-8 (S2 priority — **CONFIRMED S71: `ict_zones` ACTIVE is NULL for both symbols; the M5 detector writes nothing**) — the "`OB_MIN_MOVE_PCT = 0.40%` is empirically unreachable" finding was measured against the wrong quantity and must be struck, not carried
 
 | Field | Value |
 |---|---|
@@ -204,7 +371,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Cross-ref** | TD-NEW-7 · TD-S69-NEW-1 (EC2 disk). |
 | **Status** | **OPEN.** |
 
-### TD-S69-NEW-1 (S1 priority) — MERDIAN AWS EC2 root volume is 7.6 GB and hit 100% on 2026-08-12, cascading into a feed crash + `.env` corruption + a silently-failed breadth cron; the journal cap only delays recurrence
+### TD-S69-NEW-1 (S1 priority — **RESOLVED S71 by measurement; root-cause row was wrong**) — MERDIAN AWS EC2 root volume is 7.6 GB and hit 100% on 2026-08-12, cascading into a feed crash + `.env` corruption + a silently-failed breadth cron; the journal cap only delays recurrence
 
 | Field | Value |
 |---|---|
@@ -1565,7 +1732,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 
 ---
 
-### TD-NEW-7 — MALPHA → MERDIAN AWS Zerodha token propagation is manual `sed`; should be Supabase `system_config` automation (Dhan-flow mirror)
+### TD-NEW-7 — MALPHA → MERDIAN AWS Zerodha token propagation is manual `sed`; should be Supabase `system_config` automation (Dhan-flow mirror) — **RECLASSIFIED S71: the automation exists, predates this TD by a month, and works. Documentation correction, not a build item.**
 
 | | |
 |---|---|
@@ -2782,6 +2949,82 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 ---
 
 ## Resolved (audit trail)
+
+### TD-S70-NEW-6 — the intraday capture cron window ends at hour `09` UTC, leaving 15:30–15:40 IST uncovered for every `*/5` and `*/1` job — RESOLVED S71 (ADR-022 D1 job-by-job audit)
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Second CAS exposure on the capture layer, distinct from the auction-window gap. |
+| **Discovered** | Session 70 (2026-08-22), reading the AWS crontab. |
+| **Component** | AWS crontab — `capture_spot_1m_v2.py`, `capture_market_spot_snapshot_local.py`, `capture_index_futures_snapshot_local.py`, `run_ingest.sh`, `build_wcb_snapshot_local.py`, `ingest_breadth_from_ticks.py`, `run_merdian_shadow_runner_aws.py` |
+| **Symptom** | Every intraday capture line is bounded `03-09` or `03,04,…,09` UTC. Hour 09 ends at 09:59 UTC = **15:29 IST**. Index **derivatives trade to 15:40** under ADR-022, and the CAS equilibrium publishes 15:30–15:35. Nothing is captured in that window. |
+| **Relationship to the CAS close fix** | Separate. `capture_cas_close.py` retrieves the settled *close* at 16:20 IST. This TD is about the ~10 minutes of *derivatives* activity after the cash close, which no job observes at all. |
+| **Proper fix** | Extend the hour ranges `09` → `10` (coverage to 10:55 UTC = 16:25 IST) **as part of the ADR-022 D1 job-by-job audit**, not as a standalone edit — it touches seven live ingest lines and each needs its own verdict on whether post-close data is meaningful for that series. |
+| **Cost to fix** | ~0.5 session, bundled with the D1 audit. |
+| **Blocked by** | the ADR-022 D1 audit ordering. |
+| **Cross-ref** | ADR-022 D1 · Deployment Topology §S70 · `docs/registers/aws_crontab.txt`. |
+| **Closed** | 2026-08-24 (Session 71) — crontab applied on-box, 35 → 46 lines; backup `docs/registers/aws_crontab_PRE_S71_20260824T012332Z.txt`. |
+| **Resolution — job-by-job, not a blanket extension** | Eight job groups audited. **Extended** to `0,5,10 10 * * 1-5` (15:30 / 15:35 / 15:40 IST — the derivatives window and nothing beyond it): `capture_index_futures_snapshot_local.py` ×2, `run_ingest.sh` ×2, and `ingest_breadth_from_ticks.py` at `0-10 10`. **Deliberately NOT extended:** `capture_spot_1m_v2.py` (index is frozen 15:15–15:28 and its guard is already at 15:15 — extension only manufactures `SKIPPED_NO_INPUT`; 15:29 is owned by `capture_cas_close.py`), the hour-`03` `run_ingest` pair (pre-open, unaffected), `build_wcb_snapshot_local.py` (chain consumer — inherits `run_ingest`'s semantics, revisit after a week), and `run_merdian_shadow_runner_aws.py` (its compute contracts were written against different window semantics). A blanket `09`→`10` would have polled to 16:25 IST and collided with the detectors at `10:20`/`10:22` and `capture_cas_close.py` at `10:50`. |
+| **Write-path marker proposed, then rejected on reading the code** | `ingest_option_chain_local.py:223` stores `"raw": option_raw` — the **vendor payload verbatim**. Annotating it would destroy the only property that field has. And the CAS window is a pure function of `ts`, which every row already carries. **The 15:15–15:40 discontinuity is a read-path concern**, scoped in derived views on `ts` per the ADR-021 pattern. No schema change, no ADR trigger, no ingest-path code change. |
+| **Exchange hours CONFIRMED** | NSE's CAS page: **Equity Derivatives Segment 9:15 am – 3:40 pm**; non-CAS cash 9:15–3:30. Zerodha corroborates operationally (F&O GTT/alerts trigger to 3:40 PM). Rationale: F&O settles against the cash close, which now finalises later, so derivatives were extended 10 minutes to stay aligned. **The register's 15:40 figure was right and the session's scepticism about it was wrong.** |
+| **Verification** | `scripts/eod_health_check.py --date 2026-08-25`: `market_spot_snapshots 723 rows 03:41→10:30 UTC` (pre-open move live) and `option_chain_snapshots 75,680 rows 03:05→10:10 UTC` (CAS window live). |
+| **Same-commit dated fix** | `capture_market_spot_snapshot_local.py` moved `38 3` → `41 3` (09:08 → 09:11 IST), ahead of the 2026-09-07 pre-open restructure which randomises the close to 09:08–09:10. No hardcoded instant exists in the script — the 09:08 came entirely from the crontab minute field. |
+| **Residual** | First live firing 2026-08-24 15:30 IST. `build_wcb_snapshot_local.py` and the shadow runner remain unextended pending a week of the new window. |
+
+### TD-S70-NEW-5 — `load_vix_history_rows()` selects silently among three candidate tables and logs nothing, which is the mechanism that hid a five-month staleness — RESOLVED S71 (logging live; refuted its own hypothesis on run one)
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2 — this is the generalisable defect, above the VIX instance itself.** |
+| **Discovered** | Session 70 (2026-08-22). |
+| **Component** | `compute_volatility_metrics_local.py::load_vix_history_rows` (line ~278) |
+| **Symptom** | The function iterates `["india_vix_daily", "india_vix_history", "vix_percentile_reference"]`, swallows every exception with `continue`, keeps whichever result is longest (`if len(temp) > len(parsed)`), and **never logs which table answered or how many rows it returned**. Two of the three are empty; the third is five months stale. Everything downstream works, reports nothing, and is wrong. |
+| **Root cause** | Defensive source-selection without observability. The `.pre_vix_repair_backup.py` shows the candidate list was *extended* from two entries to three at some prior repair — i.e. the fallback was the fix, and the empty table was never repopulated. Each layer of defensiveness made the failure quieter. |
+| **Proper fix** | Log the resolved source and row count on every call — `resolved=india_vix_history rows=1782 newest=2026-03-11`. Escalate to a `WARN` when the newest row is older than a threshold. **This is worth more than the VIX writer**: the pattern will hide the next stale reference source exactly as it hid this one. |
+| **Generalisation** | Audit for the same shape elsewhere: any function that tries a list of sources and picks by size or first-success without recording the choice. |
+| **Cost to fix** | ~10 min for the log line; ~30 min for the audit. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | TD-S70-NEW-4 · ADR-001 (a quiet wrong answer) · ADR-023 (freshness must be visible in the artefact). |
+| **Status** | **OPEN — do the log line before the writer.** |
+
+### TD-S70-NEW-3 — `backfill_cas_close_from_daily.py` computes one `capture_ts` for the whole batch, so multi-row `market_spot_snapshots` inserts collide on the unique key — RESOLVED S71 (per-row `capture_ts`)
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Audit-trail loss only; the bars themselves write correctly. |
+| **Discovered** | Session 70 (2026-08-22), on the first live backfill run. |
+| **Component** | `backfill_cas_close_from_daily.py` |
+| **Symptom** | `Supabase INSERT market_spot_snapshots failed: 409 {"code":"23505","details":"Key (symbol, ts, source_table)=(NIFTY, 2026-08-22 00:17:55.225618+00, dhan_charts_historical) already exists."}` — 14 rows shared a single `capture_ts` and collided on `(symbol, ts, source_table)`. |
+| **Root cause** | `capture_ts` is computed once before the write loop. Correct for `capture_cas_close.py`, which writes two rows for one instant; wrong for a backfill writing many sessions in one pass. |
+| **Impact** | `hist_spot_bars_1m` wrote all 14 rows cleanly (it keys on `bar_ts`, which is per-session). Only the `market_spot_snapshots` audit rows are missing, so the backfilled closes are not individually traceable in the snapshot table. Nothing downstream reads those rows. |
+| **Proper fix** | Derive `ts` per row from that row's `bar_ist` rather than from `now()`. One line. |
+| **Cost to fix** | ~10 min. |
+| **Blocked by** | nothing. Do it before the next reconciliation run. |
+| **Cross-ref** | ADR-022 D2 · TD-S70-NEW-2 (same pass). |
+| **Closed** | 2026-08-22 (Session 71) — `382ac34`. |
+| **Resolution** | The batch `capture_ts` was correct for `capture_cas_close.py` (two rows, one instant) and wrong for a backfill writing many sessions in one pass. `ts` is now derived **per row** from that row's `bar_ist`. The run's own wall-clock is already preserved in `market_spot_snapshots.created_at` (row-birth), so nothing is lost. |
+| **Verification** | **None available.** Every session 08-03→08-21 is repaired, so `MISSING = 0` on every reachable range and the write loop is never entered; `--dry-run` returns before it in any case. Reaching back before 08-03 would write pre-CAS bars into a slot that meant something different then. **Latent until the next genuine gap** — the next weekly reconciliation that finds one is its first real exercise. Recorded as unverified rather than manufacturing a green run. |
+
+### TD-S70-NEW-2 — `capture_cas_close.py` Guard 3 is over-fitted: `close == open` was read as "auction not settled" when it means "settled at the frozen price" — RESOLVED S71 (flat-bar provisional + slot set + storage normalisation)
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Conservative failure — it rejects rather than corrupts — but it rejected 10 of 28 symbol-days that were correct. |
+| **Discovered** | Session 70 (2026-08-22), immediately, in the first backfill run of the script it belongs to. |
+| **Component** | `capture_cas_close.py` — Guard 3 |
+| **Symptom** | The 2026-08-03→08-21 backfill rejected 10 symbol-days with `15:29 bar still frozen (O=C=…); auction result not landed`. Cross-checking Dhan's daily endpoint showed **every rejected value was already the correct settled close**: 08-06 NIFTY 24636.00, 08-10 SENSEX 78542.44, 08-11 SENSEX 78154.25, 08-12 NIFTY 24435.95, 08-14 NIFTY 24366.00, 08-17 both, 08-18 SENSEX 77235.46. |
+| **Root cause** | The guard was designed from two hand-picked samples (08-20, 08-21) in which the settled price happened to differ from the frozen price, and it generalised `close != open` into a settlement test. **On a quiet close the auction settles at the price the index was already frozen at, and the bar is legitimately flat.** The guard encodes an assumption about price movement, not about settlement. |
+| **Secondary finding, same run** | Sessions 2026-08-03/04/05 place the last bar at **15:34 IST, not 15:29**, so the bar-timestamp assertion rejected those six symbol-days too. The exchange/vendor window differed in the first CAS week. The assertion is correct to exist — it refuses to write a bar of unknown provenance — but it needs to accept a small set of known-good slots rather than a single one. |
+| **Proper fix** | Replace the movement heuristic with an **authority cross-check**: compare the 15:29 bar's close against Dhan's daily endpoint where available, and accept a flat bar that matches. Same-day this is unavailable (daily does not publish until the next morning — verified 2026-08-21 18:32 IST returning only 08-20), so the same-day path should **accept the flat bar and mark it provisional**, with `backfill_cas_close_from_daily.py` reconciling the next day. Widen the bar-slot assertion to `{15:29, 15:34}`. |
+| **Mitigation in place** | `backfill_cas_close_from_daily.py` catches every rejected day on its next run, so the series is correct in aggregate today. The guard costs completeness, not correctness. |
+| **Cost to fix** | ~30 min. |
+| **Blocked by** | nothing. Ship with the ADR-023 D1 floor in one pass. |
+| **Cross-ref** | ADR-022 D2 · `backfill_cas_close_from_daily.py` · Assumption Register D.28.3. |
+| **Closed** | 2026-08-22 (Session 71) — `382ac34`, corrected by `79a04d4`. |
+| **Resolution** | Guard 3's `close != open` settlement proxy replaced with **flat-bar provisional marking**: the bar is written and stamped `raw.flat_bar_provisional = true`, and `backfill_cas_close_from_daily.py` reconciles it against the daily endpoint on its next run. A same-day authority cross-check is not available — the daily endpoint does not publish the current session (verified 2026-08-21 18:32 IST) — so provisional-then-reconcile is the only shape that works. Bar-slot assertion widened from the single slot `15:29` to the known-good set `{15:29, 15:34}`. |
+| **Correction shipped same session (`79a04d4`)** | Widening the accepted set let the vendor slot leak into `hist_spot_bars_1m.bar_ts`. Left alone it would have written a **second closing bar** into 2026-08-03/04/05 (already backfilled at 15:29), shifted `max(bar_ts)` to 15:34 for every daily-close consumer, and hidden the row from the reconciler's 15:29-only lookup. Resolved by separating the two concerns: **the accepted-slot set governs ACCEPTANCE; the canonical `CAS_CLOSE_BAR` slot governs STORAGE.** True vendor slot preserved as `raw.bar_slot_ist`. Caught in dry-run before any write. |
+| **Verification** | `--date 2026-08-06` (flat 15:29 NIFTY): `[REJECT]` → `[PROVISIONAL]`. `--date 2026-08-03` (both symbols at 15:34): slot-rejected → accepted, provisional line reporting the true `15:34` slot after `79a04d4`. |
+| **Residual** | The storage-normalisation half is **unverified by execution** — `--dry-run` returns before the write block, so no run reaches it. Its proof is the code path (`bar_ts_utc` is now built from `trade_day` + `CAS_CLOSE_BAR` and no longer reads `bar["timestamp"]`). Recorded rather than papered over with a green dry-run. |
 
 ### TD-S58-NEW-1 — purchased options chain (2025-04→2026-03) has 0% Greeks; historical per-strike IV/Greeks + concentration solve — RESOLVED S62
 

@@ -1034,6 +1034,61 @@ Returned **`[OK]` on 2026-08-12** while pin/accel views, the M5 detector, and th
 
 ---
 
+## §S71 — Session 71 script and schedule changes (2026-08-22→29)
+
+### S71.A — Scripts modified
+
+| Script | Change | Commit |
+|---|---|---|
+| `capture_cas_close.py` | Guard 3 `close != open` → **flat-bar provisional marking** (`raw.flat_bar_provisional`); bar-slot assertion widened to the set `{15:29, 15:34}`; **storage normalised to the canonical `CAS_CLOSE_BAR` slot** whatever known-good slot the vendor returns, with the true slot preserved as `raw.bar_slot_ist`. | `382ac34`, `79a04d4` |
+| `backfill_cas_close_from_daily.py` | `capture_ts` derived **per row** from `bar_ist` instead of once per batch (was colliding 14 rows on `(symbol, ts, source_table)` with 23505). | `382ac34` |
+| `compute_volatility_metrics_local.py` | `load_vix_history_rows()` — source-selection observability: resolved source, per-candidate probe including swallowed exception type, raw/usable counts, date range, age, 7-day staleness WARN, PostgREST page-cap WARN. **Behaviour unchanged.** | `9f1e41c` |
+
+### S71.B — ADR-022 D1 job-by-job verdicts (the audit, not just the outcome)
+
+| # | Job | Window before | Verdict |
+|---|---|---|---|
+| 1 | `capture_spot_1m_v2.py` | `*/1 03–09` | **Not extended.** Index frozen 15:15–15:28 and the script's own guard is at 15:15; extension only manufactures `SKIPPED_NO_INPUT`. 15:29 is owned by `capture_cas_close.py`. |
+| 2 | `capture_market_spot_snapshot_local.py` | `38 3` | **Not a window job** — single pre-open fire. Separately moved to `41 3` for the 2026-09-07 restructure. |
+| 3 | `capture_index_futures_snapshot_local.py` ×2 | `*/5 04–09` | **Extended.** Highest value of the set: futures keep trading while spot is frozen, so basis in 15:15–15:40 was entirely unobserved. |
+| 4 | `run_ingest.sh` (intraday ×2) | `*/5 04–09` | **Extended.** Options trade through the auction against a pinned underlying. |
+| 5 | `run_ingest.sh` (hour 03 ×2) | `0,5,…55 03` | **Not extended.** Pre-open only. |
+| 6 | `build_wcb_snapshot_local.py` | `*/5 03–09` | **Not extended yet.** Chain consumer — inherits #4's semantics; revisit after a week of the new window. |
+| 7 | `ingest_breadth_from_ticks.py` | `*/1 03–09` | **Extended** (`0-10 10`). Caveat: Category-I constituents stop continuous trading at 15:15 while others run on, so the breadth basket's composition changes mid-window and the series is not stationary across 15:15. |
+| 8 | `run_merdian_shadow_runner_aws.py` | `*/5 03–09` | **Not extended.** Its compute contracts were written against different window semantics. |
+
+A blanket `09` → `10` would have polled to 16:25 IST and collided with the detectors at `10:20`/`10:22` and `capture_cas_close.py` at `10:50`.
+
+**Write-path window marker: proposed, then rejected.** `ingest_option_chain_local.py:223` stores `"raw": option_raw` — the vendor payload verbatim. The CAS window is a pure function of `ts`, which every row already carries. **The 15:15–15:40 discontinuity is a read-path concern**, scoped in derived views on `ts` per the ADR-021 pattern.
+
+### S71.C — Scripts with NO scheduled invoker (third instance this session)
+
+| Script | State | Consequence observed |
+|---|---|---|
+| `generate_pine_overlay.py` | No cron entry since the S70 migration dropped the third line of `merdian_eod_ict.bat`. | EC2 artefact stale at 2026-08-18 / 104 zones while Local regenerated 106 with same-morning positioning. TD-S71-NEW-7. |
+| `reload_dhan_scripmaster.py` / `_from_csv.py` | Neither in any crontab; reloaded by hand. | `dhan_scripmaster` expired at the 2026-08-27 roll → **four symbol-sessions of `index_futures_snapshots` lost**. TD-S71-NEW-14. Cron added `30 01 1,15 * *`. |
+| `capture_premarket_0908.py` | Orphan wrapper; cron calls its target directly. | Filename encodes an instant retired 2026-09-07. TD-S71-NEW-8. |
+
+**All three produced a plausible empty or stale result rather than an error.** Standing reconciliation required: every production script at repo root against the crontab.
+
+### S71.D — `index_futures_snapshots` data loss, per symbol
+
+| Session | NIFTY | SENSEX | Total |
+|---|---|---|---|
+| 2026-08-24 | 151 | 151 | 302 |
+| 2026-08-25 | 151 | 151 | 302 |
+| 2026-08-26 | **0** | 151 | 151 |
+| 2026-08-27 | **0** | 151 | 151 |
+| 2026-08-28 | **0** | **0** | **0** |
+
+Each symbol dropped out the session after **its own** contract expired (NIFTY 2026-08-25, SENSEX 2026-08-27). **Permanent loss: NIFTY 08-26/27/28 and SENSEX 08-28** — the script captures a live LTP with no historical equivalent, `hist_future_bars_1m` has nothing since 08-25, and the August `SECURITY_ID`s were replaced by the reload swap. `basis_context_snapshots` and every ENH-07 derivative carry a NIFTY gap across those three sessions.
+
+`eod_health_check.py` reported `[ OK ] 151 rows` on 08-26 and 08-27 — PRIMARY INGESTION counts total rows and checks a first→last range, which one symbol alone satisfies. TD-S71-NEW-15.
+
+**Also noted:** `capture_index_futures_snapshot_local.py` **ignores its symbol argument** — invoked with `NIFTY` it resolves and writes both. The paired crontab lines duplicate every call; the pair should collapse to one.
+
+---
+
 ## §S70 (2026-08-22) — update log
 
 Doc-close of S69 plus an ingestion-integrity sweep. Three new scripts, one patched, one register-grade correction.

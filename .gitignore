@@ -125,3 +125,4 @@ extend_hist_atm_option_bars.py
 
 # S68: keep the rebuild-grade crontab manifest tracked despite *.txt
 !docs/registers/aws_crontab.txt
+merdian_ict_htf_zones.pine

@@ -490,13 +490,22 @@ def fetch_current_spot(sb, symbol):
             age = _age_min(rows[0].get("ts"))
             _ts_raw = rows[0].get("ts")
             _td_age = None
+            _same_day = False
             try:
                 _t = datetime.fromisoformat(str(_ts_raw).replace("Z", "+00:00"))
                 if _t.tzinfo is None:
                     _t = _t.replace(tzinfo=timezone.utc)
                 _td_age = _trading_days_between(_t.date(), date.today())
+                # S72 fix-of-the-fix: the intraday wall-clock bound must key on the
+                # ACTUAL calendar day, not on a zero trading-day count. Friday ->
+                # Saturday scores 0 trading days (Saturday is not counted), which on
+                # the first cut fell through to the 240-min branch and reproduced the
+                # very weekend false positive this change exists to remove. Caught on
+                # the first Saturday run, 2026-09-05.
+                _same_day = (_t.date() == date.today())
             except Exception:
                 _td_age = None
+                _same_day = False
 
             if _td_age is not None and _td_age > SPOT_MAX_AGE_TRADING_DAYS:
                 print(
@@ -506,7 +515,7 @@ def fetch_current_spot(sb, symbol):
                     f"on a stale spot.",
                     file=sys.stderr,
                 )
-            elif (_td_age == 0 and age is not None
+            elif (_same_day and age is not None
                   and age > SPOT_MAX_AGE_MIN_INTRADAY):
                 print(
                     f"  STALE: {symbol} market_spot_snapshots newest ts is "

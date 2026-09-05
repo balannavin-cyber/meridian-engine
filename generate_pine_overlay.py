@@ -91,7 +91,33 @@ INTRADAY_MAX_AGE_TRADING_DAYS = 2
 POSITIONING_MAX_AGE_MIN = 1440   # 24h -- views are EOD-ish, not intraday
 
 # S69-HARDENING. Freshness bound on the spot anchor driving the tier system.
-SPOT_MAX_AGE_MIN = 1080
+#
+# S72 (TD-S71-NEW-6) -- CORRECTED. This was SPOT_MAX_AGE_MIN = 1080, an 18-hour
+# WALL-CLOCK bound, defined nine lines below a comment that spells out exactly why
+# a wall-clock bound is wrong here: "the generator commonly runs pre-market Monday
+# off Friday's zones, so 1 would false-flag every Monday". S69 made the INTRADAY
+# floor weekend-aware and then reintroduced the same defect in the SPOT floor
+# immediately underneath it.
+#
+# A weekend is ~63 hours. 1080 minutes cannot span one. Every Monday pre-market run
+# therefore printed:
+#     STALE: NIFTY market_spot_snapshots newest ts is 2026-08-28T10:30:03 (3744 min
+#     old, floor 1080). Tier assignment is anchored on a stale spot.
+# ...when Friday 16:00 IST was the correct and only possible newest value. Observed
+# 2026-08-24 and again 2026-08-31. A floor that cries wolf weekly stops being read,
+# which is the failure mode that matters: the four false STALE lines sat directly
+# above a REAL defect (a 57014 timeout that dropped NIFTY's PIN box) and the real
+# one read as more of the same noise.
+#
+# Expressed in TRADING DAYS via _trading_days_between(), as the intraday floor
+# already is. 2 trading days: Friday close -> Monday pre-market is 1, and a genuinely
+# dead writer crosses 2 within a session.
+SPOT_MAX_AGE_TRADING_DAYS = 2
+
+# Retained for the in-session case only: within a single trading day a spot anchor
+# older than this is stale even though the trading-day count is 0. 240 min covers a
+# 6h15m session end-to-end without firing on a normal pre-market run.
+SPOT_MAX_AGE_MIN_INTRADAY = 240
 
 
 def _trading_days_between(d_from, d_to):
@@ -440,7 +466,7 @@ def fetch_current_spot(sb, symbol):
     signal_snapshots is retained as a logged fallback so the generator
     degrades rather than hard-fails.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime, timezone, date
 
     def _age_min(ts_str):
         try:
@@ -456,13 +482,43 @@ def fetch_current_spot(sb, symbol):
             "symbol", symbol
         ).order("ts", desc=True).limit(1).execute().data
         if rows:
+            # S72 (TD-S71-NEW-6): two-part floor. The TRADING-DAY count is the
+            # primary bound and is weekend-aware, so Friday-close -> Monday-preopen
+            # scores 1 and does not fire. The wall-clock bound is applied ONLY when
+            # zero trading days have elapsed, i.e. same-day, where it catches a
+            # writer that died mid-session.
             age = _age_min(rows[0].get("ts"))
-            if age is not None and age > SPOT_MAX_AGE_MIN:
+            _ts_raw = rows[0].get("ts")
+            _td_age = None
+            try:
+                _t = datetime.fromisoformat(str(_ts_raw).replace("Z", "+00:00"))
+                if _t.tzinfo is None:
+                    _t = _t.replace(tzinfo=timezone.utc)
+                _td_age = _trading_days_between(_t.date(), date.today())
+            except Exception:
+                _td_age = None
+
+            if _td_age is not None and _td_age > SPOT_MAX_AGE_TRADING_DAYS:
                 print(
                     f"  STALE: {symbol} market_spot_snapshots newest ts is "
-                    f"{rows[0].get('ts')} ({age:.0f} min old, floor "
-                    f"{SPOT_MAX_AGE_MIN}). Tier assignment is anchored on a "
-                    f"stale spot.",
+                    f"{_ts_raw} ({_td_age} trading days old, floor "
+                    f"{SPOT_MAX_AGE_TRADING_DAYS}). Tier assignment is anchored "
+                    f"on a stale spot.",
+                    file=sys.stderr,
+                )
+            elif (_td_age == 0 and age is not None
+                  and age > SPOT_MAX_AGE_MIN_INTRADAY):
+                print(
+                    f"  STALE: {symbol} market_spot_snapshots newest ts is "
+                    f"{_ts_raw} ({age:.0f} min old, same-day floor "
+                    f"{SPOT_MAX_AGE_MIN_INTRADAY}). Spot writer may have "
+                    f"stopped mid-session.",
+                    file=sys.stderr,
+                )
+            elif _td_age is None:
+                print(
+                    f"  WARNING: {symbol} market_spot_snapshots ts unparseable "
+                    f"({_ts_raw!r}) -- staleness NOT checked.",
                     file=sys.stderr,
                 )
             return float(rows[0]["spot"])

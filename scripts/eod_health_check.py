@@ -261,28 +261,53 @@ def check_gex_symbol_coverage(url, headers):
     two it does know about. That is the silent-omission shape of TD-S71-NEW-14, and
     the whole reason the literal was accepted was that this assertion would exist.
     """
+    # Method: EXACT counts, never a client-side set over a returned page.
+    #
+    # The first S72 attempt did `select=symbol` and built a Python set from the
+    # response. PostgREST caps a response at 1000 rows; the first 1000 rows of this
+    # table are all NIFTY; so the check reported SENSEX "not present" against a table
+    # holding 856,031 SENSEX rows. That is D.29.7 -- a study silently reading a
+    # truncated window -- committed inside a check written to catch silent omission.
+    #
+    # count=exact is computed server-side and is not subject to the row cap. Summing
+    # the known symbols and comparing to the unfiltered total detects an unknown third
+    # symbol exactly, without needing DISTINCT or an RPC.
     try:
-        r = requests.get(f"{url}/rest/v1/{GEX_TABLE}", headers=headers,
-                         params=[("select", "symbol")], timeout=60)
-        r.raise_for_status()
-        found = {row["symbol"] for row in r.json() if row.get("symbol")}
+        h = dict(headers); h["Prefer"] = "count=exact"
+        rt = requests.get(f"{url}/rest/v1/{GEX_TABLE}", headers=h,
+                          params=[("select", "count")], timeout=60)
+        rt.raise_for_status()
+        dt = rt.json()
+        total = int(dt[0]["count"]) if dt else 0
+
+        per = {}
+        for s in sorted(GEX_VIEW_SYMBOLS):
+            rs = requests.get(f"{url}/rest/v1/{GEX_TABLE}", headers=h,
+                              params=[("symbol", f"eq.{s}"), ("select", "count")],
+                              timeout=60)
+            rs.raise_for_status()
+            ds = rs.json()
+            per[s] = int(ds[0]["count"]) if ds else 0
     except Exception as e:
         return WARN, f"  {MARK[WARN]} {'gex view symbol coverage':<28} query error: {str(e)[:60]}"
 
-    if not found:
+    if total == 0:
         return WARN, (f"  {MARK[WARN]} {'gex view symbol coverage':<28} "
-                      f"no symbols readable in {GEX_TABLE}")
-    missing = found - GEX_VIEW_SYMBOLS
-    if missing:
+                      f"{GEX_TABLE} is empty")
+    known = sum(per.values())
+    unknown = total - known
+    absent = [s for s, c in per.items() if c == 0]
+    cells = ", ".join(f"{s}={per[s]:,}" for s in sorted(per))
+
+    if unknown > 0:
         return FAIL, (f"  {MARK[FAIL]} {'gex view symbol coverage':<28} "
-                      f"{sorted(missing)} in {GEX_TABLE} but NOT in the pin/accel view "
-                      f"VALUES list -- SILENTLY EXCLUDED (TD-S72-NEW-3)")
-    absent = GEX_VIEW_SYMBOLS - found
+                      f"{unknown:,} of {total:,} rows carry a symbol NOT in the pin/accel "
+                      f"view VALUES list -- SILENTLY EXCLUDED (TD-S72-NEW-3)  [{cells}]")
     if absent:
         return WARN, (f"  {MARK[WARN]} {'gex view symbol coverage':<28} "
-                      f"view lists {sorted(absent)} but no rows present in {GEX_TABLE}")
+                      f"view lists {absent} but no rows present in {GEX_TABLE}  [{cells}]")
     return OK, (f"  {MARK[OK]} {'gex view symbol coverage':<28} "
-                f"{sorted(found)} == view VALUES list")
+                f"{sorted(per)} == view VALUES list  [{cells}]")
 
 
 def check_marker_freshness(url, headers, sess_date, day0, verbose=False):

@@ -57,6 +57,192 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S72-NEW-1 (S2 priority — **RESOLVED S72**) — τ was decorative in both GEX zone views: the walk ran a hardcoded 0.3 while the output column reported `merdian_parameters`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** An operator-facing parameter that reads as applied and is not. Not hypothetical — it was used and silently ignored. |
+| **Discovered** | Session 72 (2026-09-05), reading `pg_get_viewdef` while investigating a 57014 timeout. Not from any register entry. |
+| **Component** | `v_gex_strike_pin_zone` · `v_gex_strike_accel_zone` · `get_parameter_num()` · ENH-81 Pine overlay labels |
+| **Symptom** | Recursive walk predicate read `g.gex_cr >= (0.3 * w_1.peak_gex_cr)` — a literal. The output column `tau_used` was independently resolved as `get_parameter_num('pin.tau.' || symbol)`. Nothing connected them. The Pine label `T0.30` reads from `tau_used`, so the chart asserted a threshold the computation never applied. |
+| **Proof the defect was live** | `merdian_parameters` history: `pin.tau.NIFTY` set to **0.25** at 2026-05-27 23:53:07 and reverted at 23:53:37 — an operator turning the knob, seeing nothing move, and putting it back. The walk ran at 0.3 throughout. Under the old view the boundaries would not have changed and only the label would have. |
+| **Consequence for research** | Any assessment of whether pin/accel zones carry information has, for the life of the feature, been an assessment of a **fixed** 0.3 walk with a possibly-mismatched label. Zone width was never tunable. This must be stated in any ADR-009 pre-registration touching the zones. |
+| **Fix applied** | τ resolved **once** in the `peak`/`trough` CTE, carried through the walk as a column, and `tau_used` selects the carried column — label and computation are structurally the same value and cannot drift again. Resolving `get_parameter_num` a second time inside the predicate was rejected: it fixes the symptom and leaves the bug one refactor away. `COALESCE(..., 0.3)` added because the function has **no default in its body** and returns NULL on a missing or expired key, which would NULL the predicate and empty the zone. |
+| **Verification** | Symmetric `EXCEPT ALL` diff against a pre-change snapshot: **zero rows**, both views. Valid because all four live τ values are 0.30, making old and new predicates algebraically identical. Liveness then proven inside a rolled-back transaction: τ=0.30 → 24300–24500 / 5 strikes; τ=0.50 → 24300–**24400** / **3** strikes; restored → 24300–24500 / 5. |
+| **Residual** | Equivalence proven **only for τ=0.3** — the sole case where the two predicates are algebraically identical. This is a no-regression proof, not a correctness proof at other τ. |
+| **Cross-ref** | ADR-001 (stable lies) · ADR-021 Amendment 1 · TD-S72-NEW-2 (same views, same pass) · SQL committed to `sql/s72_gex_view_fix.sql`. |
+| **Status** | **RESOLVED S72** — both views replaced in production, gate passed. |
+
+### TD-S72-NEW-2 (S2 priority — **RESOLVED S72**) — `latest_run` scanned all 1.32M rows on every call: ADR-021's own CTE was the unbounded step
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2**, degrading monotonically. Root cause of the recurring 57014. |
+| **Discovered** | Session 72 (2026-09-05), `EXPLAIN (ANALYZE, BUFFERS)`. |
+| **Component** | `v_gex_strike_pin_zone` · `v_gex_strike_accel_zone` · `gex_strike_snapshots` |
+| **Measured, before** | `Unique (actual time=0.033..487.049 rows=2)` fed by `Index Scan using ix_gex_strike_snap_sym_ts (actual rows=1317355)`. 1,317,355 rows scanned to produce two — 346.7 ms of a 489.9 ms warm execution, 36,073 of 36,167 buffers. `DISTINCT ON (symbol) ... ORDER BY symbol, ts DESC` with no symbol predicate; Postgres has no loose index scan. |
+| **Why it timed out intermittently** | 490 ms was the **warm** cost. Both observed 57014s (2026-08-28, 2026-08-31) were the first call of the morning from a Local pre-market run — always cold, where those 36k buffer hits are disk reads. The query sat on the `statement_timeout` boundary and landed either side at random. Table grows ~28k rows/day, so the failure rate was rising. |
+| **Disposes of a false handle** | The NIFTY-fails / SENSEX-passes asymmetry was read as diagnostic in-session. It is not: the view has **no symbol predicate anywhere**, the pipeline runs for both symbols on every call, and PostgREST filters the finished result. NIFTY failed because it was called first and paid the cold cache. |
+| **Fix applied** | `DISTINCT ON` replaced with a lateral: `VALUES ('NIFTY'),('SENSEX')` cross joined to `SELECT run_id, ts ... WHERE symbol = s.symbol ORDER BY ts DESC LIMIT 1`. One index lookup per symbol against the existing `ix_gex_strike_snap_sym_ts`. |
+| **Measured, after** | Execution **489.884 ms → 4.153 ms** (117×). Buffers **36,167 → 215** (168×). Run-selection rows **1,317,355 → 2**. End-to-end: `generate_pine_overlay.py` run cold after a two-hour idle gap completed with no 57014. |
+| **Residual** | The accel view's latency gain is inferred from structural identity with the pin view, not separately measured. Its equivalence diff did pass. |
+| **Cross-ref** | ADR-021 Amendment 1 · TD-S72-NEW-3 (the hazard this fix introduced) · TD-S72-NEW-4. |
+| **Status** | **RESOLVED S72.** |
+
+### TD-S72-NEW-3 (S2 priority — **RESOLVED S72**) — the GEX views now carry a literal symbol list; a third symbol would be silently excluded
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Introduced knowingly by the TD-S72-NEW-2 fix as the price of bounding the scan. Unguarded it is unacceptable. |
+| **Discovered** | Session 72 (2026-09-05), at the moment of writing the fix. |
+| **Component** | both GEX zone views · `scripts/eod_health_check.py` DERIVED-VIEW INTEGRITY |
+| **Symptom** | A symbol present in `gex_strike_snapshots` but absent from the views' `VALUES` driver produces no error and no empty result — just a complete-looking answer for the symbols it does know about. Identical shape to TD-S71-NEW-14's three unscheduled-invoker instances. |
+| **Rejected alternative** | `SELECT DISTINCT symbol` as the driver — reintroduces the full scan the fix removed. |
+| **Fix applied** | Assertion in `eod_health_check.py`: unfiltered `count=exact` total minus the sum of per-symbol counts detects an unknown symbol exactly. FAIL, not WARN. |
+| **First implementation was wrong** | The initial version did `select=symbol` and built a Python set from the response. **PostgREST caps a response at 1000 rows; the first 1000 rows of this table are all NIFTY**, so the check reported SENSEX absent against 856,031 SENSEX rows. That is D.29.7 — a query silently reading a truncated window — committed inside a check written to catch silent omission. Corrected to server-side `Prefer: count=exact`, which is not subject to the cap. |
+| **Verification** | `[ OK ] gex view symbol coverage ['NIFTY', 'SENSEX'] == view VALUES list [NIFTY=553,173, SENSEX=856,031]` on 2026-09-03. |
+| **Cross-ref** | TD-S72-NEW-2 · D.29.7 · TD-S71-NEW-14. |
+| **Status** | **RESOLVED S72** — commits `b2c7f4c`, `cd0cfda`. |
+
+### TD-S72-NEW-4 (S3 priority) — `gex_strike_snapshots` carries a duplicate index and a third that is redundant against the composite
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Write amplification and space only; no correctness impact. |
+| **Discovered** | Session 72 (2026-09-05), `pg_indexes` while diagnosing the 57014. |
+| **Component** | `gex_strike_snapshots` |
+| **Symptom** | `idx_gss_symbol_ts` and `ix_gex_strike_snap_sym_ts` are **byte-identical** — both `btree (symbol, ts DESC)`, two names for one index built by different sessions. Both are additionally redundant against `idx_gss_symbol_ts_strike` = `btree (symbol, ts DESC, strike)`, of which `(symbol, ts DESC)` is a leading prefix. Three indexes, one access path. |
+| **Cost** | Two unnecessary index writes per row on an append-only table taking ~28k rows/day, plus space. |
+| **Constraint on the fix** | The TD-S72-NEW-2 lateral currently plans against `ix_gex_strike_snap_sym_ts` **specifically**. Whichever index survives must cover `(symbol, ts DESC)`. Re-run `EXPLAIN` after any drop — do not assume the planner falls through to the composite. |
+| **Bloat theory refuted** | `last_autovacuum = null` looked alarming and means nothing here: 13,506 dead tuples against 1,317,355 live is 1% on an append-only table that has never crossed autovacuum's threshold. Raised in-session and abandoned. Stale planner statistics (`last_autoanalyze` 7 days old) remain a live secondary candidate. |
+| **Proper fix** | Measure `pg_relation_size` on all three, drop the two redundant, verify the plan is unchanged. Production DDL — own change, own verification pass. |
+| **Status** | **OPEN.** |
+
+### TD-S72-NEW-5 (S1 priority — **FIX DEPLOYED S72, FLOOR UNVERIFIED**) — the instrument loader failed open: an NFO timeout aborted the *breadth* load and the feed reported "Feed live" over 3 instruments
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** Root cause of a measured ~21% session failure rate in breadth. |
+| **Discovered** | Session 72 (2026-09-05), from `logs/ws_feed_zerodha.log.1` and a 45-day breadth census. |
+| **Component** | `ws_feed_zerodha.py` `load_instruments()` / `load_breadth_universe()` · `market_ticks` · `ingest_breadth_from_ticks.py` |
+| **The one line** | On any NFO fetch failure the handler did `return instruments` — returning the 3 hardcoded NSE index spots and **never attempting the breadth universe**, which is a *separate NSE download* that had nothing to do with the NFO error and would very likely have succeeded. |
+| **Evidence, 2026-09-04** | `03:40:13 Failed to download NFO instruments: ... Read timed out.` → `03:40:14 Connected. Subscribing 3 instruments... Subscribed. Feed live.` Healthy days: **1855 / 1659 / 1648**. `cron.log.1` then shows `ingest_breadth_from_ticks` firing every minute all session reporting `Total EQ ticks in window: 0`. |
+| **Measured failure rate** | 7 defective sessions in 33 (**~21%**), not the ~15% the health check saw. 07-24, 07-31, 08-11, 08-17, 08-18, 08-25, 09-04. Normal session = 379 rows pre-CAS, 390 post-2026-08-24. |
+| **Prior root cause was WRONG** | Filed in-session as the S17/S29 stale-token pattern. **Refuted by the feed's own log**: `Subscribed. Feed live.` at 03:40:14 — auth succeeded, token was valid. The token hypothesis is withdrawn. |
+| **Tuesday periodicity REFUTED** | 08-11 / 08-18 / 08-25 were three consecutive Tuesdays, seven days apart. **2026-09-01 was a Tuesday and produced a clean 390 rows.** Two of the seven failures (07-24, 09-04) are Fridays. n=3 was never sufficient. |
+| **Second mechanism is in the WRONG SUBSYSTEM** | 07-31 and 08-17 were filed as mid-session feed deaths. `breadth_intraday_history` shows 343 and 322 of 420 rows — so **`ingest_breadth_from_ticks` itself stopped running**, ~77 and ~98 minutes early. That is a `*/1` cron entirely independent of the feed. Both days' evidence is past 7-day log retention; **mechanism unknown, but not the WebSocket.** |
+| **Fix applied** | `fetch_instruments()` — 4 attempts with exponential backoff; atomic disk cache at `cache/zerodha_instruments_{NFO,NSE}.json`; cache **refused** beyond 5 days old (stale expiries are worse than no options). NFO failure no longer aborts the breadth path. Hard `MIN_UNIVERSE = 100` floor: below it the feed logs its composition and exits `3` rather than reporting "Feed live". New `Composition:` log line — `EQ=` is the number that matters. |
+| **Verified** | Dry-run 2026-09-05: NFO 32,655 rows, NSE 10,262 rows, both caches written, `Breadth matched: 1313/1385`, `After breadth: 1662`, `Composition: CE=170, EQ=1313, FUT=6, PE=170, SPOT=3`. In line with healthy sessions. |
+| **NOT verified** | The **universe floor has never fired** — `--dry-run` bypasses it by design and Saturday's token is expired, so `ExecStart` was never reached under systemd. First real exercise is Monday 2026-09-07. |
+| **Cross-ref** | TD-S72-NEW-6 · TD-S72-NEW-8 · TD-S69-NEW-2 · ADR-001. |
+| **Status** | **OPEN pending Monday verification** — commit `866face`. |
+
+### TD-S72-NEW-6 (S1 priority — **FIX DEPLOYED S72, UNVERIFIED**) — `OnFailure=` fired on the normal daily shutdown, so the alert channel emitted identical text on healthy and broken days
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** This is the operative reason a 21% failure rate persisted for weeks. |
+| **Discovered** | Session 72 (2026-09-05), comparing `WSFEED_ALERTS.log.*.gz` across good and bad sessions. |
+| **Component** | `ws_feed_zerodha.py` · `merdian-wsfeed.service` · `merdian-wsfeed-alert.service` |
+| **Symptom** | `WSFEED_ALERTS.log.{2..7}.gz` are **125 bytes each, every day** — 08-28, 08-29, 09-01, 09-02, 09-03, 09-04. Three of those were fully healthy. Content on a good day (09-02) and a bad day (09-04) is identical but for the timestamp: `ALERT: merdian-wsfeed.service entered failed state (preflight or runtime). Feed DOWN.` |
+| **Mechanism** | No SIGTERM handler existed. systemd `Stopping` at 10:05:01 → `State 'stop-sigterm' timed out. Killing.` at 10:06:31 — **exactly 90 s**, the `TimeoutStopSec` default, unset in the unit. Unit enters `failed (Result: timeout)` on the NORMAL daily shutdown; `OnFailure=` fires. |
+| **Extends** | TD-S71-NEW-4 said `is-active` cannot answer health. It is worse: the alert channel cannot distinguish the two states at all. |
+| **Narrowed** | The **preflight** alert path is good — `preflight FAIL: Incorrect api_key or access_token` names cause and remedy. Only the `OnFailure` path is noise. |
+| **Fix applied** | `install_signal_handlers()` on SIGTERM/SIGINT; `stop()` now calls `stop_retry`, `close`, `stop` in order, each guarded — `close()` alone leaves `connect(threaded=False)` blocked in the Twisted reactor. |
+| **NOT verified — and may not work** | KiteTicker runs a Twisted reactor which installs its own signal handlers under `connect(threaded=False)`. If SIGTERM is still swallowed, the reactor is why. Test Monday: `systemctl stop` then expect `inactive (dead)`, not a 90 s timeout. Fallback is `KillSignal=SIGINT` or an explicit `TimeoutStopSec`. **Do not reach for `SuccessExitStatus=SIGKILL`** — it would mask genuine kills. |
+| **Also confirmed** | `Restart=always` + `StartLimitBurst=3` / `StartLimitIntervalSec=300` / `RestartSec=10` observed live: three preflight retries ~11 s apart, then systemd gives up. Budget burns in ~30 s and the timer is start-only (`Persistent=false`), so nothing retries until the next morning. |
+| **Cross-ref** | TD-S71-NEW-4 · TD-S72-NEW-5. |
+| **Status** | **OPEN pending Monday verification** — commit `866face`. |
+
+### TD-S72-NEW-7 (S2 priority — **RESOLVED S72**) — the EOD health check read a `cron.log` that logrotate empties 45 minutes before it runs, and documented a path that does not exist
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Every wsfeed investigation for weeks started from an empty file. |
+| **Discovered** | Session 72 (2026-09-05). |
+| **Component** | `scripts/eod_health_check.py` · `/etc/logrotate.d/meridian` |
+| **Symptom** | `cron.log` was 0 bytes with mtime `2026-09-05 00:00:02` while the entire 09-04 record — the answer to the failure — sat in `cron.log.1` at **663,776 bytes**. Separately, the `market_ticks` WARN line directed the operator to `logs/cron.log`; the file is at **repo root**. |
+| **Logrotate is exonerated** | `/etc/logrotate.d/meridian` is correct: `daily`, `rotate 7`, `compress`, `delaycompress`, `missingok`, `notifempty`, `copytruncate`, `su ssm-user ssm-user`. `copytruncate` is the right choice given cron appenders and the long-lived wsfeed handle. Retention was never the problem; the reader was. Seven days of evidence have been available throughout. |
+| **Fix applied** | `resolve_cron_log()` returns the newest **non-empty** candidate with path, size and mtime, printed on the unhealthy branch. Resolved **by mtime, not generation number** — `notifempty` means a silent day produces no rotation, so `.1` is not reliably yesterday. The branch also now names `logs/ws_feed_zerodha.log[.1]` and the `Subscribing N instruments` line as the tell. |
+| **Verification** | 09-04 run prints `evidence: /home/ssm-user/meridian-engine/cron.log.1 (663,776 B, mtime 2026-09-05 00:00 UTC)`. |
+| **Status** | **RESOLVED S72** — commit `b2c7f4c`. |
+
+### TD-S72-NEW-8 (S2 priority — **RESOLVED S72**) — no continuity assertion: a session that started on time and stopped 80 minutes early passed the health check
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Two undetected instances, both previously hypothetical. |
+| **Discovered** | Session 72 (2026-09-05), from a 45-day breadth census. |
+| **Component** | `scripts/eod_health_check.py` PRIMARY INGESTION |
+| **Symptom** | 2026-07-31 wrote **302** breadth rows ending 08:42 UTC; 2026-08-17 wrote **297** ending 08:39. Both ~78% of a session, both stopping ~80 min early, both `[ OK ]` because `min_rows` was **60** against an observed norm of 379/390 and a first→last range check cannot see a truncated tail. |
+| **Fix applied** | Floors recalibrated from the observed census, not guessed: spot 600 (obs. 723), breadth **350** (obs. 379/390), chain 50000 (obs. 68738), futures 250 (obs. 302). New `verdict_tail()` asserts each table's own expected last-row time — per-table because CAS moved breadth and chain to ~10:10 while spot and futures already ran to 10:30 (ADR-022); a single global close cannot express that. |
+| **Verification** | 2026-09-03 (clean session) passes every PRIMARY line with zero WARN — the regression gate. Both known truncations would now FAIL. |
+| **Cross-ref** | TD-S69-NEW-2 · TD-S71-NEW-15 (closed in the same pass) · ADR-022. |
+| **Status** | **RESOLVED S72** — commit `b2c7f4c`. |
+
+### TD-S72-NEW-9 (S3 priority) — `equity_intraday_last` freshness cannot be audited historically; the check's own docstring claims otherwise
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Produces a meaningless FAIL on every back-dated audit, which trains the operator to ignore the line. |
+| **Discovered** | Session 72 (2026-09-05), running `--date 2026-09-03` after the S72 changes. |
+| **Component** | `scripts/eod_health_check.py` `check_reference_freshness()` · `equity_intraday_last` |
+| **Symptom** | `--date 2026-09-03` reports `NOT refreshed for 2026-09-03 -- newest ts 2026-09-04 03:35 UTC (-28 h before session)`. The newest ts is **after** the audited session and the age is negative. |
+| **Root cause** | The table is an **upsert** holding one generation (~1,314 rows, one per stock). Each refresh overwrites every `ts`, so no row retains a prior day's timestamp. Counting rows whose `ts` falls on the audited day therefore returns 0 for every date except the most recent refresh. Historical refresh state is **structurally unknowable** from this table. |
+| **The docstring is false** | It claims the check is "anchored to the audited date… so a stale-baseline day FAILs even when audited weeks later". It cannot be. The upsert destroys the evidence. |
+| **Proper fix** | When `newest > audited date`, report `NOT AUDITABLE (upsert table, single generation)` as INFO/WARN. Reserve FAIL for `newest` **behind** the audited date — the genuine stale-baseline mode TD-S59-NEW-1 describes. |
+| **Cross-ref** | TD-S59-NEW-1 · TD-S72-NEW-6 (fourth instance this session of a channel reporting identically on good and bad days). |
+| **Status** | **OPEN.** |
+
+### TD-S72-NEW-10 (S3 priority) — `gex_strike_snapshots` grew ~92k rows on a Saturday with every capture cron scoped Mon–Fri
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Unexplained, not yet shown to be harmful. |
+| **Discovered** | Session 72 (2026-09-05), incidental. |
+| **Component** | `gex_strike_snapshots` · crontab |
+| **Symptom** | `EXPLAIN` at ~01:30 UTC scanned **1,317,355** actual rows. An exact `count(*) GROUP BY symbol` at ~03:30 UTC returned **1,409,204** (SENSEX 856,031 + NIFTY 553,173). ~92k rows in two hours, on a Saturday, with every capture cron scoped `* * 1-5`. |
+| **Candidates** | An unscheduled or manually-triggered backfill; a job whose day-of-week field differs from the rest; or a writer outside the crontab entirely. Not investigated. |
+| **Proper fix** | Fold into the Priority-5 unscheduled-invoker reconciliation: enumerate every production script at repo root against the crontab and list those with neither a cron entry nor a documented manual trigger. |
+| **Cross-ref** | TD-S71-NEW-14 (the class) · TD-S71-NEW-7. |
+| **Status** | **OPEN.** |
+
+### TD-S72-NEW-11 (S3 priority) — `Out-File -Encoding utf8` writes a BOM on Windows PowerShell 5.1, contradicting the documented git workflow
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Cosmetic, but the workflow guidance is wrong as written. |
+| **Discovered** | Session 72 (2026-09-05), from commit `b2c7f4c`'s echoed message. |
+| **Component** | CLAUDE.md git workflow section · commit message procedure |
+| **Symptom** | `git commit -F` echoed `[main b2c7f4c] ﻿MERDIAN: [FIX] ...` — U+FEFF preceding the message. `Out-File -Encoding utf8` on PS 5.1 emits a BOM; `-NoNewline` does not suppress it. The documented pattern is prescribed specifically to avoid BOM issues and does not. |
+| **Proper fix** | `[System.IO.File]::WriteAllText("$PWD\.git\COMMITMSG.txt", $msg, (New-Object System.Text.UTF8Encoding($false)))`, or migrate to `pwsh` 7+ where `-Encoding utf8` is BOM-less by default. Update CLAUDE.md rather than leaving guidance that is wrong for the shell in use. |
+| **Status** | **OPEN.** |
+
+### TD-S72-NEW-12 (S2 priority) — byte-size comparison across storage tiers is invalid under `core.autocrlf=true`; Doc Protocol v4's four-tier hash discipline needs correcting
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Produced **two false alarms in one session**, one of which briefly blocked ADR-023 D1. |
+| **Discovered** | Session 72 (2026-09-05), twice. |
+| **Component** | Doc Protocol v4 hash verification · session-open baseline procedure |
+| **Instance 1** | PK-mounted `ADR-022` (13,868) and `ADR-023` (12,586) were compared against expected 17,157 / 17,095 and reported as pre-amendment. **The retrieval index held the amended text all along.** The filesystem mount and the retrieval index are distinct stores — D.29.10 exactly, committed while reading the session brief that opens with it. |
+| **Instance 2** | `ws_feed_zerodha.py` measured 18,289 on Local and 17,812 on EC2 with `git status` clean on both — reported as a divergence. It is `core.autocrlf=true`: `git ls-files --eol` returns `i/lf w/crlf`, the gap is exactly 477 lines × one `\r`, and all three `git hash-object` values match at `f84368e9...`. |
+| **Rule** | Byte size is a valid identity check **only within one storage tier**. Cross-tier comparison must use `git hash-object` or a hash taken after EOL normalisation. Under `autocrlf=true` every text file will disagree by line count between Local and EC2, permanently and correctly. |
+| **Proper fix** | Amend Doc Protocol v4's verification procedure; state the rule in CLAUDE.md. Session-open baselines quoted in bytes must specify which tier they were measured on. |
+| **Cross-ref** | D.29.10 · Doc Protocol v4 Rule on four-tier verification. |
+| **Status** | **OPEN.** |
+
+### TD-S72-NEW-13 (S3 priority — **WITHDRAWN, not a defect**) — `breadth_intraday_history` zero-coverage rows are flagged and already filtered downstream
+
+| Field | Value |
+|---|---|
+| **Priority** | n/a — filed S1 in-session, **refuted by measurement in the same session**. Retained per the never-delete rule as a record of the error. |
+| **Filed as** | "~390 synthetic zero-coverage rows per failed session, indistinguishable from a genuinely flat market; five sessions of fabricated data; quarantine before any breadth research." |
+| **Refutation** | `breadth_intraday_history` carries a `coverage_pct` column. The arithmetic is exact on **every** day measured: `history_rows − zero_cov = market_breadth_intraday rows`. 07-31: 343−41=302 ✅ · 08-17: 322−25=297 ✅ · 08-12: 417−26=391 ✅ · 09-03: 431−41=390 ✅. The writer flags zero-coverage and the downstream table already excludes it. The steady ~41/day on healthy sessions is the pre-open window before ticks start. |
+| **What it does tell us** | All five failed days appear identically here (100% zero coverage, full row count), so **this table cannot distinguish a preflight failure from a fail-open loader** — ingest runs either way and records zero either way. Worth knowing before anyone tries to classify past failures from it. |
+| **Lesson** | The claim was made from a log line (`Writing zero-coverage row`) without reading the table's schema. Measure before claiming. |
+| **Status** | **WITHDRAWN S72.** |
+
 ### TD-S71-NEW-14 (S1 priority) — `dhan_scripmaster` has no scheduled reload, and futures contract resolution has no fallback: the table silently expires at every roll
 
 | Field | Value |
@@ -88,7 +274,8 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Cost to fix** | ~45 min. |
 | **Blocked by** | nothing. Merge into the TD-S69-NEW-2 pass. |
 | **Cross-ref** | TD-S69-NEW-2 — **three** S71 findings now feed it: this one, `merdian-wsfeed`'s `Result: timeout` normal-end state (TD-S71-NEW-4), and the 08-25 check reporting 3 FAILs for one upstream cause. |
-| **Status** | **OPEN.** |
+| **Closed how** | S72: per-symbol parity applied to PRIMARY INGESTION, made **proportional** (10% floor) rather than a flat gap because SENSEX chains are legitimately wider than NIFTY's — `\|N−S\| <= 4` would false-fire on `option_chain_snapshots` daily. Symbol query wrapped: an unknown column degrades to a self-naming WARN. Continuity floors and tail assertion shipped in the same pass (TD-S72-NEW-8). |
+| **Status** | **RESOLVED S72** — commits `b2c7f4c`, `cd0cfda`. |
 
 ### TD-S71-NEW-1 (S2 priority) — `merdian_reference.json` does not cover the files and tables the register's own read-rule points at
 

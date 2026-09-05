@@ -112,4 +112,96 @@ The diagnostic tell that separated this from every other candidate cause: **the 
 
 ---
 
+## AMENDMENT 1 (Session 72, 2026-09-05)
+
+**A1.1 — the Context is correct in part and incorrect in part.**
+
+ADR-021 states the views went from returning `57014` to returning instantly. Measured
+2026-09-05 with `EXPLAIN (ANALYZE, BUFFERS)`:
+
+```
+Unique  (cost=0.43..52503.67 rows=2) (actual time=0.033..487.049 rows=2 loops=1)
+  ->  Index Scan using ix_gex_strike_snap_sym_ts on gex_strike_snapshots
+        (rows=1319059) (actual time=0.032..346.717 rows=1317355 loops=1)
+```
+
+The `latest_run` CTE **this ADR introduced** performs a full ordered index scan of
+**1,317,355 rows to return two**, on every call — 346.7 ms of a 489.9 ms warm
+execution and 36,073 of 36,167 buffers. `DISTINCT ON (symbol) … ORDER BY symbol,
+ts DESC` carries no symbol predicate, and Postgres has no loose index scan.
+
+The downstream scoping was genuine and did what the ADR claims: `scoped`, `peak`,
+`walk` all operate on one run. **The run-selection step was never bounded.**
+"Instant" was true at the table size then current (~1.06M rows) and decreasingly
+true as it grew ~28k rows/day. A performance claim stated without its table size
+has an expiry date nobody can see.
+
+**A1.2 — the `57014` recurred, twice, and produced a silent artefact both times.**
+
+2026-08-28 and 2026-08-31, both the first call of the morning from a Local
+pre-market run — i.e. always cold, where those 36k buffer hits are disk reads.
+490 ms was the *warm* cost; the query sat on the `statement_timeout` boundary and
+landed either side of it at random. Each failure produced a Pine overlay carrying
+NIFTY ACCEL, **no PIN**, and an as-of stamp inherited from the surviving side
+(see ADR-023 A1.3).
+
+**A1.3 — an asymmetry in outcome is not evidence of an asymmetry in mechanism.**
+
+The NIFTY-fails / SENSEX-passes pattern was read in-session as diagnostic. It is
+not: the view has **no symbol predicate anywhere**, the pipeline runs for both
+symbols on every call, and PostgREST filters the finished result. NIFTY failed
+because it was called first and paid the cold cache — confirmed by a clean re-run
+16 minutes later with no data change. Recorded because the false handle consumed
+real diagnostic effort. (Assumption Register D.30.8.)
+
+**A1.4 — correction applied.**
+
+`DISTINCT ON` replaced with a lateral: `VALUES ('NIFTY'),('SENSEX')` cross joined
+to `SELECT run_id, ts … WHERE symbol = s.symbol ORDER BY ts DESC LIMIT 1` — one
+index lookup per symbol against the existing `ix_gex_strike_snap_sym_ts`.
+
+| | Before | After |
+|---|---:|---:|
+| Execution time | 489.884 ms | **4.153 ms** |
+| Buffers (shared hit) | 36,167 | **215** |
+| Rows for run selection | 1,317,355 | **2** |
+
+Verified by symmetric `EXCEPT ALL` diff against a pre-change snapshot: **zero
+rows**, both views. SQL committed to `docs/research/s72_gex_view_fix.sql` per
+ADR-009. Applied under an active-defect exception with the equivalence gate
+standing in for Rule 10's ADR-first ordering — this amendment is written after the
+code, and that is flagged rather than excused.
+
+**A1.5 — a new constraint the bounded form introduces.**
+
+The lateral uses a **literal symbol list**. A third symbol in
+`gex_strike_snapshots` would be silently absent from both views — no error, no
+empty result, just a complete-looking answer for the symbols it knows. Guarded by
+a `count=exact` assertion in `eod_health_check.py` (TD-S72-NEW-3). Rejected
+alternative: `SELECT DISTINCT symbol` as the driver, which reintroduces the full
+scan this amendment removes.
+
+**A1.6 — open follow-up 2 is CLOSED.**
+
+"Run the τ-parameterisation closure so the walk uses `get_parameter_num`, not
+literal `0.3`" was filed here as *cheap to do*. It sat open for three sessions
+while the views shipped a threshold the computation never applied, and
+`pin.tau.NIFTY` was changed to 0.25 on 2026-05-27 and reverted 30 seconds later
+by an operator who saw nothing move. Closed in the same pass as A1.4: τ is
+resolved once in the `peak`/`trough` CTE and carried through the walk, so the
+displayed value and the applied value are structurally the same column.
+**A parameterisation follow-up on a live operator-facing surface is not a
+cleanup item.** (TD-S72-NEW-1, Assumption Register D.30.12.)
+
+**A1.7 — open follow-up 3 is CLOSED.** `eod_health_check.py` gained a
+DERIVED-VIEW INTEGRITY section (S72). It asserts symbol coverage rather than
+row-return; the first implementation asserted the wrong thing *and* walked into
+the PostgREST 1,000-row cap while doing it, which is recorded at TD-S72-NEW-3.
+
+**A1.8 — open follow-up 4 remains OPEN.** The audit of remaining views over
+`gex_strike_snapshots` for the same unscoped-recursion shape has not been run.
+A1.1 raises its priority: the shape was present in this ADR's own fix.
+
+---
+
 *ADR-021 — 2026-08-13 — Session 69 — the fix was four lines of SQL; the finding was that a healthy writer plus a fresh table plus a silent consumer is a shape that hides a total feature loss for weeks. Cost growth in a derived view is arithmetic — it should be a design-time check, not an incident.*

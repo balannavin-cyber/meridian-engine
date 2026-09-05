@@ -57,6 +57,24 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S72-NEW-14 (S2 priority — **RESOLVED S72**) — a canonical document was written to an inferred path, creating the duplicate basename the same session's guardrails forbid
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Resolved in ~4 minutes; filed because the mechanism is general and the timing is the evidence. |
+| **Discovered** | Session 72 (2026-09-05), immediately after the commit that caused it. |
+| **Component** | `MERDIAN_Decision_Index.md` · Doc Protocol v4 Rule 2 (file layout) · `MERIDIAN_ClaudeCode_Guardrails.md` P-7 |
+| **What happened** | The S72 Decision Index rewrite was written to `docs/registers/`. Its canonical home is `docs/decisions/`. Commit `146254c` shows `create mode 100644` — a **new file**, not a modification. For the duration of that commit the repo held `MERDIAN_Decision_Index.md` at two tracked paths, one current and one stale, with the stale copy at the path an operator or an agent would most plausibly search. |
+| **The signal that was driven past** | `Copy-Item docs\registers\MERDIAN_Decision_Index.md …_PRE_S72.md` failed with `PathNotFound` — a direct statement that the file was not there. The next command in the queued block ran anyway and created it. `git status` then reported `??` rather than ` M`, a second signal, also passed. **Two independent tells, neither acted on, because the command sequence had already been written.** |
+| **Root cause** | The path was inferred from where the other registers live (`docs/registers/`) rather than read from `git ls-files`. `git ls-files \| Select-String "Decision_Index"` — the command that settles it — takes one second and was run only *after* the duplicate existed. This is MALPHA guardrail **C-2** (enumerate preconditions before starting, not during): verifying each step while planning none produces exactly this. |
+| **Why it matters beyond the instance** | Guardrail **P-7** forbids creating a file whose basename duplicates one under `docs/`, because two files with one display name surface non-deterministically in project knowledge and a grep for the canonical one can return the stale one. **P-7 was written earlier in this same session, and the duplicate-basename scan that informed it (`README.md` only) was run *before* this violation created a second one.** A precondition scan is valid only until the next write. |
+| **Fix applied** | `git rm` the wrong path (already staged, so it landed as `D`), content applied to `docs/decisions/MERDIAN_Decision_Index.md`, verified: original untouched at 57,405 B pre-write, 62,313 B post-write, `git ls-files \| grep -c Decision_Index` = **1**, and the repo-wide duplicate-basename scan back to `README.md` alone. Commit `9fe2eb2`. |
+| **Note on the commit log** | `9fe2eb2` reads `2 files changed, 3 insertions(+), 134 deletions(-)`. Git saw identical content at two paths in one commit and recorded a rename plus delta, so **the insertion count in that message is not a measure of what changed.** The file is correct; the log is not a size record. |
+| **Residual** | `README.md` remains duplicated (`docs/runbooks/`, `docs/registers/archive/`) and is still a Claude Code precondition. **And the deeper exposure is unmeasured:** nothing enforces Doc Protocol v4 Rule 2's file layout. A canonical document can be written to a plausible-but-wrong path and committed, and only a basename scan afterwards will find it. |
+| **Proper fix** | A preflight assertion that every canonical document is at its Rule 2 path and appears exactly once in `git ls-files`. Cheap, and it converts P-7 from a rule that must be remembered into one that is checked. |
+| **Cross-ref** | Guardrails P-3, P-7 · MALPHA C-2 · Doc Protocol v4 Rule 2 · D.30.15. |
+| **Status** | **RESOLVED S72** — commit `9fe2eb2`. The preflight assertion in *Proper fix* is **OPEN**. |
+
 ### TD-S72-NEW-1 (S2 priority — **RESOLVED S72**) — τ was decorative in both GEX zone views: the walk ran a hardcoded 0.3 while the output column reported `merdian_parameters`
 
 | Field | Value |

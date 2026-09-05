@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v50",
+    "version": "v51",
     "generated": "2026-06-12",
     "sources": [
       "Session 69 (2026-08-12/13): LIVE INCIDENT SESSION - one reported symptom (no pin/accel zones on TradingView) resolved into six largely independent failures, four pre-existing. THREE FIXED AT SOURCE: (1) disk-full cascade on the 7.6 GB EC2 root at 100% - killed merdian-wsfeed.service, corrupted .env line 24 via a sed -i that wrote a literal <real-token> (the unquoted < also broke every subsequent .env source), and silently failed the 35 3 UTC breadth-baseline cron leaving equity_intraday_last 92h stale; recovered via journal vacuum 672M + npm cache clean 871M + log truncate 302M->36K to 74%/1.9G free, journal capped SystemMaxUse=200M, token rewritten QUOTED and validated with KiteConnect.profile(), systemctl reset-failed then start, duplicate feed PIDs cleared with kill -9 (SIGTERM is caught by the reconnect handler), 280k+ ticks/10min confirmed. (2) ADR-021 pin/accel view scoping (4326f25) - v_gex_strike_pin_zone/v_gex_strike_accel_zone ran a recursive walk across ALL of gex_strike_snapshots (1.06M rows, 250+ sessions) then the sole caller kept ORDER BY ts DESC LIMIT 1; cost crossed the PostgREST 8s ceiling -> 57014 -> fetch_positioning_landscape failed -> pin/accel silently absent from the overlay for WEEKS. Fixed with latest_run (DISTINCT ON (symbol)) + scoped CTEs, working set 1.06M -> ~80 strikes/symbol, output byte-identical, plus index ix_gex_strike_snap_sym_ts. (3) a4bdb4c S69-C1 daily-history - build_ict_htf_zones.py had DAILY_LOOKBACK=60 defined and NEVER REFERENCED, so detect_daily_zones() evaluated exactly ONE prior session while the weekly walked 52 weeks (~19 zones vs 1); new detect_daily_zones_history() sweeps 60 sessions emitting OB/FVG ONLY, PDH/PDL deliberately excluded (would emit ~120 unfiltered levels/symbol and reverse the S59 single-emission fix), detection rule byte-identical so the Exp-15 cohort behind WR_BY_PATTERN survives per ADR-009. A SECOND INDEPENDENT CAUSE of thin daily structure otherwise attributed entirely to M5 staleness. Rule 10: NO ADR (defined-but-unused constant is a bug fix). CARRIED, NOT FIXED: ADR-022 SEBI Closing Auction Session live 2026-08-03 (NSE+BSE+MSEI) - F&O continuous trading ends 15:15, auction 15:15-15:35 sets the close by equilibrium price (reference = VWAP 15:00-15:15, band +/-3%, limit+market only), index AND stock derivatives extend to 15:40, post-close 15:50-16:00, pre-open restructured 2026-09-07 with random close 09:08-09:10; NIFTY/SENSEX are built from Category-I constituents so the index close now lands ~15:35-15:40 and NO fixed 15:30 anchor is valid - MERDIAN_ICT_EOD fires at 15:35 INSIDE the window and has since 08-03. M5 ICT detector frozen 53 trading days at ict_zones trade_date 2026-06-02 with a HEALTHY task (State Ready, LastTaskResult 0) writing nothing - OB_MIN_MOVE_PCT=0.40% is empirically unreachable (30-session maxima NIFTY 0.366% / SENSEX 0.369%); the ADR-016 recalibration to a candidate 0.25% must land AFTER the ADR-022 re-timing or it measures auction-contaminated bars. KEY CORRECTION: the Zerodha token is rotated MANUALLY by the operator every morning 06:00-06:30 IST - there is no MALPHA auto-refresh and there never was; the 08-12 dead token was .env corruption, not expiry. This REMOVES MALPHA-token-pipeline-broken from the priority list. 2 new ADRs (ADR-021, ADR-022). 8 new TDs (TD-S69-NEW-1..8). HEAD 4326f25, Local == origin == EC2; session opened at 60642fc and the range e5232b5->60642fc is unaccounted for (TD-S69-NEW-7). Pine time-anchor patch + regenerated merdian_ict_htf_zones.pine DELIBERATELY held uncommitted pending the canonical-host decision (committing them commits the Local<->box divergence, Local 106-110 honest zones vs box 139 with stale M5 merged); merdian_eod_ict.bat untracked. New tracked file docs/runbooks/reading_the_ambient_trajectory_dashboard.md. The original S69 P0 (ENH-119 momentum layer) never started.",
@@ -4801,10 +4801,17 @@
       "truncated_each_run": false
     }
   },
-  "version": "v50",
+  "version": "v51",
   "last_updated_session": "Session 71",
   "last_updated_date": "2026-08-29",
   "change_log": [
+    {
+      "session": "S72",
+      "date": "2026-09-05",
+      "type": "GEX read-path repair + wsfeed root-cause. Six production changes deployed and verified; six assistant claims withdrawn on measurement. ADR-021 AMENDED. PASS.",
+      "summary": "TAU WAS DECORATIVE. v_gex_strike_pin_zone / v_gex_strike_accel_zone hardcoded 0.3 in the recursive walk while tau_used separately resolved get_parameter_num('pin.tau.'||symbol); nothing connected them and the Pine T0.30 label reads from tau_used. Proven live, not theoretical: merdian_parameters shows pin.tau.NIFTY set to 0.25 at 2026-05-27 23:53:07 and reverted 30s later. Fixed by resolving tau once in the peak/trough CTE and carrying it through the walk. LATEST_RUN WAS UNBOUNDED - ADR-021's own CTE scanned 1,317,355 rows to return two on every call (346.7ms of a 489.9ms warm execution, 36,073 of 36,167 buffers); root cause of the recurring 57014, which fired on cold first calls only. Lateral rewrite: 489.884ms -> 4.153ms (117x), 36,167 -> 215 buffers (168x); equivalence gate symmetric EXCEPT ALL returned zero rows both views. ADR-021 Amendment 1 written (A1.1 corrects its own Context; A1.6/A1.7 close open follow-ups 2 and 3; A1.8 open). WSFEED FAIL-OPEN LOADER - on 2026-09-04 kite.instruments('NFO') read-timed-out and the handler's `return instruments` ALSO skipped the breadth universe, a separate NSE download; feed reported 'Subscribing 3 instruments... Feed live' against a healthy norm of 1648-1855. Measured rate 7 defective sessions in 33 (~21%). Fixed with retry+backoff, atomic disk cache refused beyond 5 days, NFO failure no longer aborting breadth, MIN_UNIVERSE=100 hard floor exiting non-zero, and a Composition log line. THREE FILED CAUSES REFUTED: stale-token withdrawn (log shows 'Subscribed. Feed live.'), Tuesday periodicity refuted (09-01 Tue clean at 390 rows; two failures are Fridays), and 'mid-session feed death' refuted - breadth_intraday_history shows ingest_breadth_from_ticks, a */1 cron independent of the feed, stopped 77 and 98 min early on 07-31 and 08-17. FOUR OBSERVABILITY CHANNELS REPORT IDENTICALLY ON GOOD AND BAD DAYS: WSFEED_ALERTS at 125 bytes every day including healthy ones (OnFailure fires on the normal shutdown, no SIGTERM handler, stop-sigterm timed out at exactly 90s); market_ticks transient with n_live_tup=0; cron.log emptied by rotation at 00:00 UTC while the health check runs at 00:45 with 663,776 bytes sitting in cron.log.1; equity_intraday_last FAILing every back-dated audit because it is an upsert holding one generation. Logrotate exonerated - config correct, the reader was wrong. eod_health_check.py rewritten 16,157->29,475 B / 365->610 lines closing five TDs. CLAUDE CODE GUARDRAILS DERIVED against a live enumeration: 501 scripts at repo root, 24 in cron, 1 in systemd, so path-based permissions are impossible and every deny entry must name a file; Meridian's flag convention is INVERTED from MALPHA's - --apply is opt-in and safe bare, --dry-run-only is opt-out and writes by default (~60 scripts, all ten sampled action=store_true with no default). merdian-wsfeed-stop.timer found: a daily production stop invoker in no crontab and no register. ADR-023 D1 Decision A taken (52 10 * * 1-5, crontab 52->53); Decision B deferred to an ADR-009 pre-registered study since tau was decorative until this session. Credentials rotated; rollback tagged pre-claude-code-20260905. 13 TDs filed (2 RESOLVED same-session, 1 WITHDRAWN), 2 closed. Assumption Register D.30 added: 14 rows, twelve REFUTED, six of them the assistant's own. CLAUDE.md v1.48->v1.49. Commits b2c7f4c..4d40ff3.",
+      "docs_updated": "yes"
+    },
     {
       "session": "S70",
       "date": "2026-08-22",
@@ -5188,6 +5195,77 @@
       "contradicts": "The documented SSM-only access model for MERDIAN AWS - port 22 open from MALPHA's SG and an authorized_keys entry for ssm-user, neither recorded in Deployment Topology §1.",
       "residual_hazard": "The sync overwrites MERDIAN from MALPHA unconditionally. Refreshing MERDIAN directly without also refreshing MALPHA leaves a stale value that lands next morning at 03:00 and fails the 03:40 preflight.",
       "TD_NEW_7": "RECLASSIFIED to documentation correction. Its designed fix (Supabase mirror because no automation exists) targets a world that ended 2026-04-15."
+    }
+  },
+  "_s72_addendum": {
+    "_note": "Session 72 (2026-09-05). Facts established by direct measurement this session. Recorded here because the registry does not cover them and TD-S71-NEW-1 remains open — the fix is the coverage assertion, not this backfill.",
+    "registry_coverage_gap_TD_S71_NEW_1": "STILL OPEN. files=129 and merdian_ict_htf_zones.pine is absent from the registry despite being generated, git-tracked until this session, and the subject of TD-S70-NEW-7. Also absent: cache/zerodha_instruments_{NFO,NSE}.json (new this session), docs/research/s72_gex_view_fix.sql. CLAUDE.md Rule 11 forbids asking the operator for file paths on the grounds that the registry holds them.",
+    "change_log_gap_FOUND_S72": "The top-level change_log is MISSING sessions S71, S68 and S66. Present: S70, S69, S67, S65, S64, S63, S62, S61, S60, S59, S58, S57, S56, S42. S71 bumped version to v50 and added _s71_addendum but wrote no change_log row, so the version number and the change log disagree about what the newest session is. Not backfilled here — the gap is the finding.",
+    "gex_views_rewritten": {
+      "views": [
+        "v_gex_strike_pin_zone",
+        "v_gex_strike_accel_zone"
+      ],
+      "tau": "Resolved ONCE in the peak/trough CTE via COALESCE(get_parameter_num('pin.tau.'||symbol), 0.3) and carried through the walk as a column; tau_used selects the carried column. Previously the walk hardcoded 0.3 while tau_used resolved the parameter independently.",
+      "latest_run": "DISTINCT ON (symbol) replaced with VALUES ('NIFTY'),('SENSEX') CROSS JOIN LATERAL (... ORDER BY ts DESC LIMIT 1). Plans against ix_gex_strike_snap_sym_ts.",
+      "measured_before": "489.884 ms, 36,167 shared-hit buffers, 1,317,355 rows scanned for run selection",
+      "measured_after": "4.153 ms, 215 shared-hit buffers, 2 rows",
+      "gate": "Symmetric EXCEPT ALL against a pre-change snapshot returned zero rows for both views. Valid only because all four live tau values are 0.30, making old and new predicates algebraically identical — a no-regression proof, not a correctness proof at other tau.",
+      "sql": "docs/research/s72_gex_view_fix.sql",
+      "hazard": "Symbol list is now a literal. A third symbol would be silently absent from both views. Guarded by a count=exact assertion in eod_health_check.py (TD-S72-NEW-3)."
+    },
+    "gex_strike_snapshots": {
+      "rows_2026_09_05": 1409204,
+      "by_symbol": {
+        "SENSEX": 856031,
+        "NIFTY": 553173
+      },
+      "growth": "~28k rows/day. ADR-021 cites ~1.06M; the table was 1,317,355 at 01:30 UTC and 1,409,204 at 03:30 UTC on 2026-09-05 — ~92k rows on a Saturday with every capture cron scoped Mon-Fri. Unexplained, filed TD-S72-NEW-10.",
+      "indexes": "SEVEN. idx_gss_symbol_ts and ix_gex_strike_snap_sym_ts are byte-identical (both btree (symbol, ts DESC)); both are additionally redundant against idx_gss_symbol_ts_strike. TD-S72-NEW-4.",
+      "vacuum": "last_autovacuum null and CORRECT — append-only, 13,506 dead against 1,317,355 live (1%), never crosses the threshold. Bloat theory raised in-session and refuted. last_autoanalyze 7 days stale remains an unexamined candidate."
+    },
+    "scripts_modified": {
+      "scripts/eod_health_check.py": "16157 -> 29475 B, 365 -> 610 lines. TD-S71-NEW-15 (PRIMARY per-symbol parity, proportional not flat-gap), TD-S72-NEW-10 continuity floors + per-table tail assertion, TD-S72-NEW-8/-9 cron.log resolution by mtime, TD-S72-NEW-3 GEX symbol coverage. Commits b2c7f4c, cd0cfda.",
+      "ws_feed_zerodha.py": "17812 -> 28310 B, 477 -> 670 lines. fetch_instruments() retry+cache; NFO failure no longer returns early; MIN_UNIVERSE floor; SIGTERM handler; stop() calls stop_retry/close/stop. Commit 866face. FLOOR AND SIGTERM BOTH UNVERIFIED — --dry-run bypasses the floor and Saturday preflight blocked ExecStart.",
+      "generate_pine_overlay.py": "32191 -> 35841 B, 713 -> 778 lines. SPOT_MAX_AGE_MIN (wall-clock 1080) replaced by SPOT_MAX_AGE_TRADING_DAYS=2 + SPOT_MAX_AGE_MIN_INTRADAY=240 keyed on same calendar day. Commits 2ce2155, 89fc57d."
+    },
+    "eod_health_check_calibration": {
+      "_note": "Floors derived from a 45-day census, not guessed. Recorded so the next recalibration knows the basis.",
+      "market_spot_snapshots": {
+        "observed": 723,
+        "floor": 600,
+        "tail_utc": "10:20"
+      },
+      "market_breadth_intraday": {
+        "observed": "379 pre-CAS / 390 post-2026-08-24",
+        "floor": 350,
+        "tail_utc": "09:55",
+        "previous_floor": 60
+      },
+      "option_chain_snapshots": {
+        "observed": 68738,
+        "floor": 50000,
+        "tail_utc": "10:00"
+      },
+      "index_futures_snapshots": {
+        "observed": 302,
+        "floor": 250,
+        "tail_utc": "10:20"
+      },
+      "why": "The old breadth floor of 60 is why 2026-07-31 (302 rows) and 2026-08-17 (297) both passed. A floor must sit just under the observed norm."
+    },
+    "crontab": "52 -> 53 lines. Added: 52 10 * * 1-5 generate_pine_overlay.py (16:22 IST, ADR-023 D1 Decision A). docs/registers/aws_crontab.txt regenerated from crontab -l and committed FROM EC2 — this file is authored on the box, not Local; the exception is deliberate and recorded.",
+    "systemd_second_scheduling_surface": "merdian-wsfeed-start.timer (03:40 UTC) and merdian-wsfeed-stop.timer (10:05 UTC), plus merdian-wsfeed.service, -stop.service, -alert.service. FIVE unit files dated Jun 21, none in any crontab or register. A crontab-only invoker audit was blind to them for months. Widens TD-S71-NEW-14 to three surfaces: crontab -l, /etc/systemd/system/*.{service,timer}, systemctl list-timers.",
+    "logrotate": "/etc/logrotate.d/meridian (NOTE: 'meridian', not 'merdian'). daily, rotate 7, compress, delaycompress, missingok, notifempty, copytruncate, su ssm-user ssm-user. CORRECT. copytruncate is right given cron appenders and the long-lived wsfeed handle. The defect is one-sided: eod_health_check reads the live file 45 min after rotation empties it.",
+    "cross_tier_identity_rule": "core.autocrlf=true on Local. git ls-files --eol returns 'i/lf w/crlf'. Every text file differs between Local and EC2 by exactly its line count, permanently and correctly. Cross-tier identity is git hash-object, NEVER stat -c%s vs (Get-Item).Length. Confirmed live at this doc-close: CURRENT.md 720,679 Local / 720,296 EC2 (delta 383 = its CRLF count); Assumption Register 222,690 / 221,945 (delta 745). Corrects Doc Protocol v4's four-tier hash discipline. Assumption Register D.30.4.",
+    "claude_code_readiness": {
+      "rollback_tag": "pre-claude-code-20260905",
+      "credentials": "rotated 2026-09-05",
+      "repo_shape": "501 .py at repo root, 24 in crontab, 1 in systemd. Production, research, one-off patches and backups share one flat namespace. Path-based permissions impossible; every deny entry must name a file.",
+      "flag_convention": "INVERTED from MALPHA. --apply is opt-in and safe on a bare call. --dry-run-only is opt-out and WRITES by default. All ten sampled confirmed action=store_true with no default.",
+      "upsert_in_place_table": "equity_intraday_last — single generation, ~1,314 rows, no append-only history, prior state unrecoverable with no diff.",
+      "token_direction": "MALPHA -> Meridian, 03:00 UTC. MALPHA is the gateway; Meridian only receives. Refreshing on Meridian first overwrites a fresh token with a stale one. Neither system's documentation states this.",
+      "open_preconditions": "README.md duplicate (docs/runbooks/ and docs/registers/archive/); MALPHA-owned table list unenumerated so guardrail P-5 is a placeholder; no live safety flag located."
     }
   },
   "_s70_addendum": {

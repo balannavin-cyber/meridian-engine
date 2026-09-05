@@ -1173,3 +1173,54 @@ First correct ICT levels since `ict_zones` froze on 2026-06-02.
 Migrated off Windows Task Scheduler (see Deployment Topology §S70). Four clean AWS runs 08-19/08-20 both symbols: ~360 bars → ~72 M5 bars, `1H zones: 2 written`, Kelly lots computed. **M5 still writes zero patterns and the cause is now unexplained** — the threshold theory was withdrawn (TD-S70-NEW-8), and the `No new patterns detected` emit site has not been read to determine whether it is dedup-aware.
 
 *System Map updated Session 70, 2026-08-22 (§S70 — `capture_cas_close.py` NEW + `backfill_cas_close_from_daily.py` NEW + `capture_spot_1m_v2.py` CAS window guard and the `NO_DATA` exit-reason correction; `hist_spot_bars_1m` corrected 08-03→08-21 with the settled close verified 18/18 against the daily endpoint; `ict_htf_zones` rebuilt to 166 zones with `DAILY_LOOKBACK` verified and the `OB_MIN_MOVE_PCT`-unreachable claim withdrawn; the VIX reference chain documented as writerless since 2026-03-11; the M5 detector recorded as AWS-resident with its silence unexplained). HEAD `bfd7113`, Local == origin == EC2. Previous: Session 69, 2026-08-12/13 (§S69).*
+
+## §S72 — Session 72 script, view and schedule changes (2026-09-05)
+
+### S72.A — Derived views replaced in production
+
+| View | Change | Verification |
+|---|---|---|
+| `v_gex_strike_pin_zone` | τ resolved **once** in the `peak` CTE via `COALESCE(get_parameter_num('pin.tau.'||symbol), 0.3)` and carried through the recursive walk as a column; `tau_used` selects the carried column. `latest_run` `DISTINCT ON` replaced with `VALUES ('NIFTY'),('SENSEX') CROSS JOIN LATERAL (… ORDER BY ts DESC LIMIT 1)`. | Symmetric `EXCEPT ALL` vs pre-change snapshot: **zero rows**. τ liveness proven in a rolled-back transaction (0.30 → 24300–24500/5 strikes; 0.50 → 24300–**24400**/**3**). |
+| `v_gex_strike_accel_zone` | Same two corrections, trough-walk mirror. The original recursive term aliased its `CASE` as `int4` rather than `direction` — cosmetic only, since a recursive `UNION ALL` names columns from the non-recursive term and matches positionally. Renamed for symmetry. | Symmetric `EXCEPT ALL`: **zero rows**. Latency gain inferred from structural identity, not separately measured. |
+
+**Measured, pin view:** `489.884 ms → 4.153 ms` (117×) · `36,167 → 215` shared-hit buffers (168×) · run-selection rows `1,317,355 → 2`. SQL at `docs/research/s72_gex_view_fix.sql`. ADR-021 Amendment 1.
+
+### S72.B — Scripts modified
+
+| Script | Change | Commit |
+|---|---|---|
+| `scripts/eod_health_check.py` | Per-symbol parity on PRIMARY INGESTION, **proportional** (10% floor) not flat-gap — SENSEX chains are legitimately wider, so `\|N−S\| ≤ 4` would false-fire on `option_chain_snapshots` daily. Continuity floors recalibrated from a 45-day census plus a per-table **tail** assertion. `resolve_cron_log()` by mtime. New DERIVED-VIEW INTEGRITY section. 16,157 → 29,475 B / 365 → 610 lines. | `b2c7f4c`, `cd0cfda` |
+| `ws_feed_zerodha.py` | `fetch_instruments()` — 4 attempts with exponential backoff, atomic disk cache at `cache/zerodha_instruments_{NFO,NSE}.json`, cache **refused beyond 5 days**. **NFO failure no longer aborts the breadth path.** `MIN_UNIVERSE=100` floor exits `3` rather than reporting Feed live. `Composition:` log line. SIGTERM/SIGINT handler; `stop()` calls `stop_retry`/`close`/`stop`. 17,812 → 28,310 B / 477 → 670 lines. | `866face` |
+| `generate_pine_overlay.py` | `SPOT_MAX_AGE_MIN = 1080` (wall-clock) → `SPOT_MAX_AGE_TRADING_DAYS = 2` via `_trading_days_between()`, plus `SPOT_MAX_AGE_MIN_INTRADAY = 240` applied **only on the same calendar day**. 32,191 → 35,841 B / 713 → 778 lines. | `2ce2155`, `89fc57d` |
+
+**`89fc57d` is a correction to `2ce2155` caught on the operator's first run.** Keying the intraday bound on a *zero trading-day count* rather than same-calendar-day meant Fri→Sat (Saturday is not counted, so the count is 0) fell through to the wall-clock branch and reproduced the exact weekend false positive the change existed to remove. The boundary was created by the fix, so it could not have been inherited from the original test set.
+
+### S72.C — `gex_strike_snapshots` as measured
+
+| Property | Value |
+|---|---|
+| Rows (2026-09-05 03:30 UTC) | **1,409,204** — SENSEX 856,031 · NIFTY 553,173 |
+| Growth | ~28k/day. ADR-021 cites ~1.06M. **~92k rows appeared on a Saturday** with every capture cron scoped `* * 1-5` — unexplained, TD-S72-NEW-10 |
+| Indexes | **Seven.** `idx_gss_symbol_ts` and `ix_gex_strike_snap_sym_ts` are byte-identical; both redundant against `idx_gss_symbol_ts_strike`. TD-S72-NEW-4 |
+| Vacuum | `last_autovacuum = null` and **correct** — append-only, 13,506 dead against 1,317,355 live (1%), never crosses the threshold. Bloat theory raised in-session and refuted |
+
+### S72.D — `breadth_intraday_history` semantics (established, closes a wrong claim)
+
+Carries a `coverage_pct` column, and the downstream table already excludes flagged rows. Exact on every day measured: `history_rows − zero_cov = market_breadth_intraday rows`. 07-31 343−41=302 · 08-17 322−25=297 · 08-12 417−26=391 · 09-03 431−41=390. The steady ~41/day on healthy sessions is the pre-open window before ticks start. **A claim that these were synthetic unflagged rows was filed S1 and withdrawn in the same session** (TD-S72-NEW-13, D.30.6). One residual finding holds: all five failed days appear identically here, so this table **cannot** distinguish a preflight failure from a fail-open loader.
+
+### S72.E — Health-check calibration basis
+
+Floors derived from a 45-day census, recorded so the next recalibration knows the basis rather than re-guessing.
+
+| Table | Observed | Floor | Expected tail (UTC) |
+|---|---|---|---|
+| `market_spot_snapshots` | 723 | 600 | 10:20 |
+| `market_breadth_intraday` | 379 pre-CAS / 390 post-2026-08-24 | **350** (was 60) | 09:55 |
+| `option_chain_snapshots` | 68,738 | 50,000 | 10:00 |
+| `index_futures_snapshots` | 302 | 250 | 10:20 |
+
+Tails are **per table** because CAS moved breadth and chain to ~10:10 while spot and futures already ran to 10:30 (ADR-022). A single global close cannot express that.
+
+---
+
+*System Map updated Session 72, 2026-09-05 (§S72 — both GEX zone views replaced in production with τ carried through the walk and `latest_run` bounded by a lateral, 489.884 ms → 4.153 ms and 36,167 → 215 buffers, equivalence gate zero rows, ADR-021 Amendment 1; `eod_health_check.py` rewritten closing five TDs with floors calibrated from a 45-day census; `ws_feed_zerodha.py` fail-open instrument loader corrected — an NFO timeout had been aborting the **breadth** load, a separate NSE download, producing a 3-instrument session that reported "Feed live"; `generate_pine_overlay.py` spot floor moved to trading days and then corrected again for the Fri→Sat boundary the fix itself created; `gex_strike_snapshots` at 1,409,204 rows with seven indexes of which two are byte-identical; `breadth_intraday_history` `coverage_pct` semantics established, closing a withdrawn S1 claim). HEAD `4d40ff3`, Local == origin == EC2 verified by `git hash-object` — **not** by byte size, which differs by line count under `core.autocrlf=true` (D.30.4). Previous: Session 71, 2026-08-22→29 (§S71).*

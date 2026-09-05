@@ -1279,3 +1279,82 @@ Every `*/1` and `*/5` intraday line is bounded `03-09` or `03,04,…,09` UTC. **
 **Rejected hypothesis, recorded so it is not re-adopted:** a Kite token-flush window (5:00–7:30 IST) was proposed as the cause. **Falsified** — a token generated 06:37 IST on 08-19 was still valid at 08:19 and the feed ran 1h38m across the boundary. The propagation gap is the documented cause; rotation timing is not.
 
 *Deployment Topology updated Session 70, 2026-08-22 (§S70 — `MERDIAN_ICT_EOD` migrated Local→AWS completing ADR-006 and executing ADR-022 D1, with the 18-of-19-Disabled Task Scheduler audit that settled it; `capture_cas_close.py` added at `50 10` UTC with its known ordering defect recorded; the intraday capture window `09`-hour bound identified as a second CAS exposure absent from the ADR-022 inventory; deploy state at `bfd7113` with nothing held; the commit-message BOM cause and fix; the Zerodha propagation gap recorded at its third outage with the flush-window hypothesis falsified). Previous: Session 69, 2026-08-12/13 (§S69).*
+
+## §S72 — Session 72 topology changes (2026-09-05)
+
+### S72.A — Schedule
+
+| Change | Detail |
+|---|---|
+| Crontab **52 → 53 lines** | Added `52 10 * * 1-5 … generate_pine_overlay.py >> cron.log 2>&1` — 16:22 IST. **ADR-023 D1 Decision A taken.** Sits after the `20 10`/`22 10` EOD detectors that build the zones, clear of ADR-022's 15:45 IST boundary, and two minutes after `capture_cas_close.py` at `50 10`. Backup at `/tmp/cron_pre_s72.txt` before the edit. First scheduled run 2026-09-07. |
+| `docs/registers/aws_crontab.txt` | Regenerated from `crontab -l` and committed **from EC2** (`279fab1`). This file's only correct source is the box, and round-tripping it through Local risks whitespace damage. **The exception is deliberate and recorded here** — it had been "modified on the box only" for at least two sessions, which is what caused the pull conflict. |
+
+### S72.B — The second scheduling surface
+
+`crontab -l` is **not** the full production schedule. Five systemd unit files dated Jun 21 supervise the feed, and **none appears in any crontab or register**:
+
+| Unit | Function |
+|---|---|
+| `merdian-wsfeed-start.timer` | `OnCalendar=Mon-Fri 03:40:00 UTC`, `Persistent=false` |
+| `merdian-wsfeed-stop.timer` | **10:05 UTC daily** — the invoker that issued the stop seen in the 09-04 journal, and which read as unexplained for the whole investigation |
+| `merdian-wsfeed.service` | `Restart=always`, `StartLimitBurst=3` / `StartLimitIntervalSec=300`, `RestartSec=10`, `TimeoutStopSec` **unset (90 s default)`**, `OnFailure=merdian-wsfeed-alert.service` |
+| `merdian-wsfeed-stop.service` · `merdian-wsfeed-alert.service` | stop action; alert action |
+
+**`StartLimitBurst=3` confirmed live**, not inferred: the 2026-09-05 preflight failed three times ~11 s apart (04:00:39 / 04:00:50 / 04:01:01) and systemd then gave up. The budget burns in ~30 s and the timer is start-only, so nothing retries until the next morning.
+
+**Consequence for TD-S71-NEW-14:** the unscheduled-invoker reconciliation must cover three surfaces — `crontab -l`, `/etc/systemd/system/*.{service,timer}`, and `systemctl list-timers` — not one.
+
+### S72.C — Observability: four channels that cannot distinguish good days from bad
+
+| Channel | Reports | Reality |
+|---|---|---|
+| `WSFEED_ALERTS.log.*.gz` | `Feed DOWN` | **125 bytes every single day**, 08-28 through 09-04, three of which were healthy. `OnFailure=` fires because the feed had no SIGTERM handler, `stop-sigterm` timed out at exactly **90 s**, and SIGKILL followed — the **normal** daily shutdown path |
+| `market_ticks` row count | Zero | Transient staging, `n_live_tup = 0`. Empty on healthy days too. The health check's own WARN text says not to count it |
+| `cron.log` | 0 bytes at audit time | logrotate empties it at 00:00 UTC; `eod_health_check` runs at 00:45. 663,776 bytes of the 09-04 record sat in `cron.log.1` throughout |
+| `equity_intraday_last` freshness | `NOT refreshed … STALE BASELINE` on every back-dated audit | Upsert holding one generation; historical state is structurally unknowable. Its docstring's claim to be auditable weeks later is false |
+
+**`/etc/logrotate.d/meridian` is correct and is exonerated** — note the spelling, `meridian` not `merdian`. `daily`, `rotate 7`, `compress`, `delaycompress`, `missingok`, `notifempty`, `copytruncate`, `su ssm-user ssm-user`. `copytruncate` is the right choice given cron appenders and the long-lived wsfeed handle. Retention was never the problem; the reader was.
+
+### S72.D — Feed failure rate and mechanisms, measured
+
+**7 defective sessions in 33 — ~21%**, against the ~15% the health check could see.
+
+| Date | Day | Breadth rows | Mechanism |
+|---|---|---|---|
+| 07-24 | Fri | absent | fail-open loader (presumed; logs past retention) |
+| 07-31 | Fri | 302, ends 08:42 | **`ingest_breadth_from_ticks` stopped**, not the feed |
+| 08-11 | Tue | absent | preflight |
+| 08-17 | Mon | 297, ends 08:39 | **`ingest_breadth_from_ticks` stopped**, not the feed |
+| 08-18 | Tue | absent | preflight |
+| 08-25 | Tue | absent | preflight |
+| 09-04 | **Fri** | absent | **fail-open loader — feed ran the full session, 9 min 54 s CPU, delivered nothing** |
+
+**Tuesday periodicity is refuted:** 2026-09-01 was a Tuesday and produced a clean 390 rows. Two failures are Fridays. The S72 brief's instruction not to fit a pattern to n=3 was correct.
+
+**The preflight alert path is good and must not be "fixed"** — `preflight FAIL: Incorrect api_key or access_token … Fix: refresh_kite_token.py on MALPHA -> sync -> systemctl restart` names both cause and remedy. Only the `OnFailure` path is noise.
+
+### S72.E — Cross-tier verification rule (corrects Doc Protocol v4)
+
+`core.autocrlf=true` on Local. `git ls-files --eol` returns `i/lf w/crlf`. **Every text file differs between Local and EC2 by exactly its line count, permanently and correctly.** Cross-tier identity is `git hash-object`, never `stat -c%s` against `(Get-Item).Length`.
+
+Confirmed at this doc-close: `CURRENT.md` 720,679 Local / 720,296 EC2 (Δ 383 = its CRLF count); Assumption Register 222,690 / 221,945 (Δ 745); `session_log.md` identical on both because it is pure LF. Any byte baseline quoted at a session open must state which tier it was taken on. (D.30.4, TD-S72-NEW-12.)
+
+### S72.F — Claude Code readiness
+
+| Item | State |
+|---|---|
+| Credentials | **Rotated 2026-09-05.** Was TD-S71-NEW-11, the oldest live S1 |
+| Rollback tag | `pre-claude-code-20260905`, pushed |
+| Repo shape | **501 `.py` at repo root · 24 in crontab · 1 in systemd.** Production, research, one-off patches and backups share one flat namespace, so path-based permissions are impossible and every deny entry must name a file individually |
+| Flag convention | **Inverted from MALPHA's.** `--apply` is opt-in and safe on a bare call; `--dry-run`-only is opt-out and **writes by default** — ~60 scripts, all ten sampled `action="store_true"` with no `default` |
+| Upsert-in-place table | `equity_intraday_last`. Layer-1 deny |
+| Token direction | **MALPHA → Meridian, 03:00 UTC.** MALPHA is the gateway; Meridian only receives. Refreshing on Meridian first overwrites a fresh token with a stale one. Neither system's documentation states this |
+| Open preconditions | `README.md` duplicate (`docs/runbooks/`, `docs/registers/archive/`); MALPHA-owned tables unenumerated so guardrail P-5 is a placeholder; **no live safety flag located** |
+
+### S72.G — Carried infrastructure state
+
+EBS root 66%, logrotate capping growth. Running kernel `6.8.0-1052-aws` while `/boot/vmlinuz` points at 1061 — **the next reboot boots a kernel this instance has never booted.** `journalctl --disk-usage` 208 MB with **no entries before 2026-09-04**, so systemd-level history for the 07-31 and 08-17 truncations is unrecoverable; `logs/*.gz` at 7-day retention does not reach them either. `amazon-ssm-agent` is a snap and remains the sole access path (D.29.6).
+
+---
+
+*Deployment Topology updated Session 72, 2026-09-05 (§S72 — crontab 52→53 with the Pine invoker at `52 10 * * 1-5` executing ADR-023 D1 Decision A; `aws_crontab.txt` committed from EC2 as a deliberate and recorded exception to the Local→box direction; **the systemd second scheduling surface documented for the first time** — five units including `merdian-wsfeed-stop.timer`, a daily production stop invoker that appeared in no crontab and no register and read as unexplained throughout the 09-04 investigation; four observability channels tabulated that report identically on healthy and broken days, with logrotate exonerated; feed failure rate measured at 7/33 ≈ 21% across three distinct mechanisms, two of which were previously mis-attributed and one of which is not in the feed at all; the cross-tier verification rule that corrects Doc Protocol v4's byte-size discipline; Claude Code readiness with credentials rotated and rollback tagged). HEAD `4d40ff3`. Previous: Session 71, 2026-08-22→29 (§S71).*

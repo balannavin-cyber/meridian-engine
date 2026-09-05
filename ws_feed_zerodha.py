@@ -22,13 +22,35 @@ Run:
     python ws_feed_zerodha.py --spot-only        # spot only (testing)
     python ws_feed_zerodha.py --dry-run          # print ticks, no DB write
 
-Cron (start at 09:14 IST, stop at 15:32 IST):
-    14 3 * * 1-5 cd /home/ssm-user/meridian-engine && /bin/bash -lc \
-        'set -a; . ./.env; set +a; python3 ws_feed_zerodha.py >> logs/ws_feed.log 2>&1 &'
-    32 10 * * 1-5 pkill -f ws_feed_zerodha.py
+Scheduling (ACTUAL, corrected S72 -- the cron block previously documented here was
+stale and had not been the mechanism since the systemd migration):
+    merdian-wsfeed-start.timer  OnCalendar=Mon-Fri 03:40:00 UTC  (09:10 IST)
+    merdian-wsfeed.service      Restart=always, StartLimitBurst=3/300s
+    A stop is issued ~10:05 UTC by an invoker that is in NEITHER the unit nor the
+    timer -- unenumerated as of S72, see TD-S71-NEW-14 reconciliation.
+
+S72 FIXES (2026-09-05) -- all three close TD-S72-NEW-5 / TD-S72-NEW-6:
+
+  FAIL-OPEN INSTRUMENT LOADER (the root cause of the ~21% breadth failure rate).
+  On 2026-09-04 `kite.instruments("NFO")` hit a read timeout at 03:40:13. The
+  handler did `return instruments` -- returning the 3 hardcoded NSE index spots and
+  NEVER ATTEMPTING the breadth universe, which is a SEPARATE NSE download that had
+  nothing to do with the NFO failure and would very likely have succeeded. One
+  second later the feed logged "Connected. Subscribing 3 instruments... Feed live."
+  Zero EQ ticks flowed for the whole session; ingest_breadth_from_ticks wrote ~390
+  synthetic zero-coverage rows; market_breadth_intraday and WCB were empty; the EOD
+  check reported 2 FAIL for one upstream cause. Healthy days subscribe 1648-1855.
+  Now: retry with backoff, disk cache fallback, NFO failure no longer aborts the
+  breadth path, and a hard universe floor that refuses to report "Feed live".
+
+  NO SIGTERM HANDLER. systemd's stop timed out at 90s (TimeoutStopSec default) and
+  SIGKILLed, so the unit entered `failed (Result: timeout)` on the NORMAL daily
+  shutdown and OnFailure= fired every single day -- including healthy ones. The
+  alert channel emitted byte-identical text on 09-02 (good) and 09-04 (bad), which
+  is why a 21% failure rate went unnoticed for weeks.
 """
 
-import os, sys, time, json, math, logging
+import os, sys, time, json, math, logging, signal
 from datetime import datetime, timezone, date, timedelta
 from zoneinfo import ZoneInfo
 from threading import Thread, Event
@@ -59,6 +81,23 @@ BATCH_FLUSH_SECS = 2   # also flush if N seconds passed since last flush
 
 # Supabase table
 TICKS_TABLE  = "market_ticks"
+
+# ── S72: instrument-load resilience (TD-S72-NEW-5) ───────────────────────────
+# The instrument list is fetched ONCE at startup and determines the entire
+# session's subscription. A transient timeout there costs a full trading day of
+# breadth data, permanently. Retry, then fall back to the last good list on disk.
+INSTRUMENT_FETCH_ATTEMPTS = int(os.getenv("MERDIAN_WSFEED_FETCH_ATTEMPTS", "4"))
+INSTRUMENT_RETRY_BASE_SECS = float(os.getenv("MERDIAN_WSFEED_RETRY_BASE", "3"))
+INSTRUMENT_CACHE_DIR = os.getenv(
+    "MERDIAN_WSFEED_CACHE_DIR",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache"))
+INSTRUMENT_CACHE_MAX_AGE_DAYS = float(os.getenv("MERDIAN_WSFEED_CACHE_MAX_AGE_DAYS", "5"))
+
+# Hard floor on the subscribed universe. Below this the feed REFUSES to run rather
+# than deliver a session that looks healthy and carries no breadth. Healthy sessions
+# observed 2026-09-01/02/03: 1855, 1659, 1648. The failed session: 3.
+MIN_UNIVERSE = int(os.getenv("MERDIAN_WSFEED_MIN_INSTRUMENTS", "100"))
+EXIT_UNIVERSE_TOO_SMALL = 3
 
 # NSE indices (these tokens are stable — never change)
 NSE_INDICES = {
@@ -108,6 +147,91 @@ def flush_batch(batch: list):
 
 # ── Instrument loader ─────────────────────────────────────────────────────────
 
+def _cache_path(exchange: str) -> str:
+    return os.path.join(INSTRUMENT_CACHE_DIR, f"zerodha_instruments_{exchange}.json")
+
+
+def _cache_write(exchange: str, rows: list):
+    """Persist a good instrument list. Best-effort: a cache write failure must never
+    take down a feed that has already fetched successfully."""
+    try:
+        os.makedirs(INSTRUMENT_CACHE_DIR, exist_ok=True)
+        tmp = _cache_path(exchange) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(rows, fh, default=str)      # date objects -> ISO strings
+        os.replace(tmp, _cache_path(exchange))    # atomic
+        log.info(f"  {exchange} instrument cache written: {len(rows)} rows")
+    except Exception as e:
+        log.warning(f"  {exchange} instrument cache write failed (non-fatal): {e}")
+
+
+def _cache_read(exchange: str):
+    """Return (rows, age_days) from the last good list, or (None, None).
+
+    Expiry values come back as ISO strings rather than date objects; both
+    load_instruments() and load_breadth_universe() already handle the str form,
+    so a cached list is consumed by exactly the same code path as a live one.
+    """
+    path = _cache_path(exchange)
+    try:
+        if not os.path.isfile(path):
+            return None, None
+        age_days = (time.time() - os.stat(path).st_mtime) / 86400.0
+        with open(path, encoding="utf-8") as fh:
+            rows = json.load(fh)
+        if not rows:
+            return None, None
+        return rows, age_days
+    except Exception as e:
+        log.warning(f"  {exchange} instrument cache read failed: {e}")
+        return None, None
+
+
+def fetch_instruments(kite, exchange: str):
+    """S72 (TD-S72-NEW-5) -- fetch an instrument list with retry, then disk fallback.
+
+    Returns (rows, source) where source is 'live', 'cache' or None. Never raises.
+
+    The pre-S72 code called kite.instruments(exchange) once inside a try/except and
+    treated any failure as terminal for that exchange. A single read timeout on
+    2026-09-04 therefore cost an entire session of breadth data, unrecoverably.
+    """
+    last_err = None
+    for attempt in range(1, INSTRUMENT_FETCH_ATTEMPTS + 1):
+        try:
+            rows = kite.instruments(exchange)
+            if rows:
+                log.info(f"  {exchange} instruments downloaded: {len(rows)} rows"
+                         f"{'' if attempt == 1 else f' (attempt {attempt})'}")
+                _cache_write(exchange, rows)
+                return rows, "live"
+            last_err = "empty list returned"
+        except Exception as e:
+            last_err = str(e)
+        if attempt < INSTRUMENT_FETCH_ATTEMPTS:
+            delay = INSTRUMENT_RETRY_BASE_SECS * (2 ** (attempt - 1))
+            log.warning(f"  {exchange} instrument fetch attempt "
+                        f"{attempt}/{INSTRUMENT_FETCH_ATTEMPTS} failed: {last_err} "
+                        f"-- retrying in {delay:.0f}s")
+            time.sleep(delay)
+
+    log.error(f"  {exchange} instrument fetch FAILED after "
+              f"{INSTRUMENT_FETCH_ATTEMPTS} attempts: {last_err}")
+
+    rows, age_days = _cache_read(exchange)
+    if rows is None:
+        log.error(f"  {exchange} NO CACHE AVAILABLE -- universe will be degraded")
+        return None, None
+    if age_days is not None and age_days > INSTRUMENT_CACHE_MAX_AGE_DAYS:
+        log.error(f"  {exchange} cache is {age_days:.1f} days old "
+                  f"(> {INSTRUMENT_CACHE_MAX_AGE_DAYS}) -- REFUSING to use it; "
+                  f"expiries and listings will have moved")
+        return None, None
+    log.warning(f"  {exchange} FALLING BACK to cached list: {len(rows)} rows, "
+                f"{age_days:.1f} days old")
+    return rows, "cache"
+
+
 def load_instruments(kite: KiteConnect) -> dict:
     """
     Fetch NFO instrument list from Zerodha and build subscription map.
@@ -132,12 +256,18 @@ def load_instruments(kite: KiteConnect) -> dict:
         return instruments
 
     # 2. NFO options + futures
-    try:
-        nfo = kite.instruments("NFO")
-        log.info(f"  NFO instruments downloaded: {len(nfo)} rows")
-    except Exception as e:
-        log.error(f"  Failed to download NFO instruments: {e}")
-        return instruments
+    #
+    # S72 (TD-S72-NEW-5): this block previously did `return instruments` on any NFO
+    # failure, which ALSO skipped the breadth universe below -- an entirely separate
+    # NSE download that had nothing to do with the NFO error. That single line is
+    # what turned a transient 2026-09-04 timeout into a lost session. NFO failure is
+    # now degraded-but-continue; the universe floor at the end decides whether the
+    # result is fit to run on.
+    nfo, nfo_src = fetch_instruments(kite, "NFO")
+    if not nfo:
+        log.error("  NFO universe unavailable -- CONTINUING to breadth load "
+                  "(options/futures will be absent this session)")
+        nfo = []
 
     today       = date.today()
     max_expiry  = today + timedelta(days=14)  # current + next weekly expiry
@@ -257,12 +387,10 @@ def load_breadth_universe(kite) -> dict:
         log.warning(f"  Breadth universe fetch error: {e}")
         return {}
 
-    # Download NSE EQ instruments from Zerodha
-    try:
-        nse = kite.instruments("NSE")
-        log.info(f"  NSE instruments downloaded: {len(nse)} rows")
-    except Exception as e:
-        log.warning(f"  NSE instruments download failed: {e}")
+    # Download NSE EQ instruments from Zerodha (S72: retry + cache fallback)
+    nse, nse_src = fetch_instruments(kite, "NSE")
+    if not nse:
+        log.error("  NSE universe unavailable -- breadth will be EMPTY this session")
         return {}
 
     # Match symbols
@@ -368,6 +496,27 @@ class FeedRunner:
         log.info(f"  Dry run: {DRY_RUN}")
         log.info(f"  Supabase table: {TICKS_TABLE}")
 
+        # S72 (TD-S72-NEW-5): composition breakdown. "Subscribing N instruments" alone
+        # was not enough to spot the 2026-09-04 failure at a glance -- 3 read as a
+        # number, not as an alarm. EQ count is the one that matters for breadth.
+        comp = {}
+        for meta in self.instruments.values():
+            comp[meta["instrument_type"]] = comp.get(meta["instrument_type"], 0) + 1
+        log.info("  Composition: " + ", ".join(f"{k}={v}" for k, v in sorted(comp.items())))
+
+        # HARD FLOOR. Below this the universe cannot produce usable breadth, and a
+        # feed that runs anyway manufactures a healthy-looking session with no data:
+        # systemd sees a live process, the feed log says "Feed live", and
+        # ingest_breadth_from_ticks writes ~390 synthetic zero-coverage rows.
+        # Exiting non-zero is the only signal that survives to the operator.
+        if not SPOT_ONLY and not DRY_RUN and len(self.tokens) < MIN_UNIVERSE:
+            log.error(f"  UNIVERSE TOO SMALL: {len(self.tokens)} < {MIN_UNIVERSE} "
+                      f"floor. Instrument load failed open. REFUSING to start -- a "
+                      f"session run on this universe yields zero breadth while "
+                      f"reporting healthy (TD-S72-NEW-5).")
+            log.error(f"  Composition was: {comp}")
+            sys.exit(EXIT_UNIVERSE_TOO_SMALL)
+
         while not self._stop.is_set():
             try:
                 self._connect()
@@ -421,10 +570,18 @@ class FeedRunner:
         self._stop.set()
         self.processor.force_flush()
         if self.kws:
-            try:
-                self.kws.close()
-            except Exception:
-                pass
+            # S72: close() alone leaves connect(threaded=False) blocked in the
+            # Twisted reactor. stop_retry() prevents the client reconnecting out
+            # from under us, and stop() halts the reactor so start()'s outer loop
+            # can observe self._stop and return. Each guarded independently -- a
+            # missing method on an older pykiteconnect must not abort shutdown.
+            for meth in ("stop_retry", "close", "stop"):
+                try:
+                    fn = getattr(self.kws, meth, None)
+                    if callable(fn):
+                        fn()
+                except Exception as e:
+                    log.warning(f"  kws.{meth}() during shutdown: {e}")
 
 # ── DDL reminder ─────────────────────────────────────────────────────────────
 
@@ -468,10 +625,46 @@ if "--ddl" in sys.argv:
     print(DDL)
     sys.exit(0)
 
+def install_signal_handlers(runner):
+    """S72 (TD-S72-NEW-6) -- shut down cleanly on SIGTERM.
+
+    Pre-S72 there was NO handler. systemd's stop request was ignored for the full
+    TimeoutStopSec (90s default, unset in the unit), then SIGKILL followed and the
+    unit entered `failed (Result: timeout)`. Because that is the NORMAL daily
+    shutdown path, OnFailure= fired every single day and WSFEED_ALERTS emitted
+    byte-identical "Feed DOWN" text on healthy and broken sessions alike. An alert
+    channel that cannot distinguish the two is why a 21% failure rate persisted.
+
+    Journal evidence, 2026-09-04:
+        10:05:01 Stopping ...
+        10:06:31 State 'stop-sigterm' timed out. Killing.   <- exactly 90s
+
+    CAVEAT, not yet measured: KiteTicker runs a Twisted reactor, which installs its
+    own signal handlers when connect(threaded=False) is used. If SIGTERM is still
+    swallowed after this change, the reactor is the reason -- verify with
+    `systemctl stop` and check for a clean exit rather than a 90s timeout. The
+    fallback is KillSignal=SIGINT or an explicit TimeoutStopSec in the unit; do not
+    reach for SuccessExitStatus=SIGKILL, which would mask genuine kills.
+    """
+    def _handler(signum, _frame):
+        log.info(f"Received signal {signum} -- clean shutdown requested.")
+        try:
+            runner.stop()
+        except Exception as e:
+            log.warning(f"  stop() raised during shutdown: {e}")
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(sig, _handler)
+        except Exception as e:
+            log.warning(f"  could not install handler for {sig}: {e}")
+
+
 if __name__ == "__main__":
 
     try:
         runner = FeedRunner()
+        install_signal_handlers(runner)
         runner.start()
     except KeyboardInterrupt:
         log.info("Feed stopped.")

@@ -16,9 +16,30 @@ Encodes the lessons from S58/S59:
   * Dashboard render != DB freshness. This checks the DATABASE (source of truth),
     not the Marketview cards (which can lag independently -- the WCB render bug).
 
+S72 additions (2026-09-05), each closing a filed defect:
+  * TD-S71-NEW-15 -- PRIMARY INGESTION counted totals with NO per-symbol parity, so
+    NIFTY vanishing for two sessions still reported [ OK ] on a healthy-looking total.
+    The parity rule already existed in COMPUTE UNIVERSE; it is now applied to PRIMARY
+    for every table that carries a symbol column.
+  * TD-S72-NEW-10 -- CONTINUITY. A first->last range check cannot see a truncated tail
+    or a halved count. 2026-07-31 wrote 302 breadth rows ending 08:42 UTC and 2026-08-17
+    wrote 297 ending 08:39 -- both ~78% of a session, both stopping ~80 min early, both
+    passing because min_rows was 60 against an observed norm of 379/390. Floors are now
+    calibrated from a 45-day census and each table asserts its own expected TAIL time.
+  * TD-S72-NEW-8 -- logrotate empties cron.log at 00:00 UTC; this check runs 00:45 UTC.
+    The evidence is always in cron.log.1. Resolved by mtime/size, never by generation
+    number (`notifempty` means a silent day produces no rotation, so .1 is not
+    reliably yesterday).
+  * TD-S72-NEW-9 -- the market_ticks WARN line pointed at logs/cron.log, which does not
+    exist. The file is at repo root.
+  * TD-S72-NEW-3 -- v_gex_strike_pin_zone / v_gex_strike_accel_zone were bounded in S72
+    using a LITERAL symbol list. A third symbol would be silently absent from both views.
+    Asserted here against COUNT(DISTINCT symbol) in gex_strike_snapshots.
+
 Data ts is true-UTC (post-2026-04-07, CLAUDE Rule 20). Session runs ~03:00-10:00 UTC
-(08:30-15:30 IST). Reads SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY from .env, same
-raw-HTTP pattern as ingest_option_chain_local.py.
+(08:30-15:30 IST), extended to ~10:10 UTC for CAS-window tables (ADR-022). Reads
+SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY from .env, same raw-HTTP pattern as
+ingest_option_chain_local.py.
 
 Usage:
   python3 eod_health_check.py                 # check today's session (IST date)
@@ -27,6 +48,7 @@ Usage:
 Exit code: 0 = all OK, 1 = one or more WARN/FAIL.
 """
 import argparse
+import glob
 import os
 import re
 import sys
@@ -49,13 +71,32 @@ SESSION_CLOSE_UTC = "10:00"    # NSE 15:30 IST
 LAST_CYCLE_OK_UTC = "09:45"    # last derived cycle should land no earlier than this
 
 # ---- tables -----------------------------------------------------------------
-# Primary ingestion (raw capture). ts column + min expected rows for a full session.
+# Primary ingestion (raw capture).
+#
+# S72: entries gained `tail_utc` and `sym_col`.
+#
+#   min_rows -- calibrated 2026-09-05 from a 45-day observed census, NOT guessed.
+#     market_spot_snapshots    observed 723   (~1.8/min x 2 symbols)   -> floor 600
+#     market_breadth_intraday  observed 379 pre-CAS / 390 post-CAS     -> floor 350
+#     option_chain_snapshots   observed 68738                          -> floor 50000
+#     index_futures_snapshots  observed 302                            -> floor 250
+#   The old breadth floor of 60 is why 302 and 297 both passed. A floor must sit just
+#   under the observed norm, not at a value any partial session clears.
+#
+#   tail_utc -- the time the LAST row of a healthy session should land at or after.
+#     This is the truncation detector. It is per-table because tables legitimately
+#     stop at different times: the CAS-window extension (crontab `0,5,10 10`, live
+#     2026-08-24, ADR-022) moved breadth and chain to ~10:10 while spot and futures
+#     already ran to ~10:30. A single global close cannot express that.
+#
+#   sym_col -- column to split on for the PRIMARY parity check, or None for tables
+#     that are market-wide by construction (breadth is not per-index).
 PRIMARY = [
-    # (table, ts_col, min_rows, cadence_note)
-    ("market_spot_snapshots",   "ts", 300, "~1/min capture"),
-    ("market_breadth_intraday", "ts",  60, "~5-min cycle; ALSO the tick-health proxy"),
-    ("option_chain_snapshots",  "ts", 1000, "per-strike rows, high volume"),
-    ("index_futures_snapshots", "ts", 150, "~1/min capture"),
+    # (table, ts_col, min_rows, tail_utc, sym_col, cadence_note)
+    ("market_spot_snapshots",   "ts",   600, "10:20", "symbol", "~1/min capture"),
+    ("market_breadth_intraday", "ts",   350, "09:55", None,     "~5-min cycle; ALSO the tick-health proxy"),
+    ("option_chain_snapshots",  "ts", 50000, "10:00", "symbol", "per-strike rows, high volume"),
+    ("index_futures_snapshots", "ts",   250, "10:20", "symbol", "~1/min capture"),
 ]
 # Compute universe -- checked PER SYMBOL with parity.
 COMPUTE = [
@@ -67,8 +108,28 @@ COMPUTE = [
     ("weighted_constituent_breadth_snapshots", "ts", "index_symbol", 60),
 ]
 SYMBOLS = ["NIFTY", "SENSEX"]
-PARITY_TOL = 4          # allowed NIFTY-vs-SENSEX row-count gap
+PARITY_TOL = 4          # allowed NIFTY-vs-SENSEX row-count gap (COMPUTE)
+PRIMARY_PARITY_TOL_PCT = 10   # PRIMARY volumes differ legitimately by symbol
+                              # (SENSEX chains are wider); assert PROPORTION, not count.
 LAST_TS_TOL_MIN = 20    # how stale last_ts may be vs the expected last cycle
+
+# ---- GEX view symbol coverage (TD-S72-NEW-3) --------------------------------
+# S72 bounded v_gex_strike_pin_zone / v_gex_strike_accel_zone with a literal
+# VALUES ('NIFTY'),('SENSEX') driver to replace a 1.32M-row DISTINCT ON scan
+# (489.9ms -> 4.2ms). The cost is that a third symbol becomes silently invisible
+# in both views -- no error, no empty result, just a correct-looking answer for
+# two of three. This assertion is the guard that hazard requires.
+GEX_TABLE = "gex_strike_snapshots"
+GEX_VIEW_SYMBOLS = {"NIFTY", "SENSEX"}   # MUST match the VALUES list in both views
+
+# ---- cron log resolution (TD-S72-NEW-8 / TD-S72-NEW-9) ----------------------
+# /etc/logrotate.d/meridian: daily, rotate 7, compress, delaycompress, copytruncate.
+# Rotation fires 00:00 UTC; this check runs 00:45 UTC; so cron.log is ALWAYS empty
+# by the time anyone reads it and the session's record is in cron.log.1.
+# `notifempty` means a silent day produces NO rotation, so generation number is not
+# a reliable day offset -- resolve by mtime and size instead.
+CRON_LOG_CANDIDATES = ["cron.log", "cron.log.1"]
+CRON_LOG_GLOB = "cron.log.*"
 
 # ---- reference tables (refreshed ONCE pre-open, not row-counted in-session) --
 # equity_intraday_last holds prev-day closes, refreshed ~03:35 UTC by
@@ -87,6 +148,12 @@ MARKER_MIN_ROWS = 2
 
 OK, WARN, FAIL = "OK", "WARN", "FAIL"
 MARK = {OK: "[ OK ]", WARN: "[WARN]", FAIL: "[FAIL]"}
+RANK = [OK, WARN, FAIL]
+
+
+def worse(*verdicts):
+    """Return the most severe verdict. Replaces the repeated inline max(key=index)."""
+    return max(verdicts, key=RANK.index)
 
 
 def cfg():
@@ -151,6 +218,71 @@ def parse(ts):
 def hhmm(s, day):
     h, m = s.split(":")
     return day.replace(hour=int(h), minute=int(m), second=0, microsecond=0)
+
+
+def resolve_cron_log(repo_root=None):
+    """TD-S72-NEW-8 / TD-S72-NEW-9 -- return (path, mtime_utc, size) for the cron log
+    that actually holds a session's record, or (None, None, 0).
+
+    Two defects are closed here. The path was documented as logs/cron.log and the file
+    is at REPO ROOT. And logrotate (daily, copytruncate) empties cron.log at 00:00 UTC
+    while this check runs at 00:45 UTC, so the live file is reliably a 0-byte decoy and
+    the evidence sits in cron.log.1 -- 663,776 bytes of it on 2026-09-04, never read.
+
+    Resolved by mtime and size rather than generation number: `notifempty` means a
+    silent day produces no rotation at all, so .1 is NOT reliably yesterday.
+    """
+    root = repo_root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    best = (None, None, 0)
+    seen = set()
+    cands = [os.path.join(root, c) for c in CRON_LOG_CANDIDATES]
+    cands += sorted(glob.glob(os.path.join(root, CRON_LOG_GLOB)))
+    for p in cands:
+        if p in seen or not os.path.isfile(p):
+            continue
+        seen.add(p)
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        if st.st_size <= 0:
+            continue                      # the rotated-and-emptied decoy
+        if best[1] is None or st.st_mtime > best[1].timestamp():
+            best = (p, datetime.fromtimestamp(st.st_mtime, UTC), st.st_size)
+    return best
+
+
+def check_gex_symbol_coverage(url, headers):
+    """TD-S72-NEW-3 -- the S72 GEX view fix bounded latest_run with a LITERAL symbol
+    list. Assert the table has not outgrown it.
+
+    Failure here is not cosmetic: a third symbol present in gex_strike_snapshots but
+    absent from the views' VALUES driver produces a complete-looking result for the
+    two it does know about. That is the silent-omission shape of TD-S71-NEW-14, and
+    the whole reason the literal was accepted was that this assertion would exist.
+    """
+    try:
+        r = requests.get(f"{url}/rest/v1/{GEX_TABLE}", headers=headers,
+                         params=[("select", "symbol")], timeout=60)
+        r.raise_for_status()
+        found = {row["symbol"] for row in r.json() if row.get("symbol")}
+    except Exception as e:
+        return WARN, f"  {MARK[WARN]} {'gex view symbol coverage':<28} query error: {str(e)[:60]}"
+
+    if not found:
+        return WARN, (f"  {MARK[WARN]} {'gex view symbol coverage':<28} "
+                      f"no symbols readable in {GEX_TABLE}")
+    missing = found - GEX_VIEW_SYMBOLS
+    if missing:
+        return FAIL, (f"  {MARK[FAIL]} {'gex view symbol coverage':<28} "
+                      f"{sorted(missing)} in {GEX_TABLE} but NOT in the pin/accel view "
+                      f"VALUES list -- SILENTLY EXCLUDED (TD-S72-NEW-3)")
+    absent = GEX_VIEW_SYMBOLS - found
+    if absent:
+        return WARN, (f"  {MARK[WARN]} {'gex view symbol coverage':<28} "
+                      f"view lists {sorted(absent)} but no rows present in {GEX_TABLE}")
+    return OK, (f"  {MARK[OK]} {'gex view symbol coverage':<28} "
+                f"{sorted(found)} == view VALUES list")
 
 
 def check_marker_freshness(url, headers, sess_date, day0, verbose=False):
@@ -259,12 +391,32 @@ def main():
         age = (expected_last - last_dt).total_seconds() / 60.0
         return OK if age <= LAST_TS_TOL_MIN else (WARN if age <= 60 else FAIL)
 
+    def verdict_tail(last_dt, tail_hhmm):
+        """TD-S72-NEW-10 -- TRUNCATION detector, post-close only.
+
+        verdict_ts() measures staleness against a single global expectation and is
+        satisfied by any recent-enough row. It cannot see a session that started on
+        time, ran normally, and then STOPPED EARLY -- which is exactly what happened
+        on 2026-07-31 (last row 08:42 UTC) and 2026-08-17 (08:39). Both looked fine.
+
+        This asserts the per-table tail directly. In-session it is meaningless and
+        returns OK.
+        """
+        if in_session or last_dt is None or not tail_hhmm:
+            return OK, ""
+        expect = hhmm(tail_hhmm, day0)
+        short_min = (expect - last_dt).total_seconds() / 60.0
+        if short_min <= LAST_TS_TOL_MIN:
+            return OK, ""
+        v = FAIL if short_min > 60 else WARN
+        return v, f"  !! TRUNCATED tail {last_dt:%H:%M} < expected {tail_hhmm} (-{short_min:.0f}m)"
+
     # ---- PRIMARY INGESTION --------------------------------------------------
-    print("\nPRIMARY INGESTION")
+    print("\nPRIMARY INGESTION  (per-symbol parity where the table carries a symbol)")
     print("-" * 74)
     breadth_ok = False
     breadth_rows = 0
-    for table, tsc, minrows, note in PRIMARY:
+    for table, tsc, minrows, tail_utc, symcol, note in PRIMARY:
         try:
             n = count_rows(url, headers, table, tsc, lo, hi)
             first = parse(edge_ts(url, headers, table, tsc, lo, hi, "asc"))
@@ -274,25 +426,84 @@ def main():
                 v = FAIL
             elif n < minrows:
                 v = WARN
-            v = v if v == FAIL else max([v, verdict_ts(last)], key=lambda x: [OK, WARN, FAIL].index(x))
+            v = v if v == FAIL else worse(v, verdict_ts(last))
+
+            # TD-S72-NEW-10 -- truncated tail
+            tv, tail_note = verdict_tail(last, tail_utc)
+            v = worse(v, tv)
+
+            # TD-S71-NEW-15 -- per-symbol parity on PRIMARY.
+            # 2026-08-25: NIFTY vanished for two sessions and this block reported
+            # [ OK ] 151 rows because it only ever counted the total. The rule below
+            # is the same one COMPUTE UNIVERSE has always applied.
+            #
+            # Counts differ legitimately by symbol here (SENSEX option chains are
+            # wider than NIFTY's), so the assertion is PROPORTIONAL, not a flat gap:
+            # neither symbol may fall below PRIMARY_PARITY_TOL_PCT of the total.
+            # The symbol query is wrapped: an unknown column degrades to a WARN
+            # naming itself rather than failing the table. Verify against live schema
+            # before trusting a WARN here -- S71 wrote four queries against invented
+            # column names and this is the same exposure.
+            parity_note = ""
+            if symcol and n > 0:
+                try:
+                    per = {s: count_rows(url, headers, table, tsc, lo, hi, symcol, s)
+                           for s in SYMBOLS}
+                    tot = sum(per.values())
+                    if tot == 0:
+                        parity_note = f"  !! PARITY none of {SYMBOLS} matched on {symcol}"
+                        v = worse(v, FAIL)
+                    else:
+                        floor = tot * PRIMARY_PARITY_TOL_PCT / 100.0
+                        starved = [s for s, c in per.items() if c < floor]
+                        cells = " ".join(f"{s}={per[s]}" for s in SYMBOLS)
+                        if starved:
+                            parity_note = (f"  !! PARITY {cells} -- {starved} below "
+                                           f"{PRIMARY_PARITY_TOL_PCT}% of {tot}")
+                            v = worse(v, FAIL)
+                        elif args.verbose:
+                            parity_note = f"  ({cells})"
+                        if tot < n and args.verbose:
+                            parity_note += f"  [{n - tot} rows outside {SYMBOLS}]"
+                except Exception as e:
+                    parity_note = (f"  !! PARITY unchecked -- '{symcol}' query failed "
+                                   f"({str(e)[:40]}); VERIFY COLUMN AGAINST LIVE SCHEMA")
+                    v = worse(v, WARN)
+
             if table == "market_breadth_intraday":
                 breadth_ok, breadth_rows = (v == OK), n
             f = f"{first:%H:%M}" if first else "--:--"
             l = f"{last:%H:%M}" if last else "--:--"
-            print(f"  {MARK[v]} {table:<28} {n:>7} rows  {f}->{l} UTC  ({note})")
+            print(f"  {MARK[v]} {table:<28} {n:>7} rows  {f}->{l} UTC  ({note})"
+                  f"{tail_note}{parity_note}")
             results.append(v)
         except Exception as e:
             print(f"  {MARK[FAIL]} {table:<28} query error: {str(e)[:60]}")
             results.append(FAIL)
 
     # market_ticks -- INFERRED, never row-counted
+    #
+    # TD-S72-NEW-8 / -9: on the unhealthy branch, resolve and NAME the cron log that
+    # actually holds the session record. The old text said "cron.log" with no path;
+    # the documented logs/cron.log does not exist; and by 00:45 UTC the live file has
+    # been emptied by rotation. Investigations have therefore started from an empty
+    # file every time.
     if breadth_ok:
         print(f"  {MARK[OK]} {'market_ticks':<28} INFERRED-OK  (rolling buffer; breadth pipeline "
               f"healthy @ {breadth_rows} rows -> ticks flowed)")
         results.append(OK)
     else:
+        cpath, cmtime, csize = resolve_cron_log()
+        if cpath:
+            where = f"{cpath} ({csize:,} B, mtime {cmtime:%Y-%m-%d %H:%M} UTC)"
+        else:
+            where = "NO non-empty cron.log found -- check logrotate and repo root"
         print(f"  {MARK[WARN]} {'market_ticks':<28} SUSPECT  (breadth pipeline not healthy -- "
-              f"verify tick capture via cron.log / in-session, NOT a row count)")
+              f"verify tick capture in-session or in the log below, NOT a row count)")
+        print(f"  {'':6} {'':<28} evidence: {where}")
+        print(f"  {'':6} {'':<28} also: logs/ws_feed_zerodha.log[.1] -- check the "
+              f"'Subscribing N instruments' line; N in the low single digits means the "
+              f"instrument load failed open (TD-S72-NEW-5)")
         results.append(WARN)
 
     # ---- COMPUTE UNIVERSE (per symbol + parity) -----------------------------
@@ -315,21 +526,27 @@ def main():
                     sv = FAIL
                 elif n < minrows:
                     sv = WARN
-                sv = sv if sv == FAIL else max([sv, verdict_ts(last)],
-                                               key=lambda x: [OK, WARN, FAIL].index(x))
-                line_v = max([line_v, sv], key=lambda x: [OK, WARN, FAIL].index(x))
+                sv = sv if sv == FAIL else worse(sv, verdict_ts(last))
+                line_v = worse(line_v, sv)
                 l = f"{last:%H:%M}" if last else "--:--"
                 cells.append(f"{s} {n:>3}@{l}")
             # parity
             gap = abs(counts[SYMBOLS[0]][0] - counts[SYMBOLS[1]][0])
             parity = "" if gap <= PARITY_TOL else f"  !! PARITY gap={gap}"
             if parity:
-                line_v = max([line_v, WARN], key=lambda x: [OK, WARN, FAIL].index(x))
+                line_v = worse(line_v, WARN)
             print(f"  {MARK[line_v]} {table:<42} {' | '.join(cells)}{parity}")
             results.append(line_v)
         except Exception as e:
             print(f"  {MARK[FAIL]} {table:<42} query error: {str(e)[:50]}")
             results.append(FAIL)
+
+    # ---- DERIVED-VIEW INTEGRITY (S72) ---------------------------------------
+    print("\nDERIVED-VIEW INTEGRITY")
+    print("-" * 74)
+    gv, gline = check_gex_symbol_coverage(url, headers)
+    print(gline)
+    results.append(gv)
 
     # ---- REFERENCE FRESHNESS (prev-close baseline; not row-counted in-session) --
     print("\nREFERENCE FRESHNESS  (prev-close baseline -- refreshed once pre-open)")
@@ -358,6 +575,9 @@ def main():
     print("=" * 74)
     print(" NOTE: this checks the DATABASE. Dashboard cards can lag independently")
     print("       (WCB render bug); a green DB here does not vouch for Marketview render.")
+    print(" NOTE: FAIL count is a SYMPTOM count, not a cause count. feed -> market_ticks")
+    print("       -> market_breadth_intraday -> WCB is ONE chain; a single upstream break")
+    print("       lights every line in it (observed 2026-08-25 and 2026-09-04).")
     return code
 
 

@@ -313,31 +313,81 @@ EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM public.v_gex_strike_accel_zone;
 -- ============================================================================
 -- SECTION 5 — Prove tau is now live (the whole point of FIX 1)
 --
--- Flip NIFTY pin tau, observe pin_lower/pin_upper actually move, restore.
--- Under the OLD view the zone would not change and only tau_used would.
--- Uses the existing temporal convention (valid_to on the old row).
+-- CORRECTED 2026-09-05, AFTER THE FACT. The version originally committed here
+-- COULD NOT RUN and was never successfully applied. It read:
+--
+--     INSERT INTO public.merdian_parameters
+--            (key, value_num, value_type, valid_from, valid_to)
+--     VALUES ('pin.tau.NIFTY', 0.50, 'numeric', now(), NULL);
+--
+-- merdian_parameters has THREE NOT NULL columns with no default that this list
+-- omits: category, description, change_reason. It failed with
+--   ERROR: 23502 null value in column "category" ... violates not-null constraint
+-- and, because the Supabase SQL editor wraps a pasted script in one transaction,
+-- it took SECTIONS 2 AND 3 DOWN WITH IT. Both views rolled back; production was
+-- untouched; the whole file had to be re-run section by section.
+--
+-- Two lessons, both worth more than the fix:
+--
+--   1. The column list was written without reading the schema. Every other
+--      statement in this file was built from measured output; this one was
+--      constructed from memory. It is the only one that failed.
+--
+--   2. A verified DDL change and an unverified data probe do not belong in the
+--      same script. Section 5 is a DEMONSTRATION; Sections 2-4 are the FIX.
+--      Bundling them meant the weakest statement in the file gated the
+--      strongest. RUN SECTIONS SEPARATELY.
+--
+-- The corrected form below CLONES the row that is already valid and changes only
+-- value_num and change_reason, so the three NOT NULL columns are inherited rather
+-- than invented. It is wrapped BEGIN/ROLLBACK: the probe reads the changed value
+-- inside the transaction and discards it, so nothing needs restoring afterwards.
+--
+-- Note also uniq_merdian_parameters_active_key, a partial unique index on
+-- (key) WHERE valid_to IS NULL. The table structurally cannot hold two active
+-- rows for one key, so an expire-then-insert cannot half-complete into a
+-- duplicate — but it CAN half-complete into ZERO active rows, which the partial
+-- index permits. That is the failure mode the explicit transaction guards.
+--
+-- OBSERVED RESULT when this was finally run (2026-09-05):
+--     tau 0.30 -> pin_lower 24300, pin_upper 24500, n_strikes 5
+--     tau 0.50 -> pin_lower 24300, pin_upper 24400, n_strikes 3   <- zone moved
+--     restored -> pin_lower 24300, pin_upper 24500, n_strikes 5
+-- Under the OLD view the boundaries would NOT have moved and only tau_used
+-- would have changed. That is the entire proof.
 -- ============================================================================
+
+BEGIN;
 
 SELECT symbol, pin_lower, pin_upper, n_strikes, tau_used
   FROM public.v_gex_strike_pin_zone WHERE symbol = 'NIFTY';
 
 UPDATE public.merdian_parameters SET valid_to = now()
  WHERE key = 'pin.tau.NIFTY' AND valid_to IS NULL;
-INSERT INTO public.merdian_parameters (key, value_num, value_type, valid_from, valid_to)
-VALUES ('pin.tau.NIFTY', 0.50, 'numeric', now(), NULL);
+
+INSERT INTO public.merdian_parameters
+       (key, value_text, value_num, value_bool, value_jsonb, value_type,
+        category, description, min_value, max_value,
+        valid_from, valid_to, changed_by, change_reason)
+SELECT  key, value_text, 0.50,      value_bool, value_jsonb, value_type,
+        category, description, min_value, max_value,
+        now(), NULL, 'system', 'S72 tau liveness probe'
+FROM public.merdian_parameters
+WHERE key = 'pin.tau.NIFTY'
+ORDER BY valid_from DESC
+LIMIT 1;
 
 -- Expect a NARROWER zone and tau_used = 0.50.
 SELECT symbol, pin_lower, pin_upper, n_strikes, tau_used
   FROM public.v_gex_strike_pin_zone WHERE symbol = 'NIFTY';
 
--- Restore.
-UPDATE public.merdian_parameters SET valid_to = now()
- WHERE key = 'pin.tau.NIFTY' AND valid_to IS NULL;
-INSERT INTO public.merdian_parameters (key, value_num, value_type, valid_from, valid_to)
-VALUES ('pin.tau.NIFTY', 0.30, 'numeric', now(), NULL);
+ROLLBACK;
 
-SELECT symbol, pin_lower, pin_upper, n_strikes, tau_used
-  FROM public.v_gex_strike_pin_zone WHERE symbol = 'NIFTY';
+-- Confirm the rollback: expect ONE row, value_num 0.30, valid_to NULL.
+SELECT key, value_num, category, valid_from, valid_to
+  FROM public.merdian_parameters
+ WHERE key = 'pin.tau.NIFTY'
+ ORDER BY valid_from DESC;
 
 
 -- ============================================================================

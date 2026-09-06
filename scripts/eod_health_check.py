@@ -138,7 +138,7 @@ CRON_LOG_GLOB = "cron.log.*"
 REF_TABLE = "equity_intraday_last"
 REF_TS = "ts"
 REF_MIN_ROWS = 1200          # universe ~1385; ohlc() tail can drop a few dozen
-REF_STALE_GRACE_HRS = 30     # ts may legitimately be the 03:35 UTC slot of --date
+# (REF_STALE_GRACE_HRS removed S73 -- wall-clock grace unused since the date-anchored rewrite)
 # market_spot_session_markers feeds Marketview's spot header (prev_close_spot ->
 # client-side %-change). Stamped once daily ~16:10 IST by build_market_spot_session_markers.py
 # (cron added S60). Freshness keyed on trade_date_ist; 2 rows/day = NIFTY+SENSEX (TD-S60-NEW-1).
@@ -146,9 +146,11 @@ MARKER_TABLE = "market_spot_session_markers"
 MARKER_DATE_COL = "trade_date_ist"
 MARKER_MIN_ROWS = 2
 
-OK, WARN, FAIL = "OK", "WARN", "FAIL"
-MARK = {OK: "[ OK ]", WARN: "[WARN]", FAIL: "[FAIL]"}
-RANK = [OK, WARN, FAIL]
+OK, WARN, FAIL, NA = "OK", "WARN", "FAIL", "NOT AUDITABLE"
+MARK = {OK: "[ OK ]", WARN: "[WARN]", FAIL: "[FAIL]", NA: "[ -- ]"}
+# NA means "this check cannot speak", NOT "this check passed". It is ranked least
+# severe only so worse() is total; never combine NA with a real verdict as if equal.
+RANK = [NA, OK, WARN, FAIL]
 
 
 def worse(*verdicts):
@@ -341,11 +343,25 @@ def check_marker_freshness(url, headers, sess_date, day0, verbose=False):
 
 
 def check_reference_freshness(url, headers, sess_date, day0, verbose=False):
-    """REFERENCE FRESHNESS -- was equity_intraday_last refreshed FOR sess_date?
+    """REFERENCE FRESHNESS -- is equity_intraday_last's CURRENT generation on sess_date?
 
-    Returns (verdict, printable_line). Anchored to the audited date, not wall-clock,
-    so a stale-baseline day FAILs even when audited weeks later (the check that would
-    have fired on 2026-05-21 for TD-S59-NEW-1). Measures `ts`, not created_at.
+    Returns (verdict, printable_line). Measures `ts`, not created_at (TD-S59-NEW-1).
+
+    equity_intraday_last is UPSERT-IN-PLACE: it holds exactly ONE generation of
+    prev-day closes, and each refresh overwrites `ts` on the rows it touches. The
+    table carries no history, so this check CANNOT establish what the baseline
+    looked like on a past date. Only three states are distinguishable:
+
+      newest.date() <  sess_date  -> baseline has not advanced to the audited date.
+                                     Genuine staleness (C-09 / TD-S59-NEW-1). FAIL.
+      newest.date() == sess_date  -> the live generation IS the audited date, so the
+                                     row count is meaningful.            OK / WARN.
+      newest.date() >  sess_date  -> the generation moved past sess_date and
+                                     overwrote it.               NOT AUDITABLE.
+
+    The prior form read "no rows stamped sess_date" as staleness, which made every
+    back-dated run FAIL by construction regardless of that day's true state, and
+    the prior docstring claimed the opposite. Back-dating is now NOT AUDITABLE.
     """
     table, tsc = REF_TABLE, REF_TS
     try:
@@ -359,16 +375,20 @@ def check_reference_freshness(url, headers, sess_date, day0, verbose=False):
     except Exception as e:
         return FAIL, f"  {MARK[FAIL]} {table:<28} query error: {str(e)[:60]}"
 
-    refreshed_for_date = n_today >= 1
     if newest is None:
         v = FAIL
         detail = "no readable ts -- table empty or unreadable"
-    elif not refreshed_for_date:
-        # not refreshed on the audited day -> stale baseline (the C-09 / TD-S59-NEW-1 mode)
+    elif newest.date() < sess_date:
+        # baseline never advanced to the audited date -> stale, and stale NOW
         age_h = (day0 - newest).total_seconds() / 3600.0
         v = FAIL
-        detail = (f"NOT refreshed for {sess_date} -- newest ts {newest:%Y-%m-%d %H:%M} UTC "
-                  f"({age_h:.0f} h before session) -- STALE BASELINE (TD-S59-NEW-1)")
+        detail = (f"BEHIND {sess_date} -- newest ts {newest:%Y-%m-%d %H:%M} UTC "
+                  f"({age_h:.0f} h before session start) -- STALE BASELINE (TD-S59-NEW-1)")
+    elif newest.date() > sess_date:
+        # one-generation upsert: whatever ts sess_date carried has been overwritten
+        v = NA
+        detail = (f"generation is {newest:%Y-%m-%d}, past {sess_date} -- upsert table "
+                  f"holds one generation; {sess_date} was overwritten, not recoverable")
     elif n_today < REF_MIN_ROWS:
         v = WARN
         detail = (f"refreshed {newest:%H:%M} UTC but only {n_today} rows "
@@ -587,12 +607,18 @@ def main():
     print("\n" + "=" * 74)
     nfail = results.count(FAIL)
     nwarn = results.count(WARN)
+    nna   = results.count(NA)
+    na_note = f", {nna} NOT AUDITABLE" if nna else ""
     if nfail:
-        overall = f"{MARK[FAIL]} {nfail} FAIL, {nwarn} WARN -- investigate above"
+        overall = f"{MARK[FAIL]} {nfail} FAIL, {nwarn} WARN{na_note} -- investigate above"
         code = 1
     elif nwarn:
-        overall = f"{MARK[WARN]} {nwarn} WARN -- review above (often benign: low-volume / boundary)"
+        overall = f"{MARK[WARN]} {nwarn} WARN{na_note} -- review above (often benign: low-volume / boundary)"
         code = 1
+    elif nna:
+        overall = (f"{MARK[OK]} no failures, but {nna} check(s) NOT AUDITABLE -- "
+                   f"back-dated run over an upsert table; re-run same-day for a full verdict")
+        code = 0
     else:
         overall = f"{MARK[OK]} clean session -- capture + compute complete and symmetric"
         code = 0

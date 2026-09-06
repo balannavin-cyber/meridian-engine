@@ -57,6 +57,141 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S73-NEW-1 (S2 priority) — `shadow_runner.log` is a 262 MB live log at repo root, outside logrotate's scope, while its cron line's visible redirect target is covered
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** 274,528,648 bytes — 64% of the 411 MB `~/meridian-engine` tree — on a 7.6 G volume at 65%. Unbounded because nothing rotates it. S29's breadth cascade came from disk pressure. |
+| **Discovered** | Session 73 (2026-09-06), enumerating the ~270 MB unaccounted for between the tree size and its directories. |
+| **Component** | `~/meridian-engine/shadow_runner.log` · `run_merdian_shadow_runner_aws.py` · `/etc/logrotate.d/meridian` |
+| **Symptom** | `stat`: 274,528,648 bytes, mtime `2026-09-04 09:56:23 UTC` — the last trading day. Live, not residue. |
+| **Root cause** | `/etc/logrotate.d/meridian` covers exactly two paths: `/home/ssm-user/meridian-engine/cron.log` and `/home/ssm-user/meridian-engine/logs/*.log`. This file is at repo root and matches neither. S71 installed that config scoped to what S71 was looking at. |
+| **Why it stayed invisible** | The crontab line (`*/5 03-09 * * 1-5 … run_merdian_shadow_runner_aws.py >> logs/orchestrator.log 2>&1`) redirects to a path that **is** covered. An audit reading the crontab sees a correctly-rotated target; the real writer is an internal logging handler pointed at a hardcoded repo-root path. **The visible channel is the decoy.** C-17 shape. |
+| **Not established** | Growth rate. 274 MB accumulated over an unknown period, and EBS free went 2.7 G → 2.8 G across the ten days since S71 — which is not what an unrotated grower does. Severity above is from the absence of rotation, not from a measured trajectory. |
+| **Proper fix** | Extend `/etc/logrotate.d/meridian` to cover repo-root `*.log`, or repoint the writer into `logs/`. Prefer the second — one log location is the durable answer. Measure the rate first. |
+| **Cross-ref** | TD-S69-NEW-1 (EBS, resolved by measurement S71) · TD-S73-NEW-6 (same class: a scheduling/plumbing fact no register held). |
+| **Status** | **OPEN.** |
+
+### TD-S73-NEW-2 (S3 priority) — a literal Windows path exists as a directory on the Linux host and something writes into it daily
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** 4.6 MB, contained, no downstream consumer identified. Matters because it means a config value still carries its Windows form on EC2 and nothing detects that. |
+| **Discovered** | Session 73 (2026-09-06), `du -sh */` in `~/meridian-engine`. |
+| **Component** | `~/meridian-engine/C:\GammaEnginePython\heartbeats/` — a directory whose *name is the Windows path string* |
+| **Symptom** | Directory created `Jun 9 13:32`, containing one file: `MERDIAN_Spot_1M.log`, 4,737,896 bytes, mtime `2026-09-04 09:59 UTC` — three minutes after `shadow_runner.log`, on the last trading day. Live. |
+| **Root cause** | **Unidentified.** The structure implies something took the string `C:\GammaEnginePython\heartbeats` as a directory, created it, and joined a filename with `/`. That means the path arrives as a *value* — from config or environment — not from source, since the only two cron-scheduled scripts mentioning `GammaEnginePython` (`capture_spot_1m_v2.py:50-51`, `generate_pine_overlay.py:14`) mention it **only in comments**, as Windows Task Scheduler setup notes. |
+| **Refuted in-session** | "`capture_spot_1m_v2.py` and `generate_pine_overlay.py` write here" — filed from `grep -l`, refuted by reading the lines. `grep -l` establishes mention, not authorship. |
+| **Constraint on investigation** | The likely source is `.env`, which cannot be read (CLAUDE.md Rule 19). Probe the *code* for the variable name, never its value. |
+| **Wider surface** | 135 root `.py` files mention `GammaEnginePython`. On this evidence most are comments and Task Scheduler notes; the count is not a defect count. |
+| **Proper fix** | Identify the writer, then point the heartbeat path at a platform-appropriate location. Do not delete the directory before the writer is known — that only relocates the ignorance. |
+| **Cross-ref** | TD-S73-NEW-1 (both are repo-root writers no register describes). |
+| **Status** | **OPEN.** |
+
+### TD-S73-NEW-3 (S3 priority) — `option_chain_snapshots` retention horizon is misread as ingest failure; second instance of the TD-S72-NEW-9 class
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Same consequence as TD-S72-NEW-9: a guaranteed FAIL on any back-dated audit beyond ~11 days, training the operator to ignore the line. |
+| **Discovered** | Session 73 (2026-09-06), running `eod_health_check.py --date 2026-08-14` to exercise the new NA branch. |
+| **Component** | `scripts/eod_health_check.py` PRIMARY INGESTION · `option_chain_snapshots` |
+| **Symptom** | `--date 2026-08-14` reports `option_chain_snapshots  0 rows` → FAIL, on a session that was otherwise healthy in every other check (724 spot rows, 379 breadth, full compute parity, markers written). |
+| **Measured** | `min(ts) = 2026-08-24T03:00:07Z` · `max(ts) = 2026-09-04T10:10:04Z` · 708,902 rows total · 68,738 rows on 2026-09-04 · **0 rows on 2026-08-14**. Retention horizon ≈ 11–12 days. 2026-08-14 falls *ten days before the table's earliest row*. |
+| **The decisive evidence is not the horizon** | It is that `gamma_metrics` reported 84 NIFTY / 83 SENSEX rows for 2026-08-14 in the same run, and gamma derives from the chain. The chain was present on 08-14 and has since aged out. **Ingest did not fail.** |
+| **Root cause** | The check counts rows on the audited date against a rolling buffer and reads the buffer's horizon as an outage. `equity_intraday_last` loses the past by overwriting one generation; `option_chain_snapshots` loses it by pruning. Different mechanism, identical misreading. |
+| **Why it matters beyond the instance** | TD-S72-NEW-9 is **not a one-off**. Any table without history needs a retention-horizon concept in the check: beyond the horizon, NOT AUDITABLE, not FAIL. The `NA` verdict added in `2c26cfe` is the mechanism; this is the second table that needs it. |
+| **Proper fix** | Give PRIMARY a per-table retention horizon. Beyond it, emit `NA`. Requires knowing each table's horizon — measure, do not assume. |
+| **Cross-ref** | TD-S72-NEW-9 (RESOLVED S73, `2c26cfe`) · TD-S73-NEW-4 · TD-S73-NEW-5. |
+| **Status** | **OPEN.** |
+
+### TD-S73-NEW-4 (S3 priority) — the `option_chain_snapshots` row floor cites a provenance that could not have produced it
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The floor may still be well-chosen; the stated basis is false, which makes every other census-derived floor in the file unverified rather than wrong. |
+| **Discovered** | Session 73 (2026-09-06), incidentally, while measuring the retention horizon for TD-S73-NEW-3. |
+| **Component** | `scripts/eod_health_check.py:81` |
+| **Symptom** | The comment records `option_chain_snapshots observed 68738` as coming from "a 45-day observed census." |
+| **Why it cannot be** | 68,738 is **exactly** the row count for 2026-09-04 alone, and the table holds only ~11 days (`min(ts) = 2026-08-24`). A 45-day census against this table was not possible at any point in its retained history. The number is one day, described as forty-five. |
+| **Scope of the doubt** | S72 recalibrated several floors from "the 45-day census" — breadth 60 → 350 among them. At least one of those provenance claims is wrong. Whether the others were measured or asserted is **unknown and worth one pass**, because a floor with a false provenance cannot be re-derived when it needs revisiting. |
+| **Proper fix** | Re-derive each floor from a stated, reproducible query and record the query, not a description of one. |
+| **Cross-ref** | TD-S73-NEW-3 · TD-S72-NEW-8 (continuity floors, S72). |
+| **Status** | **OPEN.** |
+
+### TD-S73-NEW-5 (S2 priority) — UNVERIFIED: 2026-06-03 → 2026-08-24 appears in neither option-chain table
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2 if it holds.** ~12 weeks of chain history silently bounds every historical option study, including the ADR-009 zone-utility reconstruction. Unverified, so the priority is provisional. |
+| **Discovered** | Session 73 (2026-09-06), querying both chain tables for TD-S73-NEW-3. |
+| **Component** | `option_chain_snapshots` · `historical_option_chain_snapshots` |
+| **Measured** | `historical_option_chain_snapshots`: `min(ts) = 2026-03-16T09:51:09Z`, `max(ts) = 2026-06-03T09:59:00Z`. `option_chain_snapshots`: `min(ts) = 2026-08-24T03:00:07Z`. Between 2026-06-03 and 2026-08-24 the chain is in **neither of these two tables**. |
+| **Explicitly not claimed** | That the data is lost. Only two tables were queried. It may live in a third table, a Parquet extract, or a backup not enumerated here. |
+| **Secondary finding** | `count=exact` on `historical_option_chain_snapshots` returned **HTTP 500**. `min`/`max` via `order`+`limit 1` succeeded, so those values are sound; the row count is unknown. Cause unconfirmed — consistent with the S35 note on this table's size against the PostgREST statement timeout, but not established. |
+| **Proper fix** | Enumerate every table and artefact that could hold chain data for that window before drawing any conclusion. If the gap is real, it is a data-availability constraint that belongs in `merdian_reference.json` and in the ADR-009 pre-registration, not a repair task. |
+| **Cross-ref** | TD-S73-NEW-3 · ADR-009 (zone-utility study, gated) · D.29.7 (PostgREST 1,000-row cap). |
+| **Status** | **OPEN — UNVERIFIED. Measure before acting.** |
+
+### TD-S73-NEW-6 (S2 priority) — `eod_health_check.py` has no scheduled invoker; the fourth instance of the class, and TD-S72-NEW-7's premise was inferred from it
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** A health check nobody runs is not a health check. It also invalidates a stated root cause in an S72 item. |
+| **Discovered** | Session 73 (2026-09-06), checking the check's own schedule before changing its verdict logic. |
+| **Component** | `scripts/eod_health_check.py` · `crontab -l` · `/etc/systemd/system/` |
+| **Measured** | `crontab -l \| grep -n 'eod_health'` → no match, grep exit 1, against `crontab -l \| wc -l` = **53** (unchanged since S72 close). `grep -rn 'eod_health_check' /etc/systemd/system/` → no match. 20 units, 3 timers (`merdian-wsfeed-start`, `merdian-wsfeed-stop`, `snap.certbot.renew`), none referencing it. |
+| **Consequence for TD-S72-NEW-7** | That item was written around the check running at **00:45 UTC** against a `cron.log` that logrotate empties at 00:00. Nothing schedules it at 00:45. The number came from the file's own comment at lines 127–128 — an assumption about invocation, not a fact of the deployment. The `resolve_cron_log()` fix by mtime remains correct and is *more* correct for an operator-invoked script that can run at any hour; **the recorded reason needs amending, not the code.** |
+| **Second consequence** | An operator-invoked check has no fixed relationship to the 03:35 UTC `refresh_equity_intraday_last` cron. The pre-03:35 false positive is therefore not an edge case — it fires on any morning run. |
+| **Scope of the negative** | Established for the `ssm-user` crontab and `/etc/systemd/system/` only. **Not checked:** `/etc/cron.d/` drop-ins, other users' crontabs, `/usr/lib/systemd/system/`, user units under `~/.config/systemd/user/`. |
+| **Method note** | The first attempt used `grep 'eod\|scripts/'` and `grep -i 'health'` — substring guesses that could only support "no line contains these substrings," not "not scheduled." The stronger claim required the direct grep and the systemd sweep. Recorded because the weaker method produced the same empty result and would have been read as proof. |
+| **Cross-ref** | TD-S71-NEW-14 (unscheduled-invoker reconciliation) · TD-S72-NEW-7 (premise amended) · guardrails C-19 (systemd is a second scheduling surface). |
+| **Status** | **OPEN.** Fourth instance after the Pine generator, the dropped `.bat` line, and `reload_dhan_scripmaster.py`. |
+
+### TD-S73-NEW-7 (S2 priority) — the Claude Code permission model is verb-shaped, not effect-shaped, and the config itself is untracked
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** The permission file is the sole enforcement layer — no managed policy exists above it on Max tier — and three independent gaps were found in one session of ordinary use. |
+| **Discovered** | Session 73 (2026-09-06), during the first Claude Code work session. |
+| **Component** | `~/meridian-cc/.claude/settings.json` · `MERDIAN_ClaudeCode_Guardrails.md` §1 |
+| **Gap 1 — synonyms defeat the deny list** | `Bash(git checkout *)` is denied. `git switch -c` performs the identical operation and is **unlisted**, so it fell through to a generic approval prompt. `git restore` likewise covers the destructive half of `checkout` — including `git restore .`, the working-tree discard the S71 `.pine` workaround used six times. `git add` is unlisted entirely, though P-8 forbids `git add -A`/`git add .` in prose. |
+| **Gap 2 — `Read` deny does not cover every reader** | `Read(.env)` **does** block `cat`, `head`, `tail`, `sed` and Bash redirection targets (these are the file commands Claude Code recognises in Bash). It does **not** cover `grep`, `awk`, `less`, `od`, `xxd`, `strings`, or any Python that opens the file itself — and `grep` is auto-approved as a built-in read-only command, so `grep KEY .env` would not even prompt. This is the S71 exposure's uncovered sibling. |
+| **Gap 3 — mode is switchable with no disk trace** | Auto mode was active for part of this session; neither party chose it deliberately. It is offered as option 2 or 3 on nearly every permission prompt, leaves nothing in `settings.local.json`, and is visible only in the status bar and in retrospective `Allowed by auto mode classifier` lines. `ask` rules still fire in auto mode, so the load-bearing `Bash(python3 *)` guard held — but everything outside the named 25/16 was approved by a classifier. |
+| **Structural finding** | The config is **untracked** (`?? .claude/`). It is the only governance artefact in the repo not under version control: no diff, no review, absent from a fresh clone. The recorded counts **deny 25 / ask 16 / allow 0** are therefore the sole tamper check. |
+| **Also** | Empty `allow` produces prompt volume high enough that approval fatigue becomes the failure mode — the same shape as the item this session's code fix addressed. |
+| **Proper fix** | Add `Bash(git switch *)`, `Bash(git restore *)`, `Bash(git add *)` (ask), `Bash(grep*.env*)` (deny); track `.claude/settings.json` in git; re-record the counts. Amend guardrails §1, whose stated crontab deny/allow pair was already found unachievable in this session (deny precedes allow with no exceptions — moved to `ask`). |
+| **Cross-ref** | Guardrails §1, §10 · TD-S71-NEW-11 (S71 `.env` exposure) · P-4, P-8. |
+| **Status** | **OPEN.** |
+
+### TD-S73-NEW-8 (S2 priority) — `CLAUDE.md` exceeds Claude Code's context limit by 2.7×, so the contract governing agent work does not fully reach the agent
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Every Claude Code session to date has run without its own governing document fully loaded. |
+| **Discovered** | Session 73 (2026-09-06), first Claude Code launch — the warning appears on every start. |
+| **Component** | `CLAUDE.md` (repo root) |
+| **Symptom** | `⚠ CLAUDE.md is over the 150.0k-char limit (407.3k chars)`. On disk: 417,500 bytes, 1,157 lines. Claude Code auto-loads `CLAUDE.md` as project context; at 2.7× the ceiling it is truncated or dropped. |
+| **Root cause** | The v1.49 footer preserves the full v1.48 → v1.1 history verbatim under the no-crunch rule. That rule was written for registers a human reads. It collides with a hard tool limit. |
+| **Consequence** | Rule 19 (`.env`), Rule 18 (trading-day gate), Rule 10 (ADR triggers) and the settled-decisions list may not be in context. In S73 those rules reached the agent only by the operator relaying them. |
+| **Proper fix** | Split: a lean `CLAUDE.md` holding current rules and settled decisions, with version history moved to `docs/registers/CLAUDE_history.md` and linked. Requires a Doc Protocol amendment — the no-crunch rule and a tool ceiling cannot both hold. |
+| **Cross-ref** | Doc Protocol v4 Rule 7 (no-crunch) · guardrails §1. |
+| **Status** | **OPEN.** |
+
+### TD-S73-NEW-9 (S3 priority) — approved diffs are not hunk-independent, and a partial application produced a quieter failure than the defect it was fixing
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Process, not code. Caught before commit; would have shipped a false pass. |
+| **Discovered** | Session 73 (2026-09-06), applying the TD-S72-NEW-9 fix through Claude Code. |
+| **Component** | Deploy discipline · `MERDIAN_ClaudeCode_Guardrails.md` · Doc Protocol v4 |
+| **What happened** | A four-hunk diff was approved as a whole and applied hunk-by-hunk with a prompt each. One hunk (the `main()` aggregation consuming the new `NA` verdict) was rejected on operator instruction, on the mistaken belief that a fifth prompt indicated scope creep. It did not: one hunk had legitimately split into two Edit calls because its two regions were non-contiguous and each needed a unique anchor. |
+| **The resulting state** | `NA` was defined and returnable, but `main()` still counted only `FAIL` and `WARN`. A back-dated run would have returned `NA`, found `nfail == nwarn == 0`, and printed **"clean session — capture + compute complete and symmetric", exit 0**. The old behaviour was loud and wrong; the intermediate state was **quiet and wrong** — strictly worse, and the exact stable-lie shape ADR-001 exists for. |
+| **Root cause** | Hunks are **not independent** when one introduces a value another must consume. Nothing in the guardrails or Doc Protocol names partial application as a failure mode; both assume a diff is applied or not applied. |
+| **Contributing** | The operator was asked to approve prompts whose diff bodies were not visible in the relayed transcript. The correct instruction was "show me the hunk," not "reject it." |
+| **Proper fix** | State producer/consumer coupling when proposing a multi-hunk diff, and verify all hunks landed (`git diff` against the proposal) before running or committing. Add to guardrails §4. |
+| **Cross-ref** | ADR-001 (stable lies) · guardrails C-17 · TD-S72-NEW-9. |
+| **Status** | **OPEN.** |
+
 ### TD-S72-NEW-14 (S2 priority — **RESOLVED S72**) — a canonical document was written to an inferred path, creating the duplicate basename the same session's guardrails forbid
 
 | Field | Value |
@@ -210,7 +345,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **The docstring is false** | It claims the check is "anchored to the audited date… so a stale-baseline day FAILs even when audited weeks later". It cannot be. The upsert destroys the evidence. |
 | **Proper fix** | When `newest > audited date`, report `NOT AUDITABLE (upsert table, single generation)` as INFO/WARN. Reserve FAIL for `newest` **behind** the audited date — the genuine stale-baseline mode TD-S59-NEW-1 describes. |
 | **Cross-ref** | TD-S59-NEW-1 · TD-S72-NEW-6 (fourth instance this session of a channel reporting identically on good and bad days). |
-| **Status** | **OPEN.** |
+| **Status** | **RESOLVED S73** — commit `2c26cfe` on branch `s73/td-s72-new-9-not-auditable`. `FAIL` reserved for `newest.date() < sess_date`; `newest.date() > sess_date` reports `NOT AUDITABLE`; docstring corrected; dead `REF_STALE_GRACE_HRS` removed. Verified live: same-day run 2026-09-06 held 14/14 predictions with no verdict changed, back-dated `--date 2026-08-14` fired the NA branch against an otherwise healthy session where the prior code returned a false FAIL. **Not merged to `main`, not pushed.** Residuals unfixed and deliberately out of scope: the pre-03:35-UTC false positive, the absent trading-day gate (Rule 18), and `code = 0` on the NA path, which must become `code = 2` if this script ever gets a scheduled invoker (TD-S73-NEW-6). |
 
 ### TD-S72-NEW-10 (S3 priority) — `gex_strike_snapshots` grew ~92k rows on a Saturday with every capture cron scoped Mon–Fri
 

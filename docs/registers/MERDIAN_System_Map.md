@@ -1224,3 +1224,51 @@ Tails are **per table** because CAS moved breadth and chain to ~10:10 while spot
 ---
 
 *System Map updated Session 72, 2026-09-05 (§S72 — both GEX zone views replaced in production with τ carried through the walk and `latest_run` bounded by a lateral, 489.884 ms → 4.153 ms and 36,167 → 215 buffers, equivalence gate zero rows, ADR-021 Amendment 1; `eod_health_check.py` rewritten closing five TDs with floors calibrated from a 45-day census; `ws_feed_zerodha.py` fail-open instrument loader corrected — an NFO timeout had been aborting the **breadth** load, a separate NSE download, producing a 3-instrument session that reported "Feed live"; `generate_pine_overlay.py` spot floor moved to trading days and then corrected again for the Fri→Sat boundary the fix itself created; `gex_strike_snapshots` at 1,409,204 rows with seven indexes of which two are byte-identical; `breadth_intraday_history` `coverage_pct` semantics established, closing a withdrawn S1 claim). HEAD `4d40ff3`, Local == origin == EC2 verified by `git hash-object` — **not** by byte size, which differs by line count under `core.autocrlf=true` (D.30.4). Previous: Session 71, 2026-08-22→29 (§S71).*
+
+## §S73 — Session 73 agent surface, and four findings the health-check fix surfaced (2026-09-06)
+
+### S73.A — A second working tree on EC2
+
+| Item | Detail |
+|---|---|
+| `~/meridian-cc` | Sibling clone of `meridian-engine`, created S73 for Claude Code. **Referenced by no crontab line and no systemd unit** — verified against all 53 cron lines and all 20 units in `/etc/systemd/system/`. Production (`~/meridian-engine`) becomes read-only-from-git by construction: it only ever `git pull --ff-only`s. |
+| Size | 42 MB against production's 411 MB. `size-pack` 12.87 MiB. The gap is ~275 MB of untracked or gitignored material — chiefly `shadow_runner.log` (TD-S73-NEW-1), `logs/`, `cache/`, rotated `cron.log.*`. |
+| Namespace | The clone holds **590 `.py` files at root**, including all nine `build_ict_htf_zones*` and all nineteen `build_ict_primitives*` variants. `.gitignore`'s `*_PRE_S*` stops new backups entering; it does not untrack files committed before it. **Guardrail P-3 applies in the clone exactly as in production.** |
+| `.claude/settings.json` | **Untracked.** deny 25 / ask 16 / allow 0, verified live in `/permissions`. The only governance artefact outside version control — TD-S73-NEW-7. |
+
+### S73.B — `scripts/eod_health_check.py` verdict model
+
+| Change | Detail |
+|---|---|
+| New verdict `NA` | `OK, WARN, FAIL, NA = "OK", "WARN", "FAIL", "NOT AUDITABLE"`, `MARK[NA] = "[ -- ]"`, `RANK = [NA, OK, WARN, FAIL]`. NA ranks least-severe **only so `worse()` is total** — it is not a pass. |
+| `check_reference_freshness()` | Branches on `newest.date()` against `sess_date` rather than on a row count. `<` → FAIL (genuine staleness). `==` → OK/WARN on row count. `>` → **NA**: the table is an upsert holding one generation and the audited date was overwritten. |
+| `main()` aggregation | `nna = results.count(NA)`; `na_note` appended to the FAIL and WARN banners; a new `elif nna:` branch so an NA-only run cannot fall through to *"clean session"*. **Exit code 0** on that path — see the residual below. |
+| Removed | `REF_STALE_GRACE_HRS = 30`, dead since the date-anchored rewrite. |
+| Verified | Same-day run 2026-09-06: 14/14 predictions held, no verdict changed. Back-dated `--date 2026-08-14`: NA branch fired against a session healthy in every other check, where the prior code returned a false FAIL. Commit `2c26cfe`. |
+| **Residual** | `code = 0` on the NA-only path is a judgement, not a derivation. The banner opens `[ OK ]`, so anything grepping `[ OK ]` or testing `$? -eq 0` reads an abstention as a pass. Tolerable while the script is operator-invoked; **if it ever gets a scheduled invoker, this must become `code = 2`** (TD-S73-NEW-6). |
+
+### S73.C — Table properties measured this session
+
+| Table | Property | Consequence |
+|---|---|---|
+| `equity_intraday_last` | Upsert in place, one generation, ~1,314 rows. Every refresh overwrites every `ts`. | Historical refresh state is **structurally unknowable**. Back-dated audit → NA, not FAIL. Refreshed by cron `35 3 * * 1-5`. |
+| `option_chain_snapshots` | `min(ts) = 2026-08-24T03:00:07Z` · `max(ts) = 2026-09-04T10:10:04Z` · 708,902 rows · **~11–12 day retention horizon**. | A back-dated check beyond the horizon reads pruning as an outage. Established by `gamma_metrics` holding 84/83 rows for 2026-08-14 — gamma derives from the chain, so the chain was present and aged out. TD-S73-NEW-3. |
+| `historical_option_chain_snapshots` | `min(ts) = 2026-03-16T09:51:09Z` · `max(ts) = 2026-06-03T09:59:00Z`. `count=exact` returns **HTTP 500**, cause unconfirmed. | With the above, **2026-06-03 → 2026-08-24 is in neither table** — ~12 weeks. Only two tables queried, so no loss is claimed. TD-S73-NEW-5, UNVERIFIED. |
+| `gex_strike_snapshots` | Symbol coverage check returned NIFTY=553,173 / SENSEX=856,031 on 2026-09-06, matching S72's recorded figures. | The S72 `count=exact` fix (TD-S72-NEW-3) still holds. |
+
+### S73.D — Two repo-root writers no register described
+
+| Path | Detail |
+|---|---|
+| `~/meridian-engine/shadow_runner.log` | **274,528,648 bytes**, mtime 2026-09-04 09:56 — live. Outside `/etc/logrotate.d/meridian`, which covers only `cron.log` and `logs/*.log`. Its crontab line redirects to `logs/orchestrator.log`, which **is** covered — so the visible channel is a correctly-rotated decoy and the real writer is an internal handler on a hardcoded repo-root path. TD-S73-NEW-1. |
+| `~/meridian-engine/C:\GammaEnginePython\heartbeats/` | A directory whose **name is a Windows path string**, on Linux. Created 2026-06-09, holds `MERDIAN_Spot_1M.log` at 4,737,896 bytes, mtime 2026-09-04 09:59. The two cron-scheduled scripts naming that path name it **only in comments** (`capture_spot_1m_v2.py:50-51`, `generate_pine_overlay.py:14`), so the path arrives as a value and the writer is unidentified. TD-S73-NEW-2. |
+
+### S73.E — Scheduling surfaces, re-verified
+
+`crontab -l` = **53 lines**, unchanged since S72 close. `/etc/systemd/system/` = **20 units, 3 timers** (`merdian-wsfeed-start`, `merdian-wsfeed-stop`, `snap.certbot.renew`).
+
+**`scripts/eod_health_check.py` appears in neither.** Fourth instance of the unscheduled-invoker class after the Pine generator, the dropped `.bat` line and `reload_dhan_scripmaster.py`. This amends TD-S72-NEW-7, whose 00:45 UTC premise came from the file's own comment rather than the deployment. Scope of the negative: the `ssm-user` crontab and `/etc/systemd/system/` only — `/etc/cron.d/`, other users' crontabs and `/usr/lib/systemd/system/` were **not** checked. TD-S73-NEW-6.
+
+---
+
+*System Map updated Session 73, 2026-09-06 (§S73 — the `~/meridian-cc` agent working tree and its permission surface; the `NA` verdict added to `eod_health_check.py` and its unresolved exit-code residual; four table properties measured, two of which — `option_chain_snapshots` retention and the 2026-06-03→2026-08-24 chain gap — bound what any historical study can reach; two repo-root writers no register described; and `eod_health_check.py` confirmed to have no scheduled invoker on either surface. The `## Update log` table at line 560 remains frozen at Session 67 and is filed as TD-S73-NEW-10, not fixed here.)*

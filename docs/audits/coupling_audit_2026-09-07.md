@@ -562,7 +562,7 @@ Of the seven self-reported verdict signals examined, **one has no reader at all*
 
 ## Section 8 — Findings index
 
-**48 findings.** 13 `BROKEN` (F-01, 02, 03, 04, 13, 14, 15, 16, 17, 18, 19, 20, 40) · 26 `AT-RISK` · 9 `NO-WRITER` / write-only / read-but-inert (F-10, 34, 41, 43, 44, 45, 46, 47, 48).
+**59 findings.** 13 `BROKEN` (F-01, 02, 03, 04, 13, 14, 15, 16, 17, 18, 19, 20, 40) · 26 `AT-RISK` · 20 `NO-WRITER` / write-only / read-but-inert (F-10, 34, 41, 43–48, and F-49–59 added in Section 9 after the Section 7 commit).
 
 ### Producer writes outside consumer read window — the strict defect class
 
@@ -612,3 +612,128 @@ F-07 (no holiday gate on futures capture) · F-08, F-32 (host-local `date.today(
 1. **F-13 is half-fixed and the fixed half is not the broken half.** Today's change re-anchored `premarket_ref` to the market open. `close_1530` remains unobtainable for three independent reasons — no producer writes a `ts` in the window, the CAS row is stamped with its run time rather than its bar time, and the marker job runs ten minutes before the CAS capture. `capture_quality` will move from `MISSING` to `MISSING_CLOSE_1530` and stop there, and nothing reads it either way.
 
 2. **The verdict columns are not missing — they terminate.** `capture_quality`, `contract_met`, `exit_reason`, the `*_source_table` provenance set and `coverage_pct` are all computed carefully on every run and consumed by nothing that runs. The system's self-knowledge is written down and never read. That is why an eleven-session defect surfaced by eye rather than by alarm.
+
+---
+
+## Section 9 — Post-commit sweep: further write-only verdict columns
+
+**Provenance.** Sections 1–8 were committed as `584f854`. A broader automated verdict-column sweep, launched at the same time as the other five but slower to return, landed **after** that commit. This section records what it found. Everything below is additive: the sweep **contradicted nothing** in Section 7 — `capture_quality` write-only with no reader, `contract_met` and `exit_reason` read only by the unscheduled alert daemon and janitor, and `v_script_execution_health_30m` queried by no script were all independently reconfirmed.
+
+The three items given particular weight below were re-verified by hand before recording, and one of them required correcting the framing (F-50).
+
+Same standard as Section 7: a column counts as READ only if code filters on it, branches on it, aggregates it, or displays it. A writer setting it does not count; an incidental `select` that returns it without acting on it does not count.
+
+### F-49 `WRITE-ONLY` — `data_quality_events`: four writers, zero readers, `resolved` never flipped
+
+- **Writers.** Four scripts, each POST-only, each constructing the REST URL directly:
+  - `log_data_quality_event_local.py:61` (URL), `:88` `severity` default `'warning'`, `:100` `"resolved": False`
+  - `run_trade_signal_runner_v1.py:79`, `:90`, `:95`
+  - `label_signal_outcomes_local.py:85`, `:96`, `:101`
+  - `review_threshold_candidate_local.py:97`, `:108`, `:113`
+- **Reader.** **None.** A repo-wide search for `data_quality_events` returns exactly four hits — the four POST URLs above. There is no GET, no `.select`, no filter, no view.
+- **`resolved` is written `False` at all four sites and updated nowhere.** No code path flips it to true. The column records an intent to triage that no triage process exists to discharge.
+- Distinguish from `expiry_outcomes.resolved` (`accrue_expiry_outcomes.py:161`, `backfill_expiry_outcomes.py:225`), which *is* read — `v_expiry_base_rates` filters `WHERE resolved IS NOT NULL`. Same column name, different table, opposite verdict.
+- This is the purest instance of the Section 7 pattern: a dedicated data-quality event log, four distinct producers taking the trouble to emit into it, and no consumer at any point in its history.
+
+### F-50 `WRITE-ONLY` — the `*_stale_floored` marker family, and a correction to how it bears on ADR-023
+
+Three subsystems write a boolean recording that a recency floor fired. **No code anywhere filters, branches on, or aggregates any of them.**
+
+| Column | Writer | Floor default |
+|---|---|---|
+| `market_state_snapshots.breadth_stale_floored` | `build_market_state_snapshot_local.py:435`, computed `:387` | `MERDIAN_BREADTH_RECENCY_FLOOR_MIN`, 15 min |
+| `market_state_snapshots.wcb_stale_floored` | `:436`, computed `:394` | `MERDIAN_WCB_RECENCY_FLOOR_MIN`, 15 min |
+| `signal_snapshots.options_flow_stale` | `build_trade_signal_local.py:907`, computed `:483-495` | `MERDIAN_FLOW_RECENCY_FLOOR_MIN`, 15 min |
+| `signal_snapshots.basis_context_stale` | `:911`, computed `:517-526` | `MERDIAN_BASIS_RECENCY_FLOOR_MIN`, 15 min |
+| `structural_divergence_snapshots.source_stale_floored` | `compute_structural_divergence_local.py:338`, also duplicated into `raw` `:358`, computed `:283` | `MERDIAN_SDM_RECENCY_FLOOR_MIN`, 15 min; DDL default `false` at `sql/2026-06-22_enh_sdm_structural_divergence_snapshots.sql:71` |
+
+Every occurrence of `stale_floored` in the repo is a write site, the helper that computes it, a docstring, a `print`, or DDL. There are no reads.
+
+**Correction to the framing.** These are not floors "stored as marks instead of being enforced" — that would understate two of them and overstate the third. Read the implementations and they split:
+
+- **`build_market_state_snapshot_local.py` genuinely abstains.** `_apply_recency_floor` (`:117-123`) documents itself as treating an over-age row as **ABSENT**, and returns `(row_or_None, stale_bool)`. The row is dropped; the boolean is the audit trail of the drop. ADR-018 D2 is correctly implemented here.
+- **`build_trade_signal_local.py` genuinely abstains.** `:492` sets `_flow = {}` and `:495` does the same on a parse failure, so every downstream `_flow.get(...)` at `:496-497` returns `None`. Same for basis at `:517-526`.
+- **`compute_structural_divergence_local.py` does not, by design.** `:144` states it outright: *"for a display-not-gate monitor we FLAG staleness (source_stale_floored) rather than [abstaining]"*. Here the mark **is** the entire mechanism.
+
+So the accurate finding is sharper than "the floors are only marks":
+
+1. For the first two, the floors work. What is unread is the **evidence that they fired**. Nothing can answer "how often did the breadth floor abstain last month?" — which is precisely the calibration input ADR-023 D1 needs, and precisely what F-21 shows is missing when a floor is set to 1440 minutes against a consumer whose data is always ~57 minutes old. **The floors are enforced and unmeasurable.**
+2. For the third, staleness is deliberately non-blocking and the only signal is a boolean nothing reads — so a silently stopped upstream feeding the structural-divergence monitor is invisible at both ends.
+
+### F-51 `WRITE-ONLY` — `smdm_squeeze_alert`: hardcoded `None`, with a partial index built on a value it cannot hold
+
+- **Writer.** `premium_outcome_writer.py:801` — `"smdm_squeeze_alert": None`, a literal. The sole writer; the value is never computed.
+- **Column.** `sql/meridian_signal_premium_outcomes_v1.sql:75` — `smdm_squeeze_alert BOOLEAN`.
+- **Index.** `:106-107` — `ON signal_premium_outcomes (smdm_squeeze_alert, action, symbol) WHERE smdm_squeeze_alert = TRUE`.
+- **The index predicate can never be satisfied.** The only writer emits `None`, so no row will ever have `smdm_squeeze_alert = TRUE`. The index is permanently empty, is maintained on every insert, and serves no query — no code filters on the column.
+- **Context.** SMDM was retired as built per ADR-018 D3, which explicitly dropped the STOP_HUNT/SQUEEZE flags. The writer hardcodes `None` because the subsystem that would have produced the value no longer exists. The column and its index are survivors of a retired subsystem that nothing removed.
+
+### F-52 `WRITE-ONLY` — `measurement_health_snapshots`: an entire health table written once and read never
+
+- **Writer.** `measurement_health_snapshot_local.py:435` — a single `client.insert("measurement_health_snapshots", row)`. The row carries `overall_status` (`:402`) plus seven per-module verdicts (`:419-426`): `volatility_status`, `futures_status`, `wcb_status`, `gamma_status`, `momentum_status`, `regret_log_status`, `regret_analytics_status`, each `'OK'` / `'STALE'` / `'CRITICAL'` from a worst-of roll-up (`:288-291`, `:368`).
+- **Reader.** **None.** The table name appears exactly once in the entire repo — that insert. The `print` at `:439` reads back the insert's own return payload, not a query.
+- A purpose-built health-verdict table, eight verdict fields, one write site, zero reads.
+
+### F-53 `WRITE-ONLY` — `structural_divergence_snapshots`: three verdicts on a table nothing ever reads
+
+- `divergence_mode` — `compute_structural_divergence_local.py:336`, hardcoded `'OBSERVE'`. The DDL admits `'OFFENSIVE_CONTEXT'` / `'DEFENSIVE_CONTEXT'` / `'NONE'` (`sql/2026-06-22_enh_sdm_structural_divergence_snapshots.sql:67`); none is ever written.
+- `raw->>'three_wick_status'` — `:356`, constant `'DEFERRED_P3_needs_OHLC'`. Sibling `raw->>'display_not_gate'` = `True` at `:357`.
+- `source_stale_floored` — see F-50.
+- **Reader.** The table is never SELECTed by any script; the only access is the writer's own upsert at `:365`. Consistent with ADR-018 D4's "display-not-gate" intent — but the display consumer is the out-of-repo frontend, so within this repo the subsystem writes into a void.
+
+### F-54 `WRITE-ONLY` — `structural_alerts`: three verdicts behind an existence check
+
+- `score_confidence` — `detect_structural_manipulation.py:722`, set at `:462`, `:664`; `'FULL'` / `'PARTIAL'` / `NULL` when `dte != 0`.
+- `squeeze_alert` — `:721`, `True` / `False`, forced `False` when `run_type == "PARTIAL"` (`:674`).
+- `run_type` — `:718`, `'FULL'` / `'PARTIAL'`, argv-derived. It is part of `on_conflict="symbol,ts,run_type"` (`:791`) — a key, not a read.
+- **Reader.** `structural_alerts` is read exactly once in the repo, `:234-239`, and that query is `select=id` — a row-existence check that never touches any of the three.
+
+### F-55 `WRITE-ONLY` — the historical-ingest quality trio
+
+- `hist_completeness_checks.flag_incomplete` — `hist_ingest_controller.py:468`, `:478` (`actual_bars < expected * 0.80`), inserted `:470`. **Reader: none.** The DDL comment at `sql/meridian_hist_ingest_schema_v1.sql:213` claims "flag_incomplete=TRUE triggers manual review"; no code implements it. Another DDL comment asserting a consumer that does not exist, as in F-41.
+- `hist_completeness_checks.coverage_pct` — a DB-generated column (`sql/meridian_hist_ingest_schema_v1.sql:203-206`). **Reader: none** — the table is never SELECTed.
+- `hist_ingest_rejects.reject_reason` — `hist_ingest_controller.py:284` (free text), bulk-upserted `:675`. **Reader: none** — write-only table.
+
+### F-56 `WRITE-ONLY` — outcome and reconstruction verdicts
+
+- `shadow_outcomes_v2.evaluation_status` — `evaluate_shadow_outcomes_local.py:240`, `:270`, `:309`, `:360`, inserted `:399`; values `'SKIPPED_NO_ENTRY'`, `'SKIPPED_INSUFFICIENT_HORIZON'`, `'EVALUATED'`. **Reader: none** — the table appears only at `:398-399`.
+- `shadow_reconstruction.coverage_status` — `reconstruct_shadow_for_date_local_v3.py:463` via `classify_coverage()`, row field `:495`, printed `:473`, `:545`. **Reader: none** outside that file. Its literal value set is NOT ESTABLISHED from the call sites.
+- `signal_premium_outcomes.data_source` — `premium_outcome_writer.py:815`, `'LIVE'` if `trade_date >= today - 7d` else `'BACKFILL_CHAIN'`; DDL default `'LIVE'` (`sql/meridian_signal_premium_outcomes_v1.sql:85`). **Reader: none.** This is a provenance verdict distinguishing live from backfilled measurement — exactly the discriminator any cohort analysis would need — and nothing filters on it.
+- `signal_premium_outcomes.outcome_label` and `signal_outcomes.outcome_label_{15m,30m,60m,eod}` — `premium_outcome_writer.py:667`, `:796`; `outcome_engine_common.py:342-344`; `build_signal_outcome_audit_local.py:377-380`. The only reads are the writer displaying its own in-memory row (`:904`, `:921`) and `group by outcome_label_eod` in `sql/meridian_outcome_comparison_pack_v1.sql:65-79`, `:164`, `:183` — a file of loose `select` statements, not a view, executed by nothing in the repo.
+
+### F-57 `WRITE-ONLY` — four columns that are selected but discarded
+
+The incidental-`select` case: the column comes back in the payload and no code reads it off the row.
+
+| Column | Writer | Apparent reader | Why it does not count |
+|---|---|---|---|
+| `gamma_metrics.run_type` | `compute_gamma_metrics_local.py:1083` | `detect_structural_manipulation.py:635` includes it in the `select` list | the value used at `:672`, `:674` is the **caller's own CLI `run_type`**; no `gamma_row.get("run_type")` exists anywhere |
+| `breadth_ingest_state.last_status` | `ingest_equity_eod_local.py:83` (`'SEEDED_BY_PYTHON'`), `:250` | `:68` includes it in the `select` list | the caller at `:287-289` consumes only `cursor` and `limit_per_run` |
+| `momentum_snapshots.source` | provenance defaults in `sql/2026-06-26_enh07b_hist_basis_context.sql:22` and siblings | selected at `compute_momentum_features_v2_local.py:143`, `measurement_health_snapshot_local.py:300` | the first never branches on it; the second copies it into `measurement_health_snapshots`, which nothing reads (F-52) |
+| `hist_ingest_log.status` | `hist_ingest_controller.py:645`, `:797`, `:655`, `:679` | `:626-632` selects `id,status` and **prints** it at `:632` | display only — the dedup decision keys on `source_checksum`, not on `status`. Counts as READ under the Section 7 rule, but drives nothing. Three of its six CHECK-permitted values (`'COMPUTE_DONE'`, `'ARCHIVED'`, `'PARTIAL'`, `sql/meridian_hist_ingest_schema_v1.sql:153-161`) are never written by any Python |
+
+### F-58 `WRITE-ONLY` — two WCB coverage verdicts, one of which duplicates a value that *is* read
+
+- `signal_snapshots.wcb_weight_coverage_pct` — `build_trade_signal_local.py:891`; column added `sql/meridian_wcb_measurement_integration.sql:40`. **No Python reader.** It is referenced in `shadow_signal_validation_v1` (`sql/meridian_shadow_validation_view_v1.sql:54`) and aggregated in `sql/meridian_wcb_validation_summary_pack_v1.sql:93` — but no script queries that view (F-41, F-42) and the pack is loose SQL nothing executes.
+- `market_state_snapshots.wcb_features->>'is_partial'` — `build_market_state_snapshot_local.py:276` (`matched_weight_pct < 100.0`); replay twin `replay/replay_build_market_state_snapshot.py:288`. **Reader: none** — a repo-wide search for `is_partial` returns only those two write sites.
+- The contrast is instructive: the *upstream* value these derive from, `market_state_snapshots.wcb_features->>'matched_weight_pct'` (`build_market_state_snapshot_local.py:257-272`), **is** genuinely read and branched — `build_shadow_signal_local.py:128`, with confidence penalties at `< 85.0` and `< 95.0` (`:199-203`). The raw number is consumed; both derived verdicts computed from it are not.
+
+### F-59 `WRITE-ONLY` — `market_environment_snapshots.regime_conditional_note`
+
+- **Writer.** `compile_market_environment_local.py:503`, free text from `phaseb_note()` (`:452-462`) — the N-floored Phase-B base-rate receipt.
+- **Reader.** None.
+- Its siblings on the same row *are* read: `ambient_regime` and `lens_alignment` are selected and displayed by `relate_ambient_to_open_local.py:72-75`, `:109`, and filtered through `v_expiry_base_rates` at `compile_market_environment_local.py:443-444`. The note — the part that records *why* the verdict is what it is, and how much evidence stands behind it — is the part nothing reads.
+
+### Columns the sweep confirmed are genuinely read
+
+Recorded for balance, and because each is a working counter-example: `hist_greeks_backfill_log.status` (filtered `in.(DONE,SKIPPED_EXPIRY)` at `backfill_hist_greeks.py:377-378`, with a supporting index at `sql/2026-06-28_s62_hist_greeks_backfill_log.sql:20` — the one index in this section that serves a real query); `ict_primitive_outcomes.retest_status` (`audit_s33_enh103_falsification.py:100`, `:103`); `option_execution_price_history.source` (`build_option_execution_outcomes_v1.py:180`, `:274`); `signal_snapshots.entry_quality` (branched at `build_shadow_signal_local.py:116`, `:228`); `ict_htf_zones.status` (filtered at eight sites); `market_environment_snapshots.ambient_regime` / `lens_alignment`.
+
+### Excluded — not database columns
+
+Flagged so they are not mistaken for gaps. These verdicts live in JSON files or in-process state, not tables, and several **are** read: the `gamma_engine_*` heartbeat verdicts under `runtime/heartbeats/` (`gamma_engine_alert_daemon.py:16`, `:136`, `:179-192`, branched at `:512-598`); `merdian_daily_audit.py`'s `overall_status` (`:136`, `:760`, `:811`) which goes to `audit_results_YYYYMMDD.json` and into `script_execution_log.notes` at `:827`; `run_preflight.py:123-127` `overall_status`, read at `preflight_common.py:249` and driving the exit code at `:212`. Experiment-script `verdict` / `quality_score` / `wick_quality` locals are printed and never persisted.
+
+### What Section 9 adds to the picture
+
+Section 7 found the pattern in the execution-log framework and the session markers. This sweep shows it is not local to those: **eleven further findings covering roughly twenty-four columns across fourteen tables**, including two purpose-built quality tables (`data_quality_events`, `measurement_health_snapshots`) with zero reads in their entire history, a DDL comment asserting a manual-review trigger that no code implements (F-55), and an index maintained on every insert against a predicate no row can satisfy (F-51).
+
+The `*_stale_floored` family (F-50) is the one that changes a live conclusion rather than adding to a list. The ADR-018 D2 abstentions are real and working. What does not exist is any way to observe them firing — which is the missing input to the ADR-023 D1 calibration problem recorded at F-21, where a floor sits at 1440 minutes against data that is ~57 minutes old on every healthy run, calibrated against nothing.

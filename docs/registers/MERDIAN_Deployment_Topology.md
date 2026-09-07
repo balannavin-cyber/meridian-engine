@@ -1423,3 +1423,65 @@ Neither is urgent at current free space, and neither is bounded. The logrotate c
 ---
 
 *Deployment Topology updated Session 73, 2026-09-06 (§S73 — a second working tree `~/meridian-cc` on `i-0878c118835386ec2`, referenced by no crontab line and no systemd unit, which makes production read-only-from-git by construction; the deploy direction recorded by ADR-006 and Doc Protocol is now inverted by the first EC2-authored commits and a corrected topology is proposed **UNRATIFIED**; Claude Code 2.1.261 catalogued as a host artifact with no managed policy above its untracked permission file; scheduling surfaces re-verified at 53 cron lines and 20 units with **no change made this session**; and disk at 65%/2.8 G improving under logrotate while two writers remain outside its scope. The `## Update log` table at line 848 remains frozen at Session 67 and is filed as TD-S73-NEW-10, not fixed here.)*
+
+## §S74 — Session 74 topology changes (2026-09-07)
+
+### S74.A — `merdian-wsfeed.service`: `KillSignal=SIGINT`, verified on the live stop
+
+Unit-file splice with fail-loud assertions, backup `.PRE_S74`, `daemon-reload`, **no restart**. **Verified on the live 10:05 UTC systemd stop — not by manual invocation.**
+
+| | Before | After |
+|---|---|---|
+| Stop duration | ~90 s (`TimeoutStopSec` default) | `Stopping 10:05:01` → `Deactivated successfully 10:05:02` |
+| Unit result | `failed (Result: timeout)` | `Result=success` |
+| Exit | `code=killed signal=KILL` | `ExecMainStatus=0` |
+
+Application log confirms the mechanism directly: `Received signal 2 -- clean shutdown requested`.
+
+**The S72 handler was correct and was never reached.** KiteTicker's Twisted reactor installs its own SIGTERM handler under `connect(threaded=False)`, so SIGTERM never arrived at `install_signal_handlers()`. Twisted installs a **SIGINT** handler by default and ignores SIGTERM unless one is registered — hence `KillSignal=SIGINT`. This supersedes the S73 framing (*the handler is present and insufficient*): it is present, sufficient, and was unreachable over the signal systemd was sending.
+
+**`SuccessExitStatus` deliberately left empty.** Relabelling a genuine kill as success would hide the next real hang — the same ambiguity by a different route. TD-S71-NEW-4's filed *Proper fix* proposed exactly that pairing and its second half is **rejected**, recorded in that TD.
+
+**Second-order — this is the change that fixes the alert channel.** `OnFailure=` no longer fires on healthy shutdowns, so `WSFEED_ALERTS` can distinguish good days from bad **for the first time** (S72 measured six consecutive days of byte-identical 125-byte alerts, three of them on fully healthy sessions). That closes **TD-S72-NEW-6** and, through it, **TD-S71-NEW-4** — the healthy path and the broken path no longer share a terminal state, so `systemctl is-active` can now answer the question.
+
+### S74.B — Exposure: twenty units and three timers have no version control
+
+The change above was made to a file that **exists only on the box**. `/etc/systemd/system/` holds **20 units and 3 timers** (`merdian-wsfeed-start`, `merdian-wsfeed-stop`, `snap.certbot.renew`) and **none of them is in git**.
+
+This is the crontab problem at a second surface. `docs/registers/aws_crontab.txt` was brought under version control at S68 precisely because the crontab lived only on-box; the systemd surface — documented for the first time at S72, and carrying a **daily production stop invoker** — never received the same treatment. A unit-file edit therefore has no diff, no review, and no presence in a fresh clone; the `.PRE_S74` backup sits beside the live file on the same volume.
+
+**Compounds D.32.2:** commit dates on this repo systematically post-date deployments of on-box config, because such config enters git only when a register transcribes it. Cross-ref TD-S72-NEW-14 (no canonical tracked crontab source).
+
+### S74.C — `reload_dhan_scripmaster.py` fires on the 1st and 15th regardless of weekday
+
+Its cron line is day-of-month scheduled with no weekday predicate and no holiday gate, so it runs on Saturdays, Sundays and NSE holidays whenever the date lands there.
+
+**Third instance of a writer running on a closed market**, after TD-S72-NEW-10 and the 2026-06-26 holiday GEX rows. The canonical remedy already exists and is not applied here: `core/trading_calendar_gate.py` (`assert_trading_day_or_exit`), per **Rule 18** — import it, do not roll a new inline check. Rule 18's second clause binds too: a gate over a calendar that has not been validated against the official NSE source is worse than no gate.
+
+### S74.D — Repo-root artefacts no register describes
+
+- **`status.json`** — a live cron output at repo root, **in no register**. Its writer `refresh_health_dashboard.py` reports `STALE` against a five-minute-old table because a naive/aware datetime comparison raises `TypeError` into a **bare `except` returning sentinel `999`**. The dashboard is reporting the exception, not the age. Same class as D.28.5: a defensive handler that makes the failure quieter rather than the system more robust.
+- **`rate_sens.out`** — a dead `nohup` artefact.
+
+Both join `shadow_runner.log` and the `C:\GammaEnginePython\heartbeats/` directory (S73) as repo-root writers outside every register and outside logrotate's scope.
+
+### S74.E — Deploy state and direction
+
+| Item | State |
+|---|---|
+| `7bb1779` | engine (`premarket_ref` window) — **pushed** |
+| `74fee89` | ADR-009 pre-registration — this clone, **unpushed** |
+| `584f854` | coupling audit — this clone, **unpushed** |
+| `3997582` | coupling audit §9 sweep — this clone, **unpushed** |
+| `.claude/settings.json` | **staged, uncommitted** at capture; now tracked (deny 25→30, ask 16→19, allow 0) |
+| Branch | `main` — both code commits went **EC2 → main directly, no branch** |
+
+**The deploy-direction inversion remains UNRATIFIED.** ADR-006 and the Doc Protocol record Local → push → EC2 pull; S73 produced the first EC2-authored commits and S74 adds **two further instances**. Ratifying means amending **ADR-006's deploy-direction statement and the Doc Protocol line together** — not recorded as decided here.
+
+### S74.F — Scheduling surfaces
+
+`crontab -l` = **53 lines**, unchanged since the S72 close. `/etc/systemd/system/` = **20 units, 3 timers**, unchanged in count; one unit's content changed (S74.A). No schedule was added or removed this session.
+
+---
+
+*Deployment Topology updated Session 74, 2026-09-07 (§S74 — `merdian-wsfeed.service` `KillSignal=SIGINT` applied and verified on the live 10:05 UTC stop at `Result=success` / `ExecMainStatus=0`, closing TD-S72-NEW-6 and, through the `OnFailure=` second-order effect, TD-S71-NEW-4, with `SuccessExitStatus` deliberately left empty and that TD's filed remedy explicitly rejected; the twenty-units/three-timers surface recorded as having **no version control at all**, the crontab problem repeating at a second surface after S68 solved it at the first; `reload_dhan_scripmaster.py` filed as the third instance of a writer running on a closed market, with `core/trading_calendar_gate.py` as the unapplied canonical remedy per Rule 18; `status.json` and `rate_sens.out` added to the repo-root-artefacts-no-register-describes list; deploy state recorded at three unpushed commits in this clone with the **EC2 → main** direction inversion gaining two further instances and remaining UNRATIFIED. The `## Update log` table at line 848 remains frozen at Session 67 — TD-S73-NEW-10, still not fixed here.) Previous: Session 73, 2026-09-06 (§S73).*

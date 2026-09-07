@@ -1272,3 +1272,69 @@ Tails are **per table** because CAS moved breadth and chain to ~10:10 while spot
 ---
 
 *System Map updated Session 73, 2026-09-06 (§S73 — the `~/meridian-cc` agent working tree and its permission surface; the `NA` verdict added to `eod_health_check.py` and its unresolved exit-code residual; four table properties measured, two of which — `option_chain_snapshots` retention and the 2026-06-03→2026-08-24 chain gap — bound what any historical study can reach; two repo-root writers no register described; and `eod_health_check.py` confirmed to have no scheduled invoker on either surface. The `## Update log` table at line 560 remains frozen at Session 67 and is filed as TD-S73-NEW-10, not fixed here.)*
+
+## §S74 — Session 74: the `premarket_ref` window, the coupling audit's schema findings, and three on-disk definitions of one view (2026-09-07)
+
+### S74.A — `get_premarket_ref` re-anchored on the market open, not the auction close (`7bb1779`)
+
+`build_market_spot_session_markers.py`. The function windowed `[09:07:30, 09:08:30]`, then `[09:00, 09:08:59]`. The capture cron moved **09:08 → 09:11 on 2026-08-24**, so **both** windows closed *before* the only candidate row. `premarket_ref` was NULL and `capture_quality` read `MISSING` for **eleven sessions**.
+
+Replaced with a single window **`[09:00:00, 09:14:59]`, last row**.
+
+The anchor choice is the durable part: **the market open is stable; the auction close has reformed twice in six weeks** (CAS from 2026-08-03, the pre-open restructure from 2026-09-07). A window pinned to the auction close is a window that must be re-derived every time the exchange changes its mind. The upper bound is set below ~09:16 so it cannot reach the `dhan_charts_intraday` rows that feed `open_0915`.
+
+| Check | Result |
+|---|---|
+| Regression gate | 2026-08-21 reproduces exactly — `09:08:03.79091`, NIFTY `24284.05`, SENSEX `77702.18` |
+| Backfill | ten sessions 08-24 → 09-04, **20/20 rows**, `premarket_move_pct` populated |
+| Live | written by the `40 10` cron at `09:11:03` — NIFTY `23883.15`, SENSEX `76446.05` |
+
+**`close_1530` is the other half of the same field and is NOT fixed** — see S74.C.
+
+### S74.B — Coupling audit: the schema and read-path findings
+
+`docs/audits/coupling_audit_2026-09-07.md`, 739 lines, commits `584f854` + `3997582`. **59 findings — 13 BROKEN, 26 AT-RISK, 20 write-only/no-writer**; ten items verified **NOT** broken; six scope limits stated. Filed as a pointer, **not enumerated** — TD-S74-NEW-1.
+
+The four extracted as individually actionable:
+
+| ID | Table / path | Finding |
+|---|---|---|
+| **F-19** | `ict_htf_zones` | ADR-005 writes D/W zones with `valid_to = NULL`; `detect_ict_patterns_runner.py:268` filters `.gte("valid_to", trade_date)`. **PostgREST `gte` does not match NULL**, so every daily and weekly zone is invisible to the signal path — only 1H survives. `generate_pine_overlay.py:552-556` reads the same table with **no validity filter**, so the chart renders zones the engine cannot see. **Two consumers of one table disagree about which rows exist.** TD-S74-NEW-2 |
+| **F-01** | `market_spot_snapshots` | `capture_index_futures_snapshot_local.py:144-152` computes `basis` from an **unbounded** `order=ts.desc&limit=1`. The spot writer stops at **15:15**; this consumer fires **15:30 / 15:35 / 15:40** and **16:00** — a basis against spot up to **25 minutes stale**. The failure **inverts**: it finds a value and is wrong. TD-S74-NEW-3 |
+| **F-04** | `equity_intraday_last` | `build_wcb_snapshot_local.py:94-99` and `ingest_breadth_from_ticks.py:160-162` both read it **unbounded**. The post-S59 freshness guard went into `scripts/eod_health_check.py` and **into neither consumer**. If the 09:05 refresh fails, both silently use the prior session's baseline — the S59 shape verbatim. TD-S74-NEW-4 |
+| **F-13** | `market_spot_session_markers` | `close_1530` — see S74.C. TD-S74-NEW-5 |
+
+### S74.C — `close_1530` has three independent causes, and the symmetry with the pre-open bug is false
+
+1. **No producer writes a `ts` in 15:29–15:31** since S70 moved `MARKET_CLOSE_GUARD` to **15:15**.
+2. `capture_cas_close.py:366` stamps `ts` with its **run time**, keeping the bar time only in `raw.bar_ts_ist` — so even the row holding the settled close does not present at 15:29.
+3. The marker job runs at **16:10**, **ten minutes before** the CAS capture at **16:20**.
+
+**Consequence:** `derive_capture_quality` can never return `COMPLETE`. The field moves `MISSING` → `MISSING_CLOSE_1530` and stops. **A quality scale whose top value is unreachable cannot signal.**
+
+The pre-open row **existed** and its window missed it; this row **does not exist**. Recorded as §D.32.5 — a symmetry of symptoms read as a symmetry of mechanisms. **Blocked on an ADR-022 decision** about what "the close" means post-CAS, applied across every consumer, not just this one.
+
+### S74.D — Three on-disk definitions of the GEX zone views
+
+Three files each define `v_gex_strike_pin_zone` / `v_gex_strike_accel_zone`. **Only `docs/research/s72_gex_view_fix.sql` matches what precondition P1 proved deployed** — the τ-carried walk with the lateral run-selection, ADR-021 Amendment 1.
+
+The other two are earlier definitions left in place. Nothing distinguishes them by name or location, so an operator or agent reaching for "the view definition" has a **2-in-3 chance of reading a stale one** — and the stale ones are the τ-decorative versions D.30.12 refuted. Reconcile to one, or annotate the superseded pair in-file.
+
+### S74.E — `merdian_reference.json` schema drift on `gex_strike_snapshots`
+
+The register records `oi_total_calls` / `oi_total_puts` against live **`oi_call` / `oi_put`**, and **omits `id`, `dte`, `created_at`** entirely. Live columns, verified this session:
+
+`id, run_id, symbol, ts, expiry_date, dte, strike, spot, oi_call, oi_put, gex_cr, created_at, gamma_call, gamma_put`
+
+Corrected at the S74 close. The drift is ADR-015's v1→v2 migration (four columns dropped, two added) landing in the live schema and not in the register — a **write-layer change with no register sweep**, the same class as F-19's sentinel change with no reader sweep.
+
+### S74.F — Data and artefact observations
+
+- **`status.json` at repo root** is a live cron output **in no register**. Its writer `refresh_health_dashboard.py` reports `STALE` against a five-minute-old table, because a naive/aware datetime comparison raises `TypeError` into a **bare `except` returning sentinel `999`**. The dashboard is therefore reporting the exception, not the age.
+- **Five weekday marker rows wholly missing:** 07-31, 08-04, 08-07, 08-17, 08-20. Distinct from the eleven `premarket_ref`-NULL sessions — these rows do not exist at all.
+- **`rate_sens.out`** at repo root is a dead `nohup` artefact.
+- **`gex_strike_snapshots`: 1,412,989 rows across 69 GEX dates, `min(ts) = 2026-05-25`.** The zone-utility study found **67 eligible sessions**, not the **250+** carried in the session brief — the brief's figure was never measured (§D.32.4, and the "250+" refuted separately the same day).
+
+---
+
+*System Map updated Session 74, 2026-09-07 (§S74 — `get_premarket_ref` re-anchored `[09:00:00, 09:14:59]` on the market open rather than the auction close, `7bb1779`, regression-gated on 2026-08-21 and verified live at 09:11:03; the coupling audit's 59 findings recorded as a pointer with F-19 / F-01 / F-04 / F-13 extracted; `close_1530` established as three independent causes rather than the pre-open bug's mirror; three on-disk definitions of the GEX zone views with only `docs/research/s72_gex_view_fix.sql` matching production; `merdian_reference.json`'s `gex_strike_snapshots` column list corrected to live; `status.json` and `rate_sens.out` recorded as repo-root artefacts no register described. The `## Update log` table at line 560 remains frozen at Session 67 — TD-S73-NEW-10, still not fixed here.) Previous: Session 73, 2026-09-06 (§S73).*

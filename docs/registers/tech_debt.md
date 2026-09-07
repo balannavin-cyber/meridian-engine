@@ -57,6 +57,78 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S74-NEW-1 (S1 priority) — the producer/consumer coupling audit: 59 findings, filed as a pointer, not enumerated
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** 13 of the 59 findings are BROKEN — a live consumer reading something the producer no longer writes, or reading it unbounded. Four of those are separately filed below (TD-S74-NEW-2..5) because they are actionable as they stand. |
+| **Discovered** | Session 74 (2026-09-07), auditing every producer/consumer pair in the repo for time-coupling — the assumption each consumer makes about *when* its producer last wrote. |
+| **Component** | `docs/audits/coupling_audit_2026-09-07.md` (739 lines) — commits `584f854` + `3997582`. |
+| **Findings** | **59 total: 13 BROKEN, 26 AT-RISK, 20 write-only/no-writer.** Ten items were verified **NOT** broken and are recorded as such, so the file is a measurement rather than a suspicion list. Six scope limits are stated in the document. |
+| **Why this is a pointer, not sixty-nine TDs** | Enumerating 59 findings into this register would make it unreadable and would encode the audit's *discovery* order as if it were priority order. The findings have not been de-duplicated by root cause: several are the same unbounded-read defect at different call sites, and the ADR-023 recency-floor omission recurs across at least four. **De-duplicate by root cause and order by consequence before any of it is actionable.** |
+| **What the audit is not** | It measures coupling, not correctness. A pair marked AT-RISK is one whose consumer would read stale data *if* its producer stalled — not one that has been observed doing so. Only the BROKEN class carries evidence of a live defect. |
+| **Proper fix** | One pass to collapse the 59 into a root-cause set, then file the survivors individually. Expect the count to fall substantially — the unbounded-read class alone accounts for a large fraction. |
+| **Cross-ref** | TD-S74-NEW-2..5 (the four already extracted) · ADR-021 §A1.8 (the unscoped-view audit this extends) · ADR-023 (the recency floor most AT-RISK items lack). |
+| **Status** | **OPEN.** |
+
+### TD-S74-NEW-2 (S1 priority) — F-19: every D and W ICT zone is invisible to the signal path, while the chart renders them
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** The signal engine and the operator's chart disagree about which zones exist, and the engine sees strictly fewer. Only 1H zones reach it. |
+| **Discovered** | Session 74 (2026-09-07), coupling audit finding F-19. |
+| **Component** | `detect_ict_patterns_runner.py:268` · `generate_pine_overlay.py:552-556` · `ict_htf_zones` |
+| **Symptom** | ADR-005 writes D and W zones with `valid_to = NULL` — deliberately, because those are price-breach-only structural levels with no date expiry. The runner filters `.gte("valid_to", trade_date)`. **PostgREST `gte` does not match NULL**, so every daily and weekly zone is silently excluded from the signal path. |
+| **Second consumer, different answer** | `generate_pine_overlay.py:552-556` reads the same table with **no validity filter at all**. The chart therefore renders zones the signal engine cannot see. Two consumers of one table hold incompatible beliefs about which rows exist, and neither logs the discrepancy. |
+| **Why it stayed invisible** | The failure is silent and directional — it removes candidates rather than producing wrong ones, so the signal path simply emits less and reports success. The operator sees the zones on the chart and has no reason to suspect the engine does not. |
+| **Root cause shape** | ADR-005 changed the storage semantics of `valid_to` (date-expiry → NULL-means-no-expiry) and the consumer's filter was written against the prior semantics. **A sentinel change at the writer with no sweep of the readers.** |
+| **Proper fix** | Change the runner's filter to `or(valid_to.is.null,valid_to.gte.<date>)`, and give the Pine generator the same predicate so both consumers agree. Do not fix one side alone — the disagreement is the finding. |
+| **Cross-ref** | ADR-005 (zone validity model) · TD-079 (the original rewrite) · TD-S74-NEW-1. |
+| **Status** | **OPEN.** |
+
+### TD-S74-NEW-3 (S1 priority) — F-01: the futures basis is computed against spot up to 25 minutes stale, and the failure inverts
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** Three rows per symbol per day carry a basis whose spot leg is wrong by up to 25 minutes. The failure **inverts** — it finds a value and is wrong, rather than finding nothing. |
+| **Discovered** | Session 74 (2026-09-07), coupling audit finding F-01. |
+| **Component** | `capture_index_futures_snapshot_local.py:144-152` · `market_spot_snapshots` |
+| **Symptom** | `basis` is computed from an **unbounded** `order=ts.desc&limit=1` read of `market_spot_snapshots`. The spot writer stops at **15:15** by its own `MARKET_CLOSE_GUARD` (moved there at S70). This consumer fires at **15:30 / 15:35 / 15:40** — the derivatives window opened by the S71 crontab extension — and again at **16:00**. |
+| **Consequence** | At 15:40 the newest spot row is 25 minutes old, and the read returns it without complaint. The basis is a futures price against a stale spot: a number that looks like a measurement and is not one. This is precisely the class ADR-023 exists to prevent, and no recency floor was added when the window was extended. |
+| **Why the extension did not catch it** | TD-S70-NEW-6's job-by-job audit correctly extended this job into the derivatives window and correctly declined to extend the spot capture past 15:15 — both decisions were right in isolation. The interaction between them was not examined: extending the consumer past its producer's guard is what creates the gap. **Two correct decisions composing into a defect** — the ADR-020 shape. |
+| **Proper fix** | Bind the read: a recency floor per ADR-023, failing to **absent** rather than returning stale. If a post-15:15 basis is genuinely wanted, it needs a defined spot source for that window — which is an ADR-022 question, not a code question. |
+| **Cross-ref** | ADR-023 (read-path recency floors) · ADR-021 §A1.8 (the unscoped-read audit, still open) · TD-S70-NEW-6 (the window extension) · ADR-020 (contract-collision shape). |
+| **Status** | **OPEN.** |
+
+### TD-S74-NEW-4 (S1 priority) — F-04: the S59 breadth defect can recur — the guard went into the health check, not into either consumer
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** The exact failure that produced BULLISH breadth on a 0.37 A/D down day is reachable again, by the same mechanism, in two live consumers. |
+| **Discovered** | Session 74 (2026-09-07), coupling audit finding F-04. |
+| **Component** | `build_wcb_snapshot_local.py:94-99` · `ingest_breadth_from_ticks.py:160-162` · `equity_intraday_last` |
+| **Symptom** | Both consumers read `equity_intraday_last` **unbounded**. If the 09:05 refresh fails, both silently use the previous session's baseline and every downstream breadth read is computed against a stale reference price — the S59 shape verbatim, which is itself the C-09 / ADR-001 shape. |
+| **Where the guard actually went** | S59 added a REFERENCE FRESHNESS check to `scripts/eod_health_check.py` (commit `6b58587`). That check runs **after the fact**, on a schedule that S73 established has no verified invoker, and it does not gate either consumer. The guard was placed in the observer, not in the path. |
+| **Why that is not sufficient** | A health check reports a stale baseline the next time it runs. The consumers use it immediately. Between those two events the system emits confident, wrong breadth — and ADR-001's stable-lie rule says a component must refuse to produce a value it cannot stand behind, not produce one and let a downstream observer flag it later. |
+| **Proper fix** | Move the freshness assertion into both consumers, reading `ts` (never `created_at`, per §D.25.1) with an explicit floor, and **fail to absent**. Keep the health-check version — it is a useful second line — but it is not the fix. |
+| **Cross-ref** | TD-S59-NEW-1 / §D.25.1 (`ts` not `created_at`) · §D.25.2 (the frozen baseline) · ADR-001 · ADR-023 · TD-S74-NEW-1. |
+| **Status** | **OPEN.** |
+
+### TD-S74-NEW-5 (S2 priority) — F-13's remaining half: `close_1530` is unobtainable, so `capture_quality` can never reach `COMPLETE`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Not wrong data — absent data, and a quality scale whose top value is unreachable. |
+| **Discovered** | Session 74 (2026-09-07), coupling audit finding F-13. The first half (`premarket_ref`) was fixed this session as `7bb1779`; this is what remained. |
+| **Component** | `build_market_spot_session_markers.py` · `capture_cas_close.py:366` · `capture_spot_1m_v2.py` · the `16:10` marker cron |
+| **Symptom** | `derive_capture_quality` looks for a row whose `ts` falls in the **15:29–15:31** window and never finds one, so the field moves from `MISSING` to `MISSING_CLOSE_1530` and stops. `COMPLETE` is unreachable. |
+| **Three independent causes** | **(1)** No producer writes a `ts` in that window at all since S70 moved `MARKET_CLOSE_GUARD` to **15:15**. **(2)** `capture_cas_close.py:366` stamps `ts` with its **run time**, keeping the bar time only in `raw.bar_ts_ist` — so even the row that holds the settled close does not present at 15:29. **(3)** The marker job runs at **16:10**, ten minutes **before** the CAS capture at **16:20** — so on the ordering alone it could not see the row even if the timestamp were right. |
+| **The refuted symmetry** | This was initially read as "the same shape as the pre-open bug, opposite end of the day". Measurement refuted it: the pre-open row **existed** and the window missed it; the close-1530 row **does not exist**. Recorded as §D.32.5. |
+| **Why it is not fixed here** | Any fix commits to an answer for what "the close" means post-CAS — the 15:29 intraday bar, the CAS equilibrium at 16:20, or the daily endpoint's value — and that answer has to hold **across every consumer**, not just this one. Picking one here would create the second incompatible definition. |
+| **Blocked on** | an **ADR-022 decision** on the post-CAS definition of "the close", applied consumer by consumer. |
+| **Cross-ref** | ADR-022 D2 (the settled close lands in the 15:29 bar) · TD-S70-NEW-6 · §D.32.5 · TD-S74-NEW-1. |
+| **Status** | **OPEN — blocked.** |
+
 ### TD-S73-NEW-10 (S3 priority) — the System Map and Deployment Topology `## Update log` tables are frozen at Session 67 while both files record through Session 72
 
 | Field | Value |
@@ -189,7 +261,10 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Also** | Empty `allow` produces prompt volume high enough that approval fatigue becomes the failure mode — the same shape as the item this session's code fix addressed. |
 | **Proper fix** | Add `Bash(git switch *)`, `Bash(git restore *)`, `Bash(git add *)` (ask), `Bash(grep*.env*)` (deny); track `.claude/settings.json` in git; re-record the counts. Amend guardrails §1, whose stated crontab deny/allow pair was already found unachievable in this session (deny precedes allow with no exceptions — moved to `ask`). |
 | **Cross-ref** | Guardrails §1, §10 · TD-S71-NEW-11 (S71 `.env` exposure) · P-4, P-8. |
-| **Status** | **OPEN.** |
+| **Resolution — S74 (structural finding CLOSED, Gap 3 remains)** | `.claude/settings.json` is now **tracked in git** — the only governance artefact in the repo outside version control is inside it. Counts re-recorded and verified live in `/permissions`: **deny 25 → 30, ask 16 → 19, allow 0** (still empty). **New denies** closing Gap 2: `set -a`, `source *.env*`, `. ./.env*`, `grep*.env*`, `env`. **New asks** closing Gap 1: `git switch`, `git restore`, `git add`. |
+| **Residual — Gap 3 is not closeable in config** | Auto mode remains switchable with no disk trace: offered on nearly every prompt, absent from `settings.local.json`, visible only in the status bar and in retrospective `Allowed by auto mode classifier` lines. No setting suppresses it. Recorded, not fixed. |
+| **Residual — the deny list is one-sided** | The new `.env` denies bind the **agent**, not the operator shell in the same terminal. During this session's doc-close an operator-run `set -a; . ./.env; set +a` exported every credential into the shell environment — the exact operation denied to the agent one line above. **No secret was printed**; the shell was replaced with `exec bash -l`. Second instance of this asymmetry after S73's operator-side `git checkout` exposure. Recorded as **§D.32.6**. |
+| **Status** | **RESOLVED-IN-PART S74** — structural finding (untracked config) CLOSED; Gaps 1 and 2 CLOSED by rule additions; **Gap 3 (mode switchable, no disk trace) OPEN**, and the sibling-clone / permission-file asymmetry OPEN per §D.32.6. `.claude/settings.json` **staged, uncommitted** at capture. |
 
 ### TD-S73-NEW-8 (S2 priority) — `CLAUDE.md` exceeds Claude Code's context limit by 2.7×, so the contract governing agent work does not fully reach the agent
 
@@ -333,7 +408,11 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **NOT verified — and may not work** | KiteTicker runs a Twisted reactor which installs its own signal handlers under `connect(threaded=False)`. If SIGTERM is still swallowed, the reactor is why. Test Monday: `systemctl stop` then expect `inactive (dead)`, not a 90 s timeout. Fallback is `KillSignal=SIGINT` or an explicit `TimeoutStopSec`. **Do not reach for `SuccessExitStatus=SIGKILL`** — it would mask genuine kills. |
 | **Also confirmed** | `Restart=always` + `StartLimitBurst=3` / `StartLimitIntervalSec=300` / `RestartSec=10` observed live: three preflight retries ~11 s apart, then systemd gives up. Budget burns in ~30 s and the timer is start-only (`Persistent=false`), so nothing retries until the next morning. |
 | **Cross-ref** | TD-S71-NEW-4 · TD-S72-NEW-5. |
-| **Status** | **OPEN pending Monday verification** — commit `866face`. |
+| **Verified S74 — on the live stop, not by manual invocation** | The `NOT verified` row above named the correct fallback and the correct test. Both were executed. Fallback applied: **`KillSignal=SIGINT`** on `merdian-wsfeed.service` (splice with fail-loud assertions, backup `.PRE_S74`, `daemon-reload`, **no restart**). Measured on the **live 10:05 UTC systemd stop**: `Stopping 10:05:01` → `Deactivated successfully 10:05:02`; `Result=success`; `ExecMainStatus=0` — against ~90 s / `failed (Result: timeout)` / `code=killed signal=KILL` before. Application log: `Received signal 2 -- clean shutdown requested`. |
+| **Diagnosis corrected** | **The S72 handler was correct all along.** It was never reached: KiteTicker's Twisted reactor installs its own SIGTERM handler, so SIGTERM never arrived at `install_signal_handlers()` and the process was always SIGKILLed after the 90 s `TimeoutStopSec` default. Twisted installs a **SIGINT** handler by default and ignores SIGTERM unless one is registered — hence `KillSignal=SIGINT`. The S73 framing (*the handler is present and insufficient, not untested*) is superseded: it is present, sufficient, and was simply unreachable over SIGTERM. |
+| **`SuccessExitStatus` deliberately left empty** | As this TD's own text warned. Relabelling a genuine kill as success would have hidden the next real hang. |
+| **Second-order — this is what closes the alert channel** | `OnFailure=` no longer fires on healthy shutdowns, so `WSFEED_ALERTS` can distinguish good days from bad **for the first time**. That in turn closes **TD-S71-NEW-4** (`systemctl is-active` can never answer feed health) — the healthy and broken paths no longer share a terminal state. |
+| **Status** | **RESOLVED S74** — S72 code `866face` + S74 unit-file `KillSignal=SIGINT`. **Exposure recorded:** the unit file is on-box and **outside git**; twenty units and three timers have no version control. |
 
 ### TD-S72-NEW-7 (S2 priority — **RESOLVED S72**) — the EOD health check read a `cron.log` that logrotate empties 45 minutes before it runs, and documented a path that does not exist
 
@@ -519,7 +598,9 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Cost to fix** | ~20 min including one trading day of observation. |
 | **Blocked by** | nothing. Feeds TD-S69-NEW-2. |
 | **Cross-ref** | TD-S69-NEW-2 (health-check coverage) · TD-S69-NEW-6 (token rotation routine). |
-| **Status** | **OPEN.** |
+| **Resolution — S74 (second-order, via TD-S72-NEW-6)** | **CLOSED.** The `KillSignal=SIGINT` fix on `merdian-wsfeed.service` was verified on the **live 10:05 UTC stop**, not by manual invocation: `Stopping 10:05:01` → `Deactivated successfully 10:05:02`, `Result=success`, `ExecMainStatus=0`, against ~90 s / `failed (Result: timeout)` / `code=killed signal=KILL` before. The application log confirms the mechanism directly — `Received signal 2 -- clean shutdown requested`. **The healthy path and the broken path no longer share a terminal state**, which is exactly this TD's complaint: `systemctl is-active` can now answer the question. |
+| **Correction to the *Proper fix* as filed** | This TD proposed `KillSignal=SIGKILL` **plus `SuccessExitStatus=SIGKILL`**. The second half was **not** applied and was deliberately rejected — relabelling a genuine kill as success would hide the next real hang, restoring the ambiguity by a different route. The shipped fix is `KillSignal=SIGINT` alone, which makes the clean path genuinely clean rather than making the dirty path look clean. Twisted installs a SIGINT handler by default and ignores SIGTERM unless one is registered; that, not the S72 handler, was the missing piece. |
+| **Status** | **RESOLVED S74** — `merdian-wsfeed.service` `KillSignal=SIGINT`, backup `.PRE_S74`, `daemon-reload`, no restart. **The unit file is on-box and outside git** (TD-S74 exposure: twenty units and three timers have no version control). |
 
 ### TD-S71-NEW-5 (S3 priority) — `run_ingest.sh` `set -eo pipefail` makes its own `END … rc=` line unreachable on failure
 

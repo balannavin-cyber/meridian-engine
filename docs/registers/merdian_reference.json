@@ -4801,10 +4801,17 @@
       "truncated_each_run": false
     }
   },
-  "version": "v51",
-  "last_updated_session": "Session 71",
-  "last_updated_date": "2026-08-29",
+  "version": "v52",
+  "last_updated_session": "Session 73",
+  "last_updated_date": "2026-09-06",
   "change_log": [
+    {
+      "session": "S73",
+      "date": "2026-09-06",
+      "type": "Claude Code stood up on EC2 for the first time. One TD fixed end to end; four findings the fix surfaced rather than produced. ADRs_NEW=0. PASS, doc-close PARTIAL.",
+      "summary": "AGENT SURFACE. Sibling clone ~/meridian-cc referenced by no crontab line and no systemd unit (verified against all 53 cron lines and all 20 units), so production is read-only-from-git by construction - stricter than ADR-006, not an exception to it. .claude/settings.json at deny 25 / ask 16 / allow 0, verified live in /permissions, and UNTRACKED: the only governance artefact outside version control (TD-S73-NEW-7). GUARDRAILS 7.3 CLOSED ACROSS ALL 86 root scripts registering --dry-run, not the ten sampled: 85 of 86 write on a bare call and zero carry default=. The guardrails' own grep recipe is defective - it silently drops the 21 sys.argv-based scripts including ws_feed_zerodha.py, and the ten-file sample was all-argparse, which is why the gap never showed. TD-S72-NEW-9 RESOLVED (2c26cfe): eod_health_check.py gains an NA verdict; FAIL reserved for newest.date() < sess_date, NA when newest.date() > sess_date because equity_intraday_last is an upsert holding one generation and the audited date was overwritten. Verified live 14/14 predictions same-day with no verdict changed; the NA branch fired on --date 2026-08-14 against a session healthy in every other check. THE FIX IS ONE INSTANCE OF A CLASS - option_chain_snapshots min(ts) 2026-08-24, ~11-12 day retention horizon, 0 rows for 08-14 while gamma_metrics held 84/83 for that date and gamma derives from the chain: the chain was present and aged out, so the check read a rolling buffer's horizon as an outage (TD-S73-NEW-3). CHAIN COVERAGE GAP 2026-06-03 to 2026-08-24 in neither chain table - only two tables queried, so no loss is claimed; UNVERIFIED (TD-S73-NEW-5). The option_chain_snapshots 68,738 row floor cites a 45-day census impossible against an 11-day table (TD-S73-NEW-4). eod_health_check.py has NO SCHEDULED INVOKER on either surface - fourth instance of that class, and it amends TD-S72-NEW-7's inferred 00:45 UTC premise (TD-S73-NEW-6). TWO REPO-ROOT WRITERS NO REGISTER DESCRIBED: shadow_runner.log at 274,528,648 bytes outside logrotate while its cron line's visible redirect target IS covered (TD-S73-NEW-1), and a directory literally named C:\\GammaEnginePython\\heartbeats on the Linux host with an unidentified writer (TD-S73-NEW-2). TDs_NEW=11 (TD-S73-NEW-1..11; NEW-11 RESOLVED same session), TDs_RESOLVED=1 carried (TD-S72-NEW-9), ADRs_NEW=0. Rule 11.1 reverse index-health check RUN and NOT clean: ADR-017 row linkless though its file exists, ADR-019 accepted but held in the reserved table as a malformed 7-field row in a 4-column table, ADR-010 rowless with two files on disk. Assumption Register D.31 added: 8 rows, all REFUTED - six the assistant's own, two the agent's self-scored; the shape is evidence available and not read. Nine commits 2c26cfe..2ce1b58 on branch s73/td-s72-new-9-not-auditable, pushed; main untouched at 7d401d9, nothing merged.",
+      "docs_updated": "partial"
+    },
     {
       "session": "S72",
       "date": "2026-09-05",

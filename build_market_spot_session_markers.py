@@ -145,18 +145,17 @@ def pick_last_row_in_window(symbol: str, start_ist: datetime, end_ist: datetime)
 
 
 def get_premarket_ref(symbol: str, trade_date: date) -> dict[str, Any] | None:
-    exact = pick_first_row_in_window(
-        symbol,
-        ist_dt(trade_date, 9, 7, 30),
-        ist_dt(trade_date, 9, 8, 30),
-    )
-    if exact:
-        return exact
-
+    # S74: the pre-open call auction close became random 09:08-09:10 on
+    # 2026-09-07, and the capture cron moved 09:08 -> 09:11 on 2026-08-24.
+    # Both prior windows closed at 09:08, so premarket_ref was NULL for every
+    # session from 2026-08-24 onward (capture_quality = MISSING, 11 sessions).
+    # Anchor on the market open (09:15, stable) not the auction close (twice
+    # reformed). Last row before the open. Upper bound 09:14:59 cannot reach
+    # the ~09:16 dhan_charts_intraday rows that feed open_0915.
     return pick_last_row_in_window(
         symbol,
         ist_dt(trade_date, 9, 0, 0),
-        ist_dt(trade_date, 9, 8, 59),
+        ist_dt(trade_date, 9, 14, 59),
     )
 
 

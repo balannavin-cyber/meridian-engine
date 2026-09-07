@@ -1358,3 +1358,68 @@ EBS root 66%, logrotate capping growth. Running kernel `6.8.0-1052-aws` while `/
 ---
 
 *Deployment Topology updated Session 72, 2026-09-05 (§S72 — crontab 52→53 with the Pine invoker at `52 10 * * 1-5` executing ADR-023 D1 Decision A; `aws_crontab.txt` committed from EC2 as a deliberate and recorded exception to the Local→box direction; **the systemd second scheduling surface documented for the first time** — five units including `merdian-wsfeed-stop.timer`, a daily production stop invoker that appeared in no crontab and no register and read as unexplained throughout the 09-04 investigation; four observability channels tabulated that report identically on healthy and broken days, with logrotate exonerated; feed failure rate measured at 7/33 ≈ 21% across three distinct mechanisms, two of which were previously mis-attributed and one of which is not in the feed at all; the cross-tier verification rule that corrects Doc Protocol v4's byte-size discipline; Claude Code readiness with credentials rotated and rollback tagged). HEAD `4d40ff3`. Previous: Session 71, 2026-08-22→29 (§S71).*
+
+## §S73 — Session 73 topology changes (2026-09-06)
+
+### S73.A — A second working tree on EC2
+
+`i-0878c118835386ec2` now carries **two** clones of `meridian-engine`. The split is the isolation mechanism, not a convenience: the agent never edits the tree the schedulers run.
+
+| Tree | Role | Referenced by a scheduler? |
+|---|---|---|
+| `~/meridian-engine` | **Production.** Every crontab line and every systemd unit resolves inside it. | **Yes** — all 24 cron-scheduled scripts, all 5 wsfeed units |
+| `~/meridian-cc` | **Agent working tree**, created S73 for Claude Code. Edits and commits happen here, on a branch. | **No** — verified against all **53** crontab lines and all **20** units in `/etc/systemd/system/` |
+
+Production is therefore **read-only-from-git by construction**: it only ever `git pull --ff-only`s, and nothing an agent does in `~/meridian-cc` can reach a scheduled job without a pull. This is stricter than ADR-006, not an exception to it — ADR-006 forbids direct edits on the box, and the second tree removes the opportunity rather than relying on the rule.
+
+### S73.B — Deploy direction is inverted, and the registers are stale on it
+
+ADR-006 and Doc Protocol both record the flow as **Local → `git push` → EC2 `git pull`**. S73 produced the **first EC2-authored commits** in the project's history, so that direction no longer describes the deployment.
+
+| Node | Recorded role | Actual role after S73 |
+|---|---|---|
+| `origin/main` (GitHub) | Transport | **Canonical** |
+| Local Windows | Producer | Consumer |
+| `~/meridian-engine` | Consumer | Consumer |
+| `~/meridian-cc` | *(did not exist)* | Consumer, **and producer on a branch** |
+
+**Status: UNRATIFIED.** This is a proposed correction, recorded here so the discrepancy is not silently absorbed. It is a documentation correction rather than a new decision — the topology changed when the second tree was created; the registers have not yet been updated to match. Ratifying it means amending ADR-006's deploy-direction statement and the corresponding Doc Protocol line in the same pass.
+
+### S73.C — Claude Code as an installed host artifact
+
+| Item | State |
+|---|---|
+| Version | **2.1.261**, native installer at `~/.local/bin/claude` |
+| Auth | Max subscription |
+| Managed policy | **None** — no managed-policy file exists on Pro/Max, so `.claude/settings.json` is the **sole** enforcement layer |
+| Update channel | `autoUpdatesChannel` pinned to `stable`, `minimumVersion` `2.1.261` |
+| Remote Control | **Per-session.** Must be disconnected on each launch; it does not persist a setting |
+| `.claude/settings.json` | **Untracked.** deny 25 / ask 16 / allow 0, verified live in `/permissions`. The only governance artefact outside version control — TD-S73-NEW-7 |
+
+The absent managed policy is the load-bearing fact: there is no layer above the permission file, so its counts are the whole enforcement surface and — being untracked — the counts are also the only tamper check.
+
+### S73.D — Scheduling surfaces, re-verified; no change made
+
+| Surface | State | Delta vs S72 close |
+|---|---|---|
+| `crontab -l` | **53 lines** | none |
+| `/etc/systemd/system/` | **20 units, 3 timers** (`merdian-wsfeed-start`, `merdian-wsfeed-stop`, `snap.certbot.renew`) | none |
+
+**No crontab and no systemd change was made this session.** Recorded so a later reader does not attribute the S72 `52 → 53` change to S73.
+
+### S73.E — Disk trajectory, and two writers outside logrotate's scope
+
+Root filesystem **65% used, 2.8 G free**, against **66% / 2.7 G at S71** — free space *rose* across ten days, so the S71 logrotate install is holding the trajectory rather than merely slowing it.
+
+That trajectory is not the whole picture. Two writers sit outside `/etc/logrotate.d/meridian`:
+
+| Path | Size | Note |
+|---|---|---|
+| `~/meridian-engine/shadow_runner.log` | **274,528,648 bytes** | Repo root, outside logrotate's two globs; its crontab line's visible redirect target *is* covered. TD-S73-NEW-1 |
+| `~/meridian-engine/C:\GammaEnginePython\heartbeats/` | 4.6 MB | A directory whose **name is a Windows path string**, on the Linux host. Writer unidentified. TD-S73-NEW-2 |
+
+Neither is urgent at current free space, and neither is bounded. The logrotate config remains correct for what it covers; its **scope** is the gap.
+
+---
+
+*Deployment Topology updated Session 73, 2026-09-06 (§S73 — a second working tree `~/meridian-cc` on `i-0878c118835386ec2`, referenced by no crontab line and no systemd unit, which makes production read-only-from-git by construction; the deploy direction recorded by ADR-006 and Doc Protocol is now inverted by the first EC2-authored commits and a corrected topology is proposed **UNRATIFIED**; Claude Code 2.1.261 catalogued as a host artifact with no managed policy above its untracked permission file; scheduling surfaces re-verified at 53 cron lines and 20 units with **no change made this session**; and disk at 65%/2.8 G improving under logrotate while two writers remain outside its scope. The `## Update log` table at line 848 remains frozen at Session 67 and is filed as TD-S73-NEW-10, not fixed here.)*

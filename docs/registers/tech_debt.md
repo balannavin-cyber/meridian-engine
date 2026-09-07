@@ -57,6 +57,34 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S73-NEW-10 (S3 priority) — the System Map and Deployment Topology `## Update log` tables are frozen at Session 67 while both files record through Session 72
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Neither file is wrong; the table whose job is recording updates is five sessions behind the updates sitting below it. A reader trusting it dates the file to 2026-07-10. |
+| **Discovered** | Session 73 (2026-09-06), surveying both files' section format before appending §S73. |
+| **Component** | `docs/registers/MERDIAN_System_Map.md:560` · `docs/registers/MERDIAN_Deployment_Topology.md:848` |
+| **Symptom** | Both files carry a dedicated `## Update log` section — a `\| Date \| Session \| Event \|` table — closed by a footer reading *"Last updated Session 67, 2026-07-10"*. Both files contain §S68, §S69, §S70, §S71 and §S72 sections below that point. |
+| **Root cause** | Two update-log conventions coexist and only one is maintained. Sessions 68–72 each appended a **per-section closing footer** (`*System Map updated Session N, …*`) and left the document-level table alone. The per-section footers are current; the table is not. |
+| **Residual** | §S71 has **no closing footer in either file**, so even the maintained convention has a gap — consistent with §S71 being misplaced: the section order runs §S68 → §S69 → **§S71 → §S70** → §S72 in both files, identically. |
+| **Proper fix** | Decide which convention is canonical and retire the other. If the table stays, backfill S68–S73 and add it to the doc-close checklist; if the per-section footers stay, delete the table rather than leaving a stale one. **Do not maintain both.** |
+| **Cross-ref** | TD-S73-NEW-11 (same class, Decision Index) · Doc Protocol v4 Rule 3 (session-end checklist). |
+| **Status** | **OPEN.** |
+
+### TD-S73-NEW-11 (S3 priority) — the Decision Index carries four stacked stale footers, none citing the session the file actually records
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The file's own provenance line is unreliable, and there are four of them disagreeing with each other. |
+| **Discovered** | Session 73 (2026-09-06), surveying the file before appending the S73 maintenance note. |
+| **Component** | `docs/decisions/MERDIAN_Decision_Index.md:130-133` |
+| **Symptom** | Four consecutive lines at EOF each begin `*MERDIAN Decision Index — established Session 23, 2026-05-09. Prepend-only. …*`. They are **not duplicates** — lengths 582 / 647 / 594 / 806, four distinct hashes — and they diverge in their maintenance clause: L130 cites **Session 59**, L131 **S39**, L132 an unnamed session, L133 **S39** again. **None cites Session 72**, which the file records at line 120. |
+| **Root cause** | Footers were **appended rather than replaced** across sessions. The absent trailing newline on the file (last byte is `*`) is consistent with that mechanism: each append landed after an unterminated line. |
+| **Why it matters** | Every other canonical file's footer is the reader's answer to "how current is this?". Here the answer is four different answers, the newest of which is three sessions older than the newest content. Rule 11.1's index-health check verifies ADR rows and source links; it does not verify the footer. |
+| **Proper fix** | Collapse to **one** footer citing the current session, and delete the other three. Add footer currency to the Rule 11.1 check so it cannot silently drift again. Restore the trailing newline in the same pass. |
+| **Cross-ref** | TD-S73-NEW-10 (same class, System Map / Topology) · Doc Protocol v4 Rule 11.1. |
+| **Status** | **OPEN.** |
+
 ### TD-S73-NEW-1 (S2 priority) — `shadow_runner.log` is a 262 MB live log at repo root, outside logrotate's scope, while its cron line's visible redirect target is covered
 
 | Field | Value |

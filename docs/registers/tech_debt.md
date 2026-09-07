@@ -83,7 +83,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Why it matters** | Every other canonical file's footer is the reader's answer to "how current is this?". Here the answer is four different answers, the newest of which is three sessions older than the newest content. Rule 11.1's index-health check verifies ADR rows and source links; it does not verify the footer. |
 | **Proper fix** | Collapse to **one** footer citing the current session, and delete the other three. Add footer currency to the Rule 11.1 check so it cannot silently drift again. Restore the trailing newline in the same pass. |
 | **Cross-ref** | TD-S73-NEW-10 (same class, System Map / Topology) · Doc Protocol v4 Rule 11.1. |
-| **Status** | **OPEN.** |
+| **Status** | **RESOLVED S73** — the four stacked footers at lines 130-133 were replaced by a single footer citing Session 73, 2026-09-06, carrying a maintenance clause in the established form, and the file's missing trailing newline was restored in the same pass. Verified: `*MERDIAN Decision Index — established` now occurs exactly once and the file ends with a newline. The *Proper fix*'s second clause — adding footer currency to the Rule 11.1 check so it cannot silently drift again — remains **OPEN**. |
 
 ### TD-S73-NEW-1 (S2 priority) — `shadow_runner.log` is a 262 MB live log at repo root, outside logrotate's scope, while its cron line's visible redirect target is covered
 

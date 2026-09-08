@@ -326,3 +326,161 @@ sessions; `NO_FLIP` appears on **4** NIFTY and **5** SENSEX sessions. Because th
 selected on the sign of `net_gex`, each `LONG_GAMMA`↔`SHORT_GAMMA` change inside a session is
 also a change of which of the two Part A algorithms produced the number.
 
+
+---
+
+## PART C — consumers
+
+### How liveness was decided
+
+Liveness was taken from four surfaces only, never from a filename:
+
+```
+crontab -l                                  # 37 active entries
+systemctl list-timers --all --no-pager      # 17 timers
+/usr/bin/grep ExecStart /etc/systemd/system/*.service
+ps -eo pid,etime,args                       # processes running at audit time
+/usr/bin/grep -o '"[a-zA-Z0-9_/.]*\.py"' run_merdian_shadow_runner_aws.py  # orchestrator children
+```
+
+**A measurement note, because it changed the numbers below.** In this shell `grep` is a
+function, not the binary (`type grep` → `grep is a function`), and it filters recursive
+results: `grep -rln "flip_level" --include='*.py' .` returned zero `*_PRE_*.py` matches while
+`grep -ln "flip_level" compute_gamma_metrics_local_PRE_S37.py` matched that same file 13
+times. Every enumeration in this Part was re-run with `/usr/bin/grep` after that was found.
+The file count changed from 49 to 81; the set of *live* files did not change.
+
+The orchestrator matters because most compute scripts are not in cron themselves. One cron
+entry — `*/5 03-09 * * 1-5 … run_merdian_shadow_runner_aws.py` — spawns them. Its child list
+(read from the file, L181–254) is:
+
+```
+compute_gamma_metrics_local.py     compute_volatility_metrics_local.py
+build_momentum_features_local.py   build_wcb_snapshot_local.py
+build_market_state_snapshot_local.py   compute_structural_divergence_local.py
+compute_options_flow_local.py      compute_basis_context_local.py
+build_trade_signal_local.py
+```
+
+**This box only.** These four surfaces describe the AWS host `/home/ssm-user/meridian-engine`.
+Windows Task Scheduler on the Local host is a separate surface that cannot be queried from
+here, so no claim is made about it either way.
+
+### Every file referencing the four fields
+
+`/usr/bin/grep -rln "flip_level\|flip_distance\|gamma_zone"` over
+`*.py *.sql *.pine *.sh *.bat *.ps1` returns **81 files** (excluding `__pycache__`).
+Of those, **5 are live**:
+
+| file | in crontab | orchestrator child | systemd unit | running at audit time |
+|---|---|---|---|---|
+| `compute_gamma_metrics_local.py` | no | **YES** | no | no |
+| `build_market_state_snapshot_local.py` | no | **YES** | no | no |
+| `build_trade_signal_local.py` | no | **YES** | no | no |
+| `accrue_expiry_outcomes.py` | **YES** (`15 16 * * 1-5`) | no | no | no |
+| `relate_ambient_to_open_local.py` | **YES** (`55 3 * * 1-5`) | no | no | no |
+
+The remaining **76** are on none of the four surfaces. By filename group:
+
+| group | count | matched by |
+|---|---:|---|
+| dated backups / checkpoints of the live files | 36 | `PRE_`, `.pre_`, `phase_b`, `checkpoint`, `_backup`, `BAD_SYNCED`, `.bak` |
+| `backfill_*` | 8 | prefix |
+| `canonical_*` research scripts | 6 | prefix |
+| `sql/*.sql` definition files | 6 | path |
+| `replay/*` | 4 | path |
+| one-off diagnostics and everything else | 16 | remainder |
+
+The backup group is the largest single category: 36 of the 81 files that mention these fields
+are dated copies of `build_trade_signal_local.py`, `compute_gamma_metrics_local.py`,
+`build_market_state_snapshot_local.py` and `merdian_live_dashboard.py`.
+
+Two files worth naming individually because their names suggest otherwise:
+
+- **`merdian_live_dashboard.py`** — absent from `crontab -l`, absent from every
+  `ExecStart` in `/etc/systemd/system/`, and absent from `ps -eo args` at audit time.
+- **`compute_smdm_local.py`** and **`detect_structural_manipulation.py`** — absent from
+  `crontab -l` and from the orchestrator child list in `run_merdian_shadow_runner_aws.py`.
+
+### A sixth live consumer, outside the repo
+
+The Marketview frontend reads `gamma_metrics` directly over PostgREST. It is live:
+
+```
+systemctl is-active nginx        -> active
+systemctl is-active oauth2-proxy -> active
+/etc/nginx/sites-enabled/marketview -> /etc/nginx/sites-available/marketview  (symlink present)
+   root /var/www/marketview;
+/var/www/marketview/index.html references assets/index-dwQ-izwF.js
+grep flip_level /var/www/marketview/assets/index-dwQ-izwF.js  -> match in the served bundle
+```
+
+Source at `~/meridian-connect` (`7b60d01`), `src/marketview/state.ts:43`:
+`const flipLevel = (g.flip_level ?? null)`. Its uses are `sections.tsx:82-83` (a "Flip Level"
+tile with a `% from spot` subtitle), `ui.tsx:337-340` (a dashed amber vertical line and label
+on the strike chart) and `AmbientTrajectory.tsx:349-357` (a labelled line on the WEEK view).
+
+### Which of these gate a trade or a signal
+
+**The value of `flip_level` gates nothing.** Traced through every live reader:
+
+| consumer | what it does with the fields | gate? |
+|---|---|---|
+| `compute_gamma_metrics_local.py` | writes them | writer |
+| `build_market_state_snapshot_local.py` L186–198 | copies `flip_level`, `flip_distance`, `flip_distance_pct` into the market-state dict under five key names, and L190 maps `gamma_row["regime"]` to `gamma_regime` | no |
+| `build_trade_signal_local.py` L631–638 | `flip_distance_pct` selects one of three **strings** appended to `cautions` — "very near" / "moderately near" / "relatively far". No confidence change, no action change | no |
+| `build_trade_signal_local.py` L543–544, L882–883 | `flip_level` and `flip_distance` read and passed straight through into the `signal_snapshots` row | no |
+| `relate_ambient_to_open_local.py` L108–112 | `flip` interpolated into a prose string written to `session_prior` | no |
+| `accrue_expiry_outcomes.py` L159 | first cycle's `flip_level` stored as `expiry_outcomes.open_flip_level`. The `resolved` label (L142–145) is computed from `open_pin` — spot rounded to strike step — not from flip | no |
+| Marketview | tile, chart line, chart label | no |
+
+`cautions` is appended to in many places and read in exactly one: L895, where it is written
+into the output row. It is never a condition. Confirmed by
+`grep -n "cautions" build_trade_signal_local.py | grep -v 'cautions.append'` — the only
+non-append hits are the declaration (L557), the output assignment (L895) and a DTE-gate
+filter that removes strings from the list (L1184–1198).
+
+### But the presence of `flip_level` does gate
+
+There is one path from `flip_level` to a trade decision, and it carries no information about
+the level itself — only whether it exists:
+
+```
+compute_gamma_metrics_local.determine_regime(net_gex, flip_level)   L536-539
+    flip_level is None            -> "NO_FLIP"
+    net_gex >= 0                  -> "LONG_GAMMA"
+    net_gex <  0                  -> "SHORT_GAMMA"
+        |
+        v  gamma_metrics.regime
+build_market_state_snapshot_local.py L190   "gamma_regime": gamma_row.get("regime")
+        |
+        v  market_state_snapshots.gamma_regime
+build_trade_signal_local.py L235-236, L601-618
+    SHORT_GAMMA  -> confidence += 8.0 when direction_bias is BULLISH/BEARISH   (L601-604)
+    LONG_GAMMA   -> trade_allowed = False                                       (L605-611)
+    NO_FLIP      -> trade_allowed = False                                       (L612-618)
+```
+
+So `trade_allowed` is set False whenever `flip_level` is NULL, and also whenever it is
+non-NULL with `net_gex >= 0`. The only combination that leaves the trade gate open is a
+non-NULL flip with negative `net_gex`. `gamma_regime` also feeds `derive_entry_quality`
+(L338–345), which returns a better grade for `SHORT_GAMMA`.
+
+Measured frequency of each branch across the whole table
+(`GET /gamma_metrics?select=*&limit=0&symbol=eq.<sym>&regime=eq.<r>` with `Prefer: count=exact`):
+
+| regime | NIFTY rows | share | SENSEX rows | share | effect on `trade_allowed` |
+|---|---:|---:|---:|---:|---|
+| `LONG_GAMMA` | 3,593 | 73.4% | 3,050 | 62.9% | set to False |
+| `SHORT_GAMMA` | 1,140 | 23.3% | 1,730 | 35.7% | left True, +8 confidence |
+| `NO_FLIP` | 161 | 3.3% | 72 | 1.5% | set to False |
+| NULL `regime` | 0 | 0.0% | 0 | 0.0% | — |
+
+Totals: NIFTY 4,894 rows, SENSEX 4,852 rows. On 76.7% of NIFTY cycles and 64.4% of SENSEX
+cycles, the regime derived from `flip_level` sets `trade_allowed = False`.
+
+`gamma_zone` — the third field in scope — is written by `compute_gamma_metrics_local.py`
+(L958) and read by the Marketview bundle (`k.gamma_zone` in the served asset). It appears in
+no condition in any of the five live Python consumers; `build_trade_signal_local.py` L631–638
+recomputes the same three thresholds inline from `flip_distance_pct` rather than reading the
+stored `gamma_zone`.

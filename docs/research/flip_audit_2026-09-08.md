@@ -484,3 +484,129 @@ cycles, the regime derived from `flip_level` sets `trade_allowed = False`.
 no condition in any of the five live Python consumers; `build_trade_signal_local.py` L631–638
 recomputes the same three thresholds inline from `flip_distance_pct` rather than reading the
 stored `gamma_zone`.
+
+---
+
+## PART D — does price react at it
+
+Descriptive only. No confidence intervals are computed and no verdict is stated.
+
+### Construction
+
+Per session, `flip_level` is taken from the **first `gamma_metrics` run at or after 03:45 UTC**
+(09:15 IST) that has a non-null `flip_level`:
+
+```
+GET /gamma_metrics?select=ts,flip_level,spot,regime&symbol=eq.<sym>
+    &ts=gte.<day>T03:45:00+00:00&ts=lt.<day>T09:45:00+00:00
+    &flip_level=not.is.null&order=ts.asc&limit=1
+```
+
+Price is `market_spot_snapshots` over the same window, paged in full and reduced to one
+observation per clock minute (last tick in that minute):
+
+```
+GET /market_spot_snapshots?select=ts,spot&symbol=eq.<sym>
+    &ts=gte.<day>T03:45:00+00:00&ts=lt.<day>T09:45:00+00:00
+    &order=ts.asc&offset=<n>&limit=1000
+```
+
+Timestamps are parsed with the microsecond fraction normalised to exactly six digits before
+`fromisoformat`, because `market_spot_snapshots.ts` carries variable precision
+(`2026-06-12T05:30:08.9149+00:00` raises `ValueError` without it).
+
+Definitions used:
+
+- **within the band** — `abs(spot − flip) / flip <= 0.001` (0.1%).
+- **crossing** — a change in the sign of `(spot − flip)` between consecutive observed minutes.
+  Minutes where spot equals flip exactly do not themselves count as a crossing.
+- **30-minute forward move** — from each observed minute `t` where `t+30min` is also observed,
+  `(spot[t+30] − spot[t]) / spot[t] × 100`. Matched on wall-clock, not on row offset.
+- **autocorrelation of consecutive 30-minute moves** — for each `t` where `t+30` and `t+60` are
+  both observed, the pair `(r1, r2)` with `r1` over `[t, t+30]` and `r2` over `[t+30, t+60]`.
+  Pearson correlation over all such pairs, pooled across sessions, bucketed by whether `t` was
+  inside the band. Windows overlap between successive `t`.
+
+### Coverage, and the sessions excluded
+
+66 sessions have `gamma_metrics` rows (2026-06-09 .. 2026-09-08), enumerated by day-scoped
+`limit=1` probe. The sweep recorded **zero unresolved cells** (`unresolved: []`), and the
+aggregation asserts that before computing anything.
+
+**63 of 66 sessions were used per symbol.** The six excluded symbol-sessions, each with the
+measured reason:
+
+| session | symbol | reason |
+|---|---|---|
+| 2026-06-09 | NIFTY | zero rows matched `flip_level=not.is.null` in `[03:45, 09:45)` UTC |
+| 2026-06-09 | SENSEX | same |
+| 2026-06-11 | NIFTY | same |
+| 2026-06-11 | SENSEX | flip present (76,413.68 at 04:11:10) but 3 observed spot minutes |
+| 2026-06-26 | NIFTY | flip present (24,483.80 at 04:15:07) but 0 observed spot minutes |
+| 2026-06-26 | SENSEX | flip present (78,991.05 at 04:15:07) but 0 observed spot minutes |
+
+2026-06-26 was checked beyond the window: `GET /market_spot_snapshots?select=ts&ts=gte.2026-06-26
+&ts=lt.2026-06-26T23:59:59+00:00&limit=1` returns zero rows for the whole day.
+
+### 1 & 2 — time spent at the level, and crossings
+
+| | NIFTY | SENSEX |
+|---|---:|---:|
+| sessions | 63 | 63 |
+| minutes observed, total | 22,358 | 22,352 |
+| median minutes observed per session | 359 | 359 |
+| **minutes within 0.1% of flip, total** | **1,954** | **2,610** |
+| as a share of observed minutes | 8.7% | 11.7% |
+| median minutes within, per session | **0** | **0** |
+| max minutes within, in one session | 265 | 238 |
+| **crossings, total** | **164** | **236** |
+| median crossings per session | **0** | **0** |
+| max crossings in one session | 28 | 32 |
+
+The per-session medians are zero for both measures on both symbols, so the distribution is
+given rather than left to the mean:
+
+| minutes within 0.1% of flip | NIFTY sessions | SENSEX sessions |
+|---|---:|---:|
+| zero | **43** | **38** |
+| 1–30 | 5 | 4 |
+| 31–100 | 7 | 12 |
+| more than 100 | 8 | 9 |
+
+Among the sessions that have any minutes in the band at all — 20 for NIFTY, 25 for SENSEX —
+the median is 80 and 87 minutes respectively.
+
+| crossings | NIFTY sessions | SENSEX sessions |
+|---|---:|---:|
+| zero | **47** | **43** |
+| 1–5 | 8 | 5 |
+| 6–20 | 6 | 11 |
+| more than 20 | 2 | 4 |
+
+Among sessions with at least one crossing — 16 NIFTY, 20 SENSEX — the median is 8 and 9.
+
+So on 43 of 63 NIFTY sessions and 38 of 63 SENSEX sessions, price spent **zero** minutes within
+0.1% of the flip taken at the open; on 47 and 43 sessions respectively it **never crossed it**.
+
+### 3 — mean absolute 30-minute forward move, inside vs outside the band
+
+| | NIFTY | SENSEX |
+|---|---:|---:|
+| mean abs 30m forward move, **within** band | 0.0838% | 0.0822% |
+| N | 1,868 | 2,491 |
+| mean abs 30m forward move, **outside** band | 0.0836% | 0.0885% |
+| N | 18,577 | 17,942 |
+| difference (within − outside) | +0.0002 pp | −0.0063 pp |
+
+### 4 — autocorrelation of consecutive 30-minute moves, same split
+
+| | NIFTY | SENSEX |
+|---|---:|---:|
+| autocorrelation, **within** band | **+0.1381** | **−0.1138** |
+| N pairs | 1,752 | 2,302 |
+| autocorrelation, **outside** band | +0.0626 | +0.0876 |
+| N pairs | 16,790 | 16,222 |
+
+The within-band figures carry opposite signs on the two symbols. Both outside-band figures are
+positive and of similar size. The pairs overlap between successive starting minutes, so the
+N values are counts of overlapping windows, not of independent observations.

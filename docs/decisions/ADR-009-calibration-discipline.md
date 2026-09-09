@@ -73,6 +73,22 @@ Operational discipline:
 
 Logging-only graduation: if the dimension has future-analysis value (e.g., the underlying state variable might compound with another gate in Phase 1+ work), ship the data-capture writer + backfill but do not consume the data in any signal-time gate. The dimension becomes research-available without a production-decision dependency.
 
+### AMENDMENT 1 (S75 2026-09-09) — a null model must constrain the real arm on the same axis it constrains the donors
+
+Added Session 75 as the fourth governance sub-rule. It is a **template defect**, not a finding about one study, which is why it is recorded here rather than only in the study that surfaced it.
+
+**The defect.** The GEX zone-utility pre-registration builds its null by drawing donor sessions matched to within **±0.5% of the recipient session's open**. The real arm carries no such constraint: the zone's own reference spot — the spot at the cycle the zone was computed from — is unconstrained relative to that same open. The two arms are therefore not matched on the axis the null claims to control.
+
+**Measured exceedance** *(operator-supplied; from analysis not present in this repository)*: the real zone's reference spot falls outside the ±0.5% band the donors are held to on **26.1% of NIFTY sessions and 32.9% of SENSEX sessions**.
+
+**Why this is a template defect and not a study defect.** Any pre-registration that constructs a matched null inherits the same hazard: the matching predicate is written for the comparison arm, applied to the comparison arm, and silently not applied to the arm under test. The asymmetry is invisible in the design document because the constraint appears once, in the paragraph describing the donors.
+
+**What it does and does not do to the S74 verdict.** PIN's **NO** stands as measured *against that null* — "the shipped pin zone adds nothing over a spot-matched donor zone". It does **not** license the stronger reading "shipped pin zones do not hold price", because on roughly a quarter to a third of sessions the shipped zone is not a member of the population the null was drawn from. The distinction is recorded at Assumption Register **§D.33.4**.
+
+**The rule.** A pre-registration that matches a null on any axis must state, in the same paragraph, what constrains the real arm on that axis — and if nothing does, the design must say so before measurement. "Matched" is a claim about both arms or it is not a claim.
+
+**Second-order.** This study also asserted a premise it never tested — that the maximum-positive-GEX strike "sits near spot" (pre-registration §1 and §3). Measured over all 9,820 `gamma_metrics` rows carrying `max_gamma_strike`, that strike is **above** spot on **99.1% of NIFTY and 99.4% of SENSEX** rows, equal on **zero** (§D.33.8). A pre-registration's stated justification is part of its design and is subject to the same discipline as its hypotheses: **assert it, then test it, before measuring anything downstream of it.** That premise is what **ADR-024** is owed on.
+
 ---
 
 ## Case studies

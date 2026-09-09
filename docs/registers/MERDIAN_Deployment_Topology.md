@@ -1424,6 +1424,43 @@ Neither is urgent at current free space, and neither is bounded. The logrotate c
 
 *Deployment Topology updated Session 73, 2026-09-06 (§S73 — a second working tree `~/meridian-cc` on `i-0878c118835386ec2`, referenced by no crontab line and no systemd unit, which makes production read-only-from-git by construction; the deploy direction recorded by ADR-006 and Doc Protocol is now inverted by the first EC2-authored commits and a corrected topology is proposed **UNRATIFIED**; Claude Code 2.1.261 catalogued as a host artifact with no managed policy above its untracked permission file; scheduling surfaces re-verified at 53 cron lines and 20 units with **no change made this session**; and disk at 65%/2.8 G improving under logrotate while two writers remain outside its scope. The `## Update log` table at line 848 remains frozen at Session 67 and is filed as TD-S73-NEW-10, not fixed here.)*
 
+## §S75 — Session 75 (2026-09-08/09): the AWS↔Local boundary did not move, and a whole class of writer sits outside it
+
+**No boundary change.** Nothing was deployed, scheduled, disabled or migrated. This section exists because S75 established that **the topology as documented has a blind spot**, and a future session searching the host surfaces will otherwise draw the wrong conclusion.
+
+### S75.1 — a deleter that no host surface can see
+
+`gamma_metrics` and `option_chain_snapshots` lose rows daily. The four surfaces this document has always used to answer "what runs" **all read clean**:
+
+| surface | what it showed |
+|---|---|
+| `crontab -l` | 37 entries, 25 distinct scripts. Matching `delet\|cleanup\|archive\|prune\|purge\|retention\|gamma`: **zero** |
+| `systemctl list-timers --all` | only `merdian-wsfeed-start.timer` and `merdian-wsfeed-stop.timer` |
+| `/etc/systemd/system/*.service` `ExecStart` | `ws_feed_zerodha.py`, `wsfeed_alert.sh`, `systemctl stop merdian-wsfeed`, `oauth2-proxy`, OS services |
+| orchestrator child list (`run_merdian_shadow_runner_aws.py` L181–254) | nine compute scripts, **zero** delete constructs |
+
+The repo reads clean too: every `.delete(` / `DELETE FROM` / `TRUNCATE` / `requests.delete` match in any `.py` or `.sh` resolves to a different table, to the `*_replay` set, or to a log string.
+
+**The deleter is `pg_cron jobid 19`, inside the database** — `30 12 * * *`, `select public.cleanup_gamma_engine_data()`. It has **zero callers in the repo**, which is not orphanhood: pg_cron invokes it where no filesystem search can reach.
+
+### S75.2 — the standing constraint this creates
+
+**`cron.job` and `pg_proc` are not reachable through PostgREST.** Measured: `job`, `job_run_details`, `cron_job` and `cron.job` all return `PGRST205`; the `cron` schema is not among the exposed schemas and no RPC of the 38 published wraps a catalog read.
+
+So **anything about pg_cron requires the Supabase SQL editor** — it cannot be answered from this host, from the repo, or over the service-role API. The complete enumeration (operator, SQL editor, `cron.job` LEFT JOIN `pg_proc`) found **exactly two jobs that delete**: jobid 19, and jobid 46 (`*/30 * * * 1-5`, `DELETE FROM public.market_ticks WHERE ts < now() - interval '1 hour'`). Every other job is `net.http_post` to an edge function or `build_market_breadth_latest`, which reads `equity_eod` and deletes nothing.
+
+**Consequence for this document:** the four host surfaces are necessary and **not sufficient** to answer "what writes to, or deletes from, this table". A fifth surface — the database's own scheduler — exists and is queryable only from the SQL editor.
+
+### S75.3 — a non-deleting job with a live defect
+
+`pg_cron jobid 30`, active, `38 3 * * 1-5`, builds its header with `jsonb_build_object('Content-Type','application/json','<secret>')` — three arguments to a function taking alternating key/value pairs, so the secret is a **key with no value**. It is a `net.http_post` job and deletes nothing; its target and body were not read. Separately, the cron secret is stored in plaintext across ~20 `cron.job` command strings. **The value appears in no file, commit message or register** — recorded as an exposure only.
+
+### S75.4 — one new file, on no surface by design
+
+`docs/research/gamma_metrics_tail_probe.py`, committed, read-only, **not scheduled**. A watchdog on §S75.1's retention rule rather than an investigation of it.
+
+---
+
 ## §S74 — Session 74 topology changes (2026-09-07)
 
 ### S74.A — `merdian-wsfeed.service`: `KillSignal=SIGINT`, verified on the live stop

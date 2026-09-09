@@ -246,9 +246,14 @@ name jobid 19 and the `created_at` predicate.
 4. **`gamma_metrics` and `option_chain_snapshots` are moving windows.** Any document
    quoting their month-by-month row counts is a snapshot. The flip audit's Part B table
    for 2026-06 will not reproduce — it was measured when 2026-06-09 still held a row.
-5. **`gex_strike_snapshots` and `volatility_snapshots` were not checked for trimming.**
-   Neither appears in jobid 19's function body, but no other job's body was read. No claim
-   is made about them.
+5. **`gex_strike_snapshots` and `volatility_snapshots` are not trimmed — settled.** The
+   pg_cron enumeration is now complete (`cron.job` LEFT JOIN `pg_proc`, Supabase SQL
+   editor): **exactly two jobs delete anything** — jobid 19 and jobid 46
+   (`market_ticks`, 1 hour). Every other job is `net.http_post` to an edge function or
+   `build_market_breadth_latest`, which reads `equity_eod` and deletes nothing. Neither
+   table is named in either deleting job, and each retains rows well past 90 days (107 d
+   and 526 d respectively). See `docs/research/build_readiness_2026-09-09.md` §4.1 and
+   §4.4. This supersedes the caveat this item originally carried.
 6. **`created_at` vs `ts`** — retention keys on `created_at` and the two diverge by up to a
    day. Any future retention reasoning must use `created_at`.
 

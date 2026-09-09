@@ -89,6 +89,22 @@ gex_cr = (oi_call × gamma_call - oi_put × gamma_put) × spot² × multiplier /
 ```
 where `multiplier` is the index lot/contract multiplier (NIFTY 75, SENSEX 20 — defer to existing `compute_gamma_metrics_local.py` constants). The `oi_call × gamma_call − oi_put × gamma_put` term yields positive (dealer-long) when call writers dominate at the strike, negative (dealer-short) when put writers dominate, matching the convention above.
 
+> **CORRECTION (S75 2026-09-09) — the `multiplier` term above is not in the shipped code, is not needed, and the constants it defers to do not exist.**
+>
+> **What ships.** `compute_gamma_metrics_local.py::signed_gamma_exposure` L132:
+> ```
+> base = gamma * oi * (spot ** 2) / 1e7   # TD-NEW-3: store in Crore
+> ```
+> There is **no multiplier term**. `build_gss_rows` (L1113) accumulates `gex_cr` from this function, so the per-strike column carries the same formula.
+>
+> **The constants named do not exist.** `/usr/bin/grep -nE "^[A-Z_]*(LOT|MULT|CONTRACT)[A-Z_]*\s*=|lot_size|multiplier"` over `compute_gamma_metrics_local.py` returns **nothing**. The instruction to "defer to existing constants" has no referent. Separately, the stated **NIFTY 75** matches neither the file nor `public.instruments`, which records `lot_size` **NIFTY 65 / SENSEX 20** (measured `GET /instruments?select=symbol,lot_size,strike_step`).
+>
+> **And no multiplier is owed.** Dhan reports `oi` **already lot-multiplied**, so applying one would inflate every figure by the lot size. Measured on 2026-09-04, peak-OI strike: **NIFTY `oi_call` = 26,016,315** at strike 24,000 against spot 23,942.7; SENSEX 1,112,980 at 77,000 against 76,702.18. A raw contract count of 26.0M on a single strike is not plausible; at `lot_size` 65 it is ~400k lots, which is. The formula as shipped is correct as to multiplier.
+>
+> **What is not corrected here.** The shipped formula also carries **no `× 0.01` per-1%-move normalisation**, so stored `net_gex` and `gex_cr` are 100× the conventional dealer-gamma-per-1%-move figure. That is a separate question — a unit convention rather than a missing term — and is filed as **TD-S75-NEW-3** rather than decided in this correction. It affects no sign, ranking, regime or zone geometry.
+>
+> Evidence: Assumption Register **§D.33.1** (the missing-multiplier hypothesis, REFUTED on magnitude) and **TD-S75-NEW-1** (the deep-ITM filter asymmetry between `gex_cr` and its neighbouring columns, which this formula does not describe either).
+
 Codified to Assumption Register §D.18.5 at S37 close.
 
 ### 2.4 Writer placement

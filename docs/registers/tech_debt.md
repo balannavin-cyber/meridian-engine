@@ -57,6 +57,49 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S75-NEW-1 (S2 priority) — `build_gss_rows` writes `gex_cr` through the deep-ITM filter while OI and gamma bypass it, so a stored row can disagree with its own recomputation
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** No signal or gate reads `gex_cr` (per `flip_audit_2026-09-08.md` §PART C, the live consumers of the GEX surface are display-only), so nothing trades on it. It matters because ADR-015 §F2 invites read-time recomputation, and a consumer that accepts that invitation gets a different answer from the stored column. |
+| **Filed** | 2026-09-09 (Session 75) |
+| **Component** | `compute_gamma_metrics_local.py` — `build_gss_rows` (L1113) and `signed_gamma_exposure` (L114–133). |
+| **Mechanism — verified in source** | `build_gss_rows` iterates `option_rows_raw`, i.e. **pre-filter**, deliberately, so `oi_call`/`oi_put` reflect full-chain OI (its own docstring says so). It accumulates `oi_call`/`oi_put` from raw `oi` and sets `gamma_call`/`gamma_put` from `gamma_raw` whenever `gamma_raw != 0.0`. But `gex_cr` accumulates `signed_gamma_exposure(row, spot)`, which returns `0.0` for any strike more than 5% from spot whose `\|gamma\| > 5e-5` (the TD-NEW-2 Part A guard, L128–130). **The three columns therefore disagree about which rows count.** |
+| **Measured extent** | Rows with `gex_cr = 0` while `gamma_call` or `gamma_put` is populated — the signature of the guard firing — counted with `count=exact` on `gex_strike_snapshots`: **June NIFTY 1,394 / SENSEX 15,720; July 3,082 / 18,688; August 906 / 11,529; 2026-09-01..08 230 / 787.** SENSEX carries roughly an order of magnitude more than NIFTY in every month, which is TD-S75-NEW-2. |
+| **A supplied example that did not survive measurement** | This entry was drafted from a report that SENSEX 2026-09-04 carried "748 of 10,530 rows with populated OI **and gamma** at `gex_cr = 0`". Measured: total 10,530 and `gex_cr = 0` on **748** both confirm, and all 748 have `oi_call > 0` or `oi_put > 0` — but **zero of them have `gamma_call` or `gamma_put` populated**. Those 748 are the `gamma == 0.0` branch of `signed_gamma_exposure`, not the deep-ITM guard. NIFTY that day: **zero** rows at `gex_cr = 0`. The guard-firing signature is real and is the figure in the row above; 2026-09-04 SENSEX simply is not an instance of it. |
+| **Why the ADR-014 §2.5 falsification rule cannot see it** | That rule checks `sum(gex_cr)` across per-strike rows against `net_gex` in `gamma_metrics`. Both sides are computed from `signed_gamma_exposure`, so both carry the filter identically and the check passes by construction. It is a self-consistency test, not an independent one. |
+| **Proper fix** | Not decided here. Either the three columns are made to agree about the filter, or ADR-015 §F2's recomputation contract is amended to state which rows a recomputation must exclude. It is an ADR-015 question, not a code change. |
+| **Cross-ref** | ADR-015 §F2 · ADR-014 §2.5 · TD-S75-NEW-2 (the symbol-blind threshold that drives the NIFTY/SENSEX asymmetry) · `docs/research/flip_audit_2026-09-08.md`. |
+| **Status** | **OPEN.** |
+
+### TD-S75-NEW-2 (S2 priority) — the deep-ITM gamma threshold is a bare constant, so it is ~3.2× stricter on SENSEX than on NIFTY
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** It biases the primary arm and any ADR-009 cross-symbol replication differently, which is exactly the axis a replication check is supposed to hold fixed. |
+| **Filed** | 2026-09-09 (Session 75) |
+| **Component** | `compute_gamma_metrics_local.py::signed_gamma_exposure`, L128–130. |
+| **Mechanism — verified in source** | The guard is `if strike > 0 and abs(strike - spot) / spot > 0.05: if abs(gamma) > 5e-5: return 0.0`. Both constants are bare literals. **There is no `symbol` argument to the function and no symbol conditioning anywhere in it** — the row dict is not consulted for symbol. The moneyness leg (`0.05`) is scale-free; the gamma leg (`5e-5`) is not, because gamma scales inversely with the underlying's level. |
+| **Measured consequence** | Spot is ~24,300 (NIFTY) against ~77,000 (SENSEX), a ratio of ~3.2. The guard-firing counts in TD-S75-NEW-1 run roughly 10× higher on SENSEX in every month measured. The comment in the source justifies `5e-5` as "~5x typical ATM gamma", a calibration that can only hold for one of the two symbols. |
+| **Why it matters beyond magnitude** | ADR-009's replication design treats the second symbol as an independent check on the first. If the two arms are filtered at different effective strictness, a divergence between them is not evidence about the market. |
+| **Proper fix** | Not decided here. Either the threshold becomes symbol-relative (a function of spot, or an ADR-016 `merdian_parameters` lookup keyed by symbol), or the ADR that introduced it records that it is symbol-blind and that cross-symbol comparisons inherit the asymmetry. |
+| **Cross-ref** | TD-NEW-2 Part A (which introduced the guard, S27) · TD-S75-NEW-1 · ADR-009 · ADR-016 (the parameter-table pattern this would use). |
+| **Status** | **OPEN.** |
+
+### TD-S75-NEW-3 (S3 priority) — `net_gex` carries no per-1%-move normalisation, so every Crore figure in every register and dashboard is a raw second-derivative quantity
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A pure scalar. It cannot change a ranking, a sign, a regime classification, a flip level or any zone geometry, because every consumer of the magnitude is either sign-only or comparative. It is filed because the number is quoted in prose and on an operator dashboard as though it were a currency amount. |
+| **Filed** | 2026-09-09 (Session 75) |
+| **Component** | `compute_gamma_metrics_local.py::signed_gamma_exposure`, L132. |
+| **Mechanism — verified in source** | The shipped line is `base = gamma * oi * (spot ** 2) / 1e7`. The conventional dealer-gamma-per-1%-move form carries an additional `× 0.01` (or equivalently `spot**2 / 100`). **There is no `0.01` factor on that line**; the file contains only two occurrences of the literal `0.01` in total, one of which is `_FLIP_DOMINANCE_EPS_FRAC`. |
+| **Consequence** | Stored `net_gex` is 100× the per-1%-move convention. Every Cr figure in the registers, in `CLAUDE.md`'s settled-decision bullets, and on the Marketview dashboard inherits it. |
+| **What is unaffected** | Sign, and therefore `regime`. Ranking across strikes, and therefore `max_gamma_strike`, the PIN and ACCEL zone geometry, and `gamma_concentration` (a ratio, scale-invariant). The ADR-014 §2.5 falsification check (both sides scale together). |
+| **Proper fix** | Not decided here. Changing the stored unit is a migration touching every historical row and every quoted figure; documenting the convention is not. Which of those is right is an ADR-014 question. |
+| **Cross-ref** | ADR-014 §2.3 (the formula the ADR states) · TD-NEW-3 (the `/1e7` Crore conversion, S27). |
+| **Status** | **OPEN.** |
+
 ### TD-S74-NEW-1 (S1 priority) — the producer/consumer coupling audit: 59 findings, filed as a pointer, not enumerated
 
 | Field | Value |
@@ -1858,6 +1901,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Cost to fix** | ~1 session diagnostic (locate the post-Apr-2026 data) + ~1 session unification/backfill + ~30 min compute for outcomes recompute. Total 1-2 sessions assuming no surprise complications during diagnostic. |
 | **Blocked by** | Nothing structurally; diagnostic can begin immediately. If diagnostic reveals MALPHA Zerodha token issues for the ingest path, work merges with TD-NEW-7 (token automation, S29+). |
 | **Owner check-in** | 2026-05-24 — pending S35+ schedule. |
+| **Amendment (S75 2026-09-09)** | The workaround this entry records — *"restrict backtests to `trade_date <= '2026-03-30'`"* — is **narrower than the table**. It was verified on nine probed dates (2026-04-01, 04-07, 04-09, 04-13, 04-16, 04-24, 05-12, 05-14, 05-18), and all nine are confirmed empty by the S75 sweep. But `hist_option_bars_1m` holds rows with **non-null `oi`** on **2026-05-04 and 2026-05-07**, neither of which is among the nine, and its maximum `bar_ts` is **`2026-05-07T15:29:00+00:00`** — not a date in March. 2026-04 is empty across all 22 probed weekdays, both symbols. Those two May days carry `oi`, `strike`, `option_type` and `expiry_date`; `gamma` and `iv` are non-null on **zero** rows there, as everywhere else in the table. Source: `docs/research/data_inventory_2026-09-08.md` §7 and §3.1 (commit `a9f102e`). The `<= '2026-03-30'` cut remains safe for a gamma-bearing cohort — it is simply not the table's boundary. |
 | **Resolution (S35 2026-05-24)** | **CLOSED-MECHANICAL.** Diagnosis confirmed two-tier architecture: pre-Apr-2026 chain lives in `hist_option_bars_1m` (vendor-purchased, 54.8M rows, uncatalogued vendor — filed as TD-S35-NEW-2); post-Apr-2026 chain lives in **`historical_option_chain_snapshots` (HOCS)** — 2.67M rows / 2.67 GB / 41 trading days at 5-min cadence keyed on `symbol` text not `instrument_id` uuid, `ltp` not `close`, written by `ingest_option_chain_local.py`. Calendar overlap clean on the boundary (NIFTY HOCS first expiry 2026-03-24 / SENSEX 2026-03-19; vendor last expiry 2026-04-07 NIFTY / 2026-04-02 SENSEX). Writer-side fix: `ENH-106 (S35) v8` adds boundary 2026-04-01 UTC + per-tuple split routing (pre→vendor 1m / post→HOCS 5m / mixed→both); `v8.1` UNION'd expiry calendars; `v8.2` swapped HOCS pagination for RPC `get_hocs_distinct_expiries(text)` + `(symbol, expiry_date)` covering index (sub-100ms vs 9-15 min). New audit column `option_pnl_source TEXT` values `vendor_hist_1m` / `merdian_hist_5m` / NULL. Full recompute S35: 19,571 outcomes (NIFTY 8,925 + SENSEX 10,646) in 2,107s; 1,716,572 pre bars + 49,204 post cycles across 2,773 (strike, expiry, type) tuples. 2026-04-16 single-day true gap filled via Breeze surgical write (107,630 HOCS rows: NIFTY 61,899 + SENSEX 45,731). Post-Apr retest cohort recovery 317/541 mechanical + 14 Breeze 04-16 = 331/541. Zone-primitive denominator (excluding 132 architecturally-exempt level primitives — direction=NONE, no CE/PE mapping): 331/409 = **81% recovery**. Residual 75 NULL post-Apr zone-primitive retests attributed to HOCS strike-coverage structural limit (`ingest_option_chain_local` captures ATM±N strike window, retests with large spot drift miss held-strike); filed as TD-S35-NEW-1. Earlier "Kite token expiry on MALPHA (TD-080-adjacent)" framing remains superseded. |
 
 ---

@@ -1,7 +1,7 @@
 {
   "_meta": {
     "document": "merdian_reference.json",
-    "version": "v51",
+    "version": "v52",
     "generated": "2026-06-12",
     "sources": [
       "Session 69 (2026-08-12/13): LIVE INCIDENT SESSION - one reported symptom (no pin/accel zones on TradingView) resolved into six largely independent failures, four pre-existing. THREE FIXED AT SOURCE: (1) disk-full cascade on the 7.6 GB EC2 root at 100% - killed merdian-wsfeed.service, corrupted .env line 24 via a sed -i that wrote a literal <real-token> (the unquoted < also broke every subsequent .env source), and silently failed the 35 3 UTC breadth-baseline cron leaving equity_intraday_last 92h stale; recovered via journal vacuum 672M + npm cache clean 871M + log truncate 302M->36K to 74%/1.9G free, journal capped SystemMaxUse=200M, token rewritten QUOTED and validated with KiteConnect.profile(), systemctl reset-failed then start, duplicate feed PIDs cleared with kill -9 (SIGTERM is caught by the reconnect handler), 280k+ ticks/10min confirmed. (2) ADR-021 pin/accel view scoping (4326f25) - v_gex_strike_pin_zone/v_gex_strike_accel_zone ran a recursive walk across ALL of gex_strike_snapshots (1.06M rows, 250+ sessions) then the sole caller kept ORDER BY ts DESC LIMIT 1; cost crossed the PostgREST 8s ceiling -> 57014 -> fetch_positioning_landscape failed -> pin/accel silently absent from the overlay for WEEKS. Fixed with latest_run (DISTINCT ON (symbol)) + scoped CTEs, working set 1.06M -> ~80 strikes/symbol, output byte-identical, plus index ix_gex_strike_snap_sym_ts. (3) a4bdb4c S69-C1 daily-history - build_ict_htf_zones.py had DAILY_LOOKBACK=60 defined and NEVER REFERENCED, so detect_daily_zones() evaluated exactly ONE prior session while the weekly walked 52 weeks (~19 zones vs 1); new detect_daily_zones_history() sweeps 60 sessions emitting OB/FVG ONLY, PDH/PDL deliberately excluded (would emit ~120 unfiltered levels/symbol and reverse the S59 single-emission fix), detection rule byte-identical so the Exp-15 cohort behind WR_BY_PATTERN survives per ADR-009. A SECOND INDEPENDENT CAUSE of thin daily structure otherwise attributed entirely to M5 staleness. Rule 10: NO ADR (defined-but-unused constant is a bug fix). CARRIED, NOT FIXED: ADR-022 SEBI Closing Auction Session live 2026-08-03 (NSE+BSE+MSEI) - F&O continuous trading ends 15:15, auction 15:15-15:35 sets the close by equilibrium price (reference = VWAP 15:00-15:15, band +/-3%, limit+market only), index AND stock derivatives extend to 15:40, post-close 15:50-16:00, pre-open restructured 2026-09-07 with random close 09:08-09:10; NIFTY/SENSEX are built from Category-I constituents so the index close now lands ~15:35-15:40 and NO fixed 15:30 anchor is valid - MERDIAN_ICT_EOD fires at 15:35 INSIDE the window and has since 08-03. M5 ICT detector frozen 53 trading days at ict_zones trade_date 2026-06-02 with a HEALTHY task (State Ready, LastTaskResult 0) writing nothing - OB_MIN_MOVE_PCT=0.40% is empirically unreachable (30-session maxima NIFTY 0.366% / SENSEX 0.369%); the ADR-016 recalibration to a candidate 0.25% must land AFTER the ADR-022 re-timing or it measures auction-contaminated bars. KEY CORRECTION: the Zerodha token is rotated MANUALLY by the operator every morning 06:00-06:30 IST - there is no MALPHA auto-refresh and there never was; the 08-12 dead token was .env corruption, not expiry. This REMOVES MALPHA-token-pipeline-broken from the priority list. 2 new ADRs (ADR-021, ADR-022). 8 new TDs (TD-S69-NEW-1..8). HEAD 4326f25, Local == origin == EC2; session opened at 60642fc and the range e5232b5->60642fc is unaccounted for (TD-S69-NEW-7). Pine time-anchor patch + regenerated merdian_ict_htf_zones.pine DELIBERATELY held uncommitted pending the canonical-host decision (committing them commits the Local<->box divergence, Local 106-110 honest zones vs box 139 with stale M5 merged); merdian_eod_ict.bat untracked. New tracked file docs/runbooks/reading_the_ambient_trajectory_dashboard.md. The original S69 P0 (ENH-119 momentum layer) never started.",
@@ -2519,7 +2519,10 @@
       "open_items": []
     },
     "option_chain_snapshots": {
-      "written_by": [
+      "columns_live_s75": ["id", "ts", "symbol", "expiry_date", "spot", "strike", "option_type", "ltp", "bid", "ask", "oi", "oi_change", "volume", "iv", "delta", "gamma", "theta", "vega", "raw", "created_at", "run_id"],
+      "columns_live_s75_note": "21 columns. No prior column list was recorded for this table.",
+      "columns_live_s75_source": "measured 2026-09-08 from the live PostgREST OpenAPI definitions, cross-checked against sampled row keys; docs/research/iv_availability_2026-09-08.md \u00a71 (commit b2dfd25)",
+            "written_by": [
         "ingest_option_chain_local.py (FULL + ATM_ONLY modes)"
       ],
       "read_by": [
@@ -2539,7 +2542,10 @@
       ]
     },
     "gamma_metrics": {
-      "written_by": [
+      "columns_live_s75": ["id", "ts", "symbol", "expiry_date", "spot", "net_gex", "gamma_concentration", "flip_level", "flip_distance", "straddle_atm", "straddle_slope", "vix", "breadth_regime", "expansion_probability", "regime", "created_at", "run_id", "flip_distance_pct", "gamma_zone", "raw", "straddle_velocity", "otm_oi_velocity", "spot_vs_range", "run_type", "dte", "max_gamma_strike", "pin_risk_score"],
+      "columns_live_s75_note": "27 columns. CORRECTS a shortfall: `columns_confirmed` (17) plus `columns_added_s41` (3) documented only 20. The seven absent were id, breadth_regime, straddle_velocity, otm_oi_velocity, spot_vs_range, run_type, dte.",
+      "columns_live_s75_source": "measured 2026-09-08 from the live PostgREST OpenAPI definitions, cross-checked against sampled row keys; docs/research/iv_availability_2026-09-08.md \u00a71 (commit b2dfd25)",
+            "written_by": [
         "compute_gamma_metrics_local.py"
       ],
       "read_by": [
@@ -2594,7 +2600,10 @@
       }
     },
     "volatility_snapshots": {
-      "written_by": [
+      "columns_live_s75": ["id", "ts", "symbol", "expiry_date", "expiry_type", "dte", "spot", "atm_strike", "atm_call_iv", "atm_put_iv", "atm_iv_avg", "iv_skew", "source_run_id", "raw", "created_at", "india_vix", "vix_change", "vix_regime", "vix_context_regime", "vix_level_bucket", "vix_percentile", "vix_change_5m", "vix_change_15m", "vix_change_30m", "vix_change_since_open", "vix_pct_change_since_open", "vix_intraday_velocity", "vix_change_1d", "vix_change_3d", "vix_change_5d", "vix_pct_change_1d", "vix_interday_velocity", "vix_percentile_regime", "vix_direction", "vix_slope", "atm_iv_vs_vix_spread"],
+      "columns_live_s75_note": "36 columns. No prior column list was recorded. 21 of these are VIX-dependent and hold zero non-null rows across all eleven months 2025-04 to 2026-02 (iv_availability \u00a73.3b).",
+      "columns_live_s75_source": "measured 2026-09-08 from the live PostgREST OpenAPI definitions, cross-checked against sampled row keys; docs/research/iv_availability_2026-09-08.md \u00a71 (commit b2dfd25)",
+            "written_by": [
         "compute_volatility_metrics_local.py"
       ],
       "read_by": [
@@ -3043,7 +3052,10 @@
       "open_items": []
     },
     "gex_strike_snapshots": {
-      "purpose": "Per-strike GEX snapshot table \u2014 substrate for ENH-81 Positioning Landscape (PIN zone + ACCEL zone + dealer flow simulator views) and ENH-82 Pin Risk Score continuous (future). Specified by ADR-015 v2 as a 12-column minimum-sufficient-statistic; the LIVE table carries 14 columns \u2014 see schema and schema_drift.",
+      "columns_live_s75": ["id", "run_id", "symbol", "ts", "expiry_date", "dte", "strike", "spot", "oi_call", "oi_put", "gex_cr", "created_at", "gamma_call", "gamma_put"],
+      "columns_live_s75_note": "14 columns. Matches the `schema` string exactly; re-verified S75.",
+      "columns_live_s75_source": "measured 2026-09-08 from the live PostgREST OpenAPI definitions, cross-checked against sampled row keys; docs/research/iv_availability_2026-09-08.md \u00a71 (commit b2dfd25)",
+            "purpose": "Per-strike GEX snapshot table \u2014 substrate for ENH-81 Positioning Landscape (PIN zone + ACCEL zone + dealer flow simulator views) and ENH-82 Pin Risk Score continuous (future). Specified by ADR-015 v2 as a 12-column minimum-sufficient-statistic; the LIVE table carries 14 columns \u2014 see schema and schema_drift.",
       "schema": "LIVE, verified Session 74 2026-09-07: (id, run_id, symbol, ts, expiry_date, dte, strike, spot, oi_call, oi_put, gex_cr, created_at, gamma_call, gamma_put)",
       "schema_drift": "Corrected Session 74. This register previously carried the ADR-015 v2 SPEC verbatim -- (run_id, strike, expiry_date, symbol, ts, spot, gamma_call, gamma_put, oi_total_calls, oi_total_puts, gex_cr, source_table) -- which diverges from the live table three ways: oi_total_calls/oi_total_puts are live as oi_call/oi_put; id, dte and created_at were omitted entirely; and source_table does not appear in the live column list. Root cause is the ADR-015 v1->v2 migration (4 columns dropped, 2 added) landing in the live schema with no register sweep -- a write-layer change with no reader sweep, the same class as TD-S74-NEW-2 (F-19). Recorded in System Map S74.E.",
       "constraints": "UNIQUE (run_id, strike, expiry_date); RLS enabled with anon SELECT policy + GRANT SELECT to anon",

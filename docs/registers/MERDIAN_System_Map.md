@@ -1273,6 +1273,62 @@ Tails are **per table** because CAS moved breadth and chain to ~10:10 while spot
 
 *System Map updated Session 73, 2026-09-06 (§S73 — the `~/meridian-cc` agent working tree and its permission surface; the `NA` verdict added to `eod_health_check.py` and its unresolved exit-code residual; four table properties measured, two of which — `option_chain_snapshots` retention and the 2026-06-03→2026-08-24 chain gap — bound what any historical study can reach; two repo-root writers no register described; and `eod_health_check.py` confirmed to have no scheduled invoker on either surface. The `## Update log` table at line 560 remains frozen at Session 67 and is filed as TD-S73-NEW-10, not fixed here.)*
 
+## §S75 — Session 75: the retention deleter is database-side, and four measured column lists (2026-09-08/09)
+
+Measurement session. **No file, table, runner or orchestration changed.** This section records what was *measured* about existing components, plus one new committed-but-unscheduled script.
+
+### S75.A — `gamma_metrics` and `option_chain_snapshots` are trimmed, and the trimmer is not on any host
+
+`pg_cron jobid 19`, active, `30 12 * * *` (12:30 UTC daily), runs `select public.cleanup_gamma_engine_data()`. From `pg_proc.prosrc`:
+
+| target | predicate | interval | effect |
+|---|---|---|---|
+| `option_chain_snapshots` | `created_at <` | 90 days | hard delete |
+| `option_chain_snapshots` | `created_at` in 14–90 days | — | keeps only rows where `extract(hour…)=10 AND extract(minute…)=0` — one 10:00 UTC snapshot per day |
+| `raw_ingest_log` | `ts <` | 14 days | hard delete |
+| `gamma_metrics` | `created_at <` | 90 days | hard delete |
+
+**The predicate is `created_at`, not `ts`, and they diverge** — the oldest surviving `gamma_metrics` row has `ts 2026-06-10T10:55` against `created_at 2026-06-11T04:01`. Reasoning about retention from `ts` gives the wrong boundary.
+
+Corroborated without reading the function: `option_chain_snapshots` holds **2** distinct timestamps on days aged 15–16 against **170–173** inside the window, and `raw_ingest_log`'s lower bound sits exactly 14 days back.
+
+**Not trimmed** — named in no deleting job, and each retains rows well past 90 days: `gex_strike_snapshots` (107 d), `historical_option_chain_snapshots` (177 d), `market_spot_snapshots` (206 d), `volatility_snapshots`, `hist_option_bars_1m`, `hist_option_greeks_1m`, `hist_spot_bars_1m`, `hist_gamma_metrics` (526 d each).
+
+### S75.B — the four live column lists
+
+Measured from the live PostgREST OpenAPI definitions, cross-checked against sampled row keys; now recorded in `merdian_reference.json` (v52) as `columns_live_s75`.
+
+| table | columns | note |
+|---|---:|---|
+| `option_chain_snapshots` | 21 | no prior list recorded |
+| `gex_strike_snapshots` | 14 | matches its existing `schema` string exactly |
+| `gamma_metrics` | **27** | **corrects a shortfall — 20 were documented** (`columns_confirmed` 17 + `columns_added_s41` 3); the seven absent were `id`, `breadth_regime`, `straddle_velocity`, `otm_oi_velocity`, `spot_vs_range`, `run_type`, `dte` |
+| `volatility_snapshots` | 36 | no prior list; **21 are VIX-dependent and hold zero non-null rows across all eleven months 2025-04 → 2026-02**, first non-null `2026-03-09T08:49:45` |
+
+**`gex_strike_snapshots` carries no `iv`, no `straddle_atm`, no `straddle_slope` and no volatility column of any kind.** `gamma_metrics` carries no `iv`; `vix` is its only volatility column.
+
+### S75.C — three writer defects recorded against `compute_gamma_metrics_local.py`
+
+All verified in source, extent measured against `gex_strike_snapshots`. None changes behaviour; all three are filed, not fixed.
+
+- **TD-S75-NEW-1** — `build_gss_rows` (L1113) accumulates `gex_cr` through `signed_gamma_exposure`, which applies the deep-ITM guard, while `oi_call`/`oi_put`/`gamma_call`/`gamma_put` bypass it. Rows with `gex_cr = 0` and gamma populated: June 1,394 NIFTY / 15,720 SENSEX; July 3,082 / 18,688; August 906 / 11,529.
+- **TD-S75-NEW-2** — that guard's `5e-5` threshold (L128–130) is a bare literal with **no symbol conditioning**; at ~24,300 vs ~77,000 spot it is ~3.2× stricter on SENSEX.
+- **TD-S75-NEW-3** — `base = gamma * oi * (spot ** 2) / 1e7` (L132) carries **no `× 0.01` per-1%-move normalisation**. Pure scalar; sign, ranking, `regime` and zone geometry all unaffected.
+
+### S75.D — `flip_level`'s consumers
+
+Five live readers of `flip_level` / `flip_distance` / `flip_distance_pct` / `gamma_zone`, established from `crontab -l`, the orchestrator child list, `/etc/systemd/system/*` and running processes — **not from filenames**: `compute_gamma_metrics_local.py` (writer), `build_market_state_snapshot_local.py`, `build_trade_signal_local.py`, `accrue_expiry_outcomes.py`, `relate_ambient_to_open_local.py`. A sixth consumer sits outside the repo: the **Marketview** frontend reads `gamma_metrics` directly. 76 of the 81 files mentioning these fields are on none of those surfaces.
+
+**The value gates nothing; its NULL-ness gates everything.** `flip_distance_pct` selects one of three caution strings and `cautions` is never a condition. But `determine_regime` maps a NULL flip to `NO_FLIP`, and `NO_FLIP`/`LONG_GAMMA` each set `trade_allowed = False` — **76.7% of NIFTY and 64.4% of SENSEX cycles**.
+
+### S75.E — one new file, committed and deliberately unscheduled
+
+`docs/research/gamma_metrics_tail_probe.py` — read-only watchdog on the retention rule of S75.A. Appends a dated block to `docs/research/gamma_metrics_tail_<date>.md`. **On no scheduling surface, by design.** Run it when a document's `gamma_metrics` row counts fail to reproduce, or after a Supabase migration.
+
+Detail: `docs/research/data_inventory_2026-09-08.md`, `flip_audit_2026-09-08.md`, `iv_availability_2026-09-08.md`, `build_readiness_2026-09-09.md`, `docs/session_notes/capture_s75.md`.
+
+---
+
 ## §S74 — Session 74: the `premarket_ref` window, the coupling audit's schema findings, and three on-disk definitions of one view (2026-09-07)
 
 ### S74.A — `get_premarket_ref` re-anchored on the market open, not the auction close (`7bb1779`)

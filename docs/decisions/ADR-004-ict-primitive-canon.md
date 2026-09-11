@@ -1,6 +1,6 @@
 # ADR-004 — ICT PD-Array Canonical Primitive Layer
 
-**Status:** ACCEPTED (S31-A close 2026-05-20). Amendments A (retest-anchored outcomes primary, formation-anchored retained) and B (Pine v2 canonical implementation) applied.
+**Status:** ACCEPTED (S31-A close 2026-05-20). Amendments A (retest-anchored outcomes primary, formation-anchored retained) and B (Pine v2 canonical implementation) applied. Amendment C (2026-09-10) — `valid_from` is the confirming bar's CLOSE, superseding the "+ 1 TF" phrasing at `:60`; see §15. **Accepted; no code implements it yet.**
 **Supersedes:** TD-049, TD-051 (canon deviations are now subsumed into this rewrite)
 **Successor work:** S31-B (detector implementation + Pine v2 + backfill), S31-C (edge view + consumer rewire)
 **Operator sign-off:** received 2026-05-20 covering all 15 primitives and the §11 parameter block
@@ -57,7 +57,7 @@ Every detected primitive carries these fields in the `ict_primitives` table:
 - `direction` — BULL | BEAR | NONE (NONE for direction-agnostic primitives like PDH/PDL)
 - `created_at` — when the writer detected it (UTC)
 - `source_bar_ts` — the timestamp of the canonical defining bar (UTC, the bar whose properties define the primitive)
-- `valid_from` — when the primitive becomes consumable (typically `source_bar_ts` + 1 TF)
+- `valid_from` — **SUPERSEDED by Amendment C (§15): `valid_from` is the timestamp at which the bar that confirmed the primitive CLOSED.** This entry originally read *"when the primitive becomes consumable (typically `source_bar_ts` + 1 TF)"*; that wording is retained here for the record and is **not** a statement of the rule. Cite §15, not this line.
 - `valid_to` — NULL by default; set only on breach or explicit time-based expiry per primitive section
 - `zone_low`, `zone_high` — for zone primitives; NULL for others
 - `level` — for level primitives; NULL for others
@@ -651,6 +651,51 @@ Per-primitive review checkbox. Operator signs each before S31-B implements that 
 | Premium/Discount State | 8.3 | [ ] |
 
 Parameters in §11 also require sign-off as a block.
+
+---
+
+## 15. Amendment C — `valid_from` is the confirming bar's close (2026-09-10)
+
+**Status:** ACCEPTED by operator 2026-09-10. **No code implements it.** See *Implementation status* below.
+
+**What changes.** `valid_from` is the timestamp at which the bar that confirmed the primitive **closed**. It is not that bar's open, and it is not `source_bar_ts` plus one timeframe duration.
+
+| class | confirming bar | `valid_from` |
+|---|---|---|
+| Order Block (§5.1) | the displacement bar | close of the displacement bar |
+| Fair Value Gap (§5.2) | bar `i+1` — the bar that closes the gap | close of bar `i+1` |
+| Events: Displacement, Sweep (§7) | the event bar itself | close of the event bar |
+| Prior-period levels (§6.1) | — | **unchanged.** A level becomes consumable at the first bar of the current period; there is no confirming bar |
+
+**What it supersedes.** §4's field list (`:60`) read *"when the primitive becomes consumable (typically `source_bar_ts` + 1 TF)"*. That parenthetical is withdrawn. It does not survive the Order Block case: `source_bar_ts` for an OB is the **OB candle**, and the confirming displacement may be up to `DISPLACEMENT_WINDOW_BARS` bars later — 3 at W/D/H, 6 at M5 (§5.1 step 1, §11). "`source_bar_ts` + 1 TF" therefore names the wrong bar whenever the OB is not immediately adjacent to its impulse, which is the ordinary case rather than the exception. The hedge "typically" concedes the point without resolving it.
+
+`:60` is **retained in place**, rewritten to read as superseded from its first word, with the original wording preserved after it for the record. This paragraph is the citable home of that original wording.
+
+**Why this reading and not the other.** The ADR already said so everywhere except the field list:
+
+- **§5.1 step 6 (`:87`)** is normative and unambiguous: *"The candidate becomes a confirmed OB once the displacement bar closes and the FVG is verified."*
+- **§5.2 step 6 (`:129`)** confirms an FVG on `gap_pct`, which is computed from `bar[i+1].low` / `bar[i+1].high` — values that do not exist until bar `i+1` closes.
+- **Amendment A (`:71`)** defines formation-anchored outcomes as *"forward returns from the bar that confirmed the primitive"*. A forward return from a bar begins at that bar's close.
+
+Those three are ADR text and they bind. The §4 field list was the only dissenting text in the ADR, and the writer followed it.
+
+**Corroboration, not authority.** The Pine implementation (Amendment B) is consistent with this reading: its detectors are fetched under `lookahead=barmerge.lookahead_off` and read the *current* bar's `low`/`high`, so they cannot evaluate before that bar closes. That agreement is worth recording and carries no weight in the decision. It is code being used to interpret the ADR rather than ADR text; Amendment B's own Pine-parity claim is unverified (audit finding **F-80**, first-H-bucket alignment); and **F-81** records that the Pine source comment asserting parity with the Python writer asserted a correspondence that was never true. Pine agrees with the rule adopted here. It is not why the rule is adopted.
+
+**What is not changed.** Detection rules, thresholds and the §11 parameter block are untouched. Zone bounds are untouched. The §10 natural key is untouched — it carries `source_bar_ts`, never `valid_from`. Prior-period level semantics (§6.1) are untouched. This amendment governs the meaning of one field.
+
+**No schema enforcement exists.** §10 declares `valid_from TIMESTAMPTZ NOT NULL` (`:506`) with no CHECK relating it to `source_bar_ts`. Nothing in the database would have rejected the superseded behaviour, and nothing will enforce this one. Adding enforcement is a separate decision and is not taken here.
+
+**Implementation status — none.**
+
+`ict_primitives.py` and `build_ict_primitives.py` implement the superseded reading: Order Block `valid_from = disp.event_ts`, Fair Value Gap `valid_from = nxt.ts`, both **bucket-start** timestamps produced by the aggregation layer — that is, the confirming bar's *open*. The resulting lookahead is **D ≈ 6h15m, W ≈ 5 days, H ≤ 59 min** (measured — audit finding **F-68**), and **M5 ≤ 5 min** (*derived* from the bucket width, not measured).
+
+A remediation has been chosen — carry the bucket's closing timestamp on the `Bar` dataclass and consume it at the three assignment sites, since `_reduce_ohlc` already computes that value and discards it — but it is **not scheduled by this amendment**. Sequencing is the operator's.
+
+**The existing cohort predates this amendment.** `ict_primitive_outcomes` holds **19,432 rows** built under the superseded behaviour. Every formation-anchored column in them is anchored at the confirming bar's open, and the retest walk opens at the same instant, so `first_retest_ts` can fall inside a bar that had not yet closed and had not yet confirmed the primitive.
+
+**These rows are not corrected by this amendment.** The writer is INSERT-only with skip-if-exists, and `valid_from` is not part of the natural key, so re-running it would skip the existing rows rather than repair them. Correction requires a `DELETE` plus a full recompute, which is a separate decision and is not taken here. Until that happens, any measurement drawn from `ict_primitive_outcomes` — including the S31-B holdout result and the S33 ENH-106 v7 cohort — is a measurement of the superseded behaviour.
+
+Evidence, mechanism and per-cell contamination rates: `docs/research/ict_structure_audit_2026-09-09.md`, findings **F-68** (the anchoring defect), **F-69** (its effect on the retest cohort) and **F-81** (why the Pine overlay's agreement with the writer was asserted but never true).
 
 ---
 

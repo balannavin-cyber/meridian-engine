@@ -54,14 +54,14 @@ This is the **production** map. Research scripts (`experiment_*.py`, etc.) are n
 | `compute_volatility_metrics_local.py` | ✅ | ✅ | `option_chain_snapshots`, India VIX | `volatility_snapshots` | ACTIVE — IV=0 filter, ATM fallback | — compute_volatility_metrics_local.py — S48 FIX: TARGET_TABLE corrected from hardcoded "compute_volatility_metrics" (non-existent, 404 graceful handler) to canonical "volatility_snapshots" per ADR-006. Reads from volatility_snapshots for prior-cycle history. Writes to volatility_snapshots (production, no shadow post-S48). Both AWS + LOCAL fixed. Silent failure for 2+ months due to 404 handler exiting exit_code=0.
 | `build_momentum_features_local.py` | ✅ | ✅ | `market_spot_snapshots`, `market_spot_session_markers` | `momentum_snapshots` | ACTIVE — `ret_session` live (ENH-01) |
 | `build_wcb_snapshot_local.py` | ✅ | ✅ | constituent ticks | `weighted_constituent_breadth_snapshots` | ACTIVE — continues even when Dhan options auth broken |
-| `build_trade_signal_local.py` | ✅ | ✅ | `market_state_snapshots`, ICT pattern context | `signal_snapshots` | ACTIVE — 6 ENH-35 changes applied (ADR-007 codification) + 4 ICT columns |
+| `build_trade_signal_local.py` | ✅ | ✅ | `market_state_snapshots`, ICT pattern context **— superseded S76: the `ict_htf_zones` attach raises `42703` on every call and has never returned a row (§S76.A)** | `signal_snapshots` | ACTIVE — 6 ENH-35 changes applied (ADR-007 codification) + 4 ICT columns |
 | `build_signal_regret_log_v1.py` | ✅ | ❌ | `signal_snapshots`, `market_spot_snapshots` | `signal_regret_log` | ACTIVE — 614 rows (V18A baseline) |
 
 ### A.3 ICT layer (Inner Circle Trader pattern detection)
 
 | Script | Local | AWS | Reads | Writes | Status |
 |---|---|---|---|---|---|
-| `build_ict_htf_zones.py` | ✅ | ✅ | `hist_spot_bars_5m`, `hist_spot_bars_15m`, etc. | `ict_htf_zones` | PRODUCTION — ENH-37, patched Session 15 |
+| `build_ict_htf_zones.py` | ✅ | ✅ | `hist_spot_bars_5m`, `hist_spot_bars_15m`, etc. | `ict_htf_zones` | PRODUCTION — ENH-37, patched Session 15. **Superseded S76 — its invoker is unresolved:** on no crontab, no systemd unit, no orchestrator, and its Windows task is Disabled; it nonetheless runs, **once daily**, with start times spread 00:18–04:00 UTC across 16 sampled weekdays, and it **did not run at all on 2026-09-10** — the only pipeline script absent on an otherwise normal day. §S76.D. |
 | `build_ict_htf_zones_historical.py` | ✅ | ❌ | historical OHLCV | `ict_htf_zones` (backfill) | PRODUCTION — historical builder, patched Session 15 |
 | `detect_ict_patterns.py` | ✅ | ✅ | `hist_spot_bars_5m`, `ict_htf_zones` | `hist_pattern_signals` | PRODUCTION — ENH-37 |
 | `detect_ict_patterns_runner.py` | ✅ | ✅ | runner harness | calls `detect_ict_patterns` | PRODUCTION — ENH-37, wired by `patch_runner_ict.py` |
@@ -185,8 +185,8 @@ All 36 currently-tracked tables in `merdian_reference.json`. Grouped by domain.
 
 | Table | Written by | Read by | Status |
 |---|---|---|---|
-| `ict_htf_zones` | `build_ict_htf_zones.py`, `build_ict_htf_zones_historical.py` | `detect_ict_patterns.py`, dashboard, Pine overlay | LIVE — ENH-37. **`source_bar_date` semantics differ by timeframe (codified Session 25 from TD-078 closure):** W = week-start Monday date; D = bar's calendar date; 1H = hour bucket date. When debugging "missing zone row" claims on this table, check the timeframe-aware convention before concluding the row is absent. **ADR-005 zone validity model applied Session 26 (TD-079 fix, commit `0731e67`):** D/W OB/FVG `valid_to=NULL` (price-breach only canonical); 1H OB/FVG `valid_to=trade_date+7days` tactical fallback; PDH/PDL date-expire unchanged. `expire_old_zones()` filter widened from `["W","D"]` → `["W","D","H"]`. Backfill revived 18 SENSEX W BEAR_OB/BEAR_FVG zones above 78k from EXPIRED → ACTIVE valid_to=NULL. Pine 36 → 62 zones (49 HTF + 13 intraday). |
-| `ict_zones` | `detect_ict_patterns.py` (intraday zone build) | dashboard, signal builder | LIVE — ENH-37. Note: separate schema from `ict_htf_zones` (TD-047). |
+| `ict_htf_zones` | `build_ict_htf_zones.py`, `build_ict_htf_zones_historical.py` | `detect_ict_patterns.py`, dashboard, Pine overlay | LIVE — ENH-37. **Superseded S76 — the Read-by column above is short by one, and the omitted reader is the signal path.** `build_trade_signal_local.py` is a third live consumer; its read is dead (§S76.A). The table also carries **15 forked `ACTIVE` duplicate groups** with `valid_to = NULL`, unexpirable, rendered by the Pine overlay and by nothing else (TD-S76-NEW-5). **`source_bar_date` semantics differ by timeframe (codified Session 25 from TD-078 closure):** W = week-start Monday date; D = bar's calendar date; 1H = hour bucket date. When debugging "missing zone row" claims on this table, check the timeframe-aware convention before concluding the row is absent. **ADR-005 zone validity model applied Session 26 (TD-079 fix, commit `0731e67`):** D/W OB/FVG `valid_to=NULL` (price-breach only canonical); 1H OB/FVG `valid_to=trade_date+7days` tactical fallback; PDH/PDL date-expire unchanged. `expire_old_zones()` filter widened from `["W","D"]` → `["W","D","H"]`. Backfill revived 18 SENSEX W BEAR_OB/BEAR_FVG zones above 78k from EXPIRED → ACTIVE valid_to=NULL. Pine 36 → 62 zones (49 HTF + 13 intraday). |
+| `ict_zones` | `detect_ict_patterns.py` (intraday zone build) | dashboard, signal builder | **Superseded S76 — not LIVE: frozen since 2026-06-02** (§S69). Status distribution measured 2026-09-10, **no NULLs** — NIFTY `ACTIVE` 2 / `BROKEN` 124 / `EXPIRED` 107; SENSEX `ACTIVE` 4 / `BROKEN` 134 / `EXPIRED` 121. §S76.C. Formerly: LIVE — ENH-37. Note: separate schema from `ict_htf_zones` (TD-047). |
 | `hist_pattern_signals` | `detect_ict_patterns.py`, `build_hist_pattern_signals_5m.py` (backfill) | analytics, dashboards, win-rate computations | ACTIVE — 6,318 rows |
 | `hist_spot_bars_5m` | `build_spot_bars_mtf.py` | ICT detector, HTF zone builder, experiment scripts | ACTIVE — 41,248 rows full year |
 | `hist_spot_bars_15m` | `build_spot_bars_mtf.py` | HTF zone builder | ACTIVE — 14,072 rows full year |
@@ -1394,3 +1394,125 @@ Corrected at the S74 close. The drift is ADR-015's v1→v2 migration (four colum
 ---
 
 *System Map updated Session 74, 2026-09-07 (§S74 — `get_premarket_ref` re-anchored `[09:00:00, 09:14:59]` on the market open rather than the auction close, `7bb1779`, regression-gated on 2026-08-21 and verified live at 09:11:03; the coupling audit's 59 findings recorded as a pointer with F-19 / F-01 / F-04 / F-13 extracted; `close_1530` established as three independent causes rather than the pre-open bug's mirror; three on-disk definitions of the GEX zone views with only `docs/research/s72_gex_view_fix.sql` matching production; `merdian_reference.json`'s `gex_strike_snapshots` column list corrected to live; `status.json` and `rate_sens.out` recorded as repo-root artefacts no register described. The `## Update log` table at line 560 remains frozen at Session 67 — TD-S73-NEW-10, still not fixed here.) Previous: Session 73, 2026-09-06 (§S73).*
+---
+
+## §S76 — Session 76: the ICT layer's three tables, and a signal path whose HTF attach has never worked (2026-09-09/10)
+
+Audit session. **No file, table, runner or orchestration changed.** One live
+database change outside this section (`pg_cron jobid 19` disabled — Topology §S76.C).
+This section records what was *measured* about the ICT layer, and it supersedes four
+rows above.
+
+### S76.A — the signal builder selects a column `ict_htf_zones` does not have
+
+`build_trade_signal_local.py:980-985` issues a `select` against `ict_htf_zones` that
+names **`ict_tier`**. That column is not on that table. Measured 2026-09-10:
+
+| table | columns | carries `ict_tier` |
+|---|---:|---|
+| `ict_htf_zones` | 16 | **no** |
+| `ict_zones` | 30 | yes |
+
+The select therefore raises **`42703` (undefined column) on every call** — confirmed by
+running the exact select, not inferred from the schema — and falls into the handler at
+**`:1014`**, which sets `htf_failed=true` and continues. **`htf_failed=true` on 504 of
+504 cycles across two days, both symbols.** Not a sampled rate: the denominator is every
+cycle in the window.
+
+Three consequences, in order of how long each takes to see:
+
+1. **The HTF zone attach on the live signal path has never returned a row.** Not a
+   degraded attach — an empty one, on every cycle, for as long as the two column lists
+   have differed.
+2. **`htf_failed` is a correct, continuous failure report that nothing reads** — no
+   consumer, no alert, no health check. TD-S76-NEW-3's framing survives this
+   re-attribution unchanged.
+3. **The cause is not F-19.** The signal builder applies `symbol` + `status=ACTIVE` and
+   **no validity predicate at all**, so it sits on the *permissive* side of F-19's 2–2
+   split and the `valid_to` sentinel has never been what excluded its rows. The exception
+   excludes them, one step earlier. See §S76.E — the distinction is the whole of the
+   sequencing hazard.
+
+**How the rate was wrong before it was measured.** The register carried *"roughly 40
+times a day"*. That figure was read off the thing and written down; no belief about the
+cadence was stated first, so nothing could disagree with it, and it stood until somebody
+counted. **CLAUDE.md Rule 0 clause 3** — an expected value obtained by running the thing
+is not an assertion. TD-S76-NEW-19.
+
+### S76.B — the three ICT tables, and which of them has a live consumer
+
+| table | writer | live consumer | state |
+|---|---|---|---|
+| `ict_htf_zones` | `build_ict_htf_zones.py` (invoker unresolved, §S76.D) | Pine overlay (no validity predicate); the runner and the daily audit (`gte("valid_to")`, F-19); `build_trade_signal_local.py` (**dead**, §S76.A) | written daily, read four ways, three of which disagree |
+| `ict_zones` | `detect_ict_patterns_runner.py` | dashboard; signal builder | **frozen since 2026-06-02** (§S69) |
+| `ict_primitives` | `build_ict_primitives.py` | **none** | **inert since 2026-05-22** — the canon layer conforms to ADR-004, was backfilled once, and then stopped (TD-S76-NEW-6) |
+
+The ICT layer's most canon-conformant table is the one with no consumer, and the one the
+signal path depends on is the one whose read raises.
+
+### S76.C — `ict_zones` status distribution, and one corollary the audit overstated
+
+Measured 2026-09-10, both symbols, **no NULL statuses**:
+
+| symbol | `ACTIVE` | `BROKEN` | `EXPIRED` | total |
+|---|---:|---:|---:|---:|
+| NIFTY | 2 | 124 | 107 | 233 |
+| SENSEX | 4 | 134 | 121 | 259 |
+
+Two things follow, and they point opposite ways.
+
+- **The session brief's premise that `ACTIVE` is NULL for both symbols is refuted.** There
+  are `ACTIVE` rows, and there are no NULLs at all.
+- **228 `EXPIRED` rows exist.** The audit's F-17 establishes that the only write site for
+  `EXPIRED` on this table is gated behind `now.hour == 9`, which the live schedule
+  (10:20 / 10:22 UTC = 15:50 / 15:52 IST) never satisfies. **That gate analysis stands.**
+  What does not stand is the corollary a reader takes from its consequence sentence —
+  that nothing is ever retired. Something retired 228 rows. **The discriminator has not
+  been measured:** whether those rows were expired under an earlier schedule, before the
+  06-02 freeze, or by a path outside the non-variant tree. Until `max(updated_at)` on the
+  `EXPIRED` population is read, this is a gap in F-17, not a refutation of it.
+
+### S76.D — the HTF zone builder runs, once a day, and nothing schedules it
+
+Carried unresolved from the S76 audit and **not closed here**. `build_ict_htf_zones.py`
+is absent from every crontab on the host, the root crontab, `/etc/cron.*`,
+`/var/spool/cron/crontabs`, every systemd unit, the AWS orchestrator and `run_ingest.sh`;
+its Windows task is Disabled. It nonetheless has **231 runs since 2026-04-28**.
+
+Measured 2026-09-10, and this narrows the search:
+
+- **Once daily, not 2.4×.** The earlier multiple-fires-per-day reading was an artefact of
+  counting rows rather than runs.
+- **Start times spread 00:18 → 04:00 UTC** across 16 sampled weekdays. A cron entry
+  produces a fixed minute; a 3h42m spread does not come from one.
+- **It did not run on 2026-09-10** — the only pipeline script absent on an otherwise
+  normal day, which is itself a signal about the invoker rather than about the script.
+
+**What settles it:** the read-only watcher `/tmp/catch_builder.sh` (PIDs **2128790**,
+**2130111**) is still armed and logs the parent chain to `/tmp/builder_catch.log` at the
+next fire. **Nothing has been caught yet** — consistent with the 09-10 absence. Check that
+file first next session. Topology §S76.E.
+
+### S76.E — the sequencing lock: fixing §S76.A arms F-19 on the signal path
+
+`build_trade_signal_local.py`'s read is dead, and **the deadness is currently the only
+thing screening it**. Drop `ict_tier` from the select — the obvious one-word fix — and the
+select succeeds; on its first success it admits **every** `ACTIVE` row, because it applies
+no validity predicate. That converts a dead read into a live F-19 instance on the path that
+produces trade decisions.
+
+What it admits on that first success:
+
+- **109 `ACTIVE` zones no validity predicate has ever screened** (operator-measured S76;
+  not re-derived here — it answers part of the audit's open question 8 at `:514`, where the
+  160–164 split by timeframe and `valid_to` nullity was left unmeasured).
+- **15 forked duplicate groups** — `ACTIVE`, `valid_to = NULL`, unexpirable — which today
+  only the Pine overlay renders (TD-S76-NEW-5).
+
+**TD-S76-NEW-20 and TD-S74-NEW-2 are therefore mutually locked**, and each entry says so.
+TD-S74-NEW-2's *"do not fix one side alone — the disagreement is the finding"* now has a
+fourth side, and the fourth side is the one that looks like a typo.
+
+---
+
+*System Map updated Session 76, 2026-09-09/10 (§S76 — the ICT layer measured end to end: `build_trade_signal_local.py`'s `ict_htf_zones` attach raises `42703` on every call because it selects `ict_tier`, a column on the other table, giving `htf_failed=true` on **504 of 504** cycles over two days and an HTF attach that has never returned a row; the *"roughly 40 times a day"* rate corrected and its cause **re-attributed away from F-19**; `ict_zones` status distribution measured with no NULLs and 228 `EXPIRED` rows that F-17's consequence sentence does not account for; `ict_primitives` recorded inert since 2026-05-22 with no live consumer; the zone builder's invoker still unresolved but narrowed to once-daily with a 00:18–04:00 UTC spread and a 09-10 absence; and the sequencing lock that makes the one-word fix to the `42703` the thing that arms F-19 on the signal path. Four rows above superseded in place. **NO CODE CHANGED.**) Previous: Session 75, 2026-09-08/09 (§S75), whose section carries no footer of its own — see TD-S76-NEW-12.*

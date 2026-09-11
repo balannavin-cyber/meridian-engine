@@ -57,6 +57,326 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S76-NEW-1 (S1 priority) — the Windows host stopped executing on 2026-06-05, taking the option-chain archival bridge with it, and ~58 sessions of premium data are unrecoverable
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** Permanent, unrecoverable data loss on a table the research layer depends on, and it continued for three months without any surface reporting it. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | Windows host `NAVIN` Task Scheduler · `archive_option_chain_history.py` (bare `option_chain_snapshots` read at `:81` → HOCS write at `:144`) · `historical_option_chain_snapshots` · `option_chain_snapshots` |
+| **Measured** | `schtasks /query /fo TABLE`, 2026-09-10: **all 23 `MERDIAN_*` entries `Disabled`, every `Next Run Time` `N/A`**, and `Get-Process python*,pythonw*` returns nothing. `MERDIAN_Option_Chain_Ingest_NIFTY` / `_SENSEX`: **Last Run 2026-06-05 18:06:24, Last Result 0** — they exited clean and were never invoked again. |
+| **Mechanism** | Those two tasks were the archival bridge's only invokers. The bridge copies `option_chain_snapshots` into `historical_option_chain_snapshots` before the retention deleter reaches it. Host stops → bridge stops → the deleter keeps its appointment. |
+| **Consequence, measured** | `historical_option_chain_snapshots` **stops 2026-06-03**; `option_chain_snapshots` **retains nothing before 2026-08-24**. The window **2026-06-04 → 2026-08-23** — roughly **58 trading sessions** of premium data — exists in neither table. It is not recoverable: the live capture table has already been thinned and the vendor endpoint is real-time only. |
+| **Why nothing reported it** | No surface asserts on the *pair*. The deleter succeeded daily and logged success; the archiver simply was not invoked, and an uninvoked script produces no failure. The two halves are coupled only by intent. |
+| **Workaround** | None for the lost window. Going forward, `pg_cron jobid 19` is disabled — see **TD-S76-NEW-2**. |
+| **Proper fix** | Re-home the archival bridge onto a host that runs (AWS, per ADR-006), then re-enable jobid 19. Until the archiver has a scheduled invoker on a live host, re-enabling the deleter resumes the loss. |
+| **Cross-ref** | Deployment Topology **§S76.A / §S76.B / §S76.C** · TD-S76-NEW-2 · TD-S73-NEW-5 (which recorded the 2026-06-03 → 2026-08-24 gap as **UNVERIFIED** — this entry supplies the mechanism and the cause). |
+| **Status** | **OPEN.** |
+
+### TD-S76-NEW-2 (S1 priority) — `pg_cron jobid 19` disabled as a stop-gap: `gamma_metrics` now grows past its 90-day window and `raw_ingest_log` growth has never been measured
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** A deliberate, reversible change to live retention with **no scheduled review**. The failure mode is forgetting: unbounded growth on two tables against a Supabase ceiling nobody is watching. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | `pg_cron jobid 19` — `30 12 * * *`, `select public.cleanup_gamma_engine_data();` |
+| **Action taken** | Operator, 2026-09-09 ~10:10 UTC: `SELECT cron.alter_job(19, active := false);`. Verified `active=false`, with `schedule` and `command` **both intact** — the job is paused, not edited. |
+| **Why** | It was deleting `option_chain_snapshots` on a 90-day horizon while its archiver had been dark since 2026-06-05 (**TD-S76-NEW-1**). Stopping it stops the ongoing half of that loss. |
+| **What is now unbounded** | Four deletes are suspended: `option_chain_snapshots` 90-day, its 14-day thinning, `raw_ingest_log` 14-day, `gamma_metrics` 90-day. **`gamma_metrics` will grow past 90 days** — `docs/research/gamma_metrics_tail_probe.py` (Topology §S75.4) will read that correctly as a retention-rule change rather than a fault. **`raw_ingest_log`'s growth rate has never been measured**, so its trajectory is unknown, not merely unbounded. |
+| **Reversal** | `SELECT cron.alter_job(19, active := true);` — to be run **once the archiver has a scheduled invoker on a live host**, not before. |
+| **Proper fix** | This entry closes when jobid 19 is re-enabled behind a working archiver. Measuring `raw_ingest_log`'s daily growth is a prerequisite, not a follow-up: re-enabling without it means the horizon was never chosen on evidence. |
+| **Cross-ref** | TD-S76-NEW-1 · Deployment Topology §S76.C · §S75.1 (jobid 19's discovery) · TD-S69-NEW-1 (the storage-ceiling item this feeds). |
+| **Status** | **OPEN — deliberate hold, reversal pending.** |
+
+### TD-S76-NEW-3 (S1 priority) — F-19 has three consumers, not two, and the third logs its own failure on every single cycle into a field nothing reads
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** It widens a live S1. The third consumer is an orchestrator child on the 5-minute cycle, which makes the blast radius the signal path itself rather than a reporting surface. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | `detect_ict_patterns_runner.py:268` · `merdian_daily_audit.py:619` · **`build_trade_signal_local.py`** |
+| **Supersedes** | **TD-S74-NEW-2's two-consumer scope.** That entry named the runner and the Pine generator and concluded *"two consumers of one table hold incompatible beliefs"*. There are three, and the third is the one that matters most. |
+| **Measured live** | `build_trade_signal_local.py` logs **`htf_failed=true` on 504 of 504 cycles across two days** — every cycle in the window, both symbols, measured 2026-09-10, not sampled — and **nothing reads the field**. The *“roughly 40 times a day”* figure carried at filing was read off the thing and written down with no stated belief for it to disagree with (**CLAUDE.md Rule 0 clause 3**); it stood until somebody counted. **And the cause is re-attributed: it is not F-19.** This consumer applies no validity predicate at all, so `valid_to` has never been what excluded its rows — the `select` names `ict_tier`, which is not a column of `ict_htf_zones`, and raises `42703` one step earlier (**TD-S76-NEW-19**). What survives the re-attribution unchanged is this entry's actual subject: a component that reports its own degradation correctly, into a void. The signal builder is telling the log, continuously and correctly, that its HTF zone fetch returned nothing, and no consumer, alert or health check asserts on it. |
+| **Why this is worse than the runner case** | The runner is a scheduled batch job; a silent under-fetch there produces fewer signals. `build_trade_signal_local.py` runs as an orchestrator child every 5 minutes and is the path that produces trade decisions. It has been emitting a truthful failure flag into a void for the entire period F-19 has been live. |
+| **The general shape** | A component that *does* detect its own degradation, reports it in the correct place, and is still invisible — because reporting and consumption are separate acts. **CLAUDE.md Rule 0**: a signal nothing reads is not instrumentation. |
+| **Proper fix** | Fix the `valid_to` predicate at all three sites in one pass, per TD-S74-NEW-2's *"do not fix one side alone"*. Separately, `htf_failed` needs either a consumer or removal — a flag with neither is worse than no flag, because it looks like coverage. |
+| **Cross-ref** | **TD-S74-NEW-2** (superseded in scope, not closed) · TD-S74-NEW-1 · ADR-005 · CLAUDE.md Rule 0 (clause 3 on the rate; the signal-nothing-reads framing is the entry itself) · **TD-S76-NEW-19** (the `42703` that is the actual cause) · **TD-S76-NEW-20** (the sequencing lock). |
+| **Status** | **OPEN.** |
+
+### TD-S76-NEW-4 (S1 priority) — F-68: `valid_from` is the confirming bar's OPEN, so every column of all 19,662 `ict_primitive_outcomes` rows carries lookahead
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1 — proposed, and it is arguable.** By the letter of the scale this is S2: `ict_primitives` has **no live consumer**, so nothing in production is wrong today. It is proposed S1 because the contamination is **total** (every column, every row) and the correction cost **grows with every additional session** the writer runs. Downgrade to S2 if the scale's production-impact reading is preferred. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | `ict_primitives.py:192`, `:214` (FVG `valid_from = nxt.ts`), `:354` (OB `valid_from = disp.event_ts`) · `build_ict_primitives.py` aggregation layer `:380-389`, `:415`, `:423` · `ict_primitive_outcomes` |
+| **Mechanism — verified in source** | Both assignments take the aggregated bar's **bucket-start** timestamp. A primitive is not confirmed until that bar *closes*, so `valid_from` precedes the instant the primitive could have been observed. `_reduce_ohlc` computes the bucket's last bar and discards its timestamp; `Bar` has no field to carry it. |
+| **Lookahead, measured** | **D ≈ 6h15m, W ≈ 5 days, H ≤ 59 min** (audit finding F-68). **M5 ≤ 5 min is *derived* from the bucket width, not measured.** |
+| **Extent** | All **19,662** rows of `ict_primitive_outcomes`. Every formation-anchored column is anchored at the open; the retest walk also opens there, so `first_retest_ts` can fall inside a bar that had not yet closed — see the contamination rates under **TD-S76-NEW-6**'s cross-refs. |
+| **Governance state** | **ADR-004 Amendment C written 2026-09-10** — `valid_from` is the confirming bar's close; `:60`'s "+ 1 TF" phrasing superseded in place. **No code implements it.** |
+| **Why a re-run does not fix it** | The writer is **INSERT-only with skip-if-exists**, and `valid_from` is **not in the natural key** (`_natural_key`, `build_ict_primitives.py:1687-1692`, carries `source_bar_ts`). A re-run therefore *skips* every existing row rather than correcting it. Correction requires **`DELETE` plus full recompute**. |
+| **Proper fix** | Operator decision recorded: carry `ts_close` on `Bar`, set in `_reduce_ohlc` from the bucket's last bar, consume at the three assignment sites. Then `DELETE` + recompute. Cost is **~35 minutes as a floor, not an estimate** — S35's 2107s was measured on v8.2, the v9 SL block has never run the full window, and the per-tuple query count is a function of `valid_from` itself. |
+| **Cross-ref** | **ADR-004 Amendment C (§15)** · `docs/research/ict_structure_audit_2026-09-09.md` F-68, F-69, F-81 · TD-S76-NEW-6. |
+| **Status** | **OPEN — decided, not implemented.** |
+
+### TD-S76-NEW-5 (S1 priority) — F-64: `zone_high`/`zone_low` sit in the upsert conflict key, so a corrected bar mints a duplicate instead of updating, and the duplicates are unexpirable
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** The forked rows are `ACTIVE` with `valid_to = NULL` on a table the Pine overlay reads without a validity filter, so they render. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | `ict_htf_zones` — the upsert conflict key |
+| **Mechanism** | The conflict key includes the **derived** zone geometry. When an input bar is revised — a CAS correction, a backfill, a re-aggregation — the recomputed `zone_high`/`zone_low` differ, so the row no longer conflicts with its predecessor and is **inserted** rather than updated. The original survives beside it. |
+| **Measured** | **15 forked groups, 2026-04-10 → 2026-08-07, both symbols, two of them triples.** All `ACTIVE`, all `valid_to = NULL`, therefore **unexpirable** by the date-based expiry path. |
+| **The general form — worth more than the instance** | **A derived value in an idempotency key defeats idempotency under input revision.** The key answers "is this the same row?" with "does it have the same computed output?", which is the one question that changes precisely when a correction lands. Same family as the S37 finding that derived booleans belong in the read layer, not the write layer (ADR-015). |
+| **Proper fix** | Key on the identity of the source bar — `(symbol, timeframe, pattern_type, source_bar_date)` — not on what was computed from it. That is a schema decision with a backfill: the 15 existing groups need a merge rule before the key changes, or the change simply freezes them. |
+| **Cross-ref** | ADR-005 · ADR-015 (derivations belong in the read layer) · TD-S74-NEW-2 (the same table, read side) · audit finding F-64 (formerly numbered F-25). |
+| **Status** | **OPEN.** |
+
+### TD-S76-NEW-6 (S2 priority) — S31-C never executed: the canon layer conforms to ADR-004, was backfilled once, and then stopped
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Nothing is broken; a multi-session investment is simply inert. It is filed because the inertness is invisible — the table exists, is populated, and looks current. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | `ict_primitives` · `ict_primitive_outcomes` · `build_ict_primitives.py` · S31-C (edge view + consumer rewire) |
+| **State, measured** | `ict_primitives` conforms to **ADR-004 §4**; the detector was verified canon on **all four §5.1 axes**. Roughly **19,432 rows spanning 2025-04-01 → 2026-05-22**. Then nothing: **no scheduled producer** on any surface, and **no live consumer in either repo**. Six **unscheduled** audit scripts read it (`audit_s32_enh100_falsification{,_v2..v5}.py`, `audit_s33_enh103_falsification.py`). |
+| **What ADR-004 planned** | S31-C was to build `v_ict_primitive_edge` and rewire consumers off the legacy tables, after which the legacy writer would be retired *"only after 4+ weeks of operator confirmation that the primitives layer is paying"*. The confirmation window never opened because the layer never ran again. |
+| **Why this compounds** | The legacy layer (`build_ict_htf_zones.py`) was never retired and is the one still feeding the chart — including its polarity-inverted daily OB, **TD-S76-NEW-7**. The canon layer's non-execution is why the non-canonical one is still load-bearing. |
+| **Proper fix** | Not a code fix. Either S31-C is scheduled and finished, or ADR-004's S31-C scope is formally abandoned and the table marked historical. Leaving it in its current state — canon, correct, and inert — is the option that costs the most, because every future session re-reads it as live. |
+| **Cross-ref** | ADR-004 §9, §12 · TD-S76-NEW-4 (which contaminates what it did produce) · TD-S76-NEW-7. |
+| **Status** | **OPEN.** |
+
+### TD-S76-NEW-7 (S1 priority) — F-60: the legacy `detect_daily_zones` is polarity-inverted, its own comment says the deviation is "tracked separately as TD candidate", and it never was
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** This is the writer still feeding the operator's chart. A `BULL_OB` drawn from a bullish candle's body is not an order block by any reading of ADR-004 §5.1 — it is the opposite of one. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | `build_ict_htf_zones.py::detect_daily_zones`, comment at **`:457-460`** |
+| **The defect** | Non-canonical **and** polarity-inverted: **a bullish candle's own body becomes the `BULL_OB`**. Canon (ADR-004 `:79`) requires the OB to be the **opposing-direction** candle preceding a displacement that creates an FVG. There is no opposing-direction lookback and no FVG confirmation. |
+| **The comment** | `:457-460` records the deviation as **intentional** and states it is *"tracked separately as TD candidate"*. **It never was.** No TD exists for it; this entry is the first. A deviation that documents its own tracking, and is not tracked, is indistinguishable from one nobody noticed. |
+| **S69 propagated it deliberately** | `detect_daily_zones_history` was widened from 1 session to **60** at S69 (`a4bdb4c`), correctly holding the detection rule byte-identical so the Exp-15 cohort survived. The rule held constant **is this one** — so the widening multiplied the inverted zones ~60×, by design, without the design ever having been examined. |
+| **Proper fix** | Not a code change in isolation. Correcting the polarity changes every daily zone the chart has ever rendered and every cohort labelled from them. It is the ADR-004 §12 question — *the Compendium is not preserved; old WR numbers are marked SUPERSEDED-BY-CANONICAL* — reaching the one writer that was left running. |
+| **Cross-ref** | ADR-004 §5.1, `:79`, §12 · TD-S76-NEW-6 (the canon replacement that never shipped) · audit Part 1 finding F-60. |
+| **Status** | **OPEN.** |
+
+### TD-S76-NEW-8 (S2 priority) — `OB_MIN_MOVE_PCT = 0.40` is a volatility gate: hourly OB formation tracks monthly VIX and reaches zero in low-vol months
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Same class as **TD-S75-NEW-2** (a bare constant that is not scale-free), and filed at the same severity. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | `build_ict_htf_zones.py` — `OB_MIN_MOVE_PCT = 0.40` |
+| **Measured — hourly OB formation against monthly VIX** | **12** formations at VIX **16.83** (Apr-25) · **15** at **19.93** (Mar-26) · **ZERO** in Sep-25 (**10.68**) and Oct-25 (**11.06**). The constant is **symbol-blind and bar-size-blind**: one literal applied across two indices at different price levels and across four timeframes with different bar ranges. |
+| **What this establishes, precisely** | That on the **hourly** layer the threshold gates on volatility rather than on structure — in a low-vol month it admits nothing at all. It does **not**, on this evidence, establish anything about the M5 layer. |
+| **Relationship to TD-S70-NEW-8 — read this before citing either** | TD-S70-NEW-8 **struck** the claim that 0.40% is *"empirically unreachable"*, on two grounds: the measurement used single-bar bodies against a **5-bar impulse** definition, and the S70 rebuild produced 38 daily OB/FVG per symbol on the same constant. Both still hold. The reconciliation this entry offers is **per-timeframe scoping** — reachable at D, volatility-gated at H, and *plausibly* unreachable at M5 given bar range, **which has not been measured against the 5-bar definition**. TD-S70-NEW-8's caution applies unchanged: do not re-assert "unreachable" without measuring the quantity the code actually tests. |
+| **Proper fix** | ADR-016's `merdian_parameters` pattern — per-timeframe, per-symbol, with the calibration recorded. **ADR-016 recalibration remains blocked by TD-S70-NEW-8** until the 5-bar re-measurement exists, and this entry does not unblock it. |
+| **Cross-ref** | **TD-S70-NEW-8** (blocking; mechanism candidate supplied here) · TD-S75-NEW-2 (the same defect class at `5e-5`) · ADR-016 · ADR-009 (SQL to `docs/research/` first). |
+| **Status** | **OPEN.** |
+
+### TD-S76-NEW-9 (S2 priority) — 1H structure detection is directionally asymmetric: BEAR_FVG is current, the other three primitives are months stale
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Three of four 1H primitives have produced nothing for months while the layer reports success every run. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | `build_ict_htf_zones.py::detect_1h_zones` · `ict_htf_zones` |
+| **Measured — newest row per primitive** | `BEAR_FVG` **2026-09-01** (current) · `BULL_FVG` **2026-06-03** · `BULL_OB` **2026-06-03** · `BEAR_OB` **2026-05-21**. |
+| **What the runner log looks like meanwhile** | `hourly_written=2..3` in every row — which is **PDH/PDL, not structure**. The count is non-zero every run, so no freshness or contract check fires. A layer producing only its two guaranteed level rows is indistinguishable, at the count level, from one producing structure. |
+| **Why this is a Rule 22 item** | **CLAUDE.md Rule 22**: a direction-asymmetric defect in one component means auditing its pair, same author, same era, same blind spot. S15 fixed `BEAR_FVG` in the zone builder and S17 found the exact mirror in the live detector because nobody had looked. This asymmetry runs the other way — BEAR_FVG is the *surviving* one — and the pair has not been audited. |
+| **Not yet distinguished** | Whether this is a detection defect, a consequence of **TD-S76-NEW-8**'s volatility gate biting asymmetrically, or a genuine market fact about the period. The three are separable by measurement and none has been done. |
+| **Proper fix** | Audit the four 1H branches against each other before changing any of them, per Rule 22. Separately, `hourly_written` should distinguish structure from levels — a single count over two populations cannot report either. |
+| **Cross-ref** | CLAUDE.md **Rule 22** · TD-S76-NEW-8 · TD-S76-NEW-10 (the contract that cannot see this). |
+| **Status** | **OPEN.** |
+
+### TD-S76-NEW-10 (S2 priority) — `expected_writes` is a floor, so both ICT writers log `contract_met=true` daily regardless of what they wrote
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** The instrumentation that exists to detect writer failure cannot detect it. Every downstream consumer of `script_execution_log` inherits the blind spot. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | `core/execution_log.py::_compute_contract_met` **`:297-303`** · `build_ict_htf_zones.py` (`expected_writes={"ict_htf_zones": 1}`) · `detect_ict_patterns_runner.py` (`expected_writes={"ict_zones": 0}`) |
+| **Mechanism — verified in source** | The test is `if self.actual.get(table, 0) < n_expected: return False`. A **floor**. The builder declares **1** against **163** actual and passes; the runner declares **0** against **0** actual and passes. **1 and 163 are indistinguishable, and so are 0 and any number.** |
+| **Consequence** | Both writers report `contract_met=true` every day. The runner's declaration of `0` is the sharper case: it is a contract that **cannot fail on write count at all**, so the only failing path left is a non-zero exit. |
+| **Why it is the general case** | Filed as the first instance of **CLAUDE.md Rule 0 clause 1** — *`expected_writes` states an exact count or a range, never a floor*. The fix is the clause, applied everywhere `expected_writes` appears, not at these two sites. |
+| **Proper fix** | Give `expected_writes` a range form and migrate declarations to it. A sweep is required: every writer that currently declares a floor is asserting nothing, and the count of such writers has not been taken. |
+| **Cross-ref** | **CLAUDE.md Rule 0** · TD-S76-NEW-9 (whose asymmetry this contract cannot see) · TD-S76-NEW-5. |
+| **Status** | **OPEN.** |
+
+### TD-S76-NEW-11 (S3 priority) — F-82: nine of eighteen `ADR-004` line citations in the S76 audit were wrong, in four distinct ways, and every quote was correct
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Repaired in the same session it was found. Filed for the **class**, which is not repaired. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | `docs/research/ict_structure_audit_2026-09-09.md` · `docs/decisions/ADR-004-ict-primitive-canon.md` |
+| **Measured** | An exhaustive `ADR-004:(\d+)` sweep found **18 distinct cited lines, 9 wrong**. Four kinds: **off-by-one** (`:59`→`:60`, `:86`→`:87`, `:541`→`:540`); **a blank line** (`:130`→`:128`, `:145`→`:140`); **the wrong element of the right section** (`:87`→`:91`, `:113`→`:106-111`, `:133`→`:132`, `:578`→`:576`, `:369`→`:368`, `:136-138`→`:135-137`); and **the wrong file** — `ADR-004:383` is `ict_primitives.py:383`; the ADR's `timeframe` CHECK is `ADR-004:501`. ADR-004 has one commit (`37f3259`) and has never been amended, so none of it is source drift. |
+| **Why it survived** | **Every quoted string was correct, and every wrong number landed on plausible nearby text.** A reader checking the quote finds it; a reader following the number finds something that reads like support. Neither check can detect the error. |
+| **How it was found** | Not by reading. By writing an assertion — `count("ADR-004:87") == 3` — which returned 5, of which two were citations nobody had checked in the four sessions the document has existed. |
+| **The class, unrepaired** | A line citation into a file the citing document does not control is **unverifiable at read time and silently rots on any edit of the target**. This is also why ADR-004 Amendment C was appended rather than inserted: an inline insertion would have shifted 19 of the 21 surviving citations. |
+| **Proper fix** | Cite by **section and quote**, not by line, wherever the target is a file the citing document does not own. Retrofitting existing citations is a sweep nobody has scoped. |
+| **Cross-ref** | ADR-004 Amendment C (§15) · CLAUDE.md **Rule 0** (same failure class: a check that cannot discriminate) · TD-S76-NEW-12. |
+| **Status** | **OPEN as a class; the nine instances are repaired.** |
+
+### TD-S76-NEW-12 (S3 priority) — Rule 7 splice-discipline defect in S75's own doc-close: the Topology splice anchored on the wrong footer and wrote none of its own
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Navigational only. Filed because it is a defect in the splice discipline itself, found while using that discipline. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | `docs/registers/MERDIAN_Deployment_Topology.md` — §S75 |
+| **What happened** | S75's Topology splice anchored on the **§S73 footer** instead of the file end, so §S75 landed *between* §S73 and §S74. It also **wrote no footer of its own**, which is why the last footer in the file read *"Session 74"* while §S75 sat above it. Section order is now **S72 → S73 → S75 → S74 → S76**. |
+| **How it was found** | While writing §S76.A and looking for the correct append point — not by any check. Nothing in the Rule 7 discipline asserts on document ordering or on footer-per-session. |
+| **Not fixed** | Deliberately. Reordering §S75 is a large splice unrelated to anything else S76 touched, and doing it inside an unrelated doc-close is the kind of scope drift the discipline exists to prevent. §S76 appended at the true file end and carries its own footer reading `Previous: Session 75`. |
+| **Proper fix** | Move §S75 between §S74 and §S76 and give it a footer, in a splice that does nothing else. Separately: the Rule 7 checklist should assert **one footer per session** and **append-at-file-end** — both are cheap post-conditions and neither exists. |
+| **Cross-ref** | Doc Protocol v4 **Rule 7** (as amended S74) · Topology §S75, §S76 · TD-S73-NEW-10 (the `## Update log` tables frozen at S67 — the same document, a different decay). |
+| **Status** | **OPEN — recorded, not fixed.** |
+
+### TD-S76-NEW-13 (S2 priority) — F-76: `merdian_reference.json` pins both ICT files at line counts four generations stale
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** The register is the file the read-rule sends a session to first. Pinned at a pre-patch state, it will confirm the wrong file version to anyone who checks. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | `docs/registers/merdian_reference.json` — `files` entries for `build_ict_primitives.py` and `ict_primitives.py` |
+| **Measured** | The register pins **`build_ict_primitives.py` at 1,140 lines** — exactly `_PRE_S32.py` — and **`ict_primitives.py` at 613** — exactly `_PRE_S31B_SWEEP_DEDUP.py`. Live: **2,152** and **639**. Both numbers match a specific superseded backup on disk, which is what makes the staleness diagnosable rather than merely wrong. |
+| **Why the exactness matters** | A line count that matches a named backup is evidence the entry was written once and never revisited, not that it drifted. The same entry's *prose* claims the sweep-dedup patch was applied — so the register contradicts itself: the prose describes the post-patch file, the line count describes the pre-patch one. |
+| **Proper fix** | Re-measure both entries. More usefully: a line count in a register is a hostage to every edit and buys little — the same argument as **TD-S76-NEW-11**'s line citations. Consider dropping the field rather than maintaining it. |
+| **Cross-ref** | TD-S71-NEW-1 · TD-S71-NEW-2 (the same file's stale freshness header) · TD-S76-NEW-11 (line references as a general liability) · audit finding F-76. |
+| **Status** | **OPEN.** |
+
+### TD-S76-NEW-14 (S3 priority) — Deployment Topology §7.2 listed 20 Windows tasks against 23 measured, with `State: Ready` on 18 of them
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Superseded-markers were added at S76, so a reader is now warned. The table itself is still wrong. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | `docs/registers/MERDIAN_Deployment_Topology.md` §1 (`Scheduler`, `Live signal generation`) and §7.2 |
+| **The gap** | §7.2's table carries **20** task rows; `schtasks /query` returns **23**. §S70's audit said **19**. Three counts, three sessions, none reconcilable from the document. At least three live tasks are absent from the table: `MERDIAN_ICT_EOD`, `MERDIAN_Option_Chain_Ingest_NIFTY`, `MERDIAN_Option_Chain_Ingest_SENSEX` — **the latter two appear nowhere in the document at any session**, and they are the archival bridge's invokers (**TD-S76-NEW-1**). |
+| **Root cause shape** | §S70 recorded `MERDIAN_ICT_EOD`'s migration in its session section and left §7.2 untouched. **Recording a state change only in the session section is the mechanism** by which a body table reaches three sessions of staleness while asserting the opposite of the measured state. |
+| **Done at S76** | One-line superseded-markers at the §1 `Scheduler` cell, the §1 `Live signal generation` cell and the §7.2 heading, each pointing at §S76.A, original wording demoted behind `Was:`. Tables **not** rewritten. |
+| **Proper fix** | Re-inventory all 23 tasks and rewrite §7.2's table, including the three missing entries. Separately, the doc-close checklist needs a rule that a measured state change updates the body it contradicts, not only the session section. |
+| **Cross-ref** | Topology **§S76.A, §S76.B, §S76.F** · TD-S76-NEW-1 · TD-S73-NEW-10. |
+| **Status** | **OPEN — markers added, table not rewritten.** |
+
+### TD-S76-NEW-15 (S3 priority) — Doc Protocol v4 asserts `CURRENT.md` is mixed-EOL and must be edited in binary mode; measured, it is pure LF, and `CLAUDE.md` already says so
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** No data is at risk and no edit has been corrupted by it. It is filed because the stale assertion lives in the document a session brief reaches for first, and it already propagated once — into the S76 brief for this doc-close. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | `docs/operational/MERDIAN_Documentation_Protocol_v4.md` (the mixed-EOL rule) · `CLAUDE.md` (anti-pattern list, S75 correction) · `docs/session_notes/CURRENT.md` (the subject) |
+| **What Doc Protocol v4 asserts** | That `CURRENT.md` carries **mixed CRLF/LF** line endings and must therefore be edited in binary mode with the mix preserved. |
+| **Measured, 2026-09-10, before splicing the file** | **0 CRLF · 3,038 bare LF · 0 lone CR · no BOM.** `git check-attr` returns `text: unspecified, eol: unspecified`; `git ls-files --eol` returns **`i/lf w/lf`**. The file is **pure LF** in the index and in the working tree. |
+| **`CLAUDE.md` already carries the correction** | Its anti-pattern list records, verbatim: *"The counts in this note are stale — corrected S75 2026-09-09: `CURRENT.md` was 317 CRLF / 2,596 LF when this was written and measures **0 CRLF / 3,038 bare LF** now; it has been normalised since. The rule stands and is why the S75 splices normalised nothing — **but check the file, not this number**."* The S75 figures match today's measurement **exactly**, so the file has not moved since. |
+| **The defect is the disagreement, not either statement** | Doc Protocol v4's rule was true when written. `CLAUDE.md` recorded its expiry at S75. **Doc Protocol v4 was never updated**, so two governance files now disagree about the same file's byte-level state, and the **older one is the one a session brief reaches for first** — which is exactly what happened here. |
+| **It has already propagated once** | The S76 brief for doc-close file 3 of 10 opened with *"CRITICAL: Doc Protocol v4 records CURRENT.md as having MIXED CRLF/LF endings"* and instructed a binary-mode splice on that basis. The instruction was harmless — no-normalisation is the correct treatment for pure-LF and for mixed alike — but the premise was wrong, and it was wrong because the newer record was not consulted. |
+| **Same class as two items filed the same session** | **TD-S76-NEW-13** (F-76: `merdian_reference.json` pins line counts four generations stale) and **TD-S76-NEW-14** (Topology §7.2 lists 20 tasks against 23 measured). All three are a body document asserting a state that a newer record already contradicts, with nothing at the stale site pointing forward. |
+| **Proper fix** | A one-line **superseded-marker at the Doc Protocol rule**, pointing at `CLAUDE.md`'s anti-pattern entry — the same treatment applied to `ADR-004:60` and to Topology §1/§7.2 this session. **`docs/operational/MERDIAN_Documentation_Protocol_v4.md` is not among the ten files in this doc-close**, so this is deferred to whenever it is next touched. The rule's *substance* needs no change: measure the file, normalise nothing. Only its factual claim about `CURRENT.md` is stale. |
+| **Cross-ref** | `CLAUDE.md` anti-pattern list (S75 correction) · TD-S76-NEW-13 · TD-S76-NEW-14 · TD-S73-NEW-10 (frozen `## Update log` tables — the same decay in a different register). |
+| **Status** | **OPEN — deferred to the next Doc Protocol touch.** |
+
+### TD-S76-NEW-16 (S2 priority) — `merdian_reference.json`'s own version control is unreliable: two `change_log` arrays ten sessions apart, and two version counters, one of which no session bumps
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** The file is the inventory a session is told to consult first. When its own provenance is ambiguous, every value it reports inherits that ambiguity — and the stale counter is the one a reader reaches for, which has already happened once. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | `docs/registers/merdian_reference.json` — `_meta.change_log` vs top-level `change_log`; `_meta.version` vs top-level `version` / `last_updated_session` / `last_updated_date` |
+| **Two `change_log` arrays** | `_meta.change_log` (indent 4, entries at 6) newest entry **S66**. Top-level `change_log` (indent 2, entries at 4) newest entry **S76** after this session. **Ten sessions diverged.** Nothing in the file says which is canonical, and neither array references the other. |
+| **Two version counters** | `_meta.version` = **v52**. Top-level `version` = **v54** after this session. |
+| **S75 bumped the nested counter and left the top-level stamp behind** | Commit **`1832b3a`** states *"merdian_reference.json — four live column lists, version v51 -> v52"*. That is `_meta.version`. The top-level `last_updated_session` stayed at **"Session 74"** and `last_updated_date` at **2026-09-07**, so **the file recorded edits it did not admit to**: it was modified at S75 while continuing to state it was last updated at S74. |
+| **S76 widened the divergence rather than resolving it** | This session bumped the **top-level** stamp (v53 → v54, Session 74 → 76, 2026-09-07 → 2026-09-10) and deliberately left `_meta` untouched, because reconciling two counters is a decision about which is canonical, not a splice. The gap is now v52 vs v54 and S66 vs S76. **Recorded as widened, not as fixed.** |
+| **It has already misled once** | The **S76 session brief for this file cited "v52"** — the nested, stale counter — when the live top-level value was v53. The stale value is the one a reader reaches for, which is the whole hazard. |
+| **Same class as three items filed the same session** | **TD-S76-NEW-13** (line counts four generations stale), **TD-S76-NEW-14** (Topology §7.2, 20 tasks against 23), **TD-S76-NEW-15** (Doc Protocol v4 vs `CLAUDE.md` on `CURRENT.md`'s line endings). All four are **a value asserted in one place and contradicted in another, with nothing connecting them**. |
+| **Proper fix** | A decision, then a patch. Decide which `change_log` and which counter are canonical; delete or explicitly mark the other as historical; and add a doc-close post-condition asserting that the stamp a session writes matches the session it ran in. The last part is cheap and is the piece that would have caught S75. |
+| **Cross-ref** | TD-S76-NEW-13 · TD-S76-NEW-14 · TD-S76-NEW-15 · TD-S71-NEW-1 · TD-S71-NEW-2 (the same file's stale freshness header) · TD-S73-NEW-10. |
+| **Status** | **OPEN — divergence widened at S76 and recorded as such.** |
+
+### TD-S76-NEW-17 (S2 priority) — four different row counts for the ICT cohort circulate across six governance files, and none of them is a measured live count of anything
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** The F-68 recompute's scope is a function of this number, and the ADR that governs the recompute carries the wrong one for the table it is describing. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | `ict_primitives` · `ict_primitive_outcomes` · ADR-004 Amendment C · `CLAUDE.md` · `CURRENT.md` · `tech_debt.md` · `merdian_reference.json` · `docs/research/ict_structure_audit_2026-09-09.md` |
+| **The four numbers, and what each actually is** | **19,432** — the operator's S76-supplied count of **`ict_primitives`**. **19,662** — the operator's S76-supplied count of **`ict_primitive_outcomes`**. **19,399** — the S31-B backfill figure (2025-04-01 → 2026-05-19), historical. **19,571** — `CLAUDE.md`'s S35 full-recompute **insert** record, historical. |
+| **How two of them entered the governance files** | 19,432 and 19,662 are **both S76-supplied and refer to DIFFERENT TABLES**, and were then **used interchangeably across prompts** during this doc-close. That is the entire mechanism. ADR-004 Amendment C, the S76 audit document, `tech_debt.md`, `CURRENT.md` and `merdian_reference.json` each received whichever figure was in front of them at the time. |
+| **The correct statement** | **No file currently asserts a measured live row count for either table.** 19,399 and 19,571 are historical write records, not counts; 19,432 and 19,662 are counts of two different tables being quoted as though they were one. Four numbers circulate as though each were the answer to the same question. |
+| **Dispositive — one query, operator-run** | `SELECT (SELECT count(*) FROM ict_primitives) AS primitives, (SELECT count(*) FROM ict_primitive_outcomes) AS outcomes;` — this settles both tables in a single statement and is the only thing that can. |
+| **A defect in ADR-004 Amendment C, filed here and NOT fixed in this pass** | Amendment C states *"`ict_primitive_outcomes` holds **19,432 rows** built under the superseded behaviour"*. **19,432 is the `ict_primitives` count.** Amendment C is about **outcome anchoring**, so the cohort it is describing is the outcomes table and the figure should be the outcomes count. The governance language of the amendment is unaffected — `valid_from` is the confirming bar's close either way — but its extent claim names the wrong table's size. **To be corrected when ADR-004 is next opened**, deliberately not touched in this doc-close. |
+| **Consequence for `CLAUDE.md`** | The S76 settled-decisions line for Amendment C was written **without a row count** rather than inheriting the wrong one, so the defect is confined to ADR-004 and to this entry. |
+| **Same class as four items filed the same session** | **TD-S76-NEW-13**, **-14**, **-15**, **-16** — a value asserted in one place and contradicted in another with nothing connecting them. This one is the sharpest of the five, because the contradiction is not between an old record and a new one: **all four numbers were live in the same session**, and two of them were introduced by the same person in the same afternoon. |
+| **Proper fix** | Run the query; write the two measured counts, each labelled with its table and the date measured, into `merdian_reference.json`'s `tables` entries; correct Amendment C's figure at the next ADR-004 touch; and stop quoting either number anywhere else. A count belongs in the inventory that owns the table, not in prose in five documents. |
+| **MEASURED 2026-09-10 (S76), operator-run** | `ict_primitives` = **19,573**; `ict_primitive_outcomes` = **19,571**. None of the four circulating figures was a current count of the table it was attached to: 19,432 and 19,662 were wrong for both tables, 19,399 is historical, and 19,571 — `CLAUDE.md`'s S35 *insert* record — coincides with the live outcomes count without ever having been a count. **The 2-row gap this exposes is filed separately as TD-S76-NEW-18.** |
+| **Cross-ref** | ADR-004 Amendment C §15 · TD-S76-NEW-4 (the F-68 cohort this number scopes) · TD-S76-NEW-13 · TD-S76-NEW-14 · TD-S76-NEW-15 · TD-S76-NEW-16 · **TD-S76-NEW-18** · Assumption Register **§D.35.14**. |
+| **Status** | **PARTIALLY RESOLVED — counts measured; ADR-004 Amendment C's figure is still wrong for the table it describes.** |
+
+### TD-S76-NEW-18 (S3 priority) — ADR-004 §10 asserts `ict_primitive_outcomes` is 1:1 with `ict_primitives` via FK CASCADE; the live tables differ by two rows
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Two rows out of ~19,572, on a table with no live consumer. It matters because the 1:1 claim is load-bearing for every join written against these tables — including the F-68 recompute's own verification — and a claim that is *almost* true is the kind that passes a spot check. |
+| **Filed** | 2026-09-10 (Session 76) |
+| **Component** | `ict_primitives` · `ict_primitive_outcomes` · ADR-004 §10 (`PRIMARY KEY (primitive_id)`, `REFERENCES ict_primitives(id) ON DELETE CASCADE`) · `build_ict_primitives.py::upsert_outcomes` |
+| **Measured 2026-09-10 (S76), operator-run** | `ict_primitives` = **19,573**. `ict_primitive_outcomes` = **19,571**. **Two primitives have no outcomes row.** |
+| **What is claimed** | ADR-004 §10's schema block and `merdian_reference.json`'s entry both state the relationship is **1:1**, the latter as *"FK CASCADE to ict_primitives.id; 1:1 enforcement via writer logic"*. The FK guarantees no **orphan outcome**; it guarantees nothing about a **primitive without an outcome**, which is what these two are. The enforcement is entirely in the writer. |
+| **Why this is not TD-S76-NEW-17** | Different question, different fix. NEW-17 is *"four numbers circulate and none is a measured count"*, and its fix is a correction pass. This is *"the ADR asserts a constraint the data does not satisfy"* — either **the writer's 1:1 has a hole** or **the ADR overstates what the schema enforces**, and neither is resolved by correcting counts. |
+| **Candidate explanation — OPERATOR-RECALLED, NOT DOCUMENT-SOURCED** | Offered at filing: *"Part 2 of the audit records two W BEAR_FVG primitives, one per symbol, with no outcome row — found while building the retest cohort table, which is why every outcomes query in Part 2 uses a LEFT JOIN."* **Measured against the audit document 2026-09-10: `LEFT JOIN` 0 occurrences, `no outcome` 0, `outcome row` 0.** The claim is in no document — also checked `build_readiness_2026-09-09.md` and `session_log.md`. It is **session recall**, carried here as a **lead** because it accounts for the number exactly — two, one per symbol — and for nothing else. See Assumption Register **§D.35.17**. |
+| **Why the candidate is plausible anyway** | `compute_outcomes` computes an `OutcomeRow` for every primitive, but `upsert_outcomes` writes only rows whose natural key **resolves to a primitive id** (`fetch_primitive_ids_by_natural_key`) and whose id is **not already present**. A W primitive whose `source_bar_ts` falls outside the id-resolution window would be silently dropped there — no error, no log line, one fewer outcome row. That is a mechanism, not a finding: it has not been tested against these two rows. |
+| **Dispositive query** | `SELECT p.symbol, p.timeframe, p.primitive_type, p.source_bar_ts FROM ict_primitives p LEFT JOIN ict_primitive_outcomes o ON o.primitive_id = p.id WHERE o.primitive_id IS NULL;` — names the two rows, which settles whether the candidate is right and, if it is, points straight at the window. |
+| **Proper fix** | Run the query first. Then either correct the writer so 1:1 holds, or amend ADR-004 §10 to state what the schema actually guarantees (no orphan outcomes) and what only the writer attempts (no outcome-less primitives). **Do not assert 1:1 in a new join until one of those is done** — the F-68 recompute will re-create this population if the cause is in the writer. |
+| **Cross-ref** | ADR-004 §10 · TD-S76-NEW-17 (which exposed it) · TD-S76-NEW-4 (the F-68 recompute that will reproduce it if uncorrected) · Assumption Register **§D.35.14**, **§D.35.17**. |
+| **Status** | **OPEN — two rows named by arithmetic, not yet by query.** |
+
+### TD-S76-NEW-19 (S1 priority) — `build_trade_signal_local.py` selects `ict_tier` from `ict_htf_zones`, a column that is not on that table; the HTF attach on the live signal path has never returned a row
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** The dead read is on the orchestrator child that produces trade decisions, it has been dead for the whole period the two column lists have differed, and the only report of it goes into a field nothing reads. |
+| **Filed** | 2026-09-11 (Session 76, post-measurement) |
+| **Component** | `build_trade_signal_local.py:980-985` (the `select`) · `:1014` (the handler) · `ict_htf_zones` · `ict_zones` |
+| **Measured 2026-09-10/11** | `ict_htf_zones` has **16** columns and **does not carry `ict_tier`**; `ict_zones` has **30** and does. Running the exact `select` returns **`42703` — undefined column**. `htf_failed=true` on **504 of 504** cycles across two days, both symbols. The denominator is every cycle in the window, so the rate is **100%**, not a sample. |
+| **Mechanism** | The `select` names a column from the sibling table. PostgREST rejects the whole request; the exception reaches the handler at `:1014`, which sets `htf_failed=true` and continues. The signal is produced without HTF zone context and reports success. |
+| **What this is not** | **It is not F-19.** This consumer applies `symbol` + `status=ACTIVE` and **no validity predicate**, so it sits on the *permissive* side of F-19's split and `valid_to` has never been what excluded its rows. TD-S76-NEW-3 and TD-S74-NEW-2 both attributed the observed `htf_failed` to F-19 because F-19 was the finding in hand; **both are corrected in place**, and both keep their actual subject, which was never the cause but the fact that a correct failure report reaches no consumer. |
+| **CLAUDE.md Rule 0 clause 3 — why the rate was wrong too** | The register carried *“roughly 40 times a day”*. Nobody derived that from a belief about the cycle cadence; it was **read off the thing and written down**, which leaves nothing for a measurement to disagree with. Stated as a belief first, `504/504` would have been a visible contradiction on day one rather than a correction in session 76. *An expected value obtained by running the thing is not an assertion.* |
+| **The general shape** | **A column name is a cross-table assertion, and nothing type-checks it.** `ict_tier` is a real column on a real table with a plausible name, one table away. The failure mode of getting it wrong is not a crash but a caught exception, a boolean flag, and a signal that looks complete. Same family as F-19's *"a sentinel change at the writer with no sweep of the readers"* — here it is a **schema divergence between two similarly-named tables with no reader that spans both**. |
+| **Proper fix — READ TD-S76-NEW-20 FIRST** | The fix is not the one-word deletion it looks like. Removing `ict_tier` makes the `select` succeed, and on its first success it admits every `ACTIVE` row because no validity predicate is applied. **Sequencing is mandatory** — see TD-S76-NEW-20. If `ict_tier` is genuinely wanted on this path, it has to come from `ict_zones`, which is **frozen since 2026-06-02** (§S76.C) and would supply a stale value; that is a second decision, not part of this fix. |
+| **Cross-ref** | **TD-S76-NEW-20** (the sequencing lock — mandatory prerequisite reading) · **TD-S76-NEW-3** (corrected in place) · **TD-S74-NEW-2** (corrected in place; mutually locked) · audit finding **F-19** (`:259` row corrected) · System Map **§S76.A** · CLAUDE.md **Rule 0 clause 3**. |
+| **Status** | **OPEN.** |
+
+### TD-S76-NEW-20 (S1 priority) — fixing NEW-19 arms F-19 on the signal path: the `ict_tier` removal and the `valid_to` predicate must land in one pass
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1, and promoted deliberately from a note inside NEW-19 to an entry of its own.** A hazard that only exists *while somebody is fixing something else* is invisible in the entry it qualifies — it gets read as a caveat and skipped. The fix it qualifies is a one-word deletion on a live signal path. |
+| **Filed** | 2026-09-11 (Session 76, post-measurement) |
+| **Component** | `build_trade_signal_local.py:980-985` · `detect_ict_patterns_runner.py:268` · `merdian_daily_audit.py:619` · `generate_pine_overlay.py:552-556` · `ict_htf_zones` |
+| **The lock** | `build_trade_signal_local.py` applies **no validity predicate**. Today that costs nothing, because the `select` raises `42703` and returns nothing (TD-S76-NEW-19) — **the deadness is the only thing screening it**. Remove `ict_tier` and the read succeeds; on its **first** success it admits **every** `ACTIVE` row. A dead read becomes a live F-19 instance on the path that produces trade decisions, in one commit, with no intermediate state in which anyone would notice. |
+| **What the first success admits** | **109 `ACTIVE` zones that no validity predicate has ever screened** — operator-measured S76, **not re-derived in this entry**; it answers part of the audit's open question 8 (`ict_structure_audit_2026-09-09.md:514`), where the 160–164 split by timeframe and `valid_to` nullity was left unmeasured. Plus the **15 forked duplicate groups** of **TD-S76-NEW-5** — `ACTIVE`, `valid_to = NULL`, unexpirable — which today only the Pine overlay renders. |
+| **Why this is not TD-S74-NEW-2** | TD-S74-NEW-2 is *"two consumers of one table hold incompatible beliefs"*. This is *"the fix to a fourth consumer's unrelated defect is what makes it a consumer at all"*. Same table, same predicate, different failure: one is a disagreement, the other is an **ordering constraint on a repair**. **The two are mutually locked and each entry states it**: TD-S74-NEW-2 cannot close without this, and TD-S76-NEW-19 cannot be applied before it. |
+| **Proper fix — one pass, four sites** | (1) Drop `ict_tier` from the `build_trade_signal_local.py` `select`. (2) Apply `or(valid_to.is.null,valid_to.gte.<date>)` at **all** consumers — the runner, the daily audit, the Pine generator and this one — so the four agree. (3) Resolve the 15 forked groups (TD-S76-NEW-5) **before or with** the predicate change, or the signal path inherits them on its first working cycle. (4) Give `htf_failed` a consumer or remove it; otherwise the one instrument that would show the fix working still reports into a void (TD-S76-NEW-3). **Do not land (1) alone.** TD-S74-NEW-2's *"do not fix one side alone"* now has a fourth side, and the fourth side is the one that looks like a typo. |
+| **The general shape** | **A latent defect screened by an unrelated failure is armed by fixing the failure.** The safe-looking change is safe only because something else is broken, and nothing in the diff says so. This class is invisible to review of the change itself; it is visible only from the entry that records *why* the dead path was dead. |
+| **Cross-ref** | **TD-S76-NEW-19** (the defect whose fix arms this) · **TD-S74-NEW-2** (mutually locked; stated in both) · **TD-S76-NEW-5** (the forked groups) · **TD-S76-NEW-3** (`htf_failed` has no consumer) · ADR-005 · audit **F-19**, open question 8 (`:514`) · System Map **§S76.E**. |
+| **Status** | **OPEN — blocking TD-S76-NEW-19.** |
+
+### TD-S76-NEW-21 (S3 priority) — ADR-004's Amendments A and B are absent from the Decision Index entirely, and Amendment C's new marker makes the file read as though they never happened
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Nothing is broken in code and no decision is misrecorded in the ADR itself. The hazard is navigational: the Index is the file CLAUDE.md Rule 0 names for the session-start *"have we decided this already?"* scan, and it now presents an incomplete amendment history as a complete one. |
+| **Filed** | 2026-09-11 (Session 76, from file 8's premise check) |
+| **Component** | `docs/decisions/MERDIAN_Decision_Index.md` — the ADR-004 row's Date cell · `docs/decisions/ADR-004-ict-primitive-canon.md` (Amendments A, B, C) · Doc Protocol v4 **Rule 11.1** |
+| **Measured 2026-09-11** | Grep for `Amendment A` and `Amendment B` across the whole Decision Index: **zero hits each**. ADR-004's amendments appear as **no row, no Date-cell marker, and no session-footer mention**. The convention exists and three other ADRs follow it — ADR-023 and ADR-022 carry `· **AMENDED S71 2026-08-29**`, ADR-021 `· **AMENDED S72 2026-09-05**`, all in the Date cell. |
+| **How it surfaced** | Not by audit. The S76 doc-close was instructed to *read how the file handles prior amendments, since ADR-004 already carries A and B, and follow that rather than inventing a form*. The premise check that question forced returned a third answer neither branch anticipated: **there is no prior handling to follow, because there is none recorded.** |
+| **What Amendment C did about it** | Followed the convention the **other** ADRs establish — a Date-cell marker on the parent row, substance in the S76 session footer. That is correct in form and it has a side effect worth stating plainly: **C's marker is now the first and only ADR-004 amendment the Index records**, so a reader scanning the row sees one amendment where there are three. |
+| **Why it is not repaired in the same pass** | Dating A and B requires reading them out of `ADR-004-ict-primitive-canon.md` and establishing which session accepted each — a **sourced edit**, not a byte-level splice against text already on screen. Doing it inside a doc-close splice would have meant inventing two dates or transcribing them unverified, which is the class this session filed five instances of (**TD-S76-NEW-13..17**). |
+| **The general shape** | **Rule 11.1 is enforced for ADRs and unenforced for amendments.** A new ADR mechanically prepends a row and the reverse check verifies row-for-file. An *amendment* has no such mechanism: it depends on whoever writes the session footer noticing. A and B were missed for months by exactly that gap, and nothing in the index-health check would ever have caught it — the checks verify rows against files, and an amendment is neither. |
+| **Proper fix** | Two parts. (1) Read A and B out of ADR-004 §§ and date them from their accepting sessions; add both to the ADR-004 Date cell **ahead of C, in chronological order**. (2) Extend the `## Index health checks` list with a fourth check — *every amendment recorded in an ADR file has a Date-cell marker in its parent row* — since the existing three cannot see this class at all. |
+| **Cross-ref** | ADR-004 **Amendment C** (§15) · Doc Protocol v4 **Rule 11.1** · Decision Index S76 session footer (where the defect is narrated) · **TD-S73-NEW-11** (the same file, resolved at S73 — and carried forward as live into this session's brief, which is the §D.35 row this defect was found alongside) · **TD-S76-NEW-13..17** (the transcribe-without-a-source class this fix must avoid). |
+| **Status** | **OPEN — recorded, deliberately not repaired.** |
+
 ### TD-S75-NEW-4 (S2 priority) — ADR-002 v2's build sequence and the Enhancement Register use ENH-80..85 for different things; the register is authoritative by precedent, and the propagation TD that would have fixed the documents was never filed
 
 | Field | Value |
@@ -144,8 +464,10 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Why it stayed invisible** | The failure is silent and directional — it removes candidates rather than producing wrong ones, so the signal path simply emits less and reports success. The operator sees the zones on the chart and has no reason to suspect the engine does not. |
 | **Root cause shape** | ADR-005 changed the storage semantics of `valid_to` (date-expiry → NULL-means-no-expiry) and the consumer's filter was written against the prior semantics. **A sentinel change at the writer with no sweep of the readers.** |
 | **Proper fix** | Change the runner's filter to `or(valid_to.is.null,valid_to.gte.<date>)`, and give the Pine generator the same predicate so both consumers agree. Do not fix one side alone — the disagreement is the finding. |
-| **Cross-ref** | ADR-005 (zone validity model) · TD-079 (the original rewrite) · TD-S74-NEW-1. |
-| **Status** | **OPEN.** |
+| **Scope superseded S76** | **There are three consumers, not two.** `build_trade_signal_local.py` is the third — an orchestrator child on the 5-minute cycle — and it logs `htf_failed=true` on **504 of 504** cycles across two days into a field nothing reads — though **not for this entry's reason**: its read raises `42703` before any validity predicate is applied (TD-S76-NEW-19), which makes its F-19 exposure **latent rather than active**. See **TD-S76-NEW-3**. This entry stays OPEN; only its consumer count is superseded. |
+| **Mutually locked with TD-S76-NEW-20 (S76)** | **This entry cannot be closed by fixing the runner and the Pine generator alone, and TD-S76-NEW-19 cannot be fixed before this one.** The third consumer's F-19 exposure is currently **latent** — its `select` raises `42703` and returns nothing, so the missing `valid_to` predicate has never admitted a row. Removing the `ict_tier` column from that `select` — the obvious one-word fix — makes the read succeed and **admits every `ACTIVE` row on its first success**: 109 zones no validity predicate has ever screened, plus the 15 forked unexpirable duplicate groups of TD-S76-NEW-5. **The predicate fix must land with the column fix, not after it.** Stated in both entries deliberately; see **TD-S76-NEW-20**. |
+| **Cross-ref** | ADR-005 (zone validity model) · TD-079 (the original rewrite) · TD-S74-NEW-1 · **TD-S76-NEW-3** · **TD-S76-NEW-19** · **TD-S76-NEW-20** · TD-S76-NEW-5 (the forked groups the fix would admit). |
+| **Status** | **OPEN — scope widened S76.** |
 
 ### TD-S74-NEW-3 (S1 priority) — F-01: the futures basis is computed against spot up to 25 minutes stale, and the failure inverts
 
@@ -861,7 +1183,8 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Proper fix** | (a) Strike the unreachable-threshold claim from TD-S69-NEW-5 and note it in ADR-022's Evidence section — it is not load-bearing for ADR-022's decision, which rests on the timing finding. (b) Read the `No new patterns detected` emit site and its gate. (c) Only then re-measure, against the 5-bar impulse definition, with the SQL committed to `docs/research/` **before** any register entry, per ADR-009. |
 | **Cost to fix** | ~30 min for (a) and (b); the re-measurement is a research task. |
 | **Blocked by** | nothing. **ADR-016 recalibration must not proceed until this is settled** — it would be recalibrating against a premise that has been withdrawn. |
-| **Cross-ref** | TD-S69-NEW-5 · ADR-016 · ADR-009 (calibration discipline) · Assumption Register D.28.4. |
+| **Candidate mechanism, S76 — does NOT close this entry** | **TD-S76-NEW-8** measures hourly OB formation against monthly VIX (12 at 16.83, 15 at 19.93, **zero** at 10.68 and 11.06) and establishes the threshold as a **volatility gate on the H layer**. It offers per-timeframe scoping as the reconciliation — reachable at D, volatility-gated at H, plausibly unreachable at M5 — but **the M5 case is still not measured against the 5-bar impulse definition**, which is this entry's whole objection. The withdrawal stands and ADR-016 stays blocked. |
+| **Cross-ref** | TD-S69-NEW-5 · ADR-016 · ADR-009 (calibration discipline) · Assumption Register D.28.4 · **TD-S76-NEW-8**. |
 | **Status** | **OPEN — claim withdrawn, cause unexplained.** |
 
 ### TD-S70-NEW-9 (S3 priority) — 2026-08-17 capture degraded before the token failure and is unexplained
@@ -4353,4 +4676,6 @@ All four verification conditions met. **(a)** The daily layer accumulates — 38
 
 
 **S70 (2026-08-22) — 9 new items filed (TD-S70-NEW-1..9), 3 closed (TD-S69-NEW-4, TD-S69-NEW-7, TD-S69-NEW-8).** Ordering note: **TD-S70-NEW-5** (silent source-selection in `load_vix_history_rows`) comes before **TD-S70-NEW-4** (the VIX writer itself) — the logging defect is the mechanism that hid a five-month staleness and will hide the next one, so it is worth more than the instance it concealed. **TD-S70-NEW-2 and TD-S70-NEW-3 ship in one pass with ADR-023 D1**, all three being small corrections to the same CAS/read-path work. **TD-S70-NEW-8 blocks the ADR-016 recalibration** — the premise behind it has been withdrawn, and recalibrating against a withdrawn premise is worse than not recalibrating. **TD-S70-NEW-6** is deliberately bundled into the ADR-022 D1 job audit rather than actioned alone: it touches seven live ingest cron lines and each needs its own verdict. **Still open and unchanged from S69:** TD-S69-NEW-1 (EBS root 7.6 GB — the true root cause of the 08-12 cascade, still the largest infra item), TD-S69-NEW-2 (`eod_health_check.py` coverage — note S70 confirmed it reports `[OK]` on a session missing its last 14 minutes, because a first→last range check cannot see a truncated tail), TD-S69-NEW-3 (now escalated to **ADR-023 D1**), TD-S69-NEW-5 (M5 detector — orchestration half CLOSED by the AWS migration, threshold half withdrawn per TD-S70-NEW-8), TD-S69-NEW-6 (token-rotation runbook), TD-S37-01 (τ still hardcoded `0.3`). **Carried from S28 and now three outages old: TD-NEW-7** (S1, MALPHA→Supabase Zerodha token propagation) — the fix has been fully designed since 2026-05-13 and the precursor "C-10 Kite token propagation manual" dates to Session 7; outages 2026-04-22, 2026-05-12, 2026-08-18. It is the oldest live S1 in the register.
+
+**S76 (2026-09-10/11) — 21 new items filed (TD-S76-NEW-1..21), 0 closed.** **The last three were filed after the doc-close had begun, and all three corrected it.** TD-S76-NEW-19 and TD-S76-NEW-20 came out of measuring a figure this register had already published — *“roughly 40 times a day”* — which measured **504 of 504**, and whose cause was not the finding it had been attributed to. Two entries filed earlier in this same session (**TD-S76-NEW-3**, **TD-S74-NEW-2**'s widened scope) were **corrected in place** as a result. **TD-S76-NEW-21 came from the doc-close checking its own brief**: instructed to follow how the Decision Index handles ADR-004's existing Amendments A and B, the premise check found **there is no prior handling, because there is none recorded** — a Rule 11 gap predating S76 by months, which Amendment C's marker now makes visible by contrast. **Filed, deliberately not repaired** — dating A and B is a sourced edit, not a splice, and inventing the dates would have been a sixth instance of NEW-13..17's class. **The same premise check also established that TD-S73-NEW-11 has been RESOLVED since S73** and was carried into this session's brief as live; that one is an Assumption Register row, not a TD, and is owed at S77 open. **ONE STRUCTURAL CLASS, FIVE INSTANCES — TD-S76-NEW-13 through TD-S76-NEW-17: *a value asserted in one document and contradicted in another, with nothing connecting them.*** All five were found in a single session and **three of them were created during it**. They stay as separate entries because their fixes differ — a re-measurement, a table rewrite, a superseded-marker, a canonicality decision, and a query — but **the class is what a future session needs to see**, because the next instance will not look like any of these five. **This paragraph resumes a convention that lapsed: S71, S72, S73, S74 and S75 filed no update-log entry at all.** Five sessions of drift, not a decision — recorded here rather than left to be re-discovered, and the same shape as **TD-S76-NEW-12** (a splice discipline with no post-condition asserting its own conventions held). **Severity split:** eight S1 (NEW-1, 2, 3, 4, 5, 7, **19**, **20**), seven S2 (NEW-6, 8, 9, 10, 13, 16, 17), six S3 (NEW-11, 12, 14, 15, 18, **21**). **NEW-15 was filed after the first thirteen** — it came out of measuring `CURRENT.md`'s line endings during file 3 of this doc-close and finding the brief's premise stale. **Reading order matters more than numbering here.** **TD-S76-NEW-1 and TD-S76-NEW-2 are one incident** — the Windows host stopped on 2026-06-05, its archival bridge stopped with it, and `pg_cron jobid 19` went on deleting for three months; NEW-2 is the stop-gap and carries an **owed reversal**, which is the item most likely to be forgotten because nothing is currently failing. **TD-S76-NEW-4 stays S1 by operator ruling** against a defensible S2 reading (`ict_primitives` has no live consumer): the correction cost grows with every session the writer runs, and the ICT measurement programme is blocked behind it. **TD-S76-NEW-7 is the oldest defect filed this session** — the polarity-inverted daily OB whose own source comment says it is *"tracked separately as TD candidate"*; it never was, and S69 propagated it to 60 sessions deliberately while holding the rule byte-identical. **TD-S76-NEW-8 deliberately does not re-assert TD-S70-NEW-8's struck claim**: the VIX evidence establishes a volatility gate on the **H** layer and says nothing about M5, which remains unmeasured against the 5-bar impulse definition the code actually tests. **ADR-016 recalibration therefore stays blocked.** **TD-S76-NEW-10 is the first instance filed against CLAUDE.md Rule 0 clause 1** and its fix is the clause applied everywhere `expected_writes` appears, not a two-site patch; the count of writers declaring a floor has not been taken. **Scope widened, not closed:** **TD-S74-NEW-2** gains a third consumer (`build_trade_signal_local.py`, orchestrator child, `htf_failed=true` on **504 of 504** cycles into a field nothing reads — **and not for TD-S74-NEW-2's reason**: the read raises `42703` before any validity predicate applies (TD-S76-NEW-19), which makes that consumer's F-19 exposure **latent**, and **the two entries are now mutually locked** by TD-S76-NEW-20) and **TD-S70-NEW-8** gains a candidate mechanism that does not settle it. **Explicitly left open:** **TD-S73-NEW-5** (2026-06-03 → 2026-08-24 absent from both option-chain tables) — TD-S76-NEW-1 supplies its cause, but *"the host stopped"* explains **when**, not what broke first inside the pipeline, so it is not closed. **Still open and unchanged from S75:** TD-S75-NEW-1..4 (NEW-4's ENH-80..85 renumbering decision still undecided; the Enhancement Register was **not** touched this session). **TD-S38-NEW-3**'s `ict_primitives` × `gamma_metrics` LATERAL view remains unbuilt. **Carried from S28 and now three outages old: TD-NEW-7** (S1, MALPHA→Supabase Zerodha token propagation) — still the oldest live S1 in the register, and unchanged by anything filed today.
 

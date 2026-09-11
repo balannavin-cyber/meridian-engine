@@ -35,8 +35,8 @@ The three environments are not symmetric. Local Windows is the **primary live ex
 | Instance | Navin's Windows desktop, multi-WAN home network | t3.small, instance `i-0e60e4ed9ce20cefb` per pre-S35 documentation (**S35 instance-ID drift surfaced — current console shows `i-0878c118835386ec2`; instance was rebuilt at unknown earlier session; Elastic IP `13.63.27.85` unchanged; reconcile at S36**), region eu-north-1, host `ip-172-31-35-90`, user `ssm-user` | EC2 at `13.51.242.119`, user `ubuntu` |
 | OS | Windows 10/11 | Ubuntu Linux | Ubuntu Linux |
 | Python runtime | `python.exe` (3.12 — currently CMD-window-spawning; TD-061 candidate for `pythonw.exe` migration) | `python3` (3.10 — strict `fromisoformat()` microsecond handling, see §6.9 / TD-NEW-13) | `python3` |
-| Scheduler | Windows Task Scheduler (20 `MERDIAN_*` tasks per Session 36; was 19 at S29 audit; was 17 at S23) | crontab (6 entries — see §7.1) | crontab (Kite token refresh schedule) |
-| Live signal generation | ✅ Primary | ❌ Shadow only (writes shadow rows; not production decisions) | ❌ Not a Meridian pipeline host |
+| Scheduler | **SUPERSEDED — see §S76.A: 23 tasks, all `Disabled`, none running (measured 2026-09-10).** Was: Windows Task Scheduler (20 `MERDIAN_*` tasks per Session 36; was 19 at S29 audit; was 17 at S23) | crontab (6 entries — see §7.1) | crontab (Kite token refresh schedule) |
+| Live signal generation | **SUPERSEDED — see §S76.A: no `python`/`pythonw` process on the host and every task `Disabled` (measured 2026-09-10); this host generates nothing.** Was: ✅ Primary | ❌ Shadow only (writes shadow rows; not production decisions) | ❌ Not a Meridian pipeline host |
 | Broker auth — Dhan | ✅ TOTP retry | ✅ Token pulled from Local-written Supabase 03:05 UTC | ❌ |
 | Broker auth — Zerodha (Kite) | ✅ KiteTicker WebSocket (NIFTY full chain) | ❌ Cannot — depends on MALPHA token | ✅ **Sole Kite token writer**; MERDIAN AWS reads from MALPHA (manual sed step today — TD-NEW-7) |
 | Phase 4A manual execution | ✅ `merdian_trade_logger.py` + dashboard LOG TRADE button | ❌ | ❌ |
@@ -427,7 +427,7 @@ Plus `@reboot` entries:
 
 Times in cron column are mostly UTC; IST = UTC + 5:30. Day-range `1-5` = Mon-Fri. The Token_Refresh + PreOpen + Postmarket + EOD entries display IST in this table for legibility; UTC is the actual cron specifier.
 
-### 7.2 Windows Task Scheduler (20 entries — Session 36 update, 2026-05-25; was 19 at S29 audit, 2026-05-14)
+### 7.2 Windows Task Scheduler (20 entries — Session 36 update, 2026-05-25; was 19 at S29 audit, 2026-05-14) — **SUPERSEDED, see §S76.A: 23 tasks live, all `Disabled` as of 2026-09-10. The `State` column below is counterfactual, and the inventory is three tasks short.**
 
 Source: `Get-ScheduledTask -TaskName "MERDIAN_*"` PowerShell audit during S29 firefighting (`migrate_to_pythonw.ps1` dry-run reported `[INFO] Found 19 MERDIAN_* tasks`). Action mapping captured via two PowerShell passes (§2.5 + §2.6 of S29 firefighting handoff). **This is the canonical inventory** — supersedes the 17-entry S23 list. **TD-061 RESOLVED 2026-05-14** — 13/19 tasks now on `pythonw.exe`, 18/19 with `Hidden=$true + MultipleInstances=IgnoreNew`. **TD-NEW-E CLOSED** — 2 newly-discovered tasks (`MERDIAN_Dhan_Token_Refresh`, `MERDIAN_Intraday_Session_Start`) included; purpose-of-task investigation pending operator confirmation.
 
@@ -1451,9 +1451,24 @@ So **anything about pg_cron requires the Supabase SQL editor** — it cannot be 
 
 **Consequence for this document:** the four host surfaces are necessary and **not sufficient** to answer "what writes to, or deletes from, this table". A fifth surface — the database's own scheduler — exists and is queryable only from the SQL editor.
 
-### S75.3 — a non-deleting job with a live defect
+**Correction (S76) — this is not a new finding.** CLAUDE.md **B26** codified the pg_cron blind spot at **S29**, and **§6.11 of this document** carries it with the 2026-05-14 `market_ticks` incident that established it. S75 restated it as newly discovered. What S75 genuinely added is narrower: the **measurement** that `cron.job` and `pg_proc` are unreachable through PostgREST, which sharpens B26's *"nobody polls it"* into *"it cannot be polled from this host at all"*. **Cite B26 and §6.11; do not re-derive.**
 
-`pg_cron jobid 30`, active, `38 3 * * 1-5`, builds its header with `jsonb_build_object('Content-Type','application/json','<secret>')` — three arguments to a function taking alternating key/value pairs, so the secret is a **key with no value**. It is a `net.http_post` job and deletes nothing; its target and body were not read. Separately, the cron secret is stored in plaintext across ~20 `cron.job` command strings. **The value appears in no file, commit message or register** — recorded as an exposure only.
+### S75.3 — a non-deleting job that has never executed
+
+`pg_cron jobid 30`, active, `38 3 * * 1-5`. A `net.http_post` job; it deletes nothing.
+
+**Correction (S76) — the S75 framing was wrong.** S75 read the defect as a malformed auth header — `jsonb_build_object('Content-Type','application/json','<secret>')`, three arguments to a function taking alternating key/value pairs, so the secret is a key with no value — which implies a call that goes out unauthenticated. Measured at S76 open, the job's `return_message` is:
+
+```
+ERROR: argument list must have even number of elements
+HINT: The arguments of jsonb_build_object() must consist of alternating keys and values.
+```
+
+That error is raised **evaluating `jsonb_build_object` before `net.http_post` is called**. The call is never made. **The job has never executed** — **143 failures, 2026-02-23 → 2026-09-09**.
+
+**Severity: not S2, and not cosmetic.** There is **no data gap** — `option_chain_snapshots` capture starts 03:00–03:10 UTC, so the 03:38 slot is redundant and nothing downstream waits on it. But the job's **purpose is unestablished**: a scheduled job that has never once run, whose target and body were never read, is either dead weight or a capability nobody knows is missing. Its target and body remain unread.
+
+Separately, the cron secret is stored in plaintext across ~20 `cron.job` command strings. **The value appears in no file, commit message or register** — recorded as an exposure only.
 
 ### S75.4 — one new file, on no surface by design
 
@@ -1522,3 +1537,87 @@ Both join `shadow_runner.log` and the `C:\GammaEnginePython\heartbeats/` directo
 ---
 
 *Deployment Topology updated Session 74, 2026-09-07 (§S74 — `merdian-wsfeed.service` `KillSignal=SIGINT` applied and verified on the live 10:05 UTC stop at `Result=success` / `ExecMainStatus=0`, closing TD-S72-NEW-6 and, through the `OnFailure=` second-order effect, TD-S71-NEW-4, with `SuccessExitStatus` deliberately left empty and that TD's filed remedy explicitly rejected; the twenty-units/three-timers surface recorded as having **no version control at all**, the crontab problem repeating at a second surface after S68 solved it at the first; `reload_dhan_scripmaster.py` filed as the third instance of a writer running on a closed market, with `core/trading_calendar_gate.py` as the unapplied canonical remedy per Rule 18; `status.json` and `rate_sens.out` added to the repo-root-artefacts-no-register-describes list; deploy state recorded at three unpushed commits in this clone with the **EC2 → main** direction inversion gaining two further instances and remaining UNRATIFIED. The `## Update log` table at line 848 remains frozen at Session 67 — TD-S73-NEW-10, still not fixed here.) Previous: Session 73, 2026-09-06 (§S73).*
+
+## §S76 — Session 76 (2026-09-09/10): the Local half is dark, and the archival bridge went dark with it
+
+**A state change this document does not reflect.** §1 still presents a Local/AWS split with Local as `PRIMARY LIVE`; §7.2 still lists 20 tasks, 18 of them `Ready`. Measured on host `NAVIN`, 2026-09-10: **all 23 `MERDIAN_*` Task Scheduler entries are `Disabled`, every `Next Run Time` is `N/A`, and no `python`/`pythonw` process is running.** The Local half executes nothing.
+
+### S76.A — All 23 Windows tasks Disabled; no Python process on the host
+
+Source: `schtasks /query /fo TABLE` on `NAVIN`, 2026-09-10. `Get-Process python*,pythonw*` returns nothing.
+
+Confirmed `Disabled` in the measurement: `MERDIAN_ICT_HTF_Zones_0845`, `MERDIAN_ICT_EOD`, `MERDIAN_Spot_1M`, `MERDIAN_Market_Tape_1M`, `MERDIAN_PreOpen`, `MERDIAN_Post_Market_1600_Capture`, `MERDIAN_Daily_Audit`, `MERDIAN_Watchdog`, `MERDIAN_WS_Feed_0900`, and 14 others.
+
+**This completes a trend §S70 measured and this document never propagated.** §S70 recorded *"19 `MERDIAN_*` tasks, 18 Disabled, 1 Ready"* and disabled the survivor. Neither §1 nor §7.2 was updated then, and neither is updated now — see the closing note.
+
+### S76.B — The register's Local inventory is three tasks short
+
+| source | count |
+|---|---|
+| §7.2 table (canonical inventory, S36) | **20** |
+| §S70 audit (2026-08) | **19** |
+| `schtasks /query`, 2026-09-10 | **23** |
+
+At least three live tasks are absent from §7.2's table. **`MERDIAN_ICT_EOD`** is named at §S69 and §S70 but was never added to it. **`MERDIAN_Option_Chain_Ingest_NIFTY`** and **`MERDIAN_Option_Chain_Ingest_SENSEX`** appear **nowhere in this document** — no section, no session, no mention.
+
+Both ingest tasks: `Task To Run` = `ingest_option_chain_local.py <SYMBOL> FULL`, `Start In` = `C:\GammaEnginePython`, repeat every 5 min for 7h from 09:15 IST. **Last Run 2026-06-05 18:06:24, Last Result 0.** They ran clean and stopped because the host stopped, not because they failed.
+
+The three counts (19 / 20 / 23) cannot be reconciled from this document, and the identity of the remaining 14 is not established here.
+
+### S76.C — The archival bridge stopped; the deleter did not
+
+`ingest_option_chain_local.py` is the archival bridge from `option_chain_snapshots` into `historical_option_chain_snapshots`. Its only invokers were the two Windows tasks in §S76.B. When they went dark, the bridge went dark.
+
+Measured (Part 2 audit): `historical_option_chain_snapshots` **stops 2026-06-03**; `option_chain_snapshots` **retains nothing before 2026-08-24**.
+
+**`pg_cron jobid 19` — the §S75.1 deleter — kept running for three months after its archiver stopped.** `30 12 * * *`, `select public.cleanup_gamma_engine_data()`, four deletes: `option_chain_snapshots` 90-day, its 14-day thinning, `raw_ingest_log` 14-day, `gamma_metrics` 90-day.
+
+**DISABLED by the operator 2026-09-09 ~10:10 UTC** — `SELECT cron.alter_job(19, active := false);`. Verified `active=false`, with `schedule` (`30 12 * * *`) and `command` both intact.
+
+Two consequences to hold:
+
+- **`gamma_metrics` will now grow past its 90-day window.** `docs/research/gamma_metrics_tail_probe.py` (§S75.4) will correctly read this as a retention-rule change, not a fault.
+- **`raw_ingest_log`'s growth rate has never been measured.** It is now unbounded and unquantified.
+
+**REVERSIBLE** — `SELECT cron.alter_job(19, active := true);` once the archiver is back. This is a hold, not a decision about retention.
+
+### S76.D — `merdian_eod_ict.bat` does not exist — Part 2 Q6 closed
+
+`MERDIAN_ICT_EOD`'s `Task To Run` is `C:\GammaEnginePython\merdian_eod_ict.bat`. **`type` returned `PathNotFound`, 2026-09-10.** Part 2 Q6 recorded the file as untracked and Windows-side; it is **absent from the host**.
+
+Present in `~/meridian-cc`: `run_ict_htf_zones_daily.bat`, `register_ict_htf_zones_task.ps1`, `patch_ict_task_add_hourly.ps1`. The `.bat` the task pointed at is not among them.
+
+The task is Disabled, so nothing is failing. Had it been enabled it would have failed at task start, with no Python involved.
+
+### S76.E — `build_ict_htf_zones.py` invoker UNRESOLVED
+
+It runs. Last observed **2026-09-09 03:05:55 UTC**, `host=aws`, **163 zones**, `git_sha 83818e6`, **231 runs since 2026-04-28**.
+
+It is absent from **all** of:
+
+| surface | result |
+|---|---|
+| `ssm-user` crontab (37 active lines, read in full) | absent |
+| root crontab, `/etc/crontab`, `/etc/cron.d/`, `/etc/cron.daily`, `/etc/cron.hourly` | absent |
+| `/var/spool/cron/crontabs` | only `ssm-user` exists |
+| `/etc/systemd/system` units | only the wsfeed family mentions merdian |
+| `run_merdian_shadow_runner_aws.py` child list | absent |
+| `run_ingest.sh` | absent |
+| its named Windows task `MERDIAN_ICT_HTF_Zones_0845` | **Disabled** |
+
+**Recorded UNRESOLVED.** A read-only watcher is running — `/tmp/catch_builder.sh`, PIDs **2128790** and **2130111** — and will log the full parent chain to **`/tmp/builder_catch.log`** at the next fire.
+
+**This is §S75.1's shape at a second instance, and it is worse.** S75.1's invisible writer resolved to `pg_cron` — a fifth surface nobody had enumerated. Here that fifth surface has been searched too, and the invoker is still unknown.
+
+### S76.F — §1 and §7.2 carry superseded-markers, and the §S70 precedent is rejected
+
+§1's `Scheduler` cell read *20 `MERDIAN_*` tasks*; its `Live signal generation` row read *✅ Primary* for Local; §7.2's `State` column reads `Ready` for 18 of its 20 rows. **All of that is counterfactual as of 2026-09-10.**
+
+A **one-line superseded-marker pointing at §S76.A** is added at each of the three sites. The tables are **not rewritten** — the treatment is the one applied to `ADR-004:60`: the reader meets the supersession before the stale content, and every existing reference to those sections still resolves.
+
+**The §S70 precedent is explicitly rejected.** §S70 recorded `MERDIAN_ICT_EOD`'s migration in its session section without touching §7.2's table, and **that is the mechanism by which §7.2 reached three sessions of staleness.** Recording a state change only in the session section leaves the body asserting the opposite, with nothing to warn a reader who arrives at §1 first. A session section is an append; a marker is what makes the append reachable from the stale text it supersedes.
+
+---
+
+*Deployment Topology updated Session 76, 2026-09-09/10 (§S76 — the Local half of the Local/AWS split is **entirely dark**: all 23 `MERDIAN_*` Task Scheduler entries `Disabled` with no Python process on the host, measured 2026-09-10, completing a trend §S70 measured and never propagated into §1 or §7.2; the register's Local inventory established as **three tasks short**, with `MERDIAN_Option_Chain_Ingest_NIFTY`/`_SENSEX` appearing nowhere in this document at any session; those two tasks identified as the sole invokers of the `historical_option_chain_snapshots` archival bridge, which stopped 2026-06-03 while `pg_cron jobid 19` went on deleting for three months — **jobid 19 now DISABLED and reversible**, with `gamma_metrics` deliberately allowed past its 90-day window and `raw_ingest_log` growth unquantified; `merdian_eod_ict.bat` confirmed **absent from the host**, closing Part 2 Q6; and `build_ict_htf_zones.py`'s invoker recorded **UNRESOLVED** after every host surface including pg_cron was searched, with a read-only watcher pointed at `/tmp/builder_catch.log`. §S75.2 and §S75.3 corrected in place. §1's `Scheduler` and `Live signal generation` cells and §7.2's heading now carry **one-line superseded-markers** pointing at §S76.A — tables not rewritten, and the §S70 record-in-the-session-section-only precedent **explicitly rejected** as the mechanism that produced the staleness. The `## Update log` table at line 848 remains frozen at Session 67 — TD-S73-NEW-10, still not fixed here.) Previous: Session 75, 2026-09-08/09 (§S75).*
+

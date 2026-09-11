@@ -1419,7 +1419,7 @@
       "writes": [
         "ict_htf_zones (39 zones on first run, persistent)"
       ],
-      "call_signature": "called by detect_ict_patterns_runner.py",
+      "call_signature": "IMPORT relationship VERIFIED 2026-09-10 (S76): detect_ict_patterns_runner.py:56 does `from build_ict_htf_zones import detect_1h_zones, upsert_zones` -- it consumes two FUNCTIONS from this module, it does not invoke the script. The SCRIPT-level invoker is UNRESOLVED. The script ran 2026-09-09 03:05:55 UTC (host=aws, 163 zones, git_sha 83818e6; 231 runs since 2026-04-28) yet is absent from the ssm-user crontab (37 active lines, read in full), the root crontab, /etc/crontab, /etc/cron.d/, /etc/cron.daily, /etc/cron.hourly, /var/spool/cron/crontabs, every /etc/systemd/system unit, run_merdian_shadow_runner_aws.py and run_ingest.sh -- and its named Windows task MERDIAN_ICT_HTF_Zones_0845 is Disabled. See Deployment Topology §S76.E; a read-only watcher (/tmp/catch_builder.sh, PIDs 2128790 and 2130111) logs the parent chain to /tmp/builder_catch.log at the next fire (~03:05 UTC / 08:35 IST).",
       "cadence": "W/D zones: session start. H zones: updated each 5-min cycle",
       "status": "PRODUCTION -- ENH-37. PATCHED Session 15 (2026-05-02): added W BEAR_FVG branch (S1.a), D BULL_FVG + D BEAR_FVG branches (S1.b, with FVG_D_MIN_PCT=0.10% and D_FVG_VALID_DAYS=5), 1H BEAR_FVG branch (S15-1H mirror). Original preserved as build_ict_htf_zones_PRE_S15.py. Closes TD-048. Prior status: PRODUCTION  --  ENH-37. Had f-string corruption at line 475 (fixed). build_weekly_bars requires 'date' field as date object (not string).",
       "open_items": []
@@ -2164,7 +2164,7 @@
         "build_ict_primitives.py"
       ],
       "cadence": "Detector module loaded at writer invocation time; not scheduled standalone",
-      "status": "PRODUCTION (S31-A Task 1; 613 lines; 5 detectors per ADR-004 §5.1 OB body-only + §5.2 FVG + §6.1 PDH/PDL + §7.1 Sweep + §7.2 Displacement; sweep dedup patched via patch_s31b_sweep_dedup.py during S31-A build)",
+      "status": "PRODUCTION (S31-A Task 1; 639 lines VERIFIED 2026-09-10 (S76) -- the prior value 613 was exactly ict_primitives_PRE_S31B_SWEEP_DEDUP.py, i.e. the PRE-patch snapshot, while this same entry's own prose below states the dedup WAS applied: the entry contradicted itself. Audit finding F-76 / TD-S76-NEW-13; 5 detectors per ADR-004 §5.1 OB body-only + §5.2 FVG + §6.1 PDH/PDL + §7.1 Sweep + §7.2 Displacement; sweep dedup patched via patch_s31b_sweep_dedup.py during S31-A build)",
       "filed_session": "Session 31-B (S31-A authored; S31-B added to inventory + validated via Task 4 backfill execution)"
     },
     "build_ict_primitives.py": {
@@ -2182,7 +2182,7 @@
         "operator (one-shot backfill); future Task Scheduler entry for ongoing emission TBD"
       ],
       "cadence": "S31-B Task 4 one-shot backfill 2026-05-21 18:57 IST 2025-04-01 → 2026-05-19 window; future scheduled cadence TBD (likely daily post-market or per cycle)",
-      "status": "PRODUCTION (S31-A Task 2; 1140 lines after three deploy-bug patches; backfill execution validated end-to-end 19,399 primitives + 19,399 outcomes in 156.3s)",
+      "status": "PRODUCTION (S31-A Task 2; 2152 lines VERIFIED 2026-09-10 (S76) -- the prior value 1140 was exactly build_ict_primitives_PRE_S32.py, a named _PRE_ snapshot still on disk, i.e. the entry had been pinned four generations behind the live file (S32 v2-v5, S33 v6-v7, S35 v8-v8.2, S35 v9 ADR-012 SL writer). Audit finding F-76 / TD-S76-NEW-13; backfill execution validated end-to-end 19,399 primitives + 19,399 outcomes in 156.3s)",
       "filed_session": "Session 31-B (S31-A authored; S31-B added to inventory + validated via Task 4 backfill execution)"
     },
     "MERDIAN_ICT_Primitives_canonical.pine": {
@@ -2896,7 +2896,8 @@
     },
     "ict_zones": {
       "schema": "public",
-      "columns": 28,
+      "columns": 30,
+      "columns_verified": "2026-09-10 (S76) -- 30 confirmed live from information_schema. CORRECTED: the recorded value was 28.",
       "written_by": "detect_ict_patterns_runner.py",
       "read_by": [
         "dashboard",
@@ -2915,6 +2916,7 @@
     "ict_htf_zones": {
       "schema": "public",
       "columns": 16,
+      "columns_verified": "2026-09-10 (S76) -- 16 confirmed live from information_schema. Unchanged from the recorded value.",
       "written_by": "build_ict_htf_zones.py",
       "read_by": [
         "detect_ict_patterns_runner.py",
@@ -3147,6 +3149,8 @@
       "open_items": []
     },
     "ict_primitives": {
+      "columns": 16,
+      "columns_verified": "2026-09-10 (S76) -- 16 confirmed live from information_schema, and the column set conforms to ADR-004 §4 EXACTLY. No columns key existed on this entry before S76.",
       "status": "PRODUCTION (S31-A DDL deploy + S31-B Task 4 backfill — 19,399 rows total NIFTY 8838 + SENSEX 10561 over 2025-04-01 → 2026-05-19)",
       "written_by": [
         "build_ict_primitives.py (S31-A/S31-B canonical writer with ADR-004 Wave 1 detector pipeline)"
@@ -3160,6 +3164,8 @@
       "filed_session": "Session 31-A (DDL); Session 31-B (backfill data + tables added to inventory)"
     },
     "ict_primitive_outcomes": {
+      "columns": 38,
+      "columns_verified": "2026-09-10 (S76) -- 38 confirmed live from information_schema. No columns key existed on this entry before S76.",
       "status": "PRODUCTION (S31-A DDL deploy + S31-B Task 4 backfill — 19,399 rows 1:1 with ict_primitives via FK CASCADE)",
       "written_by": [
         "build_ict_primitives.py (outcomes computation block; 1:1 row count enforced)"
@@ -4814,10 +4820,18 @@
       "truncated_each_run": false
     }
   },
-  "version": "v53",
-  "last_updated_session": "Session 74",
-  "last_updated_date": "2026-09-07",
+  "version": "v54",
+  "last_updated_session": "Session 76",
+  "last_updated_date": "2026-09-10",
   "change_log": [
+    {
+      "session": "S76",
+      "date": "2026-09-10",
+      "type": "ICT structure audit, Parts 1 and 2 — an audit that answered its first question, refused its third, and found the refusal more important than the answer. NO CODE CHANGED. One live database change (pg_cron jobid 19 disabled). ADRs_AMENDED=1 (ADR-004 Amendment C); TDs_NEW=21; TDs_CLOSED=0.",
+      "summary": "HEADLINE 1: the ICT signal path has consumed PDH and PDL ONLY -- four rows -- for its entire history. No order block, no fair-value gap, at any timeframe, ever; 109 ACTIVE OB/FVG zones are invisible to it right now while the Pine overlay renders them. F-19 WIDENED to THREE consumers, not two: detect_ict_patterns_runner.py:268, merdian_daily_audit.py:619, and build_trade_signal_local.py -- the last an orchestrator child on the 5-minute cycle which logs htf_failed=true ~40x/day into a field nothing reads (TD-S76-NEW-3 supersedes TD-S74-NEW-2's scope; the entry stays OPEN). HEADLINE 2: brief Q3 ('has price respected the levels at all') is NOT ANSWERABLE from existing data. Every outcome column in all 19,662 ict_primitive_outcomes rows is anchored on a valid_from that is the confirming bar's OPEN (F-68; lookahead D ~6h15m, W ~5 days, H <=59min, M5 <=5min derived). Every favourable result measured this session traces to it: the FVG timeframe gradient 55/66/80% M5/H/D tracks the contamination rate 63/81/80%; the H order-block P&L was formation-anchored; 10 of 17 hourly OB retests are anchored INSIDE the unconfirmed displacement bar. The one cell F-68 does not reach -- retest-anchored option P&L on the dense vendor tier -- is 10 positive / 8 negative. NO EDGE. ESTABLISHED: ADR-005 is correctly implemented by the writer (all 20 valid_to sites conform), so F-19 is purely a CONSUMER defect; the canon detector IS canon (ADR-004 §5.1 all four axes, §5.2 in full, §7.1 on the detection rule), so the corrective path is 'finish S31-C', not 'the canon layer is not canon either'; the legacy detect_daily_zones is non-canonical AND polarity-inverted (a bullish candle's own body becomes the BULL_OB) and its own comment at :457-460 says the deviation was intentional and would be 'tracked separately as TD candidate' -- it never was, sixteen months (TD-S76-NEW-7); ict_primitives stops 2026-05-22 with no scheduled producer and no live consumer (S31-C never executed, TD-S76-NEW-6). INFRASTRUCTURE: all 23 Windows Task Scheduler entries found Disabled, no python/pythonw process on the host, chain ingests last ran 2026-06-05 18:06:24 -- the option-chain archival bridge died with them while pg_cron jobid 19 kept deleting for three months, so ~58 sessions of option premium (2026-06-04 -> 2026-08-23) are UNRECOVERABLE (TD-S76-NEW-1). jobid 19 DISABLED by the operator 2026-09-09 ~10:10 UTC via cron.alter_job(19, active := false) to stop the bleed -- REVERSIBLE and the reversal is OWED once the archiver is re-homed; gamma_metrics now grows past its 90-day window and raw_ingest_log growth has never been measured (TD-S76-NEW-2). ADR-004 AMENDMENT C: valid_from is the confirming bar's CLOSE; :60's '+ 1 TF' phrasing superseded IN PLACE (retained, marked, original wording demoted) and Amendment C APPENDED as §15 rather than inserted inline, because an inline insertion would have shifted 19 of the 21 line citations the audit makes into that file. NO CODE IMPLEMENTS IT. Operator decisions: D1 ADR-004:87 governs; D2 carry ts_close on Bar, set in _reduce_ohlc from the last bucket bar, consumed at the three detector assignment sites. THIS ENTRY'S OWN FILE was a finding: F-76 corrections applied below.",
+      "docs_updated": "docs/research/ict_structure_audit_2026-09-09.md (NEW, ~132 KB, F-60..F-82, UNTRACKED), ADR-004 (Amendment C §15 + :3 + :60), MERDIAN_Deployment_Topology.md (§S76 A-F + superseded-markers at §1 Scheduler, §1 Live signal generation, §7.2 heading; §S75.2 and §S75.3 corrected in place), tech_debt.md (TD-S76-NEW-1..21; TD-S74-NEW-2 scope widened; TD-S70-NEW-8 cross-linked; S76 update-log paragraph REVIVED after five sessions of lapse), CURRENT.md (Last session = S76, S75 demoted, This session reset for S77), merdian_reference.json (v54).",
+      "git_state": "NOTHING COMMITTED at time of writing. Modified and unstaged: ADR-004, MERDIAN_Deployment_Topology.md, tech_debt.md, CURRENT.md, merdian_reference.json. Untracked: docs/research/ict_structure_audit_2026-09-09.md. NO CODE CHANGED. Amendment C points at the untracked audit document, so the two must be committed together or not at all."
+    },
     {
       "session": "S74",
       "date": "2026-09-07",

@@ -386,6 +386,10 @@ def _reduce_ohlc(bucket_bars: list[Bar], bucket_ts: datetime) -> Bar:
         high=max(b.high for b in bucket_bars_sorted),
         low=min(b.low for b in bucket_bars_sorted),
         close=bucket_bars_sorted[-1].close,
+        # ADR-004 Amendment C / F-68. The source 1m bar is stamped at its OPEN,
+        # so the bucket closes one minute after the last bar's stamp. Using the
+        # bare stamp would leave 59s of lookahead at every timeframe.
+        ts_close=bucket_bars_sorted[-1].ts + timedelta(minutes=1),
     )
 
 

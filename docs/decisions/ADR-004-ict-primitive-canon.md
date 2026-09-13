@@ -1,6 +1,6 @@
 # ADR-004 — ICT PD-Array Canonical Primitive Layer
 
-**Status:** ACCEPTED (S31-A close 2026-05-20). Amendments A (retest-anchored outcomes primary, formation-anchored retained) and B (Pine v2 canonical implementation) applied. Amendment C (2026-09-10) — `valid_from` is the confirming bar's CLOSE, superseding the "+ 1 TF" phrasing at `:60`; see §15. **Accepted; no code implements it yet.**
+**Status:** ACCEPTED (S31-A close 2026-05-20). Amendments A (retest-anchored outcomes primary, formation-anchored retained) and B (Pine v2 canonical implementation) applied. Amendment C (2026-09-10) — `valid_from` is the confirming bar's CLOSE, superseding the "+ 1 TF" phrasing at `:60`; see §15. **Accepted; implemented S77 (2026-09-11) for the OB and FVG classes. The event class is unimplemented by operator decision — see Implementation status in §15.**
 **Supersedes:** TD-049, TD-051 (canon deviations are now subsumed into this rewrite)
 **Successor work:** S31-B (detector implementation + Pine v2 + backfill), S31-C (edge view + consumer rewire)
 **Operator sign-off:** received 2026-05-20 covering all 15 primitives and the §11 parameter block
@@ -656,7 +656,7 @@ Parameters in §11 also require sign-off as a block.
 
 ## 15. Amendment C — `valid_from` is the confirming bar's close (2026-09-10)
 
-**Status:** ACCEPTED by operator 2026-09-10. **No code implements it.** See *Implementation status* below.
+**Status:** ACCEPTED by operator 2026-09-10. **Implemented S77 (2026-09-11), partially — zone classes only. See *Implementation status* below.**
 
 **What changes.** `valid_from` is the timestamp at which the bar that confirmed the primitive **closed**. It is not that bar's open, and it is not `source_bar_ts` plus one timeframe duration.
 
@@ -685,15 +685,27 @@ Those three are ADR text and they bind. The §4 field list was the only dissenti
 
 **No schema enforcement exists.** §10 declares `valid_from TIMESTAMPTZ NOT NULL` (`:506`) with no CHECK relating it to `source_bar_ts`. Nothing in the database would have rejected the superseded behaviour, and nothing will enforce this one. Adding enforcement is a separate decision and is not taken here.
 
-**Implementation status — none.**
+**Implementation status — partial, S77 (2026-09-11).**
 
-`ict_primitives.py` and `build_ict_primitives.py` implement the superseded reading: Order Block `valid_from = disp.event_ts`, Fair Value Gap `valid_from = nxt.ts`, both **bucket-start** timestamps produced by the aggregation layer — that is, the confirming bar's *open*. The resulting lookahead is **D ≈ 6h15m, W ≈ 5 days, H ≤ 59 min** (measured — audit finding **F-68**), and **M5 ≤ 5 min** (*derived* from the bucket width, not measured).
+**Implemented** for the zone classes. `Bar` carries `ts_close` (`ict_primitives.py:71-76`), set in `_reduce_ohlc` (`build_ict_primitives.py:380-392`, assignment at `:392`) from the bucket's last 1m bar **plus one minute** — the source bar is stamped at its open, so the bare stamp would leave 59 s of lookahead at every timeframe. Consumed via `_bar_close_ts()` (`ict_primitives.py:79`) at the three `Primitive.valid_from` sites: BULL_FVG `:213`, BEAR_FVG `:235`, OB `:379`.
 
-A remediation has been chosen — carry the bucket's closing timestamp on the `Bar` dataclass and consume it at the three assignment sites, since `_reduce_ohlc` already computes that value and discards it — but it is **not scheduled by this amendment**. Sequencing is the operator's.
+**Not implemented** for the event class. `Event.event_ts` (`ict_primitives.py:291`, `:554`, `:571`) remains the bar's open, by operator decision, because `detect_order_blocks` keys `bar_idx` (`:333`) and `fvg_by_ts` (`:343`) on exact equality with it. `valid_from` for events is derived at `build_ict_primitives.py:1672` and `:1727`; the option tuple anchor is `_floor_5m(e.event_ts)` at `:1503`. **15,681 of 20,042 rows (78 %) are therefore still anchored at bucket-start.** TD-S77-NEW-1.
 
-**The existing cohort predates this amendment.** `ict_primitive_outcomes` holds **19,432 rows** built under the superseded behaviour. Every formation-anchored column in them is anchored at the confirming bar's open, and the retest walk opens at the same instant, so `first_retest_ts` can fall inside a bar that had not yet closed and had not yet confirmed the primitive.
+**Verification.** Paired natural-key join against the pre-fix snapshot across 2,481 OB/FVG rows: `unchanged = 0` at every timeframe, every shift positive, magnitudes M5 1 m–5 m 59 s, H 2 m–1 h 00 m 59 s, D 45 m–6 h 16 m, W 2 d 6 h 16 m–4 d 6 h 16 m. These reproduce F-68's independently derived lookahead estimates. The recurring `06:16:00` is the RTH session length (09:15–15:30 IST) plus the one-minute close offset.
 
-**These rows are not corrected by this amendment.** The writer is INSERT-only with skip-if-exists, and `valid_from` is not part of the natural key, so re-running it would skip the existing rows rather than repair them. Correction requires a `DELETE` plus a full recompute, which is a separate decision and is not taken here. Until that happens, any measurement drawn from `ict_primitive_outcomes` — including the S31-B holdout result and the S33 ENH-106 v7 cohort — is a measurement of the superseded behaviour.
+**The existing cohort predates this amendment.** Measured 2026-09-10 on the pre-fix cohort: `ict_primitives` 19,573, `ict_primitive_outcomes` 19,571 — the 2-row gap is entirely W BEAR_FVG (8 primitives, 6 outcomes), which locates TD-S76-NEW-18. **After the S77 rebuild: 20,042 / 20,042, gap absent** (TD-S77-NEW-9). The pre-fix cohort is preserved as `public.ict_primitives_pre_s77` / `public.ict_primitive_outcomes_pre_s77`. Every formation-anchored column in those pre-fix rows is anchored at the confirming bar's open, and the retest walk opens at the same instant, so `first_retest_ts` can fall inside a bar that had not yet closed and had not yet confirmed the primitive.
+
+**These rows were not corrected by the amendment alone.** The writer is INSERT-only with skip-if-exists and `valid_from` is not part of the natural key, so re-running could not repair them. **S77 took the DELETE plus full recompute** (`--start 2025-03-31 --end 2026-06-04`), replacing the cohort entirely: 19,573/19,571 pre-fix rows → 20,042/20,042 rebuilt. The pre-fix cohort is preserved as `public.ict_primitives_pre_s77` / `public.ict_primitive_outcomes_pre_s77` and remains a measurement of the superseded behaviour — S31-B's holdout result and the S33 ENH-106 figures are drawn from it and are not repaired by the rebuild.
+
+**The measurement anchor is not an entry anchor.**
+
+Amendment C specifies when a primitive is *confirmed*. It does not specify when a position can be *opened*, and for D and W these are not the same instant. A daily bar's close is 15:31 IST — after the session. The forward windows (5 m / 15 m / 30 m / 60 m) run into an empty session and the option tuple, enumerated at `_floor_5m(valid_from)`, resolves to a strike that does not trade at that moment.
+
+Measured consequence: **101 of 113 matched D rows and 17 of 19 W rows lost their ATM P&L entirely in the rebuild — 118 of 132, with zero gained.** The loss is strictly one-directional, which distinguishes it from ordinary strike re-picking: H lost 39 and gained 54, M5 lost 84 and gained 52, both ~5 % bidirectional churn.
+
+**Daily and weekly ICT are therefore unmeasured on options.** A separate entry anchor is required — the next session's open is the obvious candidate — and it is a new decision, not covered by D2. TD-S77-NEW-2.
+
+The intraday conclusions are unaffected: H and M5 comparisons are bidirectional and sound.
 
 Evidence, mechanism and per-cell contamination rates: `docs/research/ict_structure_audit_2026-09-09.md`, findings **F-68** (the anchoring defect), **F-69** (its effect on the retest cohort) and **F-81** (why the Pine overlay's agreement with the writer was asserted but never true).
 

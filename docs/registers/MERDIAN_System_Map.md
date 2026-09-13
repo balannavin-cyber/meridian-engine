@@ -1513,6 +1513,124 @@ What it admits on that first success:
 TD-S74-NEW-2's *"do not fix one side alone — the disagreement is the finding"* now has a
 fourth side, and the fourth side is the one that looks like a typo.
 
+*System Map updated Session 76, 2026-09-09/10 (§S76 — the ICT layer measured end to end: `build_trade_signal_local.py`'s `ict_htf_zones` attach raises `42703` on every call because it selects `ict_tier`, a column on the other table, giving `htf_failed=true` on **504 of 504** cycles over two days and an HTF attach that has never returned a row; the *"roughly 40 times a day"* rate corrected and its cause **re-attributed away from F-19**; `ict_zones` status distribution measured with no NULLs and 228 `EXPIRED` rows that F-17's consequence sentence does not account for; `ict_primitives` recorded inert since 2026-05-22 with no live consumer; the zone builder's invoker still unresolved but narrowed to once-daily with a 00:18–04:00 UTC spread and a 09-10 absence; and the sequencing lock that makes the one-word fix to the `42703` the thing that arms F-19 on the signal path. Four rows above superseded in place. **NO CODE CHANGED.**) Previous: Session 75, 2026-09-08/09 (§S75), whose section carries no footer of its own — see TD-S76-NEW-12.*
+
 ---
 
-*System Map updated Session 76, 2026-09-09/10 (§S76 — the ICT layer measured end to end: `build_trade_signal_local.py`'s `ict_htf_zones` attach raises `42703` on every call because it selects `ict_tier`, a column on the other table, giving `htf_failed=true` on **504 of 504** cycles over two days and an HTF attach that has never returned a row; the *"roughly 40 times a day"* rate corrected and its cause **re-attributed away from F-19**; `ict_zones` status distribution measured with no NULLs and 228 `EXPIRED` rows that F-17's consequence sentence does not account for; `ict_primitives` recorded inert since 2026-05-22 with no live consumer; the zone builder's invoker still unresolved but narrowed to once-daily with a 00:18–04:00 UTC spread and a 09-10 absence; and the sequencing lock that makes the one-word fix to the `42703` the thing that arms F-19 on the signal path. Four rows above superseded in place. **NO CODE CHANGED.**) Previous: Session 75, 2026-09-08/09 (§S75), whose section carries no footer of its own — see TD-S76-NEW-12.*
+## §S77 — Session 77: the ICT primitive cohort rebuilt clean, and the layer it measures is null (2026-09-11/13)
+
+Code changed (`ict_primitives.py`, `build_ict_primitives.py`) and one irreversible database
+operation ran: `DELETE` + full recompute of `ict_primitives` and `ict_primitive_outcomes`,
+snapshots taken first. This section records what the rebuild changed and what it settled.
+It **supersedes the `ict_primitives` row of §S76.B** on row count and cleanliness, and
+**leaves that row's verdict standing**: still no scheduled producer, still no live consumer.
+
+### S77.A — the cohort rebuilt, and nothing yet reads it
+
+ADR-004 Amendment C implemented for the **zone classes** (operator decision D2): `ts_close`
+on `Bar`, set in `_reduce_ohlc` as the bucket's last 1m bar **+ 1 min** — the bare stamp
+would have left 59 s of lookahead — consumed via a new `_bar_close_ts()` at the three
+`Primitive.valid_from` sites.
+
+| table | before | after | window |
+|---|---:|---:|---|
+| `ict_primitives` | 19,573 | **20,042** | `--start 2025-03-31 --end 2026-06-04` |
+| `ict_primitive_outcomes` | 19,571 | **20,042** | 1:1, no gap |
+
+Verified by paired natural-key join against the pre-fix snapshot: **`unchanged = 0` on
+2,481 OB/FVG rows**, every shift positive, magnitudes reproducing F-68's independently
+derived lookahead at all four timeframes. Cost **3,228 s at 8.3 % CPU** — the job is
+~92 % I/O wait, SENSEX chain prefetch alone 1,310 s across 1,818 tuples. That replaces
+S35's 2,107 s as the planning number.
+
+The end boundary is deliberate. Past **2026-06-04** the cohort would inherit F-73's
+fail-forward expiry, an all-NULL option block, F-72's collateral SL nulls and ADR-022's
+mid-auction EOD columns — four known defects written into a cohort built to remove one.
+
+**The §S76.B verdict is unchanged by any of this.** `ict_primitives` still has **no
+scheduled producer and no live consumer in either repo**; **S31-C remains unrun**. The
+table is now clean, current to 2026-06-04, and read by nothing (TD-S77-NEW-15).
+
+### S77.B — two snapshot tables, and they are an evidence tier
+
+| table | rows | created |
+|---|---:|---|
+| `ict_primitives_pre_s77` | 19,573 | 2026-09-11, `CREATE TABLE AS SELECT *` |
+| `ict_primitive_outcomes_pre_s77` | 19,571 | 2026-09-11, `CREATE TABLE AS SELECT *` |
+
+No constraints, no indexes, no FK — `CREATE TABLE AS SELECT *` carries none. `id` is
+preserved as a plain column, which is what makes the paired join back to the rebuilt
+cohort possible.
+
+Two properties matter more than the row counts:
+
+1. **They are the only surviving copy of the pre-fix cohort** — every ICT figure MERDIAN
+   has published was drawn from it, and the live tables no longer contain it.
+2. **They are the only remaining evidence for TD-S76-NEW-18.** That entry's 2-row gap
+   (19,573 vs 19,571) **did not reproduce** in the rebuild, which returned 20,042/20,042.
+   So its cause was not deterministic from the inputs, and is now reachable only here
+   (TD-S77-NEW-9).
+
+Both tables were in **no register** before S77 (TD-S77-NEW-6). They are evidence, not a
+data source: by design every `valid_from` in them is the confirming bar's **open**.
+
+### S77.C — the zone layer is measured null; the event half is not measured at all
+
+Paired clean-vs-contaminated on identical primitives:
+
+| measure | contaminated | clean |
+|---|---:|---:|
+| H `atm_pnl_30m_pct` | +12.80 % | **+0.76 %** |
+| M5 `atm_pnl_30m_pct` | +5.04 % | **−0.42 %** |
+| FVG `respected` M5/H/D/W | 43.7 / 63.8 / 77.9 / 92.3 | **34.9 / 23.0 / 43.2 / 46.2** |
+
+The FVG timeframe gradient **inverts**. The horizon sweep decays monotonically negative to
+**−7.19 %** at EOD — theta with no directional edge. The distribution is symmetric with no
+exploitable tail (H p10 −20.21 / p90 +21.72), and `mean_mfe ≈ |mean_mae|` (H +0.14 /
+−0.15; M5 +0.18 / −0.17): price moves as far against these zones as for them.
+
+**The regime split was pre-registered.** Trailing-20-day range, ≥6 % = TREND, success
+declared *before* the query as ≥1.3 trend and ≤1.1 range. Returned **1.10 / 1.10 at H** and
+**1.01 / 1.03 at M5**, on a split that discriminated cleanly (4.24 % vs 10.24 % window
+ranges, balanced n). **The null is regime-invariant.**
+
+**The event half of the table is not measured, and its numbers are artifacts.**
+`Event.event_ts` stays at bucket-start by operator decision A, because `detect_order_blocks`
+keys `bar_idx` and `fvg_by_ts` on exact equality with it and moving it empties OB detection
+silently. **15,681 of 20,042 rows — 78 % — remain anchored at bucket-start.** Events are
+*more* contaminated than zones, not less: a displacement is **defined by the bar that
+moved**, so its anchor bar *is* the signal, where a zone's confirming bar is incidental.
+H `DISPLACEMENT_DOWN` reads **41 wins of 41**; `DISPLACEMENT_UP` 57 of 62 (TD-S77-NEW-1).
+
+### S77.D — `assign_tier` is live, and the disable flag covers one consumer of three
+
+| consumer | site | covered by `MERDIAN_TIER_MULT_DISABLE` |
+|---|---|---|
+| `ict_size_mult` | — | **yes** |
+| `KELLY_FRACTIONS_C[tier]` | `build_trade_signal_local.py:1035` | **no** |
+| `tier == "SKIP"` | `detect_ict_patterns.py:528` | **no** |
+
+The flag is **set** — 3,650 of 3,650 `signal_snapshots` rows over 30 days carry the marker —
+and it is doing a third of the job that reading its name would suggest. **Capital allocation
+still keys off a mined tier**, as does the skip decision.
+
+The thresholds behind that tier were mined as the **argmax of ~40 cells over ~144 trades
+with no holdout** (TD-S77-NEW-10), and the BEAR_OB afternoon skip **cites Exp 8 for a figure
+Exp 2 produced, over a window neither measured and the code does not gate** — the two
+available measurements of that cell differ by a factor of ten (TD-S77-NEW-11).
+
+### S77.E — `merdian_reference.json`'s row counts had skipped a generation
+
+Both `status` fields on `tables.ict_primitives` and `tables.ict_primitive_outcomes` still
+read **19,399** — the S31-B Task 4 backfill figure. S76 *measured* 19,573 / 19,571 and that
+measurement **never reached the file**, so the field was two generations stale when S77
+restamped it to 20,042.
+
+This is a **fresh instance of TD-S76-NEW-17 inside the file that entry is about** — a value
+asserted in one document and contradicted in another, with nothing connecting them. It was
+not found by audit. It was found because a session had to write a new value into the field
+and read the old one on the way past.
+
+---
+
+*System Map updated Session 77, 2026-09-11/13 (§S77 — the ICT primitive cohort rebuilt clean under ADR-004 Amendment C for the zone classes: `ict_primitives` and `ict_primitive_outcomes` **20,042 / 20,042** over `--start 2025-03-31 --end 2026-06-04`, verified by paired natural-key join at `unchanged = 0` on 2,481 OB/FVG rows, at a cost of 3,228 s and ~92 % I/O wait; the `ict_primitives` row of §S76.B superseded on row count and cleanliness and its verdict left standing — **still no scheduled producer, still no live consumer, S31-C still unrun**; two snapshot tables `ict_primitives_pre_s77` / `ict_primitive_outcomes_pre_s77` (19,573 / 19,571) recorded as an evidence tier and as the **only remaining evidence for TD-S76-NEW-18**, whose 2-row gap did not reproduce; the zone layer **measured null** — H `atm_pnl_30m_pct` +12.80 % → +0.76 %, the FVG timeframe gradient inverted, no exploitable tail, `mean_mfe ≈ |mean_mae|`, and a **pre-registered** regime split returning 1.10 / 1.10 so the null is regime-invariant; the **event half unmeasured** at 78 % of rows with `DISPLACEMENT_DOWN` reading 41 of 41; `assign_tier` live on mined thresholds with `MERDIAN_TIER_MULT_DISABLE` covering one consumer of three; and `merdian_reference.json`'s row counts found **two generations stale** — a fresh instance of TD-S76-NEW-17 inside the file that entry is about. **CODE CHANGED; one irreversible database operation, snapshots taken first.**) Previous: Session 76, 2026-09-09/10 (§S76).*

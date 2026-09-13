@@ -57,6 +57,218 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S77-NEW-1 (S1 priority) — ADR-004 Amendment C's event class is unimplemented; 78 % of `ict_primitive_outcomes` is still anchored at bucket-start, and the event cells are the most contaminated in the table
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** Every event-class number in the research table is unusable, and the cells read as spectacular rather than broken — which is how they survived. |
+| **Filed** | 2026-09-11 (Session 77) |
+| **Component** | `ict_primitives.py` — `Event.event_ts` at `:291`, `:554`, `:571` · `build_ict_primitives.py` — event `valid_from` derived at `:1672` and `:1727`, option tuple anchor `_floor_5m(e.event_ts)` at `:1503` · `ict_primitive_outcomes` |
+| **Decision** | Operator option A at the F-68 remediation. `Event.event_ts` was left at the bar's **open** deliberately: `detect_order_blocks` keys `bar_idx` (`ict_primitives.py:333`) and `fvg_by_ts` (`:343`) on exact equality with it, and re-anchoring events while `bars` stay stamped at open makes both lookups return `None` and empties OB detection silently. The decision is sound; the consequence is this entry. |
+| **Scale** | **15,681 of 20,042 rows.** |
+| **Measured consequence** | H `DISPLACEMENT_DOWN` reads **41 wins of 41**; `DISPLACEMENT_UP` 57 of 62; `mean_mfe` **+0.41** against `mean_mae` **−0.05**. |
+| **Why events are worse than zones, not better** | A displacement is *defined* by the bar that moved. Anchoring at that bar's open buys immediately before a move the detector selected the bar for — the lookahead is not incidental to the primitive, it **is** the primitive. At the same timeframe the event class is therefore more contaminated than the zone class, which is the opposite of the intuition that events are simpler. |
+| **Workaround** | Treat every event-class row in `ict_primitive_outcomes` as unusable. The zone classes (OB, FVG) are clean as of the S77 rebuild; the event classes are not. |
+| **Proper fix** | Re-anchor the three `Event.event_ts` sites **together with** the `bars` stamping that `bar_idx`/`fvg_by_ts` join on, then a further DELETE + recompute. The join-key coupling is the whole difficulty; a three-line change to `event_ts` alone is the silent-empty failure. |
+| **Cross-ref** | ADR-004 **§15** (Amendment C, Implementation status as amended S77) · audit finding **F-68** · **TD-S77-NEW-2** (the D/W entry-anchor gap, the other half of what §15 leaves open) · **TD-S77-NEW-15**. |
+| **Status** | **OPEN.** |
+
+### TD-S77-NEW-2 (S2 priority) — D and W have a measurement anchor but no entry anchor, so daily and weekly ICT are unmeasured on options
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Two of four timeframes cannot be scored on options at all. Research-blocking, not production-blocking. |
+| **Filed** | 2026-09-11 (Session 77) |
+| **Component** | `build_ict_primitives.py` — `_floor_5m(p.valid_from)` at `:1500`, ATM window at `:1016` · `ict_primitive_outcomes` D and W rows |
+| **Symptom** | A daily bar's close is **15:31 IST** — after the session. The forward windows (5 m / 15 m / 30 m / 60 m) run into an empty session, and the option tuple enumerated at `_floor_5m(valid_from)` resolves to a strike that does not trade at that moment. |
+| **Measured** | **118 of 132 matched D/W rows lost their ATM P&L entirely in the rebuild, with zero gained** — 101 of 113 D, 17 of 19 W. The loss is **strictly one-directional**, which is what distinguishes it from ordinary strike re-picking: H lost 39 and gained 54, M5 lost 84 and gained 52, both ~5 % bidirectional churn. |
+| **What this does not affect** | The intraday conclusions. H and M5 comparisons are bidirectional and sound, and the S77 null result rests on them. |
+| **Proper fix** | A separate **entry** anchor, distinct from the confirmation anchor Amendment C specifies. The next session's open is the obvious candidate. This is a **new decision** and is not covered by operator decision D2. |
+| **Cross-ref** | ADR-004 **§15** (*The measurement anchor is not an entry anchor*, added S77) · **TD-S77-NEW-1** · **TD-S77-NEW-15**. |
+| **Status** | **OPEN.** |
+
+### TD-S77-NEW-3 (S3 priority) — a recompute whose `--end` lands mid-week rewrites the previous cohort's last W bucket; F-78 guards the start boundary only
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** One row in this instance, and the mechanism is understood. It will recur on every partial-range recompute. |
+| **Filed** | 2026-09-11 (Session 77) |
+| **Component** | `build_ict_primitives.py` W-bucket aggregation · the `--end` argument |
+| **Symptom** | F-78 protects the **start** boundary via the ISO-Monday rule. The **end** boundary is unguarded: a W bucket truncated by `--end` is a different bar from the same bucket computed over its full week, so the primitives that form in it differ between runs. |
+| **Measured cost here** | One NIFTY W BEAR_FVG, `source_bar_ts` 2026-05-11, window 05-04 / 05-11 / 05-18. The old run ended 2026-05-22, so its 05-18 bar was a truncated four-day week; the full week's high closes the gap and the primitive **does not form**. |
+| **The mirror image, legitimate** | The eight start-boundary cells that *gained* rows (2 each: D PDH/PDL, H BULL_FVG, M5 BULL_FVG, W PMH/PML/PWH/PWL) are the same mechanism at the protected end, and are correct additions rather than drift. |
+| **Proper fix** | Apply the F-78 ISO-week rule symmetrically — snap `--end` back to the last complete W bucket, or refuse a mid-week `--end` for W. |
+| **Cross-ref** | audit finding **F-78** · **TD-S77-NEW-15** (the range this recompute deliberately stopped short of). |
+| **Status** | **OPEN.** |
+
+### TD-S77-NEW-4 (S3 priority) — `/patch_*.py` is gitignored, so not one patch script in MERDIAN's history is in version control
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Unrecoverable for everything already written, and the registers describe what each patch did. The exposure is that a transformation is not the same artefact as a description of it. |
+| **Filed** | 2026-09-11 (Session 77) |
+| **Component** | `.gitignore:71` — `/patch_*.py` |
+| **Symptom** | `patch_s36_enh99_v3.py`, `patch_s37_enh80_writer_v2.py`, `patch_s40_enh83_view_tau_rewrite.py`, `patch_s41_*` are all referenced by registers and **none is recoverable**. The registers say what each did; the transformation is gone. |
+| **Where it matters and where it does not** | Tolerable for view DDL, which the view definition itself records. **Not** tolerable for a change whose output is an irreversible DELETE plus recompute — there the patch script is the only statement of what was done to the data. |
+| **Action taken S77** | `patch_s77_f68_ts_close.py` was committed via `git add -f` as a named exception (`87ac537`), with the exception recorded in the commit subject. |
+| **Proper fix** | A negation rule (`!/patch_s*.py`, or a `patches/` directory outside the pattern) rather than per-file `git add -f` — the force flag hides the problem for the next file, which is the S68 `.gitignore` finding verbatim. |
+| **Cross-ref** | S68 settled decision (*`git status` clean ≠ file tracked*; fix with a negation rule, not `git add -f`) · **TD-S77-NEW-6**. |
+| **Status** | **OPEN.** |
+
+### TD-S77-NEW-5 (S3 priority) — the documented commit-message recipe emits a BOM, and ways-of-working records that exact incantation as the one that avoids BOM issues
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Cosmetic in effect — a `\ufeff` at the head of a commit subject — but it is a standing instruction describing behaviour it does not produce. |
+| **Filed** | 2026-09-11 (Session 77) |
+| **Component** | ways-of-working commit-message recipe · Windows PowerShell 5.1 `Out-File -Encoding utf8 -NoNewline` |
+| **Symptom** | PS 5.1's `utf8` encoding writes U+FEFF **regardless of `-NoNewline`**; `-NoNewline` governs the trailing newline, not the byte-order mark. Commits **`c61b8a3`** and **`87ac537`** both carry it in the subject. |
+| **Root cause** | The recipe was written against the wrong mental model of what `-NoNewline` suppresses. |
+| **Proper fix** | `-Encoding utf8NoBOM` (PowerShell 7+) or `[IO.File]::WriteAllText()` (5.1, which takes a `UTF8Encoding($false)`). |
+| **The class** | Same as **TD-S76-NEW-15** — a standing instruction describing behaviour it does not produce, found only when a session tried to follow it. Second instance in two sessions. |
+| **Cross-ref** | **TD-S76-NEW-15** · **TD-S76-NEW-21**, **TD-S76-NEW-22** (the same class in other documents). |
+| **Status** | **OPEN.** |
+
+### TD-S77-NEW-6 (S3 priority) — two snapshot tables exist in production and are in no register; they are the only surviving copy of the pre-fix ICT cohort
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Nothing is broken. The risk is that they become the next unexplained database object, and they are irreplaceable. |
+| **Filed** | 2026-09-11 (Session 77) |
+| **Component** | `public.ict_primitives_pre_s77` (**19,573** rows) · `public.ict_primitive_outcomes_pre_s77` (**19,571** rows) |
+| **Created** | 2026-09-11 by `CREATE TABLE AS SELECT *`, immediately before the F-68 DELETE + recompute. |
+| **Shape** | No constraints and no indexes — correct for a snapshot. **`id` is preserved**, so a restore inserts primitives then outcomes and the FK relationship survives. |
+| **Why they matter** | They are the **only** surviving copy of the pre-fix cohort, and therefore the only remaining evidence for **TD-S76-NEW-18** and for every published figure drawn from the contaminated table (S31-B holdout, S33 ENH-106 v7). |
+| **Proper fix** | Register them in the System Map and `merdian_reference.json`, with their provenance and the fact that they are deliberately constraint-free. |
+| **Cross-ref** | ADR-004 **§15** (as amended S77) · **TD-S77-NEW-9** · **TD-S76-NEW-18** · **TD-S77-NEW-4** (the adjacent *the artefact is gone, only the description survives* shape). |
+| **Status** | **OPEN.** |
+
+### TD-S77-NEW-7 (S3 priority) — `script_execution_log.host` is not evidence of which machine ran a script
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** No production impact. It invalidates a class of register conclusion, which is why it is filed rather than left as a note. |
+| **Filed** | 2026-09-11 (Session 77) |
+| **Component** | `script_execution_log.host` · `core/execution_log.py:125-138` (`_detect_host()`) · `ingest_breadth_from_ticks.py:60-64` (hand-typed literal) · the column's own `DEFAULT 'local'::text` |
+| **Symptom** | Three independent producers write the column, and **which one wrote a given row is not recoverable from the row**. `merdian_pipeline_alert_daemon` logs `host='Navin'`, a string `_detect_host()` cannot produce. `ingest_breadth_from_ticks.py` writes a hardcoded `"local"` from a `*/1` cron **on the AWS box**. |
+| **Consequence** | Any register conclusion drawn from the column is unsound until the writing path is identified. Where the writer is an `ExecutionLog` instance the label **is** `_detect_host()` output and the column is usable — that exception is what makes the blanket rule wrong in both directions. |
+| **Proper fix** | Either a `host_source` discriminator column, or route every writer through `ExecutionLog` (**TD-S77-NEW-8**). |
+| **Cross-ref** | Deployment Topology **§S76.E as amended S77** · **TD-S77-NEW-8** · **TD-S77-NEW-14** · Assumption Register **D.35.25**, **D.35.26**. |
+| **Status** | **OPEN.** |
+
+### TD-S77-NEW-8 (S2 priority) — writers hand-roll `script_execution_log` inserts and bypass `ExecutionLog`; how many is unmeasured, and the query written to count them could not have found any
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Audit coverage of the writer fleet is unknown. Every bypassing writer is invisible to `expected_writes`, `contract_met` and `exit_reason` — i.e. to CLAUDE.md Rule 0's entire mechanism. |
+| **Filed** | 2026-09-11 (Session 77) |
+| **Component** | `ingest_breadth_from_ticks.py:60-64` (the one known instance, **29,440 rows**) · `script_execution_log` · `core/execution_log.py` |
+| **Symptom** | The bypassing writer supplies its own `insert({...})` with a hand-typed `host`, and carries **no `expected_writes` contract, no `contract_met`, no `exit_reason`**. It is a `*/1` cron on the AWS box (crontab lines 12 and 46). |
+| **The instrument failed, and that is the entry** | The query written to enumerate such writers keyed on `expected_writes IS NULL`. The column is **`NOT NULL DEFAULT '{}'::jsonb`**, so the predicate is unsatisfiable: it returned **no rows** against a population **known** to contain at least one. *No rows returned* measured nothing and would have been filed as a clean result. |
+| **Proper fix** | Enumerate on `expected_writes = '{}'::jsonb` (or on the absence of an opening `RUNNING` row), then port each bypassing writer onto `ExecutionLog`. |
+| **Cross-ref** | CLAUDE.md **Rule 0 clause 1** (this is an instance, in the instrument) · Assumption Register **D.35.27** · **TD-S77-NEW-7** · **TD-S76-NEW-10**. |
+| **Status** | **OPEN — the coverage question is unmeasured, not answered.** |
+
+### TD-S77-NEW-9 (S3 priority) — TD-S76-NEW-18's 2-row gap did not reproduce, and its cause is now reachable only through the pre-fix snapshot
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The gap is gone. What is filed is that its cause was never established and is now one `DROP TABLE` from being unreachable. |
+| **Filed** | 2026-09-11 (Session 77) |
+| **Component** | `ict_primitives` / `ict_primitive_outcomes` · `public.ict_primitives_pre_s77` / `public.ict_primitive_outcomes_pre_s77` |
+| **Measured — pre-fix** | **19,573 / 19,571.** The 2-row gap is **entirely W BEAR_FVG** (8 primitives, 6 outcomes), which confirms the operator's recalled explanation as to *what* — while the S76 refutation of its *provenance* (no such finding exists in the audit document) **stands**. |
+| **Measured — post-rebuild** | **20,042 / 20,042. No gap.** |
+| **What follows** | The cause was **not deterministic from the inputs** — the same writer over the same window produced a gap once and not the second time. It is now unreachable except through `ict_primitives_pre_s77`. |
+| **Proper fix** | Diagnose from the snapshot (the 8 W BEAR_FVG primitives against their 6 outcomes) before that table is dropped, or accept the gap as unexplained and close TD-S76-NEW-18 on that basis deliberately. |
+| **Cross-ref** | **TD-S76-NEW-18** · **TD-S77-NEW-6** (the snapshot that holds the only evidence) · ADR-004 **§15** (row counts corrected S77). |
+| **Status** | **OPEN.** |
+
+### TD-S77-NEW-10 (S1 priority) — `assign_tier` is live on the signal path and carries mined thresholds; the S30 disable flag covers one of its three consumers
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** Capital allocation keys off a tier defined as the argmax of ~40 subgroup cells over ~144 trades, with no holdout and no multiple-comparison correction, and the flag believed to neutralise it does not. |
+| **Filed** | 2026-09-11 (Session 77) |
+| **Component** | `detect_ict_patterns.py:264-314` (`assign_tier`) · consumed at `build_trade_signal_local.py:923-931` · `:1035` (`_kelly_frac = _KF.get(_tier, 0.20)`) → `KELLY_FRACTIONS_C`, `merdian_utils.py:194` · `detect_ict_patterns.py:528` (`tier == "SKIP"`) |
+| **Provenance of the thresholds** | TIER1 is *defined* in the compendium as **"100 % WR setups"** — the argmax of ~40 subgroup cells drawn from ~144 trades. No holdout. No multiple-comparison correction. A 100 % cell at that N is a selection artefact by construction. |
+| **The flag, measured** | `MERDIAN_TIER_MULT_DISABLE` is confirmed **set** — **3,650 of 3,650** `signal_snapshots` rows in the last 30 days carry `raw->>'tier_mult_disabled' = 'true'`. It neutralises **`ict_size_mult` only**. |
+| **What the flag does not cover** | (a) `_kelly_frac = _KF.get(_tier, 0.20)` at `build_trade_signal_local.py:1035` — **capital allocation still keys off the tier** (TIER1 0.50 / TIER2 0.40 / TIER3 0.20 per `merdian_utils.py:194`). (b) `tier == "SKIP"` at `detect_ict_patterns.py:528`, which **zeroes signals outright**. A disable flag covering one of three consumers reads, to anyone checking it, as a disabled feature. |
+| **Proper fix** | Extend the flag to all three consumers, or retire the mined tiers and re-derive on a holdout per ADR-009. The second is the real fix; the first is what makes the current state honest in the meantime. |
+| **Cross-ref** | `docs/research/experiment_forensics_2026-09-11.md` **§4.2** · ADR-009 (calibration discipline) · CLAUDE.md **Rule 0a clause 3** (a 100 % cell is a defect report) · **TD-S77-NEW-11** (the same function, a different defect) · S30 settled decision **B29** (cohort-prior gate hazard). |
+| **Status** | **OPEN.** |
+
+### TD-S77-NEW-11 (S1 priority) — the BEAR_OB afternoon skip cites one time window and gates another, and the two available measurements of its cell differ by a factor of ten
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** A live gate on the signal path whose justifying citation does not describe the window it gates, and whose cited figure comes from a different experiment than the one named. |
+| **Filed** | 2026-09-11 (Session 77) |
+| **Component** | `detect_ict_patterns.py:291` (the citing comment) · `:58`–`:59` (`AFTNOON_START = 13:30`, `SESSION_END = 15:30`) · `:192` (the window test) · `:306` (`BULL_OB → TIER1` on `MORNING`/`AFTNOON`) · `experiment_8_sequence.py:96` |
+| **The citation** | `:291` cites **−24.7 % / 17 % WR** and attributes it to **Experiment 8**. |
+| **What Exp 8 actually measured** | Exp 8's afternoon bucket is **13:30–15:30** (`experiment_8_sequence.py:96`) and its published result for that cell is **−2.5 % / 55 % WR**. It did not produce −24.7 %. |
+| **Where −24.7 % comes from** | Experiment **2**'s **13:00–14:30** bucket — a different experiment, a different window, and one Exp 2 scored separately from its own `POWER_HOUR` bucket. |
+| **What production gates** | `AFTNOON_START = 13:30` → `SESSION_END = 15:30`: it **omits the half-hour the cited measurement covers** (13:00–13:30) and **adds an hour** Exp 2 scored as a separate bucket (14:30–15:30). |
+| **Consequence** | The two available measurements of "afternoon BEAR_OB" differ by a **factor of ten** (−2.5 % vs −24.7 %), and neither is a measurement of the window the code gates. `BULL_OB → TIER1` at `:306` inherits the same boundary mismatch. |
+| **Proper fix** | Decide which window is being claimed, measure *that* window, and make the comment cite the run that produced the figure. Until then the gate is un-evidenced rather than wrong. |
+| **Cross-ref** | `docs/research/experiment_forensics_2026-09-11.md` · **TD-S77-NEW-10** (same function) · **TD-S77-NEW-12** (the register disagreement on Exp 2's headline) · CLAUDE.md **Rule 0a clause 2**. |
+| **Status** | **OPEN.** |
+
+### TD-S77-NEW-12 (S2 priority) — two registers publish different headline numbers for Experiment 2, disagreeing on every row, and neither cites a run log
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Two canonical-looking sources, no discriminator, and one of them is the provenance for a live gate. |
+| **Filed** | 2026-09-11 (Session 77) |
+| **Component** | `docs/research/MERDIAN_Experiment_Compendium_v*.md` · `docs/research/merdian_all_experiment_results.md` |
+| **The disagreement** | BULL_OB — compendium **N=81 / 88.9 % / +41.9 %**; all-results **N=101 / 93.5 % / +70.0 %**. They disagree on **every row**, and on `BEAR_OB \| DTE=0` by **65 points** (+7.3 % vs +72.5 %). |
+| **Why it cannot be resolved from the documents** | **Neither cites a run log.** There is no provenance field, no commit, no timestamp — so neither can be preferred on evidence. |
+| **Discriminator** | The `Tee-Object` log per CLAUDE.md **Rule 21**, which mandates exactly this artefact for long-running experiment runs. If no log survives for either, that is itself the finding. |
+| **Proper fix** | Locate the run logs, mark one register canonical for Exp 2, and add the provenance field that would have prevented this. |
+| **Cross-ref** | CLAUDE.md **Rule 21** · **TD-S77-NEW-11** (a live gate citing one of these numbers) · **TD-S77-NEW-13** (both N figures are overstated for a third reason). |
+| **Status** | **OPEN.** |
+
+### TD-S77-NEW-13 (S2 priority) — published experiment N is the pre-drop count; 55–65 % of each cohort was never scored, and the drop correlates with the losses
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Every power and confidence statement built on those N is overstated two- to threefold, and the missing trades are not missing at random. |
+| **Filed** | 2026-09-11 (Session 77) |
+| **Component** | `experiment_2_options_pnl.py:73` (`MIN_OPTION_PRICE = 5.0`), applied at `:198` · `pnl_dict[h] = None` at `:508` and `:526` · `PnlBucket.add` at `:308`, appending at `:312` · `add_no_data` at `:304` |
+| **Mechanism** | `MIN_OPTION_PRICE = 5.0` removes option bars from the lookup **entirely**. A missing *exit* sets `pnl_dict[h] = None`, and `PnlBucket.add` appends only non-`None` values — so the trade **increments the pattern count but never enters the statistics**. |
+| **Why the bias has a direction** | An exit goes missing precisely when the option decayed to **near-total loss**. The filter is a liquidity filter in intent and a loss filter in effect. |
+| **Measured** | The one published `NoD` column shows **55–65 % of each cohort was never scored**: BULL_OB **101 → 35**, BOS_BULL **1717 → 654**. |
+| **Proper fix** | Score a missing exit as the floor value rather than dropping it, or publish N-scored alongside N-detected. Either makes the denominator honest; dropping does not. |
+| **Cross-ref** | **TD-S77-NEW-12** (both registers' N figures are pre-drop) · **TD-S77-NEW-10** (the ~144-trade cohort behind the mined tiers is a post-drop subset of a pre-drop N) · CLAUDE.md **Rule 0a clause 3**. |
+| **Status** | **OPEN.** |
+
+### TD-S77-NEW-14 (S2 priority) — `build_ict_htf_zones.py`'s invoker is still unresolved, and the `host` evidence the S76 search was scoped on is retracted
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** A production writer with no identified invoker. Unchanged in substance from S76; what changed is that the evidence narrowing the search has been withdrawn. |
+| **Filed** | 2026-09-11 (Session 77) |
+| **Component** | `build_ict_htf_zones.py` · `script_execution_log.host` |
+| **What was retracted** | The S76 search was scoped on `host=aws`. Since 2026-06-05 the label split is **13 `aws` / 59 `local`** — the scoping property is true of **18 %** of the population, and the other 82 % carried a label pointing at a host already believed dark, so it was never followed. The companion *"runs once daily"* clause is also refuted (doubles on three dates, 23 runs across 06-02 → 06-04, three empty weekdays). |
+| **Eliminated in S77** | `RandomizedDelaySec` on any systemd unit (none has it) · user timers (`~/.config/systemd/user/` does not exist, so the earlier `systemctl --user` DBus failure concealed nothing) · the longer-chain hypothesis (17 of 30 runs have no predecessor within 15 minutes) · `MERDIAN_HOST=local` in `.env`. |
+| **Untried and cheap** | `sudo crontab -l -u <user>` for every user with a home directory. Only `root` and `ssm-user` have been read. |
+| **Open thread** | Runtime is bimodal with no overlap (`local` 59–112 s, `aws` 120–173 s) on the same `git_sha`, and five commits appear under both labels — whatever writes `local` tracks origin commit-for-commit. The watcher (`/tmp/catch_builder.sh`, PIDs 2128790 / 2130111) is armed and **has never fired**; the builder has not run since 2026-09-09 03:05:55. |
+| **Cross-ref** | Deployment Topology **§S76.E as amended S77** · **TD-S77-NEW-7** (why the column is not evidence) · **TD-S76-NEW-1** (whose interval this reopens) · Assumption Register **D.35.20**–**D.35.26**. |
+| **Status** | **OPEN — UNRESOLVED.** |
+
+### TD-S77-NEW-15 (S2 priority) — S31-C is unrun and the rebuilt cohort stops at 2026-06-04; `ict_primitives` still has no scheduled producer and no live consumer
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** The research table the ICT programme depends on is three months short of the present, and the gap is gated behind two other open items. |
+| **Filed** | 2026-09-11 (Session 77) |
+| **Component** | `ict_primitives` · `ict_primitive_outcomes` · `build_ict_primitives.py` |
+| **State** | No scheduled producer and no live consumer **in either repo**. The S77 recompute ran `--start 2025-03-31 --end 2026-06-04`. |
+| **Why it stopped there deliberately** | The option-chain gap **2026-06-04 → 2026-08-23** (TD-S76-NEW-1) would have produced: **F-73**'s fail-forward expiry, an all-NULL option block, **F-72**'s collateral SL nulls, and — after 2026-08-03 — **ADR-022**'s mid-auction EOD columns. Extending the range would have written four known defects into a cohort built to remove one. |
+| **What closing the gap is gated on** | The archiver (**TD-S73-NEW-5** / **TD-S76-NEW-1**) for the option data, and **TD-S77-NEW-2** for D and W to be scoreable at all. |
+| **Proper fix** | Schedule the producer on a live host per ADR-006, then recompute 2026-06-04 → present once the two gates clear. Mind **TD-S77-NEW-3** on the `--end` boundary. |
+| **Cross-ref** | **TD-S77-NEW-1**, **TD-S77-NEW-2**, **TD-S77-NEW-3** · **TD-S76-NEW-1** · **TD-S73-NEW-5** · audit findings **F-72**, **F-73** · **ADR-022**. |
+| **Status** | **OPEN.** |
+
 ### TD-S76-NEW-1 (S1 priority) — the Windows host stopped executing on 2026-06-05, taking the option-chain archival bridge with it, and ~58 sessions of premium data are unrecoverable
 
 | Field | Value |
@@ -70,6 +282,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Why nothing reported it** | No surface asserts on the *pair*. The deleter succeeded daily and logged success; the archiver simply was not invoked, and an uninvoked script produces no failure. The two halves are coupled only by intent. |
 | **Workaround** | None for the lost window. Going forward, `pg_cron jobid 19` is disabled — see **TD-S76-NEW-2**. |
 | **Proper fix** | Re-home the archival bridge onto a host that runs (AWS, per ADR-006), then re-enable jobid 19. Until the archiver has a scheduled invoker on a live host, re-enabling the deleter resumes the loss. |
+| **S77 — scope correction, not a refutation** | **Not established for 2026-06-05 → 2026-08-27.** The measurement above (23 tasks Disabled, no `python`/`pythonw` process) is sound **for 2026-09-10** and **silent on the interval**, which holds **59 `local` runs** of `build_ict_htf_zones.py` on a roughly five-a-week cadence. The entry's own subject — the archival bridge stopped 2026-06-05 and the data is gone — is unaffected; what is withdrawn is the inference that *the host* stopped executing everything on that date. Bears on **TD-S73-NEW-5** (*what broke the archiver first*) and promotes the `C:\GammaEnginePython\build_ict_primitives.py` md5 check from a slip to a discriminator. See **TD-S77-NEW-14**. |
 | **Cross-ref** | Deployment Topology **§S76.A / §S76.B / §S76.C** · TD-S76-NEW-2 · TD-S73-NEW-5 (which recorded the 2026-06-03 → 2026-08-24 gap as **UNVERIFIED** — this entry supplies the mechanism and the cause). |
 | **Status** | **OPEN.** |
 
@@ -4708,4 +4921,6 @@ All four verification conditions met. **(a)** The daily layer accumulates — 38
 **S70 (2026-08-22) — 9 new items filed (TD-S70-NEW-1..9), 3 closed (TD-S69-NEW-4, TD-S69-NEW-7, TD-S69-NEW-8).** Ordering note: **TD-S70-NEW-5** (silent source-selection in `load_vix_history_rows`) comes before **TD-S70-NEW-4** (the VIX writer itself) — the logging defect is the mechanism that hid a five-month staleness and will hide the next one, so it is worth more than the instance it concealed. **TD-S70-NEW-2 and TD-S70-NEW-3 ship in one pass with ADR-023 D1**, all three being small corrections to the same CAS/read-path work. **TD-S70-NEW-8 blocks the ADR-016 recalibration** — the premise behind it has been withdrawn, and recalibrating against a withdrawn premise is worse than not recalibrating. **TD-S70-NEW-6** is deliberately bundled into the ADR-022 D1 job audit rather than actioned alone: it touches seven live ingest cron lines and each needs its own verdict. **Still open and unchanged from S69:** TD-S69-NEW-1 (EBS root 7.6 GB — the true root cause of the 08-12 cascade, still the largest infra item), TD-S69-NEW-2 (`eod_health_check.py` coverage — note S70 confirmed it reports `[OK]` on a session missing its last 14 minutes, because a first→last range check cannot see a truncated tail), TD-S69-NEW-3 (now escalated to **ADR-023 D1**), TD-S69-NEW-5 (M5 detector — orchestration half CLOSED by the AWS migration, threshold half withdrawn per TD-S70-NEW-8), TD-S69-NEW-6 (token-rotation runbook), TD-S37-01 (τ still hardcoded `0.3`). **Carried from S28 and now three outages old: TD-NEW-7** (S1, MALPHA→Supabase Zerodha token propagation) — the fix has been fully designed since 2026-05-13 and the precursor "C-10 Kite token propagation manual" dates to Session 7; outages 2026-04-22, 2026-05-12, 2026-08-18. It is the oldest live S1 in the register.
 
 **S76 (2026-09-10/11) — 23 new items filed (TD-S76-NEW-1..23), 0 closed.** **The last five were filed after the doc-close had begun, and all five corrected it — three of them by the doc-close discovering that a standing instruction described something the file no longer did, and the last by the close checking whether its own final step had ever run.** TD-S76-NEW-19 and TD-S76-NEW-20 came out of measuring a figure this register had already published — *“roughly 40 times a day”* — which measured **504 of 504**, and whose cause was not the finding it had been attributed to. Two entries filed earlier in this same session (**TD-S76-NEW-3**, **TD-S74-NEW-2**'s widened scope) were **corrected in place** as a result. **TD-S76-NEW-21 came from the doc-close checking its own brief**: instructed to follow how the Decision Index handles ADR-004's existing Amendments A and B, the premise check found **there is no prior handling, because there is none recorded** — a Rule 11 gap predating S76 by months, which Amendment C's marker now makes visible by contrast. **Filed, deliberately not repaired** — dating A and B is a sourced edit, not a splice, and inventing the dates would have been a sixth instance of NEW-13..17's class. **The same premise check also established that TD-S73-NEW-11 has been RESOLVED since S73** and was carried into this session's brief as live; that one is an Assumption Register row, not a TD, and is owed at S77 open. **TD-S76-NEW-22 closed the set the same way**: instructed to write the log entry in Session Management **Rule 5**'s twelve-field format, the format check found the log **abandoned it around 2026-04-07** and has used one-line prose for **65 entries** since, with the rule never amended. **NEW-15, NEW-21 and NEW-22 are one defect in three documents** — a standing rule describing a practice that stopped — and **not one was found by audit; each surfaced when a session tried to follow the rule.** **TD-S76-NEW-23 is the fifth and the sharpest**: preparing Rule 3's EC2 fast-forward as the last step of the close, the production checkout measured **22 commits behind** — HEAD `83818e6`, the S74 doc-close — **having never received S75 at all**. Filed *before* the remediating pull, because the pull overwrites the only evidence. **The box's own `git rev-list --count HEAD..origin/main` returns 0**, its `origin/main` ref being equally stale, so the obvious check reports *up to date* on a three-session-stale tree. **Same shape as the S70 project-knowledge finding, one tier over** — pushing and arriving are separate acts and only the first leaves a record. **The ledger's own assertion set grew from four sites to five this session** when `session_log.md` began carrying `TDs_NEW`, and nothing noticed until this entry forced a recount — the same defect in miniature. **ONE STRUCTURAL CLASS, FIVE INSTANCES — TD-S76-NEW-13 through TD-S76-NEW-17: *a value asserted in one document and contradicted in another, with nothing connecting them.*** All five were found in a single session and **three of them were created during it**. They stay as separate entries because their fixes differ — a re-measurement, a table rewrite, a superseded-marker, a canonicality decision, and a query — but **the class is what a future session needs to see**, because the next instance will not look like any of these five. **This paragraph resumes a convention that lapsed: S71, S72, S73, S74 and S75 filed no update-log entry at all.** Five sessions of drift, not a decision — recorded here rather than left to be re-discovered, and the same shape as **TD-S76-NEW-12** (a splice discipline with no post-condition asserting its own conventions held). **Severity split:** eight S1 (NEW-1, 2, 3, 4, 5, 7, **19**, **20**), eight S2 (NEW-6, 8, 9, 10, 13, 16, 17, **23**), seven S3 (NEW-11, 12, 14, 15, 18, **21**, **22**). **NEW-15 was filed after the first thirteen** — it came out of measuring `CURRENT.md`'s line endings during file 3 of this doc-close and finding the brief's premise stale. **Reading order matters more than numbering here.** **TD-S76-NEW-1 and TD-S76-NEW-2 are one incident** — the Windows host stopped on 2026-06-05, its archival bridge stopped with it, and `pg_cron jobid 19` went on deleting for three months; NEW-2 is the stop-gap and carries an **owed reversal**, which is the item most likely to be forgotten because nothing is currently failing. **TD-S76-NEW-4 stays S1 by operator ruling** against a defensible S2 reading (`ict_primitives` has no live consumer): the correction cost grows with every session the writer runs, and the ICT measurement programme is blocked behind it. **TD-S76-NEW-7 is the oldest defect filed this session** — the polarity-inverted daily OB whose own source comment says it is *"tracked separately as TD candidate"*; it never was, and S69 propagated it to 60 sessions deliberately while holding the rule byte-identical. **TD-S76-NEW-8 deliberately does not re-assert TD-S70-NEW-8's struck claim**: the VIX evidence establishes a volatility gate on the **H** layer and says nothing about M5, which remains unmeasured against the 5-bar impulse definition the code actually tests. **ADR-016 recalibration therefore stays blocked.** **TD-S76-NEW-10 is the first instance filed against CLAUDE.md Rule 0 clause 1** and its fix is the clause applied everywhere `expected_writes` appears, not a two-site patch; the count of writers declaring a floor has not been taken. **Scope widened, not closed:** **TD-S74-NEW-2** gains a third consumer (`build_trade_signal_local.py`, orchestrator child, `htf_failed=true` on **504 of 504** cycles into a field nothing reads — **and not for TD-S74-NEW-2's reason**: the read raises `42703` before any validity predicate applies (TD-S76-NEW-19), which makes that consumer's F-19 exposure **latent**, and **the two entries are now mutually locked** by TD-S76-NEW-20) and **TD-S70-NEW-8** gains a candidate mechanism that does not settle it. **Explicitly left open:** **TD-S73-NEW-5** (2026-06-03 → 2026-08-24 absent from both option-chain tables) — TD-S76-NEW-1 supplies its cause, but *"the host stopped"* explains **when**, not what broke first inside the pipeline, so it is not closed. **Still open and unchanged from S75:** TD-S75-NEW-1..4 (NEW-4's ENH-80..85 renumbering decision still undecided; the Enhancement Register was **not** touched this session). **TD-S38-NEW-3**'s `ict_primitives` × `gamma_metrics` LATERAL view remains unbuilt. **Carried from S28 and now three outages old: TD-NEW-7** (S1, MALPHA→Supabase Zerodha token propagation) — still the oldest live S1 in the register, and unchanged by anything filed today.
+
+**S77 (2026-09-11) — 15 new items filed (TD-S77-NEW-1..15), 0 closed.** Ledger: **`TDs_NEW=15 (3×S1, 6×S2, 6×S3)` · `TDs_CLOSED=0`**. **The session fixed audit finding F-68 and the fix removed the edge.** Paired clean-vs-contaminated on identical primitives: FVG `respected` fell from 43.7 / 63.8 / 77.9 / 92.3 % (M5/H/D/W) to **34.9 / 23.0 / 43.2 / 46.2 %**; H OB+FVG `atm_pnl_30m_pct` from **+12.80 % to +0.76 %**; M5 from **+5.04 % to −0.42 %**. The horizon sweep decays monotonically negative to EOD (H **−7.19 %**), the distribution is symmetric with no tail, and `mean_mfe ≈ |mean_mae|` (H +0.14 / −0.15, M5 +0.18 / −0.17). **The regime split was pre-registered** — trailing-20-day range, ≥6 % = TREND, success declared in advance as ≥1.3 trend and ≤1.1 range — and came back **1.10 / 1.10 at H and 1.01 / 1.03 at M5**. It failed, and **the null is regime-invariant**. Recording the pre-registration matters more than the result: the criterion was fixed before the measurement, so the outcome is a finding rather than a fit. **THREE S1 ITEMS, AND TWO OF THEM ARE THE SAME DEFECT AS F-68 ONE LAYER UP.** **TD-S77-NEW-1** is the half of Amendment C left unimplemented by operator decision A — `Event.event_ts` stays at the bar's open because `bar_idx` and `fvg_by_ts` join on it, so **15,681 of 20,042 rows (78 %)** are still anchored at bucket-start, and the event cells are **more** contaminated than the zone cells, not less: H `DISPLACEMENT_DOWN` reads **41 of 41**. **TD-S77-NEW-10** and **TD-S77-NEW-11** are the live signal path: `assign_tier` carries thresholds mined as the argmax of ~40 cells over ~144 trades with no holdout, the `MERDIAN_TIER_MULT_DISABLE` flag is **set on 3,650 of 3,650 rows** and covers **one of its three consumers** (Kelly fraction and `SKIP` are both untouched), and the BEAR_OB afternoon skip **cites Exp 8 for a figure Exp 2 produced, over a window neither measured and the code does not gate** — two available measurements of that cell differing by a factor of ten. **CLAUDE.md Rule 0a was written this session and it is the lesson, not a rule added for completeness:** two independent lookahead defects six weeks apart, in code written by different passes, **neither found by review** — both found when a later session tried to use the number. **Four entries are instruments that could not have found what they were written to find.** **TD-S77-NEW-8** is the sharpest: a query keyed on `expected_writes IS NULL` against a column that is `NOT NULL DEFAULT '{}'::jsonb` returned **no rows** against a population known to contain at least one bypassing writer — *no rows* measured nothing and would have been filed clean (Assumption Register **D.35.27**). **TD-S77-NEW-7** retracts an evidence class rather than a conclusion: `script_execution_log.host` has **three producers** and which one wrote a row is not recoverable from the row, which is what withdraws the scoping of the S76 invoker search (**TD-S77-NEW-14** — still **UNRESOLVED**, now with `RandomizedDelaySec`, user timers, the longer-chain hypothesis and the `.env` override all eliminated, and `sudo crontab -l -u <user>` still untried). **One correction to a same-register entry:** **TD-S76-NEW-1** is amended to *not established for 2026-06-05 → 2026-08-27* — **not refuted**. Its subject stands; the withdrawn part is the inference that the Windows host stopped executing everything on 2026-06-05, which the 59 `local` builder runs in that interval contradict. **TD-S77-NEW-9** is the same shape on TD-S76-NEW-18: the 2-row gap **did not reproduce** (19,573/19,571 → 20,042/20,042), so its cause was **not deterministic from the inputs** and is now reachable only through `ict_primitives_pre_s77` — which **TD-S77-NEW-6** files precisely because those two snapshot tables are in no register and are the only surviving copy of every published pre-fix figure. **Two entries are about the record rather than the system.** **TD-S77-NEW-4** — `/patch_*.py` is gitignored (`.gitignore:71`), so **not one patch script in MERDIAN's history is in version control**; tolerable for view DDL, not for a change whose output is an irreversible DELETE plus recompute, and `patch_s77_f68_ts_close.py` was committed via `git add -f` as a named exception. **TD-S77-NEW-5** — the documented commit-message recipe emits a BOM, and ways-of-working records that exact incantation as the one that *avoids* it; **second instance in two sessions** of **TD-S76-NEW-15**'s class, *a standing instruction describing behaviour it does not produce*, and again found only because a session tried to follow it. **Explicitly left open, with the reason:** **TD-S77-NEW-15** — the rebuilt cohort stops at **2026-06-04**, deliberately, because extending through the option-chain gap would have written F-73's fail-forward expiry, an all-NULL option block, F-72's collateral SL nulls and ADR-022's mid-auction EOD columns into a cohort built to remove one defect. **TD-S77-NEW-2** is the finding §15 could not resolve: Amendment C specifies when a primitive is *confirmed*, not when a position can be *opened*, and for D and W those are different instants — **118 of 132 matched D/W rows lost their ATM P&L in the rebuild with zero gained**, strictly one-directional against H's −39/+54 and M5's −84/+52, so **daily and weekly ICT are unmeasured on options** and a separate entry anchor is a new decision, not covered by D2. **This paragraph continues the convention S76 revived** after a five-session lapse (S71–S75 filed no update-log entry at all). **Carried and unchanged: TD-NEW-7** (S1, MALPHA→Supabase Zerodha token propagation), still the oldest live S1 in the register.
 

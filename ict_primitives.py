@@ -68,6 +68,27 @@ class Bar:
     low: float
     close: float
     volume: float = 0.0
+    # ADR-004 Amendment C (S77) / audit finding F-68: the instant this bar
+    # CLOSED. ts is the bar's OPEN. Set by build_ict_primitives._reduce_ohlc
+    # from the bucket's last 1m bar; None on raw 1m bars, where _bar_close_ts()
+    # supplies ts + 1min. frozen=True, so a defaulted field is a compatible add
+    # and every other construction site takes the default untouched.
+    ts_close: Optional[datetime] = None
+
+
+def _bar_close_ts(b: Bar) -> datetime:
+    """
+    The instant `b` closed. ADR-004 Amendment C (S15); audit finding F-68.
+
+    Aggregated bars carry ts_close, set in build_ict_primitives._reduce_ohlc
+    from the last 1m bar of the bucket. Raw 1m bars do not, and close one
+    minute after their stamp.
+
+    Bars are stamped at their OPEN, so using b.ts as a confirmation anchor is
+    precisely the lookahead F-68 records: D ~ 6h15m, W ~ 5 days, H <= 59 min,
+    M5 <= 5 min. Every formation-anchored outcome column inherited it.
+    """
+    return b.ts_close if b.ts_close is not None else b.ts + timedelta(minutes=1)
 
 
 @dataclass
@@ -189,7 +210,7 @@ def detect_fvgs(bars: list[Bar], symbol: str, tf: str) -> list[Primitive]:
                     primitive_type="BULL_FVG",
                     direction="BULL",
                     source_bar_ts=mid.ts,
-                    valid_from=nxt.ts,
+                    valid_from=_bar_close_ts(nxt),
                     zone_low=zone_low,
                     zone_high=zone_high,
                     displacement_pct=_move_pct(mid),
@@ -211,7 +232,7 @@ def detect_fvgs(bars: list[Bar], symbol: str, tf: str) -> list[Primitive]:
                     primitive_type="BEAR_FVG",
                     direction="BEAR",
                     source_bar_ts=mid.ts,
-                    valid_from=nxt.ts,
+                    valid_from=_bar_close_ts(nxt),
                     zone_low=zone_low,
                     zone_high=zone_high,
                     displacement_pct=_move_pct(mid),
@@ -296,7 +317,11 @@ def detect_order_blocks(bars: list[Bar], symbol: str, tf: str,
 
     Zone bounds: body only — [min(open, close), max(open, close)].
     Wick high/low go to metadata for rendering convenience (canon: body-bound).
-    valid_from = displacement bar ts (OB is confirmed at displacement close).
+    valid_from = the displacement bar's CLOSE (ADR-004 Amendment C; F-68).
+    Formerly disp.event_ts, which is that bar's OPEN -- up to one full timeframe
+    of lookahead. Events keep their bucket-start event_ts deliberately: it is the
+    join key for bar_idx (:333) and fvg_by_ts (:343), and moving it empties this
+    detector silently.
     """
     out: list[Primitive] = []
     if tf not in OB_MIN_BODY_PCT or tf not in DISPLACEMENT_WINDOW_BARS:
@@ -351,7 +376,7 @@ def detect_order_blocks(bars: list[Bar], symbol: str, tf: str,
             primitive_type=ob_type,
             direction=disp.direction,
             source_bar_ts=ob_bar.ts,
-            valid_from=disp.event_ts,
+            valid_from=_bar_close_ts(bars[disp_idx]),
             zone_low=zone_low,
             zone_high=zone_high,
             displacement_pct=disp.metadata.get("displacement_pct"),

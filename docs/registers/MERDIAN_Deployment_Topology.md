@@ -1562,6 +1562,8 @@ At least three live tasks are absent from §7.2's table. **`MERDIAN_ICT_EOD`** i
 
 Both ingest tasks: `Task To Run` = `ingest_option_chain_local.py <SYMBOL> FULL`, `Start In` = `C:\GammaEnginePython`, repeat every 5 min for 7h from 09:15 IST. **Last Run 2026-06-05 18:06:24, Last Result 0.** They ran clean and stopped because the host stopped, not because they failed.
 
+**S77:** not refuted, but **not established for 2026-06-05 → 2026-08-27**. The S76 measurement (23 tasks Disabled, no `python`/`pythonw` process) is sound **for 2026-09-10** and silent on the interval, which holds 59 `local` runs of `build_ict_htf_zones.py` on a roughly five-a-week cadence. Bears on TD-S73-NEW-5 (*what broke the archiver first*) and promotes the `C:\GammaEnginePython\build_ict_primitives.py` md5 check from a slip to a discriminator. **TD-S77-NEW-14.**
+
 The three counts (19 / 20 / 23) cannot be reconciled from this document, and the identity of the remaining 14 is not established here.
 
 ### S76.C — The archival bridge stopped; the deleter did not
@@ -1608,6 +1610,30 @@ It is absent from **all** of:
 **Recorded UNRESOLVED.** A read-only watcher is running — `/tmp/catch_builder.sh`, PIDs **2128790** and **2130111** — and will log the full parent chain to **`/tmp/builder_catch.log`** at the next fire.
 
 **This is §S75.1's shape at a second instance, and it is worse.** S75.1's invisible writer resolved to `pg_cron` — a fifth surface nobody had enumerated. Here that fifth surface has been searched too, and the invoker is still unknown.
+
+**S77 (2026-09-11) — the `host` column is not evidence of machine, and the cadence is not daily. The invoker remains UNRESOLVED.**
+
+**Premise correction first.** The `host=aws` above is **superseded as evidence**, not as a reading of the row. The companion clause *"it runs once daily"* was the **S76 brief's characterisation and appears nowhere in this document** — this section asserts only *"231 runs since 2026-04-28"*. Both clauses are recorded REFUTED at Assumption Register **D.35.21**.
+
+**`host` has three producers**, and which one wrote a given row is not recoverable from the row:
+
+1. `_detect_host()` (`core/execution_log.py:125-138`) — an `os.environ` override first, then `os.name == 'nt'` → `local`, then a directory test for `/home/ssm-user/meridian-engine` → `aws`. On this box the directory test succeeds unconditionally (verified: the directory exists, and `_detect_host()` imported and called here returns `aws`).
+2. A hand-typed literal. `ingest_breadth_from_ticks.py:60-64` bypasses `ExecutionLog` entirely with its own `sb.table("script_execution_log").insert({... "host": "local" ...})`. That script has **29,440 rows**, is a `*/1` cron on **this** box (crontab lines 12 and 46), and was observed firing live at 2026-09-11 04:20:01 UTC with parent chain `cron → CRON -f -P → bash -c` — so its `local` label demonstrably does not mean the Windows host.
+3. The schema default. `script_execution_log.host` is `text DEFAULT 'local'::text`, nullable — so an insert omitting the column silently reads as `local`.
+
+`merdian_pipeline_alert_daemon` logs `host='Navin'`, a string `_detect_host()` cannot produce, which is what first established that hand-typed literals are in the column.
+
+**For `build_ict_htf_zones.py` specifically the label IS `_detect_host()` output** — it has instantiated `ExecutionLog` since `46dbdc1` (2026-04-28), `_payload_common()` includes `"host": self.host` (`core/execution_log.py:262`) and `_insert_opening_row()` (`:271`) sends it, so the schema default cannot fire. Its 59 `local` rows between 2026-06-05 and 2026-08-27 therefore mean `os.name == 'nt'` **or** a `MERDIAN_HOST` override in the launching environment. `MERDIAN_HOST` is absent from `.env` (count-only grep, both anchored and unanchored — Rule 19 observed) and from the crontab.
+
+**Cadence.** Not once daily: doubles on 2026-08-12 (03:28:25 and 03:31:04), 08-27 (03:28 and 04:00) and 08-31 (00:49 and 02:43); 23 runs across 06-02 → 06-04 at `c21e7c3`; and three empty weekdays — 09-07, 09-08, 09-10. Since 2026-06-05 the label split is **13 `aws` / 59 `local`**, so the S76 search was scoped on a property true of **18 %** of the population.
+
+**Eliminated in S77, additionally:** systemd timers carrying `RandomizedDelaySec` (no unit on the host has it; 17 timers total, two MERDIAN, both wsfeed, both fixed `OnCalendar`), and user timers — `~/.config/systemd/user/` **does not exist**, so the earlier `systemctl --user` DBus failure concealed nothing.
+
+**Refuted hypotheses, recorded so they are not retried:** that the builder is a step in a longer chain (17 of 30 runs have no predecessor within 15 minutes; those that do name a different script each time at gaps of 1.4 s to 10 m 34 s); and that `MERDIAN_HOST=local` is set in `.env`.
+
+**Untried and cheap:** `sudo crontab -l -u <user>` for every user with a home directory. Only `root` and `ssm-user` have been read.
+
+**Runtime is bimodal and tracks the label with no overlap** — `local` 59–112 s, `aws` 120–173 s, on the same `git_sha` (`9f1e41c` ran both ways on 08-27 and 08-28). Five commits appear under both labels, so whatever writes `local` tracks origin commit-for-commit. The watcher (`/tmp/catch_builder.sh`, PIDs 2128790 / 2130111) remains armed and **has never fired** — the builder has not run since 2026-09-09 03:05:55.
 
 ### S76.F — §1 and §7.2 carry superseded-markers, and the §S70 precedent is rejected
 

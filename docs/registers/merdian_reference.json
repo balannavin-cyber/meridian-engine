@@ -2164,7 +2164,7 @@
         "build_ict_primitives.py"
       ],
       "cadence": "Detector module loaded at writer invocation time; not scheduled standalone",
-      "status": "PRODUCTION (S31-A Task 1; 639 lines VERIFIED 2026-09-10 (S76) -- the prior value 613 was exactly ict_primitives_PRE_S31B_SWEEP_DEDUP.py, i.e. the PRE-patch snapshot, while this same entry's own prose below states the dedup WAS applied: the entry contradicted itself. Audit finding F-76 / TD-S76-NEW-13; 5 detectors per ADR-004 §5.1 OB body-only + §5.2 FVG + §6.1 PDH/PDL + §7.1 Sweep + §7.2 Displacement; sweep dedup patched via patch_s31b_sweep_dedup.py during S31-A build)",
+      "status": "PRODUCTION (S31-A Task 1; 664 lines VERIFIED 2026-09-11 (S77; was 639 at S76, +25 at S77 for the F-68 fix per ADR-004 Amendment C / operator decision D2 -- ts_close on Bar, set in _reduce_ohlc as the bucket's last 1m bar + 1 min, consumed via a new _bar_close_ts() at the three Primitive.valid_from sites; patch_s77_f68_ts_close.py, commit 87ac537) -- the prior value 613 was exactly ict_primitives_PRE_S31B_SWEEP_DEDUP.py, i.e. the PRE-patch snapshot, while this same entry's own prose below states the dedup WAS applied: the entry contradicted itself. Audit finding F-76 / TD-S76-NEW-13; 5 detectors per ADR-004 §5.1 OB body-only + §5.2 FVG + §6.1 PDH/PDL + §7.1 Sweep + §7.2 Displacement; sweep dedup patched via patch_s31b_sweep_dedup.py during S31-A build)",
       "filed_session": "Session 31-B (S31-A authored; S31-B added to inventory + validated via Task 4 backfill execution)"
     },
     "build_ict_primitives.py": {
@@ -2182,7 +2182,7 @@
         "operator (one-shot backfill); future Task Scheduler entry for ongoing emission TBD"
       ],
       "cadence": "S31-B Task 4 one-shot backfill 2026-05-21 18:57 IST 2025-04-01 → 2026-05-19 window; future scheduled cadence TBD (likely daily post-market or per cycle)",
-      "status": "PRODUCTION (S31-A Task 2; 2152 lines VERIFIED 2026-09-10 (S76) -- the prior value 1140 was exactly build_ict_primitives_PRE_S32.py, a named _PRE_ snapshot still on disk, i.e. the entry had been pinned four generations behind the live file (S32 v2-v5, S33 v6-v7, S35 v8-v8.2, S35 v9 ADR-012 SL writer). Audit finding F-76 / TD-S76-NEW-13; backfill execution validated end-to-end 19,399 primitives + 19,399 outcomes in 156.3s)",
+      "status": "PRODUCTION (S31-A Task 2; 2156 lines VERIFIED 2026-09-11 (S77; was 2152 at S76, +4 at S77 for the F-68 ts_close plumbing) -- the prior value 1140 was exactly build_ict_primitives_PRE_S32.py, a named _PRE_ snapshot still on disk, i.e. the entry had been pinned four generations behind the live file (S32 v2-v5, S33 v6-v7, S35 v8-v8.2, S35 v9 ADR-012 SL writer). Audit finding F-76 / TD-S76-NEW-13; backfill execution validated end-to-end 19,399 primitives + 19,399 outcomes in 156.3s; superseded S77 -- DELETE + full recompute (--start 2025-03-31 --end 2026-06-04) produced 20,042 + 20,042 in 3,228 s, ~92% I/O wait)",
       "filed_session": "Session 31-B (S31-A authored; S31-B added to inventory + validated via Task 4 backfill execution)"
     },
     "MERDIAN_ICT_Primitives_canonical.pine": {
@@ -3148,10 +3148,34 @@
       "related_td": "TD-NEW-12 RESOLVED Session 28",
       "open_items": []
     },
+    "ict_primitives_pre_s77": {
+      "columns_verified": "NOT independently verified at S77. By construction CREATE TABLE AS SELECT * reproduces the source column set (ict_primitives = 16 at S76); no information_schema check was run against the snapshot.",
+      "rows": 19573,
+      "status": "SNAPSHOT (S77) -- pre-fix copy of ict_primitives taken 2026-09-11 immediately before the F-68 DELETE + full recompute. 19,573 rows. This is the ONLY surviving copy of the cohort behind every pre-fix ICT figure MERDIAN has published.",
+      "written_by": ["S77 one-shot CREATE TABLE AS SELECT * (operator-invoked; no scheduled writer)"],
+      "read_by": ["S77 paired clean-vs-contaminated verification (natural-key join; unchanged=0 on 2,481 OB/FVG rows)", "any future re-derivation of a pre-F-68 published figure"],
+      "unique_key": "NONE. CREATE TABLE AS SELECT * carries NO constraints, NO indexes and NO foreign keys -- the same gap the S28 note records for CREATE TABLE LIKE without INCLUDING ALL. id is preserved from the source as a plain column, which is what makes the paired natural-key join back to the rebuilt table possible; it is not a key here.",
+      "ddl_source": "S77 2026-09-11, CREATE TABLE AS SELECT * (operator-invoked, one shot)",
+      "contamination_notes": "By design this table IS the contaminated cohort: every valid_from is the confirming bar's OPEN (F-68). Retained as EVIDENCE, not as a data source. Do not measure edge from it.",
+      "related_td": "TD-S77-NEW-6 (these two snapshot tables exist in production and were in no register before S77)",
+      "filed_session": "Session 77"
+    },
+    "ict_primitive_outcomes_pre_s77": {
+      "columns_verified": "NOT independently verified at S77. By construction CREATE TABLE AS SELECT * reproduces the source column set (ict_primitive_outcomes = 38 at S76); no information_schema check was run against the snapshot.",
+      "rows": 19571,
+      "status": "SNAPSHOT (S77) -- pre-fix copy of ict_primitive_outcomes taken 2026-09-11 immediately before the F-68 DELETE + full recompute. 19,571 rows -- 2 fewer than the primitives snapshot, which is TD-S76-NEW-18's gap frozen at the moment before the rebuild.",
+      "written_by": ["S77 one-shot CREATE TABLE AS SELECT * (operator-invoked; no scheduled writer)"],
+      "read_by": ["S77 paired clean-vs-contaminated verification", "TD-S77-NEW-9 (the 2-row gap did not reproduce in the rebuild, so its cause is now reachable ONLY through this table)"],
+      "unique_key": "NONE. CREATE TABLE AS SELECT * carries NO constraints, NO indexes and NO foreign keys -- the same gap the S28 note records for CREATE TABLE LIKE without INCLUDING ALL. id is preserved from the source as a plain column, which is what makes the paired natural-key join back to the rebuilt table possible; it is not a key here.",
+      "ddl_source": "S77 2026-09-11, CREATE TABLE AS SELECT * (operator-invoked, one shot)",
+      "contamination_notes": "By design this table IS the contaminated cohort: every outcome is anchored on a valid_from that is the confirming bar's OPEN (F-68). Retained as EVIDENCE, not as a data source.",
+      "related_td": "TD-S77-NEW-6; TD-S77-NEW-9; TD-S76-NEW-18",
+      "filed_session": "Session 77"
+    },
     "ict_primitives": {
       "columns": 16,
       "columns_verified": "2026-09-10 (S76) -- 16 confirmed live from information_schema, and the column set conforms to ADR-004 §4 EXACTLY. No columns key existed on this entry before S76.",
-      "status": "PRODUCTION (S31-A DDL deploy + S31-B Task 4 backfill — 19,399 rows total NIFTY 8838 + SENSEX 10561 over 2025-04-01 → 2026-05-19)",
+      "status": "PRODUCTION (S31-A DDL deploy; cohort REBUILT S77 2026-09-11 -- 20,042 rows after the F-68 DELETE + full recompute, --start 2025-03-31 --end 2026-06-04, no gap. The prior value 19,399 was the S31-B Task 4 backfill figure (NIFTY 8838 + SENSEX 10561 over 2025-04-01 -> 2026-05-19) and had never been restamped; S76 measured 19,573 and that measurement did not reach this entry either, so this field was TWO generations stale -- the TD-S76-NEW-17 class. Pre-fix cohort preserved as ict_primitives_pre_s77.)",
       "written_by": [
         "build_ict_primitives.py (S31-A/S31-B canonical writer with ADR-004 Wave 1 detector pipeline)"
       ],
@@ -3166,7 +3190,7 @@
     "ict_primitive_outcomes": {
       "columns": 38,
       "columns_verified": "2026-09-10 (S76) -- 38 confirmed live from information_schema. No columns key existed on this entry before S76.",
-      "status": "PRODUCTION (S31-A DDL deploy + S31-B Task 4 backfill — 19,399 rows 1:1 with ict_primitives via FK CASCADE)",
+      "status": "PRODUCTION (S31-A DDL deploy; cohort REBUILT S77 2026-09-11 -- 20,042 rows, 1:1 with ict_primitives via FK CASCADE, no gap. The prior value 19,399 was the S31-B Task 4 backfill figure and had never been restamped; S76 measured 19,571, a 2-row gap against primitives (TD-S76-NEW-18) which did NOT reproduce in the S77 rebuild (TD-S77-NEW-9), so this field was TWO generations stale -- the TD-S76-NEW-17 class. Pre-fix cohort preserved as ict_primitive_outcomes_pre_s77.)",
       "written_by": [
         "build_ict_primitives.py (outcomes computation block; 1:1 row count enforced)"
       ],
@@ -4820,10 +4844,18 @@
       "truncated_each_run": false
     }
   },
-  "version": "v54",
-  "last_updated_session": "Session 76",
-  "last_updated_date": "2026-09-10",
+  "version": "v55",
+  "last_updated_session": "Session 77",
+  "last_updated_date": "2026-09-11",
   "change_log": [
+    {
+      "session": "S77",
+      "date": "2026-09-11/13",
+      "type": "F-68 remediation and the ICT zone-layer verdict -- a fix, a rebuild, and a null. CODE CHANGED: ict_primitives.py (639 -> 664), build_ict_primitives.py (2152 -> 2156). One irreversible database operation: DELETE + full recompute of ict_primitives and ict_primitive_outcomes, snapshots taken first. ADRs_NEW=0; ADRs_AMENDED=1 (ADR-004 Amendment C implemented, zone classes only); TDs_NEW=15; TDs_CLOSED=0.",
+      "summary": "HEADLINE: the ICT zone layer has no measurable edge once the lookahead is removed. Paired clean-vs-contaminated on identical primitives -- H atm_pnl_30m_pct +12.80% -> +0.76%, M5 +5.04% -> -0.42%; FVG respected 43.7/63.8/77.9/92.3 -> 34.9/23.0/43.2/46.2 (M5/H/D/W), the timeframe gradient INVERTS. Horizon sweep decays monotonically negative to -7.19% at EOD (theta, no directional edge); distribution symmetric with no exploitable tail; mean_mfe ~ |mean_mae|. PRE-REGISTERED regime split FAILED: trailing-20-day range, >=6% = TREND, success declared in advance as >=1.3 trend and <=1.1 range, returned 1.10/1.10 at H and 1.01/1.03 at M5 -- the null is regime-invariant. FIX: operator decision D2 -- ts_close on Bar, set in _reduce_ohlc as the bucket's last 1m bar + 1 min (the bare stamp would leave 59s of lookahead), consumed at the three Primitive.valid_from sites. Verified by paired natural-key join against the pre-fix snapshot: unchanged=0 on 2,481 OB/FVG rows, every shift positive, magnitudes reproducing F-68's independently derived lookahead at all four timeframes. EVENT CLASS DELIBERATELY NOT IMPLEMENTED (operator option A): Event.event_ts stays at bucket-start because detect_order_blocks keys bar_idx and fvg_by_ts on exact equality with it, so 15,681 of 20,042 rows (78%) remain contaminated and the event cells are MORE contaminated than the zone cells -- H DISPLACEMENT_DOWN reads 41 wins of 41 (TD-S77-NEW-1). AND THE HISTORICAL EDGE IS EXPLAINED: experiment_2_options_pnl.py:257-264 fires at bar i if bars[i+5].close is >=0.40% away then enters at bar j <= i (:486); 96 points / the ATM premium at each DTE reproduces the published +41.9% alone, and BEAR_BREAKER wins 0 of 46 (P=1.4e-14). Win rate tracks lookahead depth, not ICT canon. LIVE EXPOSURE: MERDIAN_TIER_MULT_DISABLE is set on 3,650 of 3,650 signal_snapshots rows over 30 days but covers ict_size_mult ONLY -- not KELLY_FRACTIONS_C[tier], not tier=='SKIP' -- so capital allocation still keys off a mined tier (TD-S77-NEW-10/-11). Recompute stopped at 2026-06-04 deliberately: past it the cohort would inherit F-73's fail-forward expiry, an all-NULL option block, F-72's collateral SL nulls and ADR-022's mid-auction EOD columns (TD-S77-NEW-15).",
+      "docs_updated": "docs/research/experiment_forensics_2026-09-11.md (NEW, UNTRACKED), CLAUDE.md (Rule 0a added; ADR-004 Amendment C settled-decision bullet amended for the zone-class implementation), ADR-004 (§15 implementation status as amended S77), MERDIAN_Assumption_Register.md (§D.35 extended 17 -> 34 rows: .18/.19 rescued from /tmp, .20-.34 all S77 refutations; header and S77 update-log restamped; attribution .20-.34), tech_debt.md (TD-S77-NEW-1..15; TD-S76-NEW-1 amended to 'not established' for 2026-06-05 -> 2026-08-27; S77 update-log paragraph), MERDIAN_Deployment_Topology.md (§S76.E as amended S77), CURRENT.md (Last session = S77, S76 demoted with an S77 correction row, This session reset for S78), merdian_reference.json (v55).",
+      "git_state": "Two S77 commits before the doc-close: c61b8a3 (D.35 splice script) and 87ac537 (patch_s77_f68_ts_close.py, committed via git add -f as a named exception to .gitignore:71 /patch_*.py -- TD-S77-NEW-4). Both commit subjects carry a BOM (TD-S77-NEW-5: the documented recipe emits one while ways-of-working records it as the incantation that avoids it). Doc-close modified and unstaged: CLAUDE.md, build_ict_primitives.py, ict_primitives.py, ADR-004, MERDIAN_Assumption_Register.md, MERDIAN_Deployment_Topology.md, tech_debt.md, CURRENT.md, merdian_reference.json. Untracked: docs/research/experiment_forensics_2026-09-11.md plus the *.PRE_S77 backups. NOTE: *_PRE_S* backups are gitignored (.gitignore:108) while *.PRE_S77 backups are NOT -- two naming conventions with opposite git visibility, the S68 'git status clean != file tracked' shape."
+    },
     {
       "session": "S76",
       "date": "2026-09-10",

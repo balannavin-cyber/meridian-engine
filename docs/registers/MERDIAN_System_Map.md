@@ -1633,4 +1633,37 @@ and read the old one on the way past.
 
 ---
 
-*System Map updated Session 77, 2026-09-11/13 (§S77 — the ICT primitive cohort rebuilt clean under ADR-004 Amendment C for the zone classes: `ict_primitives` and `ict_primitive_outcomes` **20,042 / 20,042** over `--start 2025-03-31 --end 2026-06-04`, verified by paired natural-key join at `unchanged = 0` on 2,481 OB/FVG rows, at a cost of 3,228 s and ~92 % I/O wait; the `ict_primitives` row of §S76.B superseded on row count and cleanliness and its verdict left standing — **still no scheduled producer, still no live consumer, S31-C still unrun**; two snapshot tables `ict_primitives_pre_s77` / `ict_primitive_outcomes_pre_s77` (19,573 / 19,571) recorded as an evidence tier and as the **only remaining evidence for TD-S76-NEW-18**, whose 2-row gap did not reproduce; the zone layer **measured null** — H `atm_pnl_30m_pct` +12.80 % → +0.76 %, the FVG timeframe gradient inverted, no exploitable tail, `mean_mfe ≈ |mean_mae|`, and a **pre-registered** regime split returning 1.10 / 1.10 so the null is regime-invariant; the **event half unmeasured** at 78 % of rows with `DISPLACEMENT_DOWN` reading 41 of 41; `assign_tier` live on mined thresholds with `MERDIAN_TIER_MULT_DISABLE` covering one consumer of three; and `merdian_reference.json`'s row counts found **two generations stale** — a fresh instance of TD-S76-NEW-17 inside the file that entry is about. **CODE CHANGED; one irreversible database operation, snapshots taken first.**) Previous: Session 76, 2026-09-09/10 (§S76).*
+## §S78 — Session 78: the data inventory register, and the vendor question closed (2026-09-14)
+
+### S78.A — three new artefacts
+
+| Artefact | What it is | Scheduled? | Notes |
+|---|---|---|---|
+| `scripts/build_data_inventory.py` | Regenerates the data inventory register. No arguments. READ-ONLY — HTTP GET only through a single `_get()` choke point, no RPC, no write. | **No.** Run on demand. | 26,172 requests / 0:52:36 on the S78 run. Refuses to write while §10 (unresolved probes) is non-empty. Carries `S78_RESOLVED_ROWS` at module level, emitted into §11 by `render()`. |
+| `docs/registers/MERDIAN_Data_Inventory.md` | The canonical answer to "what data exists, per symbol per trading day". Measured against the live database; nothing taken from `merdian_reference.json`, from any register, or from a table name. | — | 476 table rows. **Use it instead of measuring one table and generalising** — that question had been re-derived from scratch at least a dozen times across 70+ sessions. |
+| `docs/registers/CURRENT_history.md` | Append-only archive of `CURRENT.md`'s session blocks, S76 and earlier. | — | **Committed to git; NOT uploaded to project knowledge.** 72 H2 sections moved verbatim. |
+
+### S78.B — measured extent, for reference
+
+| Quantity | NIFTY | SENSEX |
+|---|---:|---:|
+| trading days measured | 359 | 358 |
+| COMPUTABLE NOW (joined) | 302 | 302 |
+| COMPUTABLE NOW (same-relation only) | 113 | 115 |
+| NOT COMPUTABLE (joined) | 57 | 56 |
+
+The gap between the joined and same-relation verdicts is the point: **roughly 190 days per symbol are computable only via a measured join** — gamma from `hist_option_greeks_1m`, OI from `hist_option_bars_1m`, neither carrying both. The join is licensed by measurement (60 sampled tuples, 60 hits, 0 unresolved, per symbol), never by shared column names.
+
+### S78.C — relation facts recorded this session
+
+| Relation | Fact | Entry |
+|---|---|---|
+| `historical_option_chain_snapshots` | Three whole sessions from a second producer carry no spot and no greeks: `breeze_backfill_s35` NIFTY 2026-04-16 (61,899 rows), SENSEX 2026-04-16 (45,731), `breeze_backfill_s44` SENSEX 2026-06-03 (21,345). **SENSEX 2026-04-16 has no `oi` either and supports no layer at all.** Counts by offset bisection; `count=exact` returns `57014` here. | TD-S78-NEW-4 |
+| `historical_option_chain_snapshots` | `dte` declared and never written — real empty list on every day probed. Extent 2026-03-16 .. 2026-06-03. | TD-S78-NEW-5 |
+| `volatility_snapshots` | 47,350 rows; silently switches expiry class — 560 NIFTY MONTHLY timestamps 2026-03-25→04-13, 674 SENSEX 2026-03-20→05-27, inside otherwise-weekly history. Coverage and homogeneity are different properties. | TD-S78-NEW-6 |
+| `gex_strike_snapshots` | `ts` lags `created_at` by exactly one 5-minute cycle — the GEX pass reads the previous cycle's chain. Freshness must read `created_at`; provenance reads `ts`. | TD-S78-NEW-8 |
+| `hist_option_bars_1m` | Greek columns declared and never written **because the vendor never delivered them** — GFDL's nine-column schema, measured across all 175,304 rows of the delivery file. `hist_option_greeks_1m`'s iv and gamma are MERDIAN-solved. | TD-S35-NEW-2 **CLOSED** |
+
+---
+
+*System Map updated Session 78, 2026-09-14 (§S78 — the data inventory register `MERDIAN_Data_Inventory.md` and its generator `scripts/build_data_inventory.py`, both NEW and both unscheduled; `CURRENT_history.md` NEW and git-only; measured extent 359/358 trading days at 302/302 computable, with the joined-vs-same-relation gap showing ~190 days per symbol reachable only through a measured join; four relation facts recorded — HOCS's three second-producer sessions and its never-written `dte`, `volatility_snapshots`' silent expiry-class switch, and `gex_strike_snapshots.ts` lagging `created_at` by one cycle; and **TD-S35-NEW-2 CLOSED** — the pre-Apr-2026 chain vendor is GFDL and its nine-column delivery never carried IV or greeks, so they were not lost at load. **NO PRODUCTION CODE CHANGED.**) Previous: Session 77, 2026-09-11/13 (§S77).* (§S77 — the ICT primitive cohort rebuilt clean under ADR-004 Amendment C for the zone classes: `ict_primitives` and `ict_primitive_outcomes` **20,042 / 20,042** over `--start 2025-03-31 --end 2026-06-04`, verified by paired natural-key join at `unchanged = 0` on 2,481 OB/FVG rows, at a cost of 3,228 s and ~92 % I/O wait; the `ict_primitives` row of §S76.B superseded on row count and cleanliness and its verdict left standing — **still no scheduled producer, still no live consumer, S31-C still unrun**; two snapshot tables `ict_primitives_pre_s77` / `ict_primitive_outcomes_pre_s77` (19,573 / 19,571) recorded as an evidence tier and as the **only remaining evidence for TD-S76-NEW-18**, whose 2-row gap did not reproduce; the zone layer **measured null** — H `atm_pnl_30m_pct` +12.80 % → +0.76 %, the FVG timeframe gradient inverted, no exploitable tail, `mean_mfe ≈ |mean_mae|`, and a **pre-registered** regime split returning 1.10 / 1.10 so the null is regime-invariant; the **event half unmeasured** at 78 % of rows with `DISPLACEMENT_DOWN` reading 41 of 41; `assign_tier` live on mined thresholds with `MERDIAN_TIER_MULT_DISABLE` covering one consumer of three; and `merdian_reference.json`'s row counts found **two generations stale** — a fresh instance of TD-S76-NEW-17 inside the file that entry is about. **CODE CHANGED; one irreversible database operation, snapshots taken first.**) Previous: Session 76, 2026-09-09/10 (§S76).*

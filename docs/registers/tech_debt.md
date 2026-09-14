@@ -57,6 +57,143 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S78-NEW-1 (S3 priority) — the session-date convention is unspecified in Doc Protocol v4, and the only format v4 does specify cannot express a multi-day session
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Record-keeping, not behaviour. It makes cross-register joins on session date unreliable and every instance looks individually reasonable. |
+| **Filed** | 2026-09-14 (Session 78) |
+| **Component** | `docs/operational/MERDIAN_Documentation_Protocol_v4.md` · `CURRENT.md` · `merdian_reference.json` · `tech_debt.md` |
+| **Symptom** | S77 ran across three days and is recorded three different ways: `CURRENT.md` **`2026-09-11 → 2026-09-13`**, `merdian_reference.json` **`2026-09-11/13`**, `tech_debt.md:4925` **`S77 (2026-09-11)`**. Two of the three cannot be parsed as the format v4 specifies. |
+| **Evidence (verified S78)** | v4 specifies bare `YYYY-MM-DD` in four places and nowhere else: `:107` (`session_log` line format), `:329` and `:343` (`CASE-YYYY-MM-DD-<topic>.md`), `:553` (the `CURRENT.md` block's Date field). **No span format is specified anywhere in the document.** |
+| **Correction to the filing brief** | The brief also cited `ADR-004:3` as a third rendering of the S77 span. It is not — that line reads *"Amendment C (2026-09-10)"*, which is Amendment C's **authoring** date in S76. The citation is withdrawn; the finding stands on the other three. |
+| **Root cause** | A multi-day session was not anticipated when the format was written. Each author then invented a rendering, and each is locally defensible. |
+| **Proper fix** | Amend Doc Protocol v4 to specify a span form (e.g. `YYYY-MM-DD..YYYY-MM-DD`) and state which date is canonical for sorting. **Fix by amending v4, not by restamping existing files** — restamping would edit history to match a rule that did not exist when it was written. |
+| **Cost to fix** | ~20 min (one protocol amendment + one settled-decision line). |
+| **Cross-ref** | Doc Protocol v4 `:107` / `:329` / `:343` / `:553`. |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S78-NEW-2 (S3 priority) — 67 backup artefacts are tracked in git with no retention rule, and `.gitignore` cannot remove them because it does not untrack
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Hygiene. This entry shrank under measurement twice and the final version is housekeeping, not exposure. |
+| **Filed** | 2026-09-14 (Session 78) |
+| **Component** | repo root (65 files) · `sql/` (2 files) · `.gitignore:101`, `:103`, `:108` |
+| **Measured (S78)** | `git ls-files` matching `_PRE_S` / `.PRE_S` / `.pre_`: **67** — **65 in the repo root, 2 under `sql/`**. Widening to include `_PATCHED` and `.bak` gives **80**. Uppercase `_PRE_S<N>` spans **S15 → S42**. **18** are lowercase `.pre_*` forms matching no ignore pattern at all. |
+| **The actual mechanism** | **`.gitignore` does not untrack files that are already tracked.** These 67 were committed before the ignore rules existed, so `*_PRE_S*` is simply irrelevant to them. Demonstrated within this session: the two backups S78 created (`build_data_inventory.py_PRE_S78`, `MERDIAN_Data_Inventory.md_PRE_S78`) are correctly ignored by `:108`, while 67 historical ones remain in the tree. The fix is therefore `git rm --cached`, **not** a new pattern. |
+| **Claim REFUTED** | The brief asserted an asymmetry whereby `_PRE_S` is ignored and `.PRE_S` is not. **`.gitignore:108` is `*_PRE_S*` with no extension anchor** and correctly ignores every form, including a `.md`: all four S77 backups on disk (`CLAUDE.md_PRE_S77`, `build_ict_primitives.py_PRE_S77`, `ict_primitives.py_PRE_S77`, `ict_primitives.py_PRE_S77_postpatch`) are untracked. `:103` (`*_PRE_S*.py`) is redundant against `:108`. `:101` names `run_option_snapshot_intraday_runner_PRE_S44.py`, which is **not present**. |
+| **Also** | `ict_primitives.py_PRE_S77_postpatch` (mode 600) is an S77 verification artefact with no cleanup step — see TD-S77-NEW-4. |
+| **Proper fix** | Decide a retention rule (how many backups, for how long), record the naming convention, `git rm --cached` the tracked set, and delete the redundant `:103` and the stale `:101`. |
+| **Cost to fix** | ~30 min. |
+| **Cross-ref** | **TD-S77-NEW-4** (patch scripts gitignored). |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S78-NEW-3 (S2 priority) — project knowledge round-trips LF to CRLF, so the Rule 12 hash comparison cannot distinguish an identical file from a missing upload
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Rule 12 requires git and project knowledge to be treated as two destinations both required for session close. The obvious way to verify the second one reports the wrong answer with total confidence. |
+| **Filed** | 2026-09-14 (Session 78) |
+| **Component** | Claude.ai project-knowledge upload path · CLAUDE.md Rule 12 · Doc Protocol v4 hash discipline |
+| **Symptom** | A byte or hash comparison between the working tree and the project-knowledge copy **always** differs, whether or not the upload is current. Every such comparison is therefore uninformative, and a genuinely stale upload is indistinguishable from a fresh one. |
+| **Measured (S78)** | The project-knowledge byte count equals `disk_bytes + line_count` **exactly** for every file whose working tree is clean — `CURRENT.md` 749,576 + 3,076 = 752,652; `session_log.md` 630,386 + 1,182 = 631,568; `tech_debt.md` 793,911 + 4,926 = 798,837; `data_inventory_2026-09-08.md` 81,354 + 1,170 = 82,524; `iv_availability_2026-09-08.md` 19,820 + 419 = 20,239. **Five files, five exact matches**: one `\r` added per line. The tree carries **zero** CRLF. The only two that did not match (`CLAUDE.md`, `merdian_reference.json`) are exactly the two marked ` M` in `git status` — i.e. genuinely diverged. |
+| **Consequence 1** | Hash comparison must normalise `\r\n` → `\n` on **both** sides before comparing. Un-normalised, it is not a check (CLAUDE.md Rule 0). |
+| **Consequence 2** | Any splice anchor **spanning a newline** that is built from a project-knowledge copy will fail `count == 1` against the tree, and reads as *"the file changed underneath me"* rather than *"my anchor has the wrong line endings"*. Add the boundary to the anchor rule: **a project-knowledge file copy is rendered output for line-ending purposes**, the same way console output is (S71). |
+| **Same class as** | **TD-S76-NEW-23** — the obvious check reporting the wrong thing with total confidence. Also the S72 cross-tier finding: byte size is valid only within one storage tier. |
+| **Proper fix** | Normalise before hashing, both sides; state the tier whenever a byte baseline is quoted. |
+| **Cost to fix** | ~15 min (one rule amendment). |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S78-NEW-4 (S2 priority) — `historical_option_chain_snapshots` contains three whole sessions written by a second producer carrying no spot and no greeks, and one of them carries no OI either
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Any consumer reading HOCS by date, without filtering `source`, silently mixes a greek-bearing archive with three sessions that have no greeks at all. |
+| **Filed** | 2026-09-14 (Session 78) |
+| **Component** | `historical_option_chain_snapshots` · `source` column · Breeze backfill path (S35, S44) |
+| **Measured (S78, exact)** | Row counts obtained by **offset bisection**, not `count=exact` (which returns `57014` on this relation — see the Data Inventory register §11): `breeze_backfill_s35` / NIFTY / 2026-04-16 = **61,899**; `breeze_backfill_s35` / SENSEX / 2026-04-16 = **45,731**; `breeze_backfill_s44` / SENSEX / 2026-06-03 = **21,345**. |
+| **Column population (S78)** | On all three sessions `spot`, `iv`, `delta`, `gamma`, `theta`, `vega` and `dte` returned a **real empty list** under `not.is.null`. `oi` is present on NIFTY 2026-04-16 and on SENSEX 2026-06-03 — and **absent on SENSEX 2026-04-16, which therefore supports no layer at all.** |
+| **Root cause** | These sessions were surgically filled from Breeze (S35 gap fill, S44) to recover chain coverage. Breeze supplies OHLC/OI, not greeks and not spot. The fill was correct for its purpose; nothing recorded that it created a distinguishable row class. |
+| **Mitigation already present** | The `source` column distinguishes them exactly, so the fix is a filter, not a backfill. |
+| **NOT verified from this box** | The brief's derived claim that the greek-complete archive is therefore *"46 days per symbol ending 2026-06-02, not 49 ending 06-03"* could **not** be reproduced here: the supporting day/row figures (NIFTY 47 d / SENSEX 48 d, 1,625,801 / 1,585,714 rows, delta 96.2 % / 95.8 %) appear nowhere in the Data Inventory register, and the register's own per-month sums give a different quantity (days on which HOCS *supplied the verdict*: NIFTY 45, SENSEX 46). The day totals are recorded here as **claimed in-session, not re-verified**. |
+| **Proper fix** | Record the row class in the Data Inventory register and in the System Map; add `source` filtering to any consumer that assumes greeks. |
+| **Cost to fix** | ~30 min. |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S78-NEW-5 (S3 priority) — `historical_option_chain_snapshots.dte` is declared and never written
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A consumer joining or filtering on `dte` gets silence rather than an error. |
+| **Filed** | 2026-09-14 (Session 78) |
+| **Component** | `historical_option_chain_snapshots.dte` |
+| **Measured (S78)** | Day-scoped `dte=not.is.null&limit=1` probes returned a **real empty list** on **2026-04-21, 2026-05-14, 2026-06-02 and 2026-06-03**, and on the three `breeze_backfill_*` sessions. Relation extent measures **2026-03-16 .. 2026-06-03**. |
+| **Scope, stated** | This proves the claim **on the days probed**, not on every row. An unscoped probe is not available: proving absence across the whole relation requires a full scan and returns `57014` — and **`2026-04-16` timed out even at day scope**, because it is a 107k-row Breeze day. That is the Data Inventory register's **method rule 6** shape reappearing one level down. The brief's "null on all 3,211,515 rows" is therefore **not established**; the total itself could not be counted. |
+| **Root cause** | Column added to the schema; writer never populated it. Schema presence is not population. |
+| **Proper fix** | Either populate it at write time (it is derivable from `ts` and `expiry_date`, both present) or mark it vestigial in the schema and the register. Deriving at read time is the cheaper option and matches the settled *"store the raw anchor, not the derived scalar"* decision (S68). |
+| **Cost to fix** | ~20 min for the register note; ~1 h if populated. |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S78-NEW-6 (S2 priority) — `volatility_snapshots` silently switches expiry class mid-history, and no column marks the transition
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Any series read from this table without partitioning on `expiry_type` splices two different instruments into one line and calls it a trend. |
+| **Filed** | 2026-09-14 (Session 78) |
+| **Component** | `volatility_snapshots` · `expiry_type` · `expiry_date` |
+| **Measured (S78)** | Table holds **47,350** rows. `expiry_type = MONTHLY` on **560 NIFTY** timestamps spanning **2026-03-25 → 2026-04-13**, and **674 SENSEX** timestamps spanning **2026-03-20 → 2026-05-27** — both sitting inside otherwise-weekly history. |
+| **Correction to the filing brief** | The brief states 46,853 total rows; measured today it is **47,350**. The table is live and has grown. The MONTHLY counts and both date ranges reproduce exactly. |
+| **Why this was not caught earlier** | The S75 sweep measured **coverage** — whether a day has a row. **Coverage and homogeneity are different properties**, and no coverage measurement can see this. |
+| **Consequence** | ATM IV, IV term structure and any volatility-regime series built from this table are, across those windows, a blend of weekly and monthly expiries. |
+| **Proper fix** | Partition on `expiry_type` in every consumer, or add an explicit marker and a register note naming the affected windows. |
+| **Cost to fix** | ~30 min to document; consumer audit is larger. |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S78-NEW-7 — WITHDRAWN (2026-09-14, before filing) — "a CAS exposure ADR-022's D1 inventory does not list"
+
+| Field | Value |
+|---|---|
+| **Status** | **WITHDRAWN.** Not a defect. Recorded rather than dropped so the ID is never silently reused and the reasoning survives. Precedent: S72 withdrew one of thirteen on the same grounds. |
+| **What was claimed** | That `capture_spot_1m_v2.py` returning `exit_reason='OFF_HOURS'` from 09:46 UTC on 2026-09-11, while the option-chain ingest continued to 10:10 UTC, was a CAS exposure the ADR-022 D3 sweep never reached. |
+| **What was measured (S78)** | The behaviour is real and reproduces exactly: capture SUCCESS to 09:44:03, a partial at 09:45:03 (`contract_met=false`, 1 write of 2), then `OFF_HOURS` from **09:46:02**; `ingest_option_chain_local.py` SUCCESS through **10:10:02**. |
+| **Why it is not a defect** | **ADR-022 Amendment A1.1 records D1 as CLOSED**: *"Eight job groups audited against the CAS window. Five lines extended, four deliberately not… **Not extended: `capture_spot_1m_v2` (index frozen, guard already at 15:15)**."* The code agrees — `capture_spot_1m_v2.py:99`, `MARKET_CLOSE_GUARD = dtime(15, 15)  # S70-CAS-WINDOW-GUARD`. 09:46 UTC is 15:16 IST. The job was audited and a deliberate verdict recorded. |
+| **And the narrower reframing also fails** | The brief's supporting claim that `compute_gamma_metrics_local.py` "continued succeeding to 10:10" is **wrong** — its last run is **09:55:14**. That asymmetry (ingest extended to hour 10, GEX compute not) is itself deliberate: compute is invoked by the orchestrator (`run_merdian_shadow_runner_aws.py:181`), whose cron is `*/5 03-09`, and A1.1 lists *"the shadow runner (contracts written against different semantics)"* among the four deliberately not extended. |
+| **Residual question, not a defect** | Three chain snapshots per session (10:00 / 10:05 / 10:10 UTC = 15:30 / 15:35 / 15:40 IST) are captured with no GEX computed against them. Whether that matters is an operator question about the CAS window's value, not an established defect — and the index is frozen for most of it (S70). |
+| **Lesson** | *Before filing against a documented decision, read the amendment.* This is the "verify the filed diagnosis still holds" discipline applied to a finding rather than a fix. |
+
+---
+
+### TD-S78-NEW-8 (S3 priority) — `gex_strike_snapshots.ts` lags `created_at` by exactly one 5-minute cycle, so every GEX row is one cycle stale and its own timestamp says otherwise
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The data is correct; the timestamp's meaning is not what a reader assumes. It produced three wrong readings in one session. |
+| **Filed** | 2026-09-14 (Session 78) |
+| **Component** | `gex_strike_snapshots` · `compute_gamma_metrics_local.py` |
+| **Measured (S78, both symbols)** | `created_at=09:55:20 → ts=09:50:06` (SENSEX); `created_at=09:55:12 → ts=09:50:06` (NIFTY); `created_at=09:50:20 → ts=09:45:05` (SENSEX); `created_at=09:50:12 → ts=09:45:05` (NIFTY). All 2026-09-11. The lag is exactly one cycle, consistently. |
+| **Root cause** | The GEX pass reads the **previous** cycle's option-chain snapshot, and stamps the row with that snapshot's `ts`. Correct as provenance; misleading as a write time. |
+| **Consequence** | Reading `max(ts)` as "when the writer last ran" is wrong by one cycle, always. In S78 this produced three separate misreadings before it was diagnosed: an apparent "20-minute gap", an apparent "clean stop at 09:50", and an apparent "structural divergence at 2026-08-26". |
+| **Same class as** | **TD-S76-NEW-2** — *"the predicate is `created_at`, not `ts`, and they diverge"* — in a new place. |
+| **Proper fix** | Document the semantic in the register and the System Map. Any freshness check on this relation must read `created_at`; any provenance question must read `ts`. Do not "fix" the lag: the row is correctly labelled with the data it describes. |
+| **Cost to fix** | ~15 min (documentation only). |
+| **Cross-ref** | **TD-S76-NEW-2**. |
+| **Status** | **OPEN.** |
+
+---
+
 ### TD-S77-NEW-1 (S1 priority) — ADR-004 Amendment C's event class is unimplemented; 78 % of `ict_primitive_outcomes` is still anchored at bucket-start, and the event cells are the most contaminated in the table
 
 | Field | Value |
@@ -904,6 +1041,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Consequence** | Rule 19 (`.env`), Rule 18 (trading-day gate), Rule 10 (ADR triggers) and the settled-decisions list may not be in context. In S73 those rules reached the agent only by the operator relaying them. |
 | **Proper fix** | Split: a lean `CLAUDE.md` holding current rules and settled decisions, with version history moved to `docs/registers/CLAUDE_history.md` and linked. Requires a Doc Protocol amendment — the no-crunch rule and a tool ceiling cannot both hold. |
 | **Cross-ref** | Doc Protocol v4 Rule 7 (no-crunch) · guardrails §1. |
+| **S78 measurement + partial remediation** | Project knowledge measured at **92 % of capacity — 5.5 MB across 66 files; six files are 62 % of it, ten are 77 %.** `CURRENT.md` was **749,576 bytes on disk / 752,652 in project knowledge, 3,076 lines, 62 session blocks** — in a file named *current*, read second at every session open. **S78 actions:** `CURRENT.md` split to `docs/registers/CURRENT_history.md` (git-only, not uploaded), **749,576 → 12,107 bytes**, 72 of 73 H2 sections moved, partition asserted both ways; and two superseded S75 research artefacts (`data_inventory_2026-09-08.md`, `iv_availability_2026-09-08.md`) dropped from the upload set, superseded by `MERDIAN_Data_Inventory.md` which regenerates from one script. **This remains partial remediation and the TD stays OPEN** — same verdict as the S74 `CLAUDE.md` split, and for the same reason: the root cause is the eight-fold duplication of each session's findings across eight registers, which neither split addresses. **Principle recorded S78: git is the archive, project knowledge is the retrieval surface** — a file belongs in project knowledge only if it is read at session start or searched during a session. |
 | **Status** | **OPEN.** |
 
 ### TD-S73-NEW-9 (S3 priority) — approved diffs are not hunk-independent, and a partial application produced a quieter failure than the defect it was fixing
@@ -2413,24 +2551,6 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Cost to fix** | Path 1: ~1-1.5 sessions + ongoing storage. Path 2: ~2-3 sessions + ongoing Breeze quota management (5000 calls/day). |
 | **Blocked by** | Path 1 unblocked. Path 2 blocked on ADR-013 acceptance + n≥3 successful Breeze-tier backfills. |
 | **Owner check-in** | 2026-05-24 (S35) — filed at session close; decision deferred to S36+. |
-
----
-
-### TD-S35-NEW-2 — Pre-Apr-2026 vendor uncatalogued in System Map (critical institutional knowledge at risk)
-
-| | |
-|---|---|
-| **Filed** | 2026-05-24 (Session 35) |
-| **Severity** | S1 |
-| **Component** | `hist_option_bars_1m` (54.8M rows pre-Apr-2026); `hist_atm_option_bars_5m` (vendor aggregation source); `hist_spot_bars_5m` + `hist_spot_bars_1m` (pre-Apr vendor spot data); `MERDIAN_System_Map.md` (documentation gap). |
-| **Symptom** | The pre-2026-04-01 chain history in `hist_option_bars_1m` (54.8M rows / paid through 2026-04-07) was discovered by S35 diagnostic to be vendor-purchased ("we paid for it" per operator) but the vendor identity, contract terms, renewal cadence, refresh cadence, data format spec, exchange-mappings (`stock_code` conventions), and contact details are NOT documented in MERDIAN_System_Map.md or MERDIAN_Deployment_Topology.md. Currently this is the only known retail-accessible source for full-chain SENSEX history >2 years; the source is critical for all pre-Apr-2026 cohort work (every prior ENH-100/103/106 study + ADR-009 holdout splits + ADR-011 chain-table held-strike doctrine + S33 retest-cohort validation depends on it). |
-| **Root cause** | Documentation gap — the vendor was integrated when MERDIAN was younger and the cataloguing discipline that produced System Map / Topology was not yet established. Through 5+ sessions of working with this table, the vendor identity has been referenced verbally between Navin and Claude but never written down. Bus-factor of one. |
-| **Impact** | (a) Knowledge-loss risk: vendor identity, contract terms, refresh cadence not preserved anywhere outside operator memory; renewal cycle / contract end-date unknown to the documented system. (b) Any future investigation of "why did `hist_option_bars_1m` stop updating?" or "can we extend the contract?" requires operator manual recall. (c) ADR-013 PROPOSED (Breeze canonical historical backfill) — its rationale and replacement-cost analysis cannot be made cleanly without documenting what's being replaced. (d) If operator becomes unavailable, future Claude sessions will have to re-derive the vendor identity from external context, which may not be possible. |
-| **Workaround** | None — the gap is documentation, not code. |
-| **Proper fix** | Add a vendor catalog section to `MERDIAN_System_Map.md` (or new `MERDIAN_Vendor_Registry.md` if scope warrants): vendor identity, contract terms, refresh / delivery cadence, data format spec, `stock_code` mappings, contact info, renewal date, contingency / replacement options (ENH-109 Breeze graduation). Per Doc Protocol v4 Rule 7 (System Map currency). |
-| **Cost to fix** | ~15-30 min operator time to dictate vendor details; ~30 min Claude time to write the catalog entry. |
-| **Blocked by** | Operator availability for the dictation session. |
-| **Owner check-in** | 2026-05-24 (S35) — filed at session close; S36+ scheduling. |
 
 ---
 
@@ -4026,6 +4146,25 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 ---
 
 ## Resolved (audit trail)
+
+### TD-S35-NEW-2 — Pre-Apr-2026 vendor uncatalogued in System Map (critical institutional knowledge at risk) — RESOLVED S78 (vendor identified from the delivery file; GFDL, nine columns, no greeks)
+
+| | |
+|---|---|
+| **Filed** | 2026-05-24 (Session 35) |
+| **Severity** | S1 |
+| **Component** | `hist_option_bars_1m` (54.8M rows pre-Apr-2026); `hist_atm_option_bars_5m` (vendor aggregation source); `hist_spot_bars_5m` + `hist_spot_bars_1m` (pre-Apr vendor spot data); `MERDIAN_System_Map.md` (documentation gap). |
+| **Symptom** | The pre-2026-04-01 chain history in `hist_option_bars_1m` (54.8M rows / paid through 2026-04-07) was discovered by S35 diagnostic to be vendor-purchased ("we paid for it" per operator) but the vendor identity, contract terms, renewal cadence, refresh cadence, data format spec, exchange-mappings (`stock_code` conventions), and contact details are NOT documented in MERDIAN_System_Map.md or MERDIAN_Deployment_Topology.md. Currently this is the only known retail-accessible source for full-chain SENSEX history >2 years; the source is critical for all pre-Apr-2026 cohort work (every prior ENH-100/103/106 study + ADR-009 holdout splits + ADR-011 chain-table held-strike doctrine + S33 retest-cohort validation depends on it). |
+| **Root cause** | Documentation gap — the vendor was integrated when MERDIAN was younger and the cataloguing discipline that produced System Map / Topology was not yet established. Through 5+ sessions of working with this table, the vendor identity has been referenced verbally between Navin and Claude but never written down. Bus-factor of one. |
+| **Impact** | (a) Knowledge-loss risk: vendor identity, contract terms, refresh cadence not preserved anywhere outside operator memory; renewal cycle / contract end-date unknown to the documented system. (b) Any future investigation of "why did `hist_option_bars_1m` stop updating?" or "can we extend the contract?" requires operator manual recall. (c) ADR-013 PROPOSED (Breeze canonical historical backfill) — its rationale and replacement-cost analysis cannot be made cleanly without documenting what's being replaced. (d) If operator becomes unavailable, future Claude sessions will have to re-derive the vendor identity from external context, which may not be possible. |
+| **Workaround** | None — the gap is documentation, not code. |
+| **Proper fix** | Add a vendor catalog section to `MERDIAN_System_Map.md` (or new `MERDIAN_Vendor_Registry.md` if scope warrants): vendor identity, contract terms, refresh / delivery cadence, data format spec, `stock_code` mappings, contact info, renewal date, contingency / replacement options (ENH-109 Breeze graduation). Per Doc Protocol v4 Rule 7 (System Map currency). |
+| **Cost to fix** | ~15-30 min operator time to dictate vendor details; ~30 min Claude time to write the catalog entry. |
+| **Blocked by** | Operator availability for the dictation session. |
+| **Owner check-in** | 2026-05-24 (S35) — filed at session close; S36+ scheduling. |
+| **Resolution (S78 2026-09-14)** | **CLOSED — vendor identified from the delivery file.** The operator produced the raw vendor CSV. Vendor is **GFDL (Global Financial Datafeeds)**; the file is `GFDLNFO_BACKADJUSTED_01042025.csv` — `NFO` segment, back-adjusted, `01042025` = 1 April 2025, the first day of the purchased window. **Delivery schema is nine columns — `Ticker, Date, Time, Open, High, Low, Close, Volume, Open Interest` — measured uniform across all 175,304 rows; no row carries a tenth field.** 1,112 distinct tickers, 11 expiries `03APR25` → `31DEC26`, 83,490 CE / 90,710 PE plus `NIFTY-I/-II/-III` continuous futures, 376 distinct minutes `09:15:59 → 15:30:59`. **The consequence is the finding: no IV and no greeks were ever delivered — they were not dropped at load.** So `hist_option_bars_1m`'s greek columns are declared and never written, and S62's `backfill_hist_greeks.py`, which solves iv and gamma itself at a chosen `r_used`, was the correct and only route rather than a workaround for a botched ingest. **`delta`, `theta` and `vega` for the 2025-04 → 2026-03 era do not exist and cannot be recovered from this vendor.** Confirms **TD-S58-NEW-1** from the file side. Recorded permanently in `MERDIAN_Data_Inventory.md` §11, spliced into the **generator** so it survives regeneration. **Caveat recorded in the same place:** the CSV is **not on the AWS box** (`find /home/ssm-user -iname 'GFDL*'` returns nothing) — it reached S78 by upload from the operator's local machine, so the schema above cannot be re-verified from AWS. **Where the raw delivery lives is still undocumented, and that residual is the part of this TD's original concern that survives.** Contract terms, renewal cadence and contact details remain unrecorded. |
+
+---
 
 ### TD-S70-NEW-6 — the intraday capture cron window ends at hour `09` UTC, leaving 15:30–15:40 IST uncovered for every `*/5` and `*/1` job — RESOLVED S71 (ADR-022 D1 job-by-job audit)
 

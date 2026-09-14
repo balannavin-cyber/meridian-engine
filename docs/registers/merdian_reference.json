@@ -734,6 +734,38 @@
     }
   },
   "files": {
+    "scripts/build_data_inventory.py": {
+      "local_path": null,
+      "aws_path": "/home/ssm-user/meridian-cc/scripts/build_data_inventory.py",
+      "reads": [
+        "PostgREST as the service role -- HTTP GET only, no RPC, no write, through a single _get() choke point",
+        "hist_option_bars_1m",
+        "hist_option_greeks_1m",
+        "hist_spot_bars_1m",
+        "hist_spot_bars_5m",
+        "historical_option_chain_snapshots",
+        "option_chain_snapshots",
+        "trading_calendar",
+        "(and every other relation it enumerates from the live catalog -- the register's own §2 is the authoritative list)"
+      ],
+      "writes": [
+        "docs/registers/MERDIAN_Data_Inventory.md (a FILE, not a database table -- this script writes nothing to the database)"
+      ],
+      "call_signature": "no arguments",
+      "cadence": "ON DEMAND -- re-run whenever the extent question is asked. Not scheduled. One full run is 26,172 requests over 0:52:36.",
+      "status": "PRODUCTION (research tier) -- NEW Session 78 (2026-09-14). Generates docs/registers/MERDIAN_Data_Inventory.md by measuring the live database. READ-ONLY by construction: GET-only through a single _get() choke point, no RPC, no write. Six method rules govern every number it emits; rule 2 (a 57014 is never an absence -- retry, then decompose day -> halves -> quarters -> eighths) and rule 3 (every zero cell is a real empty list from a day-scoped limit=1 probe) are the load-bearing pair. Rule 6 was added this session: a relation that cannot produce a real empty list is excluded as UNMEASURABLE BY THIS METHOD, by measurement and never by name -- one relation currently excluded (v_oi_prev_close_snapshots). The script REFUSES TO WRITE while its §10 UNRESOLVED list is non-empty, so a partial measurement cannot be mistaken for a register. NOT resumable -- an interrupted run re-measures from zero. The module docstring claimed a date-keyed checkpoint; no such code exists (recorded S78, docstring corrected in the same pass). A killed run loses everything measured so far; one such run lost ~500 cells this session. Budget the full 0:52:36 before starting, and run it detached. Lives in the meridian-cc clone (same origin as meridian-engine); repo-relative path scripts/build_data_inventory.py.",
+      "open_items": []
+    },
+    "docs/registers/MERDIAN_Data_Inventory.md": {
+      "local_path": null,
+      "aws_path": "/home/ssm-user/meridian-cc/docs/registers/MERDIAN_Data_Inventory.md",
+      "reads": [],
+      "writes": [],
+      "call_signature": "GENERATED ARTEFACT -- regenerate with `python3 scripts/build_data_inventory.py` (no arguments). Do not hand-edit the rendered file alone: it is overwritten on the next run. Edit the generator.",
+      "cadence": "regenerated on demand",
+      "status": "CANONICAL -- NEW Session 78 (2026-09-14). THE answer to 'what option history does MERDIAN actually have, for which symbol-days, and what is computable from it'. Measured against the live database; nothing in it is taken from merdian_reference.json, from any register, or from a table name. 74,423 bytes as generated, 75,809 after the §11 vendor-closure splice; 476 table rows; 26,172 requests; 0:52:36; UNRESOLVED=[]. USE THIS INSTEAD OF RE-DERIVING. The extent question had been re-derived from scratch at least a dozen times across 70+ sessions, each time from whichever table that session's brief happened to name, producing a different answer each time. If it looks stale, RE-RUN THE SCRIPT -- do not measure one table and generalise. Agrees with S75 exactly on S75's own window (trading days 356/355, COMPUTABLE NOW 299/299, NOT COMPUTABLE 57/56; every delta +0) from different code six days apart. The DUAL verdict is the point: same-relation-only 113/115 against a joined 302/302, so ~190 days per symbol are computable only via a join that measurement licensed (60/60 tuples, 100.0% per symbol). §11 records the vendor closure: the 2025-04 -> 2026-03 chain came from GFDL, delivered in NINE columns with no IV and no greeks, uniform across all 175,304 rows of the sampled file -- so the historical greeks were solved, never delivered, and delta/theta/vega for that era do not exist. §10 is the honesty section and gates the write; §4b lists what is UNMEASURABLE BY THIS METHOD -- about which the register says nothing in either direction -- and §11 lists what the method could not measure at all, for which no proxy was substituted.",
+      "open_items": []
+    },
     "measure_rate_sensitivity.py": {
       "local_path": "C:\\GammaEnginePython\\measure_rate_sensitivity.py",
       "aws_path": "/home/ssm-user/meridian-engine/measure_rate_sensitivity.py",
@@ -4844,10 +4876,18 @@
       "truncated_each_run": false
     }
   },
-  "version": "v55",
-  "last_updated_session": "Session 77",
-  "last_updated_date": "2026-09-11",
+  "version": "v56",
+  "last_updated_session": "Session 78",
+  "last_updated_date": "2026-09-14",
   "change_log": [
+    {
+      "session": "S78",
+      "date": "2026-09-14",
+      "type": "The canonical data inventory register. Doc-close. NO production code changed: one generator written (scripts/build_data_inventory.py, NEW), one register written (docs/registers/MERDIAN_Data_Inventory.md, NEW), CURRENT.md split (docs/registers/CURRENT_history.md, NEW). ADRs_NEW=0; ADRs_AMENDED=0; TDs_NEW=7 filed + 1 WITHDRAWN (TD-S78-NEW-1..8, -7 withdrawn before filing; 0xS1, 3xS2, 4xS3); TDs_CLOSED=1 (TD-S35-NEW-2). Enhancement Register not triggered (ninth consecutive).",
+      "summary": "HEADLINE: MERDIAN_Data_Inventory.md, measured against the live database, READ-ONLY, GET-only through a single _get() choke point -- 74,423 bytes as generated (75,809 after the §11 vendor-closure splice), 476 table rows, 26,172 requests, 0:52:36, UNRESOLVED=[] (the script refuses to write while its §10 is non-empty). It exists because the extent question had been re-derived from scratch at least a dozen times across 70+ sessions, each time from whichever table that session's brief happened to name, producing a different answer each time. EXACT AGREEMENT WITH S75: recomputed over S75's own window -- trading days 356/355, COMPUTABLE NOW 299/299, COMPUTABLE AFTER DERIVATION 0/0, NOT COMPUTABLE 57/56; every delta +0. Two independent measurements six days apart, different code, different access patterns. Full window 359/358 trading days, 302/302 computable; density 5,182 (symbol, day, relation) cells at count=exact, 0 failed, 0 skipped. THE DUAL VERDICT IS LOAD-BEARING: same-relation-only is 113/115 against a joined 302/302, so roughly 190 days per symbol are computable ONLY via a measured join -- gamma from hist_option_greeks_1m, OI from hist_option_bars_1m, neither relation carrying both. The join is licensed by measurement, never by shared column names: 60 sampled tuples, 60 hits, 0 unresolved, 100.0% per symbol on (instrument_id, bar_ts, expiry_date, strike, option_type). A pair is used only at a perfect hit rate, and an unresolved probe counts in the DENOMINATOR -- subtracting it would let 10 hits and 10 timeouts report 100%, which is method rule 2 running backwards. VENDOR GREEKS CLOSED FROM THE FILE SIDE: the 2025-04 -> 2026-03 chain was purchased from GFDL (Global Financial Datafeeds). Delivery schema is NINE columns -- Ticker, Date, Time, Open, High, Low, Close, Volume, Open Interest -- measured uniform across all 175,304 rows of GFDLNFO_BACKADJUSTED_01042025.csv. No IV and no greeks were EVER delivered; they were not dropped at load. So S62's backfill_hist_greeks.py, which solves iv and gamma itself at a chosen r_used, was the correct and only route, not a workaround for a botched ingest. delta/theta/vega for that era do not exist and cannot be recovered from this vendor. Closes TD-S35-NEW-2 (open ~43 sessions); confirms TD-S58-NEW-1 from the file side. METHOD RULE 6 (new): a relation that cannot produce a real empty list cannot satisfy rule 3, and is excluded as UNMEASURABLE BY THIS METHOD -- by measurement, never by name and never by catalog category. Each source is probed on a window it certainly holds no rows in; one that must scan its whole extent to prove absence times out instead of returning [], and so fails once per empty day rather than once. One relation excluded: v_oi_prev_close_snapshots, HTTP 500 at ~8.3s on every scope tried including an unfiltered day window on 2025-04-01. The exclusion does NOT block the write, but the register then says NOTHING about that relation, neither presence nor absence, and must say so. PROJECT KNOWLEDGE AT 92%: 5.5 MB across 66 files, six files 62% of it. CURRENT.md split -- 61 of its 62 session blocks were history (72 of 73 H2 sections moved; partition asserted in both directions) -- and two superseded S75 research artefacts dropped from the upload set. TD-S73-NEW-8 annotated and stays OPEN: this is partial remediation and the root cause is unchanged, the eight-fold duplication of each session's findings across CLAUDE.md, CURRENT.md, session_log.md, tech_debt.md, System Map, Deployment Topology, Assumption Register and Decision Index. Governing principle recorded: git is the archive, project knowledge is the retrieval surface; a file belongs in PK only if it is read at session start or searched during a session. NOT VERIFIABLE FROM THIS BOX, recorded rather than asserted: MERDIAN_Hedgewall_Parity_Spec.md is NOT in the repo (supplied as a chat artefact, no repo path), so S1.5 of the brief could not be checked here; and the GFDL CSV is not on the AWS box (find /home/ssm-user -iname 'GFDL*' returns nothing) -- its schema is established from the operator's local file and cannot be re-verified from AWS. Record where the raw delivery lives before the next session needs it. Method rule 6 is a measurement-doctrine amendment recorded in the register that implements it, in the same shape as the S74 Doc Protocol v4 Rule 7 amendment -- a PROTOCOL AMENDMENT, NOT AN ADR.",
+      "docs_updated": "scripts/build_data_inventory.py (NEW, UNTRACKED at doc-close start; §11 vendor closure spliced into the GENERATOR, not only the rendered file, because the register regenerates and its own header tells the reader to re-run it -- anything spliced only into the output is erased on the next run; verified by executing the patched §11 emission region and diffing, byte-identical at 3,257 chars; IDEMPOTENCE docstring corrected -- it claimed a date-keyed checkpoint that does not exist in the code), docs/registers/MERDIAN_Data_Inventory.md (NEW, UNTRACKED), docs/registers/CURRENT_history.md (NEW, UNTRACKED -- 745,832 bytes; git is now the only place this content exists), docs/session_notes/CURRENT.md (749,576 -> 12,395 bytes; Last session = S78, S77 demoted, S76 and earlier moved to CURRENT_history.md), tech_debt.md (TD-S78-NEW-1..8 with -7 withdrawn; TD-S35-NEW-2 CLOSED and moved to the Resolved section; TD-S73-NEW-8 annotated; 793,911 -> 813,314 bytes), CLAUDE.md (method rule 6 settled-decision bullet), MERDIAN_System_Map.md (§S78), MERDIAN_Assumption_Register.md (§D.36 added, 6 rows D.36.1-.6), session_log.md (one line), merdian_reference.json (v55 -> v56; files 129 -> 131).",
+      "git_state": "No commits before the doc-close -- S78 changed no production code. merdian_reference.json was already modified at session start (last_updated_date 2026-09-11 -> 2026-09-11/13, one line); that edit is NOT from this doc-close and is carried into the S78 commit as-is. Doc-close modified: CLAUDE.md, MERDIAN_System_Map.md, merdian_reference.json, tech_debt.md, CURRENT.md, session_log.md, MERDIAN_Assumption_Register.md. Untracked and added explicitly: docs/registers/CURRENT_history.md, docs/registers/MERDIAN_Data_Inventory.md, scripts/build_data_inventory.py. The doc-close was interrupted by a dropped SSM session before this splice ran; state was verified clean on resume (no .s78tmp anywhere, ref.json still v55, no §D.36) and nothing was half-written."
+    },
     {
       "session": "S77",
       "date": "2026-09-11/13",

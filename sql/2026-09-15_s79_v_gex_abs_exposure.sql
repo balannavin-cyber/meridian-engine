@@ -33,10 +33,15 @@
 --       candidate and is UNMEASURED. Do not infer a cause from this file.
 --
 --   (b) avg contributing 106.9 against ~166 stored rows per SENSEX run means
---       ~36% of stored strikes contribute nothing -- independently
---       reproducing TD-S79-NEW-8's 35.1% zeroed figure from a different
---       query. The two are comparable because both are computed over STORED
---       rows. Both UNDERSTATE the fraction against the full vendor chain:
+--       ~36% of stored strikes contribute nothing, close to TD-S79-NEW-8's
+--       35.1% zeroed figure. CORRECTED S79: this is NOT independent
+--       corroboration. Both figures are real, and both are DTE-BLENDED
+--       averages over the same pooled window -- SENSEX contribution runs
+--       45.2% at 0 DTE, 63.8% at 1-2 and 77.6% at 3+ -- so the two agree
+--       because they SHARE THE BLEND, not because either confirms the
+--       other. The genuine coverage gap is ~20 points, measured at 3+ DTE
+--       where the DTE effect is smallest. Both figures also UNDERSTATE the
+--       fraction against the full vendor chain:
 --       build_gss_rows() drops fully-noise strikes (no OI either side AND no
 --       GEX contribution) before insert, so entirely-empty strikes never
 --       reach this table and are invisible to both figures.
@@ -71,7 +76,26 @@
 
 CREATE OR REPLACE VIEW public.v_gex_abs_exposure AS
 WITH RECURSIVE symbols AS (
-        -- Loose index scan ("skip scan") over idx_gss_symbol_ts (symbol, ts DESC).
+        -- Loose index scan ("skip scan") over ix_gex_strike_snap_sym_ts (symbol, ts DESC).
+        -- NAME VERIFIED AGAINST THE LIVE PLAN (S79): EXPLAIN shows Index Only Scan
+        -- using ix_gex_strike_snap_sym_ts, one row per probe, no base-table scan.
+        --
+        -- WHAT THIS VIEW NEEDS FROM THE INDEX, so a dedup pass cannot break it:
+        --   * symbol LEADING -- the recursive min(symbol) and
+        --     min(symbol) WHERE symbol > s.symbol probes are index SEEKS only if
+        --     symbol is the first column; otherwise every step degrades to a scan.
+        --   * ts DESC SECOND -- the latest_run lateral is WHERE symbol = ?
+        --     ORDER BY ts DESC LIMIT 1, which reads the first row under the symbol
+        --     prefix and needs NO SORT only if ts DESC immediately follows symbol.
+        -- The requirement is therefore (symbol, ts DESC) AS A PREFIX. A wider
+        -- composite satisfies it; a differently-ordered index does not.
+        --
+        -- THREE INDEXES, ONE ACCESS PATH (TD-S72-NEW-4): idx_gss_symbol_ts is
+        -- BYTE-IDENTICAL to ix_gex_strike_snap_sym_ts and the planner does not
+        -- choose it; idx_gss_symbol_ts_strike (symbol, ts DESC, strike) is
+        -- redundant against both but does carry the required prefix. Whichever
+        -- survives that cleanup MUST cover (symbol, ts DESC), and EXPLAIN must be
+        -- RE-RUN after any drop -- do not assume the planner falls through.
         -- Symbols are DERIVED, not a literal list: the shipped pin/accel views
         -- carry VALUES ('NIFTY'),('SENSEX') in the view body, so a third symbol
         -- renders nothing, silently (TD-S72-NEW-3 guards exactly that). This
@@ -167,7 +191,7 @@ COMMENT ON VIEW public.v_gex_abs_exposure IS
 --   FROM public.v_gex_abs_exposure
 --  WHERE n_contributing > n_strikes;
 --
--- 3d. COST. Expect an index seek per symbol against idx_gss_symbol_ts, NOT a
+-- 3d. COST. Expect an index seek per symbol against ix_gex_strike_snap_sym_ts, NOT a
 --     sequential or large ordered scan of gex_strike_snapshots. If a base
 --     table scan appears, the skip scan is not being used and this view has
 --     inherited the ADR-021 A1.1 defect.

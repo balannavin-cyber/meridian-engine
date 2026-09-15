@@ -46,7 +46,26 @@
 
 CREATE OR REPLACE VIEW public.v_gex_strike_walls AS
 WITH RECURSIVE symbols AS (
-        -- Loose index scan ("skip scan") over idx_gss_symbol_ts (symbol, ts DESC).
+        -- Loose index scan ("skip scan") over ix_gex_strike_snap_sym_ts (symbol, ts DESC).
+        -- NAME VERIFIED AGAINST THE LIVE PLAN (S79): EXPLAIN shows Index Only Scan
+        -- using ix_gex_strike_snap_sym_ts, one row per probe, no base-table scan.
+        --
+        -- WHAT THIS VIEW NEEDS FROM THE INDEX, so a dedup pass cannot break it:
+        --   * symbol LEADING -- the recursive min(symbol) and
+        --     min(symbol) WHERE symbol > s.symbol probes are index SEEKS only if
+        --     symbol is the first column; otherwise every step degrades to a scan.
+        --   * ts DESC SECOND -- the latest_run lateral is WHERE symbol = ?
+        --     ORDER BY ts DESC LIMIT 1, which reads the first row under the symbol
+        --     prefix and needs NO SORT only if ts DESC immediately follows symbol.
+        -- The requirement is therefore (symbol, ts DESC) AS A PREFIX. A wider
+        -- composite satisfies it; a differently-ordered index does not.
+        --
+        -- THREE INDEXES, ONE ACCESS PATH (TD-S72-NEW-4): idx_gss_symbol_ts is
+        -- BYTE-IDENTICAL to ix_gex_strike_snap_sym_ts and the planner does not
+        -- choose it; idx_gss_symbol_ts_strike (symbol, ts DESC, strike) is
+        -- redundant against both but does carry the required prefix. Whichever
+        -- survives that cleanup MUST cover (symbol, ts DESC), and EXPLAIN must be
+        -- RE-RUN after any drop -- do not assume the planner falls through.
         -- Symbols are DERIVED, not a literal list: the shipped pin/accel views
         -- carry VALUES ('NIFTY'),('SENSEX') in the view body, so a third symbol
         -- renders nothing, silently (TD-S72-NEW-3 exists to guard exactly that).

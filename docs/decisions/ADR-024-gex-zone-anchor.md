@@ -480,7 +480,7 @@ Recomputed with `σ = spot × atm_iv/100 × sqrt(GREATEST(dte,1)/252)`:
 | SENSEX | 3+ | 0.676 | **0.410** | 0.412 |
 
 In percent the spread is 2.8×, monotone. **In sigma it is 1.6× and non-monotone**, and the
-two symbols agree to three decimals at 1–2 DTE (0.587 / 0.586) and two at 0 DTE
+two symbols agree to **0.001σ** at 1–2 DTE (0.587 / 0.586) and to **0.017σ** at 0 DTE
 (0.359 / 0.342) — at spot levels 3.2× apart. The IQRs are 0.20–0.41σ, comfortably inside
 half an expected move.
 
@@ -576,10 +576,18 @@ linear decay to **zero at 3 strike-steps**, weight 0.30 at `:902`, renormalised 
 | 0.50 % | 2.4 steps → 0.20 | 4.1 steps → **0.00** |
 | 0.75 % | 3.6 steps → **0.00** | 6.1 steps → **0.00** |
 
-**At S74's measured mean distances (0.70 % / 0.79 %) the factor is 0 on both symbols.** The
-component drops at `:901` and the score **renormalises over the remaining 0.70 weight** — so
-`pin_risk_score` silently changes basis between cycles depending on where the anchor happens
-to sit. Given §A2, that is most cycles.
+**At S74's measured mean distances (0.70 % / 0.79 %) the factor is 0 on both symbols.**
+
+**Corrected S79 — the mechanism stated here was wrong.** This section previously said the
+component *drops* at `:901` and the score renormalises over the remaining 0.70 weight. It does
+not: **`0.0` is not `None`**, so a zeroed proximity factor is still appended as a component and
+drags the score down **across the full 1.00 weight**. The component drops only when
+`max_gamma_strike` or `strike_step` is `None` — a different condition, with a different effect
+on the denominator. **Both regimes occur, and the stored scalar cannot distinguish them**: a
+score renormalised over 0.70 and a score dragged over 1.00 are both just numbers in the column.
+That indistinguishability is why **TD-S79-NEW-9 is S2** and not a documentation fix. Under
+either mechanism `pin_risk_score` silently changes basis between cycles depending on where the
+anchor happens to sit, and given §A2 that is most cycles.
 
 **First consequence in this ADR touching a scalar consumers read**, rather than a band they
 draw. File as a TD.

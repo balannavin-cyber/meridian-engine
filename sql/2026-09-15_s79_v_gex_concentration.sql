@@ -134,6 +134,18 @@
 --   (HHI is over magnitudes), not because a negative vendor gamma is
 --   expected.
 --
+-- TYPES -- THREE VALUES, TWO TYPES. THIS BITES CONSUMERS THAT ROUND.
+--   hhi_net is NUMERIC: gex_cr is numeric, so max/sum and the division stay
+--   exact. hhi_call and hhi_put are DOUBLE PRECISION: gamma_call/gamma_put are
+--   double precision and the product with oi_* inherits that. A consumer that
+--   rounds all three uniformly hits
+--       function round(double precision, integer) does not exist
+--   because Postgres has no two-argument round() for float8. Cast to numeric
+--   before rounding, or round only hhi_net. The types are a consequence of the
+--   basis difference above and are NOT a defect to normalise away: casting
+--   gex_cr to float8 to make them uniform would discard exactness on the one
+--   leg that has it.
+--
 -- EXPLICITLY NOT IN SCOPE: the PERCENTILE, d1D HHI, and d vs MEAN.
 --   Those need the 259-day cross-tier series described in FINDING 3 and are
 --   a SEPARATE OBJECT. This view is latest-run scoped per ADR-021. Building
@@ -172,7 +184,26 @@
 
 CREATE OR REPLACE VIEW public.v_gex_concentration AS
 WITH RECURSIVE symbols AS (
-        -- Loose index scan ("skip scan") over idx_gss_symbol_ts (symbol, ts DESC).
+        -- Loose index scan ("skip scan") over ix_gex_strike_snap_sym_ts (symbol, ts DESC).
+        -- NAME VERIFIED AGAINST THE LIVE PLAN (S79): EXPLAIN shows Index Only Scan
+        -- using ix_gex_strike_snap_sym_ts, one row per probe, no base-table scan.
+        --
+        -- WHAT THIS VIEW NEEDS FROM THE INDEX, so a dedup pass cannot break it:
+        --   * symbol LEADING -- the recursive min(symbol) and
+        --     min(symbol) WHERE symbol > s.symbol probes are index SEEKS only if
+        --     symbol is the first column; otherwise every step degrades to a scan.
+        --   * ts DESC SECOND -- the latest_run lateral is WHERE symbol = ?
+        --     ORDER BY ts DESC LIMIT 1, which reads the first row under the symbol
+        --     prefix and needs NO SORT only if ts DESC immediately follows symbol.
+        -- The requirement is therefore (symbol, ts DESC) AS A PREFIX. A wider
+        -- composite satisfies it; a differently-ordered index does not.
+        --
+        -- THREE INDEXES, ONE ACCESS PATH (TD-S72-NEW-4): idx_gss_symbol_ts is
+        -- BYTE-IDENTICAL to ix_gex_strike_snap_sym_ts and the planner does not
+        -- choose it; idx_gss_symbol_ts_strike (symbol, ts DESC, strike) is
+        -- redundant against both but does carry the required prefix. Whichever
+        -- survives that cleanup MUST cover (symbol, ts DESC), and EXPLAIN must be
+        -- RE-RUN after any drop -- do not assume the planner falls through.
         -- Symbols are DERIVED, not a literal list: the shipped pin/accel views
         -- carry VALUES ('NIFTY'),('SENSEX') in the view body, so a third symbol
         -- renders nothing, silently (TD-S72-NEW-3 guards exactly that). This
@@ -332,7 +363,7 @@ COMMENT ON VIEW public.v_gex_concentration IS
 --  WHERE dte_bucket IS NULL;
 
 -- 3f. COST. CAN FIRE.
---     Expect an index seek per symbol against idx_gss_symbol_ts, NOT a
+--     Expect an index seek per symbol against ix_gex_strike_snap_sym_ts, NOT a
 --     sequential or large ordered scan of gex_strike_snapshots. A base table
 --     scan means the skip scan is not being used and this view has inherited
 --     the ADR-021 A1.1 defect.

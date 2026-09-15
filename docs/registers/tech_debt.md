@@ -180,6 +180,97 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 
 ---
 
+### TD-S79-NEW-8 (S2 priority) — SENSEX has no gamma at all on ~30 % of its strikes, so every per-strike gamma layer on SENSEX is computed over ~70 % of the chain
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Not data loss and nothing is presently mis-stated, but every gamma-derived surface on SENSEX is computed over a partial chain and none of them says so. |
+| **Filed** | 2026-09-15 (Session 79) |
+| **Component** | `gex_strike_snapshots` · `compute_gamma_metrics_local.py` (`signed_gamma_exposure`, `build_gss_rows`) · consumers `v_gex_strike_pin_zone`, `v_gex_strike_accel_zone`, `gamma_concentration`, `pin_risk_score` |
+| **Symptom** | `gex_cr = 0` has **two** paths — the deep-ITM guard (which requires `|gamma| > 5e-5`, i.e. gamma **present and large**) and a zero-gamma branch. Splitting them on the zeroed rows: NIFTY **64,183 zeroed = 10.8 %**, of which **≤ 8,940 (1.5 %)** is the guard and **≥ 55,243 (9.3 %)** has no gamma. SENSEX **323,550 = 35.1 %**, of which **≤ 47,878 (5.2 %)** is the guard and **≥ 275,672 (29.9 %)** has no gamma. |
+| **The split is corroborated, not assumed** | The guard bounds match **TD-S75-NEW-1's independently-taken monthly counts** almost exactly — SENSEX Jun–Sep sums to **46,724** against a bound of **47,878**. S75's counts were right. ADR-024 v2's headline "35 % guard" conflated the two zero-paths and **inflated the guard ~7×**; that figure is withdrawn in ADR-024 §A3. |
+| **Why this is the finding and not the guard** | A filtering question is about rows you have and chose to exclude. This is about rows where **the input was never there**. The two are indistinguishable in `gex_cr` and were in fact confused for a full ADR revision. |
+| **Consequence** | Every per-strike gamma layer on SENSEX — pin zone, accel zone, `gamma_concentration`, `pin_risk_score`, and anything downstream of them — is computed over **~70 % of the chain**, and no column, comment or panel records that. NIFTY's 9.3 % is the same defect at a third the magnitude. **ENH-120's OI walls are unaffected**: they are raw-OI and read `oi_call`/`oi_put`, which are populated independently of gamma. |
+| **Cause unknown** | Candidates, **none tested**: vendor greeks absent on illiquid strikes; the writer's zero-noise drop (`build_gss_rows` skips rows with no OI either side **and** no GEX contribution); upstream chain gaps. **Do not pick one without measuring** — the guard/no-gamma conflation this entry corrects is exactly what happens when a plausible cause is adopted without a split. |
+| **Proper fix** | Attribute the ≥ 275,672 SENSEX rows to a cause **before** deciding whether this is a defect at all. If it is vendor coverage on illiquid strikes it may be correct behaviour that merely needs recording; if it is the zero-noise drop it is a writer bug. The attribution is the work. |
+| **Cost to fix** | ~half a session to attribute; unknown to remediate, because the remedy depends on the cause. |
+| **Cross-ref** | ADR-024 §A3 · TD-S75-NEW-1 (the monthly counts that corroborate the split) · TD-S75-NEW-2 (cross-symbol replication defect, stays S2 and is a separate question) · ADR-015. |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S79-NEW-9 (S2 priority) — `pin_risk_score`'s proximity component is ABSENT, not depressed, so the score silently changes basis between cycles
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** First consequence in ADR-024 touching a **scalar consumers read** rather than a band they draw. Two cycles can report the same `pin_risk_score` computed over different weight totals, and the stored value does not distinguish them. |
+| **Filed** | 2026-09-15 (Session 79) |
+| **Component** | `compute_gamma_metrics_local.py:876-877` (factor), `:901-902` (append + weight), `:899-911` (assembly + renormalisation) — **all line citations verified against source 2026-09-15** |
+| **Mechanism** | `spot_proximity_factor = max(0.0, 1.0 − (|spot − max_gamma_strike| / strike_step) / 3.0)` — linear decay to **zero at 3 strike-steps**. Weight **0.30** at `:902`. The component is appended only under `if spot_proximity_factor is not None` at `:901`, and the score renormalises over **available** weights at `:899-911`. |
+| **The distinction that makes this S2** | A factor of **0.0 is not None**, so a zeroed factor is still appended and still drags the score down across the full 1.00 weight. The component **drops** — and the score renormalises over the remaining 0.70 — only when `max_gamma_strike` or `strike_step` is None. **Both regimes occur, and the stored scalar cannot be told apart between them.** A score of 40 computed over 1.00 weight and a score of 40 computed over 0.70 weight mean different things. |
+| **Measured, recomputed independently rather than quoted** | At S74's measured mean anchor distances: NIFTY 0.70 % × 24,000 = 168 pts ÷ step 50 = **3.36 steps** → `max(0, 1 − 3.36/3)` = **0**. SENSEX 0.79 % × 81,000 = 640 pts ÷ step 100 = **6.4 steps** → **0**. The factor is **zero on both symbols at typical anchor distances**, and ADR-024 §A2 finds the anchor structurally sits ~half an expected move **above** spot — so this is most cycles, not an edge case. |
+| **Consequence** | `pin_risk_score` is a 0–100 scalar rendered to the operator with no basis annotation. Its proximity input is dead at typical distances, and whether it is dead-as-zero or dead-as-absent depends on a nullability that nothing surfaces. |
+| **Proper fix** | Persist which components contributed (a small JSON or a bitmask alongside the score), **or** hold the basis fixed by always appending proximity with an explicit sentinel. Do not "fix" the decay constant without first deciding what the score is supposed to mean at 3+ steps — that is a design question, not a tuning one. |
+| **Cost to fix** | ~1 session including the design decision; ~20 min for the instrumentation alone. |
+| **Cross-ref** | ADR-024 §A7, §A2 · ADR-017 (the score is an operator-console surface) · TD-S79-NEW-11 (same family: a console reading the wrong scale). |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S79-NEW-10 (S3 priority) — the S74 and S79 containment figures disagree 2–5× and cannot be reconciled, because the S74 study left no result artefact
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Nothing is broken. But two numbers for the same quantity differ by up to 5×, and **neither may be quoted** until one is shown to be the right one. |
+| **Filed** | 2026-09-15 (Session 79) |
+| **Component** | `docs/research/` (the missing artefact) · `capture_s74.md:103`, `:105`, `:107` · ADR-024 §A5 |
+| **The disagreement** | **S74:** spot is inside the pin zone at the moment the zone is computed on **15/67 NIFTY = 22 %** and 13/67 SENSEX; mean distance 0.70 % / 0.79 %. **S79, by DTE:** **4.6 / 4.2 / 11.5 %**. |
+| **Two candidates, neither verified** | **Denominator** — S74 counts **sessions**, S79 counts **~75 runs per session**, so they are not the same population. **Buffer** — S74 applies ±step/2 per pre-registration line 174; S79 did not buffer. Either could account for part of the gap; neither has been tested, and they are not mutually exclusive. |
+| **The blocker, which is the more serious half** | **No result artefact for the S74 study exists on disk at all.** `docs/research/` holds only the pre-registration. Every S74 figure lives in session notes — `capture_s74.md`, `CURRENT.md`, `CURRENT_history.md`, `CLAUDE.md:980` — which are narrative, not reproducible output. **The reconciliation therefore cannot be done by reading; it requires re-running the S74 arm.** |
+| **What is genuinely new in S79** | The **DTE stratification**, which exists nowhere on disk. That part is not a rediscovery. |
+| **Not a new finding otherwise** | S74 had already reached the conclusion that matters — *"the containment statistic is measuring whether the zone **landed on** spot more than whether spot was **held**"* (`:107`), with `:105` recording that in **16 of 21** NIFTY holdout sessions price never entered the buffered zone at all, *"bimodal, not shifted."* S79 rediscovered this at a different granularity without reading it first (ADR-024 §A9 item 2). |
+| **Proper fix** | Re-run S79's containment **per session** and **with** the ±step/2 buffer, against S74's 15/67 — ADR-024 §A10 item 1. Commit the result to `docs/research/` as an artefact, which is the gap that made this necessary. |
+| **Cost to fix** | ~half a session. |
+| **Cross-ref** | ADR-024 §A5, §A9, §A10 · ADR-009 (pre-registration discipline, whose artefact half was not honoured here). |
+| **Status** | **OPEN — neither figure quotable.** |
+
+---
+
+### TD-S79-NEW-11 (S3 priority) — ADR-017 Principle 6 is right about the bug and wrong about the cause: it is a DTE difference, not a symbol difference
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The principle's conclusion (differentiated rendering is needed) is correct, so nothing downstream is wrong today. Its stated **reason** is wrong, and anyone implementing from the reason will key the salience function on the wrong variable. |
+| **Filed** | 2026-09-15 (Session 79) |
+| **Component** | `docs/decisions/ADR-017-operator-console-design-principles.md` Principle 6 |
+| **What P6 says** | Its worked example — NIFTY max γ **+0.15 %** vs SENSEX **+0.6 %** *"on the same day"* — reads as a **symbol** difference requiring symbol-differentiated rendering. |
+| **What it is** | A **DTE** difference, measured on a day when the two symbols were at different DTEs. Over ~5,670 runs per symbol, expressed in σ (`σ = spot × atm_iv/100 × sqrt(GREATEST(dte,1)/252)`): 0-DTE **0.359 NIFTY / 0.342 SENSEX**; 1–2 DTE **0.587 / 0.586**; 3+ DTE 0.500 / 0.410. The 1–2 DTE pair agrees within **0.001σ** and the 0-DTE pair within **0.017σ** — **at spot levels 3.2× apart.** |
+| **Why percent manufactured the finding** | In percent the spread across DTE is **2.8× and monotone**, which looks like a real and orderly effect. In σ it is **1.6× and non-monotone**, with IQRs of 0.20–0.41σ, comfortably inside half an expected move. The symbol asymmetry was percent-scale noise. |
+| **The method note worth keeping** | **A board read in percent will keep manufacturing findings of this shape.** S75 said so before the σ work confirmed it, and ADR-024 §A4 withdrew an entire T3 finding for the same reason. |
+| **Proper fix** | Amend ADR-017 P6: keep the conclusion, replace the cause, and specify that the salience function keys on **DTE and distance-in-σ**, never on symbol. A symbol-keyed implementation would be correct on the example day and wrong on every day where the two symbols share a DTE. |
+| **Cost to fix** | ~20 min (one principle amendment). |
+| **Cross-ref** | ADR-024 §A4 · ADR-017 P6 · TD-S79-NEW-9 (the other console-scale item) · ENH-120 (ships σ columns alongside points for exactly this reason). |
+| **Status** | **OPEN — P6 amendment owed.** |
+
+---
+
+### TD-S79-NEW-12 (S3 priority) — `infer_expiry_date` returns `expiries[0]` from an unordered PostgREST result rather than `min()`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Wrong by construction, correct in practice, and the thing making it correct is a data property nothing asserts. |
+| **Filed** | 2026-09-15 (Session 79) |
+| **Component** | `compute_gamma_metrics_local.py:245-247` — **verified against source 2026-09-15** |
+| **Symptom** | `expiries = [str(r.get("expiry_date")) for r in option_rows if r.get("expiry_date")]` then `return expiries[0] if expiries else None`. **PostgREST guarantees no ordering without an `order` parameter**, so `[0]` selects an arbitrary element of an unordered set where the intent is the **nearest** expiry. This is wrong by construction, not merely fragile. |
+| **Why it is correct today** | `runs_with_multiple_expiries = 0` — every run carries exactly one expiry, so an arbitrary pick and the correct pick coincide. That is a **property of the data**, not of the code, and **nothing asserts it**. It is also consistent with `build_gss_rows`, which stamps one `expiry_date` scalar across the whole run. |
+| **Blast radius** | Feeds `result.expiry_date`, consumed at **`:1047`** — `return (_date.fromisoformat(result.expiry_date) - as_of).days` — which is the `dte` that ADR-024's **withdrawn T3 bucketed on and that its surviving σ-scale replacement table still buckets on**, that `gex_strike_snapshots.dte` stores, and that **ENH-120's σ consumes** via `GREATEST(dte,1)`. A wrong expiry would move every σ-normalised figure in the wall and anchor layers at once. |
+| **Proper fix** | `min(expiries)`, plus an explicit assertion that the run carries a single expiry so the invariant that currently saves this is stated rather than relied on silently. |
+| **Cost to fix** | ~5 min for the `min()`; ~15 min with the assertion and a test. |
+| **Cross-ref** | ADR-024 §A10 item 3 · ENH-120 (σ consumer) · Rule 15 (the PostgREST-shape family). |
+| **Status** | **OPEN.** |
+
+---
+
 ### TD-S78-NEW-1 (S3 priority) — the session-date convention is unspecified in Doc Protocol v4, and the only format v4 does specify cannot express a multi-day session
 
 | Field | Value |
@@ -546,7 +637,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Cross-ref** | Deployment Topology **§S76.A / §S76.B / §S76.C** · TD-S76-NEW-2 · TD-S73-NEW-5 (which recorded the 2026-06-03 → 2026-08-24 gap as **UNVERIFIED** — this entry supplies the mechanism and the cause). |
 | **Status** | **OPEN.** |
 
-### TD-S76-NEW-2 (S1 priority) — `pg_cron jobid 19` disabled as a stop-gap: `gamma_metrics` now grows past its 90-day window and `raw_ingest_log` growth has never been measured
+### TD-S76-NEW-2 (S1 priority) — `pg_cron jobid 19` disabled as a stop-gap: `gamma_metrics` now grows past its 90-day window, and the stated prerequisite named the wrong table (corrected S79)
 
 | Field | Value |
 |---|---|
@@ -558,6 +649,8 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **What is now unbounded** | Four deletes are suspended: `option_chain_snapshots` 90-day, its 14-day thinning, `raw_ingest_log` 14-day, `gamma_metrics` 90-day. **`gamma_metrics` will grow past 90 days** — `docs/research/gamma_metrics_tail_probe.py` (Topology §S75.4) will read that correctly as a retention-rule change rather than a fault. **`raw_ingest_log`'s growth rate has never been measured**, so its trajectory is unknown, not merely unbounded. |
 | **Reversal** | `SELECT cron.alter_job(19, active := true);` — to be run **once the archiver has a scheduled invoker on a live host**, not before. |
 | **Proper fix** | This entry closes when jobid 19 is re-enabled behind a working archiver. Measuring `raw_ingest_log`'s daily growth is a prerequisite, not a follow-up: re-enabling without it means the horizon was never chosen on evidence. |
+| **Amended (S79, 2026-09-15)** | **The prerequisite named the wrong table.** `raw_ingest_log` growth — this entry's stated blocker — was measured 2026-09-15 at **152 rows/day, flat across all 15 days, ~55k/year**. It is a non-issue. The prerequisite was therefore satisfied against a table that was never the risk, and **the real question has not been asked.** The growth risk is **`option_chain_snapshots` at ~68,000 rows/day** — roughly 450× `raw_ingest_log`. Note the shape: the measurement the entry demanded was taken, returned a reassuring number, and the reassurance was about the wrong object. A prerequisite that names its table wrongly cannot fail for the reason it exists (CLAUDE.md Rule 0). |
+| **Corrected prerequisite** | Before re-enabling, **every shipped panel's window must be named, and must fit inside 90 days for `gamma_metrics` and 14 days for full-cadence `option_chain_snapshots`.** jobid 19 thins OCS beyond 14 days to **one 10:00 UTC row per day**, so any OI-rotation history crossing that boundary collapses to a single point per day. That will present to whoever sees it first as a **rendering bug**, not as a retention decision — the degradation is invisible in the artefact that degrades, which is the ADR-023 shape. |
 | **Cross-ref** | TD-S76-NEW-1 · Deployment Topology §S76.C · §S75.1 (jobid 19's discovery) · TD-S69-NEW-1 (the storage-ceiling item this feeds). |
 | **Status** | **OPEN — deliberate hold, reversal pending.** |
 

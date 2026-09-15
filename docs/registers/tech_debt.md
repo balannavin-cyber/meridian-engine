@@ -57,6 +57,129 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S79-NEW-1 (S2 priority) — `GREATEST(dte, 1)` overstates σ on expiry day, so the moneyness band is widest on the day it most needs to bind
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Behavioural, on a live operator surface, and loosest in exactly the wrong direction. Not data loss, so not S1. |
+| **Filed** | 2026-09-15 (Session 79) |
+| **Component** | `sql/2026-09-15_s79_v_gex_strike_walls.sql` · view `v_gex_strike_walls` |
+| **Symptom** | NIFTY was `dte=0` at the 09:50:05 gate run with ~5.5 h of session remaining. σ is `spot × atm_iv/100 × sqrt(GREATEST(dte,1)/252)`, so the floor substituted **a full trading day for a fraction of one**, giving σ = 245.2 where true remaining-time σ is materially smaller. |
+| **Consequence** | band = 1.5σ is therefore **widest on expiry day** — the day on which stale far-OTM round-strike OI is most able to win an unbounded argmax. That contamination is the *only* thing the band exists to remove, so the control is loosest precisely where it is load-bearing. |
+| **NOT a defect against its own calibration** | The 1.5σ sweep carried the same floor, so the view reproduces what was measured and the equivalence gate passed honestly. The corollary **is** the finding: the floor's effect is **baked into the 1.5** rather than separately visible, and re-deriving the band under a corrected σ would not necessarily yield 1.5. |
+| **What it does NOT inherit** | This layer is raw-OI and touches gamma **nowhere**, so it does not inherit the 0-DTE gamma singularity that makes expiry-day flat-vol `net_gex` numerically unreconstructible (S62 settled entry). The OI wall is well-defined at `dte=0`; only the σ *scale* is wrong. |
+| **Proper fix** | Replace the day floor with intraday remaining-time (fraction of session remaining at `ts`), then **re-run the 1.0 / 1.5 / 2.0 / 3.0 / unbounded sweep under the corrected σ**. The chosen band may move. |
+| **Cost to fix** | ~1 session. The σ change is minutes; the re-sweep is the work, and it is an ADR-009 recalibration — SQL to `docs/research/` first. |
+| **Cross-ref** | ENH-120 · commit `10a7ae5` · CLAUDE.md settled entry on 0-DTE `net_gex` unreconstructibility. |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S79-NEW-2 (S3 priority) — `wall.iv_floor_min` is unproven in both directions: the column computes, the floor has never bound
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The guarded path is display-only and the parameter's value is currently equal to its fallback, so nothing is presently mis-stated. It is the *verification* that is missing. |
+| **Filed** | 2026-09-15 (Session 79) |
+| **Component** | `v_gex_strike_walls` (`atm_iv_age_min` / `iv_fresh` / `iv_floor_min_used`) · `merdian_parameters` key `wall.iv_floor_min` |
+| **Symptom** | Both equivalence-gate rows reported `atm_iv_age_min 0.0` and `iv_fresh true`. |
+| **Why that is not evidence** | A freshness flag evaluated only at age 0.0 demonstrates that the expression evaluates; it demonstrates nothing about whether the comparison binds. This is the "a check that cannot fail for the reason it names" family (CLAUDE.md Rule 0). Separately, the seeded value **120 equals the view-body `COALESCE` default of 120**, so a successful `get_parameter_num` read and a NULL return are indistinguishable. `wall.band.*` was cleared of that ambiguity by the S79 liveness probe; `wall.iv_floor_min` was not. |
+| **The deviation it guards** | The view **surfaces** IV staleness but does **not** enforce to absent — weaker than ADR-023 D1's "fails to absent, never to stale". The degraded path has therefore never executed in production. |
+| **Proper fix** | Two probes, both cheap, both inside `BEGIN`/`ROLLBACK`: (a) set `wall.iv_floor_min` to a value that must flip `iv_fresh` false on the current row, confirming the parameter drives the comparison; (b) exercise the stale branch against a run whose nearest `volatility_snapshots` row is genuinely old, confirming `atm_iv_age_min` is computed from the right pair of timestamps. Then decide whether to tighten to absent per ADR-023 D1. |
+| **Cost to fix** | ~20 min for both probes; the ADR-023 tightening decision is separate. |
+| **Cross-ref** | ENH-120 · ADR-023 D1 · TD-S72-NEW-1 (the τ precedent) · TD-S78-NEW-6 (`volatility_snapshots` expiry-class switching). |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S79-NEW-3 (S2 priority) — `sql/` is a superseded rebuild source: the migrations directory holds the pre-S72 pin/accel definition, and a rebuild from it is silently wrong
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Dormant until someone rebuilds, then silent and consequential. The failure mode is a working system computing the wrong thing. |
+| **Filed** | 2026-09-15 (Session 79) |
+| **Component** | `sql/2026-08-13_s69_gex_pin_accel_latest_run_scope.sql` · `docs/research/s72_gex_view_fix.sql` · `runbook_disaster_rebuild` |
+| **Symptom** | `sql/2026-08-13_s69_gex_pin_accel_latest_run_scope.sql` holds the pin/accel prominence walk with a **hardcoded `0.3`** threshold and the unbounded `DISTINCT ON` run-selection. The **live** views run the S72 parameterised definition (τ resolved once in the peak/trough CTE and carried through the walk, plus the bounded lateral), which is committed **only** under `docs/research/s72_gex_view_fix.sql` and was tagged `[DOC]`. Confirmed this session by `pg_get_viewdef`. |
+| **Why it is silent** | Both definitions return the **same column list in the same order**, so a rebuild produces views that select cleanly, render in Marketview, and populate the Pine overlay — while the τ knob is decorative again and the run-selection cost regression returns. Nothing errors. |
+| **Consumer that would hit it** | `runbook_disaster_rebuild` — the migrations directory is exactly what a rebuild reads. |
+| **Root cause** | A correction shipped as research output rather than as a migration, because the S72 file doubled as a measurement narrative (snapshot, equivalence gate, `EXPLAIN` comparison) and was filed where narratives live. The corrected DDL never reached `sql/`. |
+| **Proper fix** | Extract the two `CREATE OR REPLACE VIEW` statements from `docs/research/s72_gex_view_fix.sql` into a dated `sql/` migration that supersedes the S69 file, and mark the S69 file superseded in place. Do **not** delete it — it is the artefact ADR-021's amendment cites. |
+| **Cost to fix** | ~30 min. Mechanical; the SQL already exists and is already verified in production. |
+| **Not fixed in S79 by design** | G1 — findings are filed, not fixed. S79 avoided *extending* the divergence by placing its own migration in `sql/`. |
+| **Cross-ref** | ADR-021 Amendment 1 (A1.4, A1.6) · TD-S72-NEW-1 · ENH-120. |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S79-NEW-4 (S3 priority) — watch item: SENSEX call wall sat at 4.8× corridor asymmetry against a calibrated ~1.2×
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** n=1. Recorded so that a second and third observation have something to attach to. **Do not act on this entry.** |
+| **Filed** | 2026-09-15 (Session 79) |
+| **Component** | `v_gex_strike_walls` · `merdian_parameters` key `wall.band.SENSEX` |
+| **Observation** | At the 09:50:05 gate run, SENSEX `call_wall_sigma` was **+0.786** against a calibrated median of **+0.33**, and `put_wall_sigma` **−0.163** against **−0.27** — giving corridor asymmetry of **4.8×** where the sweep measured **~1.2×**. The wall was **75,000**, a round strike 828 points out, **inside** the 1,580.7-point band and therefore not excluded by it. |
+| **Why it is only a watch item** | One run is not a median, and the brief's own gate criterion was sign and order of magnitude, both of which passed. NIFTY's 1.77× on the same run is consistent with its calibrated ~2×. |
+| **What would make it actionable** | Persistence. If SENSEX `call_wall_sigma` sits materially above its calibrated median across a run of sessions, `wall.band.SENSEX` may want a different value from NIFTY's — the sweep showed SENSEX **still buying containment past 1.5σ where NIFTY had stopped**, which is the specific reason a per-symbol band parameter exists rather than one shared constant. |
+| **Proper fix** | Accumulate `corridor_width_sigma` / `call_wall_sigma` per symbol across sessions, then re-run the band sweep per symbol under ADR-009 discipline. No change before that. |
+| **Cost to fix** | Zero now; ~1 session once N is adequate. |
+| **Cross-ref** | ENH-120 calibration provenance · TD-S79-NEW-1 (a corrected σ would move these ratios and must land first). |
+| **Status** | **OPEN — watch only.** |
+
+---
+
+### TD-S79-NEW-5 (S2 priority) — the deploy-direction inversion, third instance: two independent commits of identical content in two trees, requiring a rebase to undo
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Recurring, and each instance costs a reconciliation. Unratified across three sessions. |
+| **Filed** | 2026-09-15 (Session 79) |
+| **Component** | `/home/ssm-user/meridian-cc` · `/home/ssm-user/meridian-engine` · ADR-006 · Doc Protocol v4 deploy line |
+| **Symptom** | The S79 SQL was committed in `meridian-cc` (`10a7ae5`), then **copied and committed again** in `meridian-engine` (`dd0978f`) — identical content, identical message, different SHA and different parent. The canonical vector is **commit → push → pull**. Resolution required `git pull --rebase`, which reported `skipped previously applied commit dd0978f` and dropped the duplicate; both trees and `origin/main` then landed on `10a7ae5` with linear history. |
+| **A measurement taken and not carried into the conclusion** | After both trees were committed, Claude measured the blob identity — `cdc3d35` on both sides — and then, in the same message, predicted the divergence would cause an **add/add conflict that stops the pull**, recommending `git reset --hard origin/main` as the remedy. Both were wrong: git conflicts on add/add only when contents **differ**, so identical blobs merge silently. The disproof was sitting in the measurement taken three lines earlier. Corrected the following turn, and the actual reconciliation (`git pull --rebase`) reported `skipped previously applied commit dd0978f` exactly as the corrected reading predicted. **Attribution note:** the operator offered to record this as an operator-side error; the transcript shows the prediction and the `reset --hard` recommendation were both Claude's, and the register keeps the accurate attribution. The lesson is unchanged and is the one worth keeping — *a measurement taken and not carried into the conclusion is the same as a measurement not taken.* |
+| **Standing status** | **UNRATIFIED across S73, S74 and now S79.** The open question is whether EC2 trees may originate commits at all, or only receive them. |
+| **Proper fix** | Ratify or reject the inversion, amending **ADR-006 and the Doc Protocol deploy line together** — they must not disagree, which is the ADR-020 contract-collision lesson applied to process rather than code. |
+| **Cost to fix** | ~1 session (one ADR amendment + one protocol line + a sweep for contradicting prose). |
+| **Cross-ref** | ADR-006 · ADR-020 (two modules each authoring the same contract) · S73/S74 doc-close footers. |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S79-NEW-6 (S3 priority) — three untracked scratch files sit in the production tree
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Hygiene. They are untracked, so they ship nowhere and break nothing. |
+| **Filed** | 2026-09-15 (Session 79) |
+| **Component** | `/home/ssm-user/meridian-engine` working tree |
+| **Symptom** | `git status` reports `rate_sens.out`, `s6_greeks.json`, `status.json` as untracked. All three **predate Session 79** and were not created by it. |
+| **Why it matters at all** | The repo root is already a flat namespace of 501 `.py` files in which production and scratch are indistinguishable by name (S72 finding). Loose untracked output files add to the same ambiguity, and untracked scratch in a production tree is one `git add .` away from being committed. |
+| **Proper fix** | Identify each file's producer, then either `.gitignore` it by name or move it under a scratch directory. Do **not** blanket-ignore the extensions — TD-S68 records a `.gitignore` pattern (`*.txt`) silently swallowing a committed-by-intent manifest with no untracked listing at all. |
+| **Cost to fix** | ~15 min. |
+| **Cross-ref** | S72 flat-namespace finding · TD-S78-NEW-2 (tracked backup artefacts, the mirror problem) · `git check-ignore -v` is the only reliable tell. |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S79-NEW-7 (S3 priority) — the S74 Doc Protocol amendment cites a rule number belonging to a different rule, and amends a rule the named document does not contain
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Record-keeping, not behaviour — the amendment's substance is sound and is being followed. But the citation is unusable, and a literal application lands on the wrong rule. |
+| **Filed** | 2026-09-15 (Session 79) |
+| **Component** | `CLAUDE.md:982` (v1.51 / Session 74 footer) · `docs/operational/MERDIAN_Documentation_Protocol_v4.md:53`, `:393` |
+| **Symptom** | `CLAUDE.md:982` records: *"One standing rule amended — **Doc Protocol v4 Rule 7: register updates are applied as byte-level splices with fail-loud assertions, not full-file rewrites**."* But v4 `:53` (the preserved-unchanged rule index) and `:393` (the rule's own heading) **both** define Rule 7 as *"`CURRENT.md` is the live session resume (UNCHANGED FROM v3)"*. |
+| **Worse** | **v4 contains no full-file-rewrite rule at all.** Grepping `rewrite\|rewritten\|byte size\|line count` across the document returns nothing in its rule set, and the rule index runs Rule 0–8 with none concerning rewrite-versus-splice. The amendment therefore names a rule that is about something else **and** amends a rule that does not exist in the document it names. |
+| **Also unsourced** | The S79 filing brief instructed *"Doc Protocol v4 applies: full-file rewrites."* That premise is sourced to nothing — v4 is silent on the question. The **only** recorded guidance on rewrite-versus-splice anywhere in the corpus is the S74 amendment itself, which is why its citation being broken matters more than it would for a rule with an independent home. |
+| **Consequence** | Anyone applying "Rule 7 as amended" literally gets `CURRENT.md`'s rule and no guidance on registers. The splice discipline survives only because the amendment quotes its own substance in full alongside the wrong number — i.e. it is self-describing by accident, not by citation. |
+| **Root cause** | The amendment was recorded in a session footer rather than in the protocol it amends, so nothing forced a check against the target document's rule numbering. Same shape as TD-S79-NEW-3 one level up: a correction shipped to the narrative layer instead of the layer it governs. |
+| **Proper fix** | Either renumber the amendment against whichever v4 rule it actually modifies, or — more likely correct — **record it as a NEW v4 rule with its own number**, added to the rule index at `:40–56`, since no existing rule covers the ground. Then correct the `CLAUDE.md:982` citation in place. Do not restamp the substance; it is sound and is what S79 followed. |
+| **Cost to fix** | ~20 min (one protocol rule + one index row + one footer citation correction). |
+| **Cross-ref** | `CLAUDE.md:982` · v4 `:53` / `:393` · TD-S73-NEW-8 (the file-size problem the amendment exists to mitigate) · S78 precedent — *"a protocol amendment recorded in the register that implements it, not an ADR"* (CLAUDE.md:377), which is the same recording pattern and carries the same citation risk. |
+| **Status** | **OPEN.** |
+
+---
+
 ### TD-S78-NEW-1 (S3 priority) — the session-date convention is unspecified in Doc Protocol v4, and the only format v4 does specify cannot express a multi-day session
 
 | Field | Value |

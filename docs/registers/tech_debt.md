@@ -271,6 +271,40 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 
 ---
 
+### TD-S79-NEW-13 (S3 priority) — two views shipped this session each emit a "notable strike" and neither comment distinguishes it from the other
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Both quantities are correct for their own purpose. The hazard is that a consumer reads one as the other — a display-layer misreading, not a behavioural defect. |
+| **Filed** | 2026-09-15 (Session 79) |
+| **Component** | `sql/2026-09-15_s79_v_gex_strike_walls.sql` (`call_wall`, `put_wall`) · `sql/2026-09-15_s79_v_gex_concentration.sql` (`top_strike_net`) |
+| **Symptom** | `v_gex_strike_walls.call_wall` / `put_wall` are a **raw-OI** argmax within a ±band·σ moneyness window — gamma weighting was tested for that layer and **REJECTED** because it collapses to ATM. `v_gex_concentration.top_strike_net` is a **gamma-weighted** argmax, which is the correct choice there because it is the strike the Herfindahl is measured on. Two live-facing views, both naming a single strike, and **neither view's `COMMENT ON VIEW` says what the other one means.** |
+| **First-light evidence** | On the ENH-122 3a run, NIFTY `top_strike_net` = 23150 against spot 23172.35 — **0.096 % away, sitting at ATM**, which is exactly the collapse ENH-120 measured and rejected for the wall layer. SENSEX's was 75000 against spot 74171.82, **1.12 % away**, so the collapse is **not** universal. **n=1 per bucket; behaviour across the cohort is UNMEASURED and is not asserted here.** |
+| **Why this is not ADR-024 §A7** | §A7 records two implementations of **one** intent disagreeing on semantics. This is two **different** quantities, each correct for its own view, whose names do not separate them. The failure mode belongs to the reader, not the code. |
+| **Proper fix** | One sentence in each view's `COMMENT ON VIEW` naming the other and stating the difference. **Not a rename** — both names are right for their own view, and renaming would break consumers to close a documentation gap. |
+| **Cost to fix** | ~10 min, both comments, no view body change, no re-verification. |
+| **Cross-ref** | ENH-120 · ENH-122 · ADR-024 §A7 (the adjacent shape) · S37 GEX-as-context-not-gate (both are display layers, so the misreading has no routing blast radius). |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S79-NEW-14 (S2 priority) — no EXPLAIN has been taken for any of the three views shipped this session, so the skip scan is unconfirmed across the whole session's output
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** The defect it would reveal is the one that removed PIN from the Pine overlay for weeks. It is **unverified, not known-broken**, which is why it is S2 and not S1. |
+| **Filed** | 2026-09-15 (Session 79) |
+| **Component** | `v_gex_strike_walls` (ENH-120) · `v_gex_abs_exposure` (ENH-121) · `v_gex_concentration` (ENH-122) |
+| **Symptom** | All three views carry the same `WITH RECURSIVE symbols` loose-index-scan idiom and the same bounded `CROSS JOIN LATERAL` for latest run, and **all three shipped with their EXPLAIN step un-run**. ENH-122's 3a, 3d and 3e passed on first light; **3f did not run**, and neither did the equivalents on 120 and 121. All three views are **applied to the live database and serving**, so an unused skip scan is a cost being paid now, not a hypothetical. |
+| **Consequence if it fails** | A base-table scan means the skip scan is not being used and **all three inherit the ADR-021 A1.1 defect** — the unscoped recursive walk that crossed the PostgREST 8 s ceiling at 1.06 M rows, returned `57014`, and silently removed PIN from the overlay while ACCEL still rendered carrying an as-of stamp inherited from the surviving side. **The failure is invisible in the data; it presents as a missing layer.** |
+| **What would make it fire** | An `EXPLAIN` plan showing `Seq Scan on gex_strike_snapshots`, or a large ordered scan, in place of a per-symbol index seek against `idx_gss_symbol_ts`. A real defect produces exactly that plan — this is a **CAN FIRE** check in the sense of Rule 0 clause 0. |
+| **Why one pass, not three** | The three views share the idiom, the base table and the index. A single `EXPLAIN (ANALYZE, BUFFERS)` pass covering all three answers it for all three; running them separately triples operator cost for no additional evidence. |
+| **Cost to fix** | ~5 min to run all three. Unknown to remediate if it fails. |
+| **Cross-ref** | ADR-021 (A1.1) · S72 FIX 2 (the lateral form) · TD-S72-NEW-3 (the literal-symbol-list hazard these views avoid) · ENH-120 / ENH-121 / ENH-122. |
+| **Status** | **OPEN — deferred by operator to one combined EXPLAIN pass covering all three views.** |
+
+---
+
 ### TD-S78-NEW-1 (S3 priority) — the session-date convention is unspecified in Doc Protocol v4, and the only format v4 does specify cannot express a multi-day session
 
 | Field | Value |

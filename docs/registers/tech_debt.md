@@ -289,23 +289,6 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 
 ---
 
-### TD-S79-NEW-14 (S2 priority) — no EXPLAIN has been taken for any of the three views shipped this session, so the skip scan is unconfirmed across the whole session's output
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** The defect it would reveal is the one that removed PIN from the Pine overlay for weeks. It is **unverified, not known-broken**, which is why it is S2 and not S1. |
-| **Filed** | 2026-09-15 (Session 79) |
-| **Component** | `v_gex_strike_walls` (ENH-120) · `v_gex_abs_exposure` (ENH-121) · `v_gex_concentration` (ENH-122) |
-| **Symptom** | All three views carry the same `WITH RECURSIVE symbols` loose-index-scan idiom and the same bounded `CROSS JOIN LATERAL` for latest run, and **all three shipped with their EXPLAIN step un-run**. ENH-122's 3a, 3d and 3e passed on first light; **3f did not run**, and neither did the equivalents on 120 and 121. All three views are **applied to the live database and serving**, so an unused skip scan is a cost being paid now, not a hypothetical. |
-| **Consequence if it fails** | A base-table scan means the skip scan is not being used and **all three inherit the ADR-021 A1.1 defect** — the unscoped recursive walk that crossed the PostgREST 8 s ceiling at 1.06 M rows, returned `57014`, and silently removed PIN from the overlay while ACCEL still rendered carrying an as-of stamp inherited from the surviving side. **The failure is invisible in the data; it presents as a missing layer.** |
-| **What would make it fire** | An `EXPLAIN` plan showing `Seq Scan on gex_strike_snapshots`, or a large ordered scan, in place of a per-symbol index seek against `ix_gex_strike_snap_sym_ts` (the index the live plan actually chooses; the byte-identical `idx_gss_symbol_ts` also exists and is not chosen — TD-S72-NEW-4). A real defect produces exactly that plan — this is a **CAN FIRE** check in the sense of Rule 0 clause 0. |
-| **Why one pass, not three** | The three views share the idiom, the base table and the index. A single `EXPLAIN (ANALYZE, BUFFERS)` pass covering all three answers it for all three; running them separately triples operator cost for no additional evidence. |
-| **Cost to fix** | ~5 min to run all three. Unknown to remediate if it fails. |
-| **Cross-ref** | ADR-021 (A1.1) · S72 FIX 2 (the lateral form) · TD-S72-NEW-3 (the literal-symbol-list hazard these views avoid) · ENH-120 / ENH-121 / ENH-122. |
-| **Status** | **OPEN — deferred by operator to one combined EXPLAIN pass covering all three views.** |
-
----
-
 ### TD-S79-NEW-15 (S2 priority) — the L3 flip gate is algebraically degenerate: "spot above the flip" and "TotalGEX(spot) > 0" are the same proposition, so the gate cannot fail for the reason it names
 
 | Field | Value |
@@ -443,6 +426,26 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Cost to fix** | ~30 min for (a); ~20 min for (b) once the parameter table row exists. |
 | **Cross-ref** | **ADR-016** (parameter calibration pattern; the class this belongs to) · **ENH-83** (`merdian_parameters`, SHIPPED S39 — the table it should live in) · TD-S79-NEW-17 (the SHORT branch this constant gates) · TD-S79-NEW-8 (SENSEX's ~30 % gamma-less strikes, which compose with this truncation) · TD-S62-NEW / S63 (the regression that introduced the branch). |
 | **Status** | **OPEN — filed from a source read; reach unmeasured.** |
+
+---
+
+### TD-S79-NEW-22 (S2 priority) — there is no acceptance criterion for "parity achieved": fourteen layers are specced, three are built, and nothing states when the work is done
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** It does not break anything running. It makes an open-ended build unbounded, and it is the decision that governs every remaining layer — so it is filed above the layer-level items it would settle. |
+| **Filed** | 2026-09-16 (Session 79) |
+| **Component** | `docs/registers/MERDIAN_Hedgewall_Parity_Spec.md` — the parity programme itself, not any one layer. |
+| **Symptom** | The spec resolves **fourteen layers** and orders them. S79 built **three** (L1 walls / L6 abs GEX / L12 concentration). **No document states what "parity achieved" means** — not a layer count, not a named-value list, not an operator read, not a measured agreement threshold against optionsflow.in or Hedgewall. The consequence is that no layer can ever be declared the last one, and no session can report the programme complete: "parity" is a **direction, not a state**. |
+| **Why this is not just tidiness** | Every build decision in the programme is currently justified by *"it is in the spec."* That is a **provenance** argument, not an **acceptance** one, and it terminates only when the spec is exhausted. A criterion is what makes it legitimate to stop **early** — to build eight layers, measure, and decline the rest — which is the outcome L3 already demonstrated is possible (**TD-S79-NEW-15 … -21**: measured, declined, nothing built). Without it, declining a layer reads as incompleteness rather than as a result. |
+| **Root cause** | The parity spec was written as a **source-resolution** document — what each layer is, where its inputs live, what order to build in. Nobody asked what would count as finished, because the question does not arise while layers remain. It arises the first time a layer is measured and **rejected**, which happened this session. |
+| **What a criterion has to settle, at minimum** | (a) **Scope** — is parity the fourteen layers, or the subset that survives measurement? (b) **Evidence** — does a layer count as achieved when it *computes*, when it *renders*, or when it *agrees* with the reference within a stated tolerance? (c) **Reference** — Hedgewall and optionsflow.in are two different boards and S79 measured against both; which one binds, and on which layers? (d) **Declining** — what a rejected layer does to the count, given L3 is measured-and-declined rather than unbuilt. |
+| **Workaround** | None in force. Each layer is currently justified individually against the spec, which works and does not terminate. |
+| **Proper fix** | An ADR, not a register row — it is a scope-and-acceptance decision governing a multi-session programme, and Doc Protocol v4 Rule 10 applies. This entry exists so the decision is **tracked** rather than carried in a session note. |
+| **Cost to fix** | ~0.5 session to draft, and it should be drafted **before** the next layer is built, not after. |
+| **Blocked by** | Nothing. It is an operator decision; the measurement needed to inform it (three built layers, one measured-and-declined) already exists. |
+| **Cross-ref** | ENH-120 / ENH-121 / ENH-122 (the three built) · **TD-S79-NEW-15 … -21** (the measured-and-declined layer, which is the case the criterion has to accommodate) · ADR-024 (the anchor decision taken inside the same programme) · ADR-009 (pre-registration — the discipline a criterion would inherit) · **TD-S73-NEW-8** (why an open decision living only in a session note is the failure mode this filing avoids). |
+| **Status** | **OPEN.** Raised as **D0** in the S79 doc-close and filed in the same pass rather than left as a note. |
 
 ---
 
@@ -4537,6 +4540,28 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 ---
 
 ## Resolved (audit trail)
+
+### TD-S79-NEW-14 (S2 priority) — RESOLVED: the skip scan is confirmed on all three views; no base-table scan, and planning exceeds execution
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** The defect it would reveal is the one that removed PIN from the Pine overlay for weeks. It is **unverified, not known-broken**, which is why it is S2 and not S1. |
+| **Filed** | 2026-09-15 (Session 79) |
+| **Component** | `v_gex_strike_walls` (ENH-120) · `v_gex_abs_exposure` (ENH-121) · `v_gex_concentration` (ENH-122) |
+| **Symptom** | All three views carry the same `WITH RECURSIVE symbols` loose-index-scan idiom and the same bounded `CROSS JOIN LATERAL` for latest run, and **all three shipped with their EXPLAIN step un-run**. ENH-122's 3a, 3d and 3e passed on first light; **3f did not run**, and neither did the equivalents on 120 and 121. All three views are **applied to the live database and serving**, so an unused skip scan is a cost being paid now, not a hypothetical. |
+| **Consequence if it fails** | A base-table scan means the skip scan is not being used and **all three inherit the ADR-021 A1.1 defect** — the unscoped recursive walk that crossed the PostgREST 8 s ceiling at 1.06 M rows, returned `57014`, and silently removed PIN from the overlay while ACCEL still rendered carrying an as-of stamp inherited from the surviving side. **The failure is invisible in the data; it presents as a missing layer.** |
+| **What would make it fire** | An `EXPLAIN` plan showing `Seq Scan on gex_strike_snapshots`, or a large ordered scan, in place of a per-symbol index seek against `ix_gex_strike_snap_sym_ts` (the index the live plan actually chooses; the byte-identical `idx_gss_symbol_ts` also exists and is not chosen — TD-S72-NEW-4). A real defect produces exactly that plan — this is a **CAN FIRE** check in the sense of Rule 0 clause 0. |
+| **Why one pass, not three** | The three views share the idiom, the base table and the index. A single `EXPLAIN (ANALYZE, BUFFERS)` pass covering all three answers it for all three; running them separately triples operator cost for no additional evidence. |
+| **Cost to fix** | ~5 min to run all three. Unknown to remediate if it fails. |
+| **Cross-ref** | ADR-021 (A1.1) · S72 FIX 2 (the lateral form) · TD-S72-NEW-3 (the literal-symbol-list hazard these views avoid) · ENH-120 / ENH-121 / ENH-122. |
+| **Resolution** | **CLOSED 2026-09-16 (Session 79).** One combined `EXPLAIN (ANALYZE, BUFFERS)` pass covering all three views, run by the **operator in the Supabase SQL editor**. **Operator-supplied — not measured by this agent.** Result, identical in shape on all three: **`Index Only Scan using ix_gex_strike_snap_sym_ts`**, one row per probe, **three loops to enumerate two symbols** (the skip scan's n+1 probe — the idiom behaving correctly, not an extra pass), and **no base-table scan anywhere**. The check was a CAN-FIRE check and it did not fire. |
+| **Measured cost** | `v_gex_strike_walls` **2.507 ms** execution / 4.588 ms planning, 132 buffers · `v_gex_abs_exposure` **1.077 / 2.925** · `v_gex_concentration` **1.943 / 3.197**, 45 buffers. All shared-buffer hits, **zero disk reads**. `Memoize` engaged unprompted on `run_id` — two misses, no evictions, 118 rows per loop. |
+| **The observation worth keeping** | **Planning time exceeds execution time on all three.** These views are planning-bound, not scan-bound — the exact inverse of the ADR-021 A1.1 failure mode, where an unscoped recursive walk over 1.06 M rows crossed the PostgREST 8 s ceiling, returned `57014`, and silently removed PIN from the overlay. A view whose execution is ~1–2.5 ms cannot regress into `57014` by row growth alone, because the skip scan's cost is O(distinct symbols), not O(rows). **This does NOT retire the freshness obligation** — ADR-023 still binds: a fast view over a stalled writer returns stale zones instantly, which is TD-S69-NEW-3's shape exactly. |
+| **What was NOT verified** | The plan was read for the **scan node and the index name**. No assertion was made about the `CROSS JOIN LATERAL`'s row bound, the recursive CTE's iteration count beyond the three loops reported, or behaviour under concurrent write load. **S70 — a verification method can only find what it enumerates.** |
+| **Evidence is transcript-only** | The plan text **never touched the filesystem**. It exists in the S79 session transcript and nowhere else; there is no committed artefact. If the plan is needed again it must be **re-run, not retrieved**. Same class as ADR-024 §A5's missing S74 result artefact, and recorded here so the next reader does not go looking for a file. |
+| **Status** | **RESOLVED 2026-09-16 (Session 79).** Closed by measurement; the closing evidence is operator-supplied and uncommitted, per the row above. |
+
+---
 
 ### TD-S35-NEW-2 — Pre-Apr-2026 vendor uncatalogued in System Map (critical institutional knowledge at risk) — RESOLVED S78 (vendor identified from the delivery file; GFDL, nine columns, no greeks)
 

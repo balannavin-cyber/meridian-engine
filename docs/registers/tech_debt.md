@@ -449,6 +449,26 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 
 ---
 
+### TD-S79-NEW-23 (S3 priority) — `merdian_reference.json` carries two change logs four sessions apart, and three `_meta` fields disagree with their top-level counterparts
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Nothing reads `_meta` programmatically today and the top-level fields are the ones sessions use. It is filed because a register that disagrees with itself is a trust-anchor problem, and the divergence grows by one session every session. |
+| **Filed** | 2026-09-16 (Session 79) |
+| **Component** | `docs/registers/merdian_reference.json` — `_meta` versus the top-level keys. |
+| **Symptom** | Three disagreements, measured this session. **(a)** `_meta.version` = `v52`, top-level `version` = `v56` (advanced to `v57` this pass). **(b)** `_meta.last_updated_by_session` = `Session 66`, top-level `last_updated_session` = `Session 78` (advanced to `Session 79`). **(c)** `_meta.change_log` is a **29-entry list whose newest entry is S66**, running in parallel to the top-level `change_log` — 20 entries, newest S78 (21 / S79 after this pass). **Two change logs in one file, thirteen sessions apart at the head.** |
+| **Why it matters more than cosmetic drift** | `_meta.purpose` declares this file *"authoritative on current operational state"* and `_meta.authority_note` says *"JSON wins on current operational state."* A reader who takes the file at its own word and reads `_meta` first gets **S66 state presented as authoritative**. The claim to authority is made inside the block that is thirteen sessions stale. |
+| **Root cause** | `_meta` was the original home of version / session / change_log; top-level duplicates were added later, and doc-closes updated only those. Nothing fails when the two diverge, so nothing surfaced it — and each doc-close widens the gap by one session. |
+| **Why this is TD-S73-NEW-8's thesis one level down** | TD-S73-NEW-8 records the eight-fold duplication of each session's findings **across** eight documents. This is the same failure **inside a single file**: two copies of one series, one maintained and one not, with no mechanism making them agree. Any fix that adds a third copy makes it worse. |
+| **Workaround** | Read the **top-level** `version` / `last_updated_session` / `last_updated_date` / `change_log`. Treat everything under `_meta` except `purpose` and `authority_note` as historical. |
+| **Proper fix** | Decide which block owns each field, then **delete the loser** — do not sync them, because two synchronised copies is the same defect with a maintenance cost attached. Recommended: `_meta` keeps `document` / `purpose` / `authority_note` / `update_cadence` and loses `version`, `last_updated*`, `sources`, `change_log`; the top-level keys own operational state. **Verify overlap before deleting** — the 29-entry `_meta.change_log` covers a different span and may hold entries the 20-entry list dropped. |
+| **Cost to fix** | ~0.5 session, most of it the overlap check. |
+| **Blocked by** | Nothing. |
+| **Cross-ref** | **TD-S73-NEW-8** (the duplication thesis this instances) · Rule 3 (*the DB is truth* — the analogue here is that one block must be truth) · S79 doc-close, where the divergence was measured while inserting the S79 `change_log` entry. |
+| **Status** | **OPEN.** Found while updating `change_log`; filed as its own entry rather than folded into an unrelated one's prose. |
+
+---
+
 ### TD-S78-NEW-1 (S3 priority) — the session-date convention is unspecified in Doc Protocol v4, and the only format v4 does specify cannot express a multi-day session
 
 | Field | Value |

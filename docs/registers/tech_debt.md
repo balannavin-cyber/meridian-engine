@@ -306,6 +306,102 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 
 ---
 
+### TD-S79-NEW-15 (S2 priority) — the L3 flip gate is algebraically degenerate: "spot above the flip" and "TotalGEX(spot) > 0" are the same proposition, so the gate cannot fail for the reason it names
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** The gate PASSED (89.4 % / 90.4 % against an 80 % threshold) and that pass is input to a pending build decision. A check that cannot fail for the reason it names is not a check (**Rule 0 clause 0**) — the decision would rest on evidence the measurement did not produce. Nothing is shipped, which is why S2 and not S1. |
+| **Filed** | 2026-09-16 (Session 79) |
+| **Component** | S79 L3 measurement (scratchpad `l3_repriced_flip.py`, `l3_tautology.py`). **No production component — nothing was built or committed.** |
+| **Symptom** | The gate asks whether `net_gex > 0` coincides with spot **above** the repriced flip. The repriced flip is *defined* as the zero of `TotalGEX(P)`, and `TotalGEX(P)` is monotone through that zero across the sample. So `(spot > flip)` and `(TotalGEX(spot) > 0)` are **the same statement**. Measured directly: identical on **42/42 NIFTY (100 %)** and **41/42 SENSEX (97.6 %)**. |
+| **What the gate actually measured** | Whether **BS-repriced gamma from OCS `iv` reproduces the sign of vendor Dhan gamma** in `gamma_metrics.net_gex`. That reconstruction-fidelity check, evaluated at `P = spot`, scores **87.5 % NIFTY / 88.2 % SENSEX**. The gate scored **89.4 % / 90.4 %** — *at its own ceiling*, which is the signature of the degeneracy, not a coincidence. Residual disagreement concentrates at DTE=0 (84.0 % / 79.1 % vs 90.9 % / 96.5 % at DTE 1–2), consistent with the settled S62 finding that 0-DTE flat-vol reconstruction is numerically singular. |
+| **The comparison that does survive, corrected** | The shipped `flip_level` fails the same gate, but **not at the 1.8 % / 1.0 % the S79 brief quoted.** Full window `ts >= 2026-05-25`: **NIFTY 20.8 % (n=5096), SENSEX 25.1 % (n=5149)**, against independence baselines of **28.8 % / 40.3 %**. The **1.8 % is NIFTY's 2026-06 value, misreported in the brief as the window value**; the series is non-stationary and rises monotonically. |
+| **Monthly trend (shipped flip, agreement vs independence baseline)** | NIFTY — 06: **1.8 %** vs 8.2 (Δ−6.4, n=716) · 07: 12.8 vs 31.2 (Δ−18.4, n=1844) · 08: 29.7 vs 31.4 (Δ−1.7, n=1709) · 09: 36.5 vs 38.5 (Δ−2.0, n=827). SENSEX — 06: **0.4 %** vs 33.3 (Δ−32.9, n=732) · 07: 19.8 vs 44.8 (Δ−25.0, n=1888) · 08: 35.2 vs 37.2 (Δ−2.0, n=1707) · 09: 38.3 vs 44.4 (Δ−6.1, n=822). |
+| **Uninformative ≠ anti-correlated** | In 2026-06/07 the shipped flip sat **far below** independence — it carried *negative* information about the `net_gex` sign. In 2026-08/09 it sits **within 2.0 pp** (NIFTY) and 2.0–6.1 pp (SENSEX) of independence — it carries **essentially none**. Both fail. They are different diagnoses with different causes, and the register must not pool them into one number. |
+| **What the L3 pass does NOT establish** | That the flip level has **market meaning** — that price behaves differently above it than below it. No forward-outcome measurement was taken, and **the gate as specified cannot take one.** Any build decision citing 89.4 % / 90.4 % as evidence of predictive value is citing it for something it did not measure. |
+| **What would make a real check fire** | An **outcome** test: realised volatility, or absolute forward return over a fixed horizon, conditioned on which side of the flip spot sits — pre-registered per ADR-009, with the failing result stated before measuring. A real defect (the flip is not a regime boundary) produces no separation between the two conditions. |
+| **Cost to fix** | Gate redesign ~0.5 session; the outcome study is separate and ADR-009-governed. |
+| **Cross-ref** | **Rule 0 clause 0** (the governing rule — clean instance) · ADR-009 · S37 GEX-as-context-not-gate · S62 (0-DTE singularity) · TD-S79-NEW-16 · TD-S79-NEW-17 (the construction conflation) · TD-S79-NEW-18. |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S79-NEW-16 (S3 priority) — the repriced flip lands ~3× closer to spot than the published landmark, and the divergence survives the σ bias that would explain it away
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Both figures are measured and neither is known wrong. The divergence is **unexplained** and bears on whether either construction locates a real level. No behaviour depends on it today. |
+| **Filed** | 2026-09-16 (Session 79) |
+| **Component** | S79 L3 measurement vs the S79 cumulative-construction measurement. No production component. |
+| **Symptom** | Distance from spot in σ (`spot × atm_iv/100 × sqrt(GREATEST(dte,1)/252)`): repriced flip **median 0.135σ NIFTY (n=161) / 0.126σ SENSEX (n=179)**. Hedgewall's published worked example sits at **0.54σ**. The repriced flip is roughly **3–4× closer to spot**. In price terms: median **0.16 % of spot (NIFTY) / 0.11 % (SENSEX)**, p90 0.45 % / 0.48 %. |
+| **The bias that would explain it away, measured rather than assumed** | σ here uses `GREATEST(dte,1)` — the exact form **TD-S79-NEW-1** records as *overstating* σ on expiry day. An overstated σ **understates** the σ-distance, and DTE=0 is a third of the sample, so the headline is biased **in this finding's own favour**. Split by bucket: NIFTY DTE=0 **0.066σ** (n=50), 1–2 **0.258σ** (n=44), 3+ **0.135σ** (n=67); SENSEX **0.056** (n=67) / **0.171** (n=57) / **0.188σ** (n=55). **Excluding DTE=0: NIFTY 0.182σ (n=111), SENSEX 0.171σ (n=112).** The gap to 0.54σ narrows from ~4× to ~3× and **does not close.** |
+| **CAVEAT — the 0.50–0.75σ comparator is WITHDRAWN, not caveated** | The brief also cited a **0.50–0.75σ modal bin** for the cumulative construction's nearest crossings on both symbols. That figure is **not used here**: it comes from the same measurement whose SENSEX leg does not reproduce (**TD-S79-NEW-18**), and that construction's crossing is structurally just above spot by arithmetic (call-OI heaviness 0.34 % below spot, 99.5 % above), so its σ position is an artefact rather than an independent reading. **This entry stands against Hedgewall's 0.54σ alone, and is weaker for it.** |
+| **Secondary evidence, same family** | Between consecutive runs the flip moves **1.66× as much as spot** on NIFTY (median abs Δflip 0.112 % vs abs Δspot 0.068 %) and ~1:1 on SENSEX (0.077 % vs 0.081 %). A level sitting 0.11–0.16 % from spot and moving at least as fast as spot **changes the regime call on small moves**; it is not a slow-moving reference. |
+| **What is NOT claimed** | That the repriced flip is wrong. **Ladder sensitivity was tested and is negligible** — agreement 88.3 % at every one of ±5 / ±10 / ±20 % and 30 / 60 / 120 levels (NIFTY); median flip shift vs base ≤ 0.03 % of spot; crossing availability **100 %** on both symbols; multi-crossing 0.0 % / 0.6 %. The construction is stable and well-posed. It lands somewhere other than the landmark. |
+| **Proper fix** | Reconcile the σ definition against Hedgewall's *before* treating 0.54σ as a target, and measure this flip's distance distribution against a **forward-outcome** test rather than against another construction's number. |
+| **Cost to fix** | ~0.5 session to reconcile σ; the outcome test is TD-S79-NEW-15's. |
+| **Cross-ref** | TD-S79-NEW-15 · **TD-S79-NEW-1** (the σ form; bias quantified above) · TD-S79-NEW-18 (why the 0.50–0.75σ comparator is withdrawn) · ENH-120 (ships σ columns) · ADR-024 §A4. |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S79-NEW-17 (S2 priority) — the rebuilt cumulative crossing and the shipped `flip_level` are not the same construction and never produce the same level: 0/97 and 0/105 exact matches
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Two quantities were treated as one in the brief that framed a replacement decision. Every measurement taken against the reconstruction was therefore **not** a measurement of the column proposed for replacement. Nothing is shipped or broken, which is why S2 and not S1. |
+| **Filed** | 2026-09-16 (Session 79) |
+| **Component** | `gamma_metrics.flip_level` (shipped) vs a rebuilt `cumsum(gex_cr)` sign-change over `gex_strike_snapshots`. |
+| **Symptom** | The S79 brief states that *"the shipped `flip_level` and the rebuilt cumulative-crossing version **both** compute where a running total of `gex_cr` across strikes changes sign"*, and measured the rebuilt one over `gex_strike_snapshots`. Measured directly against the shipped column on the same runs: **exact matches 0/97 NIFTY and 0/105 SENSEX. Not one.** Whatever the two constructions have in common at the level of description, **they never agree on the answer.** |
+| **Why this matters more than a discrepancy** | The brief's evidence for replacing the shipped `flip_level` was produced by measuring the **reconstruction**. Because the two are not the same level, **that evidence does not describe the shipped column.** The case for replacement has to be re-made against `gamma_metrics.flip_level` directly — which TD-S79-NEW-15 now does, and which yields 20.8 % / 25.1 % full-window rather than 1.8 % / 1.0 %. |
+| **Mechanism** | **Not established — the shipped column's construction has not been read.** The proper fix below is to read `compute_flip_level` and state in one sentence what it computes. No mechanism is proposed here. |
+| **Secondary** | The rebuilt construction produces **no crossing at all on 27 % (NIFTY) / 22 % (SENSEX)** of sampled runs, so it is not a drop-in substitute regardless. Sanity that does hold: `sign(sum gex_cr) == sign(net_gex)` at **99.0 % / 100 %** — the ADR-015 identity is intact and `net_gex` is not implicated. |
+| **Proper fix** | Read `compute_flip_level` and state, in one sentence in the register, what the shipped column actually computes. Re-label any prior S79 finding that measured the reconstruction so it does not read as a finding about the shipped column. |
+| **Cost to fix** | ~20 min to read the function and correct the labels; longer if prior register entries need amending. |
+| **Cross-ref** | TD-S79-NEW-15 (the corrected shipped-column figures) · TD-S79-NEW-18 · ADR-015 (the identity that holds). |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S79-NEW-18 (S2 priority) — the SENSEX leg of the cumulative-gate result does not reproduce: 1.0 % against 34.3 %, and which measurement is wrong is UNRESOLVED
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** An unreconciled 34× divergence in the evidence base for a pending decision. **Filed as unresolved — neither figure is adopted.** |
+| **Filed** | 2026-09-16 (Session 79) |
+| **Component** | Rebuilt `cumsum(gex_cr)` crossing over `gex_strike_snapshots`, SENSEX. |
+| **Figure 1 — operator-side, SQL written in-session, full population, NOT independently reproduced** | `ts >= 2026-05-25`: net GEX positive **99.0 %**, spot below flip **98.0 %**, agreement **1.0 %**. |
+| **Figure 2 — this session, independent code path, sampled** | n=105 runs across the same window: `sum(gex_cr) > 0` **80.0 %**, spot below flip **45.7 %** (spot *above* 54.3 %), agreement **34.3 %**. Apart from Figure 1 by **34× on agreement and 52 pp on spot-vs-flip**. |
+| **NIFTY reproduces; SENSEX does not** | On NIFTY the same sampled code path returns net>0 **99.0 %**, spot>flip **4.1 %**, agreement **3.1 %** — Figure 1's NIFTY sibling (99.9 % / 1.9 % / 1.8 %) in both shape and magnitude. **The divergence is SENSEX-specific**, which is itself the strongest clue. |
+| **The two figures are NOT of equal standing** | Figure 1 is full-population and therefore not sampling-limited. Figure 2 is an independent implementation and therefore does not inherit Figure 1's assumptions. But Figure 1 was produced in-session and **has not been independently reproduced**, and it is Figure 1's **SENSEX leg specifically that fails to reproduce while its NIFTY leg does.** That asymmetry is evidence about where to look. It is not sufficient to declare a winner, and adopting either now would resolve the disagreement by preference rather than by evidence. |
+| **Live mechanism, named not adopted** | **TD-S79-NEW-8** records that **SENSEX has no gamma at all on ~30 % of its strikes**. A cumulative walk over a chain with a third of its rungs missing is exactly the construction that would become unstable, and would do so on SENSEX only. This is a **candidate explanation, not a finding** — it has not been tested against either figure. |
+| **The re-run that settles it** | Recompute the rebuilt crossing over the **full** `gex_strike_snapshots` SENSEX population for `ts >= 2026-05-25` in a **single** code path, emitting per-run: `sum(gex_cr)`, the crossing strike, `spot`, crossing-count, and **strike-coverage** (`count(gex_cr IS NOT NULL) / count(*)`). Stratify agreement by coverage decile. If TD-S79-NEW-8 is the mechanism, agreement moves with coverage; if it does not, the divergence is in the crossing rule and one of the two implementations is wrong. |
+| **Cost to fix** | ~0.5 session for the re-run; remediation unknown until it lands. |
+| **Cross-ref** | **TD-S79-NEW-8** (the ~30 % missing SENSEX gamma) · TD-S79-NEW-17 (the construction is not the shipped column either way) · TD-S79-NEW-15 · ADR-015. |
+| **Status** | **OPEN — UNRESOLVED. Both figures recorded; neither adopted pending the named re-run.** |
+
+---
+
+### TD-S79-NEW-19 (S3 priority) — OCS↔`gamma_metrics` join coverage begins 2026-08-26, not 2026-08-24: two dates are 100 % unjoinable, and a declared sample was not the sample delivered
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A data-inventory correction plus a methodology record. No production behaviour depends on it; it silently narrows the usable window for any IV-based work. |
+| **Filed** | 2026-09-16 (Session 79) |
+| **Component** | `option_chain_snapshots` ↔ `gamma_metrics` join on `run_id`, window `ts >= 2026-08-24`. |
+| **Symptom** | **167 `gamma_metrics` runs per symbol (12.6 %) carry a `run_id` with zero rows in OCS**, and the gap is **entirely 2026-08-24 (84/84) and 2026-08-25 (83/83) — 100 % missing on both, 0.0 % on all fourteen other dates.** Identical counts on NIFTY and SENSEX. |
+| **What it is NOT** | **Not DTE-related** — the apparent clustering (NIFTY 25.1 % of DTE=0 and 33.9 % of DTE 1–2; SENSEX 14.3 % / 17.0 % of 1–2 and 3+) is only which DTEs those two dates happened to carry. **Not time-of-day** — flat at 12.5 % across every half-hour slot, i.e. exactly 2 of 16 dates. **Not `run_type`** — all `FULL`. |
+| **Absent, not misfiled** | 92.8 % of missing runs have **no OCS run within 30 minutes**. The 7.2 % within 30 min are late-day: OCS rows do exist on 08-24, but only from ~15:30 IST. Separately, **45 NIFTY / 48 SENSEX orphan OCS `run_id`s** have no `gamma_metrics` row. |
+| **Corrected inventory fact** | IV rows on OCS begin **2026-08-24 ~15:30 IST**, but **full-day, run-aligned OCS↔`gamma_metrics` coverage begins 2026-08-26.** Any work quoting "IV coverage 2026-08-24 → present" as the joinable window is **two trading days optimistic**; the usable window is **14 dates, not 16.** |
+| **Sample-departure record (this session's own)** | The L3 measurement **declared** 200 runs per symbol stratified 67/67/66 across DTE 0 / 1–2 / 3+, stated before results per the brief. It **delivered** NIFTY **50/44/66** and SENSEX **67/57/54** — the shortfalls land exactly where this gap does. The dropped runs were excluded rather than silently mis-measured, so **the L3 gate result stands on the clean 14-date window**. |
+| **The departure was DISCLOSED, which is the distinction this entry preserves** | It was found by the measuring session and reported **before the results were written up** — not surfaced afterwards by review. The failure mode this entry guards against is **undisclosed** departure between a declared sample and a delivered one. This instance was disclosed, and is recorded here so that a future undisclosed one is legible as the different and worse thing it would be. |
+| **Proper fix** | Correct the stated IV/joinable window to 2026-08-26 wherever it is quoted. Determine whether 08-24/08-25 OCS rows exist under the orphan `run_id`s (a writer-cutover signature) or were never written. Future pre-registered samples verify pool joinability **before** declaring strata. |
+| **Cost to fix** | ~15 min for the window correction; ~30 min to characterise the orphans. |
+| **Cross-ref** | TD-S79-NEW-15 / -16 (the measurements this window bounds) · ADR-009 (pre-registration discipline the departure bears on) · Rule 15 (PostgREST paging, used for the 551,672 / 425,620-row sweeps). |
+| **Status** | **OPEN.** |
+
+---
+
 ### TD-S78-NEW-1 (S3 priority) — the session-date convention is unspecified in Doc Protocol v4, and the only format v4 does specify cannot express a multi-day session
 
 | Field | Value |

@@ -2,7 +2,12 @@
 
 ## Status
 
-**PROPOSED — 2026-09-15 (Session 79). Decision RESERVED pending §4.**
+**ACCEPTED — 2026-09-15 (Session 79), by Amendment A (v3).** The reservation below is
+the **drafting-time record** and is retained rather than deleted; it is resolved by §A8, and
+the one-line compressed form required by Doc Protocol v4 §11.3 is the **Governance language**
+section at the end of this file. Amendment A's own header carries the same status.
+
+*Superseded, retained for the record:* ~~PROPOSED — Decision RESERVED pending §4.~~
 
 Reserved at S75 (`297ae68`) and undrafted since. This draft files the question, enumerates
 the blast radius, and pre-registers the measurement that must precede any ruling. **It does
@@ -634,6 +639,29 @@ Filed rather than absorbed, and four are one reflex.
    matching peak, walk ⊆ recomputation is deductive.
 
 **1, 2, 6 and 7 are one pattern: reasoning from the archive when the source was available.**
+
+---
+
+## Governance language
+
+*One-line compressed form for `CLAUDE.md` settled-decisions, per Doc Protocol v4 §11.3.
+Deliberately **unnumbered** so that no `A`-section citation into this file shifts.*
+
+**GEX zone anchors are net-sign selections: PIN is the max net-long-gamma strike, ACCEL its mirror the max net-short; their offsets — above spot for PIN, below for ACCEL — are arithmetic from OI imbalance, not positioning; all consumers remain display-only.**
+
+**Why the mirror clause is load-bearing.** An earlier draft of this line read *"GEX zone
+anchors are the max net-long-gamma strike; their offset above spot is arithmetic."* That is
+exactly true of **PIN** and exactly inverted for **ACCEL**. From §A2's T1 table, per
+`(symbol, run_id)`: the peak sits above spot on **99.2 % NIFTY / 99.1 % SENSEX** (median
+**+0.549 / +0.543**), while the trough sits above spot on **1.3 % / 2.2 %** — i.e. **below**
+spot ~98.7 % / 97.8 % of the time (median **−0.412 / −0.483**). A compressed form is what
+future sessions meet first, so an imprecision here propagates further than one in the body.
+This is §A1 item 3 discharged in the footer rather than deferred to ADR-015.
+
+**Scope this line does NOT carry.** It authorises nothing in production (§A8). It is not a
+claim that the zones are useful — PIN was answered **NO** at S74 and ACCEL remains
+**unanswered** on an instrument that needs repair first. It is a statement about what the
+construction *selects*, and why the offset it produces is empty of positioning content.
 
 ---
 

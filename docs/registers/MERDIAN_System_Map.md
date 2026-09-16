@@ -1667,3 +1667,80 @@ The gap between the joined and same-relation verdicts is the point: **roughly 19
 ---
 
 *System Map updated Session 78, 2026-09-14 (§S78 — the data inventory register `MERDIAN_Data_Inventory.md` and its generator `scripts/build_data_inventory.py`, both NEW and both unscheduled; `CURRENT_history.md` NEW and git-only; measured extent 359/358 trading days at 302/302 computable, with the joined-vs-same-relation gap showing ~190 days per symbol reachable only through a measured join; four relation facts recorded — HOCS's three second-producer sessions and its never-written `dte`, `volatility_snapshots`' silent expiry-class switch, and `gex_strike_snapshots.ts` lagging `created_at` by one cycle; and **TD-S35-NEW-2 CLOSED** — the pre-Apr-2026 chain vendor is GFDL and its nine-column delivery never carried IV or greeks, so they were not lost at load. **NO PRODUCTION CODE CHANGED.**) Previous: Session 77, 2026-09-11/13 (§S77).* (§S77 — the ICT primitive cohort rebuilt clean under ADR-004 Amendment C for the zone classes: `ict_primitives` and `ict_primitive_outcomes` **20,042 / 20,042** over `--start 2025-03-31 --end 2026-06-04`, verified by paired natural-key join at `unchanged = 0` on 2,481 OB/FVG rows, at a cost of 3,228 s and ~92 % I/O wait; the `ict_primitives` row of §S76.B superseded on row count and cleanliness and its verdict left standing — **still no scheduled producer, still no live consumer, S31-C still unrun**; two snapshot tables `ict_primitives_pre_s77` / `ict_primitive_outcomes_pre_s77` (19,573 / 19,571) recorded as an evidence tier and as the **only remaining evidence for TD-S76-NEW-18**, whose 2-row gap did not reproduce; the zone layer **measured null** — H `atm_pnl_30m_pct` +12.80 % → +0.76 %, the FVG timeframe gradient inverted, no exploitable tail, `mean_mfe ≈ |mean_mae|`, and a **pre-registered** regime split returning 1.10 / 1.10 so the null is regime-invariant; the **event half unmeasured** at 78 % of rows with `DISPLACEMENT_DOWN` reading 41 of 41; `assign_tier` live on mined thresholds with `MERDIAN_TIER_MULT_DISABLE` covering one consumer of three; and `merdian_reference.json`'s row counts found **two generations stale** — a fresh instance of TD-S76-NEW-17 inside the file that entry is about. **CODE CHANGED; one irreversible database operation, snapshots taken first.**) Previous: Session 76, 2026-09-09/10 (§S76).*
+
+---
+
+## §S79 — Session 79: three parity views over `gex_strike_snapshots`, and a fourth layer measured and declined (2026-09-15/16)
+
+**Nothing was scheduled and no writer changed.** All three artefacts are SQL views over the
+existing `gex_strike_snapshots`; there is no cron, no systemd unit, no Python production
+change, and no Local↔AWS boundary movement — which is why **Deployment Topology carries no
+§S79**. Every consumer is display-only under the S37 *GEX-is-context-not-gate* ruling.
+
+### S79.A — three new views
+
+All three are siblings of the ENH-81 pin/accel views and share their construction: the same
+latest-run scoping (**ADR-021** + the S72 FIX 2 bounded `CROSS JOIN LATERAL`), the same
+`get_parameter_num` wiring (**ADR-016** / S72 FIX 1), the same recursive skip scan to
+enumerate symbols, and the same `(run_id, symbol, expiry_date)` grain.
+
+| View | What it is | Source file | Notes |
+|---|---|---|---|
+| `v_gex_strike_walls` | **ENH-120 / L10.** Put wall and call wall as **raw-OI argmax** inside a **±band×σ** moneyness window, per symbol, on the latest run — plus a four-valued `corridor_state`. Band via `get_parameter_num('wall.band.<symbol>')`, default **1.5**; the parameter wiring was **proven by probe, not by inspection**. | `sql/2026-09-15_s79_v_gex_strike_walls.sql` | **Gamma-weighted argmax was tested and REJECTED** — `argmax(gamma × oi)` collapses to ATM (put wall **−0.09σ**, call wall **+0.19σ**, both symbols) because gamma is maximal at the money: *it finds the money, not the wall.* The band is a **tail control only** — median width moves **0.48 → 0.58σ** across the entire 1.0 / 1.5 / 2.0 / 3.0 / unbounded sweep, so on a typical run the restriction changes nothing; it removes the occasional stale far-OTM round strike that wins an unbounded argmax. The corridor is **asymmetric**: the call wall sits ~2× further above spot than the put wall sits below (NIFTY **+0.30 / −0.15**, SENSEX **+0.33 / −0.27**), consistent with call-heavy OI. **~30 % of runs sit OUTSIDE the corridor**, and a NULL wall is `UNDEFINED`, **not** `BELOW_FLOOR`. **Known ADR-023 deviation, recorded in the view's own `COMMENT ON VIEW`:** `atm_iv` comes from `volatility_snapshots`, which is single-expiry and silently switches expiry class (**TD-S78-NEW-6**); staleness is **surfaced** (`atm_iv_age_min` / `iv_fresh` / `iv_floor_min_used`) but **NOT enforced to absent** — weaker than ADR-023 D1's *"fails to absent, never to stale"*, and **the degraded path has therefore never executed in production**. **TD-S79-NEW-2.** |
+| `v_gex_abs_exposure` | **ENH-121 / L6.** `sum(abs(gex_cr))` per run, beside the existing signed sum. The signed sum says **which way** hedging pushes; the absolute sum says **how much** gamma is on the board at all — and a net near zero on a huge gross book is a different market from a net near zero on an empty one, which the sign cannot distinguish. | `sql/2026-09-15_s79_v_gex_abs_exposure.sql` | Measured 2026-05-25 → present, ~5,650 runs/symbol: `abs_gex` median **7,509,653 NIFTY / 2,520,880 SENSEX** against `net_gex` median **948,535 / 157,115**; contributing strikes **93.9 / 106.9** on average. Parity target: optionsflow.in's named "Total Abs GEX". |
+| `v_gex_concentration` | **ENH-122 / L12.** Herfindahl concentration on the gamma book — **three legs, not one**: net, call and put — plus a stored `dte_bucket`. | `sql/2026-09-15_s79_v_gex_concentration.sql` | **`hhi_net` IS `gamma_metrics.gamma_concentration`. It is NOT a second number, and comparing the two is NOT a check** — the file says so in a banner comment, because that comparison is exactly the Rule 0 clause 1 shape ADR-014 §2.5 already fell into. The parity spec (L12) specs the **net leg only**; the call/put split is an **addition justified by measurement, not by copying**. |
+
+### S79.B — the `EXPLAIN` pass (closes TD-S79-NEW-14)
+
+One combined `EXPLAIN (ANALYZE, BUFFERS)` across all three, **operator-run in the Supabase SQL
+editor**: `Index Only Scan using ix_gex_strike_snap_sym_ts` on every one, **no base-table
+scan**, three loops to enumerate two symbols, all shared-buffer hits, **zero disk reads**, and
+`Memoize` engaged unprompted on `run_id`.
+
+| View | execution | planning |
+|---|---:|---:|
+| `v_gex_strike_walls` | 2.507 ms | 4.588 ms |
+| `v_gex_abs_exposure` | 1.077 ms | 2.925 ms |
+| `v_gex_concentration` | 1.943 ms | 3.197 ms |
+
+**Planning exceeds execution on all three — these are planning-bound, not scan-bound, which is
+the inverse of the ADR-021 §A1.1 failure mode** (a recursive CTE walking an unscoped base table
+until it crossed the PostgREST 8 s ceiling). The scoping was inherited by construction rather
+than retrofitted after a timeout. **The evidence is transcript-only and uncommitted** — re-run
+it; do not go looking for a file.
+
+### S79.C — σ is the distance unit, and it retired a finding
+
+`σ = spot × atm_iv/100 × sqrt(GREATEST(dte,1)/252)`. It grounds ENH-120's band and every level
+figure in the S79 L3 entries. **ADR-024 §A4 withdraws T3 on this unit**: the ~2.8× monotone
+dispersion of the anchor's offset across DTE was **percent-scale noise** — in σ it is **1.6×
+and non-monotone**, and the two symbols agree to **0.001σ** at 1–2 DTE *at spot levels 3.2×
+apart*. **Points are not a distance.** Caveat carried rather than buried: `GREATEST(dte,1)`
+**overstates** σ on expiry day — **TD-S79-NEW-1**.
+
+### S79.D — L3 measured and NOT built
+
+The flip layer was measured and deliberately not shipped; nothing was built or committed for
+it. The findings are complete in the register and are **not restated here** (TD-S73-NEW-8 —
+the duplication is the cost): **TD-S79-NEW-15** the flip gate is algebraically degenerate ·
+**-16** the repriced flip's σ-distance to spot · **-17** the shipped `flip_level` is three
+constructions, not one · **-18** the SENSEX leg does not reproduce, **UNRESOLVED** · **-19**
+the join window, and a declared sample that was not the sample delivered · **-20** replay is
+pinned to the legacy fallback branch · **-21** a hardcoded relative floor on the SHORT branch.
+
+### S79.E — recorded rather than asserted
+
+**The anon grants are not verifiable from this box.** All three source files carry their
+`REVOKE ALL` / `GRANT SELECT … TO anon` pair **commented out**, under a `SECTION 2 — anon
+grants (security-first sequence, D.21.1)` header instructing that it be *"run SEPARATELY, after
+Section 3 verifies"*. `CURRENT.md` records the grants as applied. **The repo file is therefore
+not evidence of the grant**, and the two should not be conflated — re-run the D.21.1 anon-grants
+audit if the answer matters.
+
+**No consumer reads any of the three yet.** Neither Marketview nor the Pine overlay was wired
+to them this session, so the ADR-023 recency-floor obligation on the *consumer* side is not yet
+discharged for these views — TD-S79-NEW-2 covers the producer half only.
+
+---
+
+*System Map updated Session 79, 2026-09-15/16 (§S79 — three SQL views applied to the live database over `gex_strike_snapshots`: `v_gex_strike_walls` (ENH-120, raw-OI walls in a 1.5σ band, gamma-weighted argmax tested and rejected), `v_gex_abs_exposure` (ENH-121, gross beside net) and `v_gex_concentration` (ENH-122, three HHI legs, and `hhi_net` is `gamma_metrics.gamma_concentration` rather than a second number to check against it); all three inherit ADR-021 latest-run scoping and ADR-016 parameter wiring from the ENH-81 siblings, and one combined `EXPLAIN (ANALYZE, BUFFERS)` shows Index Only Scan with **planning exceeding execution on all three** — planning-bound, the inverse of the ADR-021 §A1.1 failure mode — closing TD-S79-NEW-14. **NO writer, cron, systemd unit or Local↔AWS boundary changed**, which is why Deployment Topology carries no §S79. Known deviation recorded: `v_gex_strike_walls` **surfaces but does not enforce** IV staleness, weaker than ADR-023 D1, so its degraded path has never executed — TD-S79-NEW-2. Anon grants are **commented out in all three source files** and recorded as applied only in `CURRENT.md`; the file is not evidence of the grant. L3 was measured and **not built** — TD-S79-NEW-15..21. **CODE CHANGED (SQL only); no Python production change; no irreversible database operation.**) Previous: Session 78, 2026-09-14 (§S78).*

@@ -2,7 +2,7 @@
 
 Generated 2026-09-21 from a read-only sweep. Window 2025-04-01 .. 2026-03-30.
 
-Measured cycles: **102**. Excluded cycles: **6**. Rejected stamps inside measured cycles: **11**.
+Measured cycles: **102**. Excluded cycles: **6**. Rejected stamps inside measured cycles: **12**.
 
 ## Method notes that change how these numbers read
 
@@ -29,14 +29,14 @@ This proportion is what converts the two bounds into each other, and it is the s
 
 | symbol | leg | cycles | tested | untested | tested share |
 |---|---|---:|---:|---:|---:|
+| NIFTY | HELD_ATM_STRADDLE | 51 | 51 | 0 | 100%  (definitional -- see below) |
 | NIFTY | OTM_CE | 51 | 26 | 25 | 51% |
 | NIFTY | OTM_PE | 51 | 28 | 23 | 55% |
-| NIFTY | STRADDLE | 51 | 51 | 0 | 100%  (definitional -- see below) |
+| SENSEX | HELD_ATM_STRADDLE | 51 | 51 | 0 | 100%  (definitional -- see below) |
 | SENSEX | OTM_CE | 51 | 29 | 22 | 57% |
 | SENSEX | OTM_PE | 51 | 36 | 15 | 71% |
-| SENSEX | STRADDLE | 51 | 51 | 0 | 100%  (definitional -- see below) |
 
-**STRADDLE is 100% `tested` by construction, not by measurement.** The ATM strike is chosen as the nearest strike to Day-1 spot, so it sits within half a strike step of spot -- 25 points on NIFTY, 50 on SENSEX -- while 0.5 x sigma_daily is on the order of 90 points. The proximity criterion is therefore satisfied at entry in every cycle, and the `untested` STRADDLE cell is empty (N=0). The tested/untested split carries no information at the money; read the STRADDLE rows as pooled regardless of the state column.
+**HELD_ATM_STRADDLE is 100% `tested` by construction, not by measurement.** The ATM strike is chosen as the nearest strike to Day-1 spot, so it sits within half a strike step of spot -- 25 points on NIFTY, 50 on SENSEX -- while 0.5 x sigma_daily is on the order of 90 points. The proximity criterion is satisfied at ENTRY in every cycle -- the test is applied from Day-1 onward -- and the `untested` held-ATM cell is empty (N=0). The tested/untested split carries no information at the money; read the held-ATM rows as pooled regardless of the state column.
 
 ## M1.A  Decay % from the Day-1 10:30 reference
 
@@ -44,18 +44,32 @@ P25 / median / P75 of % decay. `N*` marks a THIN cell (N < 20).
 
 | symbol | regime | leg | state | stamp | N | P25 | median | P75 | zpv |
 |---|---|---|---|---|---:|---:|---:|---:|---:|
+| NIFTY | all | HELD_ATM_STRADDLE | pooled | D1 | 51 | -2.8 | 3.6 | 6.0 | 0% |
+| NIFTY | all | HELD_ATM_STRADDLE | pooled | D2 | 51 | -12.7 | 7.6 | 19.7 | 0% |
+| NIFTY | all | HELD_ATM_STRADDLE | pooled | D3 | 51 | -27.9 | 14.2 | 30.3 | 0% |
+| NIFTY | all | HELD_ATM_STRADDLE | pooled | D4 | 49 | -42.0 | 18.9 | 46.7 | 0% |
+| NIFTY | all | HELD_ATM_STRADDLE | pooled | D5 | 35 | -5.3 | 41.3 | 65.7 | 0% |
+| NIFTY | all | HELD_ATM_STRADDLE | pooled | D6 | 1* | -3.4 | -3.4 | -3.4 | 0% |
+| NIFTY | all | HELD_ATM_STRADDLE | pooled | EXP1300 | 51 | -31.0 | 17.5 | 61.9 | 0% |
+| NIFTY | all | HELD_ATM_STRADDLE | tested | D1 | 51 | -2.8 | 3.6 | 6.0 | 0% |
+| NIFTY | all | HELD_ATM_STRADDLE | tested | D2 | 51 | -12.7 | 7.6 | 19.7 | 0% |
+| NIFTY | all | HELD_ATM_STRADDLE | tested | D3 | 51 | -27.9 | 14.2 | 30.3 | 0% |
+| NIFTY | all | HELD_ATM_STRADDLE | tested | D4 | 49 | -42.0 | 18.9 | 46.7 | 0% |
+| NIFTY | all | HELD_ATM_STRADDLE | tested | D5 | 35 | -5.3 | 41.3 | 65.7 | 0% |
+| NIFTY | all | HELD_ATM_STRADDLE | tested | D6 | 1* | -3.4 | -3.4 | -3.4 | 0% |
+| NIFTY | all | HELD_ATM_STRADDLE | tested | EXP1300 | 51 | -31.0 | 17.5 | 61.9 | 0% |
 | NIFTY | all | OTM_CE | pooled | D1 | 51 | -15.1 | 2.9 | 36.1 | 0% |
 | NIFTY | all | OTM_CE | pooled | D2 | 51 | -22.2 | 41.3 | 65.3 | 0% |
 | NIFTY | all | OTM_CE | pooled | D3 | 51 | 9.3 | 58.0 | 82.2 | 0% |
 | NIFTY | all | OTM_CE | pooled | D4 | 49 | 53.8 | 85.3 | 95.5 | 0% |
-| NIFTY | all | OTM_CE | pooled | D5 | 34 | 99.8 | 99.9 | 99.9 | 0% |
+| NIFTY | all | OTM_CE | pooled | D5 | 35 | 99.8 | 99.9 | 99.9 | 0% |
 | NIFTY | all | OTM_CE | pooled | D6 | 1* | -57.0 | -57.0 | -57.0 | 0% |
 | NIFTY | all | OTM_CE | pooled | EXP1300 | 51 | 85.6 | 96.7 | 98.2 | 0% |
 | NIFTY | all | OTM_CE | untested | D1 | 25 | 2.9 | 18.4 | 44.6 | 0% |
 | NIFTY | all | OTM_CE | untested | D2 | 25 | 33.1 | 58.0 | 69.7 | 0% |
 | NIFTY | all | OTM_CE | untested | D3 | 25 | 63.7 | 77.3 | 87.4 | 0% |
 | NIFTY | all | OTM_CE | untested | D4 | 25 | 84.8 | 92.4 | 96.9 | 0% |
-| NIFTY | all | OTM_CE | untested | D5 | 18* | 99.8 | 99.9 | 99.9 | 0% |
+| NIFTY | all | OTM_CE | untested | D5 | 19* | 99.8 | 99.9 | 99.9 | 0% |
 | NIFTY | all | OTM_CE | untested | EXP1300 | 25 | 96.6 | 97.8 | 98.5 | 0% |
 | NIFTY | all | OTM_CE | tested | D1 | 26 | -23.3 | -7.9 | 4.5 | 0% |
 | NIFTY | all | OTM_CE | tested | D2 | 26 | -94.0 | -21.3 | 56.2 | 0% |
@@ -68,14 +82,14 @@ P25 / median / P75 of % decay. `N*` marks a THIN cell (N < 20).
 | NIFTY | all | OTM_PE | pooled | D2 | 51 | -31.3 | 49.4 | 72.9 | 0% |
 | NIFTY | all | OTM_PE | pooled | D3 | 51 | -25.8 | 68.6 | 82.4 | 0% |
 | NIFTY | all | OTM_PE | pooled | D4 | 49 | -6.4 | 80.8 | 92.0 | 0% |
-| NIFTY | all | OTM_PE | pooled | D5 | 34 | 99.7 | 99.8 | 99.9 | 0% |
+| NIFTY | all | OTM_PE | pooled | D5 | 36 | 99.7 | 99.8 | 99.9 | 0% |
 | NIFTY | all | OTM_PE | pooled | D6 | 1* | 100.0 | 100.0 | 100.0 | 0% |
 | NIFTY | all | OTM_PE | pooled | EXP1300 | 51 | 27.7 | 97.3 | 98.2 | 0% |
 | NIFTY | all | OTM_PE | untested | D1 | 23 | 7.1 | 17.0 | 29.1 | 0% |
 | NIFTY | all | OTM_PE | untested | D2 | 23 | 59.0 | 71.0 | 76.6 | 0% |
 | NIFTY | all | OTM_PE | untested | D3 | 23 | 76.3 | 81.9 | 89.1 | 0% |
 | NIFTY | all | OTM_PE | untested | D4 | 22 | 89.6 | 91.4 | 99.8 | 0% |
-| NIFTY | all | OTM_PE | untested | D5 | 13* | 99.8 | 99.9 | 99.9 | 0% |
+| NIFTY | all | OTM_PE | untested | D5 | 15* | 99.8 | 99.9 | 99.9 | 0% |
 | NIFTY | all | OTM_PE | untested | EXP1300 | 23 | 97.4 | 98.1 | 98.2 | 0% |
 | NIFTY | all | OTM_PE | tested | D1 | 28 | -11.9 | 6.6 | 15.2 | 0% |
 | NIFTY | all | OTM_PE | tested | D2 | 28 | -59.2 | 9.4 | 44.0 | 0% |
@@ -84,31 +98,29 @@ P25 / median / P75 of % decay. `N*` marks a THIN cell (N < 20).
 | NIFTY | all | OTM_PE | tested | D5 | 21 | -52.1 | 99.8 | 99.9 | 0% |
 | NIFTY | all | OTM_PE | tested | D6 | 1* | 100.0 | 100.0 | 100.0 | 0% |
 | NIFTY | all | OTM_PE | tested | EXP1300 | 28 | -185.2 | 56.8 | 97.3 | 0% |
-| NIFTY | all | STRADDLE | pooled | D1 | 51 | -2.8 | 3.6 | 6.0 | 0% |
-| NIFTY | all | STRADDLE | pooled | D2 | 51 | -12.7 | 7.6 | 19.7 | 0% |
-| NIFTY | all | STRADDLE | pooled | D3 | 51 | -27.9 | 14.2 | 30.3 | 0% |
-| NIFTY | all | STRADDLE | pooled | D4 | 49 | -42.0 | 18.9 | 46.7 | 0% |
-| NIFTY | all | STRADDLE | pooled | D5 | 34 | -4.0 | 41.3 | 65.7 | 0% |
-| NIFTY | all | STRADDLE | pooled | D6 | 1* | -3.4 | -3.4 | -3.4 | 0% |
-| NIFTY | all | STRADDLE | pooled | EXP1300 | 51 | -31.0 | 17.5 | 61.9 | 0% |
-| NIFTY | all | STRADDLE | tested | D1 | 51 | -2.8 | 3.6 | 6.0 | 0% |
-| NIFTY | all | STRADDLE | tested | D2 | 51 | -12.7 | 7.6 | 19.7 | 0% |
-| NIFTY | all | STRADDLE | tested | D3 | 51 | -27.9 | 14.2 | 30.3 | 0% |
-| NIFTY | all | STRADDLE | tested | D4 | 49 | -42.0 | 18.9 | 46.7 | 0% |
-| NIFTY | all | STRADDLE | tested | D5 | 34 | -4.0 | 41.3 | 65.7 | 0% |
-| NIFTY | all | STRADDLE | tested | D6 | 1* | -3.4 | -3.4 | -3.4 | 0% |
-| NIFTY | all | STRADDLE | tested | EXP1300 | 51 | -31.0 | 17.5 | 61.9 | 0% |
+| NIFTY | low | HELD_ATM_STRADDLE | pooled | D1 | 18* | -2.4 | 3.4 | 4.8 | 0% |
+| NIFTY | low | HELD_ATM_STRADDLE | pooled | D2 | 18* | -6.6 | 6.4 | 19.8 | 0% |
+| NIFTY | low | HELD_ATM_STRADDLE | pooled | D3 | 18* | -82.3 | -5.7 | 26.5 | 0% |
+| NIFTY | low | HELD_ATM_STRADDLE | pooled | D4 | 17* | -67.3 | -13.9 | 44.5 | 0% |
+| NIFTY | low | HELD_ATM_STRADDLE | pooled | D5 | 11* | -49.8 | 11.6 | 58.7 | 0% |
+| NIFTY | low | HELD_ATM_STRADDLE | pooled | EXP1300 | 18* | -88.6 | -7.3 | 49.6 | 0% |
+| NIFTY | low | HELD_ATM_STRADDLE | tested | D1 | 18* | -2.4 | 3.4 | 4.8 | 0% |
+| NIFTY | low | HELD_ATM_STRADDLE | tested | D2 | 18* | -6.6 | 6.4 | 19.8 | 0% |
+| NIFTY | low | HELD_ATM_STRADDLE | tested | D3 | 18* | -82.3 | -5.7 | 26.5 | 0% |
+| NIFTY | low | HELD_ATM_STRADDLE | tested | D4 | 17* | -67.3 | -13.9 | 44.5 | 0% |
+| NIFTY | low | HELD_ATM_STRADDLE | tested | D5 | 11* | -49.8 | 11.6 | 58.7 | 0% |
+| NIFTY | low | HELD_ATM_STRADDLE | tested | EXP1300 | 18* | -88.6 | -7.3 | 49.6 | 0% |
 | NIFTY | low | OTM_CE | pooled | D1 | 18* | -17.1 | 11.1 | 38.3 | 0% |
 | NIFTY | low | OTM_CE | pooled | D2 | 18* | -12.0 | 43.1 | 59.0 | 0% |
 | NIFTY | low | OTM_CE | pooled | D3 | 18* | -66.5 | 50.6 | 87.4 | 0% |
 | NIFTY | low | OTM_CE | pooled | D4 | 17* | 13.4 | 85.3 | 92.4 | 0% |
-| NIFTY | low | OTM_CE | pooled | D5 | 10* | 99.8 | 99.8 | 99.9 | 0% |
+| NIFTY | low | OTM_CE | pooled | D5 | 11* | 99.8 | 99.8 | 99.9 | 0% |
 | NIFTY | low | OTM_CE | pooled | EXP1300 | 18* | 48.1 | 96.4 | 98.0 | 0% |
 | NIFTY | low | OTM_CE | untested | D1 | 10* | 11.1 | 21.9 | 44.6 | 0% |
 | NIFTY | low | OTM_CE | untested | D2 | 10* | 33.1 | 50.5 | 69.4 | 0% |
 | NIFTY | low | OTM_CE | untested | D3 | 10* | 63.7 | 69.8 | 88.8 | 0% |
 | NIFTY | low | OTM_CE | untested | D4 | 10* | 85.3 | 87.9 | 99.7 | 0% |
-| NIFTY | low | OTM_CE | untested | D5 | 6* | 99.8 | 99.8 | 99.9 | 0% |
+| NIFTY | low | OTM_CE | untested | D5 | 7* | 99.8 | 99.8 | 99.9 | 0% |
 | NIFTY | low | OTM_CE | untested | EXP1300 | 10* | 96.6 | 97.6 | 98.1 | 0% |
 | NIFTY | low | OTM_CE | tested | D1 | 8* | -75.5 | -12.5 | 2.4 | 0% |
 | NIFTY | low | OTM_CE | tested | D2 | 8* | -80.1 | -7.9 | 43.1 | 0% |
@@ -120,13 +132,13 @@ P25 / median / P75 of % decay. `N*` marks a THIN cell (N < 20).
 | NIFTY | low | OTM_PE | pooled | D2 | 18* | -32.0 | 57.5 | 71.0 | 0% |
 | NIFTY | low | OTM_PE | pooled | D3 | 18* | -26.1 | 74.3 | 82.4 | 0% |
 | NIFTY | low | OTM_PE | pooled | D4 | 17* | -108.0 | 79.4 | 90.6 | 0% |
-| NIFTY | low | OTM_PE | pooled | D5 | 10* | 99.7 | 99.8 | 99.8 | 0% |
+| NIFTY | low | OTM_PE | pooled | D5 | 12* | 99.7 | 99.8 | 99.8 | 0% |
 | NIFTY | low | OTM_PE | pooled | EXP1300 | 18* | 46.3 | 94.5 | 97.7 | 0% |
 | NIFTY | low | OTM_PE | untested | D1 | 9* | 7.1 | 28.7 | 37.4 | 0% |
 | NIFTY | low | OTM_PE | untested | D2 | 9* | 57.5 | 70.3 | 75.7 | 0% |
 | NIFTY | low | OTM_PE | untested | D3 | 9* | 77.8 | 82.4 | 89.1 | 0% |
 | NIFTY | low | OTM_PE | untested | D4 | 8* | 90.1 | 91.2 | 91.8 | 0% |
-| NIFTY | low | OTM_PE | untested | D5 | 4* | 99.7 | 99.8 | 99.8 | 0% |
+| NIFTY | low | OTM_PE | untested | D5 | 6* | 99.7 | 99.8 | 99.8 | 0% |
 | NIFTY | low | OTM_PE | untested | EXP1300 | 9* | 95.9 | 97.3 | 98.1 | 0% |
 | NIFTY | low | OTM_PE | tested | D1 | 9* | -22.7 | -9.7 | 1.5 | 0% |
 | NIFTY | low | OTM_PE | tested | D2 | 9* | -55.1 | -32.0 | 57.8 | 0% |
@@ -134,18 +146,18 @@ P25 / median / P75 of % decay. `N*` marks a THIN cell (N < 20).
 | NIFTY | low | OTM_PE | tested | D4 | 9* | -370.2 | -108.0 | 58.1 | 0% |
 | NIFTY | low | OTM_PE | tested | D5 | 6* | -544.4 | 99.8 | 99.8 | 0% |
 | NIFTY | low | OTM_PE | tested | EXP1300 | 9* | -248.2 | 46.3 | 86.9 | 0% |
-| NIFTY | low | STRADDLE | pooled | D1 | 18* | -2.4 | 3.4 | 4.8 | 0% |
-| NIFTY | low | STRADDLE | pooled | D2 | 18* | -6.6 | 6.4 | 19.8 | 0% |
-| NIFTY | low | STRADDLE | pooled | D3 | 18* | -82.3 | -5.7 | 26.5 | 0% |
-| NIFTY | low | STRADDLE | pooled | D4 | 17* | -67.3 | -13.9 | 44.5 | 0% |
-| NIFTY | low | STRADDLE | pooled | D5 | 10* | -49.8 | 11.6 | 58.7 | 0% |
-| NIFTY | low | STRADDLE | pooled | EXP1300 | 18* | -88.6 | -7.3 | 49.6 | 0% |
-| NIFTY | low | STRADDLE | tested | D1 | 18* | -2.4 | 3.4 | 4.8 | 0% |
-| NIFTY | low | STRADDLE | tested | D2 | 18* | -6.6 | 6.4 | 19.8 | 0% |
-| NIFTY | low | STRADDLE | tested | D3 | 18* | -82.3 | -5.7 | 26.5 | 0% |
-| NIFTY | low | STRADDLE | tested | D4 | 17* | -67.3 | -13.9 | 44.5 | 0% |
-| NIFTY | low | STRADDLE | tested | D5 | 10* | -49.8 | 11.6 | 58.7 | 0% |
-| NIFTY | low | STRADDLE | tested | EXP1300 | 18* | -88.6 | -7.3 | 49.6 | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | pooled | D1 | 17* | -5.2 | 1.7 | 5.4 | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | pooled | D2 | 17* | -2.9 | 14.2 | 18.4 | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | pooled | D3 | 17* | 20.7 | 26.4 | 36.9 | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | pooled | D4 | 17* | 18.9 | 36.0 | 46.8 | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | pooled | D5 | 13* | 32.8 | 53.6 | 68.9 | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | pooled | EXP1300 | 17* | -12.5 | 58.4 | 72.7 | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | tested | D1 | 17* | -5.2 | 1.7 | 5.4 | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | tested | D2 | 17* | -2.9 | 14.2 | 18.4 | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | tested | D3 | 17* | 20.7 | 26.4 | 36.9 | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | tested | D4 | 17* | 18.9 | 36.0 | 46.8 | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | tested | D5 | 13* | 32.8 | 53.6 | 68.9 | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | tested | EXP1300 | 17* | -12.5 | 58.4 | 72.7 | 0% |
 | NIFTY | mid | OTM_CE | pooled | D1 | 17* | -16.3 | -4.3 | 36.1 | 0% |
 | NIFTY | mid | OTM_CE | pooled | D2 | 17* | -3.6 | 52.0 | 63.2 | 0% |
 | NIFTY | mid | OTM_CE | pooled | D3 | 17* | 45.6 | 58.7 | 73.8 | 0% |
@@ -182,18 +194,20 @@ P25 / median / P75 of % decay. `N*` marks a THIN cell (N < 20).
 | NIFTY | mid | OTM_PE | tested | D4 | 10* | -66.8 | 62.0 | 80.8 | 0% |
 | NIFTY | mid | OTM_PE | tested | D5 | 7* | 99.8 | 99.9 | 99.9 | 0% |
 | NIFTY | mid | OTM_PE | tested | EXP1300 | 10* | -169.1 | 27.7 | 97.3 | 0% |
-| NIFTY | mid | STRADDLE | pooled | D1 | 17* | -5.2 | 1.7 | 5.4 | 0% |
-| NIFTY | mid | STRADDLE | pooled | D2 | 17* | -2.9 | 14.2 | 18.4 | 0% |
-| NIFTY | mid | STRADDLE | pooled | D3 | 17* | 20.7 | 26.4 | 36.9 | 0% |
-| NIFTY | mid | STRADDLE | pooled | D4 | 17* | 18.9 | 36.0 | 46.8 | 0% |
-| NIFTY | mid | STRADDLE | pooled | D5 | 13* | 32.8 | 53.6 | 68.9 | 0% |
-| NIFTY | mid | STRADDLE | pooled | EXP1300 | 17* | -12.5 | 58.4 | 72.7 | 0% |
-| NIFTY | mid | STRADDLE | tested | D1 | 17* | -5.2 | 1.7 | 5.4 | 0% |
-| NIFTY | mid | STRADDLE | tested | D2 | 17* | -2.9 | 14.2 | 18.4 | 0% |
-| NIFTY | mid | STRADDLE | tested | D3 | 17* | 20.7 | 26.4 | 36.9 | 0% |
-| NIFTY | mid | STRADDLE | tested | D4 | 17* | 18.9 | 36.0 | 46.8 | 0% |
-| NIFTY | mid | STRADDLE | tested | D5 | 13* | 32.8 | 53.6 | 68.9 | 0% |
-| NIFTY | mid | STRADDLE | tested | EXP1300 | 17* | -12.5 | 58.4 | 72.7 | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | pooled | D1 | 16* | -1.0 | 4.9 | 7.2 | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | pooled | D2 | 16* | -13.9 | -0.8 | 14.0 | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | pooled | D3 | 16* | -4.9 | 9.8 | 23.1 | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | pooled | D4 | 15* | -17.7 | 17.7 | 43.7 | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | pooled | D5 | 11* | -5.3 | 49.3 | 79.9 | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | pooled | D6 | 1* | -3.4 | -3.4 | -3.4 | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | pooled | EXP1300 | 16* | -24.6 | 32.1 | 57.8 | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | tested | D1 | 16* | -1.0 | 4.9 | 7.2 | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | tested | D2 | 16* | -13.9 | -0.8 | 14.0 | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | tested | D3 | 16* | -4.9 | 9.8 | 23.1 | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | tested | D4 | 15* | -17.7 | 17.7 | 43.7 | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | tested | D5 | 11* | -5.3 | 49.3 | 79.9 | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | tested | D6 | 1* | -3.4 | -3.4 | -3.4 | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | tested | EXP1300 | 16* | -24.6 | 32.1 | 57.8 | 0% |
 | NIFTY | high | OTM_CE | pooled | D1 | 16* | -8.1 | 2.9 | 14.2 | 0% |
 | NIFTY | high | OTM_CE | pooled | D2 | 16* | -80.6 | 20.0 | 71.2 | 0% |
 | NIFTY | high | OTM_CE | pooled | D3 | 16* | -5.9 | 34.3 | 82.2 | 0% |
@@ -234,74 +248,72 @@ P25 / median / P75 of % decay. `N*` marks a THIN cell (N < 20).
 | NIFTY | high | OTM_PE | tested | D5 | 8* | -52.1 | 99.4 | 99.9 | 0% |
 | NIFTY | high | OTM_PE | tested | D6 | 1* | 100.0 | 100.0 | 100.0 | 0% |
 | NIFTY | high | OTM_PE | tested | EXP1300 | 9* | -157.6 | 89.7 | 98.2 | 0% |
-| NIFTY | high | STRADDLE | pooled | D1 | 16* | -1.0 | 4.9 | 7.2 | 0% |
-| NIFTY | high | STRADDLE | pooled | D2 | 16* | -13.9 | -0.8 | 14.0 | 0% |
-| NIFTY | high | STRADDLE | pooled | D3 | 16* | -4.9 | 9.8 | 23.1 | 0% |
-| NIFTY | high | STRADDLE | pooled | D4 | 15* | -17.7 | 17.7 | 43.7 | 0% |
-| NIFTY | high | STRADDLE | pooled | D5 | 11* | -5.3 | 49.3 | 79.9 | 0% |
-| NIFTY | high | STRADDLE | pooled | D6 | 1* | -3.4 | -3.4 | -3.4 | 0% |
-| NIFTY | high | STRADDLE | pooled | EXP1300 | 16* | -24.6 | 32.1 | 57.8 | 0% |
-| NIFTY | high | STRADDLE | tested | D1 | 16* | -1.0 | 4.9 | 7.2 | 0% |
-| NIFTY | high | STRADDLE | tested | D2 | 16* | -13.9 | -0.8 | 14.0 | 0% |
-| NIFTY | high | STRADDLE | tested | D3 | 16* | -4.9 | 9.8 | 23.1 | 0% |
-| NIFTY | high | STRADDLE | tested | D4 | 15* | -17.7 | 17.7 | 43.7 | 0% |
-| NIFTY | high | STRADDLE | tested | D5 | 11* | -5.3 | 49.3 | 79.9 | 0% |
-| NIFTY | high | STRADDLE | tested | D6 | 1* | -3.4 | -3.4 | -3.4 | 0% |
-| NIFTY | high | STRADDLE | tested | EXP1300 | 16* | -24.6 | 32.1 | 57.8 | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | pooled | D1 | 51 | -3.9 | 0.4 | 4.1 | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | pooled | D2 | 51 | -9.1 | 9.9 | 15.0 | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | pooled | D3 | 50 | -19.9 | 14.3 | 25.3 | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | pooled | D4 | 46 | -24.4 | 13.6 | 44.8 | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | pooled | D5 | 37 | -33.8 | 27.4 | 57.8 | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | pooled | D6 | 2* | 22.5 | 22.5 | 66.2 | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | pooled | EXP1300 | 46 | -24.0 | 29.0 | 66.1 | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | tested | D1 | 51 | -3.9 | 0.4 | 4.1 | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | tested | D2 | 51 | -9.1 | 9.9 | 15.0 | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | tested | D3 | 50 | -19.9 | 14.3 | 25.3 | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | tested | D4 | 46 | -24.4 | 13.6 | 44.8 | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | tested | D5 | 37 | -33.8 | 27.4 | 57.8 | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | tested | D6 | 2* | 22.5 | 22.5 | 66.2 | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | tested | EXP1300 | 46 | -24.0 | 29.0 | 66.1 | 0% |
 | SENSEX | all | OTM_CE | pooled | D1 | 51 | -21.8 | 3.3 | 21.6 | 0% |
 | SENSEX | all | OTM_CE | pooled | D2 | 51 | -29.3 | 41.8 | 62.6 | 0% |
-| SENSEX | all | OTM_CE | pooled | D3 | 48 | 18.2 | 82.4 | 90.7 | 0% |
+| SENSEX | all | OTM_CE | pooled | D3 | 49 | 18.2 | 82.4 | 91.5 | 0% |
 | SENSEX | all | OTM_CE | pooled | D4 | 46 | -9.1 | 92.6 | 97.0 | 0% |
 | SENSEX | all | OTM_CE | pooled | D5 | 37 | 99.8 | 99.9 | 100.0 | 0% |
 | SENSEX | all | OTM_CE | pooled | D6 | 2* | 42.4 | 42.4 | 99.9 | 0% |
-| SENSEX | all | OTM_CE | pooled | EXP1300 | 46 | 70.4 | 96.1 | 98.3 | 0% |
+| SENSEX | all | OTM_CE | pooled | EXP1300 | 49 | 70.4 | 96.5 | 98.4 | 0% |
 | SENSEX | all | OTM_CE | untested | D1 | 22 | -18.3 | 10.7 | 29.4 | 0% |
 | SENSEX | all | OTM_CE | untested | D2 | 22 | 45.3 | 58.3 | 69.9 | 0% |
 | SENSEX | all | OTM_CE | untested | D3 | 21 | 85.1 | 90.7 | 93.6 | 0% |
-| SENSEX | all | OTM_CE | untested | D4 | 20 | 93.3 | 95.5 | 97.8 | 0% |
+| SENSEX | all | OTM_CE | untested | D4 | 21 | 93.3 | 95.5 | 98.2 | 0% |
 | SENSEX | all | OTM_CE | untested | D5 | 17* | 99.9 | 100.0 | 100.0 | 0% |
-| SENSEX | all | OTM_CE | untested | EXP1300 | 20 | 97.4 | 98.3 | 98.7 | 0% |
+| SENSEX | all | OTM_CE | untested | EXP1300 | 22 | 97.4 | 98.3 | 99.0 | 0% |
 | SENSEX | all | OTM_CE | tested | D1 | 29 | -26.8 | 0.0 | 13.2 | 0% |
 | SENSEX | all | OTM_CE | tested | D2 | 29 | -45.7 | 2.0 | 43.0 | 0% |
-| SENSEX | all | OTM_CE | tested | D3 | 27 | -77.9 | 29.6 | 80.4 | 0% |
-| SENSEX | all | OTM_CE | tested | D4 | 26 | -81.5 | -5.4 | 89.8 | 0% |
+| SENSEX | all | OTM_CE | tested | D3 | 28 | -41.7 | 39.8 | 80.4 | 0% |
+| SENSEX | all | OTM_CE | tested | D4 | 25 | -81.5 | -5.4 | 89.4 | 0% |
 | SENSEX | all | OTM_CE | tested | D5 | 20 | -5.2 | 99.9 | 100.0 | 0% |
 | SENSEX | all | OTM_CE | tested | D6 | 2* | 42.4 | 42.4 | 99.9 | 0% |
-| SENSEX | all | OTM_CE | tested | EXP1300 | 26 | -24.4 | 72.0 | 96.1 | 0% |
+| SENSEX | all | OTM_CE | tested | EXP1300 | 27 | -73.1 | 72.0 | 96.1 | 0% |
 | SENSEX | all | OTM_PE | pooled | D1 | 51 | -21.1 | 10.2 | 20.9 | 0% |
 | SENSEX | all | OTM_PE | pooled | D2 | 51 | -16.2 | 20.2 | 67.1 | 0% |
-| SENSEX | all | OTM_PE | pooled | D3 | 48 | -51.4 | 16.5 | 85.7 | 0% |
-| SENSEX | all | OTM_PE | pooled | D4 | 46 | 51.9 | 86.6 | 95.7 | 0% |
+| SENSEX | all | OTM_PE | pooled | D3 | 50 | -51.4 | 16.5 | 87.4 | 0% |
+| SENSEX | all | OTM_PE | pooled | D4 | 47 | 51.9 | 86.6 | 95.7 | 0% |
 | SENSEX | all | OTM_PE | pooled | D5 | 37 | 87.3 | 99.9 | 100.0 | 0% |
 | SENSEX | all | OTM_PE | pooled | D6 | 2* | 99.9 | 99.9 | 100.0 | 0% |
-| SENSEX | all | OTM_PE | pooled | EXP1300 | 46 | 79.2 | 97.2 | 98.2 | 0% |
+| SENSEX | all | OTM_PE | pooled | EXP1300 | 51 | 78.1 | 97.2 | 98.2 | 0% |
 | SENSEX | all | OTM_PE | untested | D1 | 15* | 10.2 | 12.5 | 33.9 | 0% |
 | SENSEX | all | OTM_PE | untested | D2 | 15* | 60.7 | 69.9 | 73.6 | 0% |
-| SENSEX | all | OTM_PE | untested | D3 | 13* | 87.4 | 90.6 | 91.7 | 0% |
+| SENSEX | all | OTM_PE | untested | D3 | 15* | 89.5 | 90.9 | 92.8 | 0% |
 | SENSEX | all | OTM_PE | untested | D4 | 13* | 94.4 | 95.7 | 99.9 | 0% |
 | SENSEX | all | OTM_PE | untested | D5 | 9* | 100.0 | 100.0 | 100.0 | 0% |
-| SENSEX | all | OTM_PE | untested | EXP1300 | 12* | 97.6 | 98.1 | 98.6 | 0% |
+| SENSEX | all | OTM_PE | untested | EXP1300 | 15* | 97.6 | 98.1 | 98.7 | 0% |
 | SENSEX | all | OTM_PE | tested | D1 | 36 | -26.5 | 4.6 | 19.8 | 0% |
 | SENSEX | all | OTM_PE | tested | D2 | 36 | -42.2 | -5.5 | 30.2 | 0% |
 | SENSEX | all | OTM_PE | tested | D3 | 35 | -69.0 | 4.7 | 27.7 | 0% |
-| SENSEX | all | OTM_PE | tested | D4 | 33 | 13.3 | 71.4 | 91.4 | 0% |
+| SENSEX | all | OTM_PE | tested | D4 | 34 | -31.7 | 66.9 | 91.4 | 0% |
 | SENSEX | all | OTM_PE | tested | D5 | 28 | 7.1 | 99.9 | 100.0 | 0% |
 | SENSEX | all | OTM_PE | tested | D6 | 2* | 99.9 | 99.9 | 100.0 | 0% |
-| SENSEX | all | OTM_PE | tested | EXP1300 | 34 | 58.2 | 93.3 | 97.8 | 0% |
-| SENSEX | all | STRADDLE | pooled | D1 | 51 | -3.9 | 0.4 | 4.1 | 0% |
-| SENSEX | all | STRADDLE | pooled | D2 | 51 | -9.1 | 9.9 | 15.0 | 0% |
-| SENSEX | all | STRADDLE | pooled | D3 | 48 | -11.9 | 15.9 | 25.3 | 0% |
-| SENSEX | all | STRADDLE | pooled | D4 | 46 | -18.3 | 14.8 | 44.8 | 0% |
-| SENSEX | all | STRADDLE | pooled | D5 | 37 | -33.8 | 27.4 | 57.8 | 0% |
-| SENSEX | all | STRADDLE | pooled | D6 | 2* | 22.5 | 22.5 | 66.2 | 0% |
-| SENSEX | all | STRADDLE | pooled | EXP1300 | 46 | -24.0 | 29.0 | 66.1 | 0% |
-| SENSEX | all | STRADDLE | tested | D1 | 51 | -3.9 | 0.4 | 4.1 | 0% |
-| SENSEX | all | STRADDLE | tested | D2 | 51 | -9.1 | 9.9 | 15.0 | 0% |
-| SENSEX | all | STRADDLE | tested | D3 | 48 | -11.9 | 15.9 | 25.3 | 0% |
-| SENSEX | all | STRADDLE | tested | D4 | 46 | -18.3 | 14.8 | 44.8 | 0% |
-| SENSEX | all | STRADDLE | tested | D5 | 37 | -33.8 | 27.4 | 57.8 | 0% |
-| SENSEX | all | STRADDLE | tested | D6 | 2* | 22.5 | 22.5 | 66.2 | 0% |
-| SENSEX | all | STRADDLE | tested | EXP1300 | 46 | -24.0 | 29.0 | 66.1 | 0% |
+| SENSEX | all | OTM_PE | tested | EXP1300 | 36 | 54.0 | 93.3 | 97.4 | 0% |
+| SENSEX | low | HELD_ATM_STRADDLE | pooled | D1 | 18* | -2.8 | 0.7 | 4.4 | 0% |
+| SENSEX | low | HELD_ATM_STRADDLE | pooled | D2 | 18* | 9.9 | 12.4 | 15.4 | 0% |
+| SENSEX | low | HELD_ATM_STRADDLE | pooled | D3 | 18* | -11.9 | 10.2 | 22.2 | 0% |
+| SENSEX | low | HELD_ATM_STRADDLE | pooled | D4 | 18* | -24.4 | 13.6 | 47.9 | 0% |
+| SENSEX | low | HELD_ATM_STRADDLE | pooled | D5 | 15* | -33.8 | -25.1 | 28.8 | 0% |
+| SENSEX | low | HELD_ATM_STRADDLE | pooled | EXP1300 | 18* | -47.0 | 5.2 | 31.5 | 0% |
+| SENSEX | low | HELD_ATM_STRADDLE | tested | D1 | 18* | -2.8 | 0.7 | 4.4 | 0% |
+| SENSEX | low | HELD_ATM_STRADDLE | tested | D2 | 18* | 9.9 | 12.4 | 15.4 | 0% |
+| SENSEX | low | HELD_ATM_STRADDLE | tested | D3 | 18* | -11.9 | 10.2 | 22.2 | 0% |
+| SENSEX | low | HELD_ATM_STRADDLE | tested | D4 | 18* | -24.4 | 13.6 | 47.9 | 0% |
+| SENSEX | low | HELD_ATM_STRADDLE | tested | D5 | 15* | -33.8 | -25.1 | 28.8 | 0% |
+| SENSEX | low | HELD_ATM_STRADDLE | tested | EXP1300 | 18* | -47.0 | 5.2 | 31.5 | 0% |
 | SENSEX | low | OTM_CE | pooled | D1 | 18* | -31.5 | -13.5 | 17.4 | 0% |
 | SENSEX | low | OTM_CE | pooled | D2 | 18* | 16.4 | 41.8 | 55.8 | 0% |
 | SENSEX | low | OTM_CE | pooled | D3 | 18* | 39.8 | 83.8 | 91.8 | 0% |
@@ -338,72 +350,74 @@ P25 / median / P75 of % decay. `N*` marks a THIN cell (N < 20).
 | SENSEX | low | OTM_PE | tested | D4 | 13* | -68.5 | 53.7 | 83.1 | 0% |
 | SENSEX | low | OTM_PE | tested | D5 | 12* | -81.7 | 99.9 | 99.9 | 0% |
 | SENSEX | low | OTM_PE | tested | EXP1300 | 13* | -54.0 | 79.4 | 94.6 | 0% |
-| SENSEX | low | STRADDLE | pooled | D1 | 18* | -2.8 | 0.7 | 4.4 | 0% |
-| SENSEX | low | STRADDLE | pooled | D2 | 18* | 9.9 | 12.4 | 15.4 | 0% |
-| SENSEX | low | STRADDLE | pooled | D3 | 18* | -11.9 | 10.2 | 22.2 | 0% |
-| SENSEX | low | STRADDLE | pooled | D4 | 18* | -24.4 | 13.6 | 47.9 | 0% |
-| SENSEX | low | STRADDLE | pooled | D5 | 15* | -33.8 | -25.1 | 28.8 | 0% |
-| SENSEX | low | STRADDLE | pooled | EXP1300 | 18* | -47.0 | 5.2 | 31.5 | 0% |
-| SENSEX | low | STRADDLE | tested | D1 | 18* | -2.8 | 0.7 | 4.4 | 0% |
-| SENSEX | low | STRADDLE | tested | D2 | 18* | 9.9 | 12.4 | 15.4 | 0% |
-| SENSEX | low | STRADDLE | tested | D3 | 18* | -11.9 | 10.2 | 22.2 | 0% |
-| SENSEX | low | STRADDLE | tested | D4 | 18* | -24.4 | 13.6 | 47.9 | 0% |
-| SENSEX | low | STRADDLE | tested | D5 | 15* | -33.8 | -25.1 | 28.8 | 0% |
-| SENSEX | low | STRADDLE | tested | EXP1300 | 18* | -47.0 | 5.2 | 31.5 | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | pooled | D1 | 17* | -6.5 | -0.1 | 3.3 | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | pooled | D2 | 17* | -20.5 | -0.9 | 13.1 | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | pooled | D3 | 17* | -45.9 | 9.7 | 24.5 | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | pooled | D4 | 15* | -1.9 | 2.8 | 43.9 | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | pooled | D5 | 13* | -4.7 | 47.2 | 57.8 | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | pooled | D6 | 1* | 66.2 | 66.2 | 66.2 | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | pooled | EXP1300 | 14* | -11.1 | 30.2 | 69.3 | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | tested | D1 | 17* | -6.5 | -0.1 | 3.3 | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | tested | D2 | 17* | -20.5 | -0.9 | 13.1 | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | tested | D3 | 17* | -45.9 | 9.7 | 24.5 | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | tested | D4 | 15* | -1.9 | 2.8 | 43.9 | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | tested | D5 | 13* | -4.7 | 47.2 | 57.8 | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | tested | D6 | 1* | 66.2 | 66.2 | 66.2 | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | tested | EXP1300 | 14* | -11.1 | 30.2 | 69.3 | 0% |
 | SENSEX | mid | OTM_CE | pooled | D1 | 17* | -9.2 | 12.0 | 27.1 | 0% |
 | SENSEX | mid | OTM_CE | pooled | D2 | 17* | -45.7 | 48.7 | 61.8 | 0% |
-| SENSEX | mid | OTM_CE | pooled | D3 | 16* | -3.6 | 73.4 | 90.6 | 0% |
+| SENSEX | mid | OTM_CE | pooled | D3 | 17* | -3.6 | 73.4 | 94.7 | 0% |
 | SENSEX | mid | OTM_CE | pooled | D4 | 16* | -10.9 | 89.4 | 96.6 | 0% |
 | SENSEX | mid | OTM_CE | pooled | D5 | 13* | 90.4 | 99.9 | 99.9 | 0% |
 | SENSEX | mid | OTM_CE | pooled | D6 | 1* | 99.9 | 99.9 | 99.9 | 0% |
-| SENSEX | mid | OTM_CE | pooled | EXP1300 | 14* | -20.4 | 93.8 | 98.3 | 0% |
+| SENSEX | mid | OTM_CE | pooled | EXP1300 | 17* | -20.4 | 94.6 | 98.4 | 0% |
 | SENSEX | mid | OTM_CE | untested | D1 | 7* | 21.6 | 29.4 | 33.4 | 0% |
 | SENSEX | mid | OTM_CE | untested | D2 | 7* | 61.8 | 68.7 | 72.9 | 0% |
 | SENSEX | mid | OTM_CE | untested | D3 | 7* | 85.5 | 90.6 | 95.7 | 0% |
-| SENSEX | mid | OTM_CE | untested | D4 | 6* | 92.6 | 96.6 | 100.0 | 0% |
+| SENSEX | mid | OTM_CE | untested | D4 | 7* | 96.6 | 98.4 | 100.0 | 0% |
 | SENSEX | mid | OTM_CE | untested | D5 | 4* | 99.9 | 100.0 | 100.0 | 0% |
-| SENSEX | mid | OTM_CE | untested | EXP1300 | 5* | 98.3 | 98.4 | 98.7 | 0% |
+| SENSEX | mid | OTM_CE | untested | EXP1300 | 7* | 98.4 | 98.7 | 99.0 | 0% |
 | SENSEX | mid | OTM_CE | tested | D1 | 10* | -26.8 | -4.9 | 13.2 | 0% |
 | SENSEX | mid | OTM_CE | tested | D2 | 10* | -132.2 | -45.7 | 48.7 | 0% |
-| SENSEX | mid | OTM_CE | tested | D3 | 9* | -224.4 | -3.6 | 29.6 | 0% |
-| SENSEX | mid | OTM_CE | tested | D4 | 10* | -81.5 | -10.9 | 80.7 | 0% |
+| SENSEX | mid | OTM_CE | tested | D3 | 10* | -224.4 | -3.6 | 65.7 | 0% |
+| SENSEX | mid | OTM_CE | tested | D4 | 9* | -81.5 | -10.9 | 68.3 | 0% |
 | SENSEX | mid | OTM_CE | tested | D5 | 9* | -4.1 | 99.8 | 99.9 | 0% |
 | SENSEX | mid | OTM_CE | tested | D6 | 1* | 99.9 | 99.9 | 99.9 | 0% |
-| SENSEX | mid | OTM_CE | tested | EXP1300 | 9* | -73.1 | 39.4 | 93.8 | 0% |
+| SENSEX | mid | OTM_CE | tested | EXP1300 | 10* | -109.0 | -20.4 | 93.8 | 0% |
 | SENSEX | mid | OTM_PE | pooled | D1 | 17* | -36.1 | -14.1 | 10.3 | 0% |
 | SENSEX | mid | OTM_PE | pooled | D2 | 17* | -16.2 | 30.2 | 67.1 | 0% |
-| SENSEX | mid | OTM_PE | pooled | D3 | 16* | -64.5 | 71.4 | 85.7 | 0% |
-| SENSEX | mid | OTM_PE | pooled | D4 | 16* | 78.5 | 93.7 | 95.7 | 0% |
+| SENSEX | mid | OTM_PE | pooled | D3 | 17* | -64.5 | 71.4 | 87.4 | 0% |
+| SENSEX | mid | OTM_PE | pooled | D4 | 16* | 66.9 | 92.4 | 95.0 | 0% |
 | SENSEX | mid | OTM_PE | pooled | D5 | 13* | 99.8 | 100.0 | 100.0 | 0% |
 | SENSEX | mid | OTM_PE | pooled | D6 | 1* | 99.9 | 99.9 | 99.9 | 0% |
-| SENSEX | mid | OTM_PE | pooled | EXP1300 | 14* | 97.2 | 98.1 | 98.6 | 0% |
+| SENSEX | mid | OTM_PE | pooled | EXP1300 | 17* | 96.4 | 97.6 | 98.5 | 0% |
 | SENSEX | mid | OTM_PE | untested | D1 | 7* | 10.3 | 11.6 | 33.9 | 0% |
 | SENSEX | mid | OTM_PE | untested | D2 | 7* | 67.1 | 69.9 | 76.6 | 0% |
-| SENSEX | mid | OTM_PE | untested | D3 | 6* | 83.3 | 87.4 | 90.6 | 0% |
-| SENSEX | mid | OTM_PE | untested | D4 | 7* | 94.4 | 95.0 | 95.7 | 0% |
+| SENSEX | mid | OTM_PE | untested | D3 | 7* | 87.4 | 90.5 | 90.6 | 0% |
+| SENSEX | mid | OTM_PE | untested | D4 | 6* | 93.7 | 94.4 | 95.7 | 0% |
 | SENSEX | mid | OTM_PE | untested | D5 | 6* | 100.0 | 100.0 | 100.0 | 0% |
-| SENSEX | mid | OTM_PE | untested | EXP1300 | 6* | 98.1 | 98.1 | 99.4 | 0% |
+| SENSEX | mid | OTM_PE | untested | EXP1300 | 7* | 98.1 | 98.1 | 98.6 | 0% |
 | SENSEX | mid | OTM_PE | tested | D1 | 10* | -54.1 | -35.4 | -14.1 | 0% |
 | SENSEX | mid | OTM_PE | tested | D2 | 10* | -158.1 | -16.2 | 30.2 | 0% |
 | SENSEX | mid | OTM_PE | tested | D3 | 10* | -426.2 | -64.5 | 64.6 | 0% |
-| SENSEX | mid | OTM_PE | tested | D4 | 9* | 66.2 | 78.5 | 92.4 | 0% |
+| SENSEX | mid | OTM_PE | tested | D4 | 10* | -31.7 | 66.9 | 92.4 | 0% |
 | SENSEX | mid | OTM_PE | tested | D5 | 7* | 91.9 | 99.8 | 99.9 | 0% |
 | SENSEX | mid | OTM_PE | tested | D6 | 1* | 99.9 | 99.9 | 99.9 | 0% |
-| SENSEX | mid | OTM_PE | tested | EXP1300 | 8* | 96.4 | 97.2 | 98.2 | 0% |
-| SENSEX | mid | STRADDLE | pooled | D1 | 17* | -6.5 | -0.1 | 3.3 | 0% |
-| SENSEX | mid | STRADDLE | pooled | D2 | 17* | -20.5 | -0.9 | 13.1 | 0% |
-| SENSEX | mid | STRADDLE | pooled | D3 | 16* | -45.9 | 9.7 | 24.5 | 0% |
-| SENSEX | mid | STRADDLE | pooled | D4 | 16* | -1.9 | 10.3 | 43.9 | 0% |
-| SENSEX | mid | STRADDLE | pooled | D5 | 13* | -4.7 | 47.2 | 57.8 | 0% |
-| SENSEX | mid | STRADDLE | pooled | D6 | 1* | 66.2 | 66.2 | 66.2 | 0% |
-| SENSEX | mid | STRADDLE | pooled | EXP1300 | 14* | -11.1 | 30.2 | 69.3 | 0% |
-| SENSEX | mid | STRADDLE | tested | D1 | 17* | -6.5 | -0.1 | 3.3 | 0% |
-| SENSEX | mid | STRADDLE | tested | D2 | 17* | -20.5 | -0.9 | 13.1 | 0% |
-| SENSEX | mid | STRADDLE | tested | D3 | 16* | -45.9 | 9.7 | 24.5 | 0% |
-| SENSEX | mid | STRADDLE | tested | D4 | 16* | -1.9 | 10.3 | 43.9 | 0% |
-| SENSEX | mid | STRADDLE | tested | D5 | 13* | -4.7 | 47.2 | 57.8 | 0% |
-| SENSEX | mid | STRADDLE | tested | D6 | 1* | 66.2 | 66.2 | 66.2 | 0% |
-| SENSEX | mid | STRADDLE | tested | EXP1300 | 14* | -11.1 | 30.2 | 69.3 | 0% |
+| SENSEX | mid | OTM_PE | tested | EXP1300 | 10* | -3.2 | 96.4 | 98.2 | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | pooled | D1 | 16* | -3.3 | 0.4 | 4.5 | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | pooled | D2 | 16* | -24.6 | 7.8 | 13.0 | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | pooled | D3 | 15* | 7.8 | 25.3 | 28.2 | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | pooled | D4 | 13* | -55.5 | 30.1 | 43.5 | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | pooled | D5 | 9* | -14.7 | 55.8 | 65.7 | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | pooled | D6 | 1* | 22.5 | 22.5 | 22.5 | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | pooled | EXP1300 | 14* | 23.4 | 47.8 | 66.1 | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | tested | D1 | 16* | -3.3 | 0.4 | 4.5 | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | tested | D2 | 16* | -24.6 | 7.8 | 13.0 | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | tested | D3 | 15* | 7.8 | 25.3 | 28.2 | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | tested | D4 | 13* | -55.5 | 30.1 | 43.5 | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | tested | D5 | 9* | -14.7 | 55.8 | 65.7 | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | tested | D6 | 1* | 22.5 | 22.5 | 22.5 | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | tested | EXP1300 | 14* | 23.4 | 47.8 | 66.1 | 0% |
 | SENSEX | high | OTM_CE | pooled | D1 | 16* | -13.6 | 11.2 | 25.5 | 0% |
 | SENSEX | high | OTM_CE | pooled | D2 | 16* | -13.1 | 38.5 | 69.9 | 0% |
 | SENSEX | high | OTM_CE | pooled | D3 | 14* | 52.0 | 78.9 | 89.3 | 0% |
@@ -426,16 +440,16 @@ P25 / median / P75 of % decay. `N*` marks a THIN cell (N < 20).
 | SENSEX | high | OTM_CE | tested | EXP1300 | 11* | 79.4 | 96.5 | 98.1 | 0% |
 | SENSEX | high | OTM_PE | pooled | D1 | 16* | -18.9 | 9.3 | 16.8 | 0% |
 | SENSEX | high | OTM_PE | pooled | D2 | 16* | -42.8 | 46.8 | 68.8 | 0% |
-| SENSEX | high | OTM_PE | pooled | D3 | 14* | -32.7 | 11.9 | 86.6 | 0% |
-| SENSEX | high | OTM_PE | pooled | D4 | 12* | 51.9 | 91.4 | 97.5 | 0% |
+| SENSEX | high | OTM_PE | pooled | D3 | 15* | 6.2 | 26.2 | 86.6 | 0% |
+| SENSEX | high | OTM_PE | pooled | D4 | 13* | 51.9 | 91.4 | 100.0 | 0% |
 | SENSEX | high | OTM_PE | pooled | D5 | 9* | 86.7 | 100.0 | 100.0 | 0% |
 | SENSEX | high | OTM_PE | pooled | D6 | 1* | 100.0 | 100.0 | 100.0 | 0% |
-| SENSEX | high | OTM_PE | pooled | EXP1300 | 14* | 58.2 | 93.3 | 98.7 | 0% |
+| SENSEX | high | OTM_PE | pooled | EXP1300 | 16* | 85.5 | 98.2 | 98.7 | 0% |
 | SENSEX | high | OTM_PE | untested | D1 | 3* | -18.9 | -14.5 | 16.8 | 0% |
 | SENSEX | high | OTM_PE | untested | D2 | 3* | 46.8 | 73.3 | 73.6 | 0% |
-| SENSEX | high | OTM_PE | untested | D3 | 2* | 90.9 | 90.9 | 100.0 | 0% |
-| SENSEX | high | OTM_PE | untested | D4 | 1* | 100.0 | 100.0 | 100.0 | 0% |
-| SENSEX | high | OTM_PE | untested | EXP1300 | 1* | 98.7 | 98.7 | 98.7 | 0% |
+| SENSEX | high | OTM_PE | untested | D3 | 3* | 90.9 | 97.0 | 100.0 | 0% |
+| SENSEX | high | OTM_PE | untested | D4 | 2* | 100.0 | 100.0 | 100.0 | 0% |
+| SENSEX | high | OTM_PE | untested | EXP1300 | 3* | 98.7 | 99.0 | 99.7 | 0% |
 | SENSEX | high | OTM_PE | tested | D1 | 13* | -20.2 | 9.3 | 18.9 | 0% |
 | SENSEX | high | OTM_PE | tested | D2 | 13* | -49.7 | 3.4 | 54.7 | 0% |
 | SENSEX | high | OTM_PE | tested | D3 | 12* | -32.7 | 11.9 | 67.9 | 0% |
@@ -443,20 +457,6 @@ P25 / median / P75 of % decay. `N*` marks a THIN cell (N < 20).
 | SENSEX | high | OTM_PE | tested | D5 | 9* | 86.7 | 100.0 | 100.0 | 0% |
 | SENSEX | high | OTM_PE | tested | D6 | 1* | 100.0 | 100.0 | 100.0 | 0% |
 | SENSEX | high | OTM_PE | tested | EXP1300 | 13* | 58.2 | 93.3 | 98.4 | 0% |
-| SENSEX | high | STRADDLE | pooled | D1 | 16* | -3.3 | 0.4 | 4.5 | 0% |
-| SENSEX | high | STRADDLE | pooled | D2 | 16* | -24.6 | 7.8 | 13.0 | 0% |
-| SENSEX | high | STRADDLE | pooled | D3 | 14* | 7.8 | 25.3 | 33.7 | 0% |
-| SENSEX | high | STRADDLE | pooled | D4 | 12* | -18.3 | 36.5 | 43.5 | 0% |
-| SENSEX | high | STRADDLE | pooled | D5 | 9* | -14.7 | 55.8 | 65.7 | 0% |
-| SENSEX | high | STRADDLE | pooled | D6 | 1* | 22.5 | 22.5 | 22.5 | 0% |
-| SENSEX | high | STRADDLE | pooled | EXP1300 | 14* | 23.4 | 47.8 | 66.1 | 0% |
-| SENSEX | high | STRADDLE | tested | D1 | 16* | -3.3 | 0.4 | 4.5 | 0% |
-| SENSEX | high | STRADDLE | tested | D2 | 16* | -24.6 | 7.8 | 13.0 | 0% |
-| SENSEX | high | STRADDLE | tested | D3 | 14* | 7.8 | 25.3 | 33.7 | 0% |
-| SENSEX | high | STRADDLE | tested | D4 | 12* | -18.3 | 36.5 | 43.5 | 0% |
-| SENSEX | high | STRADDLE | tested | D5 | 9* | -14.7 | 55.8 | 65.7 | 0% |
-| SENSEX | high | STRADDLE | tested | D6 | 1* | 22.5 | 22.5 | 22.5 | 0% |
-| SENSEX | high | STRADDLE | tested | EXP1300 | 14* | 23.4 | 47.8 | 66.1 | 0% |
 
 ## M1.B  Share of cycles reaching each decay threshold
 
@@ -464,6 +464,12 @@ The four thresholds are the pre-registration §5.1 harvest sweep.
 
 | symbol | regime | leg | state | stamp | N | >=50% | >=60% | >=70% | >=80% |
 |---|---|---|---|---|---:|---:|---:|---:|---:|
+| NIFTY | all | HELD_ATM_STRADDLE | pooled | D2 | 51 | 0% | 0% | 0% | 0% |
+| NIFTY | all | HELD_ATM_STRADDLE | pooled | D3 | 51 | 2% | 2% | 2% | 2% |
+| NIFTY | all | HELD_ATM_STRADDLE | pooled | D4 | 49 | 10% | 4% | 2% | 0% |
+| NIFTY | all | HELD_ATM_STRADDLE | tested | D2 | 51 | 0% | 0% | 0% | 0% |
+| NIFTY | all | HELD_ATM_STRADDLE | tested | D3 | 51 | 2% | 2% | 2% | 2% |
+| NIFTY | all | HELD_ATM_STRADDLE | tested | D4 | 49 | 10% | 4% | 2% | 0% |
 | NIFTY | all | OTM_CE | pooled | D2 | 51 | 43% | 29% | 16% | 6% |
 | NIFTY | all | OTM_CE | pooled | D3 | 51 | 55% | 47% | 39% | 25% |
 | NIFTY | all | OTM_CE | pooled | D4 | 49 | 76% | 71% | 63% | 57% |
@@ -482,12 +488,12 @@ The four thresholds are the pre-registration §5.1 harvest sweep.
 | NIFTY | all | OTM_PE | tested | D2 | 28 | 25% | 14% | 7% | 0% |
 | NIFTY | all | OTM_PE | tested | D3 | 28 | 32% | 29% | 18% | 7% |
 | NIFTY | all | OTM_PE | tested | D4 | 27 | 44% | 41% | 26% | 19% |
-| NIFTY | all | STRADDLE | pooled | D2 | 51 | 0% | 0% | 0% | 0% |
-| NIFTY | all | STRADDLE | pooled | D3 | 51 | 2% | 2% | 2% | 2% |
-| NIFTY | all | STRADDLE | pooled | D4 | 49 | 10% | 4% | 2% | 0% |
-| NIFTY | all | STRADDLE | tested | D2 | 51 | 0% | 0% | 0% | 0% |
-| NIFTY | all | STRADDLE | tested | D3 | 51 | 2% | 2% | 2% | 2% |
-| NIFTY | all | STRADDLE | tested | D4 | 49 | 10% | 4% | 2% | 0% |
+| NIFTY | low | HELD_ATM_STRADDLE | pooled | D2 | 18* | 0% | 0% | 0% | 0% |
+| NIFTY | low | HELD_ATM_STRADDLE | pooled | D3 | 18* | 6% | 6% | 6% | 6% |
+| NIFTY | low | HELD_ATM_STRADDLE | pooled | D4 | 17* | 12% | 6% | 0% | 0% |
+| NIFTY | low | HELD_ATM_STRADDLE | tested | D2 | 18* | 0% | 0% | 0% | 0% |
+| NIFTY | low | HELD_ATM_STRADDLE | tested | D3 | 18* | 6% | 6% | 6% | 6% |
+| NIFTY | low | HELD_ATM_STRADDLE | tested | D4 | 17* | 12% | 6% | 0% | 0% |
 | NIFTY | low | OTM_CE | pooled | D2 | 18* | 44% | 22% | 11% | 11% |
 | NIFTY | low | OTM_CE | pooled | D3 | 18* | 56% | 50% | 33% | 28% |
 | NIFTY | low | OTM_CE | pooled | D4 | 17* | 71% | 65% | 65% | 59% |
@@ -506,12 +512,12 @@ The four thresholds are the pre-registration §5.1 harvest sweep.
 | NIFTY | low | OTM_PE | tested | D2 | 9* | 33% | 22% | 11% | 0% |
 | NIFTY | low | OTM_PE | tested | D3 | 9* | 44% | 33% | 11% | 0% |
 | NIFTY | low | OTM_PE | tested | D4 | 9* | 33% | 22% | 22% | 11% |
-| NIFTY | low | STRADDLE | pooled | D2 | 18* | 0% | 0% | 0% | 0% |
-| NIFTY | low | STRADDLE | pooled | D3 | 18* | 6% | 6% | 6% | 6% |
-| NIFTY | low | STRADDLE | pooled | D4 | 17* | 12% | 6% | 0% | 0% |
-| NIFTY | low | STRADDLE | tested | D2 | 18* | 0% | 0% | 0% | 0% |
-| NIFTY | low | STRADDLE | tested | D3 | 18* | 6% | 6% | 6% | 6% |
-| NIFTY | low | STRADDLE | tested | D4 | 17* | 12% | 6% | 0% | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | pooled | D2 | 17* | 0% | 0% | 0% | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | pooled | D3 | 17* | 0% | 0% | 0% | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | pooled | D4 | 17* | 12% | 6% | 6% | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | tested | D2 | 17* | 0% | 0% | 0% | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | tested | D3 | 17* | 0% | 0% | 0% | 0% |
+| NIFTY | mid | HELD_ATM_STRADDLE | tested | D4 | 17* | 12% | 6% | 6% | 0% |
 | NIFTY | mid | OTM_CE | pooled | D2 | 17* | 53% | 35% | 6% | 0% |
 | NIFTY | mid | OTM_CE | pooled | D3 | 17* | 65% | 47% | 41% | 18% |
 | NIFTY | mid | OTM_CE | pooled | D4 | 17* | 82% | 76% | 65% | 53% |
@@ -530,12 +536,12 @@ The four thresholds are the pre-registration §5.1 harvest sweep.
 | NIFTY | mid | OTM_PE | tested | D2 | 10* | 0% | 0% | 0% | 0% |
 | NIFTY | mid | OTM_PE | tested | D3 | 10* | 40% | 40% | 30% | 10% |
 | NIFTY | mid | OTM_PE | tested | D4 | 10* | 60% | 60% | 40% | 30% |
-| NIFTY | mid | STRADDLE | pooled | D2 | 17* | 0% | 0% | 0% | 0% |
-| NIFTY | mid | STRADDLE | pooled | D3 | 17* | 0% | 0% | 0% | 0% |
-| NIFTY | mid | STRADDLE | pooled | D4 | 17* | 12% | 6% | 6% | 0% |
-| NIFTY | mid | STRADDLE | tested | D2 | 17* | 0% | 0% | 0% | 0% |
-| NIFTY | mid | STRADDLE | tested | D3 | 17* | 0% | 0% | 0% | 0% |
-| NIFTY | mid | STRADDLE | tested | D4 | 17* | 12% | 6% | 6% | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | pooled | D2 | 16* | 0% | 0% | 0% | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | pooled | D3 | 16* | 0% | 0% | 0% | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | pooled | D4 | 15* | 7% | 0% | 0% | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | tested | D2 | 16* | 0% | 0% | 0% | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | tested | D3 | 16* | 0% | 0% | 0% | 0% |
+| NIFTY | high | HELD_ATM_STRADDLE | tested | D4 | 15* | 7% | 0% | 0% | 0% |
 | NIFTY | high | OTM_CE | pooled | D2 | 16* | 31% | 31% | 31% | 6% |
 | NIFTY | high | OTM_CE | pooled | D3 | 16* | 44% | 44% | 44% | 31% |
 | NIFTY | high | OTM_CE | pooled | D4 | 15* | 73% | 73% | 60% | 60% |
@@ -554,36 +560,36 @@ The four thresholds are the pre-registration §5.1 harvest sweep.
 | NIFTY | high | OTM_PE | tested | D2 | 9* | 44% | 22% | 11% | 0% |
 | NIFTY | high | OTM_PE | tested | D3 | 9* | 11% | 11% | 11% | 11% |
 | NIFTY | high | OTM_PE | tested | D4 | 8* | 38% | 38% | 12% | 12% |
-| NIFTY | high | STRADDLE | pooled | D2 | 16* | 0% | 0% | 0% | 0% |
-| NIFTY | high | STRADDLE | pooled | D3 | 16* | 0% | 0% | 0% | 0% |
-| NIFTY | high | STRADDLE | pooled | D4 | 15* | 7% | 0% | 0% | 0% |
-| NIFTY | high | STRADDLE | tested | D2 | 16* | 0% | 0% | 0% | 0% |
-| NIFTY | high | STRADDLE | tested | D3 | 16* | 0% | 0% | 0% | 0% |
-| NIFTY | high | STRADDLE | tested | D4 | 15* | 7% | 0% | 0% | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | pooled | D2 | 51 | 0% | 0% | 0% | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | pooled | D3 | 50 | 0% | 0% | 0% | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | pooled | D4 | 46 | 17% | 11% | 7% | 2% |
+| SENSEX | all | HELD_ATM_STRADDLE | tested | D2 | 51 | 0% | 0% | 0% | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | tested | D3 | 50 | 0% | 0% | 0% | 0% |
+| SENSEX | all | HELD_ATM_STRADDLE | tested | D4 | 46 | 17% | 11% | 7% | 2% |
 | SENSEX | all | OTM_CE | pooled | D2 | 51 | 43% | 31% | 16% | 10% |
-| SENSEX | all | OTM_CE | pooled | D3 | 48 | 69% | 65% | 60% | 52% |
+| SENSEX | all | OTM_CE | pooled | D3 | 49 | 69% | 65% | 61% | 53% |
 | SENSEX | all | OTM_CE | pooled | D4 | 46 | 70% | 70% | 63% | 63% |
 | SENSEX | all | OTM_CE | untested | D2 | 22 | 73% | 50% | 23% | 14% |
 | SENSEX | all | OTM_CE | untested | D3 | 21 | 100% | 100% | 100% | 86% |
-| SENSEX | all | OTM_CE | untested | D4 | 20 | 100% | 100% | 100% | 100% |
+| SENSEX | all | OTM_CE | untested | D4 | 21 | 100% | 100% | 100% | 100% |
 | SENSEX | all | OTM_CE | tested | D2 | 29 | 21% | 17% | 10% | 7% |
-| SENSEX | all | OTM_CE | tested | D3 | 27 | 44% | 37% | 30% | 26% |
-| SENSEX | all | OTM_CE | tested | D4 | 26 | 46% | 46% | 35% | 35% |
+| SENSEX | all | OTM_CE | tested | D3 | 28 | 46% | 39% | 32% | 29% |
+| SENSEX | all | OTM_CE | tested | D4 | 25 | 44% | 44% | 32% | 32% |
 | SENSEX | all | OTM_PE | pooled | D2 | 51 | 33% | 29% | 18% | 8% |
-| SENSEX | all | OTM_PE | pooled | D3 | 48 | 42% | 42% | 38% | 31% |
-| SENSEX | all | OTM_PE | pooled | D4 | 46 | 76% | 70% | 65% | 59% |
+| SENSEX | all | OTM_PE | pooled | D3 | 50 | 44% | 44% | 40% | 34% |
+| SENSEX | all | OTM_PE | pooled | D4 | 47 | 74% | 68% | 64% | 57% |
 | SENSEX | all | OTM_PE | untested | D2 | 15* | 73% | 73% | 47% | 13% |
-| SENSEX | all | OTM_PE | untested | D3 | 13* | 100% | 100% | 100% | 92% |
+| SENSEX | all | OTM_PE | untested | D3 | 15* | 100% | 100% | 100% | 93% |
 | SENSEX | all | OTM_PE | untested | D4 | 13* | 100% | 100% | 100% | 100% |
 | SENSEX | all | OTM_PE | tested | D2 | 36 | 17% | 11% | 6% | 6% |
 | SENSEX | all | OTM_PE | tested | D3 | 35 | 20% | 20% | 14% | 9% |
-| SENSEX | all | OTM_PE | tested | D4 | 33 | 67% | 58% | 52% | 42% |
-| SENSEX | all | STRADDLE | pooled | D2 | 51 | 0% | 0% | 0% | 0% |
-| SENSEX | all | STRADDLE | pooled | D3 | 48 | 0% | 0% | 0% | 0% |
-| SENSEX | all | STRADDLE | pooled | D4 | 46 | 17% | 11% | 7% | 2% |
-| SENSEX | all | STRADDLE | tested | D2 | 51 | 0% | 0% | 0% | 0% |
-| SENSEX | all | STRADDLE | tested | D3 | 48 | 0% | 0% | 0% | 0% |
-| SENSEX | all | STRADDLE | tested | D4 | 46 | 17% | 11% | 7% | 2% |
+| SENSEX | all | OTM_PE | tested | D4 | 34 | 65% | 56% | 50% | 41% |
+| SENSEX | low | HELD_ATM_STRADDLE | pooled | D2 | 18* | 0% | 0% | 0% | 0% |
+| SENSEX | low | HELD_ATM_STRADDLE | pooled | D3 | 18* | 0% | 0% | 0% | 0% |
+| SENSEX | low | HELD_ATM_STRADDLE | pooled | D4 | 18* | 17% | 11% | 6% | 0% |
+| SENSEX | low | HELD_ATM_STRADDLE | tested | D2 | 18* | 0% | 0% | 0% | 0% |
+| SENSEX | low | HELD_ATM_STRADDLE | tested | D3 | 18* | 0% | 0% | 0% | 0% |
+| SENSEX | low | HELD_ATM_STRADDLE | tested | D4 | 18* | 17% | 11% | 6% | 0% |
 | SENSEX | low | OTM_CE | pooled | D2 | 18* | 44% | 22% | 6% | 0% |
 | SENSEX | low | OTM_CE | pooled | D3 | 18* | 72% | 72% | 72% | 61% |
 | SENSEX | low | OTM_CE | pooled | D4 | 18* | 78% | 78% | 78% | 78% |
@@ -602,36 +608,36 @@ The four thresholds are the pre-registration §5.1 harvest sweep.
 | SENSEX | low | OTM_PE | tested | D2 | 13* | 8% | 8% | 0% | 0% |
 | SENSEX | low | OTM_PE | tested | D3 | 13* | 0% | 0% | 0% | 0% |
 | SENSEX | low | OTM_PE | tested | D4 | 13* | 54% | 38% | 38% | 31% |
-| SENSEX | low | STRADDLE | pooled | D2 | 18* | 0% | 0% | 0% | 0% |
-| SENSEX | low | STRADDLE | pooled | D3 | 18* | 0% | 0% | 0% | 0% |
-| SENSEX | low | STRADDLE | pooled | D4 | 18* | 17% | 11% | 6% | 0% |
-| SENSEX | low | STRADDLE | tested | D2 | 18* | 0% | 0% | 0% | 0% |
-| SENSEX | low | STRADDLE | tested | D3 | 18* | 0% | 0% | 0% | 0% |
-| SENSEX | low | STRADDLE | tested | D4 | 18* | 17% | 11% | 6% | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | pooled | D2 | 17* | 0% | 0% | 0% | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | pooled | D3 | 17* | 0% | 0% | 0% | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | pooled | D4 | 15* | 13% | 7% | 7% | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | tested | D2 | 17* | 0% | 0% | 0% | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | tested | D3 | 17* | 0% | 0% | 0% | 0% |
+| SENSEX | mid | HELD_ATM_STRADDLE | tested | D4 | 15* | 13% | 7% | 7% | 0% |
 | SENSEX | mid | OTM_CE | pooled | D2 | 17* | 47% | 41% | 18% | 12% |
-| SENSEX | mid | OTM_CE | pooled | D3 | 16* | 56% | 56% | 50% | 44% |
+| SENSEX | mid | OTM_CE | pooled | D3 | 17* | 59% | 59% | 53% | 47% |
 | SENSEX | mid | OTM_CE | pooled | D4 | 16* | 62% | 62% | 56% | 56% |
 | SENSEX | mid | OTM_CE | untested | D2 | 7* | 86% | 71% | 43% | 29% |
 | SENSEX | mid | OTM_CE | untested | D3 | 7* | 100% | 100% | 100% | 86% |
-| SENSEX | mid | OTM_CE | untested | D4 | 6* | 100% | 100% | 100% | 100% |
+| SENSEX | mid | OTM_CE | untested | D4 | 7* | 100% | 100% | 100% | 100% |
 | SENSEX | mid | OTM_CE | tested | D2 | 10* | 20% | 20% | 0% | 0% |
-| SENSEX | mid | OTM_CE | tested | D3 | 9* | 22% | 22% | 11% | 11% |
-| SENSEX | mid | OTM_CE | tested | D4 | 10* | 40% | 40% | 30% | 30% |
+| SENSEX | mid | OTM_CE | tested | D3 | 10* | 30% | 30% | 20% | 20% |
+| SENSEX | mid | OTM_CE | tested | D4 | 9* | 33% | 33% | 22% | 22% |
 | SENSEX | mid | OTM_PE | pooled | D2 | 17* | 35% | 35% | 18% | 12% |
-| SENSEX | mid | OTM_PE | pooled | D3 | 16* | 56% | 56% | 50% | 38% |
-| SENSEX | mid | OTM_PE | pooled | D4 | 16* | 88% | 88% | 75% | 69% |
+| SENSEX | mid | OTM_PE | pooled | D3 | 17* | 59% | 59% | 53% | 41% |
+| SENSEX | mid | OTM_PE | pooled | D4 | 16* | 81% | 81% | 69% | 62% |
 | SENSEX | mid | OTM_PE | untested | D2 | 7* | 86% | 86% | 43% | 29% |
-| SENSEX | mid | OTM_PE | untested | D3 | 6* | 100% | 100% | 100% | 83% |
-| SENSEX | mid | OTM_PE | untested | D4 | 7* | 100% | 100% | 100% | 100% |
+| SENSEX | mid | OTM_PE | untested | D3 | 7* | 100% | 100% | 100% | 86% |
+| SENSEX | mid | OTM_PE | untested | D4 | 6* | 100% | 100% | 100% | 100% |
 | SENSEX | mid | OTM_PE | tested | D2 | 10* | 0% | 0% | 0% | 0% |
 | SENSEX | mid | OTM_PE | tested | D3 | 10* | 30% | 30% | 20% | 10% |
-| SENSEX | mid | OTM_PE | tested | D4 | 9* | 78% | 78% | 56% | 44% |
-| SENSEX | mid | STRADDLE | pooled | D2 | 17* | 0% | 0% | 0% | 0% |
-| SENSEX | mid | STRADDLE | pooled | D3 | 16* | 0% | 0% | 0% | 0% |
-| SENSEX | mid | STRADDLE | pooled | D4 | 16* | 12% | 6% | 6% | 0% |
-| SENSEX | mid | STRADDLE | tested | D2 | 17* | 0% | 0% | 0% | 0% |
-| SENSEX | mid | STRADDLE | tested | D3 | 16* | 0% | 0% | 0% | 0% |
-| SENSEX | mid | STRADDLE | tested | D4 | 16* | 12% | 6% | 6% | 0% |
+| SENSEX | mid | OTM_PE | tested | D4 | 10* | 70% | 70% | 50% | 40% |
+| SENSEX | high | HELD_ATM_STRADDLE | pooled | D2 | 16* | 0% | 0% | 0% | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | pooled | D3 | 15* | 0% | 0% | 0% | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | pooled | D4 | 13* | 23% | 15% | 8% | 8% |
+| SENSEX | high | HELD_ATM_STRADDLE | tested | D2 | 16* | 0% | 0% | 0% | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | tested | D3 | 15* | 0% | 0% | 0% | 0% |
+| SENSEX | high | HELD_ATM_STRADDLE | tested | D4 | 13* | 23% | 15% | 8% | 8% |
 | SENSEX | high | OTM_CE | pooled | D2 | 16* | 38% | 31% | 25% | 19% |
 | SENSEX | high | OTM_CE | pooled | D3 | 14* | 79% | 64% | 57% | 50% |
 | SENSEX | high | OTM_CE | pooled | D4 | 12* | 67% | 67% | 50% | 50% |
@@ -642,20 +648,26 @@ The four thresholds are the pre-registration §5.1 harvest sweep.
 | SENSEX | high | OTM_CE | tested | D3 | 12* | 75% | 58% | 50% | 42% |
 | SENSEX | high | OTM_CE | tested | D4 | 10* | 60% | 60% | 40% | 40% |
 | SENSEX | high | OTM_PE | pooled | D2 | 16* | 44% | 31% | 25% | 12% |
-| SENSEX | high | OTM_PE | pooled | D3 | 14* | 43% | 43% | 36% | 29% |
-| SENSEX | high | OTM_PE | pooled | D4 | 12* | 75% | 67% | 67% | 58% |
+| SENSEX | high | OTM_PE | pooled | D3 | 15* | 47% | 47% | 40% | 33% |
+| SENSEX | high | OTM_PE | pooled | D4 | 13* | 77% | 69% | 69% | 62% |
 | SENSEX | high | OTM_PE | untested | D2 | 3* | 67% | 67% | 67% | 0% |
-| SENSEX | high | OTM_PE | untested | D3 | 2* | 100% | 100% | 100% | 100% |
-| SENSEX | high | OTM_PE | untested | D4 | 1* | 100% | 100% | 100% | 100% |
+| SENSEX | high | OTM_PE | untested | D3 | 3* | 100% | 100% | 100% | 100% |
+| SENSEX | high | OTM_PE | untested | D4 | 2* | 100% | 100% | 100% | 100% |
 | SENSEX | high | OTM_PE | tested | D2 | 13* | 38% | 23% | 15% | 15% |
 | SENSEX | high | OTM_PE | tested | D3 | 12* | 33% | 33% | 25% | 17% |
 | SENSEX | high | OTM_PE | tested | D4 | 11* | 73% | 64% | 64% | 55% |
-| SENSEX | high | STRADDLE | pooled | D2 | 16* | 0% | 0% | 0% | 0% |
-| SENSEX | high | STRADDLE | pooled | D3 | 14* | 0% | 0% | 0% | 0% |
-| SENSEX | high | STRADDLE | pooled | D4 | 12* | 25% | 17% | 8% | 8% |
-| SENSEX | high | STRADDLE | tested | D2 | 16* | 0% | 0% | 0% | 0% |
-| SENSEX | high | STRADDLE | tested | D3 | 14* | 0% | 0% | 0% | 0% |
-| SENSEX | high | STRADDLE | tested | D4 | 12* | 25% | 17% | 8% | 8% |
+
+## Special sessions removed from the Day-N and DTE index
+
+Diwali Muhurat is a ~1-hour ceremonial session -- on 2025-10-21 the option chain ran **13:45-14:44 only**. The 15:25 close anchor then sits ~40 minutes after the session ended, which is why every leg on that stamp read `stale 40m`.
+
+Rejecting those stamps is not sufficient: counting Muhurat as a full trading day inflates **both the Day-N index and DTE** by one for any cycle containing it. Such days are dropped from the cycle and the remaining days renumbered.
+
+The detector reads the CHAIN, not spot: SENSEX `hist_spot_bars_5m` reports a full 09:15-16:00 / 82 rows on 2025-10-21, so spot would not have revealed it. A normal session's first option bar is 09:15; a Muhurat session's is 13:45. Rule: first chain bar later than 11:00 IST.
+
+| symbol | cycle expiry | special session dropped |
+|---|---|---|
+| SENSEX | 2025-10-23 | 2025-10-21 (Tue) |
 
 ## M1.C  The Day-N index is not a constant time-to-expiry
 
@@ -669,16 +681,16 @@ Cycle length varies 3-6 trading days, and a complete cycle ends ON its expiry. S
 | NIFTY | D2 | DTE4 n=1, DTE3 n=35, DTE2 n=13, DTE1 n=2  **blend** |
 | NIFTY | D3 | DTE3 n=1, DTE2 n=35, DTE1 n=13, DTE0 n=2  **blend** |
 | NIFTY | D4 | DTE2 n=1, DTE1 n=35, DTE0 n=13  **blend** |
-| NIFTY | D5 | DTE1 n=1, DTE0 n=33  **blend** |
+| NIFTY | D5 | DTE1 n=1, DTE0 n=35  **blend** |
 | NIFTY | D6 | DTE0 n=1 |
 | NIFTY | EXP1300 | EXP1300 n=51 |
-| SENSEX | D1 | DTE5 n=2, DTE4 n=35, DTE3 n=11, DTE2 n=2, DTE1 n=1  **blend** |
-| SENSEX | D2 | DTE4 n=2, DTE3 n=35, DTE2 n=11, DTE1 n=2, DTE0 n=1  **blend** |
-| SENSEX | D3 | DTE3 n=2, DTE2 n=35, DTE1 n=9, DTE0 n=2  **blend** |
-| SENSEX | D4 | DTE2 n=2, DTE1 n=34, DTE0 n=10  **blend** |
+| SENSEX | D1 | DTE5 n=2, DTE4 n=35, DTE3 n=10, DTE2 n=3, DTE1 n=1  **blend** |
+| SENSEX | D2 | DTE4 n=2, DTE3 n=35, DTE2 n=10, DTE1 n=3, DTE0 n=1  **blend** |
+| SENSEX | D3 | DTE3 n=2, DTE2 n=35, DTE1 n=10, DTE0 n=3  **blend** |
+| SENSEX | D4 | DTE2 n=2, DTE1 n=35, DTE0 n=10  **blend** |
 | SENSEX | D5 | DTE1 n=2, DTE0 n=35  **blend** |
 | SENSEX | D6 | DTE0 n=2 |
-| SENSEX | EXP1300 | EXP1300 n=46 |
+| SENSEX | EXP1300 | EXP1300 n=51 |
 
 ## M1.D  Decay % indexed by DTE (primary) rather than by Day-N
 
@@ -686,18 +698,32 @@ Same observations as M1.A, re-indexed. This is the one to read for where decay a
 
 | symbol | regime | leg | state | DTE | N | P25 | median | P75 |
 |---|---|---|---|---|---:|---:|---:|---:|
+| NIFTY | all | HELD_ATM_STRADDLE | pooled | DTE5 | 1* | 6.0 | 6.0 | 6.0 |
+| NIFTY | all | HELD_ATM_STRADDLE | pooled | DTE4 | 36 | -2.8 | 3.5 | 5.4 |
+| NIFTY | all | HELD_ATM_STRADDLE | pooled | DTE3 | 49 | -2.9 | 6.4 | 15.2 |
+| NIFTY | all | HELD_ATM_STRADDLE | pooled | DTE2 | 51 | -12.7 | 13.9 | 27.4 |
+| NIFTY | all | HELD_ATM_STRADDLE | pooled | DTE1 | 51 | -13.9 | 21.0 | 46.6 |
+| NIFTY | all | HELD_ATM_STRADDLE | pooled | DTE0 | 50 | -64.6 | 32.8 | 62.3 |
+| NIFTY | all | HELD_ATM_STRADDLE | pooled | EXP1300 | 51 | -31.0 | 17.5 | 61.9 |
+| NIFTY | all | HELD_ATM_STRADDLE | tested | DTE5 | 1* | 6.0 | 6.0 | 6.0 |
+| NIFTY | all | HELD_ATM_STRADDLE | tested | DTE4 | 36 | -2.8 | 3.5 | 5.4 |
+| NIFTY | all | HELD_ATM_STRADDLE | tested | DTE3 | 49 | -2.9 | 6.4 | 15.2 |
+| NIFTY | all | HELD_ATM_STRADDLE | tested | DTE2 | 51 | -12.7 | 13.9 | 27.4 |
+| NIFTY | all | HELD_ATM_STRADDLE | tested | DTE1 | 51 | -13.9 | 21.0 | 46.6 |
+| NIFTY | all | HELD_ATM_STRADDLE | tested | DTE0 | 50 | -64.6 | 32.8 | 62.3 |
+| NIFTY | all | HELD_ATM_STRADDLE | tested | EXP1300 | 51 | -31.0 | 17.5 | 61.9 |
 | NIFTY | all | OTM_CE | pooled | DTE5 | 1* | -13.5 | -13.5 | -13.5 |
 | NIFTY | all | OTM_CE | pooled | DTE4 | 36 | -17.1 | 2.4 | 24.4 |
 | NIFTY | all | OTM_CE | pooled | DTE3 | 49 | -12.5 | 21.9 | 58.0 |
 | NIFTY | all | OTM_CE | pooled | DTE2 | 51 | 14.2 | 48.0 | 71.4 |
 | NIFTY | all | OTM_CE | pooled | DTE1 | 51 | 38.5 | 77.3 | 90.8 |
-| NIFTY | all | OTM_CE | pooled | DTE0 | 49 | 99.8 | 99.9 | 99.9 |
+| NIFTY | all | OTM_CE | pooled | DTE0 | 50 | 99.8 | 99.9 | 99.9 |
 | NIFTY | all | OTM_CE | pooled | EXP1300 | 51 | 85.6 | 96.7 | 98.2 |
 | NIFTY | all | OTM_CE | untested | DTE4 | 19* | -8.8 | 11.1 | 26.7 |
 | NIFTY | all | OTM_CE | untested | DTE3 | 25 | 21.9 | 50.5 | 63.1 |
 | NIFTY | all | OTM_CE | untested | DTE2 | 25 | 49.6 | 69.7 | 78.7 |
 | NIFTY | all | OTM_CE | untested | DTE1 | 25 | 77.3 | 87.4 | 92.8 |
-| NIFTY | all | OTM_CE | untested | DTE0 | 24 | 99.8 | 99.9 | 99.9 |
+| NIFTY | all | OTM_CE | untested | DTE0 | 25 | 99.8 | 99.9 | 99.9 |
 | NIFTY | all | OTM_CE | untested | EXP1300 | 25 | 96.6 | 97.8 | 98.5 |
 | NIFTY | all | OTM_CE | tested | DTE5 | 1* | -13.5 | -13.5 | -13.5 |
 | NIFTY | all | OTM_CE | tested | DTE4 | 17* | -50.8 | -8.1 | 2.4 |
@@ -711,13 +737,13 @@ Same observations as M1.A, re-indexed. This is the one to read for where decay a
 | NIFTY | all | OTM_PE | pooled | DTE3 | 49 | -11.9 | 28.7 | 59.0 |
 | NIFTY | all | OTM_PE | pooled | DTE2 | 51 | -22.0 | 68.6 | 78.6 |
 | NIFTY | all | OTM_PE | pooled | DTE1 | 51 | -6.4 | 79.4 | 90.2 |
-| NIFTY | all | OTM_PE | pooled | DTE0 | 49 | 99.4 | 99.8 | 99.9 |
+| NIFTY | all | OTM_PE | pooled | DTE0 | 51 | 99.4 | 99.8 | 99.9 |
 | NIFTY | all | OTM_PE | pooled | EXP1300 | 51 | 27.7 | 97.3 | 98.2 |
 | NIFTY | all | OTM_PE | untested | DTE4 | 15* | 10.9 | 24.0 | 28.7 |
 | NIFTY | all | OTM_PE | untested | DTE3 | 22 | 29.1 | 49.4 | 71.0 |
 | NIFTY | all | OTM_PE | untested | DTE2 | 23 | 74.3 | 77.8 | 81.9 |
 | NIFTY | all | OTM_PE | untested | DTE1 | 23 | 85.7 | 90.1 | 91.4 |
-| NIFTY | all | OTM_PE | untested | DTE0 | 21 | 99.8 | 99.9 | 99.9 |
+| NIFTY | all | OTM_PE | untested | DTE0 | 23 | 99.8 | 99.9 | 99.9 |
 | NIFTY | all | OTM_PE | untested | EXP1300 | 23 | 97.4 | 98.1 | 98.2 |
 | NIFTY | all | OTM_PE | tested | DTE5 | 1* | 38.0 | 38.0 | 38.0 |
 | NIFTY | all | OTM_PE | tested | DTE4 | 21 | -9.7 | 6.6 | 16.0 |
@@ -726,91 +752,91 @@ Same observations as M1.A, re-indexed. This is the one to read for where decay a
 | NIFTY | all | OTM_PE | tested | DTE1 | 28 | -108.0 | 52.7 | 69.0 |
 | NIFTY | all | OTM_PE | tested | DTE0 | 28 | -316.5 | 99.8 | 99.9 |
 | NIFTY | all | OTM_PE | tested | EXP1300 | 28 | -185.2 | 56.8 | 97.3 |
-| NIFTY | all | STRADDLE | pooled | DTE5 | 1* | 6.0 | 6.0 | 6.0 |
-| NIFTY | all | STRADDLE | pooled | DTE4 | 36 | -2.8 | 3.5 | 5.4 |
-| NIFTY | all | STRADDLE | pooled | DTE3 | 49 | -2.9 | 6.4 | 15.2 |
-| NIFTY | all | STRADDLE | pooled | DTE2 | 51 | -12.7 | 13.9 | 27.4 |
-| NIFTY | all | STRADDLE | pooled | DTE1 | 51 | -13.9 | 21.0 | 46.6 |
-| NIFTY | all | STRADDLE | pooled | DTE0 | 49 | -64.6 | 34.2 | 62.3 |
-| NIFTY | all | STRADDLE | pooled | EXP1300 | 51 | -31.0 | 17.5 | 61.9 |
-| NIFTY | all | STRADDLE | tested | DTE5 | 1* | 6.0 | 6.0 | 6.0 |
-| NIFTY | all | STRADDLE | tested | DTE4 | 36 | -2.8 | 3.5 | 5.4 |
-| NIFTY | all | STRADDLE | tested | DTE3 | 49 | -2.9 | 6.4 | 15.2 |
-| NIFTY | all | STRADDLE | tested | DTE2 | 51 | -12.7 | 13.9 | 27.4 |
-| NIFTY | all | STRADDLE | tested | DTE1 | 51 | -13.9 | 21.0 | 46.6 |
-| NIFTY | all | STRADDLE | tested | DTE0 | 49 | -64.6 | 34.2 | 62.3 |
-| NIFTY | all | STRADDLE | tested | EXP1300 | 51 | -31.0 | 17.5 | 61.9 |
+| SENSEX | all | HELD_ATM_STRADDLE | pooled | DTE5 | 2* | 0.4 | 0.4 | 0.7 |
+| SENSEX | all | HELD_ATM_STRADDLE | pooled | DTE4 | 37 | -2.9 | 0.4 | 4.4 |
+| SENSEX | all | HELD_ATM_STRADDLE | pooled | DTE3 | 47 | -5.9 | 7.5 | 13.1 |
+| SENSEX | all | HELD_ATM_STRADDLE | pooled | DTE2 | 50 | -18.3 | 7.8 | 24.0 |
+| SENSEX | all | HELD_ATM_STRADDLE | pooled | DTE1 | 50 | -24.2 | 13.7 | 39.0 |
+| SENSEX | all | HELD_ATM_STRADDLE | pooled | DTE0 | 51 | -42.4 | 27.4 | 58.7 |
+| SENSEX | all | HELD_ATM_STRADDLE | pooled | EXP1300 | 46 | -24.0 | 29.0 | 66.1 |
+| SENSEX | all | HELD_ATM_STRADDLE | tested | DTE5 | 2* | 0.4 | 0.4 | 0.7 |
+| SENSEX | all | HELD_ATM_STRADDLE | tested | DTE4 | 37 | -2.9 | 0.4 | 4.4 |
+| SENSEX | all | HELD_ATM_STRADDLE | tested | DTE3 | 47 | -5.9 | 7.5 | 13.1 |
+| SENSEX | all | HELD_ATM_STRADDLE | tested | DTE2 | 50 | -18.3 | 7.8 | 24.0 |
+| SENSEX | all | HELD_ATM_STRADDLE | tested | DTE1 | 50 | -24.2 | 13.7 | 39.0 |
+| SENSEX | all | HELD_ATM_STRADDLE | tested | DTE0 | 51 | -42.4 | 27.4 | 58.7 |
+| SENSEX | all | HELD_ATM_STRADDLE | tested | EXP1300 | 46 | -24.0 | 29.0 | 66.1 |
 | SENSEX | all | OTM_CE | pooled | DTE5 | 2* | -10.4 | -10.4 | 21.2 |
 | SENSEX | all | OTM_CE | pooled | DTE4 | 37 | -21.8 | 1.2 | 17.8 |
-| SENSEX | all | OTM_CE | pooled | DTE3 | 48 | 0.6 | 31.8 | 55.8 |
-| SENSEX | all | OTM_CE | pooled | DTE2 | 50 | -19.8 | 63.5 | 89.4 |
-| SENSEX | all | OTM_CE | pooled | DTE1 | 48 | -10.9 | 85.6 | 93.8 |
+| SENSEX | all | OTM_CE | pooled | DTE3 | 47 | 2.0 | 31.8 | 55.8 |
+| SENSEX | all | OTM_CE | pooled | DTE2 | 50 | -9.2 | 63.5 | 89.4 |
+| SENSEX | all | OTM_CE | pooled | DTE1 | 50 | -28.2 | 85.5 | 94.5 |
 | SENSEX | all | OTM_CE | pooled | DTE0 | 50 | 99.9 | 99.9 | 100.0 |
-| SENSEX | all | OTM_CE | pooled | EXP1300 | 46 | 70.4 | 96.1 | 98.3 |
+| SENSEX | all | OTM_CE | pooled | EXP1300 | 49 | 70.4 | 96.5 | 98.4 |
 | SENSEX | all | OTM_CE | untested | DTE4 | 17* | -21.8 | -0.9 | 17.4 |
 | SENSEX | all | OTM_CE | untested | DTE3 | 21 | 31.7 | 54.6 | 62.6 |
 | SENSEX | all | OTM_CE | untested | DTE2 | 21 | 78.2 | 89.6 | 91.8 |
-| SENSEX | all | OTM_CE | untested | DTE1 | 21 | 93.0 | 94.9 | 96.3 |
+| SENSEX | all | OTM_CE | untested | DTE1 | 22 | 93.0 | 94.9 | 96.6 |
 | SENSEX | all | OTM_CE | untested | DTE0 | 22 | 99.9 | 100.0 | 100.0 |
-| SENSEX | all | OTM_CE | untested | EXP1300 | 20 | 97.4 | 98.3 | 98.7 |
+| SENSEX | all | OTM_CE | untested | EXP1300 | 22 | 97.4 | 98.3 | 99.0 |
 | SENSEX | all | OTM_CE | tested | DTE5 | 2* | -10.4 | -10.4 | 21.2 |
 | SENSEX | all | OTM_CE | tested | DTE4 | 20 | -16.9 | 11.2 | 27.1 |
-| SENSEX | all | OTM_CE | tested | DTE3 | 27 | -43.6 | 3.9 | 38.5 |
+| SENSEX | all | OTM_CE | tested | DTE3 | 26 | -43.6 | 3.9 | 38.5 |
 | SENSEX | all | OTM_CE | tested | DTE2 | 29 | -56.5 | -0.2 | 52.0 |
-| SENSEX | all | OTM_CE | tested | DTE1 | 27 | -81.5 | -9.1 | 68.3 |
+| SENSEX | all | OTM_CE | tested | DTE1 | 28 | -77.9 | -9.1 | 67.6 |
 | SENSEX | all | OTM_CE | tested | DTE0 | 28 | -4.1 | 99.9 | 100.0 |
-| SENSEX | all | OTM_CE | tested | EXP1300 | 26 | -24.4 | 72.0 | 96.1 |
+| SENSEX | all | OTM_CE | tested | EXP1300 | 27 | -73.1 | 72.0 | 96.1 |
 | SENSEX | all | OTM_PE | pooled | DTE5 | 2* | -14.1 | -14.1 | 13.9 |
 | SENSEX | all | OTM_PE | pooled | DTE4 | 37 | -24.3 | 9.3 | 23.0 |
-| SENSEX | all | OTM_PE | pooled | DTE3 | 48 | -21.1 | 10.9 | 46.3 |
-| SENSEX | all | OTM_PE | pooled | DTE2 | 50 | -51.4 | 16.5 | 75.8 |
-| SENSEX | all | OTM_PE | pooled | DTE1 | 48 | 13.3 | 80.1 | 92.4 |
-| SENSEX | all | OTM_PE | pooled | DTE0 | 50 | 99.8 | 99.9 | 100.0 |
-| SENSEX | all | OTM_PE | pooled | EXP1300 | 46 | 79.2 | 97.2 | 98.2 |
+| SENSEX | all | OTM_PE | pooled | DTE3 | 47 | -21.1 | 10.9 | 46.3 |
+| SENSEX | all | OTM_PE | pooled | DTE2 | 50 | -51.4 | 11.9 | 74.5 |
+| SENSEX | all | OTM_PE | pooled | DTE1 | 51 | 6.2 | 80.1 | 92.8 |
+| SENSEX | all | OTM_PE | pooled | DTE0 | 51 | 99.8 | 99.9 | 100.0 |
+| SENSEX | all | OTM_PE | pooled | EXP1300 | 51 | 78.1 | 97.2 | 98.2 |
 | SENSEX | all | OTM_PE | untested | DTE4 | 9* | 11.6 | 33.9 | 38.4 |
-| SENSEX | all | OTM_PE | untested | DTE3 | 14* | 10.3 | 36.6 | 69.9 |
-| SENSEX | all | OTM_PE | untested | DTE2 | 15* | 73.3 | 83.3 | 90.5 |
-| SENSEX | all | OTM_PE | untested | DTE1 | 13* | 91.2 | 94.0 | 95.5 |
-| SENSEX | all | OTM_PE | untested | DTE0 | 14* | 100.0 | 100.0 | 100.0 |
-| SENSEX | all | OTM_PE | untested | EXP1300 | 12* | 97.6 | 98.1 | 98.6 |
+| SENSEX | all | OTM_PE | untested | DTE3 | 13* | 16.6 | 60.7 | 69.9 |
+| SENSEX | all | OTM_PE | untested | DTE2 | 15* | 71.4 | 83.1 | 89.5 |
+| SENSEX | all | OTM_PE | untested | DTE1 | 15* | 91.2 | 94.0 | 95.5 |
+| SENSEX | all | OTM_PE | untested | DTE0 | 15* | 100.0 | 100.0 | 100.0 |
+| SENSEX | all | OTM_PE | untested | EXP1300 | 15* | 97.6 | 98.1 | 98.7 |
 | SENSEX | all | OTM_PE | tested | DTE5 | 2* | -14.1 | -14.1 | 13.9 |
 | SENSEX | all | OTM_PE | tested | DTE4 | 28 | -25.5 | 4.6 | 18.9 |
 | SENSEX | all | OTM_PE | tested | DTE3 | 34 | -42.2 | -11.5 | 24.8 |
 | SENSEX | all | OTM_PE | tested | DTE2 | 35 | -75.9 | 3.4 | 32.1 |
-| SENSEX | all | OTM_PE | tested | DTE1 | 35 | -47.7 | 53.7 | 86.6 |
+| SENSEX | all | OTM_PE | tested | DTE1 | 36 | -47.7 | 53.7 | 85.7 |
 | SENSEX | all | OTM_PE | tested | DTE0 | 36 | 86.7 | 99.9 | 100.0 |
-| SENSEX | all | OTM_PE | tested | EXP1300 | 34 | 58.2 | 93.3 | 97.8 |
-| SENSEX | all | STRADDLE | pooled | DTE5 | 2* | 0.4 | 0.4 | 0.7 |
-| SENSEX | all | STRADDLE | pooled | DTE4 | 37 | -2.9 | 0.4 | 4.4 |
-| SENSEX | all | STRADDLE | pooled | DTE3 | 48 | -5.9 | 7.5 | 13.1 |
-| SENSEX | all | STRADDLE | pooled | DTE2 | 50 | -18.3 | 7.8 | 24.0 |
-| SENSEX | all | STRADDLE | pooled | DTE1 | 48 | -15.5 | 14.8 | 39.0 |
-| SENSEX | all | STRADDLE | pooled | DTE0 | 50 | -33.8 | 27.4 | 58.7 |
-| SENSEX | all | STRADDLE | pooled | EXP1300 | 46 | -24.0 | 29.0 | 66.1 |
-| SENSEX | all | STRADDLE | tested | DTE5 | 2* | 0.4 | 0.4 | 0.7 |
-| SENSEX | all | STRADDLE | tested | DTE4 | 37 | -2.9 | 0.4 | 4.4 |
-| SENSEX | all | STRADDLE | tested | DTE3 | 48 | -5.9 | 7.5 | 13.1 |
-| SENSEX | all | STRADDLE | tested | DTE2 | 50 | -18.3 | 7.8 | 24.0 |
-| SENSEX | all | STRADDLE | tested | DTE1 | 48 | -15.5 | 14.8 | 39.0 |
-| SENSEX | all | STRADDLE | tested | DTE0 | 50 | -33.8 | 27.4 | 58.7 |
-| SENSEX | all | STRADDLE | tested | EXP1300 | 46 | -24.0 | 29.0 | 66.1 |
+| SENSEX | all | OTM_PE | tested | EXP1300 | 36 | 54.0 | 93.3 | 97.4 |
 
 ## M1.E  Threshold share by DTE
 
 | symbol | leg | state | DTE | N | >=50% | >=60% | >=70% | >=80% |
 |---|---|---|---|---:|---:|---:|---:|---:|
+| NIFTY | HELD_ATM_STRADDLE | pooled | DTE5 | 1* | 0% | 0% | 0% | 0% |
+| NIFTY | HELD_ATM_STRADDLE | pooled | DTE4 | 36 | 0% | 0% | 0% | 0% |
+| NIFTY | HELD_ATM_STRADDLE | pooled | DTE3 | 49 | 0% | 0% | 0% | 0% |
+| NIFTY | HELD_ATM_STRADDLE | pooled | DTE2 | 51 | 0% | 0% | 0% | 0% |
+| NIFTY | HELD_ATM_STRADDLE | pooled | DTE1 | 51 | 8% | 2% | 0% | 0% |
+| NIFTY | HELD_ATM_STRADDLE | pooled | DTE0 | 50 | 34% | 26% | 18% | 8% |
+| NIFTY | HELD_ATM_STRADDLE | pooled | EXP1300 | 51 | 35% | 29% | 22% | 4% |
+| NIFTY | HELD_ATM_STRADDLE | tested | DTE5 | 1* | 0% | 0% | 0% | 0% |
+| NIFTY | HELD_ATM_STRADDLE | tested | DTE4 | 36 | 0% | 0% | 0% | 0% |
+| NIFTY | HELD_ATM_STRADDLE | tested | DTE3 | 49 | 0% | 0% | 0% | 0% |
+| NIFTY | HELD_ATM_STRADDLE | tested | DTE2 | 51 | 0% | 0% | 0% | 0% |
+| NIFTY | HELD_ATM_STRADDLE | tested | DTE1 | 51 | 8% | 2% | 0% | 0% |
+| NIFTY | HELD_ATM_STRADDLE | tested | DTE0 | 50 | 34% | 26% | 18% | 8% |
+| NIFTY | HELD_ATM_STRADDLE | tested | EXP1300 | 51 | 35% | 29% | 22% | 4% |
 | NIFTY | OTM_CE | pooled | DTE5 | 1* | 0% | 0% | 0% | 0% |
 | NIFTY | OTM_CE | pooled | DTE4 | 36 | 6% | 6% | 3% | 0% |
 | NIFTY | OTM_CE | pooled | DTE3 | 49 | 35% | 20% | 10% | 2% |
 | NIFTY | OTM_CE | pooled | DTE2 | 51 | 47% | 41% | 27% | 16% |
 | NIFTY | OTM_CE | pooled | DTE1 | 51 | 75% | 67% | 59% | 49% |
-| NIFTY | OTM_CE | pooled | DTE0 | 49 | 84% | 84% | 84% | 84% |
+| NIFTY | OTM_CE | pooled | DTE0 | 50 | 84% | 84% | 84% | 84% |
 | NIFTY | OTM_CE | pooled | EXP1300 | 51 | 80% | 80% | 78% | 76% |
 | NIFTY | OTM_CE | untested | DTE4 | 19* | 11% | 11% | 5% | 0% |
 | NIFTY | OTM_CE | untested | DTE3 | 25 | 52% | 32% | 16% | 4% |
 | NIFTY | OTM_CE | untested | DTE2 | 25 | 72% | 68% | 44% | 24% |
 | NIFTY | OTM_CE | untested | DTE1 | 25 | 96% | 88% | 84% | 72% |
-| NIFTY | OTM_CE | untested | DTE0 | 24 | 96% | 96% | 96% | 96% |
+| NIFTY | OTM_CE | untested | DTE0 | 25 | 96% | 96% | 96% | 96% |
 | NIFTY | OTM_CE | untested | EXP1300 | 25 | 96% | 96% | 96% | 96% |
 | NIFTY | OTM_CE | tested | DTE5 | 1* | 0% | 0% | 0% | 0% |
 | NIFTY | OTM_CE | tested | DTE4 | 17* | 0% | 0% | 0% | 0% |
@@ -824,13 +850,13 @@ Same observations as M1.A, re-indexed. This is the one to read for where decay a
 | NIFTY | OTM_PE | pooled | DTE3 | 49 | 31% | 24% | 16% | 2% |
 | NIFTY | OTM_PE | pooled | DTE2 | 51 | 59% | 57% | 49% | 24% |
 | NIFTY | OTM_PE | pooled | DTE1 | 51 | 73% | 65% | 57% | 47% |
-| NIFTY | OTM_PE | pooled | DTE0 | 49 | 76% | 76% | 76% | 76% |
+| NIFTY | OTM_PE | pooled | DTE0 | 51 | 76% | 76% | 76% | 76% |
 | NIFTY | OTM_PE | pooled | EXP1300 | 51 | 73% | 71% | 71% | 71% |
 | NIFTY | OTM_PE | untested | DTE4 | 15* | 0% | 0% | 0% | 0% |
 | NIFTY | OTM_PE | untested | DTE3 | 22 | 50% | 41% | 32% | 5% |
 | NIFTY | OTM_PE | untested | DTE2 | 23 | 91% | 91% | 87% | 48% |
 | NIFTY | OTM_PE | untested | DTE1 | 23 | 100% | 96% | 96% | 83% |
-| NIFTY | OTM_PE | untested | DTE0 | 21 | 100% | 100% | 100% | 100% |
+| NIFTY | OTM_PE | untested | DTE0 | 23 | 100% | 100% | 100% | 100% |
 | NIFTY | OTM_PE | untested | EXP1300 | 23 | 100% | 100% | 100% | 100% |
 | NIFTY | OTM_PE | tested | DTE5 | 1* | 0% | 0% | 0% | 0% |
 | NIFTY | OTM_PE | tested | DTE4 | 21 | 5% | 0% | 0% | 0% |
@@ -839,74 +865,60 @@ Same observations as M1.A, re-indexed. This is the one to read for where decay a
 | NIFTY | OTM_PE | tested | DTE1 | 28 | 50% | 39% | 25% | 18% |
 | NIFTY | OTM_PE | tested | DTE0 | 28 | 57% | 57% | 57% | 57% |
 | NIFTY | OTM_PE | tested | EXP1300 | 28 | 50% | 46% | 46% | 46% |
-| NIFTY | STRADDLE | pooled | DTE5 | 1* | 0% | 0% | 0% | 0% |
-| NIFTY | STRADDLE | pooled | DTE4 | 36 | 0% | 0% | 0% | 0% |
-| NIFTY | STRADDLE | pooled | DTE3 | 49 | 0% | 0% | 0% | 0% |
-| NIFTY | STRADDLE | pooled | DTE2 | 51 | 0% | 0% | 0% | 0% |
-| NIFTY | STRADDLE | pooled | DTE1 | 51 | 8% | 2% | 0% | 0% |
-| NIFTY | STRADDLE | pooled | DTE0 | 49 | 35% | 27% | 18% | 8% |
-| NIFTY | STRADDLE | pooled | EXP1300 | 51 | 35% | 29% | 22% | 4% |
-| NIFTY | STRADDLE | tested | DTE5 | 1* | 0% | 0% | 0% | 0% |
-| NIFTY | STRADDLE | tested | DTE4 | 36 | 0% | 0% | 0% | 0% |
-| NIFTY | STRADDLE | tested | DTE3 | 49 | 0% | 0% | 0% | 0% |
-| NIFTY | STRADDLE | tested | DTE2 | 51 | 0% | 0% | 0% | 0% |
-| NIFTY | STRADDLE | tested | DTE1 | 51 | 8% | 2% | 0% | 0% |
-| NIFTY | STRADDLE | tested | DTE0 | 49 | 35% | 27% | 18% | 8% |
-| NIFTY | STRADDLE | tested | EXP1300 | 51 | 35% | 29% | 22% | 4% |
+| SENSEX | HELD_ATM_STRADDLE | pooled | DTE5 | 2* | 0% | 0% | 0% | 0% |
+| SENSEX | HELD_ATM_STRADDLE | pooled | DTE4 | 37 | 0% | 0% | 0% | 0% |
+| SENSEX | HELD_ATM_STRADDLE | pooled | DTE3 | 47 | 0% | 0% | 0% | 0% |
+| SENSEX | HELD_ATM_STRADDLE | pooled | DTE2 | 50 | 0% | 0% | 0% | 0% |
+| SENSEX | HELD_ATM_STRADDLE | pooled | DTE1 | 50 | 8% | 2% | 0% | 0% |
+| SENSEX | HELD_ATM_STRADDLE | pooled | DTE0 | 51 | 35% | 24% | 18% | 8% |
+| SENSEX | HELD_ATM_STRADDLE | pooled | EXP1300 | 46 | 30% | 26% | 17% | 4% |
+| SENSEX | HELD_ATM_STRADDLE | tested | DTE5 | 2* | 0% | 0% | 0% | 0% |
+| SENSEX | HELD_ATM_STRADDLE | tested | DTE4 | 37 | 0% | 0% | 0% | 0% |
+| SENSEX | HELD_ATM_STRADDLE | tested | DTE3 | 47 | 0% | 0% | 0% | 0% |
+| SENSEX | HELD_ATM_STRADDLE | tested | DTE2 | 50 | 0% | 0% | 0% | 0% |
+| SENSEX | HELD_ATM_STRADDLE | tested | DTE1 | 50 | 8% | 2% | 0% | 0% |
+| SENSEX | HELD_ATM_STRADDLE | tested | DTE0 | 51 | 35% | 24% | 18% | 8% |
+| SENSEX | HELD_ATM_STRADDLE | tested | EXP1300 | 46 | 30% | 26% | 17% | 4% |
 | SENSEX | OTM_CE | pooled | DTE5 | 2* | 0% | 0% | 0% | 0% |
 | SENSEX | OTM_CE | pooled | DTE4 | 37 | 8% | 5% | 3% | 0% |
-| SENSEX | OTM_CE | pooled | DTE3 | 48 | 33% | 23% | 10% | 4% |
+| SENSEX | OTM_CE | pooled | DTE3 | 47 | 34% | 23% | 11% | 4% |
 | SENSEX | OTM_CE | pooled | DTE2 | 50 | 58% | 54% | 48% | 42% |
-| SENSEX | OTM_CE | pooled | DTE1 | 48 | 65% | 62% | 56% | 56% |
+| SENSEX | OTM_CE | pooled | DTE1 | 50 | 64% | 62% | 56% | 56% |
 | SENSEX | OTM_CE | pooled | DTE0 | 50 | 80% | 80% | 80% | 80% |
-| SENSEX | OTM_CE | pooled | EXP1300 | 46 | 78% | 76% | 76% | 70% |
+| SENSEX | OTM_CE | pooled | EXP1300 | 49 | 78% | 76% | 76% | 69% |
 | SENSEX | OTM_CE | untested | DTE4 | 17* | 6% | 0% | 0% | 0% |
 | SENSEX | OTM_CE | untested | DTE3 | 21 | 52% | 33% | 14% | 5% |
 | SENSEX | OTM_CE | untested | DTE2 | 21 | 100% | 95% | 86% | 71% |
-| SENSEX | OTM_CE | untested | DTE1 | 21 | 100% | 100% | 100% | 100% |
+| SENSEX | OTM_CE | untested | DTE1 | 22 | 100% | 100% | 100% | 100% |
 | SENSEX | OTM_CE | untested | DTE0 | 22 | 100% | 100% | 100% | 100% |
-| SENSEX | OTM_CE | untested | EXP1300 | 20 | 100% | 100% | 100% | 100% |
+| SENSEX | OTM_CE | untested | EXP1300 | 22 | 100% | 100% | 100% | 100% |
 | SENSEX | OTM_CE | tested | DTE5 | 2* | 0% | 0% | 0% | 0% |
 | SENSEX | OTM_CE | tested | DTE4 | 20 | 10% | 10% | 5% | 0% |
-| SENSEX | OTM_CE | tested | DTE3 | 27 | 19% | 15% | 7% | 4% |
+| SENSEX | OTM_CE | tested | DTE3 | 26 | 19% | 15% | 8% | 4% |
 | SENSEX | OTM_CE | tested | DTE2 | 29 | 28% | 24% | 21% | 21% |
-| SENSEX | OTM_CE | tested | DTE1 | 27 | 37% | 33% | 22% | 22% |
+| SENSEX | OTM_CE | tested | DTE1 | 28 | 36% | 32% | 21% | 21% |
 | SENSEX | OTM_CE | tested | DTE0 | 28 | 64% | 64% | 64% | 64% |
-| SENSEX | OTM_CE | tested | EXP1300 | 26 | 62% | 58% | 58% | 46% |
+| SENSEX | OTM_CE | tested | EXP1300 | 27 | 59% | 56% | 56% | 44% |
 | SENSEX | OTM_PE | pooled | DTE5 | 2* | 0% | 0% | 0% | 0% |
 | SENSEX | OTM_PE | pooled | DTE4 | 37 | 3% | 0% | 0% | 0% |
-| SENSEX | OTM_PE | pooled | DTE3 | 48 | 25% | 21% | 6% | 2% |
-| SENSEX | OTM_PE | pooled | DTE2 | 50 | 38% | 36% | 32% | 22% |
-| SENSEX | OTM_PE | pooled | DTE1 | 48 | 67% | 60% | 58% | 50% |
-| SENSEX | OTM_PE | pooled | DTE0 | 50 | 82% | 82% | 82% | 82% |
-| SENSEX | OTM_PE | pooled | EXP1300 | 46 | 85% | 80% | 78% | 72% |
+| SENSEX | OTM_PE | pooled | DTE3 | 47 | 26% | 21% | 6% | 2% |
+| SENSEX | OTM_PE | pooled | DTE2 | 50 | 36% | 34% | 30% | 20% |
+| SENSEX | OTM_PE | pooled | DTE1 | 51 | 67% | 61% | 59% | 51% |
+| SENSEX | OTM_PE | pooled | DTE0 | 51 | 82% | 82% | 82% | 82% |
+| SENSEX | OTM_PE | pooled | EXP1300 | 51 | 82% | 78% | 76% | 71% |
 | SENSEX | OTM_PE | untested | DTE4 | 9* | 0% | 0% | 0% | 0% |
-| SENSEX | OTM_PE | untested | DTE3 | 14* | 50% | 50% | 21% | 7% |
-| SENSEX | OTM_PE | untested | DTE2 | 15* | 80% | 80% | 80% | 60% |
-| SENSEX | OTM_PE | untested | DTE1 | 13* | 100% | 100% | 100% | 92% |
-| SENSEX | OTM_PE | untested | DTE0 | 14* | 100% | 100% | 100% | 100% |
-| SENSEX | OTM_PE | untested | EXP1300 | 12* | 100% | 100% | 100% | 100% |
+| SENSEX | OTM_PE | untested | DTE3 | 13* | 54% | 54% | 23% | 8% |
+| SENSEX | OTM_PE | untested | DTE2 | 15* | 73% | 73% | 73% | 53% |
+| SENSEX | OTM_PE | untested | DTE1 | 15* | 100% | 100% | 100% | 93% |
+| SENSEX | OTM_PE | untested | DTE0 | 15* | 100% | 100% | 100% | 100% |
+| SENSEX | OTM_PE | untested | EXP1300 | 15* | 100% | 100% | 100% | 100% |
 | SENSEX | OTM_PE | tested | DTE5 | 2* | 0% | 0% | 0% | 0% |
 | SENSEX | OTM_PE | tested | DTE4 | 28 | 4% | 0% | 0% | 0% |
 | SENSEX | OTM_PE | tested | DTE3 | 34 | 15% | 9% | 0% | 0% |
 | SENSEX | OTM_PE | tested | DTE2 | 35 | 20% | 17% | 11% | 6% |
-| SENSEX | OTM_PE | tested | DTE1 | 35 | 54% | 46% | 43% | 34% |
+| SENSEX | OTM_PE | tested | DTE1 | 36 | 53% | 44% | 42% | 33% |
 | SENSEX | OTM_PE | tested | DTE0 | 36 | 75% | 75% | 75% | 75% |
-| SENSEX | OTM_PE | tested | EXP1300 | 34 | 79% | 74% | 71% | 62% |
-| SENSEX | STRADDLE | pooled | DTE5 | 2* | 0% | 0% | 0% | 0% |
-| SENSEX | STRADDLE | pooled | DTE4 | 37 | 0% | 0% | 0% | 0% |
-| SENSEX | STRADDLE | pooled | DTE3 | 48 | 0% | 0% | 0% | 0% |
-| SENSEX | STRADDLE | pooled | DTE2 | 50 | 0% | 0% | 0% | 0% |
-| SENSEX | STRADDLE | pooled | DTE1 | 48 | 8% | 2% | 0% | 0% |
-| SENSEX | STRADDLE | pooled | DTE0 | 50 | 36% | 24% | 18% | 8% |
-| SENSEX | STRADDLE | pooled | EXP1300 | 46 | 30% | 26% | 17% | 4% |
-| SENSEX | STRADDLE | tested | DTE5 | 2* | 0% | 0% | 0% | 0% |
-| SENSEX | STRADDLE | tested | DTE4 | 37 | 0% | 0% | 0% | 0% |
-| SENSEX | STRADDLE | tested | DTE3 | 48 | 0% | 0% | 0% | 0% |
-| SENSEX | STRADDLE | tested | DTE2 | 50 | 0% | 0% | 0% | 0% |
-| SENSEX | STRADDLE | tested | DTE1 | 48 | 8% | 2% | 0% | 0% |
-| SENSEX | STRADDLE | tested | DTE0 | 50 | 36% | 24% | 18% | 8% |
-| SENSEX | STRADDLE | tested | EXP1300 | 46 | 30% | 26% | 17% | 4% |
+| SENSEX | OTM_PE | tested | EXP1300 | 36 | 75% | 69% | 67% | 58% |
 
 ## Excluded cycles
 

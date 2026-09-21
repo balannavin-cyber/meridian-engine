@@ -31,10 +31,12 @@ This proportion is what converts the two bounds into each other, and it is the s
 |---|---|---:|---:|---:|---:|
 | NIFTY | OTM_CE | 51 | 26 | 25 | 51% |
 | NIFTY | OTM_PE | 51 | 28 | 23 | 55% |
-| NIFTY | STRADDLE | 51 | 51 | 0 | 100% |
+| NIFTY | STRADDLE | 51 | 51 | 0 | 100%  (definitional -- see below) |
 | SENSEX | OTM_CE | 51 | 29 | 22 | 57% |
 | SENSEX | OTM_PE | 51 | 36 | 15 | 71% |
-| SENSEX | STRADDLE | 51 | 51 | 0 | 100% |
+| SENSEX | STRADDLE | 51 | 51 | 0 | 100%  (definitional -- see below) |
+
+**STRADDLE is 100% `tested` by construction, not by measurement.** The ATM strike is chosen as the nearest strike to Day-1 spot, so it sits within half a strike step of spot -- 25 points on NIFTY, 50 on SENSEX -- while 0.5 x sigma_daily is on the order of 90 points. The proximity criterion is therefore satisfied at entry in every cycle, and the `untested` STRADDLE cell is empty (N=0). The tested/untested split carries no information at the money; read the STRADDLE rows as pooled regardless of the state column.
 
 ## M1.A  Decay % from the Day-1 10:30 reference
 
@@ -654,6 +656,41 @@ The four thresholds are the pre-registration §5.1 harvest sweep.
 | SENSEX | high | STRADDLE | tested | D2 | 16* | 0% | 0% | 0% | 0% |
 | SENSEX | high | STRADDLE | tested | D3 | 14* | 0% | 0% | 0% | 0% |
 | SENSEX | high | STRADDLE | tested | D4 | 12* | 25% | 17% | 8% | 8% |
+
+## M1.C  The Day-N index is not a constant time-to-expiry
+
+Cycle length varies 3-6 trading days, and a complete cycle ends ON its expiry. So `D4` is DTE 0 in a 4-day cycle, DTE 1 in a 5-day cycle and DTE 2 in a 6-day cycle. **Decay is a function of DTE, not of days since cycle open**, so any Day-N cell spanning more than one DTE below is a blend of different physics and must be read as one.
+
+`D{last}` and `EXP1300` both sit on the expiry session but at different clocks -- 15:25 against 13:00 -- so they are **never the same timestamp**. They are two correlated observations of one day and are not independent.
+
+| symbol | stamp | DTE composition |
+|---|---|---|
+| NIFTY | D1 | DTE5 n=1, DTE4 n=35, DTE3 n=13, DTE2 n=2  **blend** |
+| NIFTY | D2 | DTE4 n=1, DTE3 n=35, DTE2 n=13, DTE1 n=2  **blend** |
+| NIFTY | D3 | DTE3 n=1, DTE2 n=35, DTE1 n=13, DTE0 n=2  **blend** |
+| NIFTY | D4 | DTE2 n=1, DTE1 n=35, DTE0 n=13  **blend** |
+| NIFTY | D5 | DTE1 n=1, DTE0 n=33  **blend** |
+| NIFTY | D6 | DTE0 n=1 |
+| NIFTY | EXP1300 | EXP1300 n=51 |
+| SENSEX | D1 | DTE5 n=2, DTE4 n=35, DTE3 n=11, DTE2 n=2, DTE1 n=1  **blend** |
+| SENSEX | D2 | DTE4 n=2, DTE3 n=35, DTE2 n=11, DTE1 n=2, DTE0 n=1  **blend** |
+| SENSEX | D3 | DTE3 n=2, DTE2 n=35, DTE1 n=9, DTE0 n=2  **blend** |
+| SENSEX | D4 | DTE2 n=2, DTE1 n=34, DTE0 n=10  **blend** |
+| SENSEX | D5 | DTE1 n=2, DTE0 n=35  **blend** |
+| SENSEX | D6 | DTE0 n=2 |
+| SENSEX | EXP1300 | EXP1300 n=46 |
+
+## M1.D  Decay % indexed by DTE (primary) rather than by Day-N
+
+Same observations as M1.A, re-indexed. This is the one to read for where decay actually sits; M1.A remains as the operational index.
+
+| symbol | regime | leg | state | DTE | N | P25 | median | P75 |
+|---|---|---|---|---|---:|---:|---:|---:|
+
+## M1.E  Threshold share by DTE
+
+| symbol | leg | state | DTE | N | >=50% | >=60% | >=70% | >=80% |
+|---|---|---|---|---:|---:|---:|---:|---:|
 
 ## Excluded cycles
 

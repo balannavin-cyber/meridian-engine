@@ -69,3 +69,38 @@ Deliberately scoped. Not established: which writer pads, whether it pads on
 halts as well as closed sessions, whether `hist_spot_bars_1m` and the era-2
 spot sources do the same, and how many days in the 2025-04 → 2026-03 window
 are affected. Each is a real question; none is this one.
+
+---
+
+## CORRECTION TO THE BRIEF — M10's stage-1 gate could not answer M10's question
+
+**Not a finding. A defect in the measurement design, recorded as such.**
+
+The addendum gates M10 stage 2 on stage 1 showing a spread wider than 10
+percentage points across sigma-distance terciles. Stage 1 cannot discharge
+that gate, because it varies sigma-distance **only through IV**.
+
+For a strike at 1% of spot:
+
+    sigma_distance = 0.01*S / (S * IV/100 / sqrt(252)) = sqrt(252) / IV
+
+so within stage 1 the sigma-distance terciles ARE the IV terciles inverted.
+Measured: `corr(sigma_distance, 1/IV)` = **0.984 to 0.992** across all four
+(symbol, leg) cells, the residual being exchange-grid rounding alone.
+
+The question M10 asks — *do outcomes depend on sigma-distance or on percent?* —
+requires holding one constant while moving the other. Only **stage 2** does
+that, by re-fetching at `K = spot +/- 1.0 sigma_daily`. Stage 1 compares a 1%
+strike against itself in different IV regimes, which is the M1 IV-regime split
+under another name.
+
+**Consequence.** Stage 1's flat result (4 of 16 DTE-1 cells clearing 10 pp,
+6 of 16 monotone, one cell of the wrong sign) is evidence that outcomes do not
+vary much across IV regimes at a fixed 1% strike. It is **not** evidence that
+sigma-distance does not matter, and it cannot be. The stop condition as
+written would have closed the question on a measurement incapable of answering
+it.
+
+**Disposition (operator, this session):** stage 2 is **DEFERRED, NOT
+CANCELLED**. The flat stage-1 result lowers the prior enough to rank stage 2
+below M9 and M8, which is a priority judgement, not a verdict.

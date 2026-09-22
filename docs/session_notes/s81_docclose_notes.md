@@ -420,3 +420,36 @@ for the gamma_metrics-only decision.
 - NOT BUILT NOW. Recorded so that whoever attempts a 299-day river knows
   the bridge is a prerequisite, not a detail, and that TD-S30-CANDIDATE-1
   is what it costs to skip it.
+
+### 2026-05-28 SETTLED - and the gate held
+SUPERSEDES the two-reading entry above. Reading (a) is correct.
+- **NSE circular NSE/CMTR/71775 (Ref 172/2025, 12 Dec 2025)** lists
+  28 May 2026 (Thu) as **Bakri Id, a trading holiday.** Reading (b), the
+  whole-day blackout, is RULED OUT.
+- MEASURED S81, and it refines the finding further:
+  `trading_calendar.json` **DOES carry it** - `holidays[8] = {"date":
+  "2026-05-28", "name": "Bakri Eid"}`, one of 16 2026 dates in the file.
+  The **DB table `trading_calendar` is the only thing missing the row.**
+- So the defect is in **SEEDING**, not in the calendar source. The JSON is
+  right; `seed_trading_calendar.py` did not land this row in the table,
+  while it did land 2026-09-14 (present, is_open=false, so the seeder
+  does write closure rows).
+- **THE GATE HELD, and ADR-020 is why.** `core/trading_calendar_gate.py`
+  resolves a missing row through the V18E rule engine
+  (`trading_calendar.get_session_config_for_date`) rather than defaulting,
+  so it read the JSON, found Bakri Eid, and returned closed. markers=0 /
+  signals=0 on 05-28 is the gate working, not an outage. **This is ADR-020
+  doing exactly the job it was written for** - a validation of that
+  decision, recorded as such.
+- TD BECOMES (S2, S60 family, Rule 18): "`trading_calendar` table is
+  missing the 2026-05-28 Bakri Id closure row that `trading_calendar.json`
+  carries." Scope: find why the seeder skipped it and whether other JSON
+  holidays are equally absent from the table - 16 JSON dates against
+  whatever the table holds is a one-query diff and was NOT run this
+  session. Do not fix now.
+- NOTE THE RESIDUAL RISK: the gate is safe because it falls through to the
+  JSON, but **any consumer reading `trading_calendar` directly** - rather
+  than through the gate - still sees no row for 05-28 and, per the
+  seeder's own convention, would read that as closed while the gate's
+  documented contract reads no-row as allow. The ADR-020 collision is
+  contained in the canonical gate, not eliminated system-wide.

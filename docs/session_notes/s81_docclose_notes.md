@@ -835,3 +835,90 @@ would raise it; a bigger table will not.
 - **max_pain tie-break TD stays OPEN.** row_number() ORDER BY total_pain
   with no tie-break column. One line to fix, still out of scope. One
   change, one reason.
+
+## L9 stage-1 prerequisite: FRONT-EXPIRY run_id fix (commit 89ad2bb)
+
+### The defect, and a correction to my own audit
+`ingest_option_chain_local.py` computes `snapshot_ts = utc_now_iso()` ONCE
+at line 449 and passes the same value to W1 (457) and to the S80
+extra-expiry pass (548), so **every expiry in a cycle shares one `ts`**.
+They do NOT share `created_at` - a DB-side default, therefore LATER for
+the extra pass. Two selectors ordered by exactly the column that differs:
+  run_merdian_shadow_runner_aws.py:104  fetch_latest_run_ids()
+  compute_options_flow_local.py:155     fetch_latest_runs_per_symbol()
+
+**I first recorded gamma and volatility as SAFE** on the grounds that the
+runner passes run_id explicitly. It does - but it RE-DERIVES that run_id
+by created_at.desc, so passing it explicitly protected nothing. Had the
+depth flip gone first, from its FIRST cycle the runner would have handed
+gamma and volatility W2's run_id and options flow would independently
+have picked W2 too. Silently: each run_id is still single-expiry, so
+TD-S79-NEW-12's guard sees one expiry and returns W2's date without
+raising. gex_strike_snapshots, gamma_metrics, ENH-120/121/122/125/126,
+the Pine overlay and Positioning would all have followed;
+gamma_metrics.dte would have jumped from 0/2 to 7/9.
+
+**ADR-025 A1's precondition that the ingest's "Run ID:" stdout line stays
+bound to W1 is TRUE AND GUARDS NOTHING HERE** - the AWS runner never
+reads that line, it re-queries the table. A precondition that holds and
+protects nothing is the shape this project has a rule about.
+
+### Fix and verification
+`order="ts.desc,expiry_date.asc"` at both sites - latest snapshot, then
+its front expiry. `core/supabase_client._normalize_order` returns a
+string verbatim when it ends in .asc/.desc, and compute_options_flow
+builds raw PostgREST params, so the multi-column order passes through
+both clients unaltered (verified from source BEFORE writing the patch).
+**No ">= today" guard**, deliberately and unlike the views: the ingest
+never writes past expiries, and a no-fallback guard in the orchestrator
+converts an edge case into a compute OUTAGE (no run_id => gamma does not
+run). Stated in a comment at both sites.
+
+READ-ONLY verification, 2026-09-22 (no script run, no table written):
+| symbol | old selector run_id | new selector run_id | same? |
+|---|---|---|---|
+| NIFTY | 7a2ec638-6cc6-4b4a-ac0b-2ce8c6fc7f82 | same | YES |
+| SENSEX | be93cc98-703e-4394-9215-780b7de2c271 | same | YES |
+Latest ts carries exactly ONE expiry per symbol (NIFTY 2026-09-22, 472
+rows; SENSEX 2026-09-24, 392 rows), one run_id each - so the change is
+**provably inert at depth 1**, which is what makes it safe to deploy
+ahead of the flip.
+
+**First live exercise: the runner's first cycle after the pull, `*/5
+03-09 UTC` = 08:30-08:35 IST tomorrow.** It fires on existing chain data
+and is independent of any depth change.
+
+### SIBLING SWEEP (B18) - three more sites, NOT fixed, awaiting ruling
+| site | pattern | at depth 2 | scheduled? |
+|---|---|---|---|
+| build_option_atm_snapshots_v1.py:20-25 | OCS `order=ts.desc limit=200` | **WOULD MIX** - 200 rows at the latest ts span W1 and W2 nondeterministically | NO |
+| build_option_execution_snapshots_v1.py:177-183 | OCS `order=ts.desc` limit 1000, symbol+signal_ts filtered | **WOULD MIX** | NO |
+| stage2_db_contract.py:238 | `("option_chain_snapshots","created_at",600)` freshness contract | NOT broken - sees W2's newer created_at, so it passes MORE easily. Weakened, not wrong | NO |
+None of the three is in the crontab or in the shadow runner's invoke
+list. All are manual/diagnostic. Fix only on operator ruling.
+
+### FOUR ITEMS RECORDED FOR DOC-CLOSE CORRECTION
+1. **ingest_option_chain_local.py lines 57-59** carry the SAME off-by-one
+   as TD-S80-NEW-1's Status row: `stage 1 = depth 1 / stage 2 = depth 2 /
+   stage 3 = depth 4`, against ADR-025 A1's "a stage 0 at depth 1 --
+   provably inert -- precedes W1+W2". **The code comment matters more
+   than the TD**: it is what an implementer reads when choosing a value.
+   Both need correcting.
+2. **record_write under-count.** `log.record_write("option_chain_snapshots",
+   inserted_count)` at line 512 records **W1 only**; the extra-expiry rows
+   are never added. After the flip, `script_execution_log` under-reports
+   by ~half, so **the log cannot be used to verify the flip landed** -
+   verification must query the table.
+3. **merdian_daily_audit.py:90** `option_chain_snapshots_min: 80_000` is a
+   day-TOTAL floor. At depth 2 the total roughly doubles, so the floor
+   becomes trivially satisfied and masks a partial day even more
+   thoroughly than TD-S80-NEW-9 already records.
+4. **useIvSmile (queries.ts:395) collides.** It neither selects nor
+   filters `expiry_date`, filters to `maxTs`, then writes
+   `entry.ce = r.iv` into a Map keyed by strike - **last write wins**.
+   Two expiries at one ts collide and one silently overwrites. Renders in
+   `BreadthVolSection` (sections.tsx:372-379): the IV skew number and the
+   smile chart on the **Breadth** page. A frontend fix is owed BEFORE or
+   ALONGSIDE the flip; Amendment B currently freezes that surface, so
+   this is a genuine conflict needing an operator decision, not a
+   quiet proceed.

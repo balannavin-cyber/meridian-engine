@@ -454,7 +454,7 @@ SUPERSEDES the two-reading entry above. Reading (a) is correct.
   documented contract reads no-row as allow. The ADR-020 collision is
   contained in the canonical gate, not eliminated system-wide.
 
-## ENH-126 v_gex_net_gamma_river (L14) - observations and one self-caught defect
+## ENH-126 v_gex_net_gamma_river (L14) - observations and one operator-caught defect
 
 ### DEFECT IN MY OWN DESIGN, caught by the operator on first read
 - session_complete shipped in draft as
@@ -506,3 +506,31 @@ gamma is unbounded as T->0.
 - Not investigated. Recorded so the river's 08-17 point is known to be a
   14:10 value rather than a 15:10 one, which is precisely what
   session_complete now surfaces.
+
+### ENH-126 D2 status and what is owed
+- **ADR-025 D2 clause 1 MET** - output read, 30 rows per symbol, all seven
+  invariants 0 including the two 08-17 regression assertions.
+- **Clause 2 MET** - EXPLAIN 54 ms, Seq Scan on gamma_metrics (11,280 rows
+  scanned, 10,170 kept by the 90-day predicate). A seq scan is correct at
+  this size; the predicate is there for when it is not.
+- **Clause 4 MET** - sql/2026-09-22_s81_v_gex_net_gamma_river.sql, with
+  COMMENT and REVOKE/GRANT as live statements, so sql/ matches the
+  database. Third object today for which that is true.
+- **Clause 3 PENDING BY DECISION** under ADR-025 Amendment B. A deliberate
+  hold, not a lapse. Write it that way.
+- **ENH-126 REGISTER ENTRY OWED** (with ENH-125's). ENH-126 is the next
+  free id; ENH-125 was the previous highest.
+
+### OBSERVED, not theorised: the view was live and anon-unreadable
+- Section 3b (GRANT SELECT) was missed on the first application pass. The
+  view existed, computed correctly, and returned nothing to the anon role
+  until the grant was re-run. 4d caught it: anon_select false on all seven
+  privileges.
+- **This is the TD-S37-03 silent-empty-dataset shape happening, not being
+  described.** Harmless here only because nothing consumes this view yet -
+  Marketview is frozen under Amendment B. Had it been a rendered layer,
+  the panel would have shown an empty chart at HTTP 200 with no error.
+- REINFORCES the S81 rule that COMMENT and GRANT ship as LIVE statements
+  in the sql/ file: the file was right, the application pass skipped a
+  statement, and only a verification query that tests the ANON path -
+  rather than the object's existence - could distinguish the two.

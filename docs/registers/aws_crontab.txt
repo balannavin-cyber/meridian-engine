@@ -51,3 +51,9 @@
 # and its contract gate aborts before any write if NIFTY/SENSEX FUTIDX fail.
 30 01 1,15 * * cd /home/ssm-user/meridian-engine && source .env && /usr/bin/python3 reload_dhan_scripmaster.py --apply >> logs/scripmaster.log 2>&1
 52 10 * * 1-5 cd /home/ssm-user/meridian-engine && source .env && /usr/bin/python3 generate_pine_overlay.py >> cron.log 2>&1
+
+# S81: disk headroom guard (TD-S80-NEW-18). EVERY day, not 1-5 - the volume
+# filled across 2026-09-06..09-22 including weekends. No cd and no `source .env`
+# on purpose: this is the one line that must not share the cron layer's failure
+# chain (S53), and it therefore also survives a dropped SHELL directive.
+15 02 * * * /home/ssm-user/meridian-engine/bin/disk_guard.sh >> /home/ssm-user/meridian-engine/logs/disk_guard.log 2>&1

@@ -337,3 +337,86 @@ the view crosses the PostgREST 8 s ceiling in roughly four weeks
   DDL for the first time, and shipping known non-determinism in a
   first-ever canonical DDL without writing it down is how defects become
   invisible.
+
+## L14 source measurement (S81) - coverage, holes, and the unit bridge that does not exist
+
+### Measured coverage
+| source | span | days/symbol |
+|---|---|---|
+| hist_gamma_metrics | 2025-04-01 -> 2026-03-30 | 244 |
+| gamma_metrics | NIFTY 2026-06-12, SENSEX 2026-06-10 -> 09-22 | 72 / 74 |
+| gex_strike_snapshots | 2026-05-25 -> 09-22 | NIFTY 81 / SENSEX 82 |
+
+### 3a RETURNED ZERO ROWS: hist_gamma_metrics and gamma_metrics DO NOT OVERLAP
+- hist ends 2026-03-30; gamma_metrics starts 2026-06-10/12. The x1e7 unit
+  bridge between the two eras is therefore **UNVERIFIED and unverifiable
+  from these two tables alone**. This is the TD-S30-CANDIDATE-1 trap
+  (seven sessions lost to a unit-convention misdiagnosis) sitting
+  unexercised. Any future stitch across 2026-03-30 MUST establish the
+  ratio empirically first, on a third source that overlaps both.
+- 3b matched 1,731 runs at ratio 1.0 exactly - join and grain are sound,
+  but it is BY CONSTRUCTION (same signed_gamma_exposure output) and
+  verifies no unit. 3c found no unit step inside gamma_metrics
+  (monthly median |net_gex| stable Jun-Sep: NIFTY 1.1-1.7M, SENSEX
+  0.46-0.59M).
+
+### WHY gamma_metrics STARTS 2026-06-10/12 - it is a retention artefact
+90 days before 2026-09-09 (when jobid 19 was disabled, TD-S76-NEW-2) is
+2026-06-11. The last cleanup deleted everything older, and nothing has
+been deleted since. **The start date records when the janitor stopped,
+not when data began.** Consequence: the window keeps growing now, and
+SNAPS BACK to 90 days the moment jobid 19 is re-enabled. A 30-session
+panel (~42 calendar days) survives that reversal; a 299-day panel would
+not, and would become the thing blocking the reversal.
+
+### GAP CLASSIFICATION against trading_calendar (Rule 18 applied)
+trading_calendar spans **2026-03-25 -> 2027-01-29 only**. It cannot
+classify any 2025 date, nor 2026-03-10. Those gaps are UNCLASSIFIABLE by
+this calendar, not "holidays".
+
+| date | dow | calendar | independent evidence | verdict |
+|---|---|---|---|---|
+| 2025-04-23 | - | NO ROW (out of span) | - | UNCLASSIFIABLE |
+| 2025-04-28 | - | NO ROW (out of span) | - | UNCLASSIFIABLE |
+| 2025-06-05 | - | NO ROW (out of span) | - | UNCLASSIFIABLE |
+| 2026-03-10 | - | NO ROW (out of span) | - | UNCLASSIFIABLE |
+| 2026-05-28 | Thu | **NO ROW, inside span** | markers 0, signals 0 | see below |
+| 2026-06-03 | Wed | is_open=true | markers 2, signals 0 | **REAL HOLE (GSS)** |
+| 2026-06-04 | Thu | is_open=true | markers 2, signals 0 | **REAL HOLE (GSS)** |
+| 2026-06-08 | Mon | is_open=true | markers 2, signals 0 | **REAL HOLE (GSS)** |
+| 2026-06-11 | Thu | is_open=true | markers 2, signals 1 | **REAL HOLE (GSS, NIFTY)** |
+| 2026-09-14 | Mon | is_open=false | - | holiday, correctly absent |
+
+**gamma_metrics has NO real holes.** Its only gap, 09-11 -> 09-15, has
+exactly one missing weekday (09-14) and the calendar marks it closed.
+09-11 and 09-15 are both present. This is the strongest single argument
+for the gamma_metrics-only decision.
+
+### NEW TD OWED - S2: trading_calendar is missing a weekday row INSIDE its span
+- 2026-05-28 (Thu) has **no row**, while every other weekday 2026-05-20
+  -> 06-05 carries one and weekends correctly carry none. The calendar
+  does record closures as rows (09-14 is present with is_open=false), so
+  an absent weekday is neither "open" nor "closed" - it is undefined.
+- That is exactly the **ADR-020 contract collision** landing on a real
+  date: the gate reads no-row as ALLOW, the seeder writes no-row to mean
+  CLOSED. Rule 18 says a gate over a wrong calendar is worse than no gate.
+- TWO READINGS, UNRESOLVED, and I am not picking one: (a) 05-28 was a
+  genuine closure whose holiday row was never seeded - but then it should
+  look like 09-14 and does not; (b) 05-28 was a trading day on which the
+  ENTIRE pipeline was dark - markers 0 and signals 0 against 148 and 143
+  on the neighbouring sessions - and the calendar is independently
+  missing its row. Reading (b) means a whole-day outage nobody recorded.
+- SETTLE IT AGAINST THE OFFICIAL NSE/BSE 2026 HOLIDAY LIST, per Rule 18.
+  Do not settle it from the calendar, which is the artefact in question.
+
+### DEFERRED - the long-history extension (2026-03-31 -> 2026-05-24)
+- That stretch is covered by NO current source: hist_gamma_metrics ends
+  03-30, gex_strike_snapshots starts 05-25, gamma_metrics starts 06-10.
+- Fillable only by RECOMPUTE from historical_option_chain_snapshots,
+  which overlaps hist_gamma_metrics (03-16 -> 03-30) AND
+  gex_strike_snapshots (05-25 -> 06-03). Those overlaps are what make it
+  **the unit bridge 3a could not provide** - it is the only object that
+  can measure the x1e7 ratio empirically against both eras.
+- NOT BUILT NOW. Recorded so that whoever attempts a 299-day river knows
+  the bridge is a prerequisite, not a detail, and that TD-S30-CANDIDATE-1
+  is what it costs to skip it.

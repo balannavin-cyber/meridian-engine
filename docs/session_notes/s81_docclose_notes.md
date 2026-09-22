@@ -580,3 +580,193 @@ checks misfiring on my own prose - those were wrong CHECKS, this was a
 wrong CLAIM with no measurement behind it. Rule: an expected value handed
 to a verifier must be computed, and computed from the artefact, not
 recalled.
+
+## ENH-98 (L7 vanna / L8 charm) - deferral LIFTED, build WAITS for a clean re-run
+
+### Status
+- **OPERATOR DECISION S81: the ENH-98 deferral is LIFTED.** It was blocked
+  on "Phase 2 deployment plan commitment" because vanna/charm had no
+  Phase-1 consumer. **Hedgewall parity is that consumer.** ENH-98 moves
+  PROPOSED -> IN BUILD. Parent is ADR-002 v2 P8. Build L7 and L8 under the
+  EXISTING ENH-98 id; do not mint a new one.
+- **BUILD NOT STARTED.** The go/no-go measurement was INCONCLUSIVE on a
+  contaminated sample. Re-run first. Query below, ready to paste.
+
+### idx_ocs_symbol_created_at_desc - CAVEAT RESOLVED
+Measured: it is `(symbol, created_at DESC)`, **on created_at, NOT ts**.
+So it is valid for the SYMBOL SKIP-SCAN only (symbol is its leading
+column); the latest-ts probe rides `idx_ocs_ts_symbol_expiry
+(ts DESC, symbol, expiry_date)`. Both exist, so **the v_max_pain_by_strike
+latest_ts retrofit has the indexes it needs.** The earlier "verify before
+relying on it" caveat is CLOSED - and it was worth raising: the name says
+created_at and would have been read as ts.
+Full index set on option_chain_snapshots: idx_ocs_run_id(run_id);
+idx_ocs_symbol_created_at_desc(symbol, created_at DESC);
+idx_ocs_symbol_expiry_strike_type(symbol, expiry_date, strike,
+option_type); idx_ocs_ts_symbol_expiry(ts DESC, symbol, expiry_date);
+option_chain_snapshots_pkey(id); uix_ocs_run_strike_type UNIQUE(run_id,
+strike, option_type).
+
+### The S81 measurement, and why it does not decide
+SENSEX only (NIFTY was dte 0, excluded by T>0 - itself an S62
+demonstration). dte 2, 392 chain rows, spot from gamma_metrics with a
+20-minute gap.
+  gamma_rel_err median by bucket:
+    dte/252   ATM 0.1287  NEAR 0.1268  FAR 0.1979
+    dte/365   ATM 0.0739  NEAR 0.1270  FAR 0.1961
+    exact/365 ATM 0.0757  NEAR 0.1267  FAR 0.2040
+  delta_abs_err median: ATM ~0.046-0.052, NEAR 0.009-0.016, FAR ~0.006
+
+1. **Calendar-year time fits better than trading-day time** - ATM gamma
+   7.4% on dte/365 against 12.9% on dte/252. The vendor almost certainly
+   prices a 365-day year. NOTE: dte/365 and exact/365 are
+   INDISTINGUISHABLE at 2 DTE (0.0739 vs 0.0757) - 20 minutes out of two
+   days is ~0.7%. **The conventions only separate at 0-1 DTE, which is
+   exactly when it matters.** Today's sample cannot choose between them;
+   that is a fact about the test, not about the conventions.
+2. **Stopping rule NOT met, and NOT passed.** The stated rule was: refuse
+   if gamma_rel_err_med > ~0.10 in ATM AND NEAR under BOTH conventions.
+   Under dte/365 ATM is 0.0739, so the refusal condition is not met.
+   NEAR at 0.127 means it is not a pass either. **INCONCLUSIVE.**
+3. **THE TEST WAS CONTAMINATED, AND THE CONTAMINATION WAS SELF-INFLICTED.**
+   I joined gamma_metrics for spot. **option_chain_snapshots HAS ITS OWN
+   spot COLUMN** - same row, same moment, 0 nulls on 66,528 rows today.
+   The right column was on the row I was already reading.
+   Worse, the gap is not "20 minutes stale": the chain is at 15:40 and the
+   spot at ~15:20, and per ADR-022 the index is FROZEN 15:15-15:28 with
+   the settled close in the 15:29 bar. The two straddle the AUCTION
+   BOUNDARY - two different market states, not drift.
+   QUANTIFIED: SENSEX ocs.spot 74,529.08 vs the gamma_metrics 74,653.2 I
+   used = **124 points, 0.17%**. Via delta_err ~ gamma x dS with SENSEX
+   ATM gamma ~ n(d1)/(S*sigma*sqrt(T)) ~ 0.399/(74529*0.00874) ~ 0.00061,
+   a 0.046 delta error implies ~75 points. Same order, same direction,
+   against a measured 124. The spot mismatch accounts for most of it.
+4. **Vendor greek coverage is partial and the wings are junk.**
+   133 of 392 SENSEX front-expiry rows (34%) have iv zero or null - the
+   TD-S79-NEW-8 shape at the GREEK level, not just the gamma level. And
+   iv reaches **337.86** on the wings. Those are not volatilities.
+   **They must be excluded BY RULE, never by eye.** The re-run uses a
+   |vendor delta| in [0.05, 0.95] band, which is self-describing and
+   standard, and REPORTS how many rows the rule removed.
+
+### PREDICTION, STATED BEFORE THE RE-RUN (Rule 0 clause 3)
+Using ocs.spot, ATM delta_abs_err should fall from ~0.046 to **well under
+0.01**. If it does not, the spot explanation is WRONG and there is a real
+model mismatch. Record the outcome against this sentence, not against a
+number adjusted afterwards.
+
+### WHY THE FORWARD VARIANT CANNOT TEST 3(a) - include it anyway, cheaply
+Black-76 with F = S*exp(rT) has an ALGEBRAICALLY IDENTICAL d1 to spot-BS:
+ln(S*exp(rT)/K) + sigma^2*T/2 == ln(S/K) + rT + sigma^2*T/2. The only
+difference is an exp(-rT) discount on delta and gamma, which at 1-2 DTE
+and r=6.5% is 0.9998. It cannot move a 12% gamma error. It settles the
+DISCOUNTING question and nothing else.
+The instruments that DO discriminate a spot offset are in the re-run:
+  * **signed** median delta error beside the absolute one. Consistent sign
+    => spot offset. Signed ~ 0 with large absolute => model noise.
+  * **implied_spot_offset_pts = median((v_delta - bs_delta)/bs_gamma)**,
+    which reads the mismatch directly in index points, since
+    delta_err ~ gamma * dS.
+
+### RE-RUN CONDITIONS (operator to run)
+Tomorrow **mid-session ~11:00 IST, NOT post-close**, both symbols, NIFTY
+on its next expiry with dte >= 1, SENSEX dte 1. Spot from
+option_chain_snapshots.spot - the SAME ROW as the greeks. Same three
+conventions. Same stopping rule, restated: **refuse if gamma_rel_err_med
+> 0.10 in ATM AND NEAR under all three conventions.**
+
+### RE-RUN QUERY (ready to paste)
+```sql
+WITH bounded AS (
+  SELECT symbol, ts, expiry_date, strike, option_type, iv, delta, gamma, spot
+    FROM option_chain_snapshots
+   WHERE ts >= now() - interval '1 day'
+), latest AS (
+  SELECT symbol, max(ts) AS latest_ts FROM bounded GROUP BY symbol
+), front AS (
+  SELECT l.symbol, l.latest_ts,
+         (l.latest_ts AT TIME ZONE 'Asia/Kolkata')::date AS session_date,
+         min(b.expiry_date) AS expiry_date
+    FROM latest l
+    JOIN bounded b ON b.symbol = l.symbol AND b.ts = l.latest_ts
+     AND b.expiry_date >= (l.latest_ts AT TIME ZONE 'Asia/Kolkata')::date
+   GROUP BY l.symbol, l.latest_ts
+), raw AS (
+  SELECT f.symbol, f.latest_ts, f.expiry_date,
+         (f.expiry_date - f.session_date) AS dte, b.spot, b.strike,
+         b.option_type, b.iv, b.delta AS v_delta, b.gamma AS v_gamma,
+         EXTRACT(epoch FROM ((f.session_date + time '15:30')
+                  AT TIME ZONE 'Asia/Kolkata') - f.latest_ts) AS secs_left_today
+    FROM front f
+    JOIN bounded b ON b.symbol = f.symbol AND b.ts = f.latest_ts
+                  AND b.expiry_date = f.expiry_date
+), kept AS (
+  SELECT *, abs(v_delta) BETWEEN 0.05 AND 0.95 AS in_band
+    FROM raw WHERE iv > 0 AND v_gamma > 0 AND v_delta IS NOT NULL
+), t AS (
+  SELECT k.*, c.conv, c.tt
+    FROM kept k
+    CROSS JOIN LATERAL (VALUES
+      ('dte/365',   GREATEST(k.dte,0)::numeric/365.0),
+      ('dte/252',   GREATEST(k.dte,0)::numeric/252.0),
+      ('exact/365', GREATEST(((k.dte-1)*86400.0 + GREATEST(k.secs_left_today,0))/86400.0,
+                             0.0)::numeric/365.0)) AS c(conv, tt)
+   WHERE k.in_band AND c.tt > 0
+), d AS (
+  SELECT t.*, t.iv/100.0 AS sigma,
+         (ln(t.spot/t.strike) + (0.065 + (t.iv/100.0)^2/2)*t.tt)
+           / NULLIF((t.iv/100.0)*sqrt(t.tt),0) AS d1
+    FROM t
+), e AS (
+  SELECT d.*, exp(-d.d1*d.d1/2)/sqrt(2*pi()) AS nd1,
+         1/(1+0.2316419*abs(d.d1)) AS q
+    FROM d
+), f2 AS (
+  SELECT e.*,
+    e.nd1/NULLIF(e.spot*e.sigma*sqrt(e.tt),0)                      AS bs_gamma_spot,
+    exp(-0.065*e.tt)*e.nd1/NULLIF(e.spot*e.sigma*sqrt(e.tt),0)     AS bs_gamma_fwd,
+    CASE WHEN e.d1 >= 0
+         THEN 1 - e.nd1*(e.q*(0.319381530+e.q*(-0.356563782+e.q*(1.781477937
+                  +e.q*(-1.821255978+e.q*1.330274429)))))
+         ELSE     e.nd1*(e.q*(0.319381530+e.q*(-0.356563782+e.q*(1.781477937
+                  +e.q*(-1.821255978+e.q*1.330274429))))) END      AS n_d1
+    FROM e
+), cmp AS (
+  SELECT f2.symbol, f2.conv, f2.dte, f2.spot,
+         CASE WHEN abs(f2.strike/f2.spot-1) <= 0.01 THEN 'ATM'
+              WHEN abs(f2.strike/f2.spot-1) <= 0.03 THEN 'NEAR'
+              ELSE 'FAR' END AS bucket,
+         ((CASE WHEN f2.option_type='CE' THEN f2.n_d1 ELSE f2.n_d1-1 END)
+            - f2.v_delta)                                   AS d_signed,
+         abs((CASE WHEN f2.option_type='CE' THEN f2.n_d1 ELSE f2.n_d1-1 END)
+            - f2.v_delta)                                   AS d_abs,
+         abs(f2.bs_gamma_spot - f2.v_gamma)/NULLIF(f2.v_gamma,0) AS g_spot,
+         abs(f2.bs_gamma_fwd  - f2.v_gamma)/NULLIF(f2.v_gamma,0) AS g_fwd,
+         (f2.v_delta - (CASE WHEN f2.option_type='CE' THEN f2.n_d1 ELSE f2.n_d1-1 END))
+            / NULLIF(f2.bs_gamma_spot,0)                     AS implied_dspot
+    FROM f2
+)
+SELECT symbol, conv, bucket, max(dte) AS dte, round(max(spot),1) AS spot,
+       count(*) AS n,
+       round(percentile_cont(0.5) WITHIN GROUP (ORDER BY g_spot)::numeric,4)  AS gamma_relerr_med,
+       round(percentile_cont(0.9) WITHIN GROUP (ORDER BY g_spot)::numeric,4)  AS gamma_relerr_p90,
+       round(percentile_cont(0.5) WITHIN GROUP (ORDER BY g_fwd)::numeric,4)   AS gamma_relerr_fwd_med,
+       round(percentile_cont(0.5) WITHIN GROUP (ORDER BY d_abs)::numeric,4)   AS delta_abserr_med,
+       round(percentile_cont(0.5) WITHIN GROUP (ORDER BY d_signed)::numeric,4) AS delta_signederr_med,
+       round(percentile_cont(0.5) WITHIN GROUP (ORDER BY implied_dspot)::numeric,1) AS implied_spot_offset_pts
+  FROM cmp GROUP BY symbol, conv, bucket
+ ORDER BY symbol, conv, bucket;
+```
+Run alongside it, to make the exclusion rule visible rather than silent:
+```sql
+SELECT symbol, count(*) AS rows_front_expiry,
+       count(*) FILTER (WHERE iv IS NULL OR iv = 0)        AS iv_zero_or_null,
+       count(*) FILTER (WHERE iv > 100)                    AS iv_over_100,
+       count(*) FILTER (WHERE abs(delta) < 0.05 OR abs(delta) > 0.95) AS outside_delta_band,
+       round(min(iv) FILTER (WHERE iv > 0)::numeric,2)     AS iv_min,
+       round(max(iv)::numeric,2)                           AS iv_max
+  FROM option_chain_snapshots o
+ WHERE o.ts = (SELECT max(ts) FROM option_chain_snapshots x WHERE x.symbol = o.symbol
+                AND x.ts >= now() - interval '1 day')
+ GROUP BY symbol;
+```

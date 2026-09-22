@@ -453,3 +453,56 @@ SUPERSEDES the two-reading entry above. Reading (a) is correct.
   seeder's own convention, would read that as closed while the gate's
   documented contract reads no-row as allow. The ADR-020 collision is
   contained in the canonical gate, not eliminated system-wide.
+
+## ENH-126 v_gex_net_gamma_river (L14) - observations and one self-caught defect
+
+### DEFECT IN MY OWN DESIGN, caught by the operator on first read
+- session_complete shipped in draft as
+  `session_date < today_IST OR last_run >= 15:15`.
+  The date clause made **every past session complete BY CONSTRUCTION** -
+  the column could not fail for the reason it existed. Rule 0 clause 1,
+  authored fresh rather than inherited.
+- The counter-example it missed: **2026-08-17**, both symbols, n_runs 64,
+  last run at or before 15:15 = **14:10**. The writer stopped ~1 hour
+  early and the old rule called the day finished.
+- Redefined to `last_ts_ist_any >= session_date + time '15:10'`, no date
+  clause. Today mid-session now reads false under the same rule, with no
+  special case. A regression assertion for 08-17 is in the file's 4c.
+
+### THE DAILY VALUE IS THE 15:10 CYCLE, not the 15:15 one
+- Runs stamp about **seven seconds past** the five-minute mark, so the
+  15:15 cycle lands at **15:15:07** and falls outside the
+  at-or-before-15:15 test in `pick`. The last qualifying cycle is
+  15:10:07.
+- This is intended - inside continuous trading, clear of the ADR-022
+  auction boundary - but **the window is named 15:15 and the value taken
+  is the 15:10 cycle, and those are not the same sentence.** Recorded in
+  the COMMENT so a later reader does not rediscover it as a bug.
+
+### OBSERVATION - expiry days dominate the river's scale
+Session minima, all at **dte = 0**:
+  SENSEX 2026-09-10  -62.2M
+  NIFTY  2026-08-11  -40.1M
+  NIFTY  2026-09-01  -27.9M
+  SENSEX 2026-09-17  -25.3M
+against typical NON-expiry closes of ~0.1-3M - **one to two orders of
+magnitude**. This is the S62 0-DTE gamma blow-up visible in the LIVE
+series: at 15:10 the expiring book is twenty minutes from vanishing and
+gamma is unbounded as T->0.
+- NOT a defect and NOT reconstructed - gamma_metrics is the live source,
+  which is exactly why S62 permits expiry days here at all.
+- CONSEQUENCE FOR RENDERING: on a linear axis four expiry sessions will
+  flatten the other twenty-six to a baseline. `dte` is already a column,
+  so a renderer can mark, separate, or axis-break 0-DTE sessions without
+  a schema change. **Presentation question, DEFERRED under Amendment B.**
+- Do not "fix" this by excluding expiry days. They are real sessions and
+  the largest gamma states in the window.
+
+### OBSERVATION - 2026-08-17 is a partial compute day
+- Both symbols, 64 runs, writer stopped ~14:10. A **real hole in the last
+  hour**, not a holiday - the calendar marks it a trading day.
+- Distinct from the four early-June GSS holes (06-03/04/08/11), which are
+  whole-day compute failures on days where capture ran.
+- Not investigated. Recorded so the river's 08-17 point is known to be a
+  14:10 value rather than a 15:10 one, which is precisely what
+  session_complete now surfaces.

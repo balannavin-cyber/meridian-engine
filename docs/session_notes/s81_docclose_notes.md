@@ -534,3 +534,49 @@ gamma is unbounded as T->0.
   in the sql/ file: the file was right, the application pass skipped a
   statement, and only a verification query that tests the ANON path -
   rather than the object's existence - could distinguish the two.
+
+## ENH-127 v_oi_rotation_since_open (L13 live leg)
+- **D2 clause 1 MET** - read verified. NIFTY anchor 09:15:04, latest
+  15:40:05, dte 0, 236 strikes, all BOTH, churned 0. SENSEX same shape,
+  196 strikes, dte 2. Top-10 read sane (NIFTY 23350 CE +20.0M qty on
+  expiry day, 23400 PE -8.8M).
+- **Clause 2 MET** - EXPLAIN 24.7 ms, index seeks throughout via
+  idx_ocs_symbol_created_at_desc and idx_ocs_ts_symbol_expiry, no full
+  scan. Contrast v_max_pain_by_strike at 3,396 ms.
+- **Clause 4 MET** - sql/2026-09-22_s81_v_oi_rotation_since_open.sql with
+  COMMENT and REVOKE/GRANT live. Fourth object today for which sql/
+  matches the database.
+- **Clause 3 PENDING BY DECISION** under ADR-025 Amendment B.
+- **ENH-127 REGISTER ENTRY OWED**, with ENH-125 and ENH-126.
+- 4c: all five invariants 0.
+- is_fresh read FALSE at verification time (72.3 min past the 15:40
+  snapshot, floor 30). The column worked on its first run rather than
+  being decorative.
+
+### idx_ocs_symbol_created_at_desc EXISTS - it is what the max-pain fix needs
+The 4a plan shows option_chain_snapshots carries
+**idx_ocs_symbol_created_at_desc** alongside idx_ocs_ts_symbol_expiry.
+That is the (symbol, <time> DESC) prefix the S72 FIX 2 lateral probe
+requires, and it is exactly what the v_max_pain_by_strike latest_ts fix
+needs - the 3,260 ms full-index scan filed this session with a ~4-week
+clock. ENH-127 demonstrates the pattern working on the SAME TABLE at
+24.7 ms. The retrofit is therefore not speculative: the index is present
+and the shape is proven in production.
+CAVEAT, UNMEASURED: the index name says created_at, not ts. If it is on
+created_at rather than ts the two are close but NOT the same column, and
+the lateral must probe whichever column the view orders by. **Verify the
+index definition before writing the retrofit** - do not assume from the
+name. (This is the S72 three-indexes-one-access-path shape: names are
+not definitions.)
+
+### CORRECTION - I published an unmeasured expected value
+I told the operator to expect comment_len 4637. The file literal is
+**5632**, which is what the database stored, so the artefact was always
+correct. The number came from nowhere: the verification run that would
+have printed it aborted on a wrong assertion before reaching that line,
+and I stated a figure anyway. The operator caught it by comparing.
+DISTINCT FROM the four earlier assertion slips this session, which were
+checks misfiring on my own prose - those were wrong CHECKS, this was a
+wrong CLAIM with no measurement behind it. Rule: an expected value handed
+to a verifier must be computed, and computed from the artefact, not
+recalled.

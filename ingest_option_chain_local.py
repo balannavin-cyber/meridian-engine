@@ -54,10 +54,24 @@ SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 # back to a default indistinguishable from a successful read (TD-S79-NEW-2
 # shape). Rollout is by git pull -- canonical, auditable, one-line commits.
 #
-#   stage 1  {"NIFTY": 1, "SENSEX": 1}  inert, behaviour identical to S79
-#   stage 2  {"NIFTY": 2, "SENSEX": 2}  non-expiry day, after stage 1 verified
-#   stage 3  {"NIFTY": 4, "SENSEX": 2}  after a week of ENH-99 retry telemetry
-EXPIRY_DEPTH = {"NIFTY": 1, "SENSEX": 1}
+# ADR-025 A1 NUMBERING. CORRECTED S81: this table previously called depth 1
+# "stage 1", which is off by one against Amendment A1 -- "a stage 0 at depth 1,
+# provably inert, precedes W1+W2". TD-S80-NEW-1's Status row carries the same
+# error. A1 governs; both were corrected at S81.
+#
+#   stage 0  {"NIFTY": 1, "SENSEX": 1}  inert, behaviour identical to S79
+#   stage 1  {"NIFTY": 2, "SENSEX": 2}  W1+W2, ships on a non-expiry day
+#   stage 2  {"NIFTY": 4, "SENSEX": 2}  after a week of ENH-99 retry telemetry
+#
+# S81-EXPIRY-DEPTH-STAGE1 -- at stage 1 since 2026-09-22, first live cycle the
+# 08:30 IST ingest of 2026-09-23. PRECONDITION, landed in 89ad2bb: both
+# latest-run selectors resolve the FRONT expiry's run_id, not the newest
+# created_at. Without it this constant silently re-points gamma, volatility
+# and options flow onto W2 from the first cycle, with no guard tripping.
+# ROLLBACK is this one line back to {"NIFTY": 1, "SENSEX": 1}; it takes effect
+# on the next cron fire, within 5 minutes, because run_ingest.sh re-execs
+# Python each cycle and this constant is read at import.
+EXPIRY_DEPTH = {"NIFTY": 2, "SENSEX": 2}
 
 # Seconds between sequential option-chain calls. core/dhan_client.py has NO
 # proactive spacing -- all 429 handling is reactive, via retry_call and

@@ -922,3 +922,131 @@ list. All are manual/diagnostic. Fix only on operator ruling.
    ALONGSIDE the flip; Amendment B currently freezes that surface, so
    this is a genuine conflict needing an operator decision, not a
    quiet proceed.
+
+## Two operator rulings, S81
+
+### RULING 1 - sibling OCS readers: NOT fixed, recorded as one TD
+**NEW TD OWED (S3): "manual/diagnostic option_chain_snapshots readers are
+not expiry-scoped."** Three sites, none scheduled, none in the crontab or
+the shadow runner's invoke list:
+| site | at depth 2 |
+|---|---|
+| `build_option_atm_snapshots_v1.py:20-25` | **would MIX** - `order=ts.desc limit=200` spans W1 and W2 nondeterministically at one ts |
+| `build_option_execution_snapshots_v1.py:177-183` | **would MIX** - `order=ts.desc`, limit 1000 |
+| `stage2_db_contract.py:238` | NOT broken - `("option_chain_snapshots","created_at",600)` freshness sees W2's NEWER created_at, so it passes more easily. Weakened, not wrong |
+Filed so that **anyone reviving one of these knows it predates depth 2**.
+Do not fix without a ruling; they are diagnostic tools, and a silent
+"fix" to an unscheduled script is how a tool's output stops matching the
+run it is being compared against.
+
+### RULING 2 - useIvSmile fix is NOT blocked by Amendment B
+Being fixed via Lovable: select `expiry_date`, keep `min(expiry_date)` at
+`maxTs`, before the Map. **Operator ruling: this is a CORRECTNESS fix to
+an existing card, not new parity presentation, so ADR-025 Amendment B
+does not block it.** Recorded because Amendment B's scope will be read
+again: it defers *presentation of the parity layers*, not repairs to
+surfaces already shipped. Without this distinction written down, the next
+reader could treat the freeze as blocking bug fixes, which it does not.
+
+## STAGE 1 DEPLOYED (commit 8d51cce) - tomorrow's verification
+
+`EXPIRY_DEPTH = {"NIFTY": 2, "SENSEX": 2}`, live in ~/meridian-engine.
+**Nothing fires until the 08:30 IST ingest of 2026-09-23.**
+The stage table was renumbered to ADR-025 A1 in the same anchor: stage 0
+= depth 1, stage 1 = W1+W2, stage 2 = NIFTY 4. TD-S80-NEW-1's Status row
+still carries the old numbering and is owed the same correction.
+
+### RUN THIS AT ~09:20 IST, 2026-09-23. Every verdict must read PASS.
+```sql
+WITH latest AS (
+  SELECT symbol, max(ts) AS ts FROM option_chain_snapshots
+   WHERE ts >= now() - interval '8 hours' GROUP BY symbol
+), chain AS (
+  SELECT o.symbol, count(DISTINCT o.expiry_date) AS n_expiries,
+         count(DISTINCT o.run_id) AS n_run_ids, min(o.expiry_date) AS front_expiry
+    FROM option_chain_snapshots o JOIN latest l ON l.symbol=o.symbol AND l.ts=o.ts
+   GROUP BY o.symbol
+), gm AS (
+  SELECT symbol, count(*) AS rows_today, count(DISTINCT ts) AS cycles_today
+    FROM gamma_metrics WHERE ts >= (now() AT TIME ZONE 'Asia/Kolkata')::date
+   GROUP BY symbol
+), gm_last AS (
+  SELECT DISTINCT ON (symbol) symbol, expiry_date AS gm_expiry, dte AS gm_dte
+    FROM gamma_metrics WHERE ts >= (now() AT TIME ZONE 'Asia/Kolkata')::date
+   ORDER BY symbol, ts DESC
+), of_last AS (
+  SELECT DISTINCT ON (symbol) symbol, run_id
+    FROM options_flow_snapshots WHERE ts >= (now() AT TIME ZONE 'Asia/Kolkata')::date
+   ORDER BY symbol, ts DESC
+), of_exp AS (
+  SELECT f.symbol, min(o.expiry_date) AS of_expiry
+    FROM of_last f JOIN option_chain_snapshots o ON o.run_id = f.run_id
+   GROUP BY f.symbol
+)
+SELECT c.symbol, 'A depth_landed' AS chk,
+       c.n_expiries::text || ' expiries / ' || c.n_run_ids::text || ' run_ids' AS observed,
+       CASE WHEN c.n_expiries = 2 AND c.n_run_ids = 2 THEN 'PASS' ELSE 'FAIL' END AS verdict
+  FROM chain c
+UNION ALL
+SELECT c.symbol, 'B gamma_on_FRONT_expiry',
+       'gm=' || COALESCE(g.gm_expiry::text,'NULL') || ' front=' || c.front_expiry::text
+         || ' dte=' || COALESCE(g.gm_dte::text,'NULL'),
+       CASE WHEN g.gm_expiry = c.front_expiry THEN 'PASS' ELSE 'FAIL' END
+  FROM chain c LEFT JOIN gm_last g ON g.symbol = c.symbol
+UNION ALL
+SELECT m.symbol, 'C gamma_one_row_per_cycle',
+       m.rows_today::text || ' rows / ' || m.cycles_today::text || ' cycles',
+       CASE WHEN m.rows_today = m.cycles_today THEN 'PASS' ELSE 'FAIL' END
+  FROM gm m
+UNION ALL
+SELECT c.symbol, 'D options_flow_on_FRONT_expiry',
+       'of=' || COALESCE(f.of_expiry::text,'NO ROW') || ' front=' || c.front_expiry::text,
+       CASE WHEN f.of_expiry = c.front_expiry THEN 'PASS' ELSE 'FAIL' END
+  FROM chain c LEFT JOIN of_exp f ON f.symbol = c.symbol
+ ORDER BY 1, 2;
+```
+
+**Check B is the one that proves the run_id fix held**, and it is written
+self-referentially ON PURPOSE: it compares `gamma_metrics.expiry_date`
+against `min(expiry_date)` observed in the chain at that same ts, rather
+than against a dte I predicted. A hardcoded "dte must not be 13" would
+have to be re-derived every week and would silently stop testing anything
+the moment the expiry calendar shifted. If the fix had NOT held, gamma
+would carry W2 - NIFTY ~10-06 rather than ~09-29, SENSEX ~10-01 rather
+than 09-24 - and B reads FAIL without anyone needing to know the calendar.
+
+**Check A can fail for a reason that is NOT a defect:** if the vendor
+offers only one future expiry for a symbol, `select_expiries` returns a
+shorter list by design and `n_expiries = 1`. Read the ingest log line
+`S80 extra expiries (depth=2): [...]` before calling A a failure.
+
+### ENH-99 retry telemetry (shell, on the box)
+```
+grep -E "get_option_chain 20[0-9-]+|insert extra expiry" \
+     /home/ssm-user/meridian-engine/cron.log | tail -40
+```
+Those two `label=` strings are built at ingest lines 542 and 563 and
+exist ONLY on the extra-expiry path, so any retry banner carrying them is
+stage-1-induced. `grep -c retry_call` is the WRONG instrument - it fires
+on success too.
+
+### Also confirm no guard exception
+```
+grep -iE "infer_expiry_date|multi-expiry|Traceback" \
+     /home/ssm-user/meridian-engine/cron.log | tail -20
+```
+Expect nothing. TD-S79-NEW-12 raises by design on a multi-expiry run_id;
+it should not fire, because each expiry has its own run_id.
+
+### ROLLBACK
+One line at `ingest_option_chain_local.py:74` back to
+`EXPIRY_DEPTH = {"NIFTY": 1, "SENSEX": 1}`, commit, push, `git pull
+--ff-only` on the box. **Effective on the next cron fire, within 5
+minutes** - `run_ingest.sh` re-execs Python each cycle and the constant is
+read at import. No restart, no daemon, no cache. Already-written W2 rows
+stay; they are run_id-keyed and no front-expiry-scoped consumer sees them.
+
+### REMEMBER: script_execution_log CANNOT verify this
+`record_write` at ingest line 512 logs **W1 only**. After the flip the log
+under-reports by about half. Verify from the TABLE, which is what the
+block above does.

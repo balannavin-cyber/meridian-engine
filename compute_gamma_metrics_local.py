@@ -243,8 +243,19 @@ def infer_spot(option_rows: list[dict[str, Any]]) -> float:
 
 
 def infer_expiry_date(option_rows: list[dict[str, Any]]) -> str | None:
-    expiries = [str(r.get("expiry_date")) for r in option_rows if r.get("expiry_date")]
-    return expiries[0] if expiries else None
+    # TD-S79-NEW-12 (S80): min() is correct by construction; the raise states the
+    # single-expiry invariant that previously held only as a property of the data.
+    # Required before ingest can write >1 expiry per cycle -- an arbitrary pick
+    # corrupts dte -> gex_strike_snapshots.dte -> ENH-120 sigma, silently.
+    expiries = {str(r.get("expiry_date")) for r in option_rows if r.get("expiry_date")}
+    if not expiries:
+        return None
+    if len(expiries) > 1:
+        raise RuntimeError(
+            f"option rows carry {len(expiries)} expiries {sorted(expiries)}; "
+            f"gamma metrics assume a single-expiry run (TD-S79-NEW-12)"
+        )
+    return min(expiries)
 
 
 def infer_ts(option_rows: list[dict[str, Any]]) -> str:

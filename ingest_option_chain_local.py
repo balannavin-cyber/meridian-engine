@@ -41,6 +41,54 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 
 
+# S80 / ADR-025: per-symbol expiry capture depth.
+# Measured, not assumed -- hist_option_bars_1m, full day 2025-06-02, every
+# contract at peak OI. NIFTY W1/W2/M1/M2 = 94.45% of OI at 0/7/21/56 DTE,
+# while W3 carries 0.47% against the Dec quarterly 3.4%, so chronological
+# slicing takes the worthless expiry and misses the valuable one. SENSEX W1
+# alone is 97.25% and W1+W2 is 99.90%; its monthlies are dead (0.089%), so
+# depth 2 is its final answer.
+#
+# Deliberately a constant, NOT merdian_parameters: ingest is the head of the
+# pipeline and must not acquire a network read that can fail or silently fall
+# back to a default indistinguishable from a successful read (TD-S79-NEW-2
+# shape). Rollout is by git pull -- canonical, auditable, one-line commits.
+#
+#   stage 1  {"NIFTY": 1, "SENSEX": 1}  inert, behaviour identical to S79
+#   stage 2  {"NIFTY": 2, "SENSEX": 2}  non-expiry day, after stage 1 verified
+#   stage 3  {"NIFTY": 4, "SENSEX": 2}  after a week of ENH-99 retry telemetry
+EXPIRY_DEPTH = {"NIFTY": 1, "SENSEX": 1}
+
+# Seconds between sequential option-chain calls. core/dhan_client.py has NO
+# proactive spacing -- all 429 handling is reactive, via retry_call and
+# is_dhan_429. TD-080 is S1-recurring (S22/S28/S29), so space the calls
+# rather than provoke a 429 and lean on the retry.
+EXPIRY_CALL_SPACING_S = 3.0
+
+
+def select_expiries(future_expiries: list[str], depth: int) -> list[str]:
+    """W1..W2 then the last expiry of each successive calendar month.
+
+    depth 1 -> [W1]; 2 -> [W1, W2]; 3 -> [W1, W2, M1]; 4 -> [W1, W2, M1, M2].
+    `future_expiries` must be sorted ascending. A monthly is the last expiry
+    falling within a calendar month. Returns a deduplicated ascending list,
+    shorter than `depth` when the vendor offers fewer. ADR-025.
+    """
+    if depth <= 0 or not future_expiries:
+        return []
+    picked: list[str] = list(future_expiries[: min(depth, 2)])
+    if depth > 2:
+        last_of_month: dict[str, str] = {}
+        for e in future_expiries:
+            last_of_month[e[:7]] = e
+        for key in sorted(last_of_month):
+            if len(picked) >= depth:
+                break
+            if last_of_month[key] not in picked:
+                picked.append(last_of_month[key])
+    return sorted(dict.fromkeys(picked))
+
+
 UNDERLYING_MAP = {
     "NIFTY": {
         "UnderlyingScrip": 13,
@@ -462,6 +510,68 @@ def ingest_symbol(symbol: str, mode: str, log: ExecutionLog) -> int:
     # ENH-71: record the actual write count. ExecutionLog computes
     # contract_met by comparing this against EXPECTED_FLOOR[mode].
     log.record_write("option_chain_snapshots", inserted_count)
+
+    # S80 / ADR-025 -- extra forward expiries, appended after W1 is committed.
+    _depth = EXPIRY_DEPTH.get(symbol.upper(), 1)
+    if _depth > 1:
+        import time as _time
+        _sorted = sorted({str(e) for e in future_expiries})
+        if _sorted and _sorted[0] != str(future_expiries[0]):
+            print(
+                f"WARN: vendor expiry list NOT sorted -- "
+                f"raw[0]={future_expiries[0]} sorted[0]={_sorted[0]}"
+            )
+        _extra = [e for e in select_expiries(_sorted, _depth) if e != expiry_date]
+        print(f"S80 extra expiries (depth={_depth}): {_extra}")
+        _captured: list[str] = []
+        _failed: list[str] = []
+        _extra_rows = 0
+        for _ed in _extra:
+            _time.sleep(EXPIRY_CALL_SPACING_S)
+            try:
+                _resp = retry_call(
+                    lambda ed=_ed: dhan.get_option_chain(
+                        underlying_scrip=underlying["UnderlyingScrip"],
+                        underlying_seg=underlying["UnderlyingSeg"],
+                        expiry=ed,
+                    ),
+                    attempts=6,
+                    delay_seconds=15.0,
+                    backoff_multiplier=1.5,
+                    retry_predicate=is_dhan_429,
+                    label=f"{symbol} get_option_chain {_ed}",
+                )
+                _rid = str(uuid.uuid4())
+                _rows = extract_option_rows(
+                    symbol=symbol,
+                    expiry_date=_ed,
+                    snapshot_ts=snapshot_ts,
+                    run_id=_rid,
+                    spot=spot,
+                    option_chain_response=_resp,
+                    mode=mode,
+                )
+                if not _rows:
+                    print(f"  {_ed}: 0 rows -- skipped")
+                    _failed.append(_ed)
+                    continue
+                retry_call(
+                    lambda r=_rows: sb.insert("option_chain_snapshots", r),
+                    attempts=3,
+                    delay_seconds=5.0,
+                    backoff_multiplier=1.5,
+                    label=f"{symbol} insert extra expiry {_ed}",
+                )
+                _captured.append(_ed)
+                _extra_rows += len(_rows)
+                print(f"  {_ed}: run_id={_rid} rows={len(_rows)} OK")
+            except Exception as _e:
+                print(f"  {_ed}: FAILED {type(_e).__name__}: {_e}")
+                _failed.append(_ed)
+        print(
+            f"S80 extra expiries captured={_captured} "
+            f"failed={_failed} rows={_extra_rows}"
+        )
 
     print("INGEST OPTION CHAIN COMPLETED")
     return log.complete()

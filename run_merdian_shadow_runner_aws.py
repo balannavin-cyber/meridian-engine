@@ -101,7 +101,22 @@ def fetch_latest_run_ids(sb: SupabaseClient) -> Dict[str, str]:
                 lambda s=symbol: sb.select(
                     table="option_chain_snapshots",
                     filters={"symbol": f"eq.{s}"},
-                    order="created_at.desc",
+                    # S81-FRONT-EXPIRY-RUNID -- was order="created_at.desc".
+                    # W1 and the S80 extra expiries share ONE ts (ingest sets
+                    # snapshot_ts once and reuses it) but NOT created_at, which
+                    # is a DB default and is therefore LATER for the extra
+                    # pass. Ordering by created_at.desc would hand every
+                    # downstream compute W2's run_id the moment EXPIRY_DEPTH
+                    # exceeds 1 -- silently, with no guard tripping, because
+                    # each run_id is still single-expiry.
+                    #
+                    # NO ">= today" guard here, deliberately, and unlike the
+                    # views. The ingest never writes past expiries, and a
+                    # no-fallback guard in the orchestrator turns an edge case
+                    # into a compute outage: no run_id means gamma does not run
+                    # at all. Failing to absent is right for a display read; it
+                    # is wrong for the thing that feeds the whole compute chain.
+                    order="ts.desc,expiry_date.asc",
                     limit=1,
                 ),
                 attempts=3,

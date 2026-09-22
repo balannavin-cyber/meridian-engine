@@ -151,7 +151,17 @@ def fetch_latest_runs_per_symbol(symbols: List[str]) -> Dict[str, Dict[str, Any]
             {
                 "select": "symbol,run_id,created_at",
                 "symbol": f"eq.{symbol}",
-                "order": "created_at.desc",
+                # S81-FRONT-EXPIRY-RUNID -- was "order": "created_at.desc".
+                # W1 and the S80 extra expiries share ONE ts but NOT
+                # created_at (a DB default, later for the extra pass), so
+                # created_at.desc selects W2 once EXPIRY_DEPTH exceeds 1.
+                # This picks the latest snapshot, then its front expiry.
+                #
+                # NO ">= today" guard, deliberately, and unlike the views:
+                # the ingest never writes past expiries, and a no-fallback
+                # guard here would convert an edge case into a compute
+                # outage rather than a display gap.
+                "order": "ts.desc,expiry_date.asc",
                 "limit": "1",
             },
         )

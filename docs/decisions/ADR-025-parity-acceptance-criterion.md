@@ -8,6 +8,7 @@
 | Session | Session 80 |
 | Supersedes | Nothing. First acceptance ruling for the Hedgewall parity programme. |
 | Related | **TD-S79-NEW-22 (D0)** — the entry that filed this decision · `MERDIAN_Hedgewall_Parity_Spec.md` (S78) · ENH-120 / ENH-121 / ENH-122 (S79) · ENH-123 / ENH-124 (S80, off-spec) · TD-S79-NEW-15…-21 (L3 measured and declined) · ADR-021 (latest-run scoping) · ADR-017 (console design) · ADR-009 (pre-registration) · ADR-016 (parameter calibration) · TD-S79-NEW-3 (`sql/` as a superseded rebuild source) · TD-080 (Dhan 429, S1-recurring) |
+| Amended | **Amendment A**, 2026-09-22 (Session 80) — what shipped against what was ruled; session self-corrections; D2 clause 4 registration status. Body text above is unchanged. |
 | Rule 10 class | **Programme scope and acceptance.** Governs a multi-session build. Mandatory ADR per Doc Protocol v4 Rule 10 and per TD-S79-NEW-22's own *Proper fix* clause. |
 
 ---
@@ -124,7 +125,9 @@ Chronological `future_expiries[0:4]` yields 92.28 % on NIFTY and no curve — fo
 Implementation constraints, all to be measured before shipping:
 
 - The count is `ingest.n_expiries.{symbol}` in `merdian_parameters` per ADR-016. This is a **capture-depth config**, not an output threshold, so TD-S79-NEW-21's measure-before-parameterise rule does not bind it the same way.
+  - **Amendment A1 (2026-09-22): what shipped is a module-level constant, not this parameter.** The deviation is deliberate and conditioned; see below.
 - **Stage it**: ship at W1+W2, watch ENH-99 retry telemetry for one week, then extend NIFTY to 4. TD-080 is S1-recurring across S22 / S28 / S29.
+  - **Amendment A1: the staging shipped finer than this.** A stage 0 at depth 1 — provably inert — precedes W1+W2.
 - **Calls and rows are separable risks.** Far expiries need only ATM ± N strikes for an IV reading; full depth is required for W1 alone.
 - Cadence may be tiered — W1/W2 every cycle, monthlies less often.
 
@@ -154,3 +157,103 @@ Implementation constraints, all to be measured before shipping:
 - **The ENH-98 deferral.** L7/L8 stay BLOCKED-ON-DECISION until it is lifted.
 - **Whether the pin/max-pain coincidence predicts anything.** That is a conjunction question and is governed by spec §5 and ADR-009 — pre-registration, target and success criterion written before the first query. ENH-97 stands as the warning: chi-sq 1.56, p ≈ 0.30 on 1,968 signals.
 - **jobid 19.** Re-enabling it caps L13's history at 14 days and deletes what L14 needs. Unresolved, TD-S76-NEW-2.
+
+---
+
+## Amendment A — 2026-09-22 (Session 80)
+
+*Appended at S80 doc-close. The body above is the decision as accepted on 2026-09-21 and is
+not edited. This amendment records where the implementation departed from it, what the session
+got wrong, and which of D2 clause 4's obligations are now discharged.*
+
+### A1 — Capture depth shipped as a constant, not a parameter
+
+The L9 ruling places the count in `merdian_parameters` as `ingest.n_expiries.{symbol}`, per
+ADR-016. What shipped in `ingest_option_chain_local.py` (commit `b094fa2`) is a module-level
+constant:
+
+```python
+EXPIRY_DEPTH = {"NIFTY": 1, "SENSEX": 1}
+```
+
+with the extra-expiry pass **appended** before the completion print and guarded by `if _depth > 1:`.
+
+**Why, stated rather than assumed.** A database-read parameter introduces a read path, and a read
+path can fail. ADR-023's obligation is that a read fails to *absent*, never to stale — but a
+capture-depth read that failed **open** would raise depth silently on a cycle whose downstream
+consumers assume one expiry, which is precisely the corruption TD-S79-NEW-12's guard now crashes
+on. At depth 1 the constant makes stage 0 inert **by inspection**: the extra pass is unreachable,
+W1's path is untouched, and the stdout `Run ID:` contract and ENH-71's `record_write` stay bound
+to W1 alone. A constant is the right instrument for a safety interlock; a parameter is the right
+instrument for a tuning knob. This is one of the former until the guard has proven itself.
+
+**Actual staging**, finer than the bullet above describes:
+
+| stage | depth | gate |
+|---|---|---|
+| **0 — shipped S80** | NIFTY 1 · SENSEX 1 | Inert by construction. Verification owed: `grep -c "S80 extra expiries"` on `cron.log` must be **0**, and the day's runs must show `max_exp = 1` at 2–3 runs per symbol. |
+| 1 | NIFTY 2 · SENSEX 2 | A non-expiry day, **after** TD-S80-NEW-10's missing expiry filter is fixed. Not before: a second expiry entering `option_chain_snapshots` arms the per-strike `max()` mixture in the S40 `v_max_pain_by_strike`. |
+| 2 | NIFTY 4 by the **selection** rule · SENSEX 2 | One week of clean ENH-99 retry telemetry. TD-080 is S1-recurring across S22 / S28 / S29. |
+
+**The parameter is not abandoned; it is conditioned.** It becomes the correct instrument at stage 2,
+when depth is a tuning decision rather than an interlock. Recorded as a condition and not a plan:
+move the depth to `ingest.n_expiries.{symbol}` once TD-S79-NEW-12's guard has run in production
+across a full expiry cycle without firing.
+
+### A2 — Self-corrections, Session 80
+
+In the form of ADR-024 §A9, and for the same reason: an error corrected inside a session leaves no
+trace unless it is written down, and the pattern across them is worth more than any one of them.
+
+1. **`[0]` on an unordered set — TD-S79-NEW-12's own shape, hours after patching the guard for it.**
+   Claimed the day's first `option_chain_snapshots` row was 09:00 IST; it is **08:30–08:40 IST**.
+   The claim came from `ORDER BY ts ASC LIMIT 5` over an arbitrary `LIMIT 20` backfill subset —
+   the minimum of a sample read as the minimum of the set. The guard shipped that same morning
+   exists to crash on exactly this class of reasoning.
+
+2. **Two measurements three days apart, called an anomaly.** Reported 3,093 against 2,923 `run_id`s
+   as unexplained. Monday 2026-09-21 wrote 85 × 2 = 170 runs; 2,923 + 170 = 3,093 exactly. It had
+   already been drafted as TD-S80-NEW-6 before the arithmetic was done, and was withdrawn before
+   filing — later than it should have been caught, earlier than the register.
+
+3. **Called a stale sentence a phantom commit.** Asserted that `CURRENT.md` referenced a follow-on
+   commit that did not exist. On EC2, `grep -c "TD-S79-NEW-23"` = 1 and `change_log[0]` = S79: the
+   commit is present and one sentence describing it is stale. Downgraded to **TD-S80-NEW-13**.
+
+4. **Used `sha256` across tiers, which C-15 names an invalid instrument.** Compared file hashes
+   Local against EC2 to test identity. `core.autocrlf=true` makes every text file differ across
+   those tiers by exactly its line count; the cross-tier instrument is **`git hash-object`**.
+   C-15 states this in `MERDIAN_ClaudeCode_Guardrails.md`, which had already been read.
+
+5. **Had §S73.A backwards, and patched production because of it.** Argued against `~/meridian-cc`
+   on the grounds that *"CC lives on EC2, so using it re-inverts the deploy direction."* §S73.A
+   establishes the agent tree for precisely the opposite reason — so agent work happens on EC2
+   **without touching production**. The consequence was not theoretical: both S80 patch scripts
+   ran against `~/meridian-engine`, the production tree. Corrected on the operator's instruction
+   to read PK first.
+
+**The pattern.** 1 through 4 are one reflex, and it is the reflex ADR-024 §A9 already named:
+*reasoning from the archive when the source was available* — a sample for a set, a stale figure
+for a current one, a memory of a file for the file. 5 is a different and worse failure: asserting
+a topology claim without reading the topology document, then acting on it. Reading PK before
+asserting is the remedy for all five, and it is cheap in every one of these cases.
+
+### A3 — D2 clause 4 registration, status at doc-close
+
+Of the six objects the *Consequences* section lists:
+
+- `v_gex_max_pain`, `v_gex_pin_maxpain`, `gex_pin_maxpain_history`,
+  `backfill_pin_maxpain_runs(text, timestamptz, timestamptz, integer)` — **DDL committed under
+  `sql/` at `85dfad2`.** Register entries land in this doc-close, Enhancement Register Part 4.
+- `backfill_pin_maxpain(text, date)` — **dropped**, as ruled. It computed before `ON CONFLICT`
+  could discard, and timed out; a second callable path into one table is a hazard, not a spare.
+- `scripts/backfill_pin_maxpain.py` — **committed at `85dfad2`**, byte-identical to the run that
+  produced the 11,795 rows (`sha256 453f1be8…`). It hardcodes the window 2026-05-25 → 2026-09-18,
+  so re-running it extends nothing; extending the history means editing the window.
+
+**Clause 4 is discharged for all six. Rule 10 is not.** `gex_pin_maxpain_history` is a new table
+and still owes its own schema ADR — **TD-S80-NEW-7**. Committing DDL and ratifying a schema are
+different obligations, and only the first has been met.
+
+*Amendment A — Session 80 doc-close, 2026-09-22. No decision in the body above is reversed,
+narrowed or extended by this amendment.*

@@ -57,6 +57,318 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S80-NEW-1 (S2 priority) — the ingest discards the expiry ladder the vendor returns, so no multi-expiry IV exists at any timestamp and L9 has no live source
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** No data is wrong; a capability the vendor supplies for free has never been captured. It blocks a specced parity layer outright. **PARTIALLY REMEDIATED this session** — see Status. |
+| **Filed** | 2026-09-22 (Session 80) |
+| **Component** | `ingest_option_chain_local.py:325-366` · `option_chain_snapshots` |
+| **Measured** | Across **every cycle the table has ever held** — 1,462 NIFTY + 1,461 SENSEX — `min_exp = avg_exp = max_exp = 1` and `cycles_multi_expiry = 0`. One expiry per cycle, always, ~400–470 strike rows. |
+| **Mechanism, from source** | `dhan.get_expiry_list()` at `:327` returns the **whole ladder**. `:365` takes `future_expiries[0]` and discards the rest. `:374` already parameterises the chain call by expiry, so fetching more was never an integration problem. **No comment anywhere states why only one is taken.** |
+| **What it blocks** | An IV term structure is ATM IV at two or more expiries **compared at one moment**. With one expiry per cycle there is nothing to compare, at any timestamp, ever. The parity spec's L9 names `option_chain_snapshots` as *"full expiry ladder per cycle"* — see **TD-S80-NEW-2**. |
+| **What history can and cannot give** | `hist_option_greeks_1m` carries 2 expiries per minute with IV, but ends **2026-03-30**. `hist_option_bars_1m` carries **21 expiries** at day level with OI, but **no IV**, and ends 2026-05-07. **2026-03-30 → present has no multi-expiry IV source at all, and it cannot be backfilled.** Every day the ladder is not captured is permanently missing. |
+| **Not a lost capability** | `historical_option_chain_snapshots` shows up to 3 expiries per cycle, but **every such cycle is 2026-04-16** — `breeze_backfill_s35`, which the parity spec §1.1 records as carrying no spot, no greeks and no bid/ask. The live ingest never captured a ladder in either relation. **No regression occurred; the capability never existed.** |
+| **Proper fix** | Loop `select_expiries(sorted(future_expiries), depth)` instead of indexing `[0]`, with **one `run_id` per expiry** — `infer_expiry_date` raises on a multi-expiry run (TD-S79-NEW-12) and `build_gss_rows` stamps one expiry scalar per run, so a shared run_id would corrupt `dte` → `gex_strike_snapshots.dte` → ENH-120's σ silently. |
+| **Cost to fix** | Code shipped this session. The remaining cost is the staged rollout and its rate-limit measurement — see Status. |
+| **Cross-ref** | **ADR-025** (depth measured, not assumed) · **TD-S80-NEW-2** (the spec claim) · TD-S79-NEW-12 (the guard this required first) · **TD-080** (Dhan 429, S1-recurring — `core/dhan_client.py` has no proactive call spacing, all 429 handling is reactive) · `sql/2026-09-22_s80_*` |
+| **Status** | **OPEN — code deployed INERT.** `EXPIRY_DEPTH = {"NIFTY": 1, "SENSEX": 1}` at commit `b094fa2`; the extra-expiry pass is behind `if _depth > 1` and does not execute. Stage 2 is `{"NIFTY": 2, "SENSEX": 2}` on a non-expiry day; stage 3 is NIFTY to 4 after a week of ENH-99 retry telemetry. **Closes only when depth is actually raised and verified**, not when the code landed. |
+
+---
+
+### TD-S80-NEW-2 (S2 priority) — three claims in the Hedgewall parity spec are refuted by measurement, and the spec is what sequences the remaining build
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** The spec is a source-resolution document used to order a multi-session programme. Three of its claims are wrong and one of them made a layer look like a 3-hour view when it is an ingest change. |
+| **Filed** | 2026-09-22 (Session 80) |
+| **Component** | `MERDIAN_Hedgewall_Parity_Spec.md` — §2 L4, L5, L9, L13 and §3's ordering |
+| **(1) L9's live source is false** | *"Source, live \| `option_chain_snapshots` — full expiry ladder per cycle."* Measured one expiry per cycle across all 2,923 cycles (TD-S80-NEW-1). It was **never** true at any point in the system's history. |
+| **(2) L4 still recommends a construction S79 rejected** | L4 says `argmax(oi)` and `argmax(gamma × oi)` *"differ and both are worth rendering."* S79 measured the gamma-weighted form collapsing to ATM at **−0.09σ / +0.19σ** and **REJECTED** it — it finds the money, not the wall. |
+| **(3) L4 / L5 / L13 name columns that do not exist** | The spec uses `oi_total_calls` / `oi_total_puts`; `gex_strike_snapshots` carries **`oi_call` / `oi_put`** per ADR-015. A build following the spec literally fails with an undefined-column error. |
+| **Consequence for §3's ordering** | L9 sits at **#2, 3 h, "cheapest real read on the list."** The real shape is an ingest change, a backfill that cannot happen, a live panel with zero history at launch, and a chart with a discontinuity at 2026-03-30 between a 2-point historical slope and a live multi-point one. **§3's effort figures were derived from source resolution, never from building anything**, and two are now measured wrong. |
+| **Root cause** | All three are the same reflex — reasoning from a register or a row count when the source was available. **ADR-024 §A9 names it and attributes four of its own eight self-corrections to it.** ~400 rows per OCS cycle *looks* like a ladder if `expiry_date` is never counted. |
+| **Proper fix** | Correct the three claims in place; re-derive §3's ordering from measured cost rather than inherited estimates, per **ADR-025's Consequences**. Record that the spec is S78-dated and decays. |
+| **Cost to fix** | ~30 min of text. The ordering re-derivation is the judgement, not the typing. |
+| **Cross-ref** | **ADR-025** (§ Spec corrections records all three) · TD-S80-NEW-1 · ADR-024 §A9 · ADR-015 (the real column names) · **TD-S79-NEW-22** (no acceptance criterion — now closed by ADR-025) |
+| **Status** | **OPEN.** Recorded in ADR-025; the spec file itself is unedited. |
+
+---
+
+### TD-S80-NEW-3 (S3 priority) — `max_pain_in_pin_band` fires on two runs in five regardless of DTE, so it cannot discriminate and must not be read as a weaker form of coincidence
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Display-layer only, on a parked extension. The hazard is a consumer treating the boolean as a signal. |
+| **Filed** | 2026-09-22 (Session 80) |
+| **Component** | `v_gex_pin_maxpain.max_pain_in_pin_band` (ENH-124) |
+| **Measured** | Session-hours only, 11,795 runs. Band-membership rate runs **20.8 % – 42.1 %** across all ten symbol×DTE cells. Exact strike coincidence over the same cells runs **1.2 % – 13.9 %**. |
+| **The discriminating case** | **NIFTY 6-DTE has the HIGHEST band rate in the sample (42.1 %) on a 2.9 % exact rate**, while NIFTY 0-DTE — the one genuinely elevated cell at **13.9 % exact** — has a *lower* band rate at 41.9 %. So the two quantities do not rank the same cells and the band boolean carries no information the exact test carries. |
+| **Why that matters** | "Max pain and the pin on the same strike" was the reading ENH-123/124 were built for. A consumer reaching for a softer version of it would naturally reach for `in_band`, and would get a flag that is true two times in five whatever the market is doing. |
+| **Proper fix** | Either drop the column, or document in the view comment that it is descriptive geometry and not a signal. **Do not widen it into a tolerance** — TD-S79-NEW-21's ruling applies, and ENH-124 deliberately ships a distance with no tolerance constant. |
+| **Cost to fix** | ~10 min (one `COMMENT ON VIEW` amendment) or a column drop with a grant re-apply. |
+| **Cross-ref** | ENH-124 · **TD-S79-NEW-21** (measure, then parameterise) · parity spec §5 + **ADR-009** (whether coincidence predicts anything is a pre-registered conjunction question, unanswered; ENH-97's chi-sq 1.56 / p≈0.30 on 1,968 signals is the standing warning) |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S80-NEW-4 (S2 priority) — the documented commit-message pattern emits a BOM, and one shipped inside a commit subject this session
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Cosmetic per commit, but it lands in every commit made by the documented method and it breaks any tooling that matches a commit subject by prefix. |
+| **Filed** | 2026-09-22 (Session 80) |
+| **Component** | The commit-message temp-file pattern — `Out-File -Encoding utf8 -NoNewline` |
+| **Symptom** | `git log --oneline -1` on `b094fa2` renders **`﻿S80 - TD-S79-NEW-12 guard...`** — U+FEFF before the first character. `43382ea` and `35b68f7` do not carry it, so this is new rather than long-standing. |
+| **Root cause** | **Windows PowerShell 5.1's `utf8` encoding writes a BOM.** `-NoNewline` suppresses the trailing newline and has no effect on the byte-order mark. Only PowerShell 6+ offers `utf8NoBOM`. The working note records this pattern as the one that *"avoids BOM and heredoc issues"* — it avoids the heredoc issue only. |
+| **Why it was not caught** | The pattern was adopted for a reason that is half-true, and a BOM is invisible in most terminals and in most diffs. It surfaced here only because the commit subject was read back deliberately. |
+| **Deliberately not amended** | `b094fa2` is pushed and pulled and verified on both hosts. Force-pushing `main` to fix a subject-line character is a worse trade than carrying it, particularly given the register's own note that **tags must be re-verified after any amend cycle**. |
+| **Proper fix** | Replace the pattern with `[System.IO.File]::WriteAllText($path, $msg, (New-Object System.Text.UTF8Encoding $false))` — used for `85dfad2`, which carries no BOM. Correct the working note, which currently states the opposite. |
+| **Cost to fix** | ~5 min of text. |
+| **Cross-ref** | commits `b094fa2` (with BOM) and `85dfad2` (without) · TD-S78-NEW-3 (the PK LF→CRLF round-trip — the same encoding-assumption family one tier over) |
+| **Status** | **OPEN.** Method corrected in practice from `85dfad2`; the written rule still says the wrong thing. |
+
+---
+
+### TD-S80-NEW-5 (S2 priority) — ADR-025 was accepted and committed alone, so Rule 11.4's single-commit closure did not happen — in the session that wrote the acceptance criterion
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** The same defect class the Decision Index's ADR-024 row spent a paragraph documenting, repeated one ADR later. |
+| **Filed** | 2026-09-22 (Session 80) |
+| **Component** | `docs/decisions/ADR-025-parity-acceptance-criterion.md` · commit `b094fa2` |
+| **Symptom** | Doc Protocol v4 **Rule 11.4** specifies a five-step order ending *"Single commit with all four files."* `b094fa2` carries the ADR plus unrelated code and **none** of: the Decision Index row (11.1), the CLAUDE.md governance footer (11.3), or an Assumption Register update (11.2). |
+| **Aggravating** | ADR-024's Decision Index row carries a **READINESS CAVEAT** explicitly naming this failure — *"Rule 11.4 step 1 never ran"* — and was written six days earlier. The precedent was on the page and was not followed. |
+| **Why it happened** | The ADR was drafted mid-session as the deliverable of an open decision (D0), then committed opportunistically with the code that was ready. Rule 11.4 is an ordering constraint and nothing enforces ordering. |
+| **Proper fix** | Complete 11.1 / 11.2 / 11.3 in this doc-close. Then consider whether Rule 11.4 is enforceable at all without a check — **TD-S79-NEW-24**'s finding is the same shape: a footer need not cite its ADR id and 87 of 120 do not, so compliance cannot be counted. |
+| **Cost to fix** | Closed by the S80 doc-close itself. The enforceability question is separate. |
+| **Cross-ref** | **Doc Protocol v4 Rule 11.1–11.4** · Decision Index ADR-024 row (the caveat) · **TD-S79-NEW-24** (Rule 11.3 unenforced) · **TD-S79-NEW-25** (no PK manifest, so Rule 12 compliance is undetectable) |
+| **Status** | **OPEN at filing; closes with this doc-close's Decision Index, CLAUDE.md and Assumption Register edits.** |
+
+---
+
+### TD-S80-NEW-6 — WITHDRAWN (2026-09-22, before filing) — "3,093 `run_id`s against 2,923 `(symbol, ts)` cycles, unexplained"
+
+**WITHDRAWN before filing.** The claim was that `option_chain_snapshots` holds 170 more distinct `run_id`s than `(symbol, ts)` pairs while **no** `(symbol, ts)` carries more than one `run_id` — arithmetically impossible, so presented as an anomaly needing a cause.
+
+There is no anomaly. **The two figures were measured three days apart.** The 2,923 count was taken on 2026-09-19; the 3,093 count on 2026-09-22. Monday 2026-09-21 was a trading day and wrote **exactly 85 runs per symbol = 170**. `null_ts`, `null_symbol` and `null_run` are all **0**, so the NULL-collapse hypothesis is dead too.
+
+Filed as a withdrawal rather than deleted, because the error is worth keeping: **two measurements of a growing table were compared without reading their own dates.** Same family as the S78 precedent (TD-S78-NEW-7, withdrawn before filing on the same discipline). ID retained per Rule 5. Recorded also in **ADR-025 Amendment A** as an S80 self-correction.
+
+---
+
+### TD-S80-NEW-7 (S3 priority) — `gex_pin_maxpain_history` is a Rule 10 schema-affecting table with no ADR of its own
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The table is registered in `sql/`, documented in its own header, and parked. What is missing is the decision record Rule 10 requires. |
+| **Filed** | 2026-09-22 (Session 80) |
+| **Component** | `public.gex_pin_maxpain_history` · `sql/2026-09-22_s80_gex_pin_maxpain_history.sql` |
+| **Symptom** | Doc Protocol v4 **Rule 10** makes an ADR mandatory before code for *"anything adding/removing/restructuring a load-bearing table or its primary write contract."* The table was created, populated with 11,795 rows, and committed with no ADR. |
+| **Is it load-bearing?** | Arguable and worth arguing in the ADR rather than asserting here. It has no live consumer and feeds no production path (ADR-025 D5 parks it as L19). But it holds a derived series a future session will reason from, and its write contract — one row per `(symbol, run_id, expiry_date)`, `ON CONFLICT DO NOTHING` — is what makes the backfill resumable. |
+| **What the ADR has to settle** | Whether a materialised reproduction of a latest-run-scoped view is the right answer to ADR-021's consequence (the pin band is unreadable historically by construction), or whether the view should instead gain a parameterised scope. The second is the more general fix and was not considered at the time. |
+| **Proper fix** | Draft the ADR. **ADR-025 does not cover this** — it rules on the parity programme's acceptance criterion, not on this table's design, and says so. |
+| **Cost to fix** | ~0.5 session. |
+| **Cross-ref** | **ADR-021** (why the history is unreadable from the view) · **ADR-025 D5** (parks it as L19) · ADR-015 (`gex_strike_snapshots`, the base) · TD-S80-NEW-8 |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S80-NEW-8 (S3 priority) — the backfill driver hardcodes its date window, so the script that produced 11,795 rows cannot be re-run without a code edit
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The data is complete and verified. This is re-runnability, not correctness. |
+| **Filed** | 2026-09-22 (Session 80) |
+| **Component** | `scripts/backfill_pin_maxpain.py` — `start = dt.date(2026, 5, 25); end = dt.date(2026, 9, 18)` |
+| **Symptom** | The window is a module-level literal. Extending the series past 2026-09-18, or re-running a corrected window, requires editing the file. |
+| **Why it was committed this way** | Deliberately. The committed copy is **byte-identical to the one that ran** — sha256 `453f1be8…` verified on both hosts before and after the git round trip. Parameterising it first would have made the committed artefact something other than the one that produced the data being reasoned from. **Fidelity beat tidiness.** |
+| **Proper fix** | `argparse` for `--from` / `--to` / `--symbols`, defaulting to the stored max `ts` onward so an incremental top-up needs no arguments at all. |
+| **Cost to fix** | ~20 min. |
+| **Cross-ref** | `sql/2026-09-22_s80_backfill_pin_maxpain_runs.sql` (the RPC it drives) · TD-S80-NEW-7 |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S80-NEW-9 (S3 priority) — the ingest day starts at 08:30, 08:35 or 08:40 IST and loses one or two cycles, and nothing records which
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** One or two cycles out of 87, pre-open, on a table with ~34k rows per symbol per day. Real but small. |
+| **Filed** | 2026-09-22 (Session 80) |
+| **Component** | `run_ingest.sh` crontab entries (hour 03 UTC) · `option_chain_snapshots` |
+| **Measured** | First row per day, both symbols: 09-15 **08:35**, 09-16 **08:30**, 09-17 **08:35**, 09-18 **08:40**, 09-21 **08:40**. Run counts **86 / 87 / 86 / 85 / 85** against a crontab complement of **87** (twelve fires in hour 03, seventy-two across 04–09, three in hour 10). |
+| **The pattern** | The day that started at 08:30 got all 87. The days that started at 08:40 got 85. So the losses are **the first one or two fires**, not scattered. |
+| **Candidate cause, NOT established** | `overview.md` records the Dhan token refresh at **03:05 UTC = 08:35 IST**, which is *after* the 08:30 and 08:35 ingest fires. A stale-token failure on the earliest cycles would produce exactly this shape. **Unmeasured** — `script_execution_log` should say, and was not queried. |
+| **Why it is worth an entry** | `merdian_daily_audit.py` thresholds on a day **total** (`option_chain_snapshots_min: 80_000`), so 85 cycles and 87 cycles both pass and the loss is invisible. The same shape as TD-S71-NEW-15: a total-row assertion with no per-cycle parity. |
+| **Proper fix** | Query `script_execution_log` for the 03:00/03:05 UTC invocations across a week and read the `exit_reason`. If it is the token, either move the ingest's first fire after the refresh or make the refresh earlier — a one-line crontab change either way. |
+| **Cost to fix** | ~20 min to measure; the remedy is one crontab line. |
+| **Cross-ref** | `overview.md` token-flow timings · TD-S71-NEW-15 (total-count assertions with no per-symbol parity) · TD-080 (Dhan 429 — the other candidate) |
+| **Status** | **OPEN — cause unmeasured, shape established.** |
+
+---
+
+### TD-S80-NEW-10 (S3 priority) — `v_max_pain_by_strike` emits no timestamp and takes an unbounded `max(ts)`, so it serves a plausible stale strike to Marketview if chain ingest stops
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** It renders on an operator page. It has not misled anyone on the evidence available, and the failure needs an ingest stall to fire. |
+| **Filed** | 2026-09-22 (Session 80) |
+| **Component** | `public.v_max_pain_by_strike` (S40, `sql/v_max_pain_by_strike.sql`) · Marketview Max Pain page |
+| **Symptom** | `latest_ts` is `max(ts)` per symbol **with no recency floor**, and the view's output columns are `symbol, candidate_strike, total_pain, max_pain_strike, side` — **no `ts`, no `run_id`, no `expiry_date`**. If chain ingest stops, `max_ts` silently falls back to the last good cycle and the view returns a complete, well-formed max-pain strike from whenever that was. Nothing downstream can tell. |
+| **Live instance of the shape** | At 2026-09-19 11:40 IST the newest `option_chain_snapshots` row was **2026-09-17 15:40 IST** — the view was serving a two-day-old strike, correctly, with no way to know. |
+| **The same failure, already paid for** | This is `breadth_intraday_history` writing full 431-row days at `coverage_pct: 0` — a relation that fails silently in row count and loudly only in content nobody reads. It is also exactly what **ADR-023** exists to prevent: *"fails to absent, never to stale."* |
+| **Second, latent defect** | `chain` groups by `(symbol, strike)` with **no expiry filter**, so a snapshot carrying two expiries would collapse into a per-strike `max()` mixture. **Not firing** — measured one expiry per cycle across all 2,923 cycles — but it becomes live the moment TD-S80-NEW-1's depth is raised, since the ladder then lands in the same table. |
+| **Proper fix** | Add a recency floor per **ADR-023 D1** and emit `ts` so a consumer can see its own staleness; add the expiry filter **before** raising ingest depth. ENH-123's `v_gex_max_pain` already does all three and is the reference. |
+| **Cost to fix** | ~30 min for the view, plus a Marketview change to surface the age. |
+| **Cross-ref** | **ADR-023** D1/D3 · **ENH-123** (`v_gex_max_pain`, which carries `ts`, coverage and a probed freshness floor) · TD-S80-NEW-1 (raising depth arms the expiry defect) · ADR-021 (the sibling scoping fix) |
+| **Status** | **OPEN.** The expiry half must be fixed **before** stage 2 of TD-S80-NEW-1. |
+
+---
+
+### TD-S80-NEW-11 (S3 priority) — `option_chain_snapshots` retention is 18 days, not the ~11 carried in the register
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A figure correction. It matters because it was used to reason about what a layer could be built on. |
+| **Filed** | 2026-09-22 (Session 80) |
+| **Component** | `option_chain_snapshots` |
+| **Measured** | `MIN(ts)::date` **2026-08-24**, `MAX(ts)::date` **2026-09-17**, `COUNT(DISTINCT ts::date)` = **18**. The register carried *"a ~11-day retention horizon."* |
+| **Why the number moved** | Unestablished. The floor lands exactly on **2026-08-24**, which is also the boundary of the coverage gap carried as unverified since S79 — so 18 days may be a retention window, a start date, or both. The two readings are not distinguished by this measurement. |
+| **What it does not rescue** | 18 days is still far short of anything historical. The claim that max pain offered *"full history rather than the 62-day IV window"* fails on this source either way — `gex_strike_snapshots` is the relation with history, which is why ENH-123 was built on it. |
+| **Proper fix** | Establish whether the floor is pruning or a start date — `pg_cron` job list plus the earliest `created_at` will separate them — and correct the figure wherever it is carried. |
+| **Cost to fix** | ~15 min. |
+| **Cross-ref** | **ENH-123** (built on `gex_strike_snapshots` for this reason) · TD-S76-NEW-2 (jobid 19, currently DISABLED) · the unverified `option_chain_snapshots` / `gamma_metrics` coverage gap 2026-06-03 → 2026-08-24 |
+| **Status** | **OPEN.** |
+
+---
+
+### TD-S80-NEW-12 (S2 priority) — the deploy-direction correction has been drafted and UNRATIFIED since S73, and S80 acted against the topology twice before reading it
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Two production files were edited in the production tree because a correction that has existed since 2026-09-06 was not read. Nothing broke; the mechanism that exists to make it impossible was bypassed. |
+| **Filed** | 2026-09-22 (Session 80) |
+| **Component** | `MERDIAN_Deployment_Topology.md` **§S73.A / §S73.B** · **ADR-006** deploy-direction statement · Doc Protocol v4's matching line · **TD-S79-NEW-5** |
+| **The correction already exists** | §S73.B tabulates it: `origin/main` **Transport → CANONICAL**, Local Windows **Producer → CONSUMER**, `~/meridian-engine` Consumer, `~/meridian-cc` *(did not exist)* → **Consumer, and producer on a branch**. Marked **UNRATIFIED** and carried for four sessions. Ratifying means amending **ADR-006 and the Doc Protocol line together**, since either alone leaves the pair inconsistent. |
+| **The isolation mechanism, and what S80 actually did wrong** | §S73.A: `~/meridian-engine` is production — **53 crontab lines and 20 systemd units resolve inside it**; `~/meridian-cc` is the agent tree, referenced by **no** scheduler. *"Production is read-only-from-git by construction... stricter than ADR-006, not an exception to it — ADR-006 forbids direct edits on the box, and the second tree removes the opportunity."* **S80 ran both canon-v3 patch scripts against `~/meridian-engine`.** The defect is not "authored on EC2" — that is the designed route — it is **"authored in the production tree instead of `~/meridian-cc`."** |
+| **Live practice already follows §S73.B** | `s80/srs-exploration` is authored and committed in `~/meridian-cc` and pushed from there — at S80 open it stood at `99efc53` while **Local's `origin/s80/srs-exploration` ref was two commits stale at `35b68f7`**. Local is demonstrably the consumer the table says it is. |
+| **Why TD-S79-NEW-5's framing compounds it** | That entry counts "deploy-direction inversion" instances against a direction **the Topology already records as superseded**. Four to five recurrences of the same "violation" is evidence the rule is stale, not evidence of five lapses — and counting them is cheaper than ratifying, so it keeps happening. The instance count is not the finding; the unratified correction is. |
+| **What Local-origin genuinely buys, and costs** | Buys: a pull-only production tree and a clean clone-from-origin disaster rebuild. Costs: authoring only at the Windows box; code written where it cannot be tested against the real environment; and the CRLF/LF split, which **C-15 of the Claude Code guardrails** already rules makes cross-tier byte and hash comparison invalid — `git hash-object` is the only valid instrument, and Doc Protocol v4's four-tier hash discipline is *"wrong as written."* |
+| **Proper fix** | **Ratify §S73.B** — amend ADR-006's deploy-direction statement and the Doc Protocol line in one pass, per §S73.B's own instruction — and **retire TD-S79-NEW-5's instance counting** into this entry. Then state the tree rule explicitly where an agent will meet it: **work in `~/meridian-cc`, never in `~/meridian-engine`.** |
+| **Cost to fix** | ~0.5 session. Zero to keep counting instances, which is why four sessions have. |
+| **Cross-ref** | **Deployment Topology §S73.A / §S73.B** · **ADR-006** · **TD-S79-NEW-5** (retired into this entry) · **MERDIAN_ClaudeCode_Guardrails C-15** (cross-tier identity is `git hash-object`) · ADR-025 (the precedent — an unratified practice settled by ADR rather than by repeated filing) · `runbook_disaster_rebuild.md` |
+| **Status** | **OPEN.** The S80 instance was reverted and redone through git before anything shipped; the ratification is still owed and is now four sessions old. |
+
+---
+
+### TD-S80-NEW-13 (S3 priority) — `CURRENT.md`'s S79 Ledger describes a follow-on commit as local-only and unpushed; its content is in `main`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Stale in the safe direction — it under-claims. But `CURRENT.md` is what the next session reads first, so a false statement there costs a verification pass. |
+| **Filed** | 2026-09-22 (Session 80) |
+| **Component** | `docs/session_notes/CURRENT.md` — S79 **Ledger** row |
+| **Symptom** | The row reads *"A follow-on commit carries `merdian_reference.json`, TD-S79-NEW-23 and these ledger corrections; it is **local-only and unpushed**."* Measured at S80 open: `grep -c "TD-S79-NEW-23" docs/registers/tech_debt.md` = **1** on EC2, and `merdian_reference.json`'s `change_log[0]` reads **S79** on EC2. Local `main` == `origin/main` == `43382ea`. **The content is in `main` on every tree.** |
+| **What I got wrong first** | I read the same row and concluded the commit was *missing* — a "phantom commit." That was worse than the row it was correcting: the content was present all along and one `grep` settled it. Recorded in **ADR-025 Amendment A** as an S80 self-correction. |
+| **Root cause** | The row was written **during** the doc-close, describing a commit that had not yet been pushed at the moment of writing, and was never revisited after the push. The same shape as TD-S79-NEW-25's finding — a claim about a synchronisation state recorded at a point where it was true and never rechecked. |
+| **Proper fix** | The S80 `CURRENT.md` rewrite drops the S79 block to predecessor position and this claim goes with it. Structurally: **a doc-close should not assert a push state it has not yet reached** — state it as owed, or write it after the push. |
+| **Cost to fix** | Closed by the S80 `CURRENT.md` rewrite. The discipline point is the durable part. |
+| **Cross-ref** | **TD-S79-NEW-25** (Rule 12 compliance undetectable without a manifest — same family) · TD-S73-NEW-8 (eight-fold duplication; a claim repeated in eight places goes stale in eight places) |
+| **Status** | **OPEN at filing; closes with the S80 `CURRENT.md` rewrite.** |
+
+---
+
+### TD-S80-NEW-14 (S3 priority) — `tech_debt.md` closed TD-S79-NEW-14 and left three references to it stale one file over
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** No behaviour depends on it. It is filed because it is the third instance of a shape this register keeps recording. |
+| **Discovered** | Session 80 (2026-09-22), while writing ENH-123/124 into the Enhancement Register. |
+| **Component** | `docs/registers/MERDIAN_Enhancement_Register.md` |
+| **Symptom** | Three places still assert the EXPLAIN is outstanding — ENH-121's *"3d EXPLAIN outstanding - TD-S79-NEW-14"*, ENH-122's *"3f EXPLAIN outstanding"*, and a file-tail bullet — while `tech_debt.md` records TD-S79-NEW-14 **RESOLVED at S79** on an `Index Only Scan` with no base-table scan. |
+| **Root cause** | S79 closed the item in one register and did not sweep the others. **This is the TD-S76-NEW-12 shape:** an edit landing without the register's own self-description moving with it. S76 recorded three instances in one close and called it *"a pattern, not three accidents"*. |
+| **Proper fix** | Applied at this doc-close as **annotation, not rewrite** — the as-filed text is kept and a CORRECTION note appended, per the register's convention that an entry records what was believed before it was measured. The residual is that the convention **has no sweep step**: nothing looks for other files asserting a closed item is open. |
+| **Cost to fix** | Minutes for the instance; the sweep step is a protocol question. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | TD-S76-NEW-12 · TD-S76-NEW-13..17 (the same class) · TD-S79-NEW-14 (RESOLVED S79, transcript-only evidence) · TD-S80-NEW-19 (the same shape inside a single entry). |
+| **Status** | **OPEN.** Instance annotated at the S80 doc-close; the missing sweep step is the real item. |
+
+### TD-S80-NEW-15 (S2 priority) — ~1.76 GB of the 2.5 GB that filled the root volume is unattributed, so the resize is a delay of known length rather than a fix
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** The volume is at 20% and the immediate risk is gone. The item is that **nobody can say what fills it**, and 24 GB at the measured rate is about five months. |
+| **Discovered** | Session 80 (2026-09-22), after the disk-full access lockout. |
+| **Component** | `i-0878c118835386ec2` root volume `vol-09b957d7f294beba0` · `~/.local` · `~/.claude` · `/var/lib` · `/var/log` |
+| **Symptom** | Growth measured **4.9 GB at S73 (2026-09-06) → 7.6 GB ceiling (2026-09-22)** — ~2.5 GB in sixteen days, **~150 MB/day**. |
+| **Root cause** | **Not established.** The leading candidate was recorded as *"~/.local 872 MB + ~/.claude 102 MB + ~/.cache 57 MB ≈ 1.0 GB, all Claude Code"*. **Measured, that attribution is wrong on two of three terms** — `.local/share/claude` 636 M + `.claude` 102 M = **738 MB is Claude Code**; `.local/lib/python3.10` **236 M is pip user site-packages** (the engine's own dependencies) and `.cache/pip` **57 M is pip's HTTP cache**. At ~46 MB/day that is **under a third** of the rate, leaving **~1.76 GB unexplained**. The reboot returned ~1.5 GB, which points at **deleted-but-still-open files**; `lsof +L1` after the restart is empty, so it cannot be attributed retroactively. |
+| **Proper fix** | `du -x` on `/var/lib`, `/var/log` and both repo trees, and an `lsof +L1` **before** the next restart rather than after. Then decide whether 30 GiB is the right size or the growth is the defect. |
+| **Cost to fix** | ~30 min of measurement; the remedy depends on what it finds. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | Deployment Topology §S80.7 · Assumption Register **D.37.7** (the corrected attribution) and **D.37.8** (why §S71.4's headroom estimate lapsed) · TD-S69-NEW-1 (the ceiling item, closed by the resize) · TD-S73-NEW-1 (`shadow_runner.log`, closed by the logrotate widening) · TD-S73-NEW-2 (the `C:\GammaEnginePython\heartbeats/` writer, still unidentified). |
+| **Status** | **OPEN.** Note that **78 MB of the measured Claude Code footprint is `~/.claude/projects/-home-ssm-user-meridian-cc`** — agent transcripts, which grow every session including this one. The agent tree is not free. |
+
+### TD-S80-NEW-16 (S3 priority) — `/etc/logrotate.d/meridian` exists only on the box: third instance of on-box-only infrastructure after the crontab and the systemd units
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Nothing breaks. A disaster rebuild silently loses log rotation, which is how the volume filled in the first place. |
+| **Discovered** | Session 80 (2026-09-22), on widening the rotation scope. |
+| **Component** | `/etc/logrotate.d/meridian` on `i-0878c118835386ec2` |
+| **Symptom** | The config was edited this session — scope widened from `cron.log` + `logs/*.log` to `/home/ssm-user/meridian-engine/*.log` + `logs/*.log`, which is what finally caught a **313,728,377-byte** `shadow_runner.log`. The edit has **no diff, no review and no presence in a fresh clone**, and its backup `.PRE_20260922` sits beside it on the same volume. |
+| **Root cause** | Same as the crontab before S68 and the systemd units still: infrastructure that lives only where it runs. **§S68 solved this for the crontab** by committing `docs/registers/aws_crontab.txt`; **§S74.B recorded the identical gap for twenty systemd units and three timers** and it was never closed. |
+| **Proper fix** | Copy the live file to `docs/registers/logrotate_meridian.conf` and commit it, per the S68 precedent — noting §S68 needed a `.gitignore` negation to land `aws_crontab.txt`, so check `git check-ignore -v` rather than trusting an empty `git status`. Close the systemd half in the same pass or it becomes a fourth instance. |
+| **Cost to fix** | Minutes. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | Deployment Topology §S68 (the crontab precedent) · §S74.B (the systemd units, open) · §S80.6 · TD-S72-NEW-14 (no canonical tracked crontab source) · TD-S73-NEW-1 (CLOSED by this session's widening). |
+| **Status** | **OPEN.** |
+
+### TD-S80-NEW-17 (S3 priority) — `merdian-wsfeed-start.timer` is `Persistent=false`, so a start missed while the host is wedged needs a human
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** It is a decision, not a defect — but it cost ~34 minutes of feed on 2026-09-22 and will cost the same again. |
+| **Discovered** | Property recorded at **S72.B**; consequence measured at Session 80 (2026-09-22). |
+| **Component** | `/etc/systemd/system/merdian-wsfeed-start.timer` |
+| **Symptom** | The 03:40 UTC start **fired normally** at 09:10 IST and the feed delivered until the box wedged at ~09:28. On recovery the service was **`inactive (dead)`, not `failed`** — so `systemctl reset-failed` (the §S69 recovery canon) was neither needed nor sufficient — and because the timer is start-only and non-persistent, **nothing retried**. It was started by hand at 10:16 IST. |
+| **Root cause** | `Persistent=false` means a missed activation is not replayed on the next boot. Correct for a timer whose window has passed; wrong for one whose job should be running for the rest of the session. |
+| **Proper fix** | **Decide, do not default.** `Persistent=true` would have restarted the feed at 10:09 unattended — but it also fires a start on **any** boot, including one after `merdian-wsfeed-stop.timer` has legitimately run at 10:05 UTC, which would start a feed outside market hours. The alternative is a recovery unit conditioned on market hours. Either way the unit file must then be version-controlled (TD-S80-NEW-16). |
+| **Cost to fix** | ~30 min including the out-of-hours case. |
+| **Blocked by** | TD-S80-NEW-16 in practice — changing an unversioned unit file repeats §S74.B. |
+| **Cross-ref** | Deployment Topology §S72.B (the property) · §S80.5 (the consequence) · Assumption Register **D.37.4** · §S69 (`reset-failed` + `kill -9` canon, which did not apply here). |
+| **Status** | **OPEN — decision owed.** |
+
+### TD-S80-NEW-18 (S1 priority) — there is no disk guard: the condition that took the box down was visible in the system for sixteen days and invisible to the operator
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1. This is the failure class, and it is the only item here that would have prevented the outage.** |
+| **Discovered** | Session 80 (2026-09-22). |
+| **Component** | `i-0878c118835386ec2` · `scripts/eod_health_check.py` · `bin/wsfeed_alert.sh` (the existing Telegram path) |
+| **Symptom** | Root filesystem climbed from 4.9 GB (2026-09-06) to 100% (2026-09-22) — **sixteen days, ~150 MB/day, entirely measurable throughout** — and produced no signal of any kind until both access paths failed at once. |
+| **Root cause** | Nothing polls disk headroom. `eod_health_check.py` asserts on data freshness and continuity and **not on the host it runs on**; TD-S69-NEW-2's *Proper fix* row already named *"(d) disk headroom on the box"* and that clause was never built. **This is §6.11's pg_cron blind spot at a second surface** — a condition recorded continuously by the system and read by nothing. |
+| **Proper fix** | A daily check firing the **existing** `wsfeed_alert.sh` Telegram path past 80%, and a second threshold at 90%. It must be a **live check, not a review item**: the whole lesson of TD-S69-NEW-1 is that a *resolved* entry has no watcher, so when its ~17 MB/day premise lapsed on 2026-09-06 nothing fired (**D.37.8**). Discipline does not reopen a closed item; only a check does. |
+| **Cost to fix** | ~1 hour. The alert transport already exists and is proven. |
+| **Blocked by** | nothing. **This should be the first thing built next session.** |
+| **Cross-ref** | TD-S69-NEW-1 (closed by the resize; its premise lapsed unwatched) · TD-S69-NEW-2 clause (d), never built · TD-S80-NEW-15 (what to measure) · Deployment Topology §6.11, §S80.1, §S80.8 item 2 · Assumption Register **D.37.3** (a green `describe-instance-status` is not reachability), **D.37.8**. |
+| **Status** | **OPEN — P0 into S81.** |
+
+### TD-S80-NEW-19 (S2 priority) — TD-S69-NEW-1's heading says RESOLVED and its Status row says OPEN, and on 2026-09-22 two readers reached opposite conclusions from it
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** A register entry that supports contradictory readings is worse than a missing one, because both readers believe they checked. |
+| **Discovered** | Session 80 (2026-09-22), when an incident document and a doc-close pass disagreed about the same item on the same day. |
+| **Component** | `docs/registers/tech_debt.md` — TD-S69-NEW-1 |
+| **Symptom** | Heading: *"(S1 priority — **RESOLVED S71 by measurement; root-cause row was wrong**)"*. Status row, eighteen lines below: *"**OPEN — P0 into S70.** The cleanup bought headroom; it did not raise the ceiling."* **Both have stood unreconciled since S71.** The S80 incident document read the Status row and recorded *"open at P0 since 2026-08-12"*; the doc-close read the heading and recorded it as closed at S71. **The inherited claim propagated into Deployment Topology §S80 twice and the Assumption Register once before it was caught**, and required a correction pass. |
+| **Root cause** | S71 annotated the heading on a new measurement and **did not move the Status row**. This is the **TD-061 shape**, which this project codified against at **S29** — *"TD body-state must match footer-claim"*, recorded in Deployment Topology §7.2 as a Doc Protocol v4 candidate rule and **never made into one**. In violation for four sessions. |
+| **Proper fix** | Two parts. **(a)** The instance: TD-S69-NEW-1 moves to Resolved with a closure block stating both prior states — done in this doc-close, separately. **(b)** The rule: promote the S29 candidate to an actual Doc Protocol rule, or add a mechanical check that a heading containing RESOLVED/CLOSED cannot coexist with a Status row containing OPEN. **The check is trivial and the rule has been a candidate for fifty-one sessions.** |
+| **Cost to fix** | (a) done. (b) ~30 min for a grep-based check; the protocol amendment is an operator decision. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | TD-S69-NEW-1 (the instance) · TD-061 / TD-063 (S29, the original shape) · Deployment Topology §7.2 *"TD body-state must match footer-claim"*, §S80.8 · Assumption Register **D.37.8** · TD-S80-NEW-14 (the same shape across files rather than within one entry) · TD-S76-NEW-12. |
+| **Status** | **OPEN — part (a) closed at this doc-close, part (b) is the item.** |
+
 ### TD-S79-NEW-1 (S2 priority) — `GREATEST(dte, 1)` overstates σ on expiry day, so the moneyness band is widest on the day it most needs to bind
 
 | Field | Value |
@@ -71,7 +383,9 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Proper fix** | Replace the day floor with intraday remaining-time (fraction of session remaining at `ts`), then **re-run the 1.0 / 1.5 / 2.0 / 3.0 / unbounded sweep under the corrected σ**. The chosen band may move. |
 | **Cost to fix** | ~1 session. The σ change is minutes; the re-sweep is the work, and it is an ADR-009 recalibration — SQL to `docs/research/` first. |
 | **Cross-ref** | ENH-120 · commit `10a7ae5` · CLAUDE.md settled entry on 0-DTE `net_gex` unreconstructibility. |
-| **Status** | **OPEN.** |
+| **MEASURED S80 — the overstatement is TIME-VARYING, and it HIDES an intraday effect** | The floor is not a constant scale error. σ_correct/σ_stated = `sqrt(mins_left/375)`, measured on 11,795 stored runs by IST hour: **0.982 at 09:00, 0.898 at 10:00, 0.804 at 11:00, 0.697 at 12:00, 0.570 at 13:00, 0.404 at 14:00, 0.203 at 15:00** — roughly **2 % at the open and ~5× by 15:00**. The consequence is worse than mis-scaling: under the shipped day-σ the 0-DTE pin↔max-pain gap looks **flat** through the session (median −0.398 → −0.224), while under correct remaining-time σ it **more than doubles** (−0.382 → −0.939). **The convention makes a widening gap look stable on the one day the layer matters most.** |
+| **Second S80 note — dispersion, not the median** | 0-DTE carries the **tightest** IQR in the sample (NIFTY 0.199, SENSEX 0.254, against 0.32–0.41 elsewhere) while its median sits with every other cell at ≈ −0.32σ. That apparent convergence is at least partly this defect: an inflated denominator compresses the ratio toward zero. **It is not independent evidence of expiry-day convergence and must not be cited as such until σ is corrected.** |
+| **Status** | **OPEN — and stronger than as filed.** The S80 measurement supplies the re-sweep's motivation: the chosen 1.5 band was calibrated under this floor, so re-deriving it under intraday σ may not return 1.5. |
 
 ---
 
@@ -256,12 +570,12 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 
 ---
 
-### TD-S79-NEW-12 (S3 priority) — `infer_expiry_date` returns `expiries[0]` from an unordered PostgREST result rather than `min()`
+### TD-S79-NEW-12 — RESOLVED S80. See **Resolved (audit trail)**.
 
 | Field | Value |
 |---|---|
 | **Priority** | **S3.** Wrong by construction, correct in practice, and the thing making it correct is a data property nothing asserts. |
-| **Filed** | 2026-09-15 (Session 79) |
+| **Filed** | 2026-09-15 (Session 79) · **RESOLVED 2026-09-22 (Session 80), commit `b094fa2`** |
 | **Component** | `compute_gamma_metrics_local.py:245-247` — **verified against source 2026-09-15** |
 | **Symptom** | `expiries = [str(r.get("expiry_date")) for r in option_rows if r.get("expiry_date")]` then `return expiries[0] if expiries else None`. **PostgREST guarantees no ordering without an `order` parameter**, so `[0]` selects an arbitrary element of an unordered set where the intent is the **nearest** expiry. This is wrong by construction, not merely fragile. |
 | **Why it is correct today** | `runs_with_multiple_expiries = 0` — every run carries exactly one expiry, so an arbitrary pick and the correct pick coincide. That is a **property of the data**, not of the code, and **nothing asserts it**. It is also consistent with `build_gss_rows`, which stamps one `expiry_date` scalar across the whole run. |
@@ -2059,22 +2373,6 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Blocked by** | nothing. |
 | **Cross-ref** | TD-NEW-7 · TD-S69-NEW-1 (EC2 disk). |
 | **Status** | **OPEN.** |
-
-### TD-S69-NEW-1 (S1 priority — **RESOLVED S71 by measurement; root-cause row was wrong**) — MERDIAN AWS EC2 root volume is 7.6 GB and hit 100% on 2026-08-12, cascading into a feed crash + `.env` corruption + a silently-failed breadth cron; the journal cap only delays recurrence
-
-| Field | Value |
-|---|---|
-| **Priority** | **S1 — this is the true infra root cause of the entire 08-12 incident.** Every other same-day failure descends from it. |
-| **Discovered** | Session 69 (2026-08-12), while diagnosing "no pin/accel zones on TradingView for days". |
-| **Component** | `i-0878c118835386ec2` (eu-north-1) root EBS volume · `market_ticks` · `gex_strike_snapshots` · journald · npm/apt caches |
-| **Symptom** | Root filesystem at 100% (7.6 GB total). Downstream, all on the same morning: `merdian-wsfeed.service` crashed and then latched on the systemd start rate-limit; the operator's 06:00 token rotation `sed -i` wrote the literal placeholder `<real-token>` into `.env` line 24 **and** the unquoted `<` broke every subsequent `.env` source with a shell "newline unexpected" parse error; the `35 3` UTC `refresh_equity_intraday_last.py` cron failed with no alert, leaving the breadth prev-close baseline 92h stale (last write 08-07). |
-| **Root cause** | The volume is undersized for what the system now writes. Principal consumers: rolling `market_ticks`, `gex_strike_snapshots` (**~1.06M rows and growing every 5-minute cycle, no retention policy**), unbounded journald, npm and apt caches, and `logs/*.log`. |
-| **Workaround (applied, partial)** | `journalctl --vacuum-size=100M` (freed 672M) + `npm cache clean --force` (freed 871M) + `truncate -s 0 logs/*.log` (302M → 36K) → **74%, 1.9G free**. Durable guard added: `SystemMaxUse=200M` in `/etc/systemd/journald.conf`. |
-| **Proper fix** | **Grow the EBS root volume**, and/or add DB-side retention on `market_ticks` and `gex_strike_snapshots`. Retention on `gex_strike_snapshots` must be decided deliberately — the historical series is a research asset ADR-015 exists to preserve (this is why ADR-021 explicitly *rejected* pruning as the pin/accel fix). Add a disk-headroom check to the EOD health check so the next approach to the ceiling alerts. |
-| **Cost to fix** | ~1 session (EBS grow + `growpart`/`resize2fs` + retention decision). |
-| **Blocked by** | nothing. |
-| **Cross-ref** | ADR-021 (rejected pruning as the view fix) · TD-S69-NEW-2 (health-check coverage) · TD-S69-NEW-6 (token-rotation routine) · Deployment Topology §S69. |
-| **Status** | **OPEN — P0 into S70.** The cleanup bought headroom; it did not raise the ceiling. |
 
 ### TD-S69-NEW-2 (S1 priority) — `scripts/eod_health_check.py` returned `[OK]` on 2026-08-12 while pin/accel, the M5 detector and the GEX read path were all broken: it asserts on none of them
 
@@ -4621,6 +4919,57 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 ---
 
 ## Resolved (audit trail)
+
+### TD-S69-NEW-1 (S1 priority — **CLOSED S80 2026-09-22 by the EBS resize**; entered S80 in a self-contradictory state, see TD-S80-NEW-19) — MERDIAN AWS EC2 root volume is 7.6 GB and hit 100% on 2026-08-12, cascading into a feed crash + `.env` corruption + a silently-failed breadth cron; the journal cap only delays recurrence
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1 — this is the true infra root cause of the entire 08-12 incident.** Every other same-day failure descends from it. |
+| **Discovered** | Session 69 (2026-08-12), while diagnosing "no pin/accel zones on TradingView for days". |
+| **Component** | `i-0878c118835386ec2` (eu-north-1) root EBS volume · `market_ticks` · `gex_strike_snapshots` · journald · npm/apt caches |
+| **Symptom** | Root filesystem at 100% (7.6 GB total). Downstream, all on the same morning: `merdian-wsfeed.service` crashed and then latched on the systemd start rate-limit; the operator's 06:00 token rotation `sed -i` wrote the literal placeholder `<real-token>` into `.env` line 24 **and** the unquoted `<` broke every subsequent `.env` source with a shell "newline unexpected" parse error; the `35 3` UTC `refresh_equity_intraday_last.py` cron failed with no alert, leaving the breadth prev-close baseline 92h stale (last write 08-07). |
+| **Root cause** | The volume is undersized for what the system now writes. Principal consumers: rolling `market_ticks`, `gex_strike_snapshots` (**~1.06M rows and growing every 5-minute cycle, no retention policy**), unbounded journald, npm and apt caches, and `logs/*.log`. |
+| **Workaround (applied, partial)** | `journalctl --vacuum-size=100M` (freed 672M) + `npm cache clean --force` (freed 871M) + `truncate -s 0 logs/*.log` (302M → 36K) → **74%, 1.9G free**. Durable guard added: `SystemMaxUse=200M` in `/etc/systemd/journald.conf`. |
+| **Proper fix** | **Grow the EBS root volume**, and/or add DB-side retention on `market_ticks` and `gex_strike_snapshots`. Retention on `gex_strike_snapshots` must be decided deliberately — the historical series is a research asset ADR-015 exists to preserve (this is why ADR-021 explicitly *rejected* pruning as the pin/accel fix). Add a disk-headroom check to the EOD health check so the next approach to the ceiling alerts. |
+| **Cost to fix** | ~1 session (EBS grow + `growpart`/`resize2fs` + retention decision). |
+| **Blocked by** | nothing. |
+| **Cross-ref** | ADR-021 (rejected pruning as the view fix) · TD-S69-NEW-2 (health-check coverage) · TD-S69-NEW-6 (token-rotation routine) · Deployment Topology §S69. |
+| **Status** | **CLOSED — Session 80, 2026-09-22.** Root volume `vol-09b957d7f294beba0` grown **8 GiB gp2 → 30 GiB gp3**; filesystem now 29 G with 24 G free (20%). **The remedy is the one this entry's own *Proper fix* row named in August.** See the closure block below — this entry was carrying two contradictory statuses when it was closed. |
+
+
+**Closure block — Session 80, 2026-09-22.**
+
+**What closed it.** The 2026-09-22 disk-full access lockout forced the action this entry had specified since August. Root volume `vol-09b957d7f294beba0` grown **8 GiB gp2 → 30 GiB gp3** (3000 IOPS, 125 MiB/s), snapshot `snap-0e111e3c1d5cd1f93` taken first, EIP verified as a true Elastic IP before any instance state change, `growpart`/`resize2fs` run by cloud-init on boot. **29 G total, 5.6 G used, 24 G free.** Full account in Deployment Topology **§S80**.
+
+**The entry was in two states at once, and both were read.** Its heading said *"**RESOLVED S71 by measurement; root-cause row was wrong**"*. Its Status row, eighteen lines below, said *"**OPEN — P0 into S70.** The cleanup bought headroom; it did not raise the ceiling."* **Both stood unreconciled from S71 to S80.** On 2026-09-22 the incident document read the Status row and recorded the item as *"open at P0 since 2026-08-12"*; the doc-close read the heading and recorded it as closed at S71. The first reading propagated into Deployment Topology §S80 twice and the Assumption Register once before it was caught, and needed a correction pass. **Neither reader was careless — the entry supported both.** Filed as **TD-S80-NEW-19**; it is the **TD-061 shape** this project codified against at **S29** (*"TD body-state must match footer-claim"*) and never promoted from a candidate rule.
+
+**Why the S71 resolution lapsed, which is the part worth carrying forward.** It rested on §S71.4's measurement of **~17 MB/day ≈ 100 days headroom**, and on §S73.E's reading that free space was *rising* at 65% / 2.8 G. **Neither was wrong when taken.** Both measured a regime that ended on **2026-09-06** — the day a new consumer was installed, and the same day §S73.E's measurement was taken. Actual growth over the following sixteen days was **~150 MB/day, roughly 9×**. **A resolved item has no watcher**: when its premise expired, nothing fired, because closed items are not monitored — they are closed. See Assumption Register **D.37.8**.
+
+**This is the argument for TD-S80-NEW-18**, filed S1 at the same doc-close. Review discipline does not reopen a closed item whose premise has changed; only a live check does. The condition was measurable in the system for sixteen days and read by nothing.
+
+**What remains open after this closure.** The resize bought a known interval, not an answer: **~1.76 GB of the 2.5 GB that filled the volume is still unattributed** (**TD-S80-NEW-15**), so 24 GB at the measured rate is about five months. The associated retention question this entry raised — DB-side limits on `market_ticks` and `gex_strike_snapshots` — is **not** closed here and was never the binding constraint: §S71.5 measured `gex_strike_snapshots` at **438 MB, tenth largest**, which is why ADR-021's refusal to prune it stands.
+
+**Cross-ref.** Deployment Topology §S69 (the 2026-08-12 incident that filed this), §S71.4 and §S73.E (the superseded readings), §S80 (the closure) · Assumption Register **D.37.1–.10** · TD-S80-NEW-15, **TD-S80-NEW-18**, TD-S80-NEW-19 · TD-S73-NEW-1 (CLOSED S80 by the logrotate widening) · ADR-021 (pruning rejected as the view fix).
+
+
+### TD-S79-NEW-12 (S3 priority) — RESOLVED: `min()` plus a raise that states the single-expiry invariant, shipped as a prerequisite rather than a tidy-up
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3 as filed.** It became a **blocker** at S80 — see *Why it was resolved now*. |
+| **Filed** | 2026-09-15 (Session 79) |
+| **Resolved** | 2026-09-22 (Session 80), commit **`b094fa2`** |
+| **Component** | `compute_gamma_metrics_local.py` `infer_expiry_date()` |
+| **Fix applied** | `expiries` becomes a **set**; empty returns `None`; **more than one expiry raises `RuntimeError`** naming the count and the sorted expiries; otherwise returns `min(expiries)`. Applied by `scripts/patch_s80_td_s79_new_12_infer_expiry.py` (canon-v3 — count==1 anchor, line delta 11 computed from the replacement text, `ast.parse` gate, `_PRE_S80` backup, dry-run first). |
+| **CAN FIRE — proven, not asserted** | `scripts/probe_s80_expiry_guards.py` loads the function **out of the source file by AST** and executes it in isolation — no module import, so no credentials, no network, no Supabase client, and the text on disk is what is tested. Four cases pass on Local (CRLF) and again on EC2 (LF) after the pull: single expiry → `2026-09-22`; empty → `None`; repeated same expiry → `2026-09-22`; **two expiries → raises.** Exit 0. |
+| **Why it was resolved now, and why the order mattered** | The S80 ingest change makes `option_chain_snapshots` able to hold more than one expiry per cycle. Before it, the invariant that saved this code was *"the ingest only ever fetches one expiry"*; after it, the invariant is *"the ingest assigns a distinct `run_id` per expiry"* — **weaker, and a coding slip re-introduces the defect silently.** `fetch_option_chain_rows` filters on `run_id` and symbol with **no expiry filter**, so a multi-expiry run would aggregate `net_gex` / `flip_level` / `max_gamma_strike` / `pin_risk_score` across chains and `build_gss_rows` would stamp one arbitrary `expiry_date` and `dte` across all of `gex_strike_snapshots`. Every S79 and S80 view reads that table by `(run_id, expiry_date)`. **This guard converts that from silent corruption into a crash, and it shipped first.** |
+| **`min()` is currently unreachable, deliberately** | With the raise in place, `min()` can only ever act on a one-element set. Both halves were filed for and both are in, but **only the raise is live behaviour** — `min()` is insurance for a future where the assertion is deliberately relaxed. Recorded so a later session does not read `min()` as validated. |
+| **Invariant still holds in the data** | Re-measured at S80 on `run_id` directly, not on `(symbol, ts)`: **3,093 runs, `max_exp = 1`, `multi_expiry_runs = 0`.** So the guard cannot fire spuriously on existing data. |
+| **Discharges** | **ADR-024 §A10 item 3.** |
+| **Cross-ref** | **TD-S80-NEW-1** (the ingest change this gated) · ENH-120 (the σ consumer at the end of the blast radius) · Rule 15 (the PostgREST-shape family) · `scripts/probe_s80_expiry_guards.py` |
+| **Status** | **CLOSED 2026-09-22 (S80, `b094fa2`).** |
+
+---
 
 ### TD-S79-NEW-14 (S2 priority) — RESOLVED: the skip scan is confirmed on all three views; no base-table scan, and planning exceeds execution
 

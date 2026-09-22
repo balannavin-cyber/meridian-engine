@@ -279,3 +279,61 @@ both token tables.
   57014 on any unfiltered read. The frontend escapes it only because
   useDealerFlow filters by symbol first. Same cost shape, same fix.
   OWED AS ITS OWN TD.
+
+## TD-S80-NEW-10 expiry half: DONE (commit b1bb829)
+- Applied and verified live. Sections 1/2/3a/3b all succeeded.
+- 4b INERTNESS: old_minus_new = 0, new_minus_old = 0; NIFTY 236/236,
+  SENSEX 196/196. Run as ONE statement so both bodies read the same
+  transaction snapshot.
+- 4c anon: SELECT only. 4d comment: 4123 chars.
+- sql/ == database for this object including COMMENT and GRANT. Second
+  such object today (after ENH-125). Baseline at cebcc03, fix at b1bb829,
+  so the change is a reviewable diff rather than an assertion.
+- L9 STAGE 1 PRECONDITION IS MET. Stage 1 can run on the next NON-EXPIRY
+  day (not 2026-09-22; NIFTY was on expiry). The two-armed multi-expiry
+  test is already assigned to TD-S80-NEW-1 stage 1 above - do not lose the
+  second arm (baseline must DIFFER), it is the load-bearing half.
+
+### NEW TD OWED - S2 WITH A CLOCK
+v_max_pain_by_strike.latest_ts full-index-scans option_chain_snapshots;
+the view crosses the PostgREST 8 s ceiling in roughly four weeks
+
+- MEASURED 2026-09-22 (4a, cold cache): total 3396 ms, planning 3.4 ms.
+  latest_ts alone = 3260 ms: Index Only Scan on idx_ocs_ts_symbol_expiry
+  over ALL 1,336,714 rows, Heap Fetches 145,354, shared read 14,240 /
+  written 3,191. NOT a seq scan - a full-index scan, which is cheaper but
+  still O(table). The rest of the view is cheap and BOUNDED: front_expiry
+  2.8 ms, chain 432 rows on the latest ts, pain 113 ms.
+- PROJECTION - AN ESTIMATE, and here is how it was derived. Only the
+  latest_ts term scales with table size; the remaining ~136 ms is fixed.
+  Solving 3260*k + 136 = 8000 gives k = 2.41, i.e. ~3.22M rows. That is
+  ~1.89M rows of growth from today's 1,336,714. jobid 19 (the OCS thinning
+  job) is DISABLED per TD-S76-NEW-2, so the table grows ~68k rows/day,
+  giving ~28 days. ASSUMPTIONS: linear scaling in row count, cold cache,
+  constant growth rate, no index change. A warm cache is much faster, so
+  the failure will present INTERMITTENTLY first - cold reads failing while
+  warm ones pass, which is harder to diagnose than a clean break.
+- CONSEQUENCE WHEN IT FIRES: 57014, and the live Marketview Max Pain page
+  empties silently. This is the ADR-021 failure mode exactly - the same
+  shape that emptied the Pine overlay for weeks at S69.
+- FIX: replace latest_ts with the S72 FIX 2 recursive symbol skip-scan +
+  CROSS JOIN LATERAL latest-ts probe. ENH-123 and ENH-125 already use it;
+  this is the last max-pain object that does not. Separate change,
+  separate decision - deliberately NOT bundled into the expiry fix.
+- RELATED: v_dealer_flow_sim has the same untreated shape (see the
+  security incident section). Two ENH-81-era objects now carry it.
+
+### NEW TD OWED - max_pain tie-break is non-deterministic
+- v_max_pain_by_strike.max_pain uses
+  row_number() OVER (PARTITION BY symbol, expiry_date ORDER BY total_pain)
+  with NO tie-break column, so equal total_pain yields an arbitrary
+  winner. ENH-123 orders by (total_pain, candidate_strike).
+- Present in the S40 baseline and CARRIED UNCHANGED through the S81 fix by
+  instruction: correcting it is one line but was outside the approved
+  scope, and it is a semantic change to a view the frozen Marketview
+  reads. Reported rather than altered silently.
+- Ties in real OI-weighted pain are near-impossible, so this is latent,
+  not live. It is recorded because the S81 fix registered this object's
+  DDL for the first time, and shipping known non-determinism in a
+  first-ever canonical DDL without writing it down is how defects become
+  invisible.

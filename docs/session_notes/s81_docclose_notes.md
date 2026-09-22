@@ -785,3 +785,53 @@ SELECT symbol, count(*) AS rows_front_expiry,
                 AND x.ts >= now() - interval '1 day')
  GROUP BY symbol;
 ```
+
+## v_max_pain_by_strike latest_ts retrofit - the ~4-week clock TD is RESOLVED
+
+### Before / after, measured
+| | before | after |
+|---|---|---|
+| whole view | **3,396 ms** | **140.9 ms** |
+| latest_ts CTE | **3,260 ms** | **0.18 ms** |
+| latest_ts access | full-index scan, 1,336,714 rows, 145,354 heap fetches | Index Cond (symbol = s.symbol) on idx_ocs_ts_symbol_expiry, rows=1 per symbol |
+| buffers | 14,240 read / 3,191 written (cold) | 1,146 shared hit, **0 reads** |
+
+**THE CLOCK IS REMOVED, NOT DEFERRED.** The old cost scaled with TABLE
+SIZE - option_chain_snapshots grows ~68k rows/day with jobid 19 disabled,
+which put the view ~4 weeks from the PostgREST 8 s ceiling, at which
+point the live Marketview Max Pain page would have emptied silently (the
+ADR-021 failure mode). The remaining 140.9 ms is almost entirely the
+`pain` CTE: a nested-loop left join of 94,112 rows, the within-symbol
+strike x strike cross product. **That is O(strikes^2) per snapshot,
+bounded by CHAIN WIDTH and independent of table growth.** A wider chain
+would raise it; a bigger table will not.
+
+### Equivalence and compatibility
+- 4b same-statement EXCEPT against the CAPTURED BASELINE body, **run
+  twice, identical both times**: old_minus_new 0, new_minus_old 0,
+  NIFTY 236/236, SENSEX 196/196.
+- The output SELECT block is **byte-identical** to the expiry-fix file -
+  asserted in the generator, not eyeballed. Twelve columns, same order,
+  same side strings, same freshness columns. The frozen Marketview is
+  untouched.
+- Exactly ONE CTE changed. front_expiry, chain, cohort, strikes, pain,
+  max_pain all carried byte-for-byte.
+- 4c: anon SELECT true, INSERT false. comment_len 5062 and
+  comment_md5 c3d4d97e98700768a044df70d7583ca7, **both computed from the
+  file literal and confirmed equal to the stored value** - the ENH-127
+  correction applied (an expected value handed to a verifier must be
+  computed from the artefact, never recalled).
+
+### STILL OPEN, deliberately
+- **Stall degradation mode.** The only ts DESC index is
+  idx_ocs_ts_symbol_expiry (ts DESC, symbol, expiry_date), where symbol
+  is the SECOND column, so the probe walks in ts order and filters on
+  symbol. Both symbols write every cycle, so the match is the first row.
+  If ONE symbol stalls, its probe walks back through the other symbol's
+  newer entries - ~34k index entries per stalled day, index-only,
+  milliseconds not seconds. Acceptable. A dedicated (symbol, ts DESC)
+  index would remove it; **that is a SEPARATE decision and was
+  deliberately not taken in this change.** Recorded in the view's COMMENT.
+- **max_pain tie-break TD stays OPEN.** row_number() ORDER BY total_pain
+  with no tie-break column. One line to fix, still out of scope. One
+  change, one reason.

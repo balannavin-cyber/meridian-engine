@@ -1050,3 +1050,56 @@ stay; they are run_id-keyed and no front-expiry-scoped consumer sees them.
 `record_write` at ingest line 512 logs **W1 only**. After the flip the log
 under-reports by about half. Verify from the TABLE, which is what the
 block above does.
+
+## Marketview redeploy: useIvSmile expiry-collision fix (2026-09-22)
+
+### What shipped
+`~/meridian-connect` 7b60d01 -> **a408fb4** ("Fixed IV smile expiry
+collision", plus one "Changes" commit). Diff across BOTH incoming commits
+is **one file, one function**: `src/lib/queries.ts`, 10 insertions /
+3 deletions, all inside `useIvSmile`. No exported-function signature was
+added or removed. Confirmed before pulling, not after.
+
+The fix: `expiry_date` added to the select; rows narrowed to `maxTs`, then
+to the **minimum `expiry_date`** among them (ISO date strings sort
+chronologically under `localeCompare`), before the Map keyed by strike.
+The previous code did `entry.ce = r.iv` with no expiry filter, so two
+expiries at one ts collided and one silently overwrote the other. Falls
+back to the unfiltered maxTs set only when NO row carries an expiry at
+all - which preserves today's behaviour rather than blanking the card.
+
+### NOT used: ~/redeploy_marketview.sh
+That script's `SRC_DIR` is `~/merdian-marketview`, the **stale May-27
+clone** (S81 Finding A). Built from `~/meridian-connect`, which md5 proved
+at S81 to be the tree the live bundle actually came from. Ownership left
+as `ssm-user:ssm-user` to match what was already being served - the
+script's `chown www-data` was NOT applied, because the live tree is
+ssm-user-owned and works, which is further evidence the Jul-12 deploy did
+not use that script either.
+
+### Verification
+| check | result |
+|---|---|
+| files changed 7b60d01..a408fb4 | **1** (`src/lib/queries.ts`) |
+| CSS hash | **unchanged** `index-CqIIwJkK.css` - correct for a .ts-only change |
+| JS hash | `index-dwQ-izwF.js` -> **`index-DLdbWkEE.js`** |
+| dist vs served, file-for-file md5 | **IDENTICAL**, manifest md5 `b4802df6a0301f84983cf5f5e2ae5c13` |
+| `/`, `/index.html`, both assets over HTTP | **200** |
+| OLD bundle `/assets/index-dwQ-izwF.js` | **404** - proves a real swap, not a cache |
+| index.html references | the NEW bundle only |
+| **fix present in the SERVED bytes** | `ts, expiry_date, strike, option_type, iv` occurs **1x** in `index-DLdbWkEE.js` |
+
+That last row is the one that matters: it proves the correctness fix is in
+the bytes nginx is serving, not merely in the repo. A green build and a
+matching md5 would both pass on a bundle that never contained the change.
+
+### Rollback
+`/var/www/marketview.PRE_S81` holds the exact pre-deploy tree (CSS
+983217234aa1f3a110256dffb166349b, JS 2c8c7bd9e30332fc2380aa1ff9086e13).
+`sudo rsync -a --delete /var/www/marketview.PRE_S81/ /var/www/marketview/`
+restores it immediately - nginx serves from disk, no reload needed.
+
+### Sequencing
+Done BEFORE the 08:30 IST ingest of 2026-09-23, which is when
+EXPIRY_DEPTH stage 1 first produces two expiries at one ts. So the Breadth
+page never renders a collided smile.

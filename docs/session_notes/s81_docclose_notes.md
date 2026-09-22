@@ -649,6 +649,22 @@ demonstration). dte 2, 392 chain rows, spot from gamma_metrics with a
    |vendor delta| in [0.05, 0.95] band, which is self-describing and
    standard, and REPORTS how many rows the rule removed.
 
+### TWO DEFECTS IN MY OWN RE-RUN QUERY, caught by the operator
+1. **exact/365 was off by exactly one day.** It used (dte-1) days plus
+   seconds-left-today; remaining time is dte days PLUS seconds-left-today.
+   At dte=1 on an 11:00 IST session it returned 0.19 days against a true
+   1.19. Replaced with the direct form: epoch of
+   ((expiry_date + 15:30) AT TIME ZONE IST - latest_ts) / (365*86400),
+   clamped at 0. **The convention meant to be the most precise was the one
+   that was wrong**, and at low DTE the error is a large fraction of T -
+   easily large enough to read as a model failure.
+2. **round(max(spot),1) would have thrown 42883 on the first run.**
+   PostgreSQL has round(numeric,int) but NO round(double precision,int),
+   and spot is double precision. Now cast. The other round() calls in the
+   block were already cast; this one was not, which is how it survived a
+   read-through. A scan of every round() in these notes found exactly one
+   other, already correct.
+
 ### PREDICTION, STATED BEFORE THE RE-RUN (Rule 0 clause 3)
 Using ocs.spot, ATM delta_abs_err should fall from ~0.046 to **well under
 0.01**. If it does not, the spot explanation is WRONG and there is a real
@@ -695,8 +711,8 @@ WITH bounded AS (
   SELECT f.symbol, f.latest_ts, f.expiry_date,
          (f.expiry_date - f.session_date) AS dte, b.spot, b.strike,
          b.option_type, b.iv, b.delta AS v_delta, b.gamma AS v_gamma,
-         EXTRACT(epoch FROM ((f.session_date + time '15:30')
-                  AT TIME ZONE 'Asia/Kolkata') - f.latest_ts) AS secs_left_today
+         EXTRACT(epoch FROM (((f.expiry_date + time '15:30')
+                  AT TIME ZONE 'Asia/Kolkata') - f.latest_ts)) AS secs_to_expiry
     FROM front f
     JOIN bounded b ON b.symbol = f.symbol AND b.ts = f.latest_ts
                   AND b.expiry_date = f.expiry_date
@@ -709,8 +725,7 @@ WITH bounded AS (
     CROSS JOIN LATERAL (VALUES
       ('dte/365',   GREATEST(k.dte,0)::numeric/365.0),
       ('dte/252',   GREATEST(k.dte,0)::numeric/252.0),
-      ('exact/365', GREATEST(((k.dte-1)*86400.0 + GREATEST(k.secs_left_today,0))/86400.0,
-                             0.0)::numeric/365.0)) AS c(conv, tt)
+      ('exact/365', GREATEST(k.secs_to_expiry, 0)::numeric/(365*86400))) AS c(conv, tt)
    WHERE k.in_band AND c.tt > 0
 ), d AS (
   SELECT t.*, t.iv/100.0 AS sigma,
@@ -746,7 +761,7 @@ WITH bounded AS (
             / NULLIF(f2.bs_gamma_spot,0)                     AS implied_dspot
     FROM f2
 )
-SELECT symbol, conv, bucket, max(dte) AS dte, round(max(spot),1) AS spot,
+SELECT symbol, conv, bucket, max(dte) AS dte, round(max(spot)::numeric,1) AS spot,
        count(*) AS n,
        round(percentile_cont(0.5) WITHIN GROUP (ORDER BY g_spot)::numeric,4)  AS gamma_relerr_med,
        round(percentile_cont(0.9) WITHIN GROUP (ORDER BY g_spot)::numeric,4)  AS gamma_relerr_p90,

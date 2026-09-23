@@ -878,7 +878,7 @@ Filed as a withdrawal rather than deleted, because the error is worth keeping: *
 | **Proper fix** | `min(expiries)`, plus an explicit assertion that the run carries a single expiry so the invariant that currently saves this is stated rather than relied on silently. |
 | **Cost to fix** | ~5 min for the `min()`; ~15 min with the assertion and a test. |
 | **Cross-ref** | ADR-024 §A10 item 3 · ENH-120 (σ consumer) · Rule 15 (the PostgREST-shape family). |
-| **Status** | **OPEN.** |
+| **Status** | **RESOLVED 2026-09-22 (Session 80), commit `b094fa2`.** This row read **OPEN** against a heading reading **RESOLVED S80** from S80 until S81 — **the exact TD-S80-NEW-19 defect, in the register that files it**, found by the mechanical check NEW-19 part (b) asks for, run over all 385 entries at the S81 doc-close. The full closure block is in **Resolved (audit trail)**; this is a pointer stub. |
 
 ---
 

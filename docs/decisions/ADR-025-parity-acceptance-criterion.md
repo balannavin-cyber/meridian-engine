@@ -335,7 +335,7 @@ The **S80 table above is left untouched as the S80 record.** This is the S81 sta
 |---|---|---|---|
 | L1 | Gamma density per strike | **BUILT** | — |
 | L2 | Pin zone | **BUILT** | — |
-| L3 | Flip level | **BLOCKED-ON-DECISION** | **unchanged — the three open decisions are NOT ruled on in this amendment** |
+| L3 | Flip level | **PENDING** | **was BLOCKED-ON-DECISION. All three open decisions are RULED at S81 — see B7.** What remains is build work, not a decision |
 | L4 | Call wall | **PENDING** | clause 3 now suspended by B1 |
 | L5 | Put wall | **PENDING** | as L4 |
 | L6 | Net-vs-absolute GEX | **PENDING** | as L4 |
@@ -385,6 +385,45 @@ carried an off-by-one against it and both were corrected: `ingest_option_chain_l
 `8d51cce`) and TD-S80-NEW-1's Status row (at this doc-close). **Canonical: stage 0 = depth 1 inert ·
 stage 1 = W1+W2 · stage 2 = NIFTY 4.** The **code comment mattered more than the register row** — it
 is what an implementer reads when choosing a value.
+
+### B7 — L3's three open decisions are RULED (operator, S81)
+
+**Provenance, stated rather than smoothed over.** These rulings were made **in session at S81** and
+**did not reach the S81 doc-close notes** during the session; they were recorded at the doc-close on
+operator confirmation. The doc-close pass found **zero textual support** in the notes and **declined
+to write them** until that confirmation — so what is recorded here is *ruled late*, not
+*reconstructed*. The distinction is worth preserving: an ADR clause whose source is a session rather
+than a contemporaneous artefact should say so.
+
+These close the three decisions **B4 previously listed as outstanding**, which is why **L3 moves
+BLOCKED-ON-DECISION → PENDING**.
+
+**TD-S79-NEW-17 — ADD A DISCRIMINATOR.** `gamma_metrics.flip_level` **values are unchanged**; add a
+column recording **which construction produced each row** (LONG cumulative-crossing-nearest-spot vs
+SHORT per-strike sign-flip). **No regime or signal behaviour changes.** This is the minimal of the
+three options NEW-17 named: it does not pick a winner between constructions, it makes the blend
+**readable** — which is exactly what made every S79 flip statistic uninterpretable, since *a blend is
+a property of neither construction*. With the column present, past statistics can be re-cut by
+construction instead of re-derived.
+
+**TD-S79-NEW-20 — RE-SYNC replay to production.** Replay is pinned to production's legacy fallback
+branch and its signature cannot accept the argument that selects the other two. **Pass spot, so
+replay takes production's branches**, and **record one historical day's before/after replay flip.**
+That one measured day is the witness; without it the re-sync is a code change nothing observed.
+
+**TD-S79-NEW-21 — MEASURE, THEN PARAMETERISE.** **Sweep the SHORT-branch relative floor, report flip
+sensitivity, and only then** move it to `merdian_parameters` **at the measured value**. **The
+ordering is the ruling.** Parameterising an unmeasured constant **relocates it rather than
+calibrating it**, and a parameter implies its value was chosen — which, unswept, it was not.
+
+**What L3 actually builds.** A **NEW display-only view of the REPRICED zero-gamma level**, which
+**does not read and does not change `gamma_metrics.flip_level`.** So the unsound shipped construct
+is neither displayed nor depended on, and the three rulings above concern making the **existing**
+column honest rather than feeding it to the new layer — **two tracks that share a name and nothing
+else.**
+
+**Sequencing.** None of -17, -20 or -21 ships before the **stage-1 verification has passed**. **It
+passed 2026-09-23 at 09:14 IST** (B5), so **all three are unblocked as of this doc-close.**
 
 ---
 

@@ -1766,3 +1766,253 @@ END because it died on the 401, and a `tail -16` had cut off its START.
   `ingest_option_chain_local.py:29-37, :389, :432, :546` ·
   `core/dhan_client.py:34` · TD (a) above — the 500s counted here are the
   same log lines seen from the capture side.
+
+### (e) S3 — the register says `merdian_order_placer.py` runs from an `@reboot` cron line; measured today, neither the line nor the process exists
+- **Measured 2026-09-23:** `crontab -l | grep -c '@reboot'` = **0** — there
+  is no `@reboot` line of any kind. `ps -eo pid,etimes,cmd` shows **no
+  placer process**; the only long-lived Python on the box is
+  `ws_feed_zerodha.py` (Zerodha, holds no Dhan token). No systemd unit
+  hosts it either — the only MERDIAN unit is `merdian-wsfeed.service`.
+- **The claim is carried in CLAUDE.md's settled-decisions** ("Phase 4B
+  Order Placer … `@reboot` cron", S28) and in the Deployment Topology
+  §3 / §7.1 entries written at the same time. It was true when written.
+- **Priority S3** — nothing is broken; a register entry describes a
+  process that is not running. But this is precisely the **decay shape**
+  the project has filed repeatedly: *a register entry written from a live
+  observation has no watcher, and nothing fires when its premise expires*
+  (TD-S69-NEW-1, D.37.8). Four of five carried items at S71 described a
+  system measurement did not find.
+- **Scope of the fix:** determine whether the placer was deliberately
+  retired, silently lost (e.g. a crontab reinstall — the S53 shape, where
+  a dropped line caused a 28 h blackout), or moved to a launch path not
+  yet catalogued. **Do not re-add the line before answering that** — an
+  order placer is the one component in MERDIAN that can transact.
+- **Bears on TD (d):** a daemon that caches the Dhan token at import
+  (`merdian_order_placer.py:60`, module-level) and runs indefinitely is
+  the **worst case in the B18 family** — it would hold an invalidated
+  token from the first rotation after boot until restarted. It is not
+  live, so it is not exposed today; **if it is revived, the at-use token
+  read must land with it.**
+- **Cross-ref:** CLAUDE.md S28 settled bullet · Deployment Topology §3 /
+  §7.1 / §8.2 · TD-S69-NEW-1 + **D.37.8** (a resolved item has no
+  watcher) · TD-S53 crontab-reinstall shape · TD (d) below-the-line
+  family table · TD-S71 "four of five carried items had expired".
+
+## PROPOSAL — read the Dhan token AT USE in `core/dhan_client.py` (S67 pattern). NOT APPLIED.
+
+Written up at operator request; **no file was modified and nothing was
+committed but this note.** Apply only on an explicit instruction.
+
+### Where the fix belongs — NOT in `ingest_option_chain_local.py`
+That script never builds a header. It constructs `DhanClient()` once at
+`:378`; `core/dhan_client.py:31-36` captures the token into `self.headers`
+at construction and `_post` reuses it at `:44`. All three public methods
+(`get_ltp`, `get_option_chain`, `get_expiry_list`) route through that one
+`_post`. **So this is a single edit in `core/dhan_client.py` that fixes
+every `DhanClient` consumer at once** — not a patch to the ingest.
+
+### THE TWO FACTS THAT MAKE THIS NON-OBVIOUS — a future reader will get these wrong
+Recorded first because the naive fix ("move the `os.getenv` call later")
+**would change nothing and would look correct**:
+
+1. **`get_settings()` is NOT cached.** `core/config.py:40` is a plain
+   function building a fresh frozen `Settings` from `os.environ` on every
+   call — no `lru_cache`. So there is no settings cache to invalidate, and
+   a reader who assumes there is will design a needless invalidation path.
+2. **`core/config.py:10-14` hardcodes `BASE_DIR = Path(r"C:\GammaEnginePython")`
+   and only loads `.env` `if ENV_FILE.exists()` — which on AWS is NEVER**
+   (TD-S60-NEW-5, already recorded for the trading-calendar gate). The
+   process environment is therefore **whatever `source .env` exported at
+   process start, and it never refreshes.**
+
+**Together these mean `os.getenv("DHAN_API_TOKEN")` at use returns the
+SAME STALE VALUE as at import, within one process.** Reading later is not
+reading fresher. **`load_dotenv(override=True)` is the load-bearing
+part** — it is the only step that re-reads the rotated file. `override=True`
+is required too: without it, dotenv will not overwrite the already-set
+(stale) environment variable. This is exactly why S67's helper does both,
+and why copying only half of it would produce a fix that passes review and
+fixes nothing.
+
+### The exact change — three anchors
+
+**Anchor 1**, imports (`:1-7`):
+```python
+from typing import Any
+
+import requests
+
+from core.config import get_settings
+```
+becomes
+```python
+import os
+from typing import Any
+
+import requests
+from dotenv import load_dotenv
+
+from core.config import get_settings
+```
+
+**Anchor 2**, insert the helper immediately before `class DhanClient:` (`:26`):
+```python
+class DhanClient:
+    def __init__(self) -> None:
+```
+becomes
+```python
+def _current_dhan_token(fallback: str = "") -> str:
+    """S81/TD-S66-NEW-1 family: read the token AT USE, not at construction.
+
+    DhanClient captured the token in __init__ and reused it for the life of the
+    client, so a rotation written to .env mid-cycle left a running process
+    holding an invalidated token (anti-pattern B24).
+
+    load_dotenv(override=True) is load-bearing, and override=True is not
+    optional: on AWS core/config.py's ENV_FILE is a Windows path that never
+    resolves (TD-S60-NEW-5), so the process environment is whatever
+    `source .env` set at start. os.getenv alone would return the same stale
+    value, and dotenv without override would refuse to replace it.
+
+    Mirrors ingest_equity_eod_local.py:109-119 (S67). Falls back to the
+    construction-time token so the failure mode of a bad re-read is today's
+    behaviour, never an empty header.
+    """
+    try:
+        load_dotenv(override=True)
+    except Exception:
+        pass
+    return os.getenv("DHAN_API_TOKEN", "").strip() or fallback
+
+
+class DhanClient:
+    def __init__(self) -> None:
+```
+
+**Anchor 3**, `_post` (`:42-47`):
+```python
+            response = requests.post(
+                url,
+                headers=self.headers,
+                json=payload,
+                timeout=self.timeout,
+            )
+```
+becomes
+```python
+            headers = dict(self.headers)
+            headers["access-token"] = _current_dhan_token(
+                self.headers.get("access-token", "")
+            )
+            response = requests.post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=self.timeout,
+            )
+```
+
+`self.headers` is deliberately retained as the construction-time snapshot
+and used as the fallback argument.
+
+### Verification
+
+**The check that CAN FAIL — and it must be run against the UNPATCHED file
+first.** Offline, no network, no touching the live `.env`: in a temp cwd
+holding a `.env` with `DHAN_API_TOKEN=SENTINEL_NEW`, set
+`os.environ["DHAN_API_TOKEN"]="SENTINEL_OLD"`, construct the client, assert
+`c.headers["access-token"] == "SENTINEL_OLD"`, monkeypatch `requests.post`
+to capture headers, issue one call, then **assert the captured
+`access-token` is `SENTINEL_NEW`.**
+
+**State the belief before measuring: unpatched this asserts `SENTINEL_OLD`
+and FAILS; patched it passes.** Running it against the current file first
+is what makes it a check rather than documentation — *if it passes before
+the patch, the test is wrong, not the code.*
+
+**Negative control:** same test with **no** `.env` in the temp dir → the
+header must equal `SENTINEL_OLD`, not empty. This catches a "fix" that
+appears to work by blanking the token.
+
+**Edit gate** (S64 lesson — `ast.parse` alone is insufficient, a
+`str_replace` can eat a `def` header and still parse): `ast.parse` **and**
+`py_compile` **and** an explicit named-object check that both
+`_current_dhan_token` and `DhanClient._post` still exist. Read with
+`read_bytes().decode('utf-8-sig')`, write with `write_bytes()`, and
+measure the file's EOL mix first (B6).
+
+**Sequence** (Session 71 got this wrong twice): Local patch → confirm
+`M core/dhan_client.py` in `git status --porcelain` → commit → push →
+`git pull --ff-only` on the box → **then** test on the box.
+
+**Live smoke is CONFIRMATORY ONLY and must be labelled so.** One ingest
+cycle writing rows at `rc=0` proves the client still works; it **cannot
+fail for the reason the fix exists**, because a clean cycle looks
+identical with or without the change.
+
+### PRE-REGISTERED ACCEPTANCE TEST (the longitudinal check)
+- **Baseline today: 9 × `status=401`** across all retained logs
+  (`cron.log`, `.1`, six `.gz`, spanning ~2026-09-16 → 09-23, ~6 trading
+  days) ≈ **~1.5 per trading day**, of which **2 were on the 03:05 cycle
+  on 2026-09-23** (SENSEX W1, NIFTY W2).
+- **Test:** after the fix, count `status=401` **on the 03:05 cycle
+  specifically** over **N = 10 trading days**. **Expect ZERO.**
+- **Why N = 10.** At the observed all-cycle rate (~1.5/day) ten clean
+  trading days is overwhelming; even at a conservative 0.5/day the
+  probability of zero by chance is ~0.7 %. Ten days is also two calendar
+  weeks — long enough to include a monthly expiry and any weekly token
+  quirk, short enough to act on.
+- **SETUP STEP THAT MUST HAPPEN FIRST, or the test asserts against an
+  unknown denominator:** the **9** is an all-cycles total. The matched
+  pre-fix base rate **for the 03:05 cycle alone has NOT been measured** —
+  only today's 2 are attributed to it. Before starting the N=10 window,
+  count 03:05-cycle 401s in the retained logs. If that matched baseline is
+  ~2/day, N=10 is ample; if it turns out to be ~2 in total, **N=10 is
+  underpowered and the test would read PASS on a fix that did nothing** —
+  the Rule 0 shape, arriving through the denominator rather than the
+  assertion.
+- **Refutation:** a non-zero count refutes either the fix or the
+  mechanism. That distinction stays recoverable precisely because the fix
+  does not depend on the mechanism (below).
+
+### THE FIX DOES NOT DEPEND ON THE 401 MECHANISM BEING CONFIRMED
+Stated explicitly so the proposal is **not blocked** on a check that
+currently cannot be run (`dhan_token_probe_log` is RLS-blind to
+`merdian_ro`).
+
+**Reading a credential at use rather than at import is correct regardless
+of whether it caused today's 401.** The defect is that a process holds a
+credential across an interval in which another process can rotate it —
+true by construction, visible in the source, and independent of the 401's
+provenance. If the mechanism is later **refuted**, this change is still
+correct and costs one `.env` read per request. If it is **confirmed**,
+this change is the fix. The mechanism check decides *what we say about
+today's incident*, not *whether the credential should be read at use*.
+
+### B18 FAMILY — one fix, plus two live siblings
+Eleven scripts capture `DHAN_API_TOKEN` at module import; exactly one
+(`ingest_equity_eod_local.py`, S67) reads at use. Exposure depends on
+whether the script is **running at 03:05 UTC**, when the rotation fires:
+
+| script | token read | schedule | at 03:05? | exposed |
+|---|---|---|---|---|
+| `ingest_option_chain_local.py` (via `DhanClient`) | construction | `run_ingest.sh`, dedicated `0,5,…,55 03` line | **yes** | **YES — demonstrated 09-23, both symbols** |
+| **`capture_spot_1m_v2.py`** | import `:84` | `*/1 03,04…09` | **yes, every minute** | **YES — LIVE SIBLING, separate smaller change** |
+| **`compute_gamma_metrics_local.py`** | `os.getenv` in-function `:734` | shadow runner `*/5 03-09` | **yes** | **PARTIAL — LIVE SIBLING. Reads late but never re-reads `.env`, so still stale within the process. This is exactly the trap the two facts above describe, already present in the codebase.** |
+| `capture_market_spot_snapshot_local.py` | import `:43` | `41 3` | no (03:41) | only if a rotation runs late |
+| `capture_index_futures_snapshot_local.py` | import `:43` | `*/5 04…09` | no | no |
+| `capture_cas_close.py` | import `:95` | `50 10` | no | no |
+| `ingest_equity_eod_local.py` | **at use (S67)** | long cursored sweep | straddles by design | **already fixed — the reference** |
+| `ingest_breadth_intraday_local.py`, `ingest_ad_intraday_local.py`, `capture_spot_1m.py`, `backfill_cas_close_from_daily.py`, `backfill_s41_p0a_columns_30d.py`, `ingest_equity_eod_shadow_diagnostic.py`, `stage1_auth_smoke.py` | import / in-function | **no crontab line** | — | manual/diagnostic; file so a reviver knows |
+| `merdian_order_placer.py` | import `:60` | **no `@reboot` line, no process** (measured) | — | **not live — see TD (e). Worst case in the family if revived: a daemon holds the token from boot forever.** |
+| `pull_token_from_supabase.py` | — | — | — | not a consumer; it is the **writer** |
+
+**Verdict: ONE fix, plus TWO live siblings needing separate smaller
+changes** — `capture_spot_1m_v2.py` and `compute_gamma_metrics_local.py`.
+The rest are unscheduled: file them rather than patch thirteen scripts.
+
+**Blast radius, measured not assumed:** `DhanClient()` is constructed in
+three files — `ingest_option_chain_local.py:378`, `test_core_layer.py:35`,
+and `ingest_breadth_intraday_local.BEFORE_BATCH_FIX.py:155` (a dead
+backup). **Two live call sites.**

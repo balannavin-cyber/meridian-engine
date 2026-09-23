@@ -57,6 +57,333 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
 
+### TD-S81-NEW-1 (S1 priority) — the live Dhan broker token was readable by anyone holding the public anon key, for an unbounded period; rotation decision and log review are owed
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** A live broker credential was world-readable to any holder of a key that is public by design. The grant is closed; the disclosure question is not. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | `public.system_config` (`config_key='dhan_api_token'`) · `public.dhan_auth_tokens` · Supabase anon role · `CASE-2026-09-22-anon-privilege-exposure.md` |
+| **Measured, before remediation** | **211** public relations where anon held privileges beyond SELECT; 100+ tables with RLS **off** and anon INSERT/UPDATE/DELETE; 11 auto-updatable views (writes pass through to base tables). `system_config` was anon-readable **including `config_value`**, which is where `pull_token_from_supabase.py:176` shows the operational token actually lives — `dhan_auth_tokens` is referenced by no `.py` in the tree. |
+| **Why the key being public is not a mitigation** | The anon key inlines into the Marketview bundle at build time and sits in the public `meridian-connect` repo (**D.21.2**). It is public **by design**. The security boundary was supposed to be the RLS-policy + GRANT pair — and with RLS **off** there is no policy, so the GRANT alone was the boundary, and the GRANT was ALL. |
+| **Fixed at the mechanism, not the instances** | Operator applied, verified in-database: (1) `REVOKE ALL ON system_config, dhan_auth_tokens FROM anon, authenticated`; (2) `REVOKE INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER ON ALL TABLES IN SCHEMA public`; (3) **`ALTER DEFAULT PRIVILEGES`** for the same set. **(3) is the one that matters** — S39 fixed the objects that existed then, and every object created afterwards came up with ALL again. Verified through the real anon path: `system_config` → **401**, `dhan_auth_tokens` → **401**, `POST {}` → 401/42501, 22 of 23 frontend relations → 206 with healthy counts, Marketview unaffected. |
+| **What is still OWED, and this is the item** | **(a)** Supabase API log review for anon reads of `system_config` and anon writes across the exposure window — which opens **no later than S40** for `v_max_pain_by_strike` and plausibly at project creation for the RLS-off tables. **(b)** **The Dhan token rotation decision. Treat the token as potentially disclosed until (a) says otherwise.** |
+| **Expected behaviour change, and the wrong fix for it** | A script with an empty `SUPABASE_SERVICE_ROLE_KEY` no longer degrades silently to anon — it now **fails loudly**. Rarely-run backfill / `canonical_*` scripts will surface first. **The fix when that happens is to supply the key, never to restore the grant.** |
+| **Cost to fix** | (a) ~1 h of log review. (b) an operator decision plus a rotation run. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | **`CASE-2026-09-22-anon-privilege-exposure.md`** (the incident) · **D.21.1** (reopened as a live regression, then closed at the mechanism) · **D.21.2** (trust model corrected) · TD-S81-NEW-2 / -3 (the other two residuals) · TD-080 · `pull_token_from_supabase.py:160/176`. |
+| **Status** | **OPEN — the grant is closed; (a) and (b) are the item.** |
+
+### TD-S81-NEW-2 (S2 priority) — anon SELECT is still far broader than the 23 relations the frontend consumes
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Least-privilege is not yet reached; the write surface is closed but the read surface is not scoped. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | Supabase anon role · `public` schema · Marketview `src/lib/queries.ts` |
+| **Symptom** | The S81 revoke removed every non-SELECT privilege. **SELECT was left broad.** `capital_tracker`, `app_settings` and others remain anon-readable and are consumed by nothing. |
+| **Proper fix** | Enumerate the frontend's actual relations (**23**, measured this session), then `REVOKE SELECT ON ALL TABLES` and re-grant only those. Do it as one reviewable script, not incrementally. |
+| **Do not do this blind** | A too-tight grant empties a Marketview panel at HTTP 200 with no error — the **TD-S37-03** silent-empty-dataset shape. Verify each of the 23 through the anon path after the change, not just the count. |
+| **Cost to fix** | ~1 h including verification. |
+| **Blocked by** | nothing, but sequence it after TD-S81-NEW-3 so the standing check can witness it. |
+| **Cross-ref** | **`CASE-2026-09-22-anon-privilege-exposure.md`** item (c) · D.21.1 · TD-S37-03 · TD-S81-NEW-1. |
+| **Status** | **OPEN.** |
+
+### TD-S81-NEW-3 (S2 priority) — nothing asserts that the anon revoke is still in force; item 3 of the S81 fix is trusted rather than verified
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** This is the watcher for an S1 fix. Without it the `ALTER DEFAULT PRIVILEGES` is a belief. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | `bin/disk_guard.sh` (S81, has a proven Telegram path) or `scripts/eod_health_check.py` |
+| **Symptom** | The mechanism fix is a one-time DDL. If a future migration, a Lovable scaffold, or a manual grant re-opens the write surface, **nothing fires.** |
+| **Root cause, and it is the recurring one** | *A resolved item has no watcher.* **D.21.1 was recorded remediated at S39 and silently regressed for every object created afterwards** — `v_max_pain_by_strike` (S40) measured at all seven privileges this session is the proof. Identical shape to TD-S69-NEW-1, whose premise lapsed unwatched (**D.37.8**), and to TD-S80-NEW-18, which this session closed by building exactly such a check. |
+| **Proper fix** | A daily query asserting `relations_with_anon_non_select = 0`, wired into the existing alert transport. **It must be a live check, not a review item.** |
+| **Cost to fix** | ~45 min. The transport exists and is proven on three branches. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | **`CASE-2026-09-22-anon-privilege-exposure.md`** item (e) · D.21.1 · **D.37.8** · TD-S80-NEW-18 (the same remedy, built this session) · TD-S69-NEW-1. |
+| **Status** | **OPEN.** |
+
+### TD-S81-NEW-4 (S2 priority) — `v_dealer_flow_sim` is the third ADR-021 sibling and was never scoped; it returns 57014 on any unfiltered read
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Live on an operator page, and it already fails — the frontend escapes it only by accident of call shape. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | `public.v_dealer_flow_sim` (ENH-81, S37) · Marketview `useDealerFlow` |
+| **Symptom** | Measured this session: **HTTP 500 / `57014` on an unfiltered read**; **200 in 0.44 s** when filtered by symbol, which is how `useDealerFlow` happens to call it. **Pre-existing — not caused by the S81 anon revoke**, which is what the probe was actually testing when it surfaced. |
+| **Root cause** | **ADR-021** scoped `v_gex_strike_pin_zone` and `v_gex_strike_accel_zone` at S69 and left this one unbounded. Same cost shape: work proportional to table size behind a consumer that reads one run. |
+| **Why it matters despite the frontend escaping it** | The escape is a property of the *caller*, not the view. Any new consumer that reads it unfiltered — including a diagnostic — gets a timeout, and **ADR-021's whole finding is that a cost curve crossing a ceiling is silent until it isn't.** |
+| **Proper fix** | The same `latest_run` + `scoped` CTE pair ADR-021 applied to its two siblings. Ship `COMMENT` and `GRANT` as live statements per the S81 rule. |
+| **Cost to fix** | ~1 h including EXPLAIN and an equivalence gate. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | **ADR-021** · ENH-81 (S37) · TD-S81-NEW-17 (the same shape, fixed this session on the max-pain view) · `CASE-2026-09-22-anon-privilege-exposure.md` (where it surfaced). |
+| **Status** | **OPEN.** |
+
+### TD-S81-NEW-5 (S2 priority) — `sql/` is not a true rebuild source, and the divergence runs in BOTH directions
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** A rebuild from `sql/` would produce views that are correct in body, better documented than live, and **anon-inaccessible.** |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | `sql/2026-09-15_s79_v_gex_strike_walls.sql` · `…_v_gex_abs_exposure.sql` · `…_v_gex_concentration.sql` |
+| **Measured, all three S79 views** | view bodies: present in `sql/`, present in DB, **semantic MATCH 3/3**. `COMMENT ON VIEW`: present in `sql/` 3/3, **ABSENT in DB 3/3** at S81 open. `GRANT SELECT` to anon: **COMMENTED OUT in `sql/` 3/3**, **PRESENT in DB 3/3**. |
+| **Consequence of a rebuild** | Three panels at **HTTP 200 with zero rows** — the **TD-S37-03** silent-empty-dataset shape, from the artefact that exists to make rebuilds safe. |
+| **Root cause** | The S79 apply ran Section 1 per view and **never ran the COMMENT statements.** This is **wider than TD-S79-NEW-13**, which assumed the sentence was unwritten rather than the file part-run. |
+| **Bears on ADR-025** | D2 clause 4 (*"DDL committed under `sql/`"*) is met **in letter** while `sql/` is not a rebuild source. The clause tests for a file, not for fidelity. |
+| **Residual after S81** | `v_gex_abs_exposure`'s S79 comment (`sql/2026-09-15_s79_v_gex_abs_exposure.sql:145-146`) is **still unapplied**, and the grants half is **unfixed on all three by instruction.** Four objects shipped this session (ENH-125/126/127 and the max-pain fix) **do** carry COMMENT and GRANT as live statements — that is the pattern to generalise. |
+| **Proper fix** | Uncomment the GRANTs in the three S79 files, apply the missing COMMENTs, and adopt the S81 rule generally: **`sql/` files ship COMMENT and GRANT as live statements, never as commentary.** Then a rebuild-from-`sql/` drill, because that is the only check that can fail for the right reason. |
+| **Cost to fix** | ~1 h for the three files; the drill is the real cost and the real value. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | **ADR-025 D2 clause 4** · TD-S79-NEW-3 (`sql/` as superseded rebuild source) · TD-S79-NEW-13 (narrower framing, superseded here) · TD-S37-03 · ENH-126's grant miss, which is this shape **observed rather than described** (the view was live and anon-unreadable until the GRANT was re-run). |
+| **Status** | **OPEN.** |
+
+### TD-S81-NEW-6 (S3 priority) — `v_max_pain_by_strike.max_pain` has a non-deterministic tie-break
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Latent, not live — ties in real OI-weighted pain are near-impossible. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | `public.v_max_pain_by_strike` |
+| **Symptom** | `row_number() OVER (PARTITION BY symbol, expiry_date ORDER BY total_pain)` with **no tie-break column**, so equal `total_pain` yields an arbitrary winner. **ENH-123 orders by `(total_pain, candidate_strike)`** and is the reference. |
+| **Why it was not fixed with the rest** | Present in the S40 baseline and **carried unchanged through both S81 changes by instruction.** One line, but outside the approved scope, and a semantic change to a view the frozen Marketview reads. **One change, one reason.** |
+| **Why it is recorded at all** | The S81 fix registered this object's DDL for the first time ever. **Shipping known non-determinism inside a first-ever canonical DDL without writing it down is how defects become invisible.** |
+| **Proper fix** | Add `, candidate_strike` to the `ORDER BY`. |
+| **Cost to fix** | One line, plus an equivalence gate against the current body. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | ENH-123 (`v_gex_max_pain`, the correct ordering) · TD-S80-NEW-10 (closed this session) · `sql/2026-09-22_s81_v_max_pain_by_strike_CAPTURED_BASELINE.sql`. |
+| **Status** | **OPEN.** |
+
+### TD-S81-NEW-7 (S2 priority) — the `trading_calendar` TABLE is missing the 2026-05-28 Bakri Id closure row that `trading_calendar.json` carries
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Rule 18: a gate over a wrong calendar is worse than no gate. The canonical gate survived this; a direct reader would not. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | `public.trading_calendar` · `trading_calendar.json` · `seed_trading_calendar.py` |
+| **Measured** | **2026-05-28 (Thu) has no row**, while every other weekday 2026-05-20 → 06-05 carries one and weekends correctly carry none. The table **does** record closures as rows — 2026-09-14 is present with `is_open=false` — so an absent weekday is neither open nor closed, it is **undefined**. |
+| **Settled against the official source, per Rule 18** | **NSE circular NSE/CMTR/71775 (Ref 172/2025, 12 Dec 2025)** lists 28 May 2026 as **Bakri Id, a trading holiday.** `trading_calendar.json` **does carry it** — `holidays[8] = {"date": "2026-05-28", "name": "Bakri Eid"}`, one of 16 2026 dates. **So the JSON is right and the defect is in SEEDING.** The alternative reading — a whole-day pipeline blackout — is **ruled out**. |
+| **THE GATE HELD, and this validates ADR-020** | `core/trading_calendar_gate.py` resolves a missing row through the V18E rule engine rather than defaulting, so it read the JSON, found Bakri Eid, and returned closed. **markers=0 / signals=0 on 05-28 is the gate working, not an outage.** Recorded as a validation of ADR-020, not only as context. |
+| **Residual risk, which is the actual exposure** | Any consumer reading `trading_calendar` **directly** rather than through the gate still sees no row, and per the seeder's own convention would read that as closed — while the gate's documented contract reads no-row as allow. **The ADR-020 contract collision is contained in the canonical gate, not eliminated system-wide.** |
+| **Proper fix** | Find why the seeder skipped this row, and **diff all 16 JSON holidays against the table** — a one-query check that was **not run this session.** |
+| **Cost to fix** | ~1 h. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | **ADR-020** (validated here) · **Rule 18** · TD-S60-NEW-2/-3 (the S60 calendar family) · `core/trading_calendar_gate.py`. |
+| **Status** | **OPEN.** |
+
+### TD-S81-NEW-8 (S3 priority) — `~/redeploy_marketview.sh` builds from a stale May-27 clone, not the tree the live bundle comes from
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Not live — the script was not used for the S81 deploy — but it is a loaded gun for whoever runs it next. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | `~/redeploy_marketview.sh` · `~/merdian-marketview` (stale) · `~/meridian-connect` (canonical) |
+| **Measured** | The script's `SRC_DIR` is `~/merdian-marketview`, a **May-27 clone at `14b63f3`**. The live `/var/www/marketview` is **md5-identical to `~/meridian-connect/dist`** (`7b60d01`, Jul-12). The Enhancement Register S40 footer **already names `~/meridian-connect` canonical.** |
+| **Corroboration** | The script also does `chown www-data`; the live tree is `ssm-user`-owned and works — **further evidence the Jul-12 deploy did not use this script either.** |
+| **Root cause** | **The S72 flat-namespace shape**: two similarly-named trees, one live, and a filename that cannot tell you which. |
+| **Proper fix** | Point `SRC_DIR` at `~/meridian-connect`, or delete the script. Deleting is defensible — the S81 deploy was done by hand and documented. |
+| **Cost to fix** | ~10 min. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | S72 flat-namespace finding · Enhancement Register S40 footer · Deployment Topology §S81 (Marketview deploy path). |
+| **Status** | **OPEN.** |
+
+### TD-S81-NEW-9 (S3 priority) — one client-side strike scalar renders under three different labels
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Presentation, and currently frozen under ADR-025 Amendment B. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | Marketview `SnapshotStrip` · `KeyParametersSection` · `PositioningSection` |
+| **Symptom** | The client-side `maxGammaStrike` (argmax of **positive** `gex_cr`, per **ADR-024 Amendment A**) renders as **"MAX γ"**, **"Max γ Strike"** and **"strongest dampen"** — one number, three names, on one board. |
+| **Root cause** | A pre-existing **ADR-017 Principle 1** redundancy violation; compounds **TD-S79-NEW-13**. |
+| **Proper fix** | Collapse all three to one name — **"NET-LONG γ STRIKE"** — which is **ADR-024's own "naming, not code" remedy**. The S81 Lovable prompt already does this and is preserved in the carried-for-reuse design; re-check it against the then-current `sections.tsx` before running. |
+| **Cost to fix** | Label-only; folds into the Amendment B rendering pass at no extra cost. |
+| **Blocked by** | **ADR-025 Amendment B** — deliberately, as presentation. |
+| **Cross-ref** | **ADR-024 Amendment A** · ADR-017 P1 · TD-S79-NEW-13 · ADR-025 Amendment B. |
+| **Status** | **OPEN — deferred by decision, not by neglect.** |
+
+### TD-S81-NEW-10 (S3 priority) — manual/diagnostic `option_chain_snapshots` readers are not expiry-scoped and predate depth 2
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** None is scheduled; none ran at depth 2. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | `build_option_atm_snapshots_v1.py:20-25` · `build_option_execution_snapshots_v1.py:177-183` · `stage2_db_contract.py:238` |
+| **Symptom at depth 2** | The first two **would mix**: `order=ts.desc` with `limit=200` / `limit=1000` spans W1 and W2 nondeterministically at one `ts`. The third is **not broken** — its `("option_chain_snapshots","created_at",600)` freshness contract sees W2's *newer* `created_at` and so passes **more** easily: **weakened, not wrong.** |
+| **Verified not live** | None appears in the crontab or in the shadow runner's invoke list. All three are manual/diagnostic. |
+| **Operator ruling, S81** | **Not fixed, deliberately.** A silent fix to an unscheduled diagnostic is how a tool's output stops matching the run it is being compared against. **Filed so anyone reviving one knows it predates depth 2.** |
+| **Proper fix** | Scope each to the front expiry when and if it is revived — the `order="ts.desc,expiry_date.asc"` shape `89ad2bb` used. |
+| **Cost to fix** | ~20 min each, on revival. |
+| **Blocked by** | an operator ruling, by design. |
+| **Cross-ref** | `89ad2bb` (the same defect on the two live selectors) · TD-S80-NEW-1 (the depth change that arms it) · **B18** (N silent siblings). |
+| **Status** | **OPEN — ruled "do not fix now".** |
+
+### TD-S81-NEW-11 (S2 priority) — a Dhan HTTP 500 on the W1 call silently drops an entire ingest cycle on both symbols
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Real, lost capture data, with no alert. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | `ingest_option_chain_local.py:432` · Dhan `/v2/optionchain` · `option_chain_snapshots` |
+| **Measured** | The **08:45 IST cycle** (`03:15:01Z START`) produced **no rows for either symbol**. `Selected expiry` printed, then `status=500 | {"800":"Internal Server Error"}` → `Predicate returned False -- failing fast`. `grep -c` = **2**, one per symbol, same cycle. The table confirms the hole: today's cycles are 08:35 (NIFTY only), 08:40, 08:50, 08:55 — **08:45 absent for both.** |
+| **NOT stage-1 related** | The failure is on the **W1** call, which exists identically at depth 1. The extra-expiry pass was never reached. |
+| **Proper fix** | Belongs with **TD-S81-NEW-14**: a 500 is transient and should retry; today it fails fast on attempt 1 of 6. |
+| **Cost to fix** | Folded into the retry-predicate work. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | **TD-S81-NEW-14** (the same log line from the other side) · **TD-S81-NEW-12** — same 08:30–09:30 IST window, **entirely different failure; see the do-not-conflate note there** · TD-080 (S1-recurring) · D.16.4. |
+| **Status** | **OPEN.** |
+
+### TD-S81-NEW-12 (S2 priority) — the shadow runner invokes `compute_basis_context` for a full hour each morning before its only input exists: a cron-hour mismatch
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** No data is lost. It is here because it **pins the runner's contract signal to FAIL for an hour every trading day**, so a real failure in that window cannot be reported. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | crontab line 14 (shadow runner) · crontab lines 9–10 (`capture_index_futures_snapshot_local.py`) · `compute_basis_context_local.py:273-277` |
+| **The mismatch, which is the whole finding** | shadow runner `*/5 **03**-09 * * 1-5` = **08:30**–15:29 IST. Futures capture `*/5 **04**,05,06,07,08,09 * * 1-5` = **09:30**–15:29 IST. **08:30–09:29 IST — twelve cycles every trading morning — invoke the script before `index_futures_snapshots` holds a single row.** Structural, daily, pre-existing. |
+| **Mechanism, exact** | The only input is `index_futures_snapshots` (`LOOKBACK_MIN = 30`). With no row in the lookback both symbols land `no_input` and `:273-277` returns **`SKIPPED_NO_INPUT` with `exit_code=1`**. **The script behaves exactly as written; nothing in it is broken.** |
+| **Confirmed by prediction, not inference** | Predicted at 09:21 IST, before observing, that it would recover unaided at the 04:00 UTC boundary. Observed at 09:36:30: cycles 03:46 / 03:51 / 03:56 **FAILED**, **04:01:23 OK**, 04:06 OK; `index_futures_snapshots` first row **09:30:07 IST** both symbols. **The transition lands on the cron-hour boundary and nowhere else.** No fix was applied and none was needed. |
+| **Consumer impact: NONE, and ADR-023 is why** | Sole consumer `build_trade_signal_local.py:503-529`; nothing in the frontend reads it. The **ADR-018 D2** floor (S61, `MERDIAN_BASIS_RECENCY_FLOOR_MIN`=15) blanks the context past the floor (`:524`) and writes `basis_context_stale` (`:911`), so the label goes **NULL rather than stale**. Basis context is display-only per S37/S61. **Recorded as a validation of ADR-023, not only as context.** |
+| **ONSET: not knowable** | `shadow_runner.log.1` starts `2026-09-22T04:50:04` and older runner logs are rotated away. **Do not state a start date.** |
+| **Two decisions, unresolved, options recorded without choosing** | **(1)** Should `SKIPPED_NO_INPUT` exit 1 at all? It turns a legitimate pre-market state into a contract breach — **the name and the exit code disagree about what happened.** **(2)** A signal that reads FAIL on healthy mornings is as uninformative as one that reads OK on broken ones — the **`merdian-wsfeed` shape (§S72.B, D.27) recurring at a second surface.** Options: **align the cron hours** (smallest, but 09:30 may be deliberate if early futures quotes are thin); **exit 0** (**hazard: this trades a false FAIL for a false OK and would silence a genuine mid-session futures outage — do not take it alone**); or **a third NOT-APPLICABLE contract state** (most work, only option that preserves both). |
+| **Cost to fix** | ~30 min for option 1; ~2 h for option 3. |
+| **Blocked by** | an operator decision between the three. |
+| **Cross-ref** | ENH-07 B (S57/S61) · **ADR-018 D2** · **ADR-023** · §S72.B / **D.27** · **TD-S81-NEW-11** — same window, different failure. **DO NOT CONFLATE:** different component, cause, input table, frequency and data loss; merging them yields an entry whose fix addresses neither. |
+| **Status** | **OPEN — diagnosed, no fix applied by decision.** |
+
+### TD-S81-NEW-13 (S3 priority) — a crontab line runs `build_wcb_snapshot_local.py` with no symbol argument, every five minutes
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Noise, not data loss — the work is being done correctly elsewhere. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | crontab line 11 · `build_wcb_snapshot_local.py` · `run_merdian_shadow_runner_aws.py` |
+| **Symptom** | `Usage: python .\build_wcb_snapshot_local.py <NIFTY|SENSEX>` in `cron.log`. The script prints usage and exits; **it has never done work from this line.** Note the Windows-style `.\` in its own usage string — a Local-era artefact. |
+| **The work IS being done** | Line 14's shadow runner calls `build_wcb_snapshot NIFTY` and `SENSEX` successfully in the same window (both `OK` at 03:25:45–03:25:53). The cron line is a **redundant duplicate.** |
+| **Why it survived** | **It fails in a way that looks like a log line, not like an outage.** |
+| **Root cause** | The **S48 / ADR-018 "WCB cron arg" defect at a second site**; that one was fixed in the ADR-018 D1 pass and this line was not. |
+| **Proper fix** | Delete the line, or add the arguments — **but confirm against the runner first so the work is not then done twice.** |
+| **Cost to fix** | ~10 min. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | **ADR-018 D1** (S57) · S48 WCB cron arg fix · TD-S41-NEW-4. |
+| **Status** | **OPEN.** |
+
+### TD-S81-NEW-14 (S2 priority) — the ENH-99 retry budget has never been exercised, and the ADR-025 stage-2 gate is meant to be decided on exactly that telemetry
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Not for the retries themselves — for the **gate** that is supposed to be decided on them. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | `gamma_engine_retry_utils.py:10-56` · `ingest_option_chain_local.py:29-37, :389, :432, :546` |
+| **Predicate behaviour, from source** | `is_dhan_429` returns True only for the literal `status=429` or error code `"805"`. **Everything else — 401, 500, 502, 404, network, parse — fails fast** at attempt 1, re-raising before the budget is touched (`:35-40`). This is deliberate **S36** design, stated in its own docstring, not an oversight. All three Dhan call sites pass it with `attempts=6, delay 15 s, backoff 1.5`. |
+| **Measured across every retained log** (`cron.log`, `.1`, six `.gz`) | `Retrying in` = **0 everywhere**. `Predicate returned False` = **22**. `RETRY_BURN_DOWN` = **0**. Error classes that actually occur: **`502` ×12, `401` ×9, `500` ×2 — and `429` ZERO.** **The only class the predicate retries has never happened, and every class that has happened fails fast.** On the observed distribution the budget is not unused but **unreachable**. **502 is the most common class by a wide margin** and no prior session had surfaced it. |
+| **The contract cannot express the needed distinction** | `retry_predicate` returns a **bool**; `attempts`/`delay`/`backoff` are fixed per call site. It can say *whether* to retry, never *how many times*, *how long*, or *what to do first*. So "401 → re-read the token and retry once" and "500 → retry with backoff" cannot both be expressed. Needs one of: a **policy** return instead of a bool; a **pre-retry hook** where a token re-read would legitimately live; or **separate wrappers per class**. Putting the token re-read inside a function named `is_…` would work mechanically and is **the wrong place** — recorded so it is rejected deliberately rather than rediscovered. |
+| **CONSEQUENCE FOR THE GATE — this is the item** | **ADR-025 A1 stage 2 (NIFTY depth 4) is gated on "a week of ENH-99 retry telemetry."** That telemetry counts retries. Since only 429 retries and 429 never occurs, **the week reads clean no matter what happens**, while 401s and 500s drop captures at fail-fast speed and never reach the counters. **A gate whose evidence cannot record the failures actually being observed is Rule 0's CAN FIRE / CANNOT FIRE applied to a rollout decision.** |
+| **What the gate would need instead** | Count `Predicate returned False` **by class**, and count dropped captures (`failed=[…]` non-empty on the extra-expiry path, plus cycles with no END line). **Those can fire.** |
+| **Cost to fix** | ~2 h for the predicate/policy change; the gate re-definition is an ADR-025 decision. |
+| **Blocked by** | nothing technically; the gate change is an operator decision. |
+| **Cross-ref** | **ENH-99** (S36) · **ADR-025 Amendment A** stage-2 gate · **Rule 0** · TD-080 · **TD-S81-NEW-11** (the 500s, from the capture side) · **TD-S81-NEW-21** (the 401 hypothesis and its fix proposal). |
+| **Status** | **OPEN.** |
+
+### TD-S81-NEW-15 (S3 priority) — the register says `merdian_order_placer.py` runs from an `@reboot` cron line; neither the line nor the process exists
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Nothing is broken. A register entry describes a process that is not running. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Measured 2026-09-23** | `crontab -l \| grep -c '@reboot'` = **0** — no `@reboot` line of any kind. `ps -eo pid,etimes,cmd` shows **no placer process**; the only long-lived Python is `ws_feed_zerodha.py`, which holds no Dhan token. **No systemd unit hosts it** — the only MERDIAN unit is `merdian-wsfeed.service`. |
+| **Where the stale claim lives** | CLAUDE.md's S28 settled-decisions bullet (*"Phase 4B Order Placer … `@reboot` cron"*) and Deployment Topology §3 / §7.1 / §8.2, written at the same time. **It was true when written.** |
+| **Root cause** | The recurring decay shape: **a register entry written from a live observation has no watcher, and nothing fires when its premise expires** (TD-S69-NEW-1, **D.37.8**). Four of five carried items at S71 described a system measurement did not find. |
+| **Proper fix** | Determine whether the placer was **deliberately retired**, **silently lost** (the S53 crontab-reinstall shape, where a dropped line caused a 28 h blackout), or **moved** to an uncatalogued launch path. **Do not re-add the line before answering that** — the order placer is the one component in MERDIAN that can transact. |
+| **Bears on TD-S81-NEW-21** | A daemon that caches the Dhan token at import (`merdian_order_placer.py:60`) and runs indefinitely is **the worst case in the B18 family** — it would hold an invalidated token from the first rotation after boot until restarted. Not live, so not exposed today; **if revived, the at-use token read must land with it.** |
+| **Cost to fix** | ~30 min to determine; the decision is the operator's. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | CLAUDE.md S28 bullet · Deployment Topology §3 / §7.1 / §8.2 · TD-S69-NEW-1 · **D.37.8** · S53 crontab-reinstall shape · **TD-S81-NEW-21**. |
+| **Status** | **OPEN.** |
+
+### TD-S81-NEW-16 (S2 priority) — `merdian_ro` reads zero rows, silently, from 57 RLS-enabled tables, and a FAIL was reported to the operator because of it
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** It is the failure mode most likely to make a future session confidently wrong, and it has already produced one false FAIL against a rollback trigger. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | `merdian_ro` role · `bin/roq.sh` · 57 RLS-enabled `public` tables |
+| **Mechanism** | `merdian_ro` has `rolbypassrls = false` and this project's RLS policies are written `TO anon`. **A role matching no policy gets an empty result set, not an error** — so the read is indistinguishable from a genuinely empty table. **The TD-S37-03 silent-empty-dataset shape, arriving inside the new verification path itself.** |
+| **It bit on its first real use** | The 08:53 IST stage-1 run returned `B gamma_on_FRONT_expiry → FAIL, gm=NULL` and **check C produced no row at all**. Both were artefacts — `compute_gamma_metrics … OK` stood in `shadow_runner.log` throughout. **A FAIL was reported to the operator that was a property of the reader, and the stage-1 rollback trigger was "if B or D reads FAIL."** |
+| **The commissioning suite could not have caught it** | Checks 1/2/5/6 touch no table, check 3 touches an RLS-off table and check 4 a view. **A suite that never reads an RLS-enabled relation cannot discover this.** Any extension of `roq.sh`'s verification **must include one known-nonempty RLS table as a control.** |
+| **Partially remediated** | Operator added `merdian_ro_select` policies to `gamma_metrics` and `gex_strike_snapshots` on 2026-09-23; both now read. **57 remain**, including `signal_snapshots`, `ict_primitives`, `ict_primitive_outcomes`, `script_execution_log`, `merdian_parameters`, `market_breadth_intraday` and `gex_pin_maxpain_history` — **most of what a verification query actually wants.** |
+| **Proper fix** | Either a blanket `merdian_ro` SELECT policy across the RLS set, or `BYPASSRLS` on a role that provably cannot write (0 of 233 relations carry any write privilege — measured). Until then, **the full 57-name list and a one-lookup diagnostic are in the S81 notes; read a zero from any of them and check the list before believing it.** |
+| **Cost to fix** | ~30 min for the blanket policy; the `BYPASSRLS` route is a one-line operator decision. |
+| **Blocked by** | an operator decision on which route. |
+| **Cross-ref** | **TD-S37-03** · D.21.1 · `bin/roq.sh` · System Map §S81 · TD-S81-NEW-14 (the `dhan_token_probe_log` blindness that leaves the 401 mechanism unconfirmable). |
+| **Status** | **OPEN — 2 of 59 remediated.** |
+
+### TD-S81-NEW-17 (S2 priority — **RESOLVED same session, 2026-09-23**) — `v_max_pain_by_strike.latest_ts` full-index-scanned the whole table and was ~4 weeks from the PostgREST ceiling
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2 when filed**, with a measured clock. |
+| **Filed / Resolved** | Both 2026-09-23 (Session 81). **Same-session NEW+RESOLVED**, the established pattern (S25 TD-097, S26 TD-101, S27, S28 ×6, S29 ×5, S40 ×2, S41). |
+| **Component** | `public.v_max_pain_by_strike` · `option_chain_snapshots` |
+| **Measured before** | Whole view **3,396 ms** (cold). `latest_ts` alone **3,260 ms**: Index Only Scan over **all 1,336,714 rows**, 145,354 heap fetches, 14,240 shared read / 3,191 written. **Not a seq scan — a full-index scan, cheaper but still O(table).** The rest of the view is bounded: `front_expiry` 2.8 ms, `chain` 432 rows, `pain` 113 ms. |
+| **The projection, and how it was derived** | Only `latest_ts` scales with table size; ~136 ms is fixed. Solving `3260k + 136 = 8000` gives `k = 2.41` ≈ **3.22M rows**, i.e. ~1.89M rows of growth. jobid 19 (OCS thinning) is **disabled** per TD-S76-NEW-2 so the table grows ~68k rows/day → **~28 days.** Assumptions stated: linear scaling, cold cache, constant growth, no index change. **A warm cache is much faster, so it would have presented INTERMITTENTLY first** — cold reads failing while warm ones pass, which is harder to diagnose than a clean break. |
+| **Measured after** | Whole view **140.9 ms**; `latest_ts` **0.18 ms** via the S72 FIX 2 recursive symbol skip-scan + `CROSS JOIN LATERAL` probe, `Index Cond (symbol = s.symbol)`, rows=1 per symbol; **1,146 shared hit, 0 reads.** |
+| **THE CLOCK IS REMOVED, NOT DEFERRED** | The old cost scaled with **table size**. The remaining 140.9 ms is almost entirely the `pain` CTE's within-symbol strike×strike cross product — **O(strikes²) per snapshot, bounded by CHAIN WIDTH and independent of table growth.** Re-measured live on 2026-09-23 at **161.5 ms** on a wider chain (110,240 join rows vs 94,112), which is exactly the predicted growth axis. |
+| **Equivalence** | Same-statement `EXCEPT` against the captured baseline, **run twice, identical both times**: `old_minus_new` 0, `new_minus_old` 0; NIFTY 236/236, SENSEX 196/196. The output SELECT block is **byte-identical** to the expiry-fix file — **asserted in the generator, not eyeballed.** Exactly one CTE changed. |
+| **Left open deliberately** | **Stall degradation.** The only `ts DESC` index has `symbol` second, so the probe walks in `ts` order and filters on symbol. Both symbols write every cycle, so the match is the first row; if **one** symbol stalls its probe walks ~34k index entries per stalled day — index-only, **milliseconds not seconds.** A dedicated `(symbol, ts DESC)` index would remove it; **a separate decision, deliberately not taken.** Recorded in the view's COMMENT. |
+| **Cross-ref** | **ADR-021** (the failure mode this would have reproduced) · S72 FIX 2 · TD-S76-NEW-2 (jobid 19 disabled, hence the growth rate) · **TD-S81-NEW-4** (`v_dealer_flow_sim`, the same untreated shape) · TD-S80-NEW-10 (closed this session). |
+| **Status** | **RESOLVED 2026-09-23.** Baseline `cebcc03`, fix committed; `sql/` matches the database including COMMENT and GRANT. |
+
+### TD-S81-NEW-18 (S3 priority) — `merdian_reference.json` records no schema for `option_chain_snapshots`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A documentation gap in the file CLAUDE.md names authoritative for schema lookups. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | `docs/registers/merdian_reference.json` → `tables` |
+| **Symptom** | `option_chain_snapshots` — the head of the entire compute chain, ~1.34M rows, six indexes — **has no `tables` entry.** CLAUDE.md's single-source-of-truth map sends readers here for *"What's the schema / row count / status of this table?"*, and for this table the answer is absent. |
+| **Why it matters now** | S81 worked on this table four separate times and had to re-derive its index set from `EXPLAIN` output each time. The full set, measured: `idx_ocs_run_id(run_id)`; `idx_ocs_symbol_created_at_desc(symbol, created_at DESC)`; `idx_ocs_symbol_expiry_strike_type(symbol, expiry_date, strike, option_type)`; `idx_ocs_ts_symbol_expiry(ts DESC, symbol, expiry_date)`; `option_chain_snapshots_pkey(id)`; `uix_ocs_run_strike_type UNIQUE(run_id, strike, option_type)`. |
+| **Proper fix** | Add the `tables.option_chain_snapshots` entry with columns, indexes and the depth-2 note. |
+| **Cost to fix** | ~20 min. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | CLAUDE.md single-source-of-truth map · TD-S41 schema-guess anti-pattern (*"check `information_schema` before composing SQL"*). |
+| **Status** | **OPEN.** |
+
+### TD-S81-NEW-19 (S3 priority) — 2026-08-17 is a partial compute day: both symbols stopped writing at ~14:10, uninvestigated
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Historical, bounded, and now visible in the data rather than hidden. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | `gamma_metrics` · 2026-08-17 |
+| **Symptom** | Both symbols, **64 runs**, writer stopped at **~14:10** against a normal ~15:40 close. A **real hole in the last hour** — the calendar marks it a trading day, so not a holiday. |
+| **Distinct from the June holes** | The four early-June `gex_strike_snapshots` holes (06-03/04/08/11) are **whole-day compute failures on days where capture ran**. This is a partial day. Do not merge them. |
+| **How it surfaced, and why that is the useful part** | It is the counter-example that killed a defective column design: ENH-126's `session_complete` shipped in draft as `session_date < today_IST OR last_run >= 15:15`, whose date clause made **every past session complete by construction** — Rule 0 clause 1, authored fresh. 08-17 is the day the old rule called finished at 14:10. Redefined with no date clause; **a regression assertion for 08-17 is in the ENH-126 file's 4c.** |
+| **Proper fix** | Investigate the 08-17 stop if it recurs. Recorded so the river's 08-17 point is known to be a 14:10 value. |
+| **Cost to fix** | ~1 h to investigate; no fix owed unless it recurs. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | **ENH-126** (`v_gex_net_gamma_river`) · **Rule 0** clause 1. |
+| **Status** | **OPEN — recorded, not investigated.** |
+
+### TD-S81-NEW-20 (S3 priority) — `DhanClient` reads the Dhan token at construction, so a rotation mid-cycle leaves a running process holding an invalidated token
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Correct by construction regardless of whether it caused the observed 401s; the observed cost so far is one lost SENSEX cycle and one W2 snapshot. |
+| **Filed** | 2026-09-23 (Session 81) |
+| **Component** | `core/dhan_client.py:27-36, :44` · `ingest_option_chain_local.py:378` |
+| **Symptom** | `DhanClient.__init__` captures `self.settings.dhan_access_token` into `self.headers` and `_post` reuses it for the life of the client. All three public methods route through that one `_post`. **Anti-pattern B24**: `.env` edits do not propagate to running processes. |
+| **Observed, 2026-09-23** | Two `401 / 808 Authentication Failed` inside the `03:05:01Z–03:05:12Z` cycle: **SENSEX on its W1 call — losing the whole cycle** — and NIFTY on its W2 call. **W1 was affected, contrary to an earlier S81 report** whose grep pattern required a date in the retry label and so was structurally incapable of matching a W1 failure. |
+| **Mechanism UNCONFIRMED, deliberately** | The hypothesis is that the 03:05 token refresh rotates mid-cycle. `cron.log` shows `DHAN TOKEN REFRESH SUCCESS` positioned between the cycle STARTs and the 401s — **but position in a shared append-mode log is not event order**: three processes append to it and the refresh's banners carry **no timestamp of their own**, so a block-buffered flush at exit would place them identically. **The check that would settle it:** a timestamped token-write record compared against that window — `dhan_token_probe_log` is the natural source and **`merdian_ro` is blind to it** (TD-S81-NEW-16), so it needs a policy or an operator run. |
+| **The fix does not depend on the mechanism** | **Reading a credential at use rather than at import is correct regardless.** A process holding a credential across an interval in which another process can rotate it is a defect by construction, visible in source, independent of the 401's provenance. **So this is not blocked on a check that cannot currently be run.** |
+| **Proper fix — written up in full, NOT applied** | One edit in `core/dhan_client.py` (not the ingest): a `_current_dhan_token(fallback)` helper mirroring S67's `ingest_equity_eod_local.py:109-119`, plus a per-request header build in `_post`. **Two facts make it non-obvious and a naive fix would change nothing:** `get_settings()` is **not cached** (`core/config.py:40`), and `core/config.py:10-14` hardcodes a Windows `BASE_DIR` so its `load_dotenv` **never fires on AWS** (TD-S60-NEW-5) — therefore `os.getenv` at use returns the **same stale value** as at import. **`load_dotenv(override=True)` is the load-bearing part, and `override=True` is not optional.** Three anchors, a verification that must be run against the unpatched file first (where it must FAIL), a negative control, and a pre-registered N=10-trading-day acceptance test are all recorded in the S81 notes. |
+| **Blast radius, measured** | `DhanClient()` is constructed in three files — `ingest_option_chain_local.py:378`, `test_core_layer.py:35`, and a dead `.BEFORE_BATCH_FIX` backup. **Two live call sites.** |
+| **TWO LIVE SIBLINGS needing separate smaller changes (B18)** | **`capture_spot_1m_v2.py`** (import-time token at `:84`, runs `*/1` in hour 03 — every minute through the rotation) and **`compute_gamma_metrics_local.py`** (`os.getenv` in-function at `:734` but **never re-reads `.env`, so still stale within the process** — precisely the trap the two facts above describe, already in the codebase). Eleven scripts capture the token at import; exactly one (`ingest_equity_eod_local.py`, S67) reads at use. The rest are unscheduled — **filed so a reviver knows, not patched.** |
+| **Cost to fix** | ~1 h for `core/dhan_client.py` including the failing-first test; ~30 min each for the two siblings. |
+| **Blocked by** | an operator instruction to apply. |
+| **Cross-ref** | **B24** · **B18** · TD-S66-NEW-1 / S67 `_current_dhan_token()` · **TD-S60-NEW-5** (the Windows `BASE_DIR`) · **TD-S81-NEW-14** (the retry predicate that fails fast on these 401s) · **TD-S81-NEW-15** (the placer, worst case if revived) · TD-080. |
+| **Status** | **OPEN — proposal written and reviewed, not applied.** |
+
 ### TD-S80-NEW-1 (S2 priority) — the ingest discards the expiry ladder the vendor returns, so no multi-expiry IV exists at any timestamp and L9 has no live source
 
 | Field | Value |
@@ -72,7 +399,8 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Proper fix** | Loop `select_expiries(sorted(future_expiries), depth)` instead of indexing `[0]`, with **one `run_id` per expiry** — `infer_expiry_date` raises on a multi-expiry run (TD-S79-NEW-12) and `build_gss_rows` stamps one expiry scalar per run, so a shared run_id would corrupt `dte` → `gex_strike_snapshots.dte` → ENH-120's σ silently. |
 | **Cost to fix** | Code shipped this session. The remaining cost is the staged rollout and its rate-limit measurement — see Status. |
 | **Cross-ref** | **ADR-025** (depth measured, not assumed) · **TD-S80-NEW-2** (the spec claim) · TD-S79-NEW-12 (the guard this required first) · **TD-080** (Dhan 429, S1-recurring — `core/dhan_client.py` has no proactive call spacing, all 429 handling is reactive) · `sql/2026-09-22_s80_*` |
-| **Status** | **OPEN — code deployed INERT.** `EXPIRY_DEPTH = {"NIFTY": 1, "SENSEX": 1}` at commit `b094fa2`; the extra-expiry pass is behind `if _depth > 1` and does not execute. Stage 2 is `{"NIFTY": 2, "SENSEX": 2}` on a non-expiry day; stage 3 is NIFTY to 4 after a week of ENH-99 retry telemetry. **Closes only when depth is actually raised and verified**, not when the code landed. |
+| **Stage numbering — CORRECTED S81** | This row previously read *"stage 2 is `{2,2}`; stage 3 is NIFTY to 4"*, which is **off by one against ADR-025 Amendment A1**, whose wording is *"a stage 0 at depth 1 — provably inert — precedes W1+W2"*. The canonical numbering is **stage 0 = depth 1 (inert) · stage 1 = W1+W2 · stage 2 = NIFTY 4**. `ingest_option_chain_local.py:57-59` carried the identical off-by-one and was corrected in the same anchor at `8d51cce`. **The code comment mattered more than this row** — it is what an implementer reads when choosing a value. |
+| **Status** | **OPEN — STAGE 1 DEPLOYED AND VERIFIED 2026-09-23.** `EXPIRY_DEPTH = {"NIFTY": 2, "SENSEX": 2}` at `8d51cce`, first live cycle the 08:30 IST ingest of 2026-09-23. Verified at 09:14 IST through `bin/roq.sh`, **all four checks PASS on both symbols**: A depth landed (2 expiries / 2 run_ids), **B gamma on FRONT expiry** (NIFTY `2026-09-29` dte 6, SENSEX `2026-09-24` dte 1), C one gamma row per cycle, D options flow on front expiry. **B is the load-bearing check and it could have failed**: W2 (`2026-10-06` dte 13 / `2026-10-01` dte 8) was live in the table at the same `ts`, and the pre-`89ad2bb` selector would have returned it. **Remains OPEN for stage 2 (NIFTY 4)**, which is gated on a week of ENH-99 retry telemetry — and **TD-S81-NEW-14 shows that telemetry cannot presently record the failures actually occurring**, so the gate needs re-definition before it can be read. |
 
 ---
 
@@ -208,24 +536,6 @@ Filed as a withdrawal rather than deleted, because the error is worth keeping: *
 
 ---
 
-### TD-S80-NEW-10 (S3 priority) — `v_max_pain_by_strike` emits no timestamp and takes an unbounded `max(ts)`, so it serves a plausible stale strike to Marketview if chain ingest stops
-
-| Field | Value |
-|---|---|
-| **Priority** | **S3.** It renders on an operator page. It has not misled anyone on the evidence available, and the failure needs an ingest stall to fire. |
-| **Filed** | 2026-09-22 (Session 80) |
-| **Component** | `public.v_max_pain_by_strike` (S40, `sql/v_max_pain_by_strike.sql`) · Marketview Max Pain page |
-| **Symptom** | `latest_ts` is `max(ts)` per symbol **with no recency floor**, and the view's output columns are `symbol, candidate_strike, total_pain, max_pain_strike, side` — **no `ts`, no `run_id`, no `expiry_date`**. If chain ingest stops, `max_ts` silently falls back to the last good cycle and the view returns a complete, well-formed max-pain strike from whenever that was. Nothing downstream can tell. |
-| **Live instance of the shape** | At 2026-09-19 11:40 IST the newest `option_chain_snapshots` row was **2026-09-17 15:40 IST** — the view was serving a two-day-old strike, correctly, with no way to know. |
-| **The same failure, already paid for** | This is `breadth_intraday_history` writing full 431-row days at `coverage_pct: 0` — a relation that fails silently in row count and loudly only in content nobody reads. It is also exactly what **ADR-023** exists to prevent: *"fails to absent, never to stale."* |
-| **Second, latent defect** | `chain` groups by `(symbol, strike)` with **no expiry filter**, so a snapshot carrying two expiries would collapse into a per-strike `max()` mixture. **Not firing** — measured one expiry per cycle across all 2,923 cycles — but it becomes live the moment TD-S80-NEW-1's depth is raised, since the ladder then lands in the same table. |
-| **Proper fix** | Add a recency floor per **ADR-023 D1** and emit `ts` so a consumer can see its own staleness; add the expiry filter **before** raising ingest depth. ENH-123's `v_gex_max_pain` already does all three and is the reference. |
-| **Cost to fix** | ~30 min for the view, plus a Marketview change to surface the age. |
-| **Cross-ref** | **ADR-023** D1/D3 · **ENH-123** (`v_gex_max_pain`, which carries `ts`, coverage and a probed freshness floor) · TD-S80-NEW-1 (raising depth arms the expiry defect) · ADR-021 (the sibling scoping fix) |
-| **Status** | **OPEN.** The expiry half must be fixed **before** stage 2 of TD-S80-NEW-1. |
-
----
-
 ### TD-S80-NEW-11 (S3 priority) — `option_chain_snapshots` retention is 18 days, not the ~11 carried in the register
 
 | Field | Value |
@@ -338,21 +648,6 @@ Filed as a withdrawal rather than deleted, because the error is worth keeping: *
 | **Blocked by** | TD-S80-NEW-16 in practice — changing an unversioned unit file repeats §S74.B. |
 | **Cross-ref** | Deployment Topology §S72.B (the property) · §S80.5 (the consequence) · Assumption Register **D.37.4** · §S69 (`reset-failed` + `kill -9` canon, which did not apply here). |
 | **Status** | **OPEN — decision owed.** |
-
-### TD-S80-NEW-18 (S1 priority) — there is no disk guard: the condition that took the box down was visible in the system for sixteen days and invisible to the operator
-
-| Field | Value |
-|---|---|
-| **Priority** | **S1. This is the failure class, and it is the only item here that would have prevented the outage.** |
-| **Discovered** | Session 80 (2026-09-22). |
-| **Component** | `i-0878c118835386ec2` · `scripts/eod_health_check.py` · `bin/wsfeed_alert.sh` (the existing Telegram path) |
-| **Symptom** | Root filesystem climbed from 4.9 GB (2026-09-06) to 100% (2026-09-22) — **sixteen days, ~150 MB/day, entirely measurable throughout** — and produced no signal of any kind until both access paths failed at once. |
-| **Root cause** | Nothing polls disk headroom. `eod_health_check.py` asserts on data freshness and continuity and **not on the host it runs on**; TD-S69-NEW-2's *Proper fix* row already named *"(d) disk headroom on the box"* and that clause was never built. **This is §6.11's pg_cron blind spot at a second surface** — a condition recorded continuously by the system and read by nothing. |
-| **Proper fix** | A daily check firing the **existing** `wsfeed_alert.sh` Telegram path past 80%, and a second threshold at 90%. It must be a **live check, not a review item**: the whole lesson of TD-S69-NEW-1 is that a *resolved* entry has no watcher, so when its ~17 MB/day premise lapsed on 2026-09-06 nothing fired (**D.37.8**). Discipline does not reopen a closed item; only a check does. |
-| **Cost to fix** | ~1 hour. The alert transport already exists and is proven. |
-| **Blocked by** | nothing. **This should be the first thing built next session.** |
-| **Cross-ref** | TD-S69-NEW-1 (closed by the resize; its premise lapsed unwatched) · TD-S69-NEW-2 clause (d), never built · TD-S80-NEW-15 (what to measure) · Deployment Topology §6.11, §S80.1, §S80.8 item 2 · Assumption Register **D.37.3** (a green `describe-instance-status` is not reachability), **D.37.8**. |
-| **Status** | **OPEN — P0 into S81.** |
 
 ### TD-S80-NEW-19 (S2 priority) — TD-S69-NEW-1's heading says RESOLVED and its Status row says OPEN, and on 2026-09-22 two readers reached opposite conclusions from it
 
@@ -4919,6 +5214,47 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 ---
 
 ## Resolved (audit trail)
+
+### TD-S80-NEW-18 (S1 priority — **RESOLVED S81 2026-09-23; first scheduled run observed**) — there is no disk guard: the condition that took the box down was visible in the system for sixteen days and invisible to the operator
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1. This is the failure class, and it is the only item here that would have prevented the outage.** |
+| **Discovered** | Session 80 (2026-09-22). |
+| **Component** | `i-0878c118835386ec2` · `scripts/eod_health_check.py` · `bin/wsfeed_alert.sh` (the existing Telegram path) |
+| **Symptom** | Root filesystem climbed from 4.9 GB (2026-09-06) to 100% (2026-09-22) — **sixteen days, ~150 MB/day, entirely measurable throughout** — and produced no signal of any kind until both access paths failed at once. |
+| **Root cause** | Nothing polls disk headroom. `eod_health_check.py` asserts on data freshness and continuity and **not on the host it runs on**; TD-S69-NEW-2's *Proper fix* row already named *"(d) disk headroom on the box"* and that clause was never built. **This is §6.11's pg_cron blind spot at a second surface** — a condition recorded continuously by the system and read by nothing. |
+| **Proper fix** | A daily check firing the **existing** `wsfeed_alert.sh` Telegram path past 80%, and a second threshold at 90%. It must be a **live check, not a review item**: the whole lesson of TD-S69-NEW-1 is that a *resolved* entry has no watcher, so when its ~17 MB/day premise lapsed on 2026-09-06 nothing fired (**D.37.8**). Discipline does not reopen a closed item; only a check does. |
+| **Cost to fix** | ~1 hour. The alert transport already exists and is proven. |
+| **Blocked by** | nothing. **This should be the first thing built next session.** |
+| **Cross-ref** | TD-S69-NEW-1 (closed by the resize; its premise lapsed unwatched) · TD-S69-NEW-2 clause (d), never built · TD-S80-NEW-15 (what to measure) · Deployment Topology §6.11, §S80.1, §S80.8 item 2 · Assumption Register **D.37.3** (a green `describe-instance-status` is not reachability), **D.37.8**. |
+| **Built** | `bin/disk_guard.sh` shipped `9a5114e`, scheduled `51af3d8` — `15 02 * * *` daily, crontab **53 → 59 lines**. Fires the existing `wsfeed_alert.sh` Telegram path. **Alert proven on three branches** before scheduling: blocks WARN, blocks CRIT, and inodes WARN (via a loopback filesystem, so the alert path was exercised rather than assumed). |
+| **First scheduled run — OBSERVED** | `2026-09-23T02:15:01Z disk_guard mount=/ blocks=21% inodes=5% avail=23G size=29G warn=80 crit=90 verdict=OK alert=none`. The S81 notes recorded this as *"NOT YET OBSERVED at time of writing"*; **it has since fired and is recorded here from the log, not from the schedule.** |
+| **Gotcha worth keeping** | `crontab <file>` truncates the filename at ~100 chars (Debian `crontab.c` `MAX_FNAME`). Scratchpad paths exceed it, and the first install failed harmlessly on a truncated path. **Use `crontab - < file`.** |
+| **Status** | **RESOLVED 2026-09-23 (Session 81).** Heading and Status row moved together, per the TD-S80-NEW-19 shape this register exists to stop repeating. |
+
+### TD-S80-NEW-10 (S3 priority — **RESOLVED S81 2026-09-23, both halves**) — `v_max_pain_by_strike` emits no timestamp and takes an unbounded `max(ts)`, so it serves a plausible stale strike to Marketview if chain ingest stops
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** It renders on an operator page. It has not misled anyone on the evidence available, and the failure needs an ingest stall to fire. |
+| **Filed** | 2026-09-22 (Session 80) |
+| **Component** | `public.v_max_pain_by_strike` (S40, `sql/v_max_pain_by_strike.sql`) · Marketview Max Pain page |
+| **Symptom** | `latest_ts` is `max(ts)` per symbol **with no recency floor**, and the view's output columns are `symbol, candidate_strike, total_pain, max_pain_strike, side` — **no `ts`, no `run_id`, no `expiry_date`**. If chain ingest stops, `max_ts` silently falls back to the last good cycle and the view returns a complete, well-formed max-pain strike from whenever that was. Nothing downstream can tell. |
+| **Live instance of the shape** | At 2026-09-19 11:40 IST the newest `option_chain_snapshots` row was **2026-09-17 15:40 IST** — the view was serving a two-day-old strike, correctly, with no way to know. |
+| **The same failure, already paid for** | This is `breadth_intraday_history` writing full 431-row days at `coverage_pct: 0` — a relation that fails silently in row count and loudly only in content nobody reads. It is also exactly what **ADR-023** exists to prevent: *"fails to absent, never to stale."* |
+| **Second, latent defect** | `chain` groups by `(symbol, strike)` with **no expiry filter**, so a snapshot carrying two expiries would collapse into a per-strike `max()` mixture. **Not firing** — measured one expiry per cycle across all 2,923 cycles — but it becomes live the moment TD-S80-NEW-1's depth is raised, since the ladder then lands in the same table. |
+| **Proper fix** | Add a recency floor per **ADR-023 D1** and emit `ts` so a consumer can see its own staleness; add the expiry filter **before** raising ingest depth. ENH-123's `v_gex_max_pain` already does all three and is the reference. |
+| **Cost to fix** | ~30 min for the view, plus a Marketview change to surface the age. |
+| **Cross-ref** | **ADR-023** D1/D3 · **ENH-123** (`v_gex_max_pain`, which carries `ts`, coverage and a probed freshness floor) · TD-S80-NEW-1 (raising depth arms the expiry defect) · ADR-021 (the sibling scoping fix) |
+| **Resolution — expiry half** | Applied and verified live (`b1bb829`), baseline captured first at `cebcc03` as `sql/2026-09-22_s81_v_max_pain_by_strike_CAPTURED_BASELINE.sql` (`pg_get_viewdef` verbatim) **so the change lands as a reviewable diff rather than an assertion**. Inertness gate: same-statement `EXCEPT` both ways, `old_minus_new = 0`, `new_minus_old = 0`, NIFTY 236/236, SENSEX 196/196 — run as ONE statement so both bodies read the same transaction snapshot. |
+| **Resolution — freshness half** | The same change added the missing output columns. **Measured 2026-09-23 against the live view: 12 columns** — `symbol, candidate_strike, total_pain, max_pain_strike, side, ts, expiry_date, dte, n_strikes, snapshot_age_min, stale_floor_min_used, is_fresh`. The `ts` the entry says is absent, and the recency floor **ADR-023 D1** requires, are both present. |
+| **What the S81 fix could NOT prove** | The expiry filter exists for a condition that did not occur on 2026-09-22: one expiry per cycle across all 2,923 cycles. The `EXCEPT` gate proves **no regression on single-expiry data**; it cannot prove the filter behaves correctly once a second expiry appears. **That two-armed test is assigned to TD-S80-NEW-1 stage 1** — (a) output vs the same computation restricted by hand to W1 must be IDENTICAL, and (b) the **captured baseline body against that same snapshot must DIFFER**. **(b) is the load-bearing half: without it (a) passes even if the filter does nothing.** |
+| **First-ever canonical DDL** | The S81 notes establish that **`sql/v_max_pain_by_strike.sql` had NEVER EXISTED** — absent from disk, `git log --all` empty for the path. The Enhancement Register S40 footer's claim of *"1 new SQL file"* is **false**, and this entry's own Component row cited the same non-existent path. The object lived in the live database only, from S40 until S81 — **exactly ADR-025 D2 clause 4's "one DROP from unrecoverable".** |
+| **Residual, filed separately** | The non-deterministic tie-break carried through unchanged by instruction — **TD-S81-NEW-6**. The `latest_ts` cost shape was filed and resolved the same session — **TD-S81-NEW-17**. |
+| **Status** | **RESOLVED 2026-09-23 (Session 81), both halves.** Heading and Status row moved together. |
+
+---
 
 ### TD-S69-NEW-1 (S1 priority — **CLOSED S80 2026-09-22 by the EBS resize**; entered S80 in a self-contradictory state, see TD-S80-NEW-19) — MERDIAN AWS EC2 root volume is 7.6 GB and hit 100% on 2026-08-12, cascading into a feed crash + `.env` corruption + a silently-failed breadth cron; the journal cap only delays recurrence
 

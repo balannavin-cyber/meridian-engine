@@ -1210,3 +1210,244 @@ sanctioned path — but the situation should be a decision, not an accident.
 listed nginx; **nginx was NOT restarted** and was confirmed `active` with
 `/marketview` still serving HTTP 200 afterwards — the S81 redeploy is
 undisturbed.
+
+### LIMITATION — roq.sh reads 0 rows, silently, from RLS tables with no `merdian_ro` policy
+
+`merdian_ro` has `rolbypassrls = false`. Supabase's RLS policies on this
+project are written `TO anon`. A role that matches no policy gets **an
+empty result set, not an error** — so a query against such a table is
+indistinguishable from a table that is genuinely empty. **This is the
+TD-S37-03 silent-empty-dataset shape arriving inside the new verification
+path itself**, and it is the failure mode most likely to make a future
+session confidently wrong.
+
+**It bit on its first real use.** The 08:53 IST run of the stage-1 block
+returned `B gamma_on_FRONT_expiry -> FAIL, gm=NULL` and **check C produced
+no row at all** (its CTE was empty, so the UNION branch vanished). Both
+were artefacts. `compute_gamma_metrics NIFTY OK` / `SENSEX OK` stood in
+`shadow_runner.log` at 03:25 and 03:30 UTC the whole time. **A FAIL was
+reported to the operator that was a property of the reader, not of the
+system** — and the rollback trigger for stage 1 was *"if B or D reads
+FAIL"*. Recorded because the near-miss is the lesson: the check could not
+distinguish "gamma is on W2" from "I cannot see gamma".
+
+**The six commissioning checks did not catch it and could not have** —
+checks 1, 2, 5 and 6 touch no table, check 3 touches
+`option_chain_snapshots` (RLS off) and check 4 a view. **A commissioning
+suite that never reads an RLS-enabled relation cannot discover this.** Any
+future extension of roq.sh's verification must include one known-nonempty
+RLS table as a control.
+
+**Operator applied `merdian_ro_select` policies to `gamma_metrics` and
+`gex_strike_snapshots` on 2026-09-23.** Those two now read. **57 remain**
+(measured after the fix, `relkind IN ('r','p')`, RLS on, SELECT granted,
+no policy matching `merdian_ro` and none matching PUBLIC):
+
+```
+_s36_outcomes_pre_truncate        basis_context_snapshots
+bse_t1_securities                 data_contamination_ranges
+dhan_scripmaster                  dhan_scripmaster_staging
+dhan_token_probe_log              eq_instrument_events
+eq_paper_trades                   eq_price_daily_backup_20260618
+eq_price_daily_v2                 expiry_outcomes
+fii_dii_cash_daily                gamma_metrics_replay
+gex_pin_maxpain_history           hist_basis_context
+hist_greeks_backfill_log          hist_option_greeks_1m
+ict_primitive_outcomes            ict_primitive_outcomes_pre_s77
+ict_primitives                    ict_primitives_pre_s77
+ict_zones                         ict_zones_replay
+market_breadth_intraday           market_environment_snapshots
+market_spot_session_markers       market_spot_snapshots_replay
+market_state_snapshots_replay     merdian_parameters
+momentum_snapshots_replay         nifty_cycle_base
+nifty_move_anchor                 option_chain_snapshots_replay
+options_flow_snapshots_replay     participant_oi_daily
+po3_session_state                 script_execution_log
+script_execution_log_replay       signal_snapshots
+signal_snapshots_replay           structural_divergence_snapshots
+structural_divergence_snapshots_replay
+study_accel_stat  study_eligible  study_null_pair  study_path
+study_pin_stat    study_real_pair study_recon_accel study_recon_pin
+study_runs_m      study_step_m    study_zone_ref
+vol_analytics                     vol_analytics_shadow
+volatility_snapshots_replay
+```
+
+**`signal_snapshots`, `ict_primitives`, `ict_primitive_outcomes`,
+`script_execution_log`, `merdian_parameters`, `market_breadth_intraday`
+and `gex_pin_maxpain_history` are on that list** — most of what a
+verification query actually wants. Read a zero from any of them and check
+this list **before** believing it.
+
+The reusable diagnostic, one lookup:
+```sql
+WITH me AS (SELECT oid FROM pg_roles WHERE rolname='merdian_ro')
+SELECT c.relname
+  FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+ WHERE n.nspname='public' AND c.relkind IN ('r','p') AND c.relrowsecurity
+   AND has_table_privilege('merdian_ro', c.oid, 'SELECT')
+   AND NOT EXISTS (SELECT 1 FROM pg_policy p
+                    WHERE p.polrelid=c.oid AND p.polcmd IN ('r','*')
+                      AND (0 = ANY(p.polroles) OR (SELECT oid FROM me) = ANY(p.polroles)))
+ ORDER BY 1;
+```
+
+## STAGE 1 VERIFIED — the §"RUN THIS AT ~09:20 IST" block, run 2026-09-23
+
+Run through `roq.sh` at **09:14 IST**, after the two policies landed so B
+and C were genuinely measurable:
+
+```
+ symbol |              chk               |               observed               | verdict
+--------+--------------------------------+--------------------------------------+---------
+ NIFTY  | A depth_landed                 | 2 expiries / 2 run_ids               | PASS
+ NIFTY  | B gamma_on_FRONT_expiry        | gm=2026-09-29 front=2026-09-29 dte=6 | PASS
+ NIFTY  | C gamma_one_row_per_cycle      | 5 rows / 5 cycles                    | PASS
+ NIFTY  | D options_flow_on_FRONT_expiry | of=2026-09-29 front=2026-09-29       | PASS
+ SENSEX | A depth_landed                 | 2 expiries / 2 run_ids               | PASS
+ SENSEX | B gamma_on_FRONT_expiry        | gm=2026-09-24 front=2026-09-24 dte=1 | PASS
+ SENSEX | C gamma_one_row_per_cycle      | 4 rows / 4 cycles                    | PASS
+ SENSEX | D options_flow_on_FRONT_expiry | of=2026-09-24 front=2026-09-24       | PASS
+```
+
+### B's COUNTERFACTUAL — this is what makes it a check that could have failed
+Had `89ad2bb` not landed, both selectors would still order by
+`created_at.desc`. W1 and W2 share one `ts` but **not** `created_at` — a
+DB default, therefore later for the S80 extra-expiry pass — so the
+newest-`created_at` row is **W2**. Gamma would then carry:
+
+| symbol | front expiry (observed) | W2, i.e. what a FAIL would show | dte |
+|---|---|---|---|
+| NIFTY | **2026-09-29** (dte 6) | 2026-10-06 | **13** |
+| SENSEX | **2026-09-24** (dte 1) | 2026-10-01 | **8** |
+
+Both alternatives were live in the table at the same `ts` — the check had
+a real wrong answer available to it and did not return it. **Not a
+tautology.** And per the notes above, B is written self-referentially
+against `min(expiry_date)` observed in the chain at that same `ts`, not
+against a dte predicted in advance, so it keeps testing after the expiry
+calendar rolls.
+
+**First live exercise of the selector fix with two expiries actually
+present, and it held on both symbols.** No rollback.
+
+### Log checks, same run
+- **ENH-99 retry labels on the extra-expiry path:** exactly one banner all
+  day (detail in the TD below). Not a 429.
+- **Guard exceptions** (`infer_expiry_date|multi-expiry|Traceback`):
+  **nothing**, as designed — each expiry gets its own `run_id`, so
+  TD-S79-NEW-12's guard never sees a mixed one.
+- **Expiries selected:** `depth=2` chose W2 `2026-10-06` (NIFTY, 460 rows)
+  and `2026-10-01` (SENSEX, 364 rows). NIFTY 996 = 536 + 460, SENSEX
+  756 = 392 + 364 — log and table agree exactly.
+
+## FOUR TDs OWED — file verbatim at doc-close; NOT spliced into the register now
+
+Deliberately held out of `tech_debt.md` per **TD-S79-NEW-25**: the
+register is written in one pass at doc-close, and splicing mid-session
+means the close must reconcile a file that already moved. Numbering is
+**not** pre-assigned here — the next free `TD-S81-NEW-n` is whatever the
+doc-close derives from the headings, never incremented by hand.
+**None of the four is stage-1 related. All four are live.**
+
+### (a) S2 — Dhan HTTP 500 on the W1 call drops a whole ingest cycle on both symbols
+- **Symptom:** the **08:45 IST** cycle (`03:15:01Z START`) produced **no
+  rows for either symbol**. `Selected expiry: 2026-09-24` / `2026-09-29`
+  printed, then
+  `[retry_call] <SYM> get_option_chain failed on attempt 1/6 with error:
+  Dhan HTTP error | status=500 | path=/v2/optionchain |
+  response={"data":{"800":"Internal Server Error"}}. Predicate returned
+  False -- failing fast.`
+- **Evidence:** `grep -c "status=500 | path=/v2/optionchain" cron.log` = **2**
+  (one per symbol, same cycle). Table confirms the hole: today's cycles
+  are 08:35 (NIFTY only), 08:40, 08:50, 08:55 — **08:45 absent for both.**
+- **Why it is NOT stage-1:** the failure is on the **W1** call, which
+  exists identically at depth 1. The extra-expiry pass was never reached.
+- **Priority S2** — a silently dropped capture cycle; pre-existing vendor
+  flakiness, TD-080 family.
+- **Cross-ref:** TD-080 (S1-recurring, S22/S28/S29) · the retry-budget TD
+  (d) below, which is the same log line seen from the other side ·
+  D.16.4 (vendor tier behaviour).
+
+### (b) S2 — `compute_basis_context` fails the shadow-runner contract, and has failed EVERY cycle since 2026-09-23 03:01 UTC
+- **Symptom:** `compute_basis_context NIFTY+SENSEX FAILED (exit code 1)`,
+  followed by `======= PIPELINE FAILED: 1 step(s) =======` and
+  `Shadow runner cycle failed (contract not met)`. Empty stdout.
+- **Since when, bounded honestly by log retention:**
+  | log | window | first failure | fails | OKs |
+  |---|---|---|---|---|
+  | `shadow_runner.log.1` | 2026-09-22 | `2026-09-22T05:06:15` | 4 | 58 |
+  | `shadow_runner.log` | 2026-09-23 | `2026-09-23T03:01:17` | 8 | **0** |
+  So: **intermittent on 09-22 (4 of 62), total since 09-23 03:01.**
+  Retained logs reach back only to 09-22 — **the true onset may be
+  earlier and is not knowable from these files.** State it that way; do
+  not report 09-22 as the start date.
+- **Consequence:** every cycle is marked contract-not-met, so the
+  runner's own PASS/FAIL signal is pinned FAIL and can no longer report a
+  *new* failure. A health signal stuck at FAIL is as uninformative as one
+  stuck at OK — the ADR-018 D2 / `merdian-wsfeed` shape.
+- **Note:** `basis_context_snapshots` and `hist_basis_context` are both
+  on the 57-table RLS list, so this could not be diagnosed further
+  through `roq.sh` this session.
+- **Priority S2.** **Cross-ref:** ENH-07 B (S61, the basis sign-read) ·
+  ADR-018 D2 · TD-S61-NEW-2 · §D.25.
+
+### (c) S3 — a crontab line invokes `build_wcb_snapshot_local.py` with no symbol argument, every 5 minutes
+- **Symptom:** `Usage: python .\build_wcb_snapshot_local.py <NIFTY|SENSEX>`
+  in `cron.log`. The script prints usage and exits; **it has never done
+  work from this line.** Note the Windows-style `.\` path in its own usage
+  string — a Local-era artefact.
+- **Evidence:** crontab line 11 —
+  `*/5 03,04,05,06,07,08,09 * * 1-5 cd /home/ssm-user/meridian-engine && source .env && /usr/bin/python3 build_wcb_snapshot_local.py >> cron.log 2>&1`
+  — no argument, against line 14's shadow runner which calls
+  `build_wcb_snapshot NIFTY` and `SENSEX` **successfully** in the same
+  window (both `OK` at `03:25:45`–`03:25:53`).
+- **So the WCB work IS being done**, by the runner. The cron line is a
+  redundant duplicate that only emits noise — which is why it survived:
+  **it fails in a way that looks like a log line, not like an outage.**
+- **This is the S48/ADR-018 "WCB cron arg" defect at a second site.** That
+  one was fixed in the same pass as ADR-018 D1; this line was not.
+- **Priority S3** — noise, not data loss. Fix is deleting the line or
+  adding the arguments, but confirm against the runner first so the work
+  is not then done twice.
+- **Cross-ref:** ADR-018 D1 (S57) · S48 WCB cron arg fix · TD-S41-NEW-4
+  (`build_wcb_snapshot_local.py` ExecutionLog instrumentation).
+
+### (d) S2 — the ENH-99 retry budget does not engage on either error class actually observed, and the stage-2 gate is supposed to be decided on that telemetry
+- **Symptom:** `retry_call` is configured `attempts=6`, and **both** error
+  classes seen on 2026-09-23 terminated at attempt 1 with
+  `Predicate returned False -- failing fast`:
+  - `status=401` `{"808":"Authentication Failed"}` — NIFTY W2 `2026-10-06`
+  - `status=500` `{"800":"Internal Server Error"}` — both symbols, W1
+- **So the observed retry count is structurally zero.** The banners fire;
+  the retries do not. `grep -c retry_call` counts *banners*, and the notes
+  already record it as the wrong instrument — this is why.
+- **Why it matters beyond hygiene — it bears on a gate:** ADR-025 A1
+  stage 2 (NIFTY depth 4) is gated on **"a week of ENH-99 retry
+  telemetry."** If the predicate never retries the classes that actually
+  occur, that week measures **429 pressure only**, and will read clean
+  while 401s and 500s are silently dropping captures. **A gate whose
+  evidence cannot record the failures being observed is the Rule 0
+  CAN FIRE / CANNOT FIRE shape applied to a rollout decision.**
+- **The 401 is worth separating from the 500.** 401 is genuinely
+  non-retryable *with the same token* — but the correct response is to
+  re-read the token and retry, not to fail fast, because the mechanism
+  below is a token that rotated mid-cycle. 500 is transient and plainly
+  should retry.
+- **Mechanism for the 401, inferred and NOT confirmed:** the failing
+  cycle ran `03:05:01Z → 03:05:12Z`; `refresh_dhan_token.py` is scheduled
+  at **03:05 UTC**. W1 succeeded and W2, three seconds later
+  (`EXPIRY_CALL_SPACING_S = 3.0`), got 808. A refresh mints a new token
+  and invalidates the old one, so a token held in memory across the two
+  calls would 401 on the second. **This is the S66 "token read at import,
+  not at use" shape** — and **stage 1 did not cause it, it exposed it**:
+  at depth 1 there is one API call per cycle and no window to straddle.
+  **n=1. Confirm against the refresh log before filing the mechanism as
+  fact; the observation stands regardless.**
+- **Scope of the 401, measured:** one cycle (`run_id d7c9422a`), W2 only,
+  **W1 never affected in any cycle**, 0 rows lost, `rc=0` (the extra pass
+  is non-fatal by design), self-healed next cycle — the six subsequent
+  extra-expiry captures all `failed=[]`.
+- **Priority S2.** **Cross-ref:** ENH-99 · ADR-025 Amendment A stage 2
+  gate · TD-080 · TD-S66-NEW-1 (token at import vs at use, S67 fix) ·
+  `core/dhan_client.py` `is_dhan_429` / `retry_call` · CLAUDE.md Rule 0.

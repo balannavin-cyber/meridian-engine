@@ -1367,30 +1367,174 @@ doc-close derives from the headings, never incremented by hand.
   flakiness, TD-080 family.
 - **Cross-ref:** TD-080 (S1-recurring, S22/S28/S29) · the retry-budget TD
   (d) below, which is the same log line seen from the other side ·
-  D.16.4 (vendor tier behaviour).
+  D.16.4 (vendor tier behaviour) · **TD (b) — same 08:30–09:30 IST
+  window, entirely different failure; see the do-not-conflate table under
+  (b) before merging anything at doc-close.**
 
-### (b) S2 — `compute_basis_context` fails the shadow-runner contract, and has failed EVERY cycle since 2026-09-23 03:01 UTC
-- **Symptom:** `compute_basis_context NIFTY+SENSEX FAILED (exit code 1)`,
-  followed by `======= PIPELINE FAILED: 1 step(s) =======` and
-  `Shadow runner cycle failed (contract not met)`. Empty stdout.
-- **Since when, bounded honestly by log retention:**
-  | log | window | first failure | fails | OKs |
-  |---|---|---|---|---|
-  | `shadow_runner.log.1` | 2026-09-22 | `2026-09-22T05:06:15` | 4 | 58 |
-  | `shadow_runner.log` | 2026-09-23 | `2026-09-23T03:01:17` | 8 | **0** |
-  So: **intermittent on 09-22 (4 of 62), total since 09-23 03:01.**
-  Retained logs reach back only to 09-22 — **the true onset may be
-  earlier and is not knowable from these files.** State it that way; do
-  not report 09-22 as the start date.
-- **Consequence:** every cycle is marked contract-not-met, so the
-  runner's own PASS/FAIL signal is pinned FAIL and can no longer report a
-  *new* failure. A health signal stuck at FAIL is as uninformative as one
-  stuck at OK — the ADR-018 D2 / `merdian-wsfeed` shape.
-- **Note:** `basis_context_snapshots` and `hist_basis_context` are both
-  on the 57-table RLS list, so this could not be diagnosed further
-  through `roq.sh` this session.
-- **Priority S2.** **Cross-ref:** ENH-07 B (S61, the basis sign-read) ·
-  ADR-018 D2 · TD-S61-NEW-2 · §D.25.
+### (b) S2 — the shadow runner invokes `compute_basis_context` for a full hour before its only input exists: a cron-hour mismatch, structural and daily
+
+**This entry REPLACES an earlier draft** that described the same symptom
+as *"failed every cycle since 03:01 UTC, onset bounded by retention."*
+**That framing was wrong**, and the two corrections behind it are recorded
+below rather than quietly dropped, because both were errors of
+instrumentation rather than of the system.
+
+- **The mismatch, which is the whole finding:**
+
+  | job | crontab | hours UTC | IST window |
+  |---|---|---|---|
+  | shadow runner | line 14, `*/5 03-09 * * 1-5` | **03**–09 | **08:30**–15:29 |
+  | `capture_index_futures_snapshot_local.py` | lines 9-10, `*/5 04,05,06,07,08,09 * * 1-5` | **04**–09 | **09:30**–15:29 |
+
+  **08:30–09:29 IST — twelve runner cycles every trading morning — invoke
+  `compute_basis_context_local.py` before `index_futures_snapshots` has
+  any row to read.** Structural, daily, pre-existing. Not an outage.
+
+- **Mechanism, exact:** the script's only input is
+  `index_futures_snapshots` (`fetch_recent_futures`, `LOOKBACK_MIN = 30`).
+  With no row inside the lookback both symbols land `no_input`, and
+  `:273-277` returns **`SKIPPED_NO_INPUT` with `exit_code=1`**. The script
+  behaves exactly as written; nothing in it is broken.
+
+- **CORRECTION 1 — "empty stdout" was an `awk` filter artefact, not the
+  log.** The banner at `:221` prints unconditionally, and the log says:
+  ```
+  MERDIAN - compute_basis_context_local (ENH-07 B)
+  Skipping NIFTY: no recent index_futures_snapshots rows.
+  Skipping SENSEX: no recent index_futures_snapshots rows.
+  ```
+  The reason was in the log the entire time. It was filtered out by
+  `awk '/Starting: |OK$|FAILED|PIPELINE/'` and then reported as a property
+  of the script. **A pattern that selects status lines cannot see a
+  diagnostic, and reporting its silence as evidence is the shape Rule 0
+  warns about, applied to a reader rather than a check.**
+
+- **CORRECTION 2 — "4 of 62 on 09-22" measured a truncated window.**
+  `shadow_runner.log.1` begins at **`2026-09-22T04:50:04`**, i.e. **after**
+  futures capture had started that day (09-22 futures ran late, first row
+  **10:10 IST = 04:40 UTC**). So all 62 invocations it holds sit *inside*
+  the futures window, the morning's structural failures are **not in the
+  retained log at all**, and those **4 failures are a DIFFERENT cause** —
+  genuine transient gaps in futures capture mid-session. The earlier
+  "intermittent on 09-22" reading was right by accident and for the wrong
+  reason.
+
+- **Today is fully explained and is NOT an outage.** `shadow_runner.log`
+  covers `03:00:04 → 03:50:30` UTC; all 8 invocations fall inside the
+  03:00–03:59 hour. `index_futures_snapshots` had 0 rows and
+  `capture_index_futures_snapshot_local.py` 0 invocations in `cron.log` at
+  09:21 IST — nine minutes before its first scheduled fire.
+
+- **ONSET: not knowable from retained logs.** `shadow_runner.log.1` starts
+  04:50 UTC and older runner logs are rotated away. Do not state a start
+  date. The mismatch is as old as whichever cron line moved last, and that
+  is not recoverable from what is on the box.
+
+- **Consumer impact: NONE, and the floor is why.** Sole consumer is
+  `build_trade_signal_local.py:503-529`; nothing in `~/meridian-connect/src`
+  reads it. The ADR-018 D2 floor added at S61
+  (`MERDIAN_BASIS_RECENCY_FLOOR_MIN`, default 15) blanks the context past
+  the floor (`_basis_ctx = {}` at `:524`) and writes `basis_context_stale`
+  into the signal row at `:911`, so the label goes **NULL rather than
+  stale**. Fail-to-absent, correctly implemented. Basis context is
+  display-only per S37/S61 — no confidence modifier — so **signal
+  generation is unaffected.** This is ADR-023 working as intended, and is
+  worth recording as a *validation* of that decision, not only as context.
+
+- **RLS note, corrected for accuracy:** `basis_context_snapshots` and
+  `hist_basis_context` ARE on the 57-table list, so the *output* could not
+  be read through `roq.sh`. `index_futures_snapshots` is **not** on that
+  list and read normally — which is what allowed the diagnosis. Do not
+  restate this as "could not be diagnosed through roq.sh."
+
+- **Priority S2** — not for data loss (there is none) but because it
+  pins the runner's contract signal; see the two decisions below.
+- **Cross-ref:** ENH-07 B (S57 scope add, S61 ship) · ADR-018 D2 (the
+  floor that contains it) · ADR-023 (fails-to-absent) · TD-S61-NEW-2 ·
+  §D.25 · TD (a) above — **same window, different failure, see below**.
+
+#### TWO DECISIONS THAT FALL OUT OF (b) — UNRESOLVED, options recorded, none chosen
+
+**Decision 1 — should `SKIPPED_NO_INPUT` exit 1 at all?**
+It converts a *legitimate pre-market state* into a contract breach. The
+exit reason itself says "skipped", and `SKIPPED_NO_INPUT` is a valid
+`script_execution_log` reason — but paired with `exit_code=1` the runner
+reads it as a failure. **The name and the exit code disagree about what
+happened.**
+
+**Decision 2 — the runner's contract signal is pinned FAIL for an hour
+every morning, so a REAL failure in that window cannot be reported.**
+Twelve cycles a day emit `PIPELINE FAILED: 1 step(s)` and
+`Shadow runner cycle failed (contract not met)` for a benign reason. **A
+signal that reads FAIL on healthy mornings is as uninformative as one
+that reads OK on broken ones** — precisely the `merdian-wsfeed` shape
+(§S72.B, D.27), where a normal shutdown lands in `failed (Result:
+timeout)` and a hang is indistinguishable from a clean stop. **That
+property was codified and has now recurred at a second surface.**
+
+Options, recorded without choosing:
+1. **Align the cron hours** — move the futures capture to `03-09`, or the
+   runner to `04-09`. Smallest change; requires knowing why they differ
+   (09:30 IST may be deliberate — futures quotes before then may be thin
+   or absent, in which case moving capture earlier buys nothing).
+2. **Make `SKIPPED_NO_INPUT` exit 0** — honest about "nothing to do", but
+   it would also silence a *genuine* futures-capture outage mid-session,
+   which is exactly what the 09-22 four were. **This option trades a false
+   FAIL for a false OK and should not be taken alone.**
+3. **Have the runner treat no-input as NOT-APPLICABLE rather than failed**
+   — a third contract state, distinct from both OK and FAIL. Most work,
+   and the only option that preserves the ability to report a real
+   mid-session futures outage while not failing the pre-market hour.
+
+Whichever is chosen, **option 2's hazard is the thing to decide
+deliberately**: the 09-22 failures are real and must stay visible.
+
+#### (a) AND (b) ARE DIFFERENT FAILURES IN THE SAME WINDOW — DO NOT CONFLATE AT DOC-CLOSE
+Both surfaced in the same hour on the same morning and both concern the
+08:30–09:30 IST pre-market window, which makes them easy to merge into one
+entry. They have **nothing in common**:
+
+| | (a) | (b) |
+|---|---|---|
+| failing component | Dhan `/v2/optionchain`, **W1 call** | `compute_basis_context_local.py` |
+| cause | vendor **HTTP 500**, transient | **cron-hour mismatch**, structural |
+| input table | `option_chain_snapshots` | `index_futures_snapshots` |
+| frequency | one cycle, 2026-09-23 08:45 | **twelve cycles, every trading day** |
+| data lost | a full capture cycle, both symbols | **none** |
+| fix | retry predicate / vendor | schedule or contract semantics |
+
+(a) is a real gap in captured data. (b) loses nothing and is a reporting
+defect. **Merging them would produce an entry whose "fix" addresses
+neither.**
+
+#### VERDICT ON (b): pre-existing, and unrelated to BOTH of yesterday's changes
+The question asked was whether (b) is (i) pre-existing, (ii) triggered by
+the front-expiry selector fix `89ad2bb`, or (iii) triggered by stage 1.
+**(i), on evidence rather than inference:**
+
+1. **`compute_basis_context_local.py` is unchanged for three months** —
+   mtime 2026-06-26, and `git log --since=2026-09-21` over the script,
+   `core/execution_log.py`, `core/supabase_client.py` and
+   `run_merdian_shadow_runner_aws.py` returns **exactly one** commit.
+2. **That one commit is `89ad2bb`, and it touched only run_id ordering in
+   the runner.** `compute_basis_context_local.py` **reads no `run_id` at
+   all** — it queries `index_futures_snapshots` by `ts`. There is no
+   shared code path; the selector cannot reach it.
+3. **Stage 1 changed `EXPIRY_DEPTH`, which affects
+   `option_chain_snapshots` only.** `index_futures_snapshots` has a
+   different writer, a different cron, and no expiry dimension whatsoever.
+4. **The mismatch is visible before either change.**
+   `index_futures_snapshots` first row is **09:30 IST on 2026-09-17,
+   09-18 and 09-21** — all pre-dating yesterday. The same twelve cycles
+   failed on those mornings too; their runner logs are simply rotated
+   away, which is the same retention limit that makes onset unknowable.
+
+**Falsifiable prediction, stated at 09:21 IST before observing** (per
+Rule 0 clause 3 — record the outcome against this sentence, not against a
+number adjusted afterwards): the futures writer fires at 09:30 IST, so
+**basis_context should return OK unaided on the first runner cycle at or
+after ~09:35 IST.** If it does not, this diagnosis is wrong and the cause
+is something other than the cron window.
 
 ### (c) S3 — a crontab line invokes `build_wcb_snapshot_local.py` with no symbol argument, every 5 minutes
 - **Symptom:** `Usage: python .\build_wcb_snapshot_local.py <NIFTY|SENSEX>`

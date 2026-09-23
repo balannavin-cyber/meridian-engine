@@ -1811,3 +1811,56 @@ Both are siblings of the ENH-81 / ENH-120-122 family and share the construction:
 **The `## Update log` table remains frozen at Session 67** — TD-S73-NEW-10, recorded by S73, S74 and S76 and **not fixed here either**. Repairing it means sourcing six sessions of entries, which is a separate edit.
 
 *System Map updated Session 80, 2026-09-19/22 (§S80 — `v_gex_max_pain` (ENH-123) and `v_gex_pin_maxpain` (ENH-124) applied to the live database, both **off-spec and parked as L19 per ADR-025 D5**, neither counted toward parity; `gex_pin_maxpain_history` + `backfill_pin_maxpain_runs()` built because ADR-021's latest-run scoping makes the pin band unreadable historically from the view — the caveat §S69 recorded, now paid — gated by exact reproduction of the live view on 2026-09-18 and backfilled 11,795/11,795 with zero failures; superseded `backfill_pin_maxpain(text, date)` **dropped** rather than kept as a spare; `compute_gamma_metrics_local.py`'s `infer_expiry_date()` now raises on multi-expiry input, closing TD-S79-NEW-12, shipped **before** the ingest change because it converts silent corruption into a crash; `ingest_option_chain_local.py` gains an appended, `if _depth > 1:`-guarded capture-depth scaffold at **stage 0, depth 1**, observed inert at 08:53 IST the following morning by a paired check rather than by a grep that cannot fail; the spec's *"full expiry ladder per cycle"* refuted at **one expiry across all 2,923 cycles ever written**, with `:327` returning the ladder and `:365` discarding it; and the **−0.4σ** pin↔max-pain constant recorded over 11,795 runs with its one elevated cell isolated to NIFTY 0 DTE. `gex_pin_maxpain_history` **still owes its Rule 10 schema ADR — TD-S80-NEW-7**; committing DDL satisfies ADR-025 D2 clause 4 and not Rule 10. **NO cron, systemd unit, token path or Local↔AWS boundary changed by this work** — but the session did change topology: the **2026-09-22 disk-full access lockout** resized the root volume **8 GiB gp2 → 30 GiB gp3**, widened the logrotate scope, discharged the S71 kernel risk and left the feed needing a manual start, so **Deployment Topology carries a full §S80** and this section is the database half only. The `## Update log` table remains frozen at Session 67 — TD-S73-NEW-10, still not fixed here.) Previous: Session 79, 2026-09-15/16 (§S79).*
+
+---
+
+## §S81 — Session 81: six views touched, a read-only role that reads 57 tables as empty, and a max-pain clock removed rather than deferred (2026-09-22/23)
+
+**Six views new or changed, one new database role, and no schema change to any base table.** No table was created, altered or dropped this session; every object below is a view, a grant, or a policy.
+
+### §S81.1 — The six views
+
+| view | change | ENH | evidence |
+|---|---|---|---|
+| `v_gex_strike_rank` | **NEW** — L12 ranked leg; strikes ordered by `abs(gex_cr)` within the latest run, signed value carried | **ENH-125** | `EXPLAIN` 11.8 ms exec / 12.2 ms plan, 618 shared hit / 7 read, **no Seq Scan**; 251 scoped → 84 removed by `gex_cr <> 0` → 167 ranked. `sql/2026-09-22_s81_v_gex_strike_rank.sql`, commit `4fcd740` |
+| `v_gex_net_gamma_river` | **NEW** — L14; one daily net-gamma value per symbol over 90 days, with `dte` and `session_complete` | **ENH-126** | `EXPLAIN` 54 ms, Seq Scan on `gamma_metrics` (11,280 scanned / 10,170 kept). A seq scan is correct at this size; the predicate exists for when it is not |
+| `v_oi_rotation_since_open` | **NEW** — L13 live leg; per-strike OI change from the session anchor, with `is_fresh` | **ENH-127** | `EXPLAIN` **24.7 ms**, index seeks throughout, **no full scan** |
+| `v_max_pain_by_strike` | **CHANGED TWICE** — expiry scoping, then a `latest_ts` retrofit | **ENH-128** (registered retroactively) | see §S81.2 |
+| `v_gex_strike_walls` | **COMMENT ON VIEW applied** (body unchanged) | ENH-120 | stored length **1449** |
+| `v_gex_concentration` | **COMMENT ON VIEW applied** (body unchanged) | ENH-122 | stored length **1951** |
+
+The two comment-only changes are `sql/2026-09-22_s81_comment_on_view_strike_disambiguation.sql`, commit `dc2e6b5`. **A published expectation of 1451 for walls was wrong** — it was taken from the source literal and double-counted the two `''` escapes; **stored = literal − 2**.
+
+**All four S81-authored SQL files ship `COMMENT` and `GRANT` as LIVE statements**, so `sql/` matches the database for those objects. That is not true of the three S79 files, where `COMMENT` is present in `sql/` and absent live while `GRANT` is commented out in `sql/` and present live — **TD-S81-NEW-5**, and the reason this became a rule.
+
+### §S81.2 — `v_max_pain_by_strike`: a clock removed, not deferred
+
+**Before:** whole view **3,396 ms** cold; `latest_ts` alone **3,260 ms** — an Index Only Scan over **all 1,336,714 rows**, 145,354 heap fetches, 14,240 shared read. **Not a seq scan — a full-index scan**, cheaper but still O(table).
+
+**After the S72 FIX 2 recursive symbol skip-scan + `CROSS JOIN LATERAL` probe:** whole view **140.9 ms**; `latest_ts` **0.18 ms**, `Index Cond (symbol = s.symbol)`, rows=1 per symbol, **1,146 shared hit and 0 reads**.
+
+**The projection that made it urgent:** only `latest_ts` scaled with table size, ~136 ms was fixed, so `3260k + 136 = 8000` gives ~3.22M rows — **~28 days** at ~68k rows/day with pg_cron jobid 19 disabled. **A warm cache is much faster, so it would have presented INTERMITTENTLY first** — cold reads failing while warm ones pass, which is harder to diagnose than a clean break.
+
+**The residual is a different quantity.** 140.9 ms is almost entirely the `pain` CTE's within-symbol strike × strike cross product — **O(strikes²) per snapshot, bounded by CHAIN WIDTH and independent of table growth.** Re-measured live 2026-09-23 at **161.5 ms** on a wider chain (110,240 join rows against 94,112), which is that axis behaving as predicted rather than a regression.
+
+**The view now emits 12 columns** — `symbol, candidate_strike, total_pain, max_pain_strike, side, ts, expiry_date, dte, n_strikes, snapshot_age_min, stale_floor_min_used, is_fresh` — measured against the live object. That closes **both** halves of TD-S80-NEW-10, not only the expiry half.
+
+**`sql/v_max_pain_by_strike.sql` had never existed** before this session: absent from disk, `git log --all` empty for the path. From S40 to S81 the object lived in the live database only. Baseline captured verbatim at `cebcc03` **before** either change, so both land as reviewable diffs.
+
+### §S81.3 — `merdian_ro`: a read-only role, and the 57 tables it reads as empty
+
+**New database role `merdian_ro`** — LOGIN, and nothing else. Measured, not assumed: `rolsuper` / `rolcreaterole` / `rolcreatedb` / `rolbypassrls` / `rolreplication` **all false**; **0 of 233** public relations carry INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES or TRIGGER; SELECT on **231**. The two it cannot read are `system_config` and `dhan_auth_tokens`, both returning `permission denied` through the real connection.
+
+**The limitation is the part that matters to a future reader.** `rolbypassrls = false` and this project's RLS policies are written `TO anon`, so **a role matching no policy gets an empty result set, not an error.** **57 tables read as silently empty** — including `signal_snapshots`, `ict_primitives`, `ict_primitive_outcomes`, `script_execution_log`, `merdian_parameters`, `market_breadth_intraday` and `gex_pin_maxpain_history`, i.e. most of what a verification query wants. Operator added `merdian_ro_select` policies to `gamma_metrics` and `gex_strike_snapshots`; the rest stand. **Read a zero from any of them and check TD-S81-NEW-16's list before believing it.**
+
+**`option_chain_snapshots` has RLS off** and reads normally, which is what allowed the S81 diagnoses that depended on it.
+
+### §S81.4 — Privilege state changed across the whole `public` schema
+
+Operator applied, verified in-database: `REVOKE ALL` on `system_config` and `dhan_auth_tokens`; `REVOKE INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER ON ALL TABLES IN SCHEMA public`; and **`ALTER DEFAULT PRIVILEGES`**, which is the clause that closes the mechanism rather than the instances. Post-state: `relations_with_anon_non_select = 0`. **Before**, `anon` held privileges beyond SELECT on **211** relations and ~100 tables had RLS off. Full account in `CASE-2026-09-22-anon-privilege-exposure.md`.
+
+### §S81.5 — `option_chain_snapshots` catalogued properly for the first time
+
+`merdian_reference.json` carried a correct 21-column name list from S75 and **no index list, no types, and a `constraint` field that was factually false**. Now recorded: 21 types, the **six index definitions** (not names), size (**1,393,290 rows / 1,376 MB**, ~68k/day), RLS state, and the depth-2 reader rule. **Two index traps are now written down**: `idx_ocs_symbol_created_at_desc` is on **`created_at`, not `ts`** — valid for the symbol skip-scan only — and `idx_ocs_ts_symbol_expiry` has `symbol` **second**. TD-S81-NEW-18.
+
+*System Map updated Session 81, 2026-09-23 (§S81 — three new views, one changed twice, two comment-only; the `merdian_ro` role and its 57-table blind spot; a schema-wide privilege change; and `option_chain_snapshots` catalogued with indexes and types for the first time). **No base table was created, altered or dropped.** **The `## Update log` table remains frozen at Session 67 — TD-S73-NEW-10, now recorded by S73, S74, S76 and S81 and still not fixed here**, for the same reason: repairing it means sourcing seven sessions of entries and is a separate edit.*

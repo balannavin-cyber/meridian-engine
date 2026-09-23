@@ -2553,6 +2553,43 @@
     "option_chain_snapshots": {
       "columns_live_s75": ["id", "ts", "symbol", "expiry_date", "spot", "strike", "option_type", "ltp", "bid", "ask", "oi", "oi_change", "volume", "iv", "delta", "gamma", "theta", "vega", "raw", "created_at", "run_id"],
       "columns_live_s75_note": "21 columns. No prior column list was recorded for this table.",
+        "column_types_live_s81": {
+          "id": "uuid NOT NULL default gen_random_uuid()",
+          "ts": "timestamptz NOT NULL",
+          "symbol": "text NOT NULL",
+          "expiry_date": "date NOT NULL",
+          "spot": "numeric NOT NULL",
+          "strike": "numeric NOT NULL",
+          "option_type": "text NOT NULL",
+          "ltp": "numeric",
+          "bid": "numeric",
+          "ask": "numeric",
+          "oi": "numeric",
+          "oi_change": "numeric",
+          "volume": "numeric",
+          "iv": "numeric",
+          "delta": "numeric",
+          "gamma": "numeric",
+          "theta": "numeric",
+          "vega": "numeric",
+          "raw": "jsonb",
+          "created_at": "timestamptz NOT NULL default now()",
+          "run_id": "uuid"
+        },
+        "column_types_source": "measured 2026-09-23 (S81) from information_schema.columns via the merdian_ro read-only role. The 21 column NAMES match columns_live_s75 exactly, order included -- the S75 list was correct and is unchanged; only types, indexes and the constraint field are added or corrected here.",
+        "indexes_live_s81": [
+          "option_chain_snapshots_pkey UNIQUE btree (id)",
+          "uix_ocs_run_strike_type UNIQUE btree (run_id, strike, option_type)",
+          "idx_ocs_run_id btree (run_id)",
+          "idx_ocs_symbol_created_at_desc btree (symbol, created_at DESC)",
+          "idx_ocs_symbol_expiry_strike_type btree (symbol, expiry_date, strike, option_type)",
+          "idx_ocs_ts_symbol_expiry btree (ts DESC, symbol, expiry_date)"
+        ],
+        "indexes_note": "S81 re-derived this set FOUR times from EXPLAIN output because it was not recorded here. Two of the six carry a trap worth stating: idx_ocs_symbol_created_at_desc is on created_at, NOT ts, so it serves the SYMBOL SKIP-SCAN only -- a latest-ts probe must ride idx_ocs_ts_symbol_expiry instead. The name would otherwise be read as ts (the S72 names-are-not-definitions shape). And idx_ocs_ts_symbol_expiry has symbol SECOND, so a per-symbol probe walks in ts order and filters on symbol; harmless while both symbols write every cycle, ~34k index entries per stalled day if one stops.",
+        "indexes_source": "measured 2026-09-23 (S81) from pg_indexes.indexdef -- definitions, not names.",
+        "size_live_s81": "1,393,290 rows / 1,376 MB total relation size, measured 2026-09-23. Grows ~68k rows/day because pg_cron jobid 19 (the OCS thinning job) is DISABLED per TD-S76-NEW-2. Growth rate matters: it is what put v_max_pain_by_strike ~28 days from the PostgREST 8s ceiling before the S81 retrofit (TD-S81-NEW-17).",
+        "rls_live_s81": "RLS is OFF on this table, so merdian_ro reads it normally -- unlike the 57 RLS-enabled tables it reads as silently empty (TD-S81-NEW-16).",
+        "capture_depth_s81": "Since 2026-09-23 the ingest captures TWO expiries per cycle (EXPIRY_DEPTH stage 1, W1+W2), each with its OWN run_id but SHARING one ts. CONSEQUENCE FOR ANY READER: a 'latest snapshot' selector must order ts.desc,expiry_date.asc to get the FRONT expiry. Ordering by created_at.desc returns W2, because created_at is a DB default and therefore later for the extra-expiry pass. See CLAUDE.md settled rule and ADR-025 B5.",
       "columns_live_s75_source": "measured 2026-09-08 from the live PostgREST OpenAPI definitions, cross-checked against sampled row keys; docs/research/iv_availability_2026-09-08.md \u00a71 (commit b2dfd25)",
             "written_by": [
         "ingest_option_chain_local.py (FULL + ATM_ONLY modes)"
@@ -2565,8 +2602,8 @@
         "build_shadow_signal_v3_local",
         "outcome engine (pending migration)"
       ],
-      "constraint": "None at table level (run_id is per-call UUID)",
-      "status": "LIVE  --  dual cadence. Currently failing 401 on Local (V18A).",
+      "constraint": "CORRECTED S81. This field previously read 'None at table level (run_id is per-call UUID)', which is FALSE: uix_ocs_run_strike_type is a UNIQUE constraint on (run_id, strike, option_type), and option_chain_snapshots_pkey is UNIQUE on (id). Measured 2026-09-23 from pg_indexes.",
+      "status": "LIVE -- dual cadence, AWS-only. The 'currently failing 401 on Local (V18A)' clause was stale and is removed: Local was retired at the ADR-006 migration and all 22 Local scheduled tasks are Disabled. Refreshed S81 2026-09-23.",
       "critical_rule": "FULL rows: ~534 NIFTY / ~606 SENSEX per cycle. ATM_ONLY: ~10 per cycle. Distinguish by row count per run_id or ts cadence. Schema uses ts NOT trade_date.",
       "open_items": [
         "V18A-01",

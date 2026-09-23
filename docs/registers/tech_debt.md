@@ -334,20 +334,22 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Cross-ref** | **ADR-021** (the failure mode this would have reproduced) · S72 FIX 2 · TD-S76-NEW-2 (jobid 19 disabled, hence the growth rate) · **TD-S81-NEW-4** (`v_dealer_flow_sim`, the same untreated shape) · TD-S80-NEW-10 (closed this session). |
 | **Status** | **RESOLVED 2026-09-23.** Baseline `cebcc03`, fix committed; `sql/` matches the database including COMMENT and GRANT. |
 
-### TD-S81-NEW-18 (S3 priority) — `merdian_reference.json` records no schema for `option_chain_snapshots`
+### TD-S81-NEW-18 (S3 priority — **RESOLVED S81 2026-09-23; and the filed diagnosis was WRONG**) — `merdian_reference.json` records no INDEXES for `option_chain_snapshots`, and its `constraint` field was factually false
 
 | Field | Value |
 |---|---|
 | **Priority** | **S3.** A documentation gap in the file CLAUDE.md names authoritative for schema lookups. |
 | **Filed** | 2026-09-23 (Session 81) |
 | **Component** | `docs/registers/merdian_reference.json` → `tables` |
-| **Symptom** | `option_chain_snapshots` — the head of the entire compute chain, ~1.34M rows, six indexes — **has no `tables` entry.** CLAUDE.md's single-source-of-truth map sends readers here for *"What's the schema / row count / status of this table?"*, and for this table the answer is absent. |
+| **Symptom, AS FILED — and it was wrong** | Filed this session as *"has no `tables` entry"*. **False.** The entry exists and carries a 21-column list measured at S75 which matches today's measurement **exactly, order included**. The claim was made without reading the entry — the same reflex this project files under *reasoning from the archive when the source was available*, committed hours after filing five other instrumentation errors of the same shape. |
+| **Symptom, AS MEASURED** | Three real gaps, none of them the one filed. **(1)** No index list — S81 re-derived the six-index set from `EXPLAIN` output **four separate times** because it was not recorded. **(2)** Columns carried names but **no types**. **(3)** The `constraint` field read *"None at table level (run_id is per-call UUID)"*, which is **factually false**: `uix_ocs_run_strike_type` is UNIQUE on `(run_id, strike, option_type)`. A register asserting a constraint does not exist is worse than one that is silent. |
 | **Why it matters now** | S81 worked on this table four separate times and had to re-derive its index set from `EXPLAIN` output each time. The full set, measured: `idx_ocs_run_id(run_id)`; `idx_ocs_symbol_created_at_desc(symbol, created_at DESC)`; `idx_ocs_symbol_expiry_strike_type(symbol, expiry_date, strike, option_type)`; `idx_ocs_ts_symbol_expiry(ts DESC, symbol, expiry_date)`; `option_chain_snapshots_pkey(id)`; `uix_ocs_run_strike_type UNIQUE(run_id, strike, option_type)`. |
-| **Proper fix** | Add the `tables.option_chain_snapshots` entry with columns, indexes and the depth-2 note. |
-| **Cost to fix** | ~20 min. |
+| **Resolution** | Added `column_types_live_s81` (21 types, asserted in the patch to match the S75 name list exactly, order included), `indexes_live_s81` (6, from `pg_indexes.indexdef` — **definitions, not names**), `size_live_s81` (1,393,290 rows / 1,376 MB, with the ~68k/day growth that put TD-S81-NEW-17 ~28 days from the ceiling), `rls_live_s81`, and `capture_depth_s81` (two expiries per cycle sharing one `ts`, so a reader must order `ts.desc,expiry_date.asc`). **`constraint` corrected** and the stale `status` clause *"Currently failing 401 on Local (V18A)"* removed — Local was retired at the ADR-006 migration. |
+| **The index note is the load-bearing part** | Two of the six carry a trap now written down: `idx_ocs_symbol_created_at_desc` is on **`created_at`, not `ts`**, so it serves the symbol skip-scan only and a latest-ts probe must ride `idx_ocs_ts_symbol_expiry` — the name would otherwise be read as `ts` (the S72 *names-are-not-definitions* shape). And `idx_ocs_ts_symbol_expiry` has `symbol` **second**, so a per-symbol probe walks in `ts` order and filters. |
+| **Cost to fix** | ~20 min as filed; the measurement was already in hand from the session's own work. |
 | **Blocked by** | nothing. |
-| **Cross-ref** | CLAUDE.md single-source-of-truth map · TD-S41 schema-guess anti-pattern (*"check `information_schema` before composing SQL"*). |
-| **Status** | **OPEN.** |
+| **Cross-ref** | CLAUDE.md single-source-of-truth map · TD-S41 schema-guess anti-pattern · **TD-S81-NEW-17** (the cost shape the growth rate drives) · **TD-S81-NEW-16** (why the RLS note matters to a reader using `roq.sh`) · ADR-025 B5 (the `created_at` selector rule). |
+| **Status** | **RESOLVED 2026-09-23 (Session 81).** Heading and Status moved together. **The correction is recorded rather than overwritten**: a register entry that quietly changed its own symptom would be the defect this register exists to catch. |
 
 ### TD-S81-NEW-19 (S3 priority) — 2026-08-17 is a partial compute day: both symbols stopped writing at ~14:10, uninvestigated
 

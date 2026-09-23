@@ -29,7 +29,7 @@
 
 ## Part 1 -- Status Summary
 
-Sortable table of all 86 IDs. For full detail see Part 4.
+Sortable table of all 112 IDs. For full detail see Part 4.
 
 | ID | Title | Priority Tier | Status |
 |---|---|---|---|
@@ -128,7 +128,7 @@ Sortable table of all 86 IDs. For full detail see Part 4.
 | ENH-79 | PWL weekly sweep detection + signal entry rules | 1 | **PROPOSED** |
 | ENH-96 | Dashboard "Gap (vs prev close)" card (prelim 09:08 + final 09:15 vs prev close 16:00) | 1 | **SHIPPED 2026-05-10** |
 | ENH-97 | vol_analytics table + RR ratio writer (ADR-002 v2 P7) | 1 | **SHIPPED-AS-LOGGING** (S29 — Phase 0b FAIL on P7 4-way regime gate + COMPRESSED salvage; pivoted from signal-time gating to logging-only; backfill 19,520 + 24,758 rows complete; **see falsification criterion realized in this entry below**) |
-| ENH-98 | Vanna/charm second-order Greeks (ADR-002 v2 P8 — Phase 3 prep) | 2 | **PROPOSED** (S28 P2 — renumbered from S27 verbally-NEW "ENH-85" due to slot collision) |
+| ENH-98 | Vanna/charm second-order Greeks (ADR-002 v2 P8 — Phase 3 prep) | 2 | **IN BUILD (S81)** — deferral LIFTED by operator decision; Hedgewall parity **L7/L8** is the Phase-1 consumer the original block required. Build not started: the go/no-go measurement was **INCONCLUSIVE on a self-contaminated sample** and must be re-run. (S28 P2 — renumbered from S27 verbally-NEW "ENH-85" due to slot collision) |
 | ENH-99 | Dhan 429 retry layer + orphan-run janitor + RETRY_BURN_DOWN telemetry (capture-layer resilience — TD-080 closure) | 1 | **SHIPPED Session 36 — 2026-05-25** — three components shipped via 3-iteration patch history; Component 1: `retry_predicate` kwarg added to `gamma_engine_retry_utils.retry_call` + 2 Dhan sites in `ingest_option_chain_local.py` bumped to attempts=6/delay=15.0/x1.5 predicate-gated (~96s budget vs ~60s quota window); Component 2: NEW `orphan_run_janitor.py` + `MERDIAN_Orphan_Janitor` Task Scheduler task weekly Mon-Fri 09:14 IST (task count 19 → 20); int4 duration clamp at `2^31-1` per D.18.4; Component 3: `[RETRY_BURN_DOWN]` stderr telemetry tag on final retry failure. Component 4 audit thresholds DEFERRED. Mode B (token 401) DROPPED from scope as upstream-resolved S29 (zero post-S29 401s in 11 instrumented days). TD-080 CLOSED. |
 | ENH-100 | Outcomes-magnitude profiling + ATM PnL + DTE (extend `ict_primitive_outcomes` schema 8 cols) | 1 | **PROPOSED** (S31-B P0 — gates ENH-101; answers operator's six magnitude questions; ~30s/symbol re-compute; **filed 2026-05-21**) |
 | ENH-101 | Stop-loss optimization from MAE distribution (90th pct of profitable trades per TF×type×direction) | 1 | **PROPOSED — blocked by ENH-100** (S31-B; MAE column must exist on outcomes table first) |
@@ -143,6 +143,10 @@ Sortable table of all 86 IDs. For full detail see Part 4.
 | ENH-122 | Gamma concentration layer - `v_gex_concentration` (Herfindahl net/call/put + stored `dte_bucket`) | 1 | **SHIPPED 2026-09-15 (S79)** - SQL `sql/2026-09-15_s79_v_gex_concentration.sql`, commit `dca1116`. First-light 3a/3d/3e PASS both symbols. `hhi_net` **IS** `gamma_metrics.gamma_concentration` by construction - not a second number. Split legs bypass the deep-ITM guard by a **measured** <=0.0021 effect against a 0.01 criterion fixed before the query. Verification split **CAN FIRE / CANNOT FIRE**, now the house pattern. **APPLIED 2026-09-15** - Section 1 run, 3a/3d/3e clean both symbols, Section 2 grants applied and `anon` confirmed SELECT-only (D.21.1). **3f EXPLAIN outstanding - TD-S79-NEW-14.** **CORRECTION S80: TD-S79-NEW-14 is RESOLVED** (S79, transcript-only evidence) - `Index Only Scan using ix_gex_strike_snap_sym_ts`, no base-table scan, execution 1.943 ms against planning 3.197 ms. The as-filed clause is kept because it records what was believed; see TD-S80-NEW-14. |
 | ENH-123 | Max pain over `gex_strike_snapshots` - `v_gex_max_pain`, scoped per `(symbol, run_id, expiry_date)`, emitting `ts` / `dte` / OI coverage / freshness | 1 | **SHIPPED 2026-09-22 (S80)** - SQL `sql/2026-09-22_s80_v_gex_max_pain.sql`, commit `85dfad2`. **NOT a parity layer** - max pain appears nowhere in the fourteen layers or the build order of the Hedgewall parity spec; **ADR-025 D5** files it as **L19**, an extension under spec section 2.5: applied, unrendered, **not counted toward parity**. Equivalence gate PASSED - agreed with the S40 `v_max_pain_by_strike` on both symbols at first light (NIFTY **23,300** / SENSEX **74,400**) from a different base table, a different pivot and snapshots 20 minutes apart, so a real cross-check rather than a tautology. Freshness floor `maxpain.stale_floor_min` probed **CAN FIRE** under `BEGIN`/`ROLLBACK`: `stale_floor_min_used` tracked **30 -> 20 -> 99999** and `is_fresh` flipped **false -> true at an unchanged age**, so the parameter drives the comparison. That closes the **TD-S79-NEW-2** ambiguity for this view. The parameter is deliberately **left unseeded** - the COALESCE default of 30 differs from any value we would seed, keeping a successful read distinguishable from a NULL read. |
 | ENH-124 | Pin <-> max-pain distance - `v_gex_pin_maxpain`, in points, strike steps and sigma, with band and corridor tests | 1 | **SHIPPED 2026-09-22 (S80)** - SQL `sql/2026-09-22_s80_v_gex_pin_maxpain.sql`, commit `85dfad2`. **NOT a parity layer** - **ADR-025 D5**, L19, parked. **Emits a DISTANCE, never a verdict**: no tolerance constant appears in the view and none may be added until the history supports one, per **TD-S79-NEW-21**'s measure-then-parameterise ruling. History over **11,795 runs** (`gex_pin_maxpain_history`, S80 backfill): the gap is a **stable -0.4 sigma** - medians -0.32 to -0.66 across **both symbols, every DTE and every session hour**, never changing sign. Max pain sits systematically **below** peak gamma; close to a constant of this market rather than a varying relationship. Exact strike coincidence is **1.2-5.4 %** everywhere **except NIFTY at 0 DTE, which runs 13.9 %** (164/1,182) - ~3x the next cell and ~13x a random landing; **SENSEX at 0 DTE is NOT elevated (3.4 %)**, so this is NIFTY expiry day, not expiry day generically. `max_pain_in_pin_band` is **non-selective** at 20.8-42.1 % regardless of DTE - **TD-S80-NEW-3**. Sigma is the unit: first light gave NIFTY **-4 strikes / -0.587 sigma** against SENSEX **-1 strike / -0.128 sigma** - near-equal in strikes, **4.6x apart in sigma**. `sigma_overstated_expiry_day` carries **TD-S79-NEW-1** in the row rather than in a footnote. |
+| ENH-125 | L12 ranked leg - `v_gex_strike_rank` (strikes ordered by abs(gex_cr) within the latest run, signed value carried) | 1 | **SHIPPED 2026-09-22 (S81)** - commit `4fcd740`, SQL `sql/2026-09-22_s81_v_gex_strike_rank.sql`. D2 clauses 1/2/4 MET; **clause 3 PENDING BY DECISION** under ADR-025 Amendment B. First object for which `sql/` == database including COMMENT and GRANT. |
+| ENH-126 | L14 net-gamma river - `v_gex_net_gamma_river` (one daily net-gamma value per symbol over 90 days, with `dte` and `session_complete`) | 1 | **SHIPPED 2026-09-22 (S81)** - SQL `sql/2026-09-22_s81_v_gex_net_gamma_river.sql`. D2 clauses 1/2/4 MET; **clause 3 PENDING BY DECISION** under ADR-025 Amendment B. |
+| ENH-127 | L13 live leg - `v_oi_rotation_since_open` (per-strike OI change from the session open, with `is_fresh`) | 1 | **SHIPPED 2026-09-22 (S81)** - SQL `sql/2026-09-22_s81_v_oi_rotation_since_open.sql`. D2 clauses 1/2/4 MET; **clause 3 PENDING BY DECISION** under ADR-025 Amendment B. |
+| ENH-128 | `v_max_pain_by_strike` - **retroactive registration** of an object live on Marketview since S40 with no register entry and, until S81, **no DDL in `sql/` at all** | 1 | **BUILT S40 - REGISTERED 2026-09-23 (S81).** Baseline `cebcc03`, fix `b1bb829`. Expiry filter, `ts` + freshness columns and the `latest_ts` cost shape fixed; tie-break and the no-op CTE carried unchanged by instruction. |
 | ENH-SDM | Structural Divergence Monitor (ADR-018 D4) | context | **PROPOSED** |
 
 ## Part 2 -- Active Work (not yet delivered or under monitoring)
@@ -3051,13 +3055,17 @@ Quantitative thresholds locked in ADR-002 v2 §P7:
 
 | Field | Detail |
 |---|---|
-| Status | **PROPOSED** |
-| Filed | 2026-05-13 (Session 28 P2) |
+| Status | **IN BUILD (S81, 2026-09-23)** — deferral LIFTED |
+| Filed | 2026-05-13 (Session 28 P2) · **deferral lifted 2026-09-23 (Session 81)** |
 | Source | ADR-002 v2 §P8 (second-order Greeks principle); Assumption Register §D.10.8 (LIVE — pending Phase 3 backtest). Verbal NEW in S27 as "ENH-85"; formal filing deferred to S28 by operator consent; renumbered to ENH-98 at S28 filing due to slot-85 collision with PROPOSED-DEFERRED PO3 Session Direction Lock (S13, design space reduced via Exp 47b S15). |
 | Priority Tier | 2 |
 | Build cost | TBD when Phase 2 plan locks; rough ~1 session for compute + table |
 | Blocks | Phase 3 writer's strategy mode (sellers). Phase 1 buyer + Phase 2 spreads not blocked. |
-| Blocked by | Phase 2 (spreads) deployment plan commitment. ADR-002 v2 §P8 explicitly defers ENH-98 build until Phase 2 imminent — Phase 1 buyer treats vanna as risk-advisory only; charm is not consumed. |
+| Blocked by | **NOTHING as of S81.** Previously: *"Phase 2 (spreads) deployment plan commitment."* **Operator decision S81: the deferral is LIFTED.** The block existed because vanna/charm had no Phase-1 consumer; **Hedgewall parity L7 (vanna) and L8 (charm) are that consumer.** Build L7 and L8 under **this existing ID** — do not mint a new one. Parent remains ADR-002 v2 §P8. |
+| Build gate, NOT yet met | The go/no-go measurement is **INCONCLUSIVE and must be re-run before any build starts.** The stated stopping rule — refuse if `gamma_rel_err_med > 0.10` in ATM **and** NEAR — was **neither met nor passed**: under `dte/365` ATM read 0.0739 (so no refusal) while NEAR read 0.127 (so no pass). **Calendar-year time fits better than trading-day time** (ATM 7.4 % on `dte/365` vs 12.9 % on `dte/252`), but `dte/365` and `exact/365` are **indistinguishable at 2 DTE** (0.0739 vs 0.0757) — **they only separate at 0–1 DTE, which is exactly when it matters.** That is a fact about the test, not about the conventions. |
+| Why the sample was contaminated, and it was self-inflicted | `gamma_metrics` was joined for spot when **`option_chain_snapshots` carries its own `spot` column on the same row at the same moment** (0 nulls on 66,528 rows). Worse, the gap is not drift: the chain was at 15:40 and the spot at ~15:20, and per **ADR-022** the index is **frozen 15:15–15:28** with the settled close in the 15:29 bar — **the two straddle the auction boundary, i.e. two different market states.** Quantified: SENSEX `ocs.spot` 74,529.08 vs the 74,653.2 used = **124 points, 0.17 %**; via `delta_err ≈ gamma × dS` a 0.046 delta error implies ~75 points — same order, same direction. **The spot mismatch accounts for most of the error.** |
+| Vendor greek coverage is partial and the wings are junk | **133 of 392** SENSEX front-expiry rows (**34 %**) carry `iv` zero or null — the TD-S79-NEW-8 shape at the **greek** level — and `iv` reaches **337.86** on the wings. Those are not volatilities. **They must be excluded BY RULE, never by eye**: the re-run uses a `abs(vendor delta) ∈ [0.05, 0.95]` band and **reports how many rows the rule removed.** |
+| Re-run conditions | **Mid-session ~11:00 IST, not post-close**, both symbols, NIFTY at dte ≥ 1 and SENSEX dte 1; spot from `option_chain_snapshots.spot` — **the same row as the greeks**. Same three conventions, same stopping rule. The ready-to-paste query, two defects already corrected in it (an `exact/365` term off by exactly one day, and a `round(double precision, int)` that would have thrown `42883`), and a **prediction stated before the re-run** — ATM `delta_abs_err` should fall from ~0.046 to well under 0.01, and **if it does not, the spot explanation is wrong** — are all in the S81 doc-close notes. |
 | Area | Market structure intelligence / writer's risk model |
 
 **Context.** ADR-002 v2 P8 introduces second-order Greeks — vanna (dδ/dIV) and charm (dδ/dt) — as Phase 3 prerequisites. For sellers (Phase 3 writer's strategy mode), these surfaces govern when a written position's delta drifts away from initial neutrality due to IV shifts (vanna) or time decay (charm), independent of underlying move. The buyer/writer inversion principle (ADR-002 v2 §Buyer-Writer Inversion) means the same gamma layer is consumed differently: buyers care about gamma magnitude for convexity; writers care about vanna + charm to predict when their delta-hedged book becomes accidentally directional.
@@ -4120,6 +4128,106 @@ same computation per run. Gate: reproduced the live view on 2026-09-18 for both 
 ENH-120, ENH-123 · ADR-021, ADR-025 D5, ADR-009 · TD-S79-NEW-1, TD-S79-NEW-21, TD-S80-NEW-3,
 TD-S80-NEW-7, TD-S80-NEW-8 · commit `85dfad2`.
 
+### ENH-125 — L12 ranked leg: `v_gex_strike_rank` (SHIPPED 2026-09-22, S81)
+
+| Field | Detail |
+|---|---|
+| Status | **SHIPPED 2026-09-22 (S81)** — commit `4fcd740`, `sql/2026-09-22_s81_v_gex_strike_rank.sql` |
+| Filed | 2026-09-23 (Session 81 doc-close) |
+| Source | Hedgewall parity **L12**; ADR-025 D2 |
+| Priority Tier | 1 |
+| Area | Positioning / per-strike GEX |
+| Blocked by | nothing |
+
+**What it ships.** The **ranked** leg of L12, beside ENH-122's HHI leg. L12 now has **both legs computing**: concentration as a scalar (`v_gex_concentration`) and the ordered book (`v_gex_strike_rank`). Ranks strikes by `abs(gex_cr)` within the latest run per symbol, carrying the signed value so a reader sees magnitude and direction without a second query.
+
+**ADR-025 D2 status.** Clause 1 **MET** — output read. Clause 2 **MET** — `EXPLAIN` 11.8 ms execution / 12.2 ms planning, 618 shared hit / 7 read, **no Seq Scan on `gex_strike_snapshots`**; 251 rows scoped → 84 removed by `gex_cr <> 0` → 167 ranked. Clause 4 **MET**. **Clause 3 PENDING BY DECISION** under **ADR-025 Amendment B** — a deliberate hold, not a lapse.
+
+**First object for which `sql/` == database including COMMENT and GRANT.** Sections 2 and 3 shipped as **live statements** for exactly that reason, and that choice became the S81 rule after ENH-126 demonstrated the alternative failing (see TD-S81-NEW-5).
+
+**Also satisfies parity spec §2.5 L15** — "Absolute Gamma Strike" is `strike_rank = 1` and "Large Gamma Strike, ranked" is `1..N`. Per **ADR-025 D5 an extension does not count toward parity**, so this **counts as L12 only**.
+
+**Two observations, recorded as observations and not findings.**
+(a) Every DAMPENING row sits above spot and every AMPLIFYING row below, on both symbols. That is **ADR-024 Amendment A's OI-imbalance arithmetic made visible per row** — the tautology this design exists to *expose* rather than hide. **It is not evidence of dealer behaviour.**
+(b) NIFTY coverage fell 64/96 (08:15) → 56/96 (~14:35) → 60/96 (14:41) on its expiry day — the TD-S79-NEW-8 DTE effect moving live intraday. NIFTY concentration is extreme: top 5 strikes hold **72.6 %** of the `|gex|` book against SENSEX's 37.9 %.
+
+**Plan-shape note, recorded and deliberately not fixed.** The `volatility_snapshots` LEFT JOIN LATERAL in the `sig` CTE runs `loops=167` — once per ranked **row**, not once per run; the planner pushed it below the join. 0.019 ms/loop, 501 buffer hits: trivial at this grain, but **it scales with STRIKE count, not SYMBOL count.** Revisit if chains widen or a history object replays many runs.
+
+**Cross-ref.** ENH-122 (the HHI leg) · ADR-025 D2 / D5 / **Amendment B** · ADR-024 Amendment A · TD-S79-NEW-8 · TD-S81-NEW-5.
+
+### ENH-126 — L14 net-gamma river: `v_gex_net_gamma_river` (SHIPPED 2026-09-22, S81)
+
+| Field | Detail |
+|---|---|
+| Status | **SHIPPED 2026-09-22 (S81)** — `sql/2026-09-22_s81_v_gex_net_gamma_river.sql` |
+| Filed | 2026-09-23 (Session 81 doc-close) |
+| Source | Hedgewall parity **L14**; ADR-025 D2 |
+| Priority Tier | 1 |
+| Area | Positioning / cross-session gamma trajectory |
+| Blocked by | nothing |
+
+**What it ships.** One daily net-gamma value per symbol over a 90-day predicate on `gamma_metrics`, 30 sessions per symbol, with `dte` and a `session_complete` flag.
+
+**ADR-025 D2 status.** Clause 1 **MET** — 30 rows per symbol, **all seven invariants 0**, including two 08-17 regression assertions. Clause 2 **MET** — `EXPLAIN` 54 ms, Seq Scan on `gamma_metrics` (11,280 scanned, 10,170 kept by the predicate); **a seq scan is correct at this size and the predicate exists for when it is not.** Clause 4 **MET**, with COMMENT and REVOKE/GRANT as live statements. **Clause 3 PENDING BY DECISION** under **ADR-025 Amendment B** — a deliberate hold, not a lapse.
+
+**A defect in this design, caught by the operator on first read.** `session_complete` shipped in draft as `session_date < today_IST OR last_run >= 15:15`. **The date clause made every past session complete by construction — the column could not fail for the reason it existed.** That is **Rule 0 clause 1, authored fresh rather than inherited.** The counter-example it missed is **2026-08-17**: both symbols, 64 runs, last run at or before 15:15 = **14:10** — the writer stopped ~an hour early and the old rule called the day finished. Redefined to `last_ts_ist_any >= session_date + time '15:10'`, no date clause; today mid-session now reads false under the same rule with no special case. (**TD-S81-NEW-19** carries the 08-17 day itself.)
+
+**The daily value is the 15:10 cycle, not the 15:15 one.** Runs stamp ~7 s past the five-minute mark, so the 15:15 cycle lands at 15:15:07 and falls outside the at-or-before-15:15 test in `pick`. The last qualifying cycle is 15:10:07. This is intended — inside continuous trading, clear of the **ADR-022** auction boundary — but **the window is named 15:15 and the value taken is the 15:10 cycle, and those are not the same sentence.** Recorded in the COMMENT so a later reader does not rediscover it as a bug.
+
+**Expiry days dominate the scale, and this is not a defect.** Session minima all at `dte = 0`: SENSEX 2026-09-10 **−62.2M**, NIFTY 2026-08-11 −40.1M, NIFTY 2026-09-01 −27.9M, SENSEX 2026-09-17 −25.3M — against typical non-expiry closes of ~0.1–3M, **one to two orders of magnitude.** This is the **S62 0-DTE gamma blow-up visible in the live series**, not a reconstruction: `gamma_metrics` is the live source, which is exactly why S62 permits expiry days here. **Do not "fix" it by excluding expiry days** — they are real sessions and the largest gamma states in the window. For rendering, `dte` is already a column so a renderer can mark, separate or axis-break them without a schema change; that is a presentation question, **deferred under Amendment B**.
+
+**The grant miss, observed rather than theorised.** Section 3b (`GRANT SELECT`) was skipped on the first application pass. **The view existed, computed correctly, and returned nothing to anon** until the grant was re-run; 4d caught it (`anon_select` false on all seven privileges). **This is the TD-S37-03 silent-empty-dataset shape happening, not being described** — harmless only because nothing consumes this view yet. It is the direct evidence behind **TD-S81-NEW-5** and the S81 rule that COMMENT and GRANT ship as live statements.
+
+**Cross-ref.** ADR-025 D2 / **Amendment B** · ADR-022 · S62 (0-DTE singularity) · TD-S81-NEW-5 · TD-S81-NEW-19 · TD-S37-03 · **Rule 0**.
+
+### ENH-127 — L13 live leg: `v_oi_rotation_since_open` (SHIPPED 2026-09-22, S81)
+
+| Field | Detail |
+|---|---|
+| Status | **SHIPPED 2026-09-22 (S81)** — `sql/2026-09-22_s81_v_oi_rotation_since_open.sql` |
+| Filed | 2026-09-23 (Session 81 doc-close) |
+| Source | Hedgewall parity **L13** (live leg); ADR-025 D2 |
+| Priority Tier | 1 |
+| Area | Positioning / intraday OI rotation |
+| Blocked by | nothing |
+
+**What it ships.** Per-strike OI change from the session's opening snapshot to the latest, per symbol, with a direction classification and an `is_fresh` recency column.
+
+**ADR-025 D2 status.** Clause 1 **MET** — NIFTY anchor 09:15:04, latest 15:40:05, dte 0, 236 strikes, all BOTH, churned 0; SENSEX the same shape at 196 strikes, dte 2. Top-10 reads sane (NIFTY 23350 CE **+20.0M** qty on expiry day, 23400 PE −8.8M). Clause 2 **MET** — `EXPLAIN` **24.7 ms**, index seeks throughout via `idx_ocs_symbol_created_at_desc` and `idx_ocs_ts_symbol_expiry`, **no full scan** — against `v_max_pain_by_strike` at 3,396 ms before its retrofit. Clause 4 **MET**, COMMENT and REVOKE/GRANT live. 4c: all five invariants 0. **Clause 3 PENDING BY DECISION** under **ADR-025 Amendment B**.
+
+**`is_fresh` worked on its first run rather than being decorative** — it read FALSE at verification time, 72.3 min past the 15:40 snapshot against a 30-minute floor.
+
+**This view located the max-pain fix.** Its 4a plan is what showed `option_chain_snapshots` carries `idx_ocs_symbol_created_at_desc` alongside `idx_ocs_ts_symbol_expiry` — the `(symbol, <time> DESC)` prefix the S72 FIX 2 lateral probe needs. **A caveat was raised and then measured rather than assumed**: the index name says `created_at`, not `ts`, and those are close but not the same column. Measured: it is `(symbol, created_at DESC)`, so it is valid for the **symbol skip-scan only**, while the latest-ts probe rides `idx_ocs_ts_symbol_expiry (ts DESC, symbol, expiry_date)`. **Both exist, so the retrofit had the indexes it needed** — and the caveat was worth raising, because the name would otherwise have been read as `ts`. (The S72 *names-are-not-definitions* shape.)
+
+**A correction recorded against this entry.** An expected `comment_len` of 4637 was handed to the operator as a verification target. The file literal is **5632**, which is what the database stored — **the artefact was always correct and the number came from nowhere**: the verification run that would have printed it aborted on a wrong assertion before reaching that line, and a figure was stated anyway. Distinct from the session's other assertion slips, which were checks misfiring on prose; **this was a wrong claim with no measurement behind it.** The rule it produced — *an expected value handed to a verifier must be computed, and computed from the artefact, not recalled* — was applied for the rest of the session and is now in CLAUDE.md.
+
+**Cross-ref.** ADR-025 D2 / **Amendment B** · ADR-021 · S72 FIX 2 · TD-S81-NEW-17 (the retrofit this enabled) · TD-S81-NEW-18 (the index set, undocumented in `merdian_reference.json`).
+
+### ENH-128 — `v_max_pain_by_strike` (BUILT S40; **registered retroactively at S81**)
+
+| Field | Detail |
+|---|---|
+| Status | **BUILT 2026-05-27 (S40) — REGISTERED 2026-09-23 (S81).** DDL first committed at S81: baseline `cebcc03`, fix `b1bb829`. |
+| Filed | 2026-09-23 (Session 81 doc-close) — **retroactive** |
+| Source | Marketview Max Pain page (S40) |
+| Priority Tier | 1 |
+| Area | Positioning / max pain |
+| Blocked by | nothing |
+
+**Why this entry exists, and why its ID is out of build order.** The object has been **live and rendering on an operator page since S40 with no Enhancement Register entry at all.** Rule 5 is monotonic-no-reuse, so a retroactive filing takes the **next free ID (128)** rather than a slot near its build date; the ID records **when it was filed**, not when it was built. (ENH-118/119 remain **cited-but-never-filed** — consumed, not reusable.)
+
+**`sql/v_max_pain_by_strike.sql` had NEVER EXISTED.** Absent from disk; `git log --all` for the path is **empty**; the only max-pain DDL in the repo was ENH-123's. **The Enhancement Register's own S40 footer claim of "1 new SQL file (`sql/v_max_pain_by_strike.sql`)" is FALSE**, and TD-S80-NEW-10's Component row cited the same non-existent path. From S40 until S81 this object lived **in the live database only** — exactly **ADR-025 D2 clause 4's "one DROP from unrecoverable"**, and the clearest instance of it the project has found.
+
+**Five defects measured in the S40 body**, all recorded in the captured-baseline file's header: (1) no expiry filter → per-strike `max()` mixture across expiries; (2) no `ts` and an unbounded `max(ts)`, no recency floor; (3) **non-deterministic `max_pain` tie-break** (→ **TD-S81-NEW-6**); (4) the `strikes` CTE is a structural no-op; (5) `latest_ts` full-index-scanned the table (→ **TD-S81-NEW-17**, filed and resolved the same session).
+
+**Fixed at S81: (1), (2) and (5).** The view now emits **12 columns** — `symbol, candidate_strike, total_pain, max_pain_strike, side, ts, expiry_date, dte, n_strikes, snapshot_age_min, stale_floor_min_used, is_fresh` — measured against the live object, not inferred. **(3) and (4) carried unchanged by instruction: one change, one reason.**
+
+**Method worth keeping.** The baseline was captured with `pg_get_viewdef` **before** any change, so both S81 edits land as **reviewable diffs rather than assertions**; the inertness gate ran as a **single statement** so both bodies read the same transaction snapshot; and the output SELECT block was asserted **byte-identical in the generator, not eyeballed**, so the frozen Marketview is provably untouched.
+
+**Cross-ref.** TD-S80-NEW-10 (closed S81, both halves) · **TD-S81-NEW-6** · **TD-S81-NEW-17** · ENH-123 (`v_gex_max_pain`, the correct reference) · ADR-021 · ADR-023 D1 · ADR-025 D2 clause 4.
+
 *Part 4 (Session 80) — 2026-09-22. Two enhancements shipped, both L19 extensions rather than parity
 layers, both unrendered. **Enhancement Register TRIGGERED** for a second consecutive session after
 nine non-triggers ending at S79.*
+
+*Part 4 (Session 81) — 2026-09-23. **Four entries: ENH-125, ENH-126, ENH-127 shipped; ENH-128 registered retroactively for an object live since S40 with no entry and no committed DDL.** ENH-98 moves **PROPOSED → IN BUILD** on an operator decision — the deferral's own condition (a Phase-1 consumer for vanna/charm) is met by Hedgewall parity L7/L8 — **with the build gate explicitly NOT met**: the go/no-go measurement was inconclusive on a self-contaminated sample and is recorded with its re-run conditions rather than rounded into a pass. **Enhancement Register TRIGGERED — third consecutive session.** All three shipped views sit at ADR-025 D2 clauses 1/2/4 with **clause 3 PENDING BY DECISION under Amendment B**, which is a deliberate hold and must not be read as a lapse. **Part 1's ID count was stale at 86 against a measured 108 before this pass** and is now derived rather than carried.*

@@ -8,7 +8,7 @@
 | Session | Session 80 |
 | Supersedes | Nothing. First acceptance ruling for the Hedgewall parity programme. |
 | Related | **TD-S79-NEW-22 (D0)** — the entry that filed this decision · `MERDIAN_Hedgewall_Parity_Spec.md` (S78) · ENH-120 / ENH-121 / ENH-122 (S79) · ENH-123 / ENH-124 (S80, off-spec) · TD-S79-NEW-15…-21 (L3 measured and declined) · ADR-021 (latest-run scoping) · ADR-017 (console design) · ADR-009 (pre-registration) · ADR-016 (parameter calibration) · TD-S79-NEW-3 (`sql/` as a superseded rebuild source) · TD-080 (Dhan 429, S1-recurring) |
-| Amended | **Amendment A**, 2026-09-22 (Session 80) — what shipped against what was ruled; session self-corrections; D2 clause 4 registration status. Body text above is unchanged. |
+| Amended | **Amendment A**, 2026-09-22 (Session 80) — what shipped against what was ruled; session self-corrections; D2 clause 4 registration status. Body text above is unchanged. · **Amendment B**, 2026-09-23 (Session 81) — **REVERSES part of Consequences**: rendering is deferred until every layer carries a disposition, so D2 clause 3 is suspended and BUILT stays 2 of 14 **by decision**. Also rules the deferral's scope (it does not block repairs to shipped surfaces), corrects the effort figure to **days, not weeks**, records the S81 dispositions, and corrects two A1 statements. D1–D5 are otherwise unchanged. |
 | Rule 10 class | **Programme scope and acceptance.** Governs a multi-session build. Mandatory ADR per Doc Protocol v4 Rule 10 and per TD-S79-NEW-22's own *Proper fix* clause. |
 
 ---
@@ -137,7 +137,7 @@ Implementation constraints, all to be measured before shipping:
 
 ## Consequences
 
-**The board reorders immediately.** Under D2, the next work is **rendering ENH-120 / ENH-121 / ENH-122**, not building L9 or L12. Five views compute; two layers are BUILT; the gap between those numbers is entirely clauses 3 and 4.
+**The board reorders immediately.** Under D2, the next work is **rendering ENH-120 / ENH-121 / ENH-122**, not building L9 or L12. **[SUPERSEDED S81 — see Amendment B1. This sentence no longer governs: rendering is deferred until every layer carries a disposition. Left in place so the reversal is visible rather than retrofitted.]** Five views compute; two layers are BUILT; the gap between those numbers is entirely clauses 3 and 4.
 
 **Effort estimates in spec §3 are not binding.** They were derived from source resolution, never from building anything, and two are now measured wrong — L9 is not "3 h, one view + one chart, cheapest real read on the list", and L4/L5 shipped at ENH-120 without the second variant the spec calls for. Ordering is re-derived from measured cost.
 
@@ -257,3 +257,159 @@ different obligations, and only the first has been met.
 
 *Amendment A — Session 80 doc-close, 2026-09-22. No decision in the body above is reversed,
 narrowed or extended by this amendment.*
+
+---
+
+## Amendment B — 2026-09-23 (Session 81)
+
+**This amendment REVERSES part of the Consequences section above. It is recorded as a reversal, not
+as a gloss.**
+
+### B1 — Presentation of the parity layers is DEFERRED until every layer carries a disposition
+
+**Decision (operator, S81).** The trigger for rendering is **full dispositional coverage of all
+fourteen layers** — not "a layer has become BUILT".
+
+**Rationale (operator).** On the reference board most layers only make sense **in comparison with
+each other**. A board assembled one layer at a time is a different artefact from a board designed as
+a whole, and the second cannot be reached by iterating toward it from the first. So the design pass
+happens once, against a complete set of dispositions.
+
+**What this reverses.** The Consequences section states *"**The board reorders immediately.** Under
+D2, the next work is rendering ENH-120 / ENH-121 / ENH-122, not building L9 or L12."* **That
+sentence no longer governs.** The board does not reorder to rendering on a layer becoming BUILT; it
+reorders when the dispositional set is complete. The original sentence is left in place above and
+annotated, so the reversal is visible rather than retrofitted.
+
+**Consequence for D2 clause 3, and it must not be misread.** Clause 3 — *"visible on at least one
+operator surface"* — is now **unmeetable by design until the rendering pass runs**. Therefore:
+
+- **BUILT stays at 2 of 14, BY DECISION.**
+- **ENH-120 / ENH-121 / ENH-122 / ENH-125 / ENH-126 / ENH-127 remain PENDING on clause 3 only.**
+- **This is a deliberate hold, not a lapse.** A later reader finding six computed-and-unrendered
+  views must not conclude that clause 3 was forgotten — it was **suspended, with a stated trigger**.
+  The distinction matters because D2 clause 3 exists precisely because five invisible views once
+  accumulated unnoticed; suspending it deliberately is the opposite of that failure, and only the
+  written trigger makes the two distinguishable.
+
+### B2 — Scope of the deferral: it does NOT block repairs to surfaces already shipped
+
+**Decision (operator, S81).** Amendment B defers **presentation of the parity layers**. It does not
+block **correctness fixes to cards already live.**
+
+**The instance that forced the ruling.** `useIvSmile` (`queries.ts:395`) neither selected nor
+filtered `expiry_date`, filtered to `maxTs`, then wrote `entry.ce = r.iv` into a Map keyed by
+strike — **last write wins**. At capture depth 1 that was inert. At depth 2 two expiries share one
+`ts` and one silently overwrites the other, on the **Breadth** page's IV-skew number and smile chart
+(`sections.tsx:372-379`). **Fixed and deployed 2026-09-22, before the 08:30 IST ingest of 09-23** —
+so the collided smile never rendered.
+
+**Why the ruling is recorded rather than assumed.** Amendment B's scope will be read again, by
+someone deciding whether a bug fix is allowed. Without this clause a reader could treat the freeze
+as blocking repairs, **which it does not**. A deferral of new presentation that silently also froze
+defect repair would make the freeze more expensive than the thing it defers.
+
+### B3 — Effort correction: the remaining parity build is DAYS, not weeks
+
+The spec's §3 estimate is **≈ 5 working days**, and that figure is a **FLOOR**, not a midpoint. **Do
+not restate it as weeks.** The distinction changes what the deferral costs: a design-as-a-whole pass
+gated on a few days of build is a sequencing choice, whereas the same pass gated on weeks would be a
+deferral of the programme.
+
+**The only genuine clock in the programme is L9 at NIFTY depth 4**, which needs one week of ENH-99
+retry telemetry. **A FIRST L9 build does not need it** — depth 2 is live and verified (see B5).
+Nothing else in the fourteen is waiting on elapsed time.
+
+**And that clock currently cannot be read.** **TD-S81-NEW-14** measures that the ENH-99 retry
+counters **cannot record the failures actually occurring**: the predicate retries only `429`, `429`
+has **never occurred** in any retained log, and the classes that do occur — `502` ×12, `401` ×9,
+`500` ×2 — all fail fast without touching the budget. **A week of that telemetry reads clean
+regardless of what happens.** The stage-2 gate therefore needs re-definition — count fail-fasts by
+class and dropped captures, not retries — **before it can be used to authorise depth 4.**
+
+### B4 — Dispositions as at S81
+
+The **S80 table above is left untouched as the S80 record.** This is the S81 state.
+
+| # | layer | disposition | change since S80 |
+|---|---|---|---|
+| L1 | Gamma density per strike | **BUILT** | — |
+| L2 | Pin zone | **BUILT** | — |
+| L3 | Flip level | **BLOCKED-ON-DECISION** | **unchanged — the three open decisions are NOT ruled on in this amendment** |
+| L4 | Call wall | **PENDING** | clause 3 now suspended by B1 |
+| L5 | Put wall | **PENDING** | as L4 |
+| L6 | Net-vs-absolute GEX | **PENDING** | as L4 |
+| L7 | Vanna | **PENDING** | **was BLOCKED-ON-DECISION.** ENH-98 deferral **LIFTED** — its own condition (a Phase-1 consumer) is met by L7/L8. Build not started; the go/no-go is INCONCLUSIVE and must be re-run |
+| L8 | Charm | **PENDING** | as L7; ships with it |
+| L9 | IV term structure | **PENDING** | **unblocked at the source.** Capture depth **stage 1 (W1+W2) deployed and verified** — see B5. Depth 4 still gated, and see B3 on why that gate cannot currently be read |
+| L10 | IV surface | **PENDING** | — |
+| L11 | Five-axis radar | **PENDING** | — |
+| L12 | Pin conviction | **PENDING** | **both legs now compute**: HHI (ENH-122) + ranked (ENH-125). Fails clause 3 only |
+| L13 | OI rotation | **PENDING** | **live leg BUILT** (ENH-127). Historical leg still capped by jobid 19. Fails clause 3 only |
+| L14 | 30-session gamma river | **PENDING** | **BUILT** (ENH-126) on the gamma_metrics-only decision. Fails clause 3 only |
+
+**BUILT: 2 of 14 — unchanged, and unchanged BY DECISION rather than for want of work.** Four views
+shipped this session; none of them can reach clause 3 while B1 holds.
+
+### B5 — A1's stdout precondition is TRUE and guards nothing
+
+Amendment A1 records, as a safety property of shipping capture depth behind `if _depth > 1`, that
+*"the stdout `Run ID:` contract and ENH-71's `record_write` stay bound to W1 alone."* **That
+statement is true and it protected nothing.**
+
+**The AWS runner never reads that stdout line. It re-queries the table** — `fetch_latest_run_ids()`
+ordered by `created_at.desc`. W1 and the extra-expiry pass share one `ts` but **not** `created_at`,
+which is a DB-side default and therefore later for the extra pass. So from its **first cycle** at
+depth 2 the runner would have handed gamma and volatility **W2's** `run_id`, and
+`compute_options_flow_local.py` would independently have picked W2 too — **silently**, because each
+`run_id` is still single-expiry and TD-S79-NEW-12's guard sees one expiry and returns W2's date
+without raising. `gex_strike_snapshots`, `gamma_metrics`, ENH-120/121/122/125/126, the Pine overlay
+and the Positioning page would all have followed, with `gamma_metrics.dte` jumping from 0/2 to 7/9.
+
+**A precondition that holds and protects nothing is the shape this project has a rule about.** It
+was fixed before the flip (`89ad2bb`): both selectors now order `ts.desc,expiry_date.asc` — latest
+snapshot, then its front expiry — with **no `">= today"` guard**, deliberately and unlike the views,
+because the ingest never writes past expiries and a no-fallback guard in the orchestrator converts
+an edge case into a **compute outage** rather than a display gap.
+
+**Verified live 2026-09-23 at 09:14 IST, all four checks PASS on both symbols**, through the
+read-only path: A depth landed (2 expiries / 2 run_ids), **B gamma on FRONT expiry** (NIFTY
+`2026-09-29` dte 6, SENSEX `2026-09-24` dte 1), C one gamma row per cycle, D options flow on front
+expiry. **B could have failed**: W2 (`2026-10-06` dte 13 / `2026-10-01` dte 8) was live in the table
+at the same `ts`, so the check had a real wrong answer available and did not return it.
+
+### B6 — Stage numbering, corrected
+
+A1's own wording is *"a stage 0 at depth 1 — provably inert — precedes W1+W2"*. Two artefacts
+carried an off-by-one against it and both were corrected: `ingest_option_chain_local.py:57-59` (at
+`8d51cce`) and TD-S80-NEW-1's Status row (at this doc-close). **Canonical: stage 0 = depth 1 inert ·
+stage 1 = W1+W2 · stage 2 = NIFTY 4.** The **code comment mattered more than the register row** — it
+is what an implementer reads when choosing a value.
+
+---
+
+## Governance language
+
+**Doc Protocol v4 Rule 11.3.** The sentence that governs, quotable without the surrounding argument:
+
+> **"Hedgewall parity is achieved when every one of the fourteen layers carries a recorded
+> disposition — BUILT · PENDING · BLOCKED-ON-DECISION · BLOCKED-ON-DATA · DECLINED-ON-EVIDENCE — not
+> when all fourteen are built. A layer counts as BUILT only when all four D2 clauses hold: it
+> computes against the live database and its output has been read; it is run-scoped and
+> EXPLAIN-verified per ADR-021; it is visible on at least one operator surface; and it has an ENH
+> entry with its DDL committed under `sql/`. Agreement with the reference is not required for BUILT.
+> A layer outside the fourteen does not count toward parity at all."**
+
+**As amended at S81:** clause 3 is **suspended by decision** until the dispositional set is complete
+(**Amendment B1**), so a computed-but-unrendered layer is **PENDING by design, not by neglect** —
+and the deferral covers **new parity presentation only**, never repairs to surfaces already shipped
+(**Amendment B2**).
+
+**This ADR authorises nothing in production.** Every layer it governs is display-only. Any gate
+built on one would additionally require N ≥ 30 live-runtime-cohort validation per ADR-009 and
+**D.13.1**.
+
+*Amendment B — Session 81 doc-close, 2026-09-23. **B1 reverses the Consequences section's "the board
+reorders immediately" and narrows nothing else.** B2 clarifies scope without changing D1–D5. B4
+supersedes the S80 disposition table as the current state and leaves it standing as the S80 record.
+B5 and B6 correct Amendment A without reversing its ruling.*

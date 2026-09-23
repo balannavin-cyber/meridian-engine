@@ -1536,6 +1536,40 @@ number adjusted afterwards): the futures writer fires at 09:30 IST, so
 after ~09:35 IST.** If it does not, this diagnosis is wrong and the cause
 is something other than the cron window.
 
+**OUTCOME — PREDICTION HELD, recorded against the sentence above.**
+Observed 09:36:30 IST, no intervention of any kind:
+
+| runner cycle (UTC) | IST | verdict |
+|---|---|---|
+| 03:46:15 | 09:16 | FAILED (exit 1) |
+| 03:51:17 | 09:21 | FAILED (exit 1) |
+| 03:56:17 | 09:26 | FAILED (exit 1) |
+| **04:01:23** | **09:31** | **OK** |
+| 04:06:19 | 09:36 | **OK** |
+
+`index_futures_snapshots` today: **first row 09:30:07 IST**, both symbols,
+4 rows each by 09:35:09 — exactly the scheduled 04:00 UTC hour boundary.
+The 04:06 cycle wrote real values for both symbols (NIFTY basis 30.95,
+`basis_velocity_pp` +0.033, label NEUTRAL; SENSEX basis 36.85,
+−0.017, NEUTRAL) and printed `COMPUTE BASIS CONTEXT COMPLETED`.
+
+**The transition lands exactly on the cron-hour boundary and nowhere
+else.** Three failures in the 03:xx hour, OK on the first cycle of the
+04:xx hour. Diagnosis (i) is confirmed; no fix was applied and none was
+needed.
+
+**CORRECTION 3, found by this check.**
+`grep -c "capture_index_futures_snapshot" cron.log` returned **0 both
+before and after** the writer demonstrably ran — the capture script does
+not write an identifiable line to `cron.log`. I had cited that zero at
+09:21 as supporting evidence that the writer had not yet started. It
+agreed with the truth by coincidence. **A grep that returns 0 whether or
+not the thing happened is not evidence** — the same CAN FIRE / CANNOT
+FIRE shape as CORRECTION 1 above, and the third instrumentation error in
+this one investigation. The authoritative instrument is the table:
+`min(ts)` on `index_futures_snapshots`, which can distinguish the two
+states and did.
+
 ### (c) S3 — a crontab line invokes `build_wcb_snapshot_local.py` with no symbol argument, every 5 minutes
 - **Symptom:** `Usage: python .\build_wcb_snapshot_local.py <NIFTY|SENSEX>`
   in `cron.log`. The script prints usage and exits; **it has never done

@@ -1332,8 +1332,13 @@ calendar rolls.
 present, and it held on both symbols.** No rollback.
 
 ### Log checks, same run
-- **ENH-99 retry labels on the extra-expiry path:** exactly one banner all
-  day (detail in the TD below). Not a 429.
+- **ENH-99 retry labels on the extra-expiry path:** exactly one banner
+  (NIFTY W2 `2026-10-06`, 401). Not a 429. **CORRECTED LATER:** that grep
+  matches only the *extra-expiry* label, which alone carries a date, so it
+  could not see the **second** 401 of the day — SENSEX's **W1** call,
+  which cost SENSEX its whole 03:05 cycle. Two 401s, not one, and W1 WAS
+  affected. See TD (d) for the pattern defect and the corrected scope; do
+  not read this line's "one banner" as the day's total.
 - **Guard exceptions** (`infer_expiry_date|multi-expiry|Traceback`):
   **nothing**, as designed — each expiry gets its own `run_id`, so
   TD-S79-NEW-12's guard never sees a mixed one.
@@ -1591,41 +1596,173 @@ states and did.
 - **Cross-ref:** ADR-018 D1 (S57) · S48 WCB cron arg fix · TD-S41-NEW-4
   (`build_wcb_snapshot_local.py` ExecutionLog instrumentation).
 
-### (d) S2 — the ENH-99 retry budget does not engage on either error class actually observed, and the stage-2 gate is supposed to be decided on that telemetry
-- **Symptom:** `retry_call` is configured `attempts=6`, and **both** error
-  classes seen on 2026-09-23 terminated at attempt 1 with
-  `Predicate returned False -- failing fast`:
-  - `status=401` `{"808":"Authentication Failed"}` — NIFTY W2 `2026-10-06`
-  - `status=500` `{"800":"Internal Server Error"}` — both symbols, W1
-- **So the observed retry count is structurally zero.** The banners fire;
-  the retries do not. `grep -c retry_call` counts *banners*, and the notes
-  already record it as the wrong instrument — this is why.
-- **Why it matters beyond hygiene — it bears on a gate:** ADR-025 A1
-  stage 2 (NIFTY depth 4) is gated on **"a week of ENH-99 retry
-  telemetry."** If the predicate never retries the classes that actually
-  occur, that week measures **429 pressure only**, and will read clean
-  while 401s and 500s are silently dropping captures. **A gate whose
-  evidence cannot record the failures being observed is the Rule 0
-  CAN FIRE / CANNOT FIRE shape applied to a rollout decision.**
-- **The 401 is worth separating from the 500.** 401 is genuinely
-  non-retryable *with the same token* — but the correct response is to
-  re-read the token and retry, not to fail fast, because the mechanism
-  below is a token that rotated mid-cycle. 500 is transient and plainly
-  should retry.
-- **Mechanism for the 401, inferred and NOT confirmed:** the failing
-  cycle ran `03:05:01Z → 03:05:12Z`; `refresh_dhan_token.py` is scheduled
-  at **03:05 UTC**. W1 succeeded and W2, three seconds later
-  (`EXPIRY_CALL_SPACING_S = 3.0`), got 808. A refresh mints a new token
-  and invalidates the old one, so a token held in memory across the two
-  calls would 401 on the second. **This is the S66 "token read at import,
-  not at use" shape** — and **stage 1 did not cause it, it exposed it**:
-  at depth 1 there is one API call per cycle and no window to straddle.
-  **n=1. Confirm against the refresh log before filing the mechanism as
-  fact; the observation stands regardless.**
-- **Scope of the 401, measured:** one cycle (`run_id d7c9422a`), W2 only,
-  **W1 never affected in any cycle**, 0 rows lost, `rc=0` (the extra pass
-  is non-fatal by design), self-healed next cycle — the six subsequent
-  extra-expiry captures all `failed=[]`.
-- **Priority S2.** **Cross-ref:** ENH-99 · ADR-025 Amendment A stage 2
-  gate · TD-080 · TD-S66-NEW-1 (token at import vs at use, S67 fix) ·
-  `core/dhan_client.py` `is_dhan_429` / `retry_call` · CLAUDE.md Rule 0.
+### (d) S2 — the ENH-99 retry budget has NEVER been exercised, and the ADR-025 stage-2 gate is meant to be decided on exactly that telemetry
+
+The load-bearing half of this entry is **predicate behaviour**, which is
+settled from source and from retained-log counts. The 401's *mechanism*
+is a separate and still-open question, recorded at the end as UNCONFIRMED
+with the check that would settle it.
+
+#### Predicate behaviour, from source
+`retry_call` — `gamma_engine_retry_utils.py:10-56`. On exception: if
+`retry_predicate` is not None **and returns False**, print
+`Predicate returned False -- failing fast` and **re-raise immediately**
+(`:35-40`), consuming none of the budget. Otherwise sleep `current_delay`,
+multiply by `backoff_multiplier`, retry to `attempts`, then print
+`[RETRY_BURN_DOWN]` and re-raise.
+
+The predicate — `ingest_option_chain_local.py:29-37`:
+```python
+def is_dhan_429(exc: Exception) -> bool:
+    msg = str(exc)
+    return "status=429" in msg or '"805"' in msg
+```
+**RETRIES: 429 only** — the literal substring `status=429`, or error code
+`"805"` in the body. **FAILS FAST: everything else** — 401, 500, 502, 404,
+network, parse. Its own docstring says so; this is deliberate S36 design,
+not an oversight.
+
+Call sites: all three Dhan calls — `:389` expiry list, `:432` W1 chain,
+`:546` W2 chain — pass `retry_predicate=is_dhan_429` with
+`attempts=6, delay_seconds=15.0, backoff_multiplier=1.5`. The two Supabase
+inserts (`:504`, `:572`) pass **no** predicate and so retry on any
+exception, `attempts=3, delay_seconds=5.0`.
+
+#### Has the 6-attempt budget ever been exercised? NO — not once, by any class
+Counted across every retained log (`cron.log`, `.1`, and six `.gz`):
+
+| marker | meaning | cron.log | .1 | .2.gz | .3.gz | .4.gz | .5.gz | .6.gz | .7.gz |
+|---|---|---|---|---|---|---|---|---|---|
+| `Retrying in` | predicate said **retry** | **0** | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `Predicate returned False` | **failed fast** | 6 | 0 | 4 | 4 | 4 | 2 | 0 | 2 |
+| `RETRY_BURN_DOWN` | budget exhausted | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+**Zero retries in the entire retained history. 22 fail-fasts.** And the
+error classes that actually occur:
+
+```
+  12  status=502
+   9  status=401
+   2  status=500
+       (429: ZERO occurrences)
+```
+
+**The only class the predicate retries has never happened, and every class
+that has happened fails fast.** The budget is not merely unused — on the
+observed distribution it is **unreachable**. Note also that **502 is the
+most common class by a wide margin**, which no prior session had surfaced;
+the 401 had all the attention and is second.
+
+#### Can the predicate express "401 -> re-read token and retry once" vs "500 -> retry"? NO
+`retry_predicate` returns a **bool**, and `attempts` / `delay_seconds` /
+`backoff_multiplier` are fixed per call site. The contract can express
+*whether* to retry — never *how many times*, *how long*, or *what to do
+first*. So "re-read the token, then retry once" and "back off six times
+over ~2.5 minutes" cannot both be expressed through it. **It is one
+predicate and one budget for all classes.**
+
+Expressing the distinction needs one of, and this is a design decision not
+taken here:
+1. the predicate returns a **policy** (retry-count + delay, or an enum)
+   rather than a bool;
+2. a **pre-retry hook** (`on_retry`) on `retry_call`, which is where a
+   token re-read would legitimately live;
+3. **separate call sites / wrappers** per class.
+
+Option: putting the token re-read *inside* the predicate would work
+mechanically and is **the wrong place** — a hidden side effect in a
+function named `is_…`. Recorded so it is rejected deliberately rather than
+rediscovered.
+
+#### CONSEQUENCE FOR THE STAGE-2 GATE — this is why the entry is S2
+**ADR-025 A1 stage 2 (NIFTY depth 4) is gated on "a week of ENH-99 retry
+telemetry."** That telemetry is `Retrying in` / `RETRY_BURN_DOWN` counts.
+Since the predicate retries only 429 and 429 never occurs, **a week of it
+will read clean no matter what happens** — while 401s and 500s drop
+captures at fail-fast speed and never appear in the retry counters at all.
+
+**A gate whose evidence cannot record the failures actually being observed
+is Rule 0's CAN FIRE / CANNOT FIRE applied to a rollout decision.** The
+week would not be measuring stage-1 stress; it would be measuring the
+absence of a class that has never occurred.
+
+**What the gate would need instead** (decision, not taken): count
+`Predicate returned False` by class, and count dropped captures
+(`failed=[...]` non-empty on the extra-expiry path, plus cycles with no
+END line), rather than counting retries. Those can fire.
+
+#### 401 MECHANISM — UNCONFIRMED, and deliberately not pursued further
+**Hypothesis:** `refresh_dhan_token.py` (crontab line 2, `5 3 * * 1-5`,
+appending to the same `cron.log`) rotates the token mid-cycle; the ingest
+constructs `DhanClient()` once (`ingest_option_chain_local.py:378`) and
+`core/dhan_client.py:34` builds the auth header from
+`self.settings.dhan_access_token` captured at construction, so a running
+process keeps the old token and 401s after the rotation. That is
+**anti-pattern B24** (".env edits do not propagate to running processes")
+and the **S66/S67 "token read at import, not at use"** shape — and S67's
+fix (`_current_dhan_token()` + `load_dotenv(override=True)` at use,
+`ingest_equity_eod_local.py:109/116/126`) **was applied to the equity EOD
+ingest and never to this one** (B18, N silent siblings).
+
+**Why it is NOT confirmed, despite the log appearing to show it.**
+`cron.log` does contain `DHAN TOKEN REFRESH SUCCESS` /
+`DHAN_API_TOKEN has been refreshed in .env` positioned between the
+`03:05:01Z START` lines and the 401s. **Position in a shared append-mode
+log is not event order.** Three processes write to that file concurrently
+and the refresh's banner lines **carry no timestamp of their own**; a
+Python process with block-buffered stdout can flush its whole block at
+exit, so the banner's position establishes only that the refresh ran in
+that general window — not that the token write preceded the failing HTTP
+calls. Treating the interleaving as chronology would be the same
+instrument error as the four already filed this session.
+
+**THE CHECK THAT WOULD SETTLE IT** — one query, once the access exists:
+a timestamped record of the token write with sub-second precision,
+compared against the `03:05:01Z–03:05:12Z` window. `dhan_token_probe_log`
+is the natural source and **`merdian_ro` is BLIND to it** (RLS on, no
+matching policy — verified, so its `0` is meaningless and was not reported
+as absence). So: **add a `merdian_ro` SELECT policy to
+`dhan_token_probe_log`, or have the operator run it**, and compare the
+write timestamp to that window. Confirmed if the write lands inside it and
+before the SENSEX call; refuted if it lands outside.
+
+**Cheap durable fix for the ordering question itself** (separate decision):
+make the refresh script timestamp its own output lines. It currently
+prints untimestamped banners into a shared append log, which is why this
+question is unanswerable from the log at all.
+
+#### SCOPE OF THE 401 — CORRECTED, and the correction matters
+**An earlier draft of this entry said "W2 only, W1 never affected in any
+cycle, 0 rows lost." That is FALSE and is corrected here.**
+
+| symbol | what failed | cost |
+|---|---|---|
+| **SENSEX** | **W1** `2026-09-24` | **entire 03:05 cycle lost** — no END line, no 08:35 rows |
+| NIFTY | W2 `2026-10-06` only | W2 snapshot only; W1 wrote 536 rows, `rc=0` |
+
+**Two 401s on 2026-09-23, not one.** SENSEX's W1 failure is **not
+stage-1 related** — W1 exists identically at depth 1. NIFTY's W2 failure
+is stage-1-*exposed* (a second call, hence a window to straddle), not
+stage-1-caused.
+
+**How the error was made, because the instrument is the lesson.** The
+search pattern `get_option_chain 20[0-9-]+` requires a **date** in the
+retry label — and only the extra-expiry path emits one
+(`label=f"{symbol} get_option_chain {_ed}"`, `:555`). W1's label has no
+date (`:441`). **The pattern was structurally incapable of matching a W1
+failure**, and its silence was reported as "W1 never affected" into a
+rollback assessment. Fifth instrumentation error of this session and the
+same shape as the other four. A second slip from the same sweep: "the
+03:05 cycle was NIFTY only" — both symbols started; SENSEX produced no
+END because it died on the 401, and a `tail -16` had cut off its START.
+
+- **Priority S2** — not for the 401 (self-healing, small) but for the
+  gate consequence above.
+- **Cross-ref:** ENH-99 (S36, the predicate) · **ADR-025 Amendment A
+  stage-2 gate** · TD-080 (S1-recurring) · TD-S66-NEW-1 / S67
+  `_current_dhan_token()` fix, **not applied here** · CLAUDE.md **B24**
+  (`.env` edits do not reach running processes), **B18** (N silent
+  siblings) · **Rule 0** · `gamma_engine_retry_utils.py:10-56` ·
+  `ingest_option_chain_local.py:29-37, :389, :432, :546` ·
+  `core/dhan_client.py:34` · TD (a) above — the 500s counted here are the
+  same log lines seen from the capture side.

@@ -185,7 +185,21 @@ def previous_trading_day(from_date_iso: str,
     for back in range(1, max_lookback + 1):
         cand = (d0 - _td(days=back)).isoformat()
         try:
-            if get_session_config_for_date(cand).is_open:
+            _cfg = get_session_config_for_date(cand)
+            # S82 special-session exclusion -- a special session (Muhurat) is an
+            # OPEN day, but a ~15-minute evening one. It must never become the
+            # audit target: every row-count floor downstream is calibrated for a
+            # ~6-hour session, so auditing it would FAIL for a reason that is not
+            # data loss.
+            #
+            # This is deliberately defensive. As measured at S82 the engine checks
+            # Rule 1 (weekend) BEFORE Rule 3 (special session) and returns early,
+            # so a Sunday Muhurat already reads is_open=False and is skipped by
+            # accident (TD-S82-NEW-4). This clause is what keeps the resolver
+            # correct AFTER that engine defect is fixed, so the two can be
+            # repaired independently. It reads the PUBLIC SessionConfig contract,
+            # never a private helper.
+            if _cfg.is_open and not getattr(_cfg, "special_session", False):
                 return cand, "rule-engine"
         except Exception as e:  # noqa: BLE001 -- fail-open is the contract
             print(f"[trading_calendar_gate] previous_trading_day({from_date_iso}): "

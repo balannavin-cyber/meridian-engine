@@ -144,6 +144,61 @@ def _resolve_absent_day(trade_date_iso: str) -> bool:
         return True
 
 
+def previous_trading_day(from_date_iso: str,
+                         max_lookback: int = 10) -> "tuple[str, str]":
+    """S82-ENH129 — the most recent OPEN trading day STRICTLY BEFORE from_date_iso.
+
+    Returns (date_iso, provenance). Provenance is one of:
+        "rule-engine"          the V18E engine computed the answer
+        "fail-open:import"     the engine could not be imported
+        "fail-open:error"      the engine raised on a candidate date
+        "fail-open:exhausted"  max_lookback days produced no open day
+
+    OFFLINE BY CONSTRUCTION — this makes NO database query. It consults
+    trading_calendar.json through the V18E rule engine, which is the seeder's own
+    source of truth (Rule 18: the table is seeded FROM the json) and the same
+    authority _resolve_absent_day already defers to. Two things follow: the
+    resolver works with no credentials and no network, and the path exercised by
+    an offline test IS the path that runs in cron.
+
+    FAIL-OPEN, and the caller is told so. Every failure path returns the previous
+    CALENDAR day with a fail-open provenance rather than raising. That inherits
+    the gate's contract, and it is wrong in one specific way the caller must
+    handle: on a rule-engine outage this can name a closed day, and the audit of
+    that day will report failures that are artefacts of the outage, not data loss.
+    That is loud rather than silent and self-corrects the next day — but a caller
+    that does not LOG the provenance turns it back into a silent lie.
+    """
+    from datetime import date as _date, timedelta as _td
+
+    d0 = _date.fromisoformat(from_date_iso)
+    fallback = (d0 - _td(days=1)).isoformat()
+
+    try:
+        from trading_calendar import get_session_config_for_date
+    except Exception as e:  # noqa: BLE001 -- fail-open is the contract
+        print(f"[trading_calendar_gate] previous_trading_day({from_date_iso}): rule "
+              f"engine unavailable ({e}); falling back to {fallback}",
+              file=sys.stderr, flush=True)
+        return fallback, "fail-open:import"
+
+    for back in range(1, max_lookback + 1):
+        cand = (d0 - _td(days=back)).isoformat()
+        try:
+            if get_session_config_for_date(cand).is_open:
+                return cand, "rule-engine"
+        except Exception as e:  # noqa: BLE001 -- fail-open is the contract
+            print(f"[trading_calendar_gate] previous_trading_day({from_date_iso}): "
+                  f"engine raised on {cand} ({e}); falling back to {fallback}",
+                  file=sys.stderr, flush=True)
+            return fallback, "fail-open:error"
+
+    print(f"[trading_calendar_gate] previous_trading_day({from_date_iso}): no open day "
+          f"in {max_lookback} days; falling back to {fallback}",
+          file=sys.stderr, flush=True)
+    return fallback, "fail-open:exhausted"
+
+
 def assert_trading_day_or_exit(log: "Optional[ExecutionLog]" = None) -> None:
     """If today is closed, exit the process cleanly.
 

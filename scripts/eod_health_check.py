@@ -62,6 +62,28 @@ try:
 except Exception:
     pass
 
+# S82-ENH129 sys.path -- this file lives in scripts/, so when it is invoked as
+# `python3 scripts/eod_health_check.py` (the cron form) sys.path[0] is scripts/,
+# NOT the repo root, and `import core.*` raises ModuleNotFoundError. Measured S82
+# by running the cron form before deploying it.
+#
+# Anchored on __file__ and .resolve()d, so it is INDEPENDENT OF THE WORKING
+# DIRECTORY -- cron cd's to the repo root, but a manual run from anywhere else
+# must behave identically. .resolve() also follows symlinks, which
+# os.path.abspath does not.
+#
+# NOT fixed via `python3 -m scripts.eod_health_check` in the crontab, for three
+# reasons: -m requires scripts/__init__.py (absent); -m puts the CWD on sys.path,
+# so it would work only while cwd happens to be the repo root and break on any
+# manual run from elsewhere; and it would make the schedule depend on a second
+# piece of environment alongside `source .env`, which is the S53 lesson.
+# NOT fixed via PYTHONPATH in the cron line, for the same last reason.
+#
+# No convention to follow: measured S82 -- this is the only file under scripts/
+# that imports core, and replay/ only NAMES core.execution_log in docstrings.
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
+
 IST = timezone(timedelta(hours=5, minutes=30))
 UTC = timezone.utc
 
@@ -401,15 +423,41 @@ def check_reference_freshness(url, headers, sess_date, day0, verbose=False):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--date", help="session date YYYY-MM-DD (IST); default = today IST")
+    ap.add_argument("--date", help="session date YYYY-MM-DD (IST), or 'prev' for the "
+                                   "previous TRADING day; default = today IST")
+    ap.add_argument("--resolve-only", action="store_true",
+                    help="resolve --date, print it, and exit; makes NO database query")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
+
+    # S82-ENH129 -- resolve the session date BEFORE cfg(), so --resolve-only needs no
+    # credentials and issues no query. 'prev' goes through the V18E rule engine
+    # (offline; Rule 18), never plain calendar arithmetic: `date -d yesterday` is
+    # wrong every Monday and after every holiday.
+    if args.date == "prev":
+        from core.trading_calendar_gate import previous_trading_day
+        _from = datetime.now(IST).date().isoformat()
+        _resolved, _prov = previous_trading_day(_from)
+        # Requirement: log the resolved date AND where it came from. A fail-open
+        # provenance means the engine could not be consulted and this may be a
+        # CLOSED day, whose audit will fail for a reason that is not data loss.
+        print(f" --date prev: resolved {_resolved} from {_from} IST via {_prov}"
+              + ("   <-- FAIL-OPEN: may be a closed day; failures below may be "
+                 "artefacts of the resolver, not the pipeline"
+                 if _prov.startswith("fail-open") else ""))
+        sess_date = datetime.strptime(_resolved, "%Y-%m-%d").date()
+    elif args.date:
+        sess_date = datetime.strptime(args.date, "%Y-%m-%d").date()
+    else:
+        sess_date = datetime.now(IST).date()
+
+    if args.resolve_only:
+        print(f" --resolve-only: {sess_date.isoformat()}  (no database query made)")
+        return 0
 
     url, headers = cfg()
 
     now_utc = datetime.now(UTC)
-    sess_date = (datetime.strptime(args.date, "%Y-%m-%d").date()
-                 if args.date else datetime.now(IST).date())
     lo = sess_date.isoformat()
     hi = (sess_date + timedelta(days=1)).isoformat()
     day0 = datetime(sess_date.year, sess_date.month, sess_date.day, tzinfo=UTC)

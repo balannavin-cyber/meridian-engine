@@ -57,3 +57,4 @@
 # on purpose: this is the one line that must not share the cron layer's failure
 # chain (S53), and it therefore also survives a dropped SHELL directive.
 15 02 * * * /home/ssm-user/meridian-engine/bin/disk_guard.sh >> /home/ssm-user/meridian-engine/logs/disk_guard.log 2>&1
+45 0 * * 2-6 cd /home/ssm-user/meridian-engine && source .env && python3 scripts/eod_health_check.py --date prev >> logs/eod_health_check.log 2>&1 || bin/eod_alert.sh "eod_health_check FAILED for the previous trading day - see logs/eod_health_check.log"

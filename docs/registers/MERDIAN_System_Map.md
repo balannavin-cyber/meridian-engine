@@ -1864,3 +1864,54 @@ Operator applied, verified in-database: `REVOKE ALL` on `system_config` and `dha
 `merdian_reference.json` carried a correct 21-column name list from S75 and **no index list, no types, and a `constraint` field that was factually false**. Now recorded: 21 types, the **six index definitions** (not names), size (**1,393,290 rows / 1,376 MB**, ~68k/day), RLS state, and the depth-2 reader rule. **Two index traps are now written down**: `idx_ocs_symbol_created_at_desc` is on **`created_at`, not `ts`** — valid for the symbol skip-scan only — and `idx_ocs_ts_symbol_expiry` has `symbol` **second**. TD-S81-NEW-18.
 
 *System Map updated Session 81, 2026-09-23 (§S81 — three new views, one changed twice, two comment-only; the `merdian_ro` role and its 57-table blind spot; a schema-wide privilege change; and `option_chain_snapshots` catalogued with indexes and types for the first time). **No base table was created, altered or dropped.** **The `## Update log` table remains frozen at Session 67 — TD-S73-NEW-10, now recorded by S73, S74, S76 and S81 and still not fixed here**, for the same reason: repairing it means sourcing seven sessions of entries and is a separate edit.*
+
+## §S82 — Session 82: a scheduled health check that was never scheduled, a resolver built on the rule engine, and two verification arms that disagreed
+
+**`scripts/eod_health_check.py` is MANUAL-ONLY.** Measured: no crontab line, no
+systemd unit, no timer, no invocation in `deploy/` or `bin/`. Its docstring asserts
+a schedule **twice** (`:29`, `:127-129`) and that claimed 00:45 UTC runtime is the
+**stated justification** for `resolve_cron_log()`'s whole mtime-and-size design. The
+logic is correct; its premise is unfounded. ADR-025 D2 clause 2 — a computed verdict
+reaching an exit code no consumer reads. Filed **TD-S82-NEW-3**, specced **ENH-129**.
+
+**`core.trading_calendar_gate.previous_trading_day()` (new, `29bc83e`/`25f9d1b`).**
+Resolves the previous OPEN trading day from the **V18E rule engine**, not the
+database — `trading_calendar.json` is the seeder's own source of truth (Rule 18) and
+`_resolve_absent_day` already defers to it. Three consequences: it is **offline by
+construction**, so `--resolve-only` issues no query; the path an offline test
+exercises **is** the path cron runs; and it works with no credentials. Returns
+`(date_iso, provenance)` — `rule-engine` / `fail-open:import` / `fail-open:error` /
+`fail-open:exhausted` — and the caller **prints the provenance**, because an
+unreported fail-open is the silent lie the contract exists to prevent.
+
+**Special sessions are excluded defensively** (`25f9d1b`). Not because the check
+failed, but because it **passed for the wrong reason**: `get_session_config_for_date`
+returns on Rule 1 (weekend, `:196-208`) before reaching Rule 3 (special session,
+`:230`), so a Sunday Muhurat reads `is_open=False` and was skipped by accident.
+Proven both ways against a simulated repaired engine — **WITHOUT** the guard
+`previous_trading_day('2026-11-10')` → **2026-11-08**; **WITH** it → **2026-11-06**.
+Filed **TD-S82-NEW-4**; the engine itself is **deliberately unfixed** (reordering it
+amends ADR-020, so it is not a bug fix under Rule 10).
+
+**The access matrix was measured per relation, not assumed.** `ro_select AND (NOT
+relrowsecurity OR ro_policy)`. `gamma_metrics` and `gex_strike_snapshots` are RLS-ON
+but carry `merdian_ro_select … USING (true)` and are **fully readable**; a claim that
+they were a *partial* blind spot was **withdrawn** on reading the policy text. Three
+relations are **silently blind** (`script_execution_log`, `market_breadth_intraday`,
+`market_spot_session_markers` — `anon`-only policies) and two are **loudly denied**
+(`system_config`, `dhan_auth_tokens` — no SELECT privilege at all). **Silent zero and
+loud denial are different failure modes and only the first can be mistaken for data
+loss.**
+
+**L9 stage-1 two-armed test on `v_max_pain_by_strike` (TD-S80-NEW-1 stage 1) —
+SENSEX PASS, NIFTY no-test.** One statement, so every arm reads one MVCC snapshot.
+Precondition (two expiries at the view's own `ts`) held on both symbols. **SENSEX:**
+arm (a) 0/0, arm (b) **196/196** — every row differs, and the pre-fix baseline picks
+max-pain **71400 against the correct 73800, a 2,400-point error.** First live
+demonstration of TD-S80-NEW-10. **NIFTY:** arm (b) **0/0**, so arm (a) passed
+vacuously. The mechanism is measured, not guessed: W2 (2026-10-06) holds **230
+strikes, all a subset of W1's 268**, **zero** W2-only strikes, and at **zero** shared
+strikes does W2 win the baseline's `max()` on either side — W1 peak OI **19,132,360**
+against W2's **1,956,955**, 9.8×. The defect is armed on NIFTY and cannot fire while
+W1 dominates pointwise. **Stage 1 is HALF-VERIFIED**; the NIFTY arm needs a near-0-DTE
+day — **2026-09-29**.

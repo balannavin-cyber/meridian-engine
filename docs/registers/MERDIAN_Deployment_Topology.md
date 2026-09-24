@@ -1852,3 +1852,90 @@ Commit `89ad2bb`, **deployed before the depth flip and provably inert at depth 1
 **The deploy-direction inversion (§S73.B) is UNRATIFIED for a SIXTH consecutive session.** All S81 work was authored in `~/meridian-cc` and reached `~/meridian-engine` by `git pull --ff-only`, which is §S73.A's designed route — so practice followed the corrected direction again while the written rule still says otherwise. **Ratifying means amending ADR-006 and the Doc Protocol line together**; counting instances is cheaper than ratifying, which is why six sessions have counted.
 
 *Deployment Topology updated Session 81, 2026-09-23 (§S81 — **no host, boundary, token path or systemd unit moved**. `EXPIRY_DEPTH` raised to stage 1 and verified; two selectors re-pointed to the front expiry at `89ad2bb`; `bin/disk_guard.sh` scheduled and its first run observed, closing TD-S80-NEW-18; `bin/roq.sh` + the `merdian_ro` role added **in the agent tree only, referenced by no scheduler**; the Marketview deploy path recorded as `~/meridian-connect` by hand, with `~/redeploy_marketview.sh` marked do-not-use. Crontab **53 → 59 lines**.)*
+
+## §S82 — Session 82 (2026-09-24): a health check with no schedule, a token that outlives its printed expiry, and a crontab line installed
+
+**The crontab went 59 → 60 lines this session, installed by the operator after
+15:45 IST**, 1 `eod_health_check` entry, `SHELL=` still on line 1. A manual run of
+the exact line returned **VERDICT `[ OK ]` with no alert files created**.
+
+**The installed line:**
+
+```
+45 0 * * 2-6 cd /home/ssm-user/meridian-engine && source .env && python3 scripts/eod_health_check.py --date prev >> logs/eod_health_check.log 2>&1 || bin/eod_alert.sh "<message>"
+```
+
+`00:45 UTC = 06:15 IST`. **Tue–Sat, not Mon–Fri**, so every session is audited the
+next morning — under `1-5` Friday's session would wait until Monday, ~64 h. **No `%`
+to escape**, which is a consequence of `--date prev`: the obvious alternative
+`--date $(date -u -d yesterday +\%F)` needs the escape *and* is wrong every Monday
+and after every holiday. On Monday the resolver walks Sun → Sat → **Friday**.
+
+**`bin/eod_alert.sh` is NEW and deliberately NOT a reuse of `bin/wsfeed_alert.sh`.**
+That script writes `logs/WSFEED_FAILED` with `>`, so sharing it would let each
+subsystem clobber the other's sentinel and make *"is the feed down?"* unanswerable.
+Same shape, separate sentinel `logs/EOD_HEALTH_FAILED`, separate log
+`logs/EOD_HEALTH_ALERTS.log`. **Both scripts always `exit 0`**, so the crontab `||`
+chain exits 0 either way and **cron itself will never signal** — the alert is the
+only channel.
+
+**The 08:35 IST refresh/ingest collision, measured across seven archives.**
+`refresh_dhan_token.py` (crontab `5 3 * * 1-5`) and the `03:05` ingest cycle collide.
+**401 at 08:35 on 4 of 6 refresh-success days, 09-15..09-23** (measured 09-23; the
+09-15 archive rotated out on 09-24), and **0 on both refresh-failure days (09-17,
+09-24)**. Every `status=401` in every archive traces to a `03:05:01Z START` — no 401
+anywhere else. Bears on **TD-S81-NEW-20**.
+
+**A token outlives its printed expiry — measured twice.** 09-16's refresh printed
+`Expiry time: 2026-09-17T08:35:03`; 09-17's refresh **FAILED** (3 × Invalid TOTP);
+09-17 nonetheless ran **172 × `END … rc=0`** with **0** × 401. The same shape is live
+today: 09-23's token printed `Expiry 2026-09-24T08:35:04`, today's refresh failed, and
+the chain has run clean. **The printed expiry is not the validity horizon.**
+
+**Both refresh failures are Invalid TOTP, and the clock is excluded.** `chronyd`
+active against the AWS link-local NTP (`169.254.169.123`), stratum 4, **system time
+0.9 µs** slow, RMS 1.2 µs, `NTPSynchronized=yes`, `systemd-timesyncd` inactive. TOTP
+windows are 30 s wide — the clock is ~7 orders of magnitude inside tolerance.
+
+**Depth-2 capture started at S81, not before.** 09-17's archive carries **0**
+`S80 extra expiries captured=` lines; 09-23 and 09-24 carry one per completed cycle.
+
+**Gate-consumer blast radius, measured over BOTH the gate and the engine.** The first
+sweep grepped `trading_calendar_gate` and found 7 consumers — **that was the gate; the
+defect is in the engine.** Re-grepping `get_session_config_for_date` /
+`import trading_calendar` found **11 further files**. Cross-referenced against
+`crontab -l` over both sets: **8 matches on 7 distinct lines** (line 14 double-counts
+on a substring), **all `dow=1-5`**, **WEEKEND-INCLUSIVE = 0**. No `.sh`/`.service`/
+`.timer` references. Blind to dynamic imports and manual runs.
+
+### §S82.A — POST-15:45 BATCH, all four slots FILLED
+
+- **Production pull — DONE.** Preview matched exactly: 2 files,
+  `core/trading_calendar_gate.py` (+16/−1) and `docs/registers/tech_debt.md` (+18).
+  Fast-forward **`29bc83e` → `25f9d1b`**. Import smoke test on the deployed tree
+  returned **`True ('2026-09-23', 'rule-engine')`, exit 0** — the prepared rollback
+  to `29bc83e` was not needed.
+- **Live dry run — DONE, `--date 2026-09-23`, EXIT 0, VERDICT `[ OK ]`.** PRIMARY 5/5
+  OK (spot 723 · breadth 390 · **chain 147,704** · futures 302 · ticks INFERRED-OK);
+  COMPUTE 6/6 OK, every parity gap ≤ 4, all tails 10:10 UTC; GEX view coverage OK.
+  **`equity_intraday_last` reads `[ -- ] NOT AUDITABLE`, and will do so EVERY NIGHT
+  BY DESIGN** — it is a one-generation upsert table, so any back-dated run (which
+  `--date prev` always is) cannot recover the audited day's baseline. That is the
+  S73 rewrite behaving correctly, not a defect, and it must not be read as one.
+  **What the run also demonstrates is TD-S82-NEW-3:** the chain shows 147,704 rows
+  with both expiries captured, and **no section of the output can say whether W2
+  landed.**
+  *Deviation recorded:* the run was made without `source .env`, relying on the
+  script's own `load_dotenv()` at `:59-63`, because the session's permission guard
+  refuses any command containing that literal. The sourced form — which is what cron
+  uses — was exercised by the operator, not by this session.
+- **Crontab install — DONE BY THE OPERATOR.** **59 → 60 lines, 1 `eod_health_check`
+  entry**, `SHELL=` still on line 1. A manual run of the exact cron line returned
+  **VERDICT `[ OK ]` with no alert files created** — so the `||` branch and
+  `bin/eod_alert.sh` did not fire. **First scheduled run: FRIDAY 2026-09-25 00:45 UTC**
+  (06:15 IST), auditing **Thursday 2026-09-24**. `2-6` is Tue–Sat; the line was
+  installed on Thursday after 00:45 UTC had passed, so Friday is the next firing.
+- **`docs/registers/aws_crontab.txt` — DONE.** Regenerated from `crontab -l` in the
+  same pass, **60 lines**, `diff` against the live crontab **empty**, `git diff
+  --numstat` exactly **1 added / 0 deleted**. The register and the live crontab were
+  byte-identical at session start and are byte-identical at session close.

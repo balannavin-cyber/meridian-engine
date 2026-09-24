@@ -56,6 +56,13 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 
 > Items below are illustrative seeds based on the project state I've read.
 > Audit and adjust before committing — replace with the real current state.
+>
+> **S82 PROPOSAL, NOT APPLIED — this note is a template artefact and is now false.**
+> `git log -S` traces it to **`c521b2f`, *"v3 routine outputs for 2026-04-22 Session 5
+> closeout"*** — it has stood at the head of Active debt since **2026-04-22**, across
+> ~77 sessions, while every entry below it became a measured item. It is left in place
+> rather than deleted because removing a header is an operator call, not a doc-close
+> edit. **Recommend deletion next session.**
 
 ### TD-S82-NEW-1 (S2 priority) — the shadow runner's cron hour range ends before the option-chain ingest's, and before its own docstring: the last three cycles of every session are never computed, and the fourth is computed the next morning
 
@@ -242,10 +249,10 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Filed** | 2026-09-23 (Session 81) |
 | **Component** | `public.trading_calendar` · `trading_calendar.json` · `seed_trading_calendar.py` |
 | **Measured** | **2026-05-28 (Thu) has no row**, while every other weekday 2026-05-20 → 06-05 carries one and weekends correctly carry none. The table **does** record closures as rows — 2026-09-14 is present with `is_open=false` — so an absent weekday is neither open nor closed, it is **undefined**. |
-| **Settled against the official source, per Rule 18** | **NSE circular NSE/CMTR/71775 (Ref 172/2025, 12 Dec 2025)** lists 28 May 2026 as **Bakri Id, a trading holiday.** `trading_calendar.json` **does carry it** — `holidays[8] = {"date": "2026-05-28", "name": "Bakri Eid"}`, one of 16 2026 dates. **So the JSON is right and the defect is in SEEDING.** The alternative reading — a whole-day pipeline blackout — is **ruled out**. |
+| **Settled against the official source, per Rule 18** | **NSE circular NSE/CMTR/71775 (Ref 172/2025, 12 Dec 2025)** lists 28 May 2026 as **Bakri Id, a trading holiday.** `trading_calendar.json` **does carry it** — `holidays[8] = {"date": "2026-05-28", "name": "Bakri Eid"}`, one of **15** holiday entries. **Corrected S82:** `holidays` holds **15** (all 2026, none on a weekend) and `special_sessions` holds **1** (Muhurat, 2026-11-08) — **15 + 1 = 16 dated entries, not 16 holidays.** **So the JSON is right and the defect is in SEEDING.** The alternative reading — a whole-day pipeline blackout — is **ruled out**. |
 | **THE GATE HELD, and this validates ADR-020** | `core/trading_calendar_gate.py` resolves a missing row through the V18E rule engine rather than defaulting, so it read the JSON, found Bakri Eid, and returned closed. **markers=0 / signals=0 on 05-28 is the gate working, not an outage.** Recorded as a validation of ADR-020, not only as context. |
 | **Residual risk, which is the actual exposure** | Any consumer reading `trading_calendar` **directly** rather than through the gate still sees no row, and per the seeder's own convention would read that as closed — while the gate's documented contract reads no-row as allow. **The ADR-020 contract collision is contained in the canonical gate, not eliminated system-wide.** |
-| **Proper fix** | Find why the seeder skipped this row, and **diff all 16 JSON holidays against the table** — a one-query check that was **not run this session.** |
+| **Proper fix** | Find why the seeder skipped this row, and **diff all **15** JSON holidays against the table — **NOT 16**: the 16th dated entry is the Muhurat **special session**, an OPEN day, and sweeping it into the holiday set is what ADR-020 rejected (TD-S82-NEW-4)** — a one-query check that was **not run this session.** |
 | **Cost to fix** | ~1 h. |
 | **Blocked by** | nothing. |
 | **Cross-ref** | **ADR-020** (validated here) · **Rule 18** · TD-S60-NEW-2/-3 (the S60 calendar family) · `core/trading_calendar_gate.py`. |
@@ -362,7 +369,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **What the gate would need instead** | Count `Predicate returned False` **by class**, and count dropped captures (`failed=[…]` non-empty on the extra-expiry path, plus cycles with no END line). **Those can fire.** |
 | **Cost to fix** | ~2 h for the predicate/policy change; the gate re-definition is an ADR-025 decision. |
 | **Blocked by** | nothing technically; the gate change is an operator decision. |
-| **Cross-ref** | **ENH-99** (S36) · **ADR-025 Amendment A** stage-2 gate · **Rule 0** · TD-080 · **TD-S81-NEW-11** (the 500s, from the capture side) · **TD-S81-NEW-21** (the 401 hypothesis and its fix proposal). |
+| **Cross-ref** | **ENH-99** (S36) · **ADR-025 Amendment A** stage-2 gate · **Rule 0** · TD-080 · **TD-S81-NEW-11** (the 500s, from the capture side) · **TD-S81-NEW-20** (the 401 hypothesis and its fix proposal). |
 | **Status** | **OPEN.** |
 
 ### TD-S81-NEW-15 (S3 priority) — the register says `merdian_order_placer.py` runs from an `@reboot` cron line; neither the line nor the process exists
@@ -375,10 +382,10 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Where the stale claim lives** | CLAUDE.md's S28 settled-decisions bullet (*"Phase 4B Order Placer … `@reboot` cron"*) and Deployment Topology §3 / §7.1 / §8.2, written at the same time. **It was true when written.** |
 | **Root cause** | The recurring decay shape: **a register entry written from a live observation has no watcher, and nothing fires when its premise expires** (TD-S69-NEW-1, **D.37.8**). Four of five carried items at S71 described a system measurement did not find. |
 | **Proper fix** | Determine whether the placer was **deliberately retired**, **silently lost** (the S53 crontab-reinstall shape, where a dropped line caused a 28 h blackout), or **moved** to an uncatalogued launch path. **Do not re-add the line before answering that** — the order placer is the one component in MERDIAN that can transact. |
-| **Bears on TD-S81-NEW-21** | A daemon that caches the Dhan token at import (`merdian_order_placer.py:60`) and runs indefinitely is **the worst case in the B18 family** — it would hold an invalidated token from the first rotation after boot until restarted. Not live, so not exposed today; **if revived, the at-use token read must land with it.** |
+| **Bears on TD-S81-NEW-20** | A daemon that caches the Dhan token at import (`merdian_order_placer.py:60`) and runs indefinitely is **the worst case in the B18 family** — it would hold an invalidated token from the first rotation after boot until restarted. Not live, so not exposed today; **if revived, the at-use token read must land with it.** |
 | **Cost to fix** | ~30 min to determine; the decision is the operator's. |
 | **Blocked by** | nothing. |
-| **Cross-ref** | CLAUDE.md S28 bullet · Deployment Topology §3 / §7.1 / §8.2 · TD-S69-NEW-1 · **D.37.8** · S53 crontab-reinstall shape · **TD-S81-NEW-21**. |
+| **Cross-ref** | CLAUDE.md S28 bullet · Deployment Topology §3 / §7.1 / §8.2 · TD-S69-NEW-1 · **D.37.8** · S53 crontab-reinstall shape · **TD-S81-NEW-20**. |
 | **Status** | **OPEN.** |
 
 ### TD-S81-NEW-16 (S2 priority) — `merdian_ro` reads zero rows, silently, from 57 RLS-enabled tables, and a FAIL was reported to the operator because of it

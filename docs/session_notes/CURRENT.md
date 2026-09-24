@@ -8,6 +8,95 @@
 
 ## Last session
 
+**Session 82 — 2026-09-24 (Thu).** Verification, not construction. Commits
+`c831fdf` → `29bc83e` → `25f9d1b` + this doc-close, all pushed; **all three trees
+level** and the post-15:45 batch complete.
+
+**Shipped.** `core.trading_calendar_gate.previous_trading_day()` — resolves the
+previous OPEN trading day from the **V18E rule engine**, not the database, so it is
+offline by construction and the path an offline test exercises is the path cron runs;
+returns `(date, provenance)` and the caller prints the provenance. `--date prev` and
+`--resolve-only` on `eod_health_check.py`. `bin/eod_alert.sh` with its **own**
+sentinel, deliberately not a reuse of `wsfeed_alert.sh`. A `sys.path` fix.
+
+**The lead finding.** `scripts/eod_health_check.py` **has never been scheduled** — no
+cron line, no unit, no timer — while its docstring asserts a 00:45 UTC run **twice**,
+and that claimed runtime is the stated justification for `resolve_cron_log()`'s whole
+design. ADR-025 D2 clause 2. Filed **TD-S82-NEW-3**, specced **ENH-129**.
+
+**Filed:** TD-S82-NEW-1, -2, -3, -4; ENH-129 (PROPOSED).
+
+**ENH-98 re-run — half-met, recorded against its own sentence.** ATM `delta_abserr`
+0.046 → **0.0139** against a predicted *"well under 0.01"*. Gamma refusal not met
+(NEAR 0.127 → 0.042). The residual ~12-pt offset is **neither futures basis nor
+theoretical carry** — Pearson **−0.0655** over 59 cycles. SENSEX **void** at 0 DTE.
+**Owed: a re-run with SENSEX at dte 1–2.**
+
+**L9 stage 1 — half-verified.** SENSEX **PASS**: arm (b) 196/196, baseline picks
+max-pain **71400 against 73800**. NIFTY **no-test by mechanism**: W2's 230 strikes
+are a subset of W1's 268, **zero** W2-only, and at **zero** shared strikes does W2
+win the baseline's `max()` (W1 peak OI 9.8× W2's). **NIFTY arm owed 2026-09-29.**
+
+### Post-15:45 batch — ALL FOUR DONE
+1. **Pull DONE** — `29bc83e` → `25f9d1b`, 2 files as previewed; import smoke
+   `True ('2026-09-23', 'rule-engine')`, exit 0. No rollback needed.
+2. **Live dry run DONE** — `--date 2026-09-23`, **EXIT 0**, VERDICT `[ OK ]`.
+   `equity_intraday_last` reads `[ -- ] NOT AUDITABLE` and **will every night by
+   design** (one-generation upsert table; `--date prev` is always back-dated).
+3. **Crontab installed BY THE OPERATOR — 59 → 60**, 1 entry. A manual run of the exact
+   cron line returned **`[ OK ]`, no alert files created**. First scheduled run
+   **Friday 2026-09-25 00:45 UTC** (06:15 IST), auditing **Thu 2026-09-24**.
+   `aws_crontab.txt` mirrored: 60 lines, `diff` empty, +1/0.
+
+### NEXT SESSION PICKS UP
+
+**Time-boxed — these expire or get harder if missed**
+1. **Watch the first scheduled run: FRIDAY 2026-09-25 00:45 UTC** (06:15 IST),
+   auditing Thu 2026-09-24. Confirm it fired at all, and that
+   `[ -- ] NOT AUDITABLE` on `equity_intraday_last` is **not** mistaken for a
+   failure — it will read that way every night by design.
+2. **NIFTY L9 arm on 2026-09-29** (NIFTY at/near 0 DTE). TD-S80-NEW-1 stage 1 is
+   **half-verified**, and the measured mechanism says the NIFTY arm **cannot** pass
+   before then — W2 ⊂ W1 with W1 OI dominant at every shared strike.
+3. **ENH-98 re-run with SENSEX at dte 1–2.** Today's SENSEX arm was void at 0 DTE, and
+   dte 1–2 is exactly where `dte/365` and `exact/365` separate.
+4. **The multi-DTE offset test was NOT run.** The ~12-pt ATM offset is constant on one
+   session; whether it scales with DTE is unmeasured, and that is what would
+   discriminate a `q > 0` dividend term from a fixed model offset.
+
+**Decisions owed to the operator — none are mine to make**
+5. **Token decision + Dhan API log review (TD-S81-NEW-1).** Rotation is **likely moot**
+   — but that is **INFERRED** from two dates (token minted 09-23 08:35; S81 revoke
+   2026-09-22 mid-session), **not measured**. The log review has not been done.
+6. **ADR-020 amendment for Muhurat (TD-S82-NEW-4).** The engine is deliberately
+   unfixed: reordering Rule 1 / Rule 3 changes a decision the ADR recorded, so it
+   needs an amendment, not a patch. Note the fix alone is not sufficient — every
+   consumer is `dow=1-5`, so a cron change is also required.
+7. **`compute_basis_context` cron decision (TD-S81-NEW-12).**
+8. **Delete the "illustrative seeds" template note** at the head of Active debt —
+   proposed and annotated this session, **not applied** (`c521b2f`, 2026-04-22).
+
+**Carried, not started**
+9. **TD-S81-NEW-20 NOT APPLIED** — `DhanClient` still reads the token at construction,
+   so a mid-cycle rotation still leaves a running process holding an invalidated
+   token. This is the mechanism behind the 08:35 401s.
+10. **ENH-129 is DESIGNED, NOT BUILT** — the seven depth checks, the crontab-derived
+    expected set, the **anon revoke check** (which needs an anon-key probe, not
+    `merdian_ro`) and the **RLS control** all exist only as a specification. The
+    scheduled check now running at 00:45 UTC is the *old* body.
+11. **Parity build order: L9 → L3 → L7/L8.**
+12. **Refresh "Invalid TOTP" on 09-17 and 09-24 (both Thursdays) — cause unexplained;
+    clock excluded** (chrony 0.9 µs offset, `NTPSynchronized=yes`, 30 s TOTP windows).
+    Both failures took the retry path 30 s apart and both windows were rejected. **The
+    next failed refresh is unpredictable**, and because a token outlives its printed
+    expiry (§D.38.1) a failed refresh is not itself an outage — which is precisely why
+    it has gone uninvestigated.
+13. **PK size check after upload** — do not project a byte total; read PK's own
+    reported size. Its counter read **1,796,444** for a set whose git bytes sum to
+    ~3.9 MB, so PK does not count raw bytes.
+
+## Previous session S81
+
 | Field | Value |
 |---|---|
 | **Date** | 2026-09-22 → 2026-09-23 (Session 81 — **three parity layers shipped, a max-pain view repaired twice, capture depth doubled and verified, and a live broker token found readable by a public key.**) Three new SQL views, two changes to one existing view, two comment-only changes, two production selectors re-pointed, one module constant raised, a schema-wide privilege change, and a new read-only database role. |
@@ -27,25 +116,3 @@
 
 ---
 
-## Previous session S80
-
-| Field | Value |
-|---|---|
-| **Date** | 2026-09-19 → 2026-09-22 (Session 80 — **the parity acceptance criterion, and the two off-spec layers that made the case for it.**) Two views, one table and one plpgsql function applied to the live database; two production Python scripts patched. |
-| **Shape** | A session that built something well, measured that it was not on the spec, and then wrote the rule that gives *"not on the spec"* any content at all. **ADR-025 is the product. ENH-123 / ENH-124 are the evidence for it**, and they are parked rather than counted. |
-| **(1) HEADLINE — ADR-025, the parity acceptance criterion** | **D1** parity is achieved when every one of the fourteen layers carries a **disposition**, not when all fourteen are built — so stopping early is a *result*. **D2** BUILT requires all four of: computes and has been read · run-scoped and EXPLAIN-verified per ADR-021 · **visible on an operator surface** · ENH entry with DDL committed under `sql/`. **D3** Hedgewall binds, deviation needs a stated reason. **D4** DECLINED-ON-EVIDENCE completes a layer; BLOCKED-ON-DATA is kept with zero members because §2.5's walls are real. **D5** off-spec layers file to §2.5 as **L19** and do not count. **Measured: BUILT = 2 of 14** (L1, L2) — not the three or five a register count suggests. **Five views compute and none renders**, so the board reorders to **rendering ENH-120 / 121 / 122**, not to building L9 or L12. |
-| **(2) ENH-123 / ENH-124 — built, and off-spec** | **`v_gex_max_pain`** over `gex_strike_snapshots`, scoped `(symbol, run_id, expiry_date)`, with a clock. Equivalence gate **PASSED and it is a real cross-check** — agreed with the S40 `v_max_pain_by_strike` on both symbols (NIFTY **23,300** / SENSEX **74,400**) from a different base table, a different pivot, snapshots 20 minutes apart. Freshness floor probed **CAN FIRE** under `BEGIN`/`ROLLBACK`: **30 → 20 → 99999** and `is_fresh` flipped **at an unchanged age**. **`v_gex_pin_maxpain`** emits a distance in points, strike steps and **σ** — and **no verdict**: no tolerance constant appears in it, per TD-S79-NEW-21's measure-then-parameterise ruling. |
-| **(3) The −0.4σ constant — 11,795 runs** | Medians **−0.32 to −0.66 across both symbols, every DTE and every session hour**, never changing sign: max pain sits systematically **below** peak gamma. Exact strike coincidence **1.2–5.4 %** everywhere **except NIFTY at 0 DTE, 13.9 %** (164 / 1,182) — ~3× the next cell, ~13× a random landing — while **SENSEX at 0 DTE is NOT elevated (3.4 %)**, so this is *NIFTY expiry day*, not expiry day generically. `max_pain_in_pin_band` is **non-selective** at 20.8–42.1 % and does **not** rank the same cells as exact coincidence — **TD-S80-NEW-3**. **Whether coincidence predicts anything is UNANSWERED by design**: that is ADR-009 pre-registration territory, and **ENH-97** (chi-sq 1.56, p ≈ 0.30 on 1,968 signals) is the standing warning. n = 164 is enough to run it properly and not enough to run it casually. |
-| **(4) TD-S79-NEW-12 CLOSED — and the ordering was the point** | `infer_expiry_date()` now **raises** on more than one expiry instead of taking `min()` of a set it assumed was a singleton. Shipped **before** the ingest-depth change, deliberately: the guard converts silent corruption into a crash, so it must exist before anything can raise depth. |
-| **(5) L9 ingest depth — measured, and staged at zero** | Day-level `hist_option_bars_1m` holds **21** expiries; S78's per-minute 14 was a subsample. **NIFTY** W1 67.8 % · current monthly 18.8 % · W2 5.2 % · **Dec quarterly 3.4 %** · **W3 0.47 %**. **SENSEX** W1 **97.25 %** · W2 2.65 % · monthly 0.089 %. **The selection rule matters more than the count** — chronological `[0:4]` takes W3 and misses the December quarterly, yielding 92.28 % and no curve. Ruling: NIFTY **4 selected** (94.45 %), SENSEX **2** (99.90 %). **Shipped as stage 0, depth 1, provably inert** — the extra pass is appended and guarded by `if _depth > 1:`, so W1's path is untouched and the `Run ID:` stdout contract stays bound to it. **Capture depth shipped as a constant, not the ruled parameter** — ADR-025 Amendment A §A1 carries the reason and the condition for moving it. |
-| **(6) TD-S79-NEW-1 escalated by measurement** | The expiry-day σ overstatement is **time-varying**, not a fixed bias: **0.982 at 09:00 IST falling to 0.203 at 15:00 IST**. It does not merely inflate — it **hides** an intraday effect. Under day-σ the 0-DTE gap looks flat across the session; under the correct σ it **more than doubles**. A caveat that changes a finding's sign is not a footnote. |
-| **Carry, unremediated** | **The deploy-direction inversion — fifth consecutive session unratified**, and S80 is the session that priced it: Amendment A §A2 item 5 is a reader acting on the uncorrected §S73.B, and the cost was **both patch scripts run against `~/meridian-engine`, the production tree**, before the operator's instruction to read PK corrected it. **ADR-024's Rule 11.3 gap — second consecutive close**: no `## Governance language` section **in the ADR file**, and the parent Status still PROPOSED against Amendment A's ACCEPTED. **Its CLAUDE.md bullet does exist** (`:378`, written S79), so the gate was **bypassed rather than unmet** — the remedy is 024's governance section, not a second bullet (TD-S80-NEW-19). **`gex_pin_maxpain_history` owes a Rule 10 schema ADR — TD-S80-NEW-7**; its DDL is committed, which discharges D2 clause 4 and *not* Rule 10. **TD-S79-NEW-6** — three untracked scratch files still in the production tree. |
-| **Verification — stage 0 OBSERVED INERT, 2026-09-22 08:53 IST** | `grep -c "S80 extra expiries" /home/ssm-user/meridian-engine/cron.log` = **0**, and the day's cycles carry **`max_exp = 1` on both symbols at 3 runs each**, first rows **08:40:06 IST (NIFTY) / 08:40:05 IST (SENSEX)**, six `INGEST OPTION CHAIN COMPLETED` lines. **The zero alone would not have shown this** — it returns 0 just as readily on a day the ingest never ran, which is the CANNOT-FIRE shape — so it is paired with a row-side count that **can** fail, and the pair is the evidence. The same reading independently confirms the day's first OCS row at **08:40 IST**, which is the figure ADR-025 Amendment A §A2 item 1 records getting wrong from a `LIMIT 20` sample. |
-| **Ledger** | **TDs_NEW=13 filed + 1 WITHDRAWN** (TD-S80-NEW-1..14; **-6 withdrawn before filing** — a 3,093-vs-2,923 run-count "anomaly" that was two measurements three days apart, Monday having written exactly 85 × 2 = 170 runs. **-14 filed in the Rule 11 completion pass, after this block was written**). **Count and split are derived from `tech_debt.md` headings, never incremented by hand** — the method TD-S79-NEW-25 exists to enforce, and it is to be re-derived at commit time, not trusted from here. **TDs_CLOSED=1** (TD-S79-NEW-12). **ADRs_NEW=1** (ADR-025). **ADRs_AMENDED=1** (ADR-025 Amendment A, same session). **Enhancement Register TRIGGERED — second consecutive**, ENH-123 / ENH-124 written as Part 4. **Deployment Topology UPDATED — §S80.** The build moved no host, cron line, systemd unit, token path or Local↔AWS boundary; **the session did** — the **2026-09-22 disk-full access lockout** resized the root volume **8 GiB gp2 → 30 GiB gp3**, widened the logrotate scope, discharged the S71 kernel risk and left the feed needing a manual start. This line previously read *"NOT updated"*, which was true of the build and false of the session. |
-| **Next session** | **Render ENH-120 / ENH-121 / ENH-122.** That is the board move D2 clause 3 forces, and it is the first operator-surface change since ENH-81 at S37. Then **stage 1** of ingest depth (both symbols to 2) on a **non-expiry day**, after TD-S80-NEW-10's missing expiry filter is fixed. Then the Rule 12 project-knowledge re-upload. |
-
----
-
----
-
-*Session blocks S78 and earlier: [`docs/registers/CURRENT_history.md`](../registers/CURRENT_history.md).*

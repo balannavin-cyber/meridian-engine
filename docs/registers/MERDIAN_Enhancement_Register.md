@@ -3054,6 +3054,21 @@ Quantitative thresholds locked in ADR-002 v2 §P7:
 
 ### ENH-98 — Vanna/charm second-order Greeks (ADR-002 v2 P8 — Phase 3 prep)
 
+**S82 go/no-go RE-RUN — the S81 measurement was repeated on clean inputs, and the
+result is a PARTIAL confirmation, not a pass. Build still NOT started.**
+
+| Field | Detail |
+|---|---|
+| **What was re-run** | The S81 notes' query **verbatim** (79 lines, extracted programmatically; sha256 `d5930ee55d608aad`), 2026-09-24 **14:12 IST mid-session**. The notes specified `~11:00 IST`; this ran later, still well inside the session. |
+| **The contamination is gone** | Spot now comes from `option_chain_snapshots.spot`, the **same row as the greeks** — verified structurally: `option_chain_snapshots` is the query's ONLY base table and `gamma_metrics` appears **0** times. |
+| **The prediction, recorded against its own sentence** | *"ATM `delta_abs_err` should fall from ~0.046 to **well under 0.01**."* **Measured 0.0139** (`exact/365`) / 0.0140 (`dte/365`) — a ~70 % reduction that **confirms the spot explanation but does not clear the stated bar.** Recorded as **half-met**, not rounded into a pass. |
+| **Gamma: the refusal condition is NOT met** | NIFTY dte 5 — `dte/365` ATM **0.0307** NEAR **0.0438**; `exact/365` ATM **0.0251** NEAR **0.0419**; `dte/252` ATM 0.1336. The S81 blocker was NEAR at 0.127; it is now 0.042. **Calendar-year time confirmed again**, and at 5 DTE `exact/365` now separates from `dte/365` in its favour, which 2 DTE could not do. |
+| **The residual ~12-point offset is NOT a spot effect — a negative result** | 59 clean cycles, 08:40→14:20 IST, futures matched to the **near-month** contract within **±1 second**: median(implied − basis) **−6.4 pts**, median(implied − carry) **−9.1 pts**, **Pearson(implied, basis) = −0.0655.** Tracking requires small residual AND positive correlation; **neither holds.** `implied_pts` is near-constant 11.3–13.1 all session while the basis wanders −1.7→+30.5. So there is **no second spot correction left to find**; the remainder is a convention or model detail — `q = 0` is confirmed absent from the formulation and was never tested. |
+| **SENSEX is VOID today** | 0 DTE (front expiry 2026-09-24). `gamma_relerr_med` **0.83 / 0.99 / 1.07** vs NIFTY's 0.025–0.070; `dte/365` and `dte/252` yield **no SENSEX rows at all** because `dte=0` ⇒ `tt=0` trips the query's own `tt > 0` filter. This **reproduces the S62 singularity**, it does not test the hypothesis. |
+| **Vendor greek junk, worse than S81** | front-expiry rows NIFTY 996 / SENSEX 756; `iv` zero-or-null **35 % / 42 %** (S81 measured 34 %); `iv_max` NIFTY 178.27, **SENSEX 1493.45**. The `[0.05, 0.95]` delta band leaves **86 NIFTY rows** (ATM 20 / NEAR 31 / FAR 35) — thin, and removed by rule rather than by eye. |
+| **Verdict** | **NOT a clean go.** One symbol, n=20 at ATM, delta error ~40 % above the predicted bar with a **consistent sign**, second symbol untested. **Owed before build: a re-run with SENSEX at dte 1–2**, which is where the conventions separate. |
+| **Status unchanged** | **IN BUILD (S81) — build NOT started.** This entry records the measurement; it does not authorise the build. |
+
 | Field | Detail |
 |---|---|
 | Status | **IN BUILD (S81, 2026-09-23)** — deferral LIFTED |

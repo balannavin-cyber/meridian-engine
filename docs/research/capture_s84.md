@@ -219,6 +219,14 @@ The NIFTY legs on A3 and A4 are stated because they are not absent, only unusabl
 - **L78-2 — scope.** Standing book versus today's ΔOI.
 - **L78-3 — charm time step.** Calendar **+24 h**, capped at the **15:30 expiry** with a named state; `dte 0` remains `SKIPPED_EXPIRY`.
 
+### 2.7 The `TD-S83-NEW-5` contradiction — a §D candidate
+
+**An anomalous derived value and an anomalous raw value on the same row are one defect, not two.** `TD-S83-NEW-5` recorded SENSEX back-leg strikes reading `iv` **110–117** against an ATM of 13.10 — roughly **8×** — while holding **48.7M** open interest, and concluded both that the implied volatility was an unexplained property of the vendor feed *and* that the open interest *"is real"*. Those were filed as two observations about two columns.
+
+They are one row. On SENSEX **72300 CE**, `ltp` sits frozen at **5464.15** from **03:05 to 04:10 UTC**; while it is frozen the `iv` reads **119.30 and 121.04**. At **04:15** `ltp` corrects to 1537.35 and the `iv` **drops to 14.89 in the same row** — and only at **04:20** does `oi` fall **48,768,100 → 40**. **72400 CE, whose `ltp` was never stale, reads `iv` 14.11 throughout** (`scratch/s84_contract/iv_stale_correction.out`). So the 8× implied volatility is a stale `ltp` inverted into an implied vol, and the nine-figure open interest is that same stale row — the S71 *"`ltp` is the last trade, not a price"* finding, in the **same row**, not in a different column as `TD-S83-NEW-5` supposed.
+
+**The candidate rule:** when two columns of one row are both anomalous, **check whether they correct together before filing them as two properties of the feed.** Here the correction order — `iv` at 04:15, `oi` at 04:20 — is itself the evidence that one upstream value drives both. Bounded and stated as such: **2 strikes, 1 session.** Filed as `TD-S84-NEW-4`; `TD-S83-NEW-5` carries the correction row.
+
 ---
 
 ## 3. §D rows to file
@@ -238,7 +246,7 @@ Rearranged, `(v_delta − bs_delta) = bs_gamma_spot × implied_dspot` **identica
 The register characterises `implied_pts` as *"near-constant 11.3–13.1"* — a band over **59 cycles** (`docs/registers/MERDIAN_Assumption_Register.md:950`). The quantity that governs whether a single cycle's median is resolved is the **across-strike** standard error of the median **within** that cycle, which measures **0.932** pts (A0 NIFTY, `r_eff.out:19`), **1.089** (A1 NIFTY, `:28`) and **2.054** (A1 SENSEX, `:29`). These are different statistics over different populations, and substituting one for the other is the easy-to-reason-about quantity standing in for the one that binds. The corrected form is pre-registered at §2.6.
 
 **(d) The RLS-blind-list premise was wrong.**
-There is **no RLS-blind list in `bin/roq.sh`** — a grep for `rls|blind|row.level|skip_?list|exclude` across its 231 lines returns nothing (`scratch/s84_item0/b1_rls_blindlist.out`). Blindness is a **property of the role**, recorded in **TD-S81-NEW-16**: `merdian_ro` has `rolbypassrls = false` and the policies are written `TO anon`, so it reads zero rows silently from the RLS set (`docs/registers/tech_debt.md:490`). None of the three views' base tables is in that set — measured live, RLS off with zero policies on `option_chain_snapshots`, `trading_calendar` and `index_futures_snapshots` (`scratch/s84_item0/b7_rls_live.out`). **A premise naming a list should be checked against the file before it is used to declare a test void.**
+There is **no RLS-blind list in `bin/roq.sh`** — a grep for `rls|blind|row.level|skip_?list|exclude` across its 231 lines returns nothing (`scratch/s84_item0/b1_rls_blindlist.out`). Blindness is a **property of the role**, recorded in **TD-S81-NEW-16**: `merdian_ro` has `rolbypassrls = false` and the policies are written `TO anon`, so it reads zero rows silently from the RLS set (TD-S81-NEW-16, *Mechanism* row). None of the three views' base tables is in that set — measured live, RLS off with zero policies on `option_chain_snapshots`, `trading_calendar` and `index_futures_snapshots` (`scratch/s84_item0/b7_rls_live.out`). **A premise naming a list should be checked against the file before it is used to declare a test void.**
 
 **(e) The S82 "neither basis nor carry" residual is now measured as a near-constant effective rate.**
 Excluding the `dte = 0` SENSEX point, `r_eff` across three points reads **0.036416** (`r_eff.out:29`), **0.037034** (`:28`) and **0.038125** (`:19`) — a band of **3.64 % to 3.81 %**, spanning two symbols and two days. The instrument's own hardcoded rate is **0.065** (`docs/session_notes/s81_docclose_notes.md:732` and `:742`). D.38.3 refuted futures basis and theoretical carry as the explanation of the offset (`docs/registers/MERDIAN_Assumption_Register.md:950`); what remains is consistent with a **rate-convention** difference rather than a spot effect. **Three points is three points** — this is filed as an observation with its n stated, not as a conclusion. T3 at §2.6 is the pre-registered test of it.
@@ -249,7 +257,21 @@ Excluding the `dte = 0` SENSEX point, `r_eff` across three points reads **0.0364
 
 ## 4. TDs filed this session
 
-> **FILED.** `TD-S84-NEW-1` was written to `docs/registers/tech_debt.md` this session as a new entry at the top of `## Active debt`, immediately above `### TD-S83-NEW-1`. *(It sits at line 67 as of this write — `scratch/s84_l78/td13_final.out` — recorded as a dated note, not as its address; see §3(f).)* `git diff --stat` reads **`16 insertions(+)`, 0 deletions** — no other line in the register changed; the entry and the anchor each appear exactly once. File went 1,060,414 → 1,064,276 bytes and 6,431 → 6,447 lines, with **CRLF 0 / bare LF 6,447 / no BOM / trailing newline** preserved. sha256 chain **`1e64310e…` → `225e194b…` → `9ca3f89b…`** (two writes: the entry, then the citation fix at errata 9). Backups: `scratch/s84_l78/tech_debt.md.PRE_S84_TD1.bak` and `…PRE_S84_CITEFIX.bak`. Before the write, `grep -c 'TD-S84'` returned **0** and the latest prefix on file was **S83** (TD-S83-NEW-1 … -7), so **TD-S84-NEW-1 was the next free number** (`scratch/s84_l78/z6_td_latest.out`).
+> **ALL SEVEN FILED AND COMMITTED.** `TD-S84-NEW-1` was filed and committed at **`35c3fea`**. `TD-S84-NEW-2` … `TD-S84-NEW-7` were filed from `parity_render_contract.md` **§5 (P1–P7)** and committed at **`6c0730c`**, together with the two appended rows described below. Entries are addressed **by ID only**: `tech_debt.md` files newest-first, so every line number in it decays on the next filing — §3(f). *(An earlier draft of this section recorded `TD-S84-NEW-1` at "line 67 as of this write"; that note is removed, because filing NEW-2…NEW-7 above it moved the entry — the decay §3(f) predicts.)*
+
+| proposal | filed as | sev | subject |
+|---|---|---|---|
+| **P1** | `TD-S84-NEW-2` | S2 | `gamma_metrics` has no `CREATE TABLE` anywhere in `sql/` — an ADR-025 D2 clause 4 gap on the most-read object |
+| **P2** | `TD-S84-NEW-3` | S2 | three views ship a `COMMENT ON VIEW` in `sql/` that never ran live; one ships its `GRANT` commented out |
+| **P3** | `TD-S84-NEW-4` | S2 | the L13 rotation anchor is fabricated on stale vendor rows, and contradicts `TD-S83-NEW-5` |
+| **P4** | `TD-S84-NEW-5` | S3 | `anon` holds `MAINTAIN` beyond `SELECT` on three objects created before the S81 default-privileges fix |
+| **P5** | `TD-S84-NEW-6` | S2 | two max pains over different substrates; which is canonical is undecided |
+| **P6** | **NOT FILED** | — | folded into **`TD-S81-NEW-8`** as an **S84 update** row |
+| **P7** | `TD-S84-NEW-7` | S2 | the UI labels `flip_distance_pct` as sigma |
+
+**P6 was declined, not forgotten.** `TD-S81-NEW-8` already records the same two `meridian-connect` clones, the same stale `14b63f3`, the same md5-identity method and the same S72 flat-namespace root cause. Filing a second entry on one root cause was declined; P6's one new measurement went into that entry instead — live HEAD **`7b60d01` → `a408fb4`**, served bundle now **`index-DLdbWkEE.js`**, stale clone still `14b63f3`, **the finding stands and the hash evidence is superseded**.
+
+**`TD-S83-NEW-5` gains an S84 correction row**, appended above its `Status` with its existing text untouched: its *"the open interest there is real"* does not hold on SENSEX 72300 / 72400 CE. The measurement is at **§2.7**; the entry that supersedes it is `TD-S84-NEW-4`.
 
 > *Method note, because the first attempt was wrong.* An earlier sort ranked entries by the **NEW-number** rather than by session (`sort -u -t- -k4 -n`), which put TD-S81-NEW-20 above TD-S83-NEW-7 and hid the entire S83 block. The corrected measurement sorts by session prefix first (`sort -V` on the `S<n>` field) — `scratch/s84_l78/z6_td_latest.out`. This is the §5 class of error: a wrong assertion, not a wrong artefact.
 
@@ -273,6 +295,7 @@ Excluding the `dte = 0` SENSEX point, `r_eff` across three points reads **0.0364
 7. **A first draft of this file recorded the anon path as unverified.** It was verified — by the operator, in the editor, in the single-run form (§1.4). The draft generalised from *"this tool cannot run the check"* to *"the check was not run"*, which does not follow.
 8. **A TD-number sort ranked by NEW-number instead of by session**, reporting TD-S81-NEW-20 as the highest entry and hiding TD-S83-NEW-1…7 entirely. Corrected at §4. The proposed `TD-S84-NEW-1` is unaffected, but the stated ceiling it sat above was wrong by two sessions.
 9. **Intra-file line citations went stale the moment the entry was inserted.** The new block cited `tech_debt.md:312`, `:314` and `:3706`; the insertion landed at the top of Active debt, **above all three**, shifting them by exactly **+16** to 328, 330 and 3722. Renumbering would re-break on the next TD filed — and every TD is filed at the top — so they were replaced with **stable entry+row references** (*"TD-S81-NEW-5, Proper fix row, this file"*, and so on). Second write, **+64 bytes, 0 lines changed**, residual count of the three stale citations **0** (`scratch/s84_l78/td12_citation_fix.out`). **The dry run could not have caught this**: the numbers were correct when composed and wrong only after the write.
+10. **§3(f) caught a live instance in this very file.** §3(d) cited `tech_debt.md:490` for TD-S81-NEW-16's *Mechanism* row. After filing NEW-1…NEW-7 above it, line 490 resolves to **`TD-S81-NEW-11`'s heading** — a different entry that reads plausibly — while the real row sits at 580. **A stale line citation that lands on other valid content is worse than one that lands on nothing**, because nothing signals the error. Replaced with the ID+row address §3(f) prescribes.
 
 ---
 
@@ -286,7 +309,10 @@ Excluding the `dte = 0` SENSEX point, `r_eff` across three points reads **0.0364
 | **T1 verdict** | after A3 + A4 | not reachable on the current n; rule and thresholds pre-registered at §2.6 |
 | **Decisions L78-1 / L78-2 / L78-3** | after T1 | blocked on the verdict; scope stated at §2.6 |
 | **EC2 HEAD re-read** | next session open | one line, to close §1.1 with a measurement by this tool |
-| **`TD-S84-NEW-1`** | **DONE this session** | **FILED** in `docs/registers/tech_debt.md`, entry `TD-S84-NEW-1`, S3 / OPEN (`scratch/s84_l78/td13_final.out`). Two writes, `16 insertions(+)` total, sha `1e64310e…` → `225e194b…` → `9ca3f89b…` |
+| **`TD-S84-NEW-1` … `NEW-7`** | **DONE this session** | **FILED AND COMMITTED.** NEW-1 at **`35c3fea`**; NEW-2…NEW-7 at **`6c0730c`**, with the `TD-S83-NEW-5` correction row and the `TD-S81-NEW-8` S84 update row |
+| **`parity_render_contract.md`** | **DONE this session** | committed **`f1b6778`** and pushed; its 39 citation offsets fixed at **`6c0730c`** |
+| **EC2 `~/meridian-engine`** | pull at doc-close | at **`18c2fb8`** against an `origin/main` of **`6c0730c`** — measured **3 commits, 3 files, 0 `.py`, 0 non-`docs/`**, so the gap is **docs-only** and carries no runtime change |
+| **Design pass A–C** | after the project-knowledge upload | blocked on it; nothing in A–C is startable from the repo alone |
 
 ---
 

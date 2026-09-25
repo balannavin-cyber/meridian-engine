@@ -64,6 +64,78 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > rather than deleted because removing a header is an operator call, not a doc-close
 > edit. **Recommend deletion next session.**
 
+### TD-S84-NEW-7 (S2 priority) — the UI labels `flip_distance_pct` as sigma, so a spot-to-flip distance is rendered as a volatility band
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Display-only, but it mislabels one quantity as another on the operator's primary surface, and the two are unrelated. |
+| **Filed** | 2026-09-25 (Session 84) |
+| **Component** | `meridian-connect/src/marketview/state.ts` · `sections.tsx` · `gamma_metrics.flip_distance_pct` · `v_gex_strike_walls.sigma` · `v_gex_strike_rank.sigma` · `v_gex_pin_maxpain.sigma` · `v_gex_repriced_flip.sigma_1d` |
+| **Measured** | **Four sigma definitions exist and none is canonical** (`scratch/s84_contract/gap_probe.out:3`). Walls and rank are textually identical, `spot * atm_iv/100 * sqrt(GREATEST(dte,1)/252.0)` — 252-day year, horizon to expiry; `v_gex_pin_maxpain` inherits walls; `v_gex_repriced_flip` computes `spot * atm_iv/100 * sqrt(1.0/365.0)` — 365-day year, one-day horizon, **a different quantity under a near-identical name**. **None of the four is in `gamma_metrics`.** The front end therefore fabricates one: `state.ts:44` sets `sigmaPct = gamma_metrics.flip_distance_pct` and renders it as **"Spot Context ±X%"** with a `σ lo–hi` subtitle, and elsewhere as **"Σ to expiry"** and **"σ-band to expiry"**. Contract Part 3 §1 and Appendix B. |
+| **Consequence** | The operator reads a **distance from spot to the flip level** under a volatility label. The to-expiry definition is also duplicated across two files rather than sourced once, so the two can drift silently, and `GREATEST(dte,1)` overstates sigma at 0 DTE. |
+| **Cross-ref** | contract Part 3 §1 · Appendix B · **TD-S79-NEW-1** (`v_gex_pin_maxpain.sigma_overstated_expiry_day`, the self-flag) · ADR-017 (console design). |
+| **Status** | **OPEN.** |
+
+### TD-S84-NEW-6 (S2 priority) — two max pains over different substrates, agreeing on strike and disagreeing on everything else; which is canonical is undecided
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Both are live and anon-readable, and a renderer showing both invites reading the agreement as corroboration when it is not. |
+| **Filed** | 2026-09-25 (Session 84) |
+| **Component** | `v_gex_max_pain` (GEX-run substrate) · `v_max_pain_by_strike` (raw-chain substrate) |
+| **Measured** | `samples_13_17.out:4-9` — `v_gex_max_pain`, NIFTY max pain **23 250**, total pain **40 137 719 250**, **138** strikes, coverage 89.1 / 87.7 %, ts **09:50:07**; SENSEX **71 200**, 137 strikes. `samples_13_17.out:22-27` — `v_max_pain_by_strike`, NIFTY **23 250**, **38 139 112 250**, **269** strikes, ts **10:10:04**; SENSEX **71 200**, 15 036 832 000, 186 strikes. **Same strike on both symbols; different strike count, different total, different ts.** Contract §13 and §15. |
+| **Consequence** | Agreement on strike is **not** corroboration — it is two estimators over overlapping data landing on the same grid point on one session. A renderer must pick one and name it, and must never show both as though one validated the other. |
+| **Cross-ref** | contract §13 · §15 · **ENH-128** (retroactive registration of `v_max_pain_by_strike`, S81) · **TD-S80-NEW-10** (same view — its missing timestamp and unbounded `max(ts)`, RESOLVED S81 by the `latest_ts` retrofit; the `ts` this entry compares is that retrofit's output). |
+| **Status** | **OPEN — the canonical choice is a decision, not a measurement.** |
+
+### TD-S84-NEW-5 (S3 priority) — `anon` holds `MAINTAIN` beyond `SELECT` on three objects created before the S81 default-privileges fix
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** `MAINTAIN` does not permit reads beyond `SELECT` or any write of row data, and all three objects are display-only. Filed because it is the S39 residual shape the S81 fix was meant to end, surviving on objects the fix did not sweep. |
+| **Filed** | 2026-09-25 (Session 84) |
+| **Component** | `v_gex_max_pain` · `v_gex_pin_maxpain` · `v_participant_oi_latest` · `anon` role · S81 `ALTER DEFAULT PRIVILEGES` |
+| **Measured** | `scratch/s84_contract/acl.out` shows `MAINTAIN,SELECT` for `anon` on **`v_gex_max_pain`** (`:15`), **`v_gex_pin_maxpain`** (`:16`) and **`v_participant_oi_latest`** (`:19`); every other object in the eighteen reads `SELECT` only. Contract §13, §14, §17. |
+| **Consequence** | S81 fixed the **mechanism** (`ALTER DEFAULT PRIVILEGES`) and did not sweep objects that already existed, so pre-S81 objects still carry the old grants. This is the exact failure S81 recorded: fixing every instance does not fix the mechanism, and fixing the mechanism does not sweep the instances. |
+| **Cross-ref** | contract §13 · §14 · §17 · **TD-S81-NEW-1** / **-2** / **-3** (the anon privilege exposure and its `ALTER DEFAULT PRIVILEGES` remedy) · **D.21.1** (Lovable auto-grant safety, REFUTED) · `CASE-2026-09-22-anon-privilege-exposure`. |
+| **Status** | **OPEN.** |
+
+### TD-S84-NEW-4 (S2 priority) — the L13 rotation anchor is fabricated on stale vendor rows, and this contradicts TD-S83-NEW-5's "the open interest there is real"
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2**, not S1: `v_oi_rotation_since_open` is display-only and **no gate reads L13**. S2 because the view currently emits a nine-figure rotation that is an artefact, and because it overturns a finding recorded in the previous session. |
+| **Filed** | 2026-09-25 (Session 84) |
+| **Component** | `v_oi_rotation_since_open` (ENH-127, L13) · `option_chain_snapshots.oi` / `.ltp` / `.iv` · **TD-S83-NEW-5** |
+| **Measured** | SENSEX **72300 CE** reports Δ = **−48 767 480**. The anchor row carries `oi = 48 768 100` with `ltp = 5464.15` **frozen across every snapshot 03:05–04:10 UTC**; `ltp` corrects at **04:15** to 1537.35 and `oi` corrects at **04:20** to **40** (`oi_anomaly.out`, `oi_anomaly2.out`, `iv_stale_correction.out`). The 03:45 anchor sits **inside** that stale window. On the same row, while `ltp` is stale the `iv` reads **119.30 and 121.04**; at 04:15 it **drops to 14.89** — before the OI corrects five minutes later. **72400 CE, whose `ltp` was never stale, reads `iv` 14.11 throughout** (`iv_stale_correction.out`). TD-S83-NEW-5's **48 773 740** for 72400 CE is **byte-identical** to this view's `ce_oi_anchor_qty`; its latest value is **400** (`samples_09_12.out`). Bounded: **4 SENSEX CE + 1 PE** strikes exceed |Δ| > 1M, max **48 773 340**, against a NIFTY max of **3 683 095** (`oi_anomaly3.out`). Contract §9. |
+| **Consequence** | Every Δ derived from those strikes is an artefact of a vendor carrying a stale row, not rotation. And the ~8× ATM implied volatility TD-S83-NEW-5 recorded is **not** an unexplained vendor property — it is a stale `ltp` inverted into an implied vol, the S71 *"`ltp` is the last trade, not a price"* finding **in the same row**, not in a different column as that entry supposed. The contradiction is bounded: **2 strikes, 1 session.** |
+| **Cross-ref** | contract §9 · **TD-S83-NEW-5** (corrected here; a correction row is appended to it) · **TD-S83-NEW-4** (same feed, opposite direction) · CLAUDE.md *"`ltp` is the last trade, not a price"* (S71) · **ENH-127**. |
+| **Status** | **OPEN.** |
+
+### TD-S84-NEW-3 (S2 priority) — three views ship a `COMMENT ON VIEW` in `sql/` that was never executed live, and one ships its `GRANT` commented out: TD-S81-NEW-5 is not remediated
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** A rebuild from these files yields views that are correct in body and undocumented, and for one of them anon-unreadable — the silent-empty shape arriving from the artefact that exists to make rebuilds safe. |
+| **Filed** | 2026-09-25 (Session 84) |
+| **Component** | `sql/2026-09-15_s79_v_gex_abs_exposure.sql` · `sql/2026-09-22_s80_v_gex_max_pain.sql` · `sql/2026-09-22_s80_v_gex_pin_maxpain.sql` · **TD-S81-NEW-5** |
+| **Measured** | **No live COMMENT** on `v_gex_abs_exposure` (`comments.out:8` — `(NO COMMENT)`), `v_gex_max_pain` (`comments.out:15`) or `v_gex_pin_maxpain` (`comments.out:16`), while each `sql/` file **ships one as a live statement** (`:145-146`, `:125`, `:137` respectively). `v_gex_abs_exposure` additionally has its **`GRANT` commented out** at `:156-157` while `anon` holds `SELECT` live (`comment_grant_in_file.out`). Contract §6, §13, §14. |
+| **Consequence** | TD-S81-NEW-5 established the rule — *"`sql/` files ship COMMENT and GRANT as live statements, never as commentary"* — and recorded a **part-run apply** as the root cause. That entry's own residual is unclosed and the same shape is present on three further objects. A rebuild of `v_gex_abs_exposure` from its file produces a view at HTTP 200 with zero rows for anon. |
+| **Cross-ref** | contract §6 · §13 · §14 · **TD-S81-NEW-5** (the rule, and its unclosed residual) · **TD-S84-NEW-2** (the same clause-4 family, on a table) · **TD-S37-03** (silent empty datasets, not auth errors) · **ADR-025 D2 clause 4**. |
+| **Status** | **OPEN.** |
+
+### TD-S84-NEW-2 (S2 priority) — `gamma_metrics` has no `CREATE TABLE` anywhere in `sql/`, an ADR-025 D2 clause 4 gap on the most-read object in the parity set
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** The table is live and healthy; the exposure is that it is **not reproducible from the repo**, and it holds data as well as structure. |
+| **Filed** | 2026-09-25 (Session 84) |
+| **Component** | `gamma_metrics` table · `sql/` · `sql/2026-05-30_gamma_metrics_s41_p0a_columns.sql` · **ADR-025 D2 clause 4** |
+| **Measured** | **No `CREATE TABLE` for `gamma_metrics` exists anywhere under `sql/`** (`scratch/s84_contract/sqlmap.out:1` — the row is present with an empty DDL column). The only committed DDL touching it is a **column-add migration**, `sql/2026-05-30_gamma_metrics_s41_p0a_columns.sql`. The table also **carries no COMMENT** (`comments.out:3` — `(NO COMMENT)`), so its grain `(symbol, ts)` is inferred from the data rather than documented. Contract §1. |
+| **Consequence** | ADR-025 D2 clause 4 exists because *"a view living only in the live database is one `DROP` from unrecoverable, and cannot be rebuilt from the repo"*. This is that condition on a **table**, and it is worse than the view case: a table also holds the data, so the loss is not recoverable by re-running a body. |
+| **Cross-ref** | contract §1 · **ADR-025 D2 clause 4** · **TD-S79-NEW-3** (`sql/` is a superseded rebuild source) · **TD-S84-NEW-1** and **TD-S84-NEW-3** (the same clause-4 family, on views). |
+| **Status** | **OPEN.** |
+
 ### TD-S84-NEW-1 (S3 priority) — the `sql/` file does not reproduce the live `merdian_ro` grant on two of the three S83 views, so a rebuild from `sql/` yields a view the verification role reads as EMPTY
 
 | Field | Value |
@@ -146,6 +218,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Why it does not reach the published `iv`** | All **20** of the worst outliers by `iv / atm_iv` sit on the **ITM side**, and L10 publishes the **OTM** side, so the convention excludes every one. **14 of the 20 carry `oi = 0`**; these four and two NIFTY puts are the exceptions that do not. |
 | **Why it is filed anyway** | The exclusion is a property of the convention, not evidence the values are harmless. Any future consumer reading the ITM side — a synthetic forward, a put-call parity check, an ITM-anchored fit — inherits them. |
 | **Cross-ref** | **TD-S83-NEW-4** (same feed, opposite direction) · **ENH-132** COMMENT · CLAUDE.md *"`ltp` is the last trade, not a price"* (the adjacent S71 finding, a different column of the same feed). |
+| **S84 correction** | Contradicted on 2 strikes / 1 session: the 48.7M OI and the iv 110–121 on SENSEX 72300/72400 CE are one stale vendor row (ltp frozen 5464.15, 03:05–04:10 UTC); iv 121.04 → 14.89 when ltp corrects at 04:15, OI 48,768,100 → 40 at 04:20. The 'OI is real' claim does not hold on these strikes. See TD-S84-NEW-4 and parity_render_contract.md §9 (iv_stale_correction.out). |
 | **Status** | **OPEN — measured, unexplained, excluded by convention rather than by fix.** |
 
 ### TD-S83-NEW-6 (S3 priority) — `.gitignore` covers `*.log` but not rotated logs or `status.json`, so the widened logrotate scope produces untracked files the repo does not describe
@@ -380,6 +453,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Cost to fix** | ~10 min. |
 | **Blocked by** | nothing. |
 | **Cross-ref** | S72 flat-namespace finding · Enhancement Register S40 footer · Deployment Topology §S81 (Marketview deploy path). |
+| **S84 update** | Live HEAD has moved **`7b60d01` → `a408fb4`**; the served bundle is now **`index-DLdbWkEE.js`**, md5 **`56ad2b21…`**, matching `/home/ssm-user/meridian-connect/dist`. The stale clone is **still at `14b63f3`**. **The finding stands; the hash evidence above is superseded.** (`parity_render_contract.md` §2.1.) |
 | **Status** | **OPEN.** |
 
 ### TD-S81-NEW-9 (S3 priority) — one client-side strike scalar renders under three different labels

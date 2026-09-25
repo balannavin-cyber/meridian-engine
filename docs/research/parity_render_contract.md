@@ -32,7 +32,7 @@ Privileges are from `pg_class.relacl` via `aclexplode` (`acl.out`). Columns are 
 
 > **Finding (P1) — ADR-025 D2 clause 4 gap.** The single most-read table in the parity set has no reproducible DDL under version control. Clause 4 exists because "a view living only in the database is one `DROP` from unrecoverable"; this is that condition on a *table*, and it is worse, because a table also holds the data.
 
-**(b)** Grain `(symbol, ts)` — one row per symbol per compute cycle (~5 min). **Inferred from the data, not documented: the table carries no COMMENT** (`comments.out:1`).
+**(b)** Grain `(symbol, ts)` — one row per symbol per compute cycle (~5 min). **Inferred from the data, not documented: the table carries no COMMENT** (`comments.out:3`).
 
 **(a)** Per the brief, scoped to the three parity columns of the table's 27:
 
@@ -65,7 +65,7 @@ def determine_regime(net_gex, flip_level):
 
 Nothing unobserved. **The split is a hard sign test at `net_gex >= 0` with no dead zone** — see Part 3 §3.
 
-**(e)** RLS **on**; anon `SELECT` only (`acl.out:4`).
+**(e)** RLS **on**; anon `SELECT` only (`acl.out:3`).
 
 ---
 
@@ -73,7 +73,7 @@ Nothing unobserved. **The split is a hard sign test at `net_gex >= 0` with no de
 
 **(f)** `sql/2026-05-25_enh80_gex_strike_snapshots.sql:30` · **ENH-80** (ADR-014, superseded same session by ADR-015).
 
-**(b)** *"Per-strike GEX time-series."* — live COMMENT, 97 chars (`comments.out:2`). Grain `(run_id, strike, expiry_date)`, per ADR-015.
+**(b)** *"Per-strike GEX time-series."* — live COMMENT, 97 chars (`comments.out:4`). Grain `(run_id, strike, expiry_date)`, per ADR-015.
 
 **(a)** **Ordinal positions 9, 13, 14, 15 are absent** — dropped by the ADR-015 v2 migration.
 
@@ -100,7 +100,7 @@ Nothing unobserved. **The split is a hard sign test at `net_gex >= 0` with no de
 
 **(d)** No status column.
 
-**(e)** RLS **on**; anon `SELECT` only (`acl.out:5`).
+**(e)** RLS **on**; anon `SELECT` only (`acl.out:4`).
 
 ---
 
@@ -108,7 +108,7 @@ Nothing unobserved. **The split is a hard sign test at `net_gex >= 0` with no de
 
 **(f)** `sql/2026-08-13_s69_gex_pin_accel_latest_run_scope.sql:26` · **ENH-81** (S69 perf rescope). An earlier body survives at `sql/2026-05-25_enh81_v_gex_strike_pin_zone.sql:18`; the S69 file is current.
 
-**(b)** *"pin zone via prominence walk, SCOPED to latest run_id per symbol… τ_pin via `get_parameter_num`."* — live COMMENT, 206 chars (`comments.out:3`). Grain `(symbol)` — exactly one row per symbol.
+**(b)** *"pin zone via prominence walk, SCOPED to latest run_id per symbol… τ_pin via `get_parameter_num`."* — live COMMENT, 206 chars (`comments.out:5`). Grain `(symbol)` — exactly one row per symbol.
 
 **(a)** `run_id` uuid · `symbol` text · `expiry_date` date · `ts` timestamptz · `pin_lower` numeric · `pin_upper` numeric · `n_strikes` bigint · `total_pin_gex_cr` numeric · `peak_pin_gex_cr` numeric · `peak_pin_strike` numeric · `tau_used` numeric.
 
@@ -121,7 +121,7 @@ Nothing unobserved. **The split is a hard sign test at `net_gex >= 0` with no de
 
 **(d)** No status column. `tau_used` is a surfaced parameter, not a state.
 
-**(e)** RLS off; anon `SELECT` only (`acl.out:6`).
+**(e)** RLS off; anon `SELECT` only (`acl.out:5`).
 
 > **Utility, stated so it is not mistaken.** S74 answered PIN's predictive utility **NO** on the holdout (NIFTY mean −0.1996, CI [−0.2998, −0.0801], 19 of 21 sessions negative). The zone renders; it does not predict. Any label implying attraction contradicts the measurement.
 
@@ -131,7 +131,7 @@ Nothing unobserved. **The split is a hard sign test at `net_gex >= 0` with no de
 
 **(f)** `sql/2026-09-25_s83_v_gex_repriced_flip.sql:94` · **ENH-131** (S83, per ADR-025 Amendment B clause B7).
 
-**(b)** *"One row per symbol at the LATEST `option_chain_snapshots` ts. Grain (symbol). Consumers MUST ORDER BY symbol — a view body carries no ordering guarantee. DISPLAY ONLY… it routes nothing, gates nothing, and makes NO PREDICTIVE CLAIM."* — live COMMENT, 6 997 chars (`comments.out:4`), the longest in the set. **It records its own failed gates**; a renderer surfacing this level should carry that, not hide it.
+**(b)** *"One row per symbol at the LATEST `option_chain_snapshots` ts. Grain (symbol). Consumers MUST ORDER BY symbol — a view body carries no ordering guarantee. DISPLAY ONLY… it routes nothing, gates nothing, and makes NO PREDICTIVE CLAIM."* — live COMMENT, 6 997 chars (`comments.out:6`), the longest in the set. **It records its own failed gates**; a renderer surfacing this level should carry that, not hide it.
 
 **(a)** `symbol` text · `ts` timestamptz · `spot` numeric · `front_expiry` date · `t_days` float8 · `r_sess` float8 · `r_p10` float8 · `r_p90` float8 · `n_r_rows` int · `atm_iv` numeric · `sigma_1d` float8 · `flip` float8 · `flip_direction` text · `flip_minus_spot` float8 · `flip_sigma` float8 · `n_cross_within_2sigma` int · `n_cross_full_grid` int · `status` text.
 
@@ -146,7 +146,7 @@ Nothing unobserved. **The split is a hard sign test at `net_gex >= 0` with no de
 
 > **A renderer must handle all four `status` values and a NULL `flip`.** SENSEX is in that state right now — half the symbols. A component that assumes a flip level exists will render blank or crash on the live data of this session.
 
-**(e)** RLS off; anon `SELECT` only (`acl.out:7`).
+**(e)** RLS off; anon `SELECT` only (`acl.out:6`).
 
 ---
 
@@ -154,7 +154,7 @@ Nothing unobserved. **The split is a hard sign test at `net_gex >= 0` with no de
 
 **(f)** `sql/2026-09-15_s79_v_gex_strike_walls.sql:47` · **ENH-120**.
 
-**(b)** *"put/call wall as raw-OI argmax within a ±band*sigma moneyness window, scoped to the latest run per symbol (ADR-021, S72 FIX 2 lateral form)… Gamma-weighted argmax was tested and rejected (collapses to ATM). Sigma columns are the distance measure; raw strikes exist for labelling only."* — live COMMENT, 1 449 chars (`comments.out:5`). Grain `(run_id, symbol, expiry_date)`.
+**(b)** *"put/call wall as raw-OI argmax within a ±band*sigma moneyness window, scoped to the latest run per symbol (ADR-021, S72 FIX 2 lateral form)… Gamma-weighted argmax was tested and rejected (collapses to ATM). Sigma columns are the distance measure; raw strikes exist for labelling only."* — live COMMENT, 1 449 chars (`comments.out:7`). Grain `(run_id, symbol, expiry_date)`.
 
 **(a)** `run_id` · `symbol` · `expiry_date` · `ts` · `dte` · `spot` · `sigma` · `band_used` · `atm_iv_used` · `atm_iv_ts` · `atm_iv_age_min` · `iv_floor_min_used` · `iv_fresh` bool · `put_wall` · `call_wall` · `put_wall_oi` bigint · `call_wall_oi` bigint · `put_wall_sigma` · `call_wall_sigma` · `corridor_width_sigma` · `corridor_state` text · `n_eligible_strikes` bigint.
 
@@ -169,7 +169,7 @@ Nothing unobserved. **The split is a hard sign test at `net_gex >= 0` with no de
 
 > **Three of four corridor states have never rendered.** A renderer cannot be styled against observed data alone here — `UNDEFINED` in particular must have a defined visual, and it is reachable.
 
-**(e)** RLS off; anon `SELECT` only (`acl.out:8`).
+**(e)** RLS off; anon `SELECT` only (`acl.out:7`).
 
 ---
 
@@ -177,7 +177,7 @@ Nothing unobserved. **The split is a hard sign test at `net_gex >= 0` with no de
 
 **(f)** `sql/2026-09-15_s79_v_gex_abs_exposure.sql:77` · **ENH-121**.
 
-**(b)** **No COMMENT live** (`comments.out:6`). The file *contains* one at `:145-146`: *"sum(abs(gex_cr)) beside sum(gex_cr), scoped to the latest run per symbol… grain (run_id, symbol, expiry_date)."*
+**(b)** **No COMMENT live** (`comments.out:8`). The file *contains* one at `:145-146`: *"sum(abs(gex_cr)) beside sum(gex_cr), scoped to the latest run per symbol… grain (run_id, symbol, expiry_date)."*
 
 > **Finding (P2) — the S81 part-run shape, unremediated.** TD-S81-NEW-5 established that `COMMENT` and `GRANT` must ship as **live statements** in the `sql/` file, because a rebuild from a body-only file yields a view that is correct and undocumented. This file is worse than body-only: its `COMMENT` is a live statement that **was never executed**, and its `GRANT` is **commented out** at `:156-157` (`comment_grant_in_file.out`) while anon holds `SELECT` live. A rebuild from this file produces a view that is **anon-unreadable** — HTTP 200, zero rows, the TD-S37-03 silent-empty shape. Two more instances in §13 and §14.
 
@@ -194,7 +194,7 @@ Nothing unobserved. **The split is a hard sign test at `net_gex >= 0` with no de
 
 **(d)** No status column.
 
-**(e)** RLS off; anon `SELECT` only (`acl.out:9`).
+**(e)** RLS off; anon `SELECT` only (`acl.out:8`).
 
 > The file's own COMMENT warns that `net_gex_cr` **duplicates `gamma_metrics.net_gex` and is not an independent check** — both come from `signed_gamma_exposure()`, so any comparison passes by construction. A renderer must not present them as corroborating.
 
@@ -204,7 +204,7 @@ Nothing unobserved. **The split is a hard sign test at `net_gex >= 0` with no de
 
 **(f)** `sql/2026-09-15_s79_v_gex_concentration.sql:185` · **ENH-122**.
 
-**(b)** *"Herfindahl max/sum on the gamma book, three legs… Latest-run scoped, grain (run_id, symbol, expiry_date). THE SPLIT IS LOAD-BEARING: call and put concentration correlate 0.71–0.87 at 0 DTE but −0.00 to 0.15 away from it."* — live COMMENT, 1 951 chars (`comments.out:7`).
+**(b)** *"Herfindahl max/sum on the gamma book, three legs… Latest-run scoped, grain (run_id, symbol, expiry_date). THE SPLIT IS LOAD-BEARING: call and put concentration correlate 0.71–0.87 at 0 DTE but −0.00 to 0.15 away from it."* — live COMMENT, 1 951 chars (`comments.out:9`).
 
 **(a)** `run_id` · `symbol` · `expiry_date` · `ts` · `dte` · `spot` · `dte_bucket` text · `hhi_net` numeric · `hhi_call` float8 · `hhi_put` float8 · `top_strike_net` numeric · `n_strikes` bigint · `n_contributing` bigint.
 
@@ -217,7 +217,7 @@ Nothing unobserved. **The split is a hard sign test at `net_gex >= 0` with no de
 
 **(d)** `dte_bucket` observed `3+` only. **Emittable and unobserved: `0`, `1-2`** (`emittable_literals.out:4`) — both symbols are ≥4 DTE today.
 
-**(e)** RLS off; anon `SELECT` only (`acl.out:10`).
+**(e)** RLS off; anon `SELECT` only (`acl.out:9`).
 
 > **The COMMENT names the measure correctly — "max/sum" — and the column name does not.** `hhi_net` = 0.14425758917096207626 is **byte-identical** to rank-1 `share_of_abs` in §8 (`samples_05_08.out:19` vs `:29`). It is a dominance ratio, not a Herfindahl index. See Part 3 §4.
 
@@ -227,7 +227,7 @@ Nothing unobserved. **The split is a hard sign test at `net_gex >= 0` with no de
 
 **(f)** `sql/2026-09-22_s81_v_gex_strike_rank.sql:131` · **ENH-125**.
 
-**(b)** *"One row per contributing strike of the latest run per symbol… grain (run_id, symbol, expiry_date, strike). The siblings… are one row per RUN; this one is per STRIKE. Consumers MUST ORDER BY strike_rank."* — live COMMENT, 3 820 chars (`comments.out:8`).
+**(b)** *"One row per contributing strike of the latest run per symbol… grain (run_id, symbol, expiry_date, strike). The siblings… are one row per RUN; this one is per STRIKE. Consumers MUST ORDER BY strike_rank."* — live COMMENT, 3 820 chars (`comments.out:10`).
 
 **(a)** `run_id` · `symbol` · `expiry_date` · `ts` · `dte` · `spot` · `sigma` · `atm_iv_used` · `atm_iv_age_min` · `iv_fresh` bool · `strike_rank` bigint · `strike` · `gex_cr` · `abs_gex_cr` · `side` text · `share_of_abs` · `cum_share_of_abs` · `dist_sigma` · `n_ranked` bigint · `n_strikes` bigint.
 
@@ -244,7 +244,7 @@ Nothing unobserved. **The split is a hard sign test at `net_gex >= 0` with no de
 
 **(d)** `side` observed `AMPLIFYING` (107), `DAMPENING` (133) — the complete emittable set (`emittable_literals.out:5`). Nothing unobserved. `iv_fresh` observed `true` only.
 
-**(e)** RLS off; anon `SELECT` only (`acl.out:11`).
+**(e)** RLS off; anon `SELECT` only (`acl.out:10`).
 
 > **This view is named "pin conviction" in its COMMENT and exposes no conviction column.** SENSEX ranks 1–3 are separated by 0.03 % of share — a renderer showing "top strike" implies a decisiveness the numbers deny. See Part 3 §5.
 
@@ -254,7 +254,7 @@ Nothing unobserved. **The split is a hard sign test at `net_gex >= 0` with no de
 
 **(f)** `sql/2026-09-22_s81_v_oi_rotation_since_open.sql:70` · **ENH-127**.
 
-**(b)** *"L13 OI rotation since open, LIVE ONLY. One row per symbol per front-expiry strike, CE and PE side by side: open interest at the session anchor, at the latest snapshot, and the delta between them. Grain (symbol, expiry_date, strike). Historical rotation is OUT OF SCOPE."* — live COMMENT, 5 632 chars (`comments.out:9`).
+**(b)** *"L13 OI rotation since open, LIVE ONLY. One row per symbol per front-expiry strike, CE and PE side by side: open interest at the session anchor, at the latest snapshot, and the delta between them. Grain (symbol, expiry_date, strike). Historical rotation is OUT OF SCOPE."* — live COMMENT, 5 632 chars (`comments.out:11`).
 
 **(a)** `symbol` · `expiry_date` · `dte` · `anchor_ts` · `latest_ts` · `strike` · `ce_oi_anchor_qty` · `ce_oi_latest_qty` · `ce_oi_delta_qty` · `ce_presence` text · `pe_oi_anchor_qty` · `pe_oi_latest_qty` · `pe_oi_delta_qty` · `pe_presence` text · `snapshot_age_min` · `stale_floor_min_used` · `is_fresh` bool.
 
@@ -262,7 +262,7 @@ Nothing unobserved. **The split is a hard sign test at `net_gex >= 0` with no de
 
 **(d)** `ce_presence`/`pe_presence` observed `BOTH` only (455 each). **Emittable and unobserved: `ANCHOR_ONLY`, `LATEST_ONLY`** (`emittable_literals.out:6`). `is_fresh` observed `false` only (455) — post-close.
 
-**(e)** RLS off; anon `SELECT` only (`acl.out:12`).
+**(e)** RLS off; anon `SELECT` only (`acl.out:11`).
 
 #### Finding (P3) — the anchor is fabricated today, and this contradicts TD-S83-NEW-5
 
@@ -290,7 +290,7 @@ So the ~8× ATM implied volatility is not an unexplained property of the vendor'
 
 **(f)** `sql/2026-09-22_s81_v_gex_net_gamma_river.sql:103` · **ENH-126**.
 
-**(b)** *"One row per symbol per session, the settled daily net dealer gamma with its sign and the spot it was observed at. Grain (symbol, session_date)… session_rank 1 is the most recent session. SOURCE IS gamma_metrics ONLY, AND THAT IS A DECISION, NOT A CON[straint]…"* — live COMMENT, 4 743 chars (`comments.out:10`).
+**(b)** *"One row per symbol per session, the settled daily net dealer gamma with its sign and the spot it was observed at. Grain (symbol, session_date)… session_rank 1 is the most recent session. SOURCE IS gamma_metrics ONLY, AND THAT IS A DECISION, NOT A CON[straint]…"* — live COMMENT, 4 743 chars (`comments.out:12`).
 
 **(a)** `symbol` · `session_date` date · `ts` · `session_rank` bigint · `net_gex_cr` · `gamma_side` text · `spot` · `session_min_net_gex_cr` · `session_max_net_gex_cr` · `n_runs` bigint · `session_complete` bool · `expiry_date` date · `dte` int.
 
@@ -305,7 +305,7 @@ So the ~8× ATM implied volatility is not an unexplained property of the vendor'
 
 **(d)** `gamma_side` observed `AMPLIFYING` (34), `DAMPENING` (26) — complete set (`emittable_literals.out:7`). `session_complete` observed `true` (58), `false` (2).
 
-**(e)** RLS off; anon `SELECT` only (`acl.out:13`).
+**(e)** RLS off; anon `SELECT` only (`acl.out:12`).
 
 > **The daily value is a single sample, not a session aggregate**, and the min/max columns prove it: SENSEX 09-24 closes at +1.1M inside a range of −15.6M to +5.9M. **A river rendered from `net_gex_cr` alone draws a line through one arbitrary point of each day's range.** The min/max columns exist precisely so a renderer can show the band; it should.
 
@@ -315,7 +315,7 @@ So the ~8× ATM implied volatility is not an unexplained property of the vendor'
 
 **(f)** `sql/2026-09-24_s83_v_iv_term_structure.sql:69` · **ENH-130**.
 
-**(b)** *"One row per (symbol, leg) at the LATEST ts per symbol. Grain (symbol, leg). Consumers MUST ORDER BY symbol, leg… DISPLAY ONLY… ATM IS THE HOUSE SPOT GRID, round(spot / step) * step."* — live COMMENT, 4 922 chars (`comments.out:11`).
+**(b)** *"One row per (symbol, leg) at the LATEST ts per symbol. Grain (symbol, leg). Consumers MUST ORDER BY symbol, leg… DISPLAY ONLY… ATM IS THE HOUSE SPOT GRID, round(spot / step) * step."* — live COMMENT, 4 922 chars (`comments.out:13`).
 
 **(a)** `symbol` · `ts` · `leg` bigint · `expiry_date` · `dte` int · `dte_sessions` bigint · `t_years` numeric · `atm_strike` · `ce_iv` · `pe_iv` · `atm_iv` · `parity_gap` · `spread_vs_front` · `fwd_vol_from_prev` · `is_back` bool · `term_slope` · `front_is_0dte` bool.
 
@@ -332,7 +332,7 @@ NIFTY in contango (+0.50), SENSEX in backwardation (−0.14).
 
 **(d)** `is_back` observed `false` (2), `true` (2). `front_is_0dte` observed `false` (4); **`true` unobserved** — reachable on any expiry day. No text status column (`emittable_literals.out:8` is empty).
 
-**(e)** RLS off; anon `SELECT` only (`acl.out:14`).
+**(e)** RLS off; anon `SELECT` only (`acl.out:13`).
 
 > **Two legs is the whole term structure available.** Capture depth shipped at stage 1 (W1+W2); depth 4 remains gated, and ADR-025 Amendment B3 records that the gate *cannot currently be read* because the telemetry it depends on counts an event that has never occurred. **A renderer must not draw a term-structure curve** — it has two points, and `fwd_vol_from_prev` is defined only on leg 2.
 
@@ -342,7 +342,7 @@ NIFTY in contango (+0.50), SENSEX in backwardation (−0.14).
 
 **(f)** `sql/2026-09-25_s83_v_iv_surface.sql:77` · **ENH-132**.
 
-**(b)** *"a strike by expiry mesh of implied volatility at the LATEST `option_chain_snapshots` ts per symbol, with a companion SKEW per leg. Grain (symbol, ts, expiry_date, strike). Consumers MUST ORDER BY symbol, leg, strike."* — live COMMENT, 4 709 chars (`comments.out:12`).
+**(b)** *"a strike by expiry mesh of implied volatility at the LATEST `option_chain_snapshots` ts per symbol, with a companion SKEW per leg. Grain (symbol, ts, expiry_date, strike). Consumers MUST ORDER BY symbol, leg, strike."* — live COMMENT, 4 709 chars (`comments.out:14`).
 
 **(a)** `symbol` · `ts` · `expiry_date` · `leg` bigint · `dte` int · `spot` · `strike` · `moneyness_pct` · `side_used` text · `ce_iv` · `pe_iv` · `iv` · `parity_gap` · `oi_otm` · `iv_over_atm` · `quote_state` text · `leg_atm_strike` · `leg_atm_iv` · `leg_k98` · `leg_skew_98` · `leg_status` text.
 
@@ -350,7 +350,7 @@ NIFTY in contango (+0.50), SENSEX in backwardation (−0.14).
 
 **(d)** `quote_state` observed `OTM_QUOTED` (861), `OTM_ABSENT` (7). `leg_status` observed `OK` (868); **`SKIPPED_EXPIRY` unobserved** — emitted when `dte = 0` (`v_iv_surface.sql:187`), reachable every expiry day. `side_used` observed `CE` (497), `PE` (371) — complete set.
 
-**(e)** RLS off; anon `SELECT` only (`acl.out:15`).
+**(e)** RLS off; anon `SELECT` only (`acl.out:14`).
 
 > `leg_skew_98` is a **server-side** skew the front end does not read; it computes its own from ATM CE/PE instead. See Part 2. Note also that the OTM publication convention is what keeps the P3 / TD-S83-NEW-5 stale-`ltp` rows off this surface — a property of the convention, not a fix.
 
@@ -360,15 +360,15 @@ NIFTY in contango (+0.50), SENSEX in backwardation (−0.14).
 
 **(f)** `sql/2026-09-22_s80_v_gex_max_pain.sql:54` · **ENH-123**.
 
-**(b)** **No COMMENT live** (`comments.out:13`), though the file ships one at `:125`. Grain from the body and data: `(symbol, run_id, expiry_date, candidate_strike)` — one row per candidate strike, **sourced from `gex_strike_snapshots`**.
+**(b)** **No COMMENT live** (`comments.out:15`), though the file ships one at `:125`. Grain from the body and data: `(symbol, run_id, expiry_date, candidate_strike)` — one row per candidate strike, **sourced from `gex_strike_snapshots`**.
 
 **(a)** `symbol` · `run_id` · `ts` · `expiry_date` · `dte` · `candidate_strike` · `total_pain` · `max_pain_strike` · `max_pain_value` · `side` text · `n_strikes` bigint · `call_oi_coverage_pct` · `put_oi_coverage_pct` · `snapshot_age_min` · `stale_floor_min_used` · `is_fresh` bool.
 
-**(c)** `samples_13_17.out:3-10` — 3 lowest-pain candidates per symbol. NIFTY max pain **23 250** (pain 40 137 719 250), 138 strikes, coverage 89.1 / 87.7 %. SENSEX max pain **71 200** (16 400 124 000), 137 strikes, coverage 79.6 / 78.1 %.
+**(c)** `samples_13_17.out:4-9` — 3 lowest-pain candidates per symbol. NIFTY max pain **23 250** (pain 40 137 719 250), 138 strikes, coverage 89.1 / 87.7 %. SENSEX max pain **71 200** (16 400 124 000), 137 strikes, coverage 79.6 / 78.1 %.
 
 **(d)** `side` observed `MAX_PAIN` (2), `CE_SIDE` (188), `PE_SIDE` (85) — complete set (`emittable_literals.out:10`). `is_fresh` observed `false` only (275).
 
-**(e)** RLS off; anon **`MAINTAIN` + `SELECT`** (`acl.out:16`).
+**(e)** RLS off; anon **`MAINTAIN` + `SELECT`** (`acl.out:15`).
 
 > **Finding (P4) — a non-SELECT privilege on anon.** See §17 note. Also the second instance of the §6 COMMENT gap (`comment_grant_in_file.out`).
 
@@ -378,7 +378,7 @@ NIFTY in contango (+0.50), SENSEX in backwardation (−0.14).
 
 **(f)** `sql/2026-09-22_s80_v_gex_pin_maxpain.sql:72` · **ENH-124**.
 
-**(b)** **No COMMENT live** (`comments.out:14`); file ships one at `:137`. Grain `(symbol)` — one row per symbol, joining §3 pin zone, §13 max pain and §5 walls (`v_gex_pin_maxpain.sql:63`).
+**(b)** **No COMMENT live** (`comments.out:16`); file ships one at `:137`. Grain `(symbol)` — one row per symbol, joining §3 pin zone, §13 max pain and §5 walls (`v_gex_pin_maxpain.sql:63`).
 
 **(a)** 30 columns — `symbol` · `run_id` · `ts` · `expiry_date` · `dte` · `spot` · `sigma` · `atm_iv_used` · `max_pain_strike` · `peak_pin_strike` · `pin_lower` · `pin_upper` · `strike_step` · `gap_points` · `gap_strikes` · `gap_sigma` · `max_pain_spot_sigma` · `peak_pin_spot_sigma` · `max_pain_in_pin_band` bool · `max_pain_in_corridor` bool · `corridor_state` text · `corridor_width_sigma` · `pin_n_strikes` bigint · `tau_used` · `chain_n_strikes` bigint · `call_oi_coverage_pct` · `put_oi_coverage_pct` · `sigma_overstated_expiry_day` bool · `snapshot_age_min` · `is_fresh` bool.
 
@@ -393,7 +393,7 @@ NIFTY in contango (+0.50), SENSEX in backwardation (−0.14).
 
 **(d)** `corridor_state` observed `INSIDE` (2); the other three of §5's vocabulary unobserved. `sigma_overstated_expiry_day` observed `false`; `true` reachable at 0 DTE (it carries TD-S79-NEW-1 in the row). `max_pain_in_pin_band` / `max_pain_in_corridor` both observed `true` and `false`.
 
-**(e)** RLS off; anon **`MAINTAIN` + `SELECT`** (`acl.out:17`).
+**(e)** RLS off; anon **`MAINTAIN` + `SELECT`** (`acl.out:16`).
 
 > S80 measured the pin↔max-pain gap as a **stable −0.4σ** over 11 795 runs, never changing sign. Today: −0.523σ and −0.151σ. **Whether it predicts anything is UNANSWERED by design** (ADR-025 Amendment A); a renderer must not imply otherwise.
 
@@ -403,15 +403,15 @@ NIFTY in contango (+0.50), SENSEX in backwardation (−0.14).
 
 **(f)** `sql/2026-09-22_s81_v_max_pain_by_strike_latest_ts_retrofit.sql:121` · **ENH-128** (retroactive registration, S81). Two superseded bodies exist in `sql/`; **the retrofit file is current** — a rebuild from either of the others reintroduces a measured ~4-week clock to the PostgREST ceiling.
 
-**(b)** *"max pain per candidate strike, scoped to the LATEST snapshot and its FRONT expiry. Grain (symbol, expiry_date, candidate_strike). THE EXPIRY FILTER IS THE FIX: the S40 baseline grouped by (symbol, strike) with no expiry in the grain, so a snapshot carrying two expiries collapsed into a per-strike max() MIXTURE of two different contracts."* — live COMMENT, 5 062 chars (`comments.out:15`).
+**(b)** *"max pain per candidate strike, scoped to the LATEST snapshot and its FRONT expiry. Grain (symbol, expiry_date, candidate_strike). THE EXPIRY FILTER IS THE FIX: the S40 baseline grouped by (symbol, strike) with no expiry in the grain, so a snapshot carrying two expiries collapsed into a per-strike max() MIXTURE of two different contracts."* — live COMMENT, 5 062 chars (`comments.out:17`).
 
 **(a)** `symbol` · `candidate_strike` · `total_pain` · `max_pain_strike` · `side` text · `ts` · `expiry_date` · `dte` · `n_strikes` bigint · `snapshot_age_min` · `stale_floor_min_used` · `is_fresh` bool.
 
-**(c)** `samples_13_17.out:21-28`. NIFTY max pain **23 250**, pain 38 139 112 250, **269 strikes**, ts **10:10:04**. SENSEX **71 200**, 15 036 832 000, **186 strikes**, ts 10:10:04.
+**(c)** `samples_13_17.out:22-27`. NIFTY max pain **23 250**, pain 38 139 112 250, **269 strikes**, ts **10:10:04**. SENSEX **71 200**, 15 036 832 000, **186 strikes**, ts 10:10:04.
 
 **(d)** `side` observed `MAX_PAIN` (2), `CE_SIDE` (287), `PE_SIDE` (166) — complete set. `is_fresh` `false` only.
 
-**(e)** RLS off; anon `SELECT` only (`acl.out:18`).
+**(e)** RLS off; anon `SELECT` only (`acl.out:17`).
 
 > **Finding (P5) — two max pains, and they are not interchangeable.** §13 and §15 both compute max pain and **agree on the strike** (23 250 / 71 200) while disagreeing on everything else: **138 vs 269 strikes** (NIFTY), **40.14bn vs 38.14bn** total pain, **09:50 vs 10:10** ts. They read different substrates — §13 the GEX run, §15 the raw chain.
 >
@@ -423,7 +423,7 @@ NIFTY in contango (+0.50), SENSEX in backwardation (−0.14).
 
 **(f)** `sql/2026-05-25_enh81_v_dealer_flow_sim.sql:30` · **ENH-81**.
 
-**(b)** *"dealer flow projection at ±0.5%, ±1%, ±2% scenarios for latest run_id per symbol. First-order approximation per ADR-014 §2.3 sign convention."* — live COMMENT, 153 chars (`comments.out:16`). Grain `(run_id, scenario)` — six rows per symbol.
+**(b)** *"dealer flow projection at ±0.5%, ±1%, ±2% scenarios for latest run_id per symbol. First-order approximation per ADR-014 §2.3 sign convention."* — live COMMENT, 153 chars (`comments.out:18`). Grain `(run_id, scenario)` — six rows per symbol.
 
 **(a)** `run_id` · `symbol` · `expiry_date` · `ts` · `scenario` text · `spot_pct` · `perturbed_spot` · `net_gex` · `flow_cr` · `direction` text · `crosses_flip` bool.
 
@@ -431,7 +431,7 @@ NIFTY in contango (+0.50), SENSEX in backwardation (−0.14).
 
 **(d)** `direction` observed `BUY` (6), `SELL` (6) — complete set. `scenario` all six observed. `crosses_flip` `false` (9), `true` (3).
 
-**(e)** RLS off; anon `SELECT` only (`acl.out:19`).
+**(e)** RLS off; anon `SELECT` only (`acl.out:18`).
 
 > `flow_cr` is **exactly linear** in `spot_pct` (NIFTY: 6 890.85 / 13 781.69 / 27 563.39 for 0.5/1/2 %) because `net_gex` is held constant across scenarios — visible in the sample, where all six rows carry the identical `net_gex`. **It is a first-order restatement of net gamma, not a simulation**; three scenarios per side convey no more than one. A renderer should present it as a slope, not a grid of six independent outcomes.
 
@@ -441,7 +441,7 @@ NIFTY in contango (+0.50), SENSEX in backwardation (−0.14).
 
 **(f)** `sql/2026-07-02_enh115_participant_positioning.sql:58` · **ENH-115**.
 
-**(b)** *"Freshness read for the ADR-018 recency guard: newest participant row per exchange. Consumers (ENH-116 Lens 3) compare trade_date to the trading calendar and flag, never silently tilt on a stale board."* — file `:55-57` (no live COMMENT, `comments.out:17`). Grain `(exchange)` via `DISTINCT ON`.
+**(b)** *"Freshness read for the ADR-018 recency guard: newest participant row per exchange. Consumers (ENH-116 Lens 3) compare trade_date to the trading calendar and flag, never silently tilt on a stale board."* — file `:55-57` (no live COMMENT, `comments.out:19`). Grain `(exchange)` via `DISTINCT ON`.
 
 **(a)** Three columns only: `exchange` text · `trade_date` date · `created_at` timestamptz.
 
@@ -449,7 +449,7 @@ NIFTY in contango (+0.50), SENSEX in backwardation (−0.14).
 
 **(d)** `exchange` observed `NSE` only. The base table's CHECK admits `BSE` — structurally emittable, and **it will not appear**, because no BSE participant-OI report exists.
 
-**(e)** RLS off; anon **`MAINTAIN` + `SELECT`** (`acl.out:20`).
+**(e)** RLS off; anon **`MAINTAIN` + `SELECT`** (`acl.out:19`).
 
 > **This view carries no OI.** It is a freshness probe — date and nothing else. **A renderer cannot build a participant tilt from it**; that requires `participant_oi_daily`, which is outside this contract's eighteen. Its one value to a renderer is the staleness badge: today's row is dated **09-24**, one session back.
 
@@ -459,7 +459,7 @@ NIFTY in contango (+0.50), SENSEX in backwardation (−0.14).
 
 **(f)** `sql/2026-05-26_enh83_merdian_parameters.sql:22` · **ENH-83** (ADR-016).
 
-**(b)** *"Temporal-immutable parameter store per ADR-016. Append-only writes; the active row per key is the one with valid_to IS NULL."* — live COMMENT, 186 chars (`comments.out:18`).
+**(b)** *"Temporal-immutable parameter store per ADR-016. Append-only writes; the active row per key is the one with valid_to IS NULL."* — live COMMENT, 186 chars (`comments.out:20`).
 
 **(a)** `id` uuid · `key` text · `value_text` · `value_num` numeric · `value_bool` bool · `value_jsonb` jsonb · `value_type` text · `category` text · `description` text · `min_value` · `max_value` · `valid_from` · `valid_to` · `changed_by` text · `change_reason` text · `created_at`.
 
@@ -473,7 +473,7 @@ NIFTY in contango (+0.50), SENSEX in backwardation (−0.14).
 
 The union is **at least 13 keys** and the live count is unverified. CLAUDE.md records 11 active rows at S39, which is already inconsistent with this union — another reason to measure rather than assume.
 
-**(e)** RLS **on**; anon `SELECT` only (`acl.out:21`).
+**(e)** RLS **on**; anon `SELECT` only (`acl.out:20`).
 
 ---
 
@@ -573,7 +573,7 @@ Seven concepts the design brief names. Each was probed against **every column of
 
 ### 1. Canonical sigma-to-expiry — **NO CANONICAL FIELD; four definitions, two conventions**
 
-Not absent — *unreconciled*. `gap_probe.out:2` finds four: `v_gex_strike_walls.sigma`, `v_gex_strike_rank.sigma`, `v_gex_pin_maxpain.sigma`, `v_gex_repriced_flip.sigma_1d`.
+Not absent — *unreconciled*. `gap_probe.out:3` finds four: `v_gex_strike_walls.sigma`, `v_gex_strike_rank.sigma`, `v_gex_pin_maxpain.sigma`, `v_gex_repriced_flip.sigma_1d`.
 
 - **Walls** (`v_gex_strike_walls.sql:127`) and **rank** (`v_gex_strike_rank.sql:185`) are textually identical: `spot * atm_iv/100 * sqrt(GREATEST(dte,1)/252.0)` — **252 trading-day year, horizon = to expiry**.
 - **pin_maxpain** does not compute one; it inherits `w.sigma` from walls (`v_gex_pin_maxpain.sql:105`). Same definition.

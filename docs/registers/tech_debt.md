@@ -64,6 +64,22 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > rather than deleted because removing a header is an operator call, not a doc-close
 > edit. **Recommend deletion next session.**
 
+### TD-S84-NEW-1 (S3 priority) — the `sql/` file does not reproduce the live `merdian_ro` grant on two of the three S83 views, so a rebuild from `sql/` yields a view the verification role reads as EMPTY
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Real but latent. All three views are live, granted and readable today, so nothing in production is degraded; the defect fires only when a view is rebuilt from its `sql/` file. Not S2 because no consumer is affected now; not S4 because the failure it produces is a silent empty read **inside the verification path itself**, which is the class most likely to make a later session confidently wrong. |
+| **Filed** | 2026-09-25 (Session 84) |
+| **Component** | `sql/2026-09-24_s83_v_iv_term_structure.sql` · `sql/2026-09-25_s83_v_gex_repriced_flip.sql` · `sql/2026-09-25_s83_v_iv_surface.sql:303` · `merdian_ro` role · `bin/roq.sh` |
+| **Measured** | `merdian_ro` holds `SELECT` **live** on all three views — `v_gex_repriced_flip`, `v_iv_surface`, `v_iv_term_structure` (`scratch/s84_item0/c2_grants.out:8`, `:13`, `:18`). Only **one** of the three `sql/` files carries the statement that produces it: `sql/2026-09-25_s83_v_iv_surface.sql:303`, `GRANT SELECT ON public.v_iv_surface TO merdian_ro;` (`scratch/s84_l78/c2_expected_from_files.out`). The other two carry a `REVOKE ALL … FROM anon` + `GRANT SELECT … TO anon` pair and **no `merdian_ro` grant at all**. |
+| **Consequence of a rebuild** | A view correct in body, correctly granted to `anon`, and **unreadable by the verification role**. `bin/roq.sh` then returns **zero rows, silently**, and a silent zero is indistinguishable from a genuinely empty view — the **TD-S37-03** shape (*"RLS misconfiguration produces silent empty datasets, not auth errors"* — TD-S37-03 heading, this file), reached here by a missing grant rather than by a policy. The reading would be a property of the reader. |
+| **Shape** | **TD-S81-NEW-5's failure aimed at `merdian_ro` instead of `anon`.** That entry's proper fix states the rule generally: **"`sql/` files ship COMMENT and GRANT as live statements, never as commentary"** (TD-S81-NEW-5, *Proper fix* row, this file). The rule was applied to the `anon` grant on all three files and to the `merdian_ro` grant on **one of three**. |
+| **Why the existing check does not catch it** | ADR-025 D2 clause 4 reads *"It has an ENH register entry and its DDL is committed under `sql/`"* (`docs/decisions/ADR-025-parity-acceptance-criterion.md:45`), and its stated rationale is recoverability — *"a view living only in the live database is one `DROP` from unrecoverable, and cannot be rebuilt from the repo"* (`:51`). TD-S81-NEW-5 records the consequence in terms: the clause *"is met **in letter** while `sql/` is not a rebuild source. The clause tests for a file, not for fidelity"* (TD-S81-NEW-5, *Bears on ADR-025* row, this file). A file-existence test passes on all three files here; only comparing each file's grant statements against `pg_class.relacl` separates them. |
+| **Cost to fix** | **~10 min ESTIMATE, not measured.** One `GRANT SELECT ON public.<view> TO merdian_ro;` appended to the grant block of each of the two files, matching the placement already used at `sql/2026-09-25_s83_v_iv_surface.sql:303`. **No DDL against the live database** — the live grants are already correct; only the rebuild sources are short. Operator to confirm before scheduling against it. |
+| **Blocked by** | nothing. |
+| **Cross-ref** | **TD-S81-NEW-5** (the rule this misses, and its original shape) · **TD-S81-NEW-16** (`merdian_ro` silent-zero — why an unreadable view is dangerous rather than merely inconvenient) · **TD-S37-03** (silent empty datasets, not auth errors) · **ADR-025 D2 clause 4** · **CLAUDE.md Rule 0** · `docs/research/capture_s84.md` §1.3 and §4. |
+| **Status** | **OPEN.** |
+
 ### TD-S83-NEW-1 (S3 priority — **RESOLVED S83 2026-09-25, same session; first clean run OBSERVED, not assumed**) — a stale second config in `/etc/logrotate.d/` made the nightly rotation fail on two consecutive nights, and nothing in MERDIAN could see it
 
 | Field | Value |

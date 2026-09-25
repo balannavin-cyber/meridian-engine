@@ -1939,3 +1939,43 @@ on a substring), **all `dow=1-5`**, **WEEKEND-INCLUSIVE = 0**. No `.sh`/`.servic
   same pass, **60 lines**, `diff` against the live crontab **empty**, `git diff
   --numstat` exactly **1 added / 0 deleted**. The register and the live crontab were
   byte-identical at session start and are byte-identical at session close.
+
+---
+
+## §S83 — Session 83 (2026-09-24/25): one host config file moved out of an active directory, and nothing else on the box changed
+
+**The whole topology change is one `mv`.** No cron line added, removed or edited. No systemd unit
+or timer touched. No token rotated, no credential changed, no service restarted. No production
+Python deployed — the session's three deliverables are database views, applied by the operator in
+the Supabase SQL editor, and views are not topology.
+
+### S83.1 — `/etc/logrotate.d/meridian.PRE_20260922` moved to `/root/`
+
+| Field | Value |
+|---|---|
+| **What** | `/etc/logrotate.d/meridian.PRE_20260922` → `/root/logrotate.meridian.PRE_20260922` |
+| **Why** | `/etc/logrotate.d/` is read **in full** by logrotate. A backup kept there is not inert — it is a second live config, and this one duplicated the two paths the live `meridian` config already names. |
+| **Provenance** | `stat` gives mtime **2026-09-22 04:48:04 UTC**, size **211**. **No session is named**: the mtime is the only evidence in hand and the writer has not been traced. |
+| **Method** | Moved, **not deleted**. `sha256sum` identical before and after the move. `/etc/logrotate.d/meridian` was **not edited**. |
+| **Blast radius while broken** | Both nights emitted, identically: `error: meridian.PRE_20260922:1 duplicate log entry for /home/ssm-user/meridian-engine/cron.log`, the same for `/home/ssm-user/meridian-engine/logs/*.log`, then `error: found error in file meridian.PRE_20260922, skipping`, then `logrotate.service: Main process exited, code=exited, status=1/FAILURE`. **logrotate SKIPPED the offending file rather than aborting on it**, and the service still exited `1/FAILURE`. **SCOPE NOT ESTABLISHED:** the journal never names which stanzas of the live config rotated, or whether any did. Settling it needs `logrotate -v` or the rotated files' mtimes; neither was run. |
+| **Verification** | The **next scheduled run was observed**, not assumed: `Starting Rotate log files...` 00:00:01, `Deactivated successfully` 00:00:03, **`Finished Rotate log files.` 00:00:03**, `Consumed 1.223s CPU time`, 2026-09-25. |
+| **Filed as** | **TD-S83-NEW-1**, filed and **CLOSED** in the same session, because the close condition is a single observed run and that run occurred inside the session. |
+
+### S83.2 — the failure was invisible to this host's operators for a structural reason
+
+`logrotate.service`'s journal is **root-readable**. An unprivileged `journalctl -u
+logrotate.service` returns `No entries` — the same output a clean run would produce — so the first
+read of this session found nothing and would have ended the investigation there. The `sudo` read of
+the same unit and window returned both nights of failures. **Nothing in MERDIAN reads that journal
+at all**, which is the larger gap and is recorded in TD-S83-NEW-1 rather than closed here.
+`bin/disk_guard.sh` (TD-S80-NEW-18, **RESOLVED S81**, first scheduled run observed) is the nearest
+existing watcher and does not cover this: a rotation that silently stops only becomes visible in
+disk headroom once the logs have grown enough to matter, which is exactly the lag in question.
+
+### S83.3 — unchanged and re-confirmed
+
+The `eod_health_check` cron installed at S82 **fired on schedule for the first time**: 2026-09-25
+**00:45 UTC**, `--date prev` resolving 2026-09-24 through the rule engine, verdict **`[ OK ] clean
+session`**. That is the S82 line working as installed; no topology change follows from it. One S82
+expectation about its output did not hold and is recorded in §D.39 rather than here, because it is
+a claim about a check's semantics, not about deployment.

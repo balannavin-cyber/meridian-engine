@@ -1915,3 +1915,66 @@ strikes does W2 win the baseline's `max()` on either side — W1 peak OI **19,13
 against W2's **1,956,955**, 9.8×. The defect is armed on NIFTY and cannot fire while
 W1 dominates pointwise. **Stage 1 is HALF-VERIFIED**; the NIFTY arm needs a near-0-DTE
 day — **2026-09-29**.
+
+---
+
+## §S83 — Session 83: three parity views on the live chain, one of them independent of a scalar it resembles (2026-09-24/25)
+
+Three views added to the live database, **no production Python changed**. All three are scoped to
+the **latest ts per symbol** by the ADR-021 pattern — a recursive skip scan for the symbol list,
+then `CROSS JOIN LATERAL (… ORDER BY ts DESC LIMIT 1)` — and **none orders by `created_at`**,
+because ingest computes one `snapshot_ts` per cycle and reuses it while `created_at` is a DB-side
+default that runs later for the extra-expiry pass (S81, `89bc83e`).
+
+| View | ENH | Relations read **by the view body** | Grain | Cols | Latency |
+|---|---|---|---|---|---|
+| `v_iv_term_structure` | ENH-130 | `option_chain_snapshots`, `trading_calendar` | (symbol, leg) | 17 | — |
+| `v_gex_repriced_flip` | ENH-131 | `option_chain_snapshots`, `index_futures_snapshots` | (symbol) | 18 | 122.9 ms |
+| `v_iv_surface` | ENH-132 | `option_chain_snapshots` | (symbol, ts, expiry_date, strike) | 21 | 28.1 ms |
+
+The column says **view body** deliberately. A `FROM`/`JOIN` grep over the three files also returns
+`v_iv_term_structure` (from L10) and `pg_depend`/`pg_rewrite` (from L3), and **every one of those
+sits inside a commented Section 4 verification block** — L10 `:320`/`:324`, L3 `:398`/`:399` — not
+in any view. **No view reads another view, and none reads `gex_strike_snapshots`**: L3 builds its
+leg set from `option_chain_snapshots`, the same table it reprices.
+
+**`v_iv_term_structure` (L9)** — one row per listed expiry in the latest cycle, carrying ATM IV,
+the spread against the front leg, the forward volatility implied between adjacent legs, and the
+term slope. `leg` is a `dense_rank()` over `expiry_date`, so leg 1 is the front and numbering is
+gapless. `trading_calendar` is read only for `dte_sessions`, and **returns NULL beyond the seeded
+horizon** rather than a short count (ADR-020: an absent row is not a verdict).
+
+**`v_gex_repriced_flip` (L3)** — one row per symbol. It reprices the front-expiry chain with
+Black-Scholes gamma from each strike's own IV, sweeps 201 points across ±10 % of spot, and
+publishes the sign change nearest spot. It is the only one of the three that reads a second
+**market-data** table: `index_futures_snapshots`, for the session-median futures carry used as
+`r`, over a window running 09:20 IST through the snapshot ts with **no look-ahead**. (L9 also
+reads a second relation, `trading_calendar`, but that is a calendar, not a price series.) **It
+neither reads nor writes `gamma_metrics.flip_level`** (ADR-025 B7) — the two are independent
+measurements of one idea and may disagree, and per TD-S79-NEW-17 the existing column is not even
+one construction.
+
+**`v_iv_surface` (L10)** — a strike × expiry mesh with **no fitting, no interpolation and no
+moneyness cut**. `iv` is the OTM side (put below spot, call above); both raw sides and their
+difference stay published so the convention is auditable per row. Four of its CTEs are marked
+**`AS MATERIALIZED`**, which is load-bearing rather than cosmetic: inlined, its ranking CTE ran
+once per output row and the view took **2,715 ms**.
+
+**dte-0 behaviour DIFFERS BY VIEW and must not be generalised.** Verified per file, not assumed:
+
+- **L9 does NOT skip.** `SKIPPED_EXPIRY` appears **0 times** in its file. A dte-0 front leg is kept
+  with all its values and carries `front_is_0dte = true`, a **display flag only** — no rows are
+  dropped and there is no fallback. The COMMENT records why: term slope on an expiry-day front leg
+  is dominated by expiry mechanics and is not comparable to a normal-day reading, which is a
+  statement about interpretation rather than a reason to withhold the number.
+- **L3 skips outright.** A dte-0 symbol returns `status = 'SKIPPED_EXPIRY'` with `flip` NULL. Per
+  S62, expiry-day 0-DTE gamma exposure is numerically unreconstructible, so it is marked and never
+  floored.
+- **L10 skips partially.** A dte-0 leg carries `leg_status = 'SKIPPED_EXPIRY'` with `iv`,
+  `iv_over_atm`, `leg_atm_iv` and `leg_skew_98` withheld, while **`ce_iv` and `pe_iv` are KEPT** so
+  the degradation stays inspectable.
+
+**Genuinely shared conventions.** `NULLIF(iv, 0)` in all three — the feed encodes absence as zero,
+measured at **0 NULLs against 20–134 zeros per side per leg**. `COMMENT`, `REVOKE` and `GRANT` ship
+as **live statements** in `sql/` (TD-S81-NEW-5), and the anon path was verified by `SET ROLE anon`
+rather than by object existence.

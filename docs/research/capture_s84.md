@@ -323,7 +323,7 @@ Excluding the `dte = 0` SENSEX point, `r_eff` across three points reads **0.0364
 | item | when | note |
 |---|---|---|
 | **A2** | Mon **2026-09-28**, **10:15:59 IST** (`z1_td_and_weekdays.out:24`) | gradient point — NIFTY dte 1 / SENSEX dte 3; not a T1 arm |
-| **A3** | Tue **2026-09-29**, **10:15:59 IST** (`z1_td_and_weekdays.out:25`) | **T1 arm, SENSEX dte 2** — the first of the dte 1–2 pair; NIFTY dte 0 and void. Also carries **the NIFTY L9 max-pain arm owed from S82**: TD-S80-NEW-1 stage 1 is half-verified with the NIFTY arm outstanding |
+| **A3** | Tue **2026-09-29**, **10:15:59 IST** (`z1_td_and_weekdays.out:25`) | **T1 arm, SENSEX dte 2** — the first of the dte 1–2 pair; NIFTY dte 0: offset void (expected NO-TEST, §2.8); gamma tested at E1. Also carries **the NIFTY L9 max-pain arm owed from S82**: TD-S80-NEW-1 stage 1 is half-verified with the NIFTY arm outstanding |
 | **A4** | Wed **2026-09-30**, **10:15:59 IST** | **T1 arm, SENSEX dte 1**; NIFTY dte 6 against the rolled front |
 | **E1** | Tue **2026-09-29**, **10:15:59 IST** | **NIFTY dte 0 gamma fidelity** (§2.8) — same cycle as A3 |
 | **E2** | Thu **2026-10-01**, **10:15:59 IST** | **SENSEX dte 0 gamma fidelity** (§2.8) |

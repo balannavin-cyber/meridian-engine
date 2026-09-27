@@ -227,6 +227,25 @@ They are one row. On SENSEX **72300 CE**, `ltp` sits frozen at **5464.15** from 
 
 **The candidate rule:** when two columns of one row are both anomalous, **check whether they correct together before filing them as two properties of the feed.** Here the correction order — `iv` at 04:15, `oi` at 04:20 — is itself the evidence that one upstream value drives both. Bounded and stated as such: **2 strikes, 1 session.** Filed as `TD-S84-NEW-4`; `TD-S83-NEW-5` carries the correction row.
 
+### 2.8 Expiry-day arms E1/E2 and A2–A4 time alignment (pre-registered 2026-09-27, before any run)
+
+**Purpose.** Test whether W1's gamma is reliable at the 10:15 IST cycle on expiry day (~5 h 15 m to expiry), as the first evidence toward recording W1's "charm to 15:30" on expiry days. This is T1's gamma-fidelity rule applied at dte 0. It is NOT a test of the ATM offset.
+
+| Item | Rule |
+|---|---|
+| Instrument | `s81_gonogo_query.sql` (sha256 `d5930ee5…`) with only the one-line `ts` pin, same hunk shape as `a0.sql`/`a1.sql`; pinned cycle = latest `ts` ≤ target |
+| **E1** | Tue 2026-09-29, target **10:15:59 IST**: **NIFTY dte 0** (its expiry day). Same cycle gives SENSEX dte 2 |
+| **E2** | Thu 2026-10-01, target **10:15:59 IST**: **SENSEX dte 0** (its expiry day). Same cycle gives NIFTY dte 2 (front 2026-10-06) |
+| **A2–A4 aligned** | Targets move from "~11:00" to **10:15:59 IST** on Mon 09-28 / Tue 09-29 / Wed 09-30, matching the daily 10:15 reading rule. Amended before any of them has run. Tue's A3 and E1 are therefore the same cycle |
+| Convention | `exact/365` only. `dte/365` and `dte/252` are **expected to return 0 rows at dte 0** (as A0 SENSEX did); expected, not a failure |
+| Test (the only go/no-go for E1/E2) | **Refuse if median `gamma_relerr` > 0.10 in BOTH ATM and NEAR.** T1's rule, inherited unchanged from S81, so dte 0 is judged by the same bar as dte 1–2 |
+| Precondition for the test | ATM rows after the delta band **≥ 10**, else NO-TEST. Derivation: half the smallest ATM count at a passing arm (18, A1 NIFTY) |
+| Offset (T2/T3) at dte 0 | **Pre-registered as an expected NO-TEST.** The ≥ 3×SE(median) precondition is expected to fail at dte 0: the one dte-0 arm in hand, A0 SENSEX, had SE 964.843 against a median of 22.9 (~0.02×). A failure there is not a surprise and is not read as one |
+| Prior, stated honestly | The only dte-0 gamma reading so far (A0 SENSEX, 14:10 IST, ~80 min left) failed badly: 0.8336 / 0.9918 / 1.0732. There is no prior at 10:15 (~5 h 15 m left), so no pass/fail is predicted |
+| Outcome use | A pass on both E1 and E2 starts the evidence count; it does not amend S62 by itself. A fail on either keeps W1's expiry-day charm unrecorded until re-tested |
+
+**Correction recorded.** The 2026-09-25 stale SENSEX row ran 03:05–04:10 UTC = **08:35–09:40 IST** and was corrected by **09:50 IST** (`scratch/s84_contract/oi_anomaly.out`, `iv_stale_correction.out`; verified in `scratch/s84_l78/e1_stale_window.out`). A 10:20 target was proposed in chat on a mis-converted time; 10:15:59 IST is 25 m 52 s clear of the last correction, so 10:15 stands.
+
 ---
 
 ## 3. §D rows to file
@@ -303,9 +322,11 @@ Excluding the `dte = 0` SENSEX point, `r_eff` across three points reads **0.0364
 
 | item | when | note |
 |---|---|---|
-| **A2** | Mon **2026-09-28** (`z1_td_and_weekdays.out:24`) | gradient point — NIFTY dte 1 / SENSEX dte 3; not a T1 arm |
-| **A3** | Tue **2026-09-29** (`z1_td_and_weekdays.out:25`) | **T1 arm, SENSEX dte 2** — the first of the dte 1–2 pair; NIFTY dte 0 and void. Also carries **the NIFTY L9 max-pain arm owed from S82**: TD-S80-NEW-1 stage 1 is half-verified with the NIFTY arm outstanding |
-| **A4** | Wed **2026-09-30** | **T1 arm, SENSEX dte 1**; NIFTY dte 6 against the rolled front |
+| **A2** | Mon **2026-09-28**, **10:15:59 IST** (`z1_td_and_weekdays.out:24`) | gradient point — NIFTY dte 1 / SENSEX dte 3; not a T1 arm |
+| **A3** | Tue **2026-09-29**, **10:15:59 IST** (`z1_td_and_weekdays.out:25`) | **T1 arm, SENSEX dte 2** — the first of the dte 1–2 pair; NIFTY dte 0 and void. Also carries **the NIFTY L9 max-pain arm owed from S82**: TD-S80-NEW-1 stage 1 is half-verified with the NIFTY arm outstanding |
+| **A4** | Wed **2026-09-30**, **10:15:59 IST** | **T1 arm, SENSEX dte 1**; NIFTY dte 6 against the rolled front |
+| **E1** | Tue **2026-09-29**, **10:15:59 IST** | **NIFTY dte 0 gamma fidelity** (§2.8) — same cycle as A3 |
+| **E2** | Thu **2026-10-01**, **10:15:59 IST** | **SENSEX dte 0 gamma fidelity** (§2.8) |
 | **T1 verdict** | after A3 + A4 | not reachable on the current n; rule and thresholds pre-registered at §2.6 |
 | **Decisions L78-1 / L78-2 / L78-3** | after T1 | blocked on the verdict; scope stated at §2.6 |
 | **EC2 HEAD re-read** | next session open | one line, to close §1.1 with a measurement by this tool |

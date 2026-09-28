@@ -8,6 +8,107 @@
 
 ## Last session
 
+**Session 84 — 2026-09-25 → 2026-09-28 (Fri–Mon).** Measure-only. **No production
+change, no DDL, no write of any kind to the database.** Six commits, all documentation.
+
+| Field | Value |
+|---|---|
+| **Item 0 — the three S83 views** | Three-way hash: authoring and `origin/main` both `18c2fb8`, EC2 `bb374ae` — ancestor, 1 commit, 16 files, **0 `.py`**; operator pulled 16:51 IST. `COMMENT` len/md5 **3/3 MATCH** against expected values **computed from the `sql/` file literal**, not recalled. `anon` holds **SELECT and nothing else** on all three. **`Seq Scan` = 0** on all three plans. L3 SENSEX reads **`NO_CROSSING`** — the designed third clause, reachable and fired, not a dead arm. |
+| **ENH-98 — the instrument was recovered, not rebuilt** | The S81 go/no-go query **was never saved as a file**; it existed only in a markdown fence (`s81_docclose_notes.md:696-773`, 78 lines). Extracted verbatim, sha256 **`d5930ee5…`**, matching variant **LF + trailing newline**. **A0 reproduces the S82 record 12/12 with no MISS.** A1 is a new point. `r_eff` is **INFORMATIONAL (T3)**: 3.64 %–3.81 % across three points against the instrument's hardcoded 0.065 — consistent with a **rate-convention** difference, not a spot effect, and filed with its n stated. |
+| **Pre-registered, before any run** | **T1** as the sole go/no-go at §2.6 (refuse if `exact/365 gamma_relerr` median > 0.10 in BOTH ATM and NEAR, at SENSEX dte 1–2), with the **corrected** precondition — **across-strike** SE of the median, ≥ 3×, not the across-cycle band. **E1/E2** at §2.8, expiry-day arms at **10:15:59 IST**, with the dte-0 offset pre-registered as an **expected NO-TEST** so its failure cannot be read later as news. |
+| **Ledger** | TDs_NEW=**7** (TD-S84-NEW-1..7), TDs_CLOSED=0. ADRs_NEW=**0**, ADRs_AMENDED=**0**, **no Decision Index row — stated as a decision.** Enhancement Register TRIGGERED (ENH-98). Six commits: `35c3fea` → `f1b6778` → `6c0730c` → `caffcf7` → `2ce8f95` → `3805922`. |
+| **`parity_render_contract.md`** | New, 1,637 lines — the 18-object read contract, the front-end consumer map, the gap list. **39 citation offsets corrected at source**: `acl.out` and `comments.out` both carry a two-line header, so `ord N` sits at file line `N+2`; the document cited `ord+3` for one and the bare `ord` for the other. Post-fix re-audit: **0 mis-resolved.** |
+| **P1–P7 → six TDs, one declined** | P1→NEW-2, P2→NEW-3, P3→NEW-4, P4→NEW-5, P5→NEW-6, P7→NEW-7. **P6 was NOT filed** — `TD-S81-NEW-8` already held the same two `meridian-connect` clones, the same stale `14b63f3` and the same S72 flat-namespace root cause; its one new measurement (live HEAD `7b60d01` → `a408fb4`) went in as an **S84 update row** instead. Filing a second entry on one root cause was declined. |
+| **A prior finding overturned on 2 strikes / 1 session** | `TD-S83-NEW-5` recorded an ~8× ATM `iv` **and** 48.7M OI as two properties of the feed. They are **one row**: `ltp` frozen 5464.15 from 03:05–04:10 UTC (08:35–09:40 IST); at 04:15 `ltp` corrects and `iv` drops **121.04 → 14.89 in the same row**; only at 04:20 does `oi` fall **48,768,100 → 40**. The **correction order** is the evidence. A correction row was appended to that entry; its existing text untouched. |
+| **Four of my own claims withdrawn on measurement** | §D.40.8. A `head -8` read as newest-first produced a confident "S80/S81 lost from the archive" — **the file appends at the end and is complete through S81**, and its own Contents field said so. A `grep -c` on the product name returned **0** because it was case-sensitive; `-ci` returns **32 across six files**. And the contract's own `.out` line citations were propagated once before being measured. |
+
+**The session's shape was recovery and pre-registration, not construction.** Nothing was
+built. The two durable artefacts are an instrument that now exists as a file with a hash,
+and two pre-registrations written before the runs they govern — which is what stops a
+later session fitting a threshold to an observation it already has.
+
+## NEXT SESSION PICKS UP
+
+**Time-boxed — these expire or get harder if missed**
+
+1. **A2 — Mon 2026-09-28, 10:15:59 IST.** Gradient point, NIFTY dte 1 / SENSEX dte 3;
+   **not** a T1 arm. The pinned instrument targets *latest `ts` ≤ target*, so A2 remains
+   runnable after the fact — it does not expire at 10:16.
+2. **A3 + E1 — Tue 2026-09-29, 10:15:59 IST, the same cycle.** A3 is the first T1 arm
+   (SENSEX dte 2); E1 is NIFTY dte 0 gamma fidelity (§2.8). Also carries **the NIFTY L9
+   stage-1 max-pain arm owed from S82** (TD-S80-NEW-1).
+3. **A4 — Wed 2026-09-30, 10:15:59 IST.** Second T1 arm, SENSEX dte 1.
+4. **E2 — Thu 2026-10-01, 10:15:59 IST.** SENSEX dte 0 gamma fidelity.
+5. **T1 verdict — after A3 + A4.** Not reachable on the current n. Rule and thresholds are
+   pre-registered at capture §2.6; **do not re-derive them after seeing the arms.**
+
+**Owed decisions — none are mine to make**
+
+6. **Capture depth — REOPENED by operator ruling.** The operator wants SENSEX the same as
+   NIFTY (W1, W2, current monthly, next monthly). This reopens the **ADR-025 S80 ruling**
+   that stood on SENSEX monthly OI at **0.089 %**. **Owed measurement: SENSEX monthly quote
+   quality — share of strikes live-quoted.** Both symbols' depth 4 stay behind the stage-2
+   gate.
+7. **Stage-2 gate redefinition — owed operator decision.** Per **TD-S81-NEW-14** the gate
+   must count **fail-fasts by class and dropped captures**, not retries: a retry-shaped
+   counter reads zero whatever happens, so the current gate cannot fail for the reason it
+   names.
+8. **P5 — which max pain is canonical** (`v_gex_max_pain` GEX-run vs `v_max_pain_by_strike`
+   raw chain). They agree on strike and disagree on strike count, total and `ts`. A renderer
+   must pick one and name it; **TD-S84-NEW-6** records that the agreement is not
+   corroboration.
+9. **The scratch-evidence decision.** `scratch/` and `research/` are untracked **and not
+   git-ignored** — the third state. Every `path:line` in `capture_s84.md` and
+   `parity_render_contract.md` points at evidence one `git clean -fd` from gone. Commit it,
+   ignore it, or accept it as session-scoped; **all three are defensible, none is chosen.**
+10. **Original owed decisions 2–5 carry unchanged** from the S83 block: the product-name
+    scrub (**32 occurrences, six files** — measured this session, case-insensitively), the
+    `authenticated` / `service_role` default grants on new views, and the vendor methodology
+    question on Greeks/IV.
+
+**Carried, not started**
+
+11. **`parity_board_design.md` A–C** — brief is in project knowledge; nothing in A–C is
+    startable from the repo alone.
+12. **EC2 pull `18c2fb8` → HEAD, then `git -C ~/meridian-engine rev-parse HEAD`** — six
+    commits behind, **all docs-only, measured** (`git diff --name-only`: 0 `.py`, 0
+    non-`docs/`). §1.1 stays open until this tool reads the post-pull hash itself.
+13. **The `merdian_parameters` editor sample** — still owed.
+14. **Commit the ENH-98 instrument to `sql/research/enh98/`** — it exists only at
+    `scratch/s84_l78/s81_gonogo_query.sql`, untracked, and it is the artefact A0's 12/12
+    reproduction depends on.
+15. **L78-1/-2/-3 are ruled, not built.** The rulings are recorded below and in the ENH-98
+    block. No build is authorised by them.
+16. **The doc-close checklist omits five files it governs** — `CLAUDE.md:129-136` names
+    neither the Assumption Register, the Decision Index, the System Map, the Deployment
+    Topology, nor `CURRENT_history.md`, all of which recent closes update. **Recorded as
+    owed; the checklist was not edited this close.**
+
+## OPERATOR RULINGS, S84
+
+These exist only in chat and are recorded here and in the ENH-98 block. **None authorises a
+build.**
+
+- **L78-1 — definition: compute BOTH.** Textbook `∂delta/∂sigma` and `∂delta/∂t` in
+  **δ-notional ₹ Cr**, *and* the parity target's `∂gamma` constructs. Each displays under a
+  **distinct name with a one-line narration**; **neither is labelled plain "vanna"/"charm".**
+- **L78-2 — scope: show BOTH.** Full standing book is **primary**; today's new positions are
+  secondary and labelled *"since open; assumes the standard dealer side"*, and are **hidden
+  when the L13 outlier guard trips** (TD-S84-NEW-4). A previous-close baseline and side
+  classification come later.
+- **L78-3 — cadence and horizon.** **One daily reading at the 10:15 IST cycle**, after the
+  initial balance. Charm horizon is **the same time next trading session**, decaying in
+  **calendar** time (weekends included). **No post-close reads.** On expiry day W2 and the
+  monthlies compute as normal; **W1's "charm to 15:30" is COMPUTED AND RECORDED under its own
+  label but NOT DISPLAYED** until E1/E2-type evidence accumulates across several expiries.
+  **S62 is amended for that leg only, and only with evidence.** A per-expiry closure record
+  (forecast vs observed) is to be designed as an extension of `expiry_outcomes` (ENH-116),
+  **schema measured first.**
+- **Capture depth — SENSEX to match NIFTY.** Recorded as an **open decision** that reopens
+  ADR-025's S80 ruling, with the owed measurement named at item 6 above.
+
+## Previous session S83
+
 **Session 83 — 2026-09-24 → 2026-09-25 (Thu–Fri).** Build. Three ADR-025 parity
 layers authored, validated and deployed; **production Python unchanged**.
 
@@ -53,92 +154,3 @@ runs **before** that day's successor refresh. Do not repeat the "every night" cl
 8. Everything under the S82 block's "Decisions owed" that S83 did not touch carries
    unchanged.
 
-## Previous session S82
-
-
-**Session 82 — 2026-09-24 (Thu).** Verification, not construction. Commits
-`c831fdf` → `29bc83e` → `25f9d1b` + this doc-close, all pushed; **all three trees
-level** and the post-15:45 batch complete.
-
-**Shipped.** `core.trading_calendar_gate.previous_trading_day()` — resolves the
-previous OPEN trading day from the **V18E rule engine**, not the database, so it is
-offline by construction and the path an offline test exercises is the path cron runs;
-returns `(date, provenance)` and the caller prints the provenance. `--date prev` and
-`--resolve-only` on `eod_health_check.py`. `bin/eod_alert.sh` with its **own**
-sentinel, deliberately not a reuse of `wsfeed_alert.sh`. A `sys.path` fix.
-
-**The lead finding.** `scripts/eod_health_check.py` **has never been scheduled** — no
-cron line, no unit, no timer — while its docstring asserts a 00:45 UTC run **twice**,
-and that claimed runtime is the stated justification for `resolve_cron_log()`'s whole
-design. ADR-025 D2 clause 2. Filed **TD-S82-NEW-3**, specced **ENH-129**.
-
-**Filed:** TD-S82-NEW-1, -2, -3, -4; ENH-129 (PROPOSED).
-
-**ENH-98 re-run — half-met, recorded against its own sentence.** ATM `delta_abserr`
-0.046 → **0.0139** against a predicted *"well under 0.01"*. Gamma refusal not met
-(NEAR 0.127 → 0.042). The residual ~12-pt offset is **neither futures basis nor
-theoretical carry** — Pearson **−0.0655** over 59 cycles. SENSEX **void** at 0 DTE.
-**Owed: a re-run with SENSEX at dte 1–2.**
-
-**L9 stage 1 — half-verified.** SENSEX **PASS**: arm (b) 196/196, baseline picks
-max-pain **71400 against 73800**. NIFTY **no-test by mechanism**: W2's 230 strikes
-are a subset of W1's 268, **zero** W2-only, and at **zero** shared strikes does W2
-win the baseline's `max()` (W1 peak OI 9.8× W2's). **NIFTY arm owed 2026-09-29.**
-
-### Post-15:45 batch — ALL FOUR DONE
-1. **Pull DONE** — `29bc83e` → `25f9d1b`, 2 files as previewed; import smoke
-   `True ('2026-09-23', 'rule-engine')`, exit 0. No rollback needed.
-2. **Live dry run DONE** — `--date 2026-09-23`, **EXIT 0**, VERDICT `[ OK ]`.
-   `equity_intraday_last` reads `[ -- ] NOT AUDITABLE` and **will every night by
-   design** (one-generation upsert table; `--date prev` is always back-dated).
-3. **Crontab installed BY THE OPERATOR — 59 → 60**, 1 entry. A manual run of the exact
-   cron line returned **`[ OK ]`, no alert files created**. First scheduled run
-   **Friday 2026-09-25 00:45 UTC** (06:15 IST), auditing **Thu 2026-09-24**.
-   `aws_crontab.txt` mirrored: 60 lines, `diff` empty, +1/0.
-
-### NEXT SESSION PICKS UP
-
-**Time-boxed — these expire or get harder if missed**
-1. **Watch the first scheduled run: FRIDAY 2026-09-25 00:45 UTC** (06:15 IST),
-   auditing Thu 2026-09-24. Confirm it fired at all, and that
-   `[ -- ] NOT AUDITABLE` on `equity_intraday_last` is **not** mistaken for a
-   failure — it will read that way every night by design.
-2. **NIFTY L9 arm on 2026-09-29** (NIFTY at/near 0 DTE). TD-S80-NEW-1 stage 1 is
-   **half-verified**, and the measured mechanism says the NIFTY arm **cannot** pass
-   before then — W2 ⊂ W1 with W1 OI dominant at every shared strike.
-3. **ENH-98 re-run with SENSEX at dte 1–2.** Today's SENSEX arm was void at 0 DTE, and
-   dte 1–2 is exactly where `dte/365` and `exact/365` separate.
-4. **The multi-DTE offset test was NOT run.** The ~12-pt ATM offset is constant on one
-   session; whether it scales with DTE is unmeasured, and that is what would
-   discriminate a `q > 0` dividend term from a fixed model offset.
-
-**Decisions owed to the operator — none are mine to make**
-5. **Token decision + Dhan API log review (TD-S81-NEW-1).** Rotation is **likely moot**
-   — but that is **INFERRED** from two dates (token minted 09-23 08:35; S81 revoke
-   2026-09-22 mid-session), **not measured**. The log review has not been done.
-6. **ADR-020 amendment for Muhurat (TD-S82-NEW-4).** The engine is deliberately
-   unfixed: reordering Rule 1 / Rule 3 changes a decision the ADR recorded, so it
-   needs an amendment, not a patch. Note the fix alone is not sufficient — every
-   consumer is `dow=1-5`, so a cron change is also required.
-7. **`compute_basis_context` cron decision (TD-S81-NEW-12).**
-8. **Delete the "illustrative seeds" template note** at the head of Active debt —
-   proposed and annotated this session, **not applied** (`c521b2f`, 2026-04-22).
-
-**Carried, not started**
-9. **TD-S81-NEW-20 NOT APPLIED** — `DhanClient` still reads the token at construction,
-   so a mid-cycle rotation still leaves a running process holding an invalidated
-   token. This is the mechanism behind the 08:35 401s.
-10. **ENH-129 is DESIGNED, NOT BUILT** — the seven depth checks, the crontab-derived
-    expected set, the **anon revoke check** (which needs an anon-key probe, not
-    `merdian_ro`) and the **RLS control** all exist only as a specification. The
-    scheduled check now running at 00:45 UTC is the *old* body.
-11. **Parity build order: L9 → L3 → L7/L8.**
-12. **Refresh "Invalid TOTP" on 09-17 and 09-24 (both Thursdays) — cause unexplained;
-    clock excluded** (chrony 0.9 µs offset, `NTPSynchronized=yes`, 30 s TOTP windows).
-    Both failures took the retry path 30 s apart and both windows were rejected. **The
-    next failed refresh is unpredictable**, and because a token outlives its printed
-    expiry (§D.38.1) a failed refresh is not itself an outage — which is precisely why
-    it has gone uninvestigated.
-13. **PK size check after upload** — do not project a byte total; read PK's own
-    reported size. Its counter read **1,796,444** for a set whose git bytes sum to
-    ~3.9 MB, so PK does not count raw bytes.

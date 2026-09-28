@@ -5,7 +5,7 @@
 | Document | `docs/registers/CURRENT_history.md` |
 | Type | Append-only archive of `CURRENT.md`'s session blocks. **Not** a working document. |
 | Split from | `CURRENT.md` at the Session 78 doc-close, 2026-09-14 |
-| Contents | Every block from **`## Previous session S81`** downward, verbatim. **CORRECTED S83:** this field read *"from `## Previous session S79`"* and was **stale again** — S80 was archived at the S82 close and the description did not move with it, which is the same self-description drift the S81 correction below records, recurring one session later. **Ordering note, measured S83:** blocks are **appended at the end**, not prepended — S79 sits at the top of the section and S80 below it — so this file is not newest-first, and S81 follows S80 at the end to match what the S82 close actually did. | **CORRECTED S81:** this field read *"from `## Previous session S76`"* and was **stale across three demotions** (S77, S78, S79) — the file's own description of itself drifted while its update rule worked correctly. **Measured S81: 76 H2 sections in total** (the field previously said 72). **The 61-session / 11-non-session split below is AS-AT-SPLIT and was NOT re-derived** — a regex over `## Previous session S…` returns 28, but older blocks use other heading forms, so 28 would be a *worse* number rather than a newer one. Recorded as unverified rather than replaced with a wrong figure. Original text follows — 61 session blocks plus 11 non-session blocks (`Live state snapshot`, `Mid-session checkpoints`, `Session-end checklist`, `Detail blocks`, `Historical Sessions Archive`), 72 H2 sections in all, spanning S76 back to Session 16. |
+| Contents | Every block from **S79** through **S82**, appended at the end, verbatim. **CORRECTED S83:** this field read *"from `## Previous session S79`"* and was **stale again** — S80 was archived at the S82 close and the description did not move with it, which is the same self-description drift the S81 correction below records, recurring one session later. **Ordering note, measured S83:** blocks are **appended at the end**, not prepended — S79 sits at the top of the section and S80 below it — so this file is not newest-first, and S81 follows S80 at the end to match what the S82 close actually did. | **CORRECTED S81:** this field read *"from `## Previous session S76`"* and was **stale across three demotions** (S77, S78, S79) — the file's own description of itself drifted while its update rule worked correctly. **Measured S81: 76 H2 sections in total** (the field previously said 72). **The 61-session / 11-non-session split below is AS-AT-SPLIT and was NOT re-derived** — a regex over `## Previous session S…` returns 28, but older blocks use other heading forms, so 28 would be a *worse* number rather than a newer one. Recorded as unverified rather than replaced with a wrong figure. Original text follows — 61 session blocks plus 11 non-session blocks (`Live state snapshot`, `Mid-session checkpoints`, `Session-end checklist`, `Detail blocks`, `Historical Sessions Archive`), 72 H2 sections in all, spanning S76 back to Session 16. |
 | Why | TD-S73-NEW-8. `CURRENT.md` had reached **749,576 bytes on disk / 752,652 in project knowledge across 3,076 lines and 62 session blocks**, in a file named *current*, read second at every session open. It was the second-largest file in a store at 92 % capacity. |
 | Project knowledge | **NOT uploaded.** Git is the archive; project knowledge is the retrieval surface. This file is reachable by `git log`/`grep` when a historical block is actually wanted. |
 | Caveat | Splitting is **necessary and not sufficient**, exactly as the S74 `CLAUDE.md` split was. The root cause is the eight-fold duplication of each session's findings across eight registers. TD-S73-NEW-8 stays **OPEN**. |
@@ -3172,3 +3172,93 @@ Recommend **Option C** — measure before changing production.
 | **Next session** | **1. Rotate the Dhan token, or decide not to** — the one item with an unbounded exposure window, blocked on nobody (TD-S81-NEW-1). **2. The standing anon check** (TD-S81-NEW-3): clause 3 of the S81 fix is currently *trusted* rather than *verified*, which is the state D.21.1 was in for 42 sessions. **3. L9 stage-1's two-armed multi-expiry test** on `v_max_pain_by_strike` — and **do not lose the second arm**: the captured baseline must **DIFFER**, or the first arm passes even if the filter does nothing. |
 
 ---
+
+## Previous session S82
+
+
+**Session 82 — 2026-09-24 (Thu).** Verification, not construction. Commits
+`c831fdf` → `29bc83e` → `25f9d1b` + this doc-close, all pushed; **all three trees
+level** and the post-15:45 batch complete.
+
+**Shipped.** `core.trading_calendar_gate.previous_trading_day()` — resolves the
+previous OPEN trading day from the **V18E rule engine**, not the database, so it is
+offline by construction and the path an offline test exercises is the path cron runs;
+returns `(date, provenance)` and the caller prints the provenance. `--date prev` and
+`--resolve-only` on `eod_health_check.py`. `bin/eod_alert.sh` with its **own**
+sentinel, deliberately not a reuse of `wsfeed_alert.sh`. A `sys.path` fix.
+
+**The lead finding.** `scripts/eod_health_check.py` **has never been scheduled** — no
+cron line, no unit, no timer — while its docstring asserts a 00:45 UTC run **twice**,
+and that claimed runtime is the stated justification for `resolve_cron_log()`'s whole
+design. ADR-025 D2 clause 2. Filed **TD-S82-NEW-3**, specced **ENH-129**.
+
+**Filed:** TD-S82-NEW-1, -2, -3, -4; ENH-129 (PROPOSED).
+
+**ENH-98 re-run — half-met, recorded against its own sentence.** ATM `delta_abserr`
+0.046 → **0.0139** against a predicted *"well under 0.01"*. Gamma refusal not met
+(NEAR 0.127 → 0.042). The residual ~12-pt offset is **neither futures basis nor
+theoretical carry** — Pearson **−0.0655** over 59 cycles. SENSEX **void** at 0 DTE.
+**Owed: a re-run with SENSEX at dte 1–2.**
+
+**L9 stage 1 — half-verified.** SENSEX **PASS**: arm (b) 196/196, baseline picks
+max-pain **71400 against 73800**. NIFTY **no-test by mechanism**: W2's 230 strikes
+are a subset of W1's 268, **zero** W2-only, and at **zero** shared strikes does W2
+win the baseline's `max()` (W1 peak OI 9.8× W2's). **NIFTY arm owed 2026-09-29.**
+
+### Post-15:45 batch — ALL FOUR DONE
+1. **Pull DONE** — `29bc83e` → `25f9d1b`, 2 files as previewed; import smoke
+   `True ('2026-09-23', 'rule-engine')`, exit 0. No rollback needed.
+2. **Live dry run DONE** — `--date 2026-09-23`, **EXIT 0**, VERDICT `[ OK ]`.
+   `equity_intraday_last` reads `[ -- ] NOT AUDITABLE` and **will every night by
+   design** (one-generation upsert table; `--date prev` is always back-dated).
+3. **Crontab installed BY THE OPERATOR — 59 → 60**, 1 entry. A manual run of the exact
+   cron line returned **`[ OK ]`, no alert files created**. First scheduled run
+   **Friday 2026-09-25 00:45 UTC** (06:15 IST), auditing **Thu 2026-09-24**.
+   `aws_crontab.txt` mirrored: 60 lines, `diff` empty, +1/0.
+
+### NEXT SESSION PICKS UP
+
+**Time-boxed — these expire or get harder if missed**
+1. **Watch the first scheduled run: FRIDAY 2026-09-25 00:45 UTC** (06:15 IST),
+   auditing Thu 2026-09-24. Confirm it fired at all, and that
+   `[ -- ] NOT AUDITABLE` on `equity_intraday_last` is **not** mistaken for a
+   failure — it will read that way every night by design.
+2. **NIFTY L9 arm on 2026-09-29** (NIFTY at/near 0 DTE). TD-S80-NEW-1 stage 1 is
+   **half-verified**, and the measured mechanism says the NIFTY arm **cannot** pass
+   before then — W2 ⊂ W1 with W1 OI dominant at every shared strike.
+3. **ENH-98 re-run with SENSEX at dte 1–2.** Today's SENSEX arm was void at 0 DTE, and
+   dte 1–2 is exactly where `dte/365` and `exact/365` separate.
+4. **The multi-DTE offset test was NOT run.** The ~12-pt ATM offset is constant on one
+   session; whether it scales with DTE is unmeasured, and that is what would
+   discriminate a `q > 0` dividend term from a fixed model offset.
+
+**Decisions owed to the operator — none are mine to make**
+5. **Token decision + Dhan API log review (TD-S81-NEW-1).** Rotation is **likely moot**
+   — but that is **INFERRED** from two dates (token minted 09-23 08:35; S81 revoke
+   2026-09-22 mid-session), **not measured**. The log review has not been done.
+6. **ADR-020 amendment for Muhurat (TD-S82-NEW-4).** The engine is deliberately
+   unfixed: reordering Rule 1 / Rule 3 changes a decision the ADR recorded, so it
+   needs an amendment, not a patch. Note the fix alone is not sufficient — every
+   consumer is `dow=1-5`, so a cron change is also required.
+7. **`compute_basis_context` cron decision (TD-S81-NEW-12).**
+8. **Delete the "illustrative seeds" template note** at the head of Active debt —
+   proposed and annotated this session, **not applied** (`c521b2f`, 2026-04-22).
+
+**Carried, not started**
+9. **TD-S81-NEW-20 NOT APPLIED** — `DhanClient` still reads the token at construction,
+   so a mid-cycle rotation still leaves a running process holding an invalidated
+   token. This is the mechanism behind the 08:35 401s.
+10. **ENH-129 is DESIGNED, NOT BUILT** — the seven depth checks, the crontab-derived
+    expected set, the **anon revoke check** (which needs an anon-key probe, not
+    `merdian_ro`) and the **RLS control** all exist only as a specification. The
+    scheduled check now running at 00:45 UTC is the *old* body.
+11. **Parity build order: L9 → L3 → L7/L8.**
+12. **Refresh "Invalid TOTP" on 09-17 and 09-24 (both Thursdays) — cause unexplained;
+    clock excluded** (chrony 0.9 µs offset, `NTPSynchronized=yes`, 30 s TOTP windows).
+    Both failures took the retry path 30 s apart and both windows were rejected. **The
+    next failed refresh is unpredictable**, and because a token outlives its printed
+    expiry (§D.38.1) a failed refresh is not itself an outage — which is precisely why
+    it has gone uninvestigated.
+13. **PK size check after upload** — do not project a byte total; read PK's own
+    reported size. Its counter read **1,796,444** for a set whose git bytes sum to
+    ~3.9 MB, so PK does not count raw bytes.

@@ -198,6 +198,8 @@ Helper provenance: `a0_reff.sql` / `a1_reff.sql` reuse CTE chain lines 1–54 by
 
 **T1 — the SOLE go/no-go.** Refuse if the `exact/365` `gamma_relerr` median exceeds **0.10 in BOTH ATM and NEAR**, evaluated at **SENSEX dte 1–2**.
 
+**Interpretation clause — pre-registered 2026-09-28, before A3.** If T1 refuses on `exact/365` while `dte/252` **passes on the same arm**, the result is recorded as a **vendor time-convention divergence, not a pipeline failure**, and the L7/L8 decision **returns to the operator** instead of defaulting to no view. **The T1 rule and its 0.10 threshold are unchanged** — this clause governs only how a refusal is read, never whether one occurs. Written because A2 measured the two conventions diverging by ~14× on one arm (§2.9), so the case is live rather than hypothetical, and deciding afterwards how to read it would be fitting the interpretation to the result.
+
 | arm | date | SENSEX dte | NIFTY dte | role |
 |---|---|---|---|---|
 | A2 | Mon 2026-09-28 (`z1_td_and_weekdays.out:24`) | 3 | 1 | gradient point |
@@ -245,6 +247,41 @@ They are one row. On SENSEX **72300 CE**, `ltp` sits frozen at **5464.15** from 
 | Outcome use | A pass on both E1 and E2 starts the evidence count; it does not amend S62 by itself. A fail on either keeps W1's expiry-day charm unrecorded until re-tested |
 
 **Correction recorded.** The 2026-09-25 stale SENSEX row ran 03:05–04:10 UTC = **08:35–09:40 IST** and was corrected by **09:50 IST** (`scratch/s84_contract/oi_anomaly.out`, `iv_stale_correction.out`; verified in `scratch/s84_l78/e1_stale_window.out`). A 10:20 target was proposed in chat on a mis-converted time; 10:15:59 IST is 25 m 52 s clear of the last correction, so 10:15 stands.
+
+**A2 target amended 10:15:59 → 10:20:59 IST by operator, 2026-09-28, before the run.** Recorded here rather than silently re-pinned: the 10:15:59 gate was evaluated at 09:16 IST and **FAILED by design** — both symbols resolved to 09:15:06 IST, 60.9 minutes before target (`scratch/s85_l78/a2_01_resolve.out`), because the 10:15 cycle did not yet exist. The arm was not run. Without that gate the pin would have substituted the 09:15 cycle and reported it as A2, complete and plausible, with nothing in the output saying otherwise. **The amendment moves A2 only; A3, A4, E1 and E2 remain at 10:15:59 IST.**
+
+### 2.9 A2 result (2026-09-28, pinned 10:20:06 IST)
+
+Gradient point, **not a T1 arm** — T1 needs SENSEX at dte 1–2 and SENSEX is at 3. Instrument `scratch/s85_l78/a2b.sql`, sha256 `7a1aead40429fb82…`, one-line `ts` pin to `2026-09-28 10:20:59+05:30`, one hunk `4c4,5` off the `d5930ee5…` instrument. **Gate passed before the run:** both symbols at/after 10:20:00 IST and both at **0.00 %** row deviation from their own 09:15 reference (NIFTY 1000, SENSEX 736) — `scratch/s85_l78/a2b_02_gate.out`.
+
+| check | expected | observed | verdict |
+|---|---|---|---|
+| NIFTY dte | **1** | **1** | **MATCH** |
+| SENSEX dte | **3** | **3** | **MATCH** |
+
+Nothing else on this arm carries an expected value. Source: `scratch/s85_l78/a2b_05_result.out`, `scratch/s85_l78/a2b_07_rows_reff.out`.
+
+**Rows before → after the delta band** (`a2b_07_rows_reff.out`): NIFTY ATM 18→18, NEAR 27→20, FAR 105→22, total **150→60**; SENSEX ATM 28→28, NEAR 51→49, FAR 130→44, total **209→121**.
+
+| symbol | conv | gamma_relerr ATM/NEAR/FAR | delta_abserr ATM/NEAR/FAR | implied_pts ATM/NEAR/FAR |
+|---|---|---|---|---|
+| NIFTY | exact/365 | **0.0759** / 0.0361 / 0.0937 | 0.0145 / 0.0180 / 0.0170 | 3.2 / −28.1 / −71.5 |
+| NIFTY | dte/365 | 0.1564 / 0.0913 / 0.2045 | 0.0317 / 0.0384 / 0.0158 | 3.1 / −59.5 / −157.6 |
+| NIFTY | dte/252 | **0.0055** / 0.0107 / 0.0304 | 0.0043 / 0.0020 / 0.0013 | 3.3 / 3.0 / 5.0 |
+| SENSEX | exact/365 | **0.0297** / 0.0258 / 0.0717 | 0.0088 / 0.0041 / 0.0048 | 24.7 / −1.8 / −56.0 |
+| SENSEX | dte/365 | 0.0655 / 0.0425 / 0.0687 | 0.0091 / 0.0110 / 0.0107 | 24.8 / −31.9 / −133.6 |
+| SENSEX | dte/252 | 0.0994 / 0.0642 / 0.1137 | 0.0122 / 0.0246 / 0.0196 | 22.4 / 115.9 / 306.6 |
+
+**The ≥ 3×SE precondition splits the two symbols — and this is its first fire on a non-zero-DTE arm.**
+
+| symbol | ATM median offset | SE(median) | 3 × SE | ratio | verdict |
+|---|---|---|---|---|---|
+| **SENSEX** | 24.7 | 3.849 | 11.55 | **6.41×** | **PASSES** — `r_eff` **0.038406**, inside the 3.64–3.81 % band to within 0.03 pp |
+| **NIFTY** | 3.2 | 3.493 | 10.48 | **0.93×** | **NO-TEST** — the offset sits *below one* SE |
+
+**NIFTY's `r_eff` of 0.042688 is NOT evidence and is recorded only so it is not later mistaken for a fourth point.** It comes from the arm that failed its own precondition. The mechanism is in the numbers: `sd` **11.825** against a median of **3.2**, so strike-to-strike scatter is ~3.7× the central value. The precondition is doing exactly what §2.6 pre-registered it to do.
+
+> **Observation — the convention ordering REVERSES at NIFTY dte 1.** On A0 and A1 (dte 4, 5, 6) `exact/365` gave the lowest gamma error and `dte/252` the highest. At NIFTY dte 1 that inverts: `dte/252` reads ATM **0.0055** where `exact/365` reads **0.0759** — a factor of ~14 on the same rows — and `dte/365` is worst at 0.1564. SENSEX at dte 3 keeps the usual order (`exact/365` 0.0297 best). **T1 is fixed on `exact/365` and is not changed here.** What this measures is that at 1 DTE the three conventions stop being cosmetically different, which is the case the §2.6 interpretation clause was written for. For the record, had A2 been a T1 arm, both symbols' `exact/365` ATM and NEAR sit under 0.10 and no refusal would have fired.
 
 ---
 

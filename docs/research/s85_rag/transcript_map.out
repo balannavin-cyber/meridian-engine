@@ -1,0 +1,57 @@
+slug                     file          bytes  lines first_ts          last_ts           session-marker counts
+-------------------------------------------------------------------------------------------------------------
+ome-ssm-user-meridian-cc 67cef54b       2986     10 2026-09-05T13:18  2026-09-05T13:21  
+ome-ssm-user-meridian-cc 2eaee5bc    1789037    441 2026-09-06T04:01  2026-09-06T05:19  
+ome-ssm-user-meridian-cc 5086c5b5    1176093    117 2026-09-06T06:52  2026-09-06T07:33  
+ome-ssm-user-meridian-cc 4d055dbb    3062010   1148 2026-09-06T23:28  2026-09-07T03:56  
+ome-ssm-user-meridian-cc 48ed9441    1454322    240 2026-09-07T04:40  2026-09-07T04:59  
+ome-ssm-user-meridian-cc 3c86be26    1767128    275 2026-09-07T06:02  2026-09-07T06:31  
+ome-ssm-user-meridian-cc 50064908    1471666    216 2026-09-07T12:39  2026-09-07T13:01  
+ome-ssm-user-meridian-cc 2301bb39    1046309     49 2026-09-07T14:14  2026-09-07T14:16  
+ome-ssm-user-meridian-cc 2a81564d    3144577    639 2026-09-07T14:19  2026-09-07T15:24  S75:1
+ome-ssm-user-meridian-cc 806f514d    2290974    613 2026-09-07T15:29  2026-09-07T16:24  S75:3
+ome-ssm-user-meridian-cc 1f72c61f    5783759   2753 2026-09-08T01:43  2026-09-09T06:40  S75:433
+ome-ssm-user-meridian-cc 721741d8    1199674     95 2026-09-09T09:19  2026-09-09T09:34  S75:26
+ome-ssm-user-meridian-cc 14391d1b    1990926    492 2026-09-09T11:32  2026-09-09T12:16  S75:26
+ome-ssm-user-meridian-cc 517701c7    1189858    219 2026-09-09T13:16  2026-09-09T13:41  S75:26
+ome-ssm-user-meridian-cc 1ec56c9d    3883189   1378 2026-09-09T23:42  2026-09-10T03:08  S76:1627, S75:563, S77:19
+ome-ssm-user-meridian-cc 939f033e    1357359    298 2026-09-10T12:41  2026-09-10T13:12  S76:473, S75:161, S77:2
+ome-ssm-user-meridian-cc 6be1f7c1    1167017    161 2026-09-11T00:29  2026-09-11T01:01  S76:356, S75:141
+ome-ssm-user-meridian-cc ec47cc75    2063943    589 2026-09-11T00:42  2026-09-11T01:52  S76:1061, S75:237, S77:29
+ome-ssm-user-meridian-cc f59cfabb    1453571    308 2026-09-12T01:36  2026-09-12T02:03  S76:75, S77:70, S75:12
+ome-ssm-user-meridian-cc b9af94b5    1484007    336 2026-09-13T05:41  2026-09-13T06:23  S77:495, S76:454, S75:71, S78:2
+ome-ssm-user-meridian-cc 49f46b3f    1384390    228 2026-09-13T06:39  2026-09-13T07:04  S77:377, S76:357, S75:49, S78:6
+ome-ssm-user-meridian-cc abf6e907    2244593    745 2026-09-13T10:13  2026-09-13T11:41  S77:1113, S76:1021, S75:150, S78:47
+ome-ssm-user-meridian-cc bfe69d45    2622329    785 2026-09-13T13:10  2026-09-13T14:45  S78:48, S75:45, S77:41, S76:35
+ome-ssm-user-meridian-cc 85dcb351    2430327    789 2026-09-14T00:20  2026-09-14T03:41  S78:53, S75:26, S77:18, S76:12
+ome-ssm-user-meridian-cc f4bd92ce    2528920    866 2026-09-14T10:10  2026-09-14T12:09  S78:531, S77:346, S76:174, S75:125
+ome-ssm-user-meridian-cc 53bb763f    1073490    165 2026-09-14T12:45  2026-09-14T13:02  S77:99, S78:72, S76:48, S75:31
+ome-ssm-user-meridian-cc da677d20     990856    113 2026-09-14T13:28  2026-09-14T13:44  S78:83, S75:42, S77:35, S76:32
+ome-ssm-user-meridian-cc 28762951    1797290    494 2026-09-14T22:09  2026-09-14T22:59  S78:443, S75:107, S77:106, S76:88
+ome-ssm-user-meridian-cc 43db9801     884552     69 2026-09-15T01:40  2026-09-15T01:46  S77:21, S75:14, S78:6, S76:4
+ome-ssm-user-meridian-cc c6a01fba    1311858    166 2026-09-15T03:45  2026-09-15T04:07  S79:20, S77:20, S75:11, S78:10
+ome-ssm-user-meridian-cc 6519851e    2047738    551 2026-09-15T10:26  2026-09-15T12:48  S79:344, S76:149, S78:69, S75:65
+ome-ssm-user-meridian-cc 95c6f75e    1574440    371 2026-09-15T13:23  2026-09-15T14:15  S79:311, S75:25, S78:19, S77:16
+ome-ssm-user-meridian-cc 2db4a5c8    1794874    487 2026-09-16T00:14  2026-09-16T01:41  S79:464, S78:19, S77:16, S75:14
+ome-ssm-user-meridian-cc 2e8f23e8    1699431    484 2026-09-16T06:44  2026-09-16T07:41  S79:686, S76:30, S78:24, S77:16
+ome-ssm-user-meridian-cc 7379bda8    2033762    450 2026-09-16T11:14  2026-09-16T12:14  S79:1669, S77:468, S78:328, S76:76
+ome-ssm-user-meridian-cc 0561a0c8    2752754    788 2026-09-16T13:29  2026-09-16T14:57  S79:1410, S78:245, S76:211, S75:170
+ssm-user-meridian-engine ae9b7b23     898492    101 2026-09-19T04:15  2026-09-19T05:01  S79:18, S77:10, S75:10, S76:4
+-home-ssm-user-srs-work  1403976d     342107     89 2026-09-21T05:13  2026-09-21T05:42  S79:2
+ome-ssm-user-meridian-cc 547a44e1    4019884   1222 2026-09-21T05:41  2026-09-21T17:08  S80:97, S79:50, S75:36, S78:20
+ssm-user-meridian-engine ac242cc4     872156     51 2026-09-21T13:48  2026-09-21T13:50  S79:30, S80:26, S77:10, S75:10
+ome-ssm-user-meridian-cc 61ace60f     996810     62 2026-09-22T02:45  2026-09-22T02:51  S80:282, S79:202, S78:20, S77:10
+ome-ssm-user-meridian-cc b8c58994    1559833    219 2026-09-22T03:01  2026-09-22T03:58  S80:702, S79:619, S78:341, S77:24
+ome-ssm-user-meridian-cc 7a1d1ee0    1744194    330 2026-09-22T05:09  2026-09-22T06:21  S80:1197, S79:377, S76:122, S78:40
+ssm-user-meridian-engine 62a19ab7    4672973   1697 2026-09-22T07:45  2026-09-22T12:44  S80:451, S79:326, S81:325, S76:53
+ssm-user-meridian-engine ade04b30    4913736   1673 2026-09-23T02:21  2026-09-23T06:43  S81:1618, S80:841, S79:589, S76:69
+ssm-user-meridian-engine 00646b90    2529721    847 2026-09-23T07:22  2026-09-23T11:56  S81:456, S82:365, S80:111, S79:92
+p-amazon-ssm-agent-13349 16c1b3ba    1007645    426 2026-09-23T11:01  2026-09-24T15:38  S79:158, S83:37, S81:24, S82:14
+ssm-user-meridian-engine 4b3bff6f    1250500    247 2026-09-23T13:45  2026-09-23T14:16  S82:283, S81:211, S79:44, S80:40
+ssm-user-meridian-engine 0131f83d   10337360   3661 2026-09-23T14:15  2026-09-25T03:30  S82:1644, S81:1195, S83:856, S80:493
+ssm-user-meridian-engine c972d318    6021105   1794 2026-09-25T07:01  2026-09-29T03:31  S84:1323, S81:930, S83:784, S82:567
+ssm-user-meridian-engine 13285548    1943006    384 2026-09-25T11:47  2026-09-25T12:36  S83:129, S81:95, S84:63, S79:55
+ssm-user-meridian-engine 89e34d1e     958336     96 2026-09-29T03:41  2026-09-29T03:46  S84:40, S80:27, S79:26, S81:24
+
+TOTAL files: 52  bytes: 112017867  lines: 30827
+entry types seen: {'mode': 52, 'permission-mode': 52, 'bridge-session': 24, 'system': 52, 'last-prompt': 52, 'cost-state': 50, 'file-history-snapshot': 51, 'atis-latch': 51, 'user': 51, 'attachment': 51, 'ai-title': 50, 'assistant': 51, 'file-history-delta': 45, 'queue-operation': 6}

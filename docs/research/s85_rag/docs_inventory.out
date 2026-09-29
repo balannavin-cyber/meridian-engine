@@ -1,0 +1,224 @@
+path                                                                                    bytes   lines    TD  ADR   §D  ENH CASE   flag
+--------------------------------------------------------------------------------------------------------------------------------------
+CLAUDE.md                                                                              327171    1169   100   56    6   41    0   
+docs/MERDIAN_Scheduler_Manifest.md                                                       5927     151     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/MERDIAN_Shadow_Tables_DDL.md                                                        8962     276     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/appendices/MERDIAN_AppendixV18F_v2.docx                                            50204      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_AppendixV18G.docx                                               47014      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_AppendixV18H_v2.docx                                            52937      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_Appendix_16A_v2.docx                                            24723      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_Appendix_16B.docx                                               30308      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_Appendix_16C_v2.docx                                            22758      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_Appendix_16D.docx                                               31945      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_Appendix_H_v2.docx                                              28909      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_Appendix_I_v3.docx                                              21300      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_Appendix_V17A_v2.docx                                           31237      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_Appendix_V17B_v2.docx                                           37546      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_Appendix_V17C.docx                                              29934      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_Appendix_V17D.docx                                              37913      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_Appendix_V17E_v2.docx                                           29182      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_Appendix_V18A_2.docx                                            25954      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_Appendix_V18A_v4.docx                                           39611      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_Appendix_V18B.docx                                              23558      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_Appendix_V18C.docx                                              31479      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_Appendix_V18D_v2.docx                                           34749      --    --   --   --   --   --   BINARY
+docs/appendices/MERDIAN_Appendix_V18E.docx                                              41114      --    --   --   --   --   --   BINARY
+docs/appendices/V18H_v2_RENUMBERING_NOTE.md                                              4228      95     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/appendices/drafts/MERDIAN_AppendixV19A_v2.md                                       75540     906     0    0    0   17    0   
+docs/archive/s39_superseded/2026-05-27_enh83_alter_for_lovable_jsonb.sql                10103     257     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/archive/s39_superseded/parameters_jsonb.py                                         12067     347     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/audits/V19A_audit_report_20260422.md                                               29073     318     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/audits/coupling_audit_2026-09-07.md                                                88313     739     0   11    0    0    0   
+docs/cases/CASE-2026-06-02-SHORT-COVERING-SETUP.md                                      14505     290     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/decisions/ADR-001-stable-lies-defeat-duration-gates.md                             12028     122     1    1    0    0    0   
+docs/decisions/ADR-002-market-structure-philosophy.md                                   44748     602     1   20    0   14    0   
+docs/decisions/ADR-003-ict-zone-architecture-review.md                                  13705     128    16    1    0    1    0   
+docs/decisions/ADR-004-ict-primitive-canon.md                                           46271     714     0    1    0    0    0   
+docs/decisions/ADR-005-zone-validity-model.md                                           10725     130     5   10    0    0    0   
+docs/decisions/ADR-006-aws-migration-scope.md                                           16415     158     6    6    0    0    0   
+docs/decisions/ADR-007-v18f-ict-pivot.md                                                25424     171     7   16    0   16    0   
+docs/decisions/ADR-008-replay-architecture.md                                           19358     146     0    1    0    1    0   
+docs/decisions/ADR-009-calibration-discipline.md                                        31661     246     0    7   12    8    0   
+docs/decisions/ADR-010-outcomes-magnitude-schema-extension-v2.md                        15512     182     0    5    1    3    0   
+docs/decisions/ADR-010-outcomes-magnitude-schema-extension.md                           19904     201     0    4    1    4    0   
+docs/decisions/ADR-011-chain-table-held-strike-atm-pnl.md                               15440     189     4   12    1    4    0   
+docs/decisions/ADR-012-spot-anchored-sl-doctrine.md                                     12565     141     1    3    0    2    0   
+docs/decisions/ADR-014-per-strike-gex-schema.md                                         17368     204     3    5    2    9    0   
+docs/decisions/ADR-015-per-strike-gex-schema-v2.md                                       7242     122     0    4    0    0    0   
+docs/decisions/ADR-016-parameter-calibration-pattern.md                                  4294      83     0    1    0    0    0   
+docs/decisions/ADR-017-operator-console-design-principles.md                            12170     152     1    1    0    1    0   
+docs/decisions/ADR-018-breadth-feed-supervision-and-signal-subsystem-disposition.md     13101      91     0    1    0    1    0   
+docs/decisions/ADR-019-signal-orphan-final-disposition.md                                6157      55     0    1    0    1    0   
+docs/decisions/ADR-020-calendar-absence-is-not-a-verdict.md                             14132     148     2    6    1    0    0   
+docs/decisions/ADR-021-derived-view-latest-run-scoping.md                               15022     207     4    6    0    1    0   
+docs/decisions/ADR-022-cas-invalidates-fixed-close-timing.md                            17157     148     0    8    0    0    0   
+docs/decisions/ADR-023-read-path-recency-floors.md                                      17095     152     2    6    0    0    0   
+docs/decisions/ADR-024-gex-zone-anchor.md                                               36979     682     1    7    1    0    0   
+docs/decisions/ADR-025-parity-acceptance-criterion.md                                   33298     454     3    2    0    9    0   
+docs/decisions/CASE-2026-03-11-do-nothing-on-trend-day.md                               13152     142     0    5    0    0    0   
+docs/decisions/CASE-2026-05-14-breadth-cascade-token-and-bloat.md                       13526     246     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/decisions/CASE-2026-05-14-spot-gap-backfill.md                                     14030     258     7    0    0    0    0   
+docs/decisions/CASE-2026-09-22-anon-privilege-exposure.md                                8607     157     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/decisions/CASE-2026-09-22-disk-full-access-lockout.md                               8749     102     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/decisions/ENH-110-consolidated-marketview-build.md                                 34619     740     0    0    0    3    0   
+docs/decisions/ENH-116-ambient-environment-intelligence.md                              18762     301     1   10    1    2    0   
+docs/decisions/ENH-SDM_structural_divergence_monitor_spec.md                             7975     129     1    1    0    0    0   
+docs/decisions/MERDIAN_Decision_Index.md                                               111098     151    19   90    1   25    1   
+docs/lovable_prompts/lovable_prompt_enh116_ambient_console.md                            6233     107     0    0    0    1    0   
+docs/lovable_prompts/lovable_prompt_health_add_ambient_writers.md                        2411      38     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/lovable_prompts/lovable_prompt_marketview_v5_home_refinement.md                     3927      57     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/lovable_prompts/lovable_prompt_marketview_v5_intraday_drift.md                      2454      41     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/lovable_prompts/lovable_prompt_marketview_v5_restructure.md                         6936     115     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/lovable_prompts/lovable_prompt_marketview_v6_ambient_trajectory.md                 17676     301     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/lovable_prompts/lovable_prompt_marketview_v7_trajectory_declutter.md               10320     182     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/lovable_prompts/lovable_prompt_marketview_v8_trajectory_polish.md                   4849      96     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/masters/GammaEngine_Master_V15_1.docx                                              54112      --    --   --   --   --   --   BINARY
+docs/masters/MERDIAN_Master_V16_Fixed.docx                                              72213      --    --   --   --   --   --   BINARY
+docs/masters/MERDIAN_Master_V17.docx                                                    65693      --    --   --   --   --   --   BINARY
+docs/masters/MERDIAN_Master_V18_v2.docx                                                 85425      --    --   --   --   --   --   BINARY
+docs/masters/MERDIAN_Master_V19.docx                                                    74438      --    --   --   --   --   --   BINARY
+docs/operational/MERDIAN_Change_Protocol_v1.md                                          12903     457     0    0    0    1    0   
+docs/operational/MERDIAN_Documentation_Protocol_v1.md                                   11480     310     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/operational/MERDIAN_Documentation_Protocol_v2.md                                   14553     388     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/operational/MERDIAN_Documentation_Protocol_v3.md                                   18648     392     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/operational/MERDIAN_Documentation_Protocol_v4.md                                   38445     655     1    3    0    0    0   
+docs/operational/MERDIAN_Governance_Framework.md                                        19128     208     1   10    0    2    0   
+docs/operational/MERDIAN_Session_Management_v1.md                                       10742     272     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/operational/MERDIAN_Testing_Protocol_v1.md                                          9533     212     1    0    0    0    0   
+docs/registers/CLAUDE_history.md                                                       143384      57     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/registers/CURRENT_history.md                                                      790734    3267  1123  475   73  548    8   
+docs/registers/MERDIAN_Assumption_Register.md                                          320123     981   172  147   21  102    2   
+docs/registers/MERDIAN_Data_Inventory.md                                                75809     969     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/registers/MERDIAN_Deployment_Topology.md                                          230541    1981    31    7    0    4    0   
+docs/registers/MERDIAN_Enhancement_Register.md                                         459686    4379    27   19    1  197    0   
+docs/registers/MERDIAN_Experiment_Compendium_v1.md                                      73957    1348     4    2    0    3    0   
+docs/registers/MERDIAN_Hedgewall_Parity_Spec.md                                         20133     355     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/registers/MERDIAN_ICT_Zone_Reference.md                                             9269     212     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/registers/MERDIAN_OpenItems_Register_v7.md                                         12527     247     0    0    0    1    0   
+docs/registers/MERDIAN_Strategy_Reference_v1.md                                         18838     410     0    2    0    0    0   
+docs/registers/MERDIAN_System_Map.md                                                   236438    1980    50   24    1   10    0   
+docs/registers/archive/MERDIAN_Enhancement_Register_v1.md                               40909     694     0    0    0   32    0   
+docs/registers/archive/MERDIAN_Enhancement_Register_v2.md                               24590     517     0    0    0   24    0   
+docs/registers/archive/MERDIAN_Enhancement_Register_v3.md                               25107     527     0    0    0   24    0   
+docs/registers/archive/MERDIAN_Enhancement_Register_v4.md                                7264     218     0    0    0   12    0   
+docs/registers/archive/MERDIAN_Enhancement_Register_v5.md                               10906     236     0    0    0    7    0   
+docs/registers/archive/MERDIAN_Enhancement_Register_v6.md                                8940     223     0    0    0   10    0   
+docs/registers/archive/MERDIAN_Enhancement_Register_v6_V18H_v2.md                       11814     299     0    0    0   12    0   
+docs/registers/archive/MERDIAN_Enhancement_Register_v7.md                               48116     906     0    0    0   36    0   
+docs/registers/archive/MERDIAN_OpenItems_Register_v3.docx                               42631      --    --   --   --   --   --   BINARY
+docs/registers/archive/MERDIAN_OpenItems_Register_v4.md                                 16710     330     0    0    0    1    0   
+docs/registers/archive/MERDIAN_OpenItems_Register_v5.md                                 13744     298     0    0    0    1    0   
+docs/registers/archive/MERDIAN_OpenItems_Register_v6.md                                  4563     127     0    0    0    1    0   
+docs/registers/archive/MERDIAN_OpenItems_Register_v7_V18H_v2.md                          8751     236     0    0    0    4    0   
+docs/registers/archive/README.md                                                         2442      53     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/registers/aws_crontab.txt                                                           6943      60     2    5    0    0    0   
+docs/registers/enhancement_register_delta_20260421.md                                    8654     130     0    0    0    4    0   
+docs/registers/logrotate_meridian.conf                                                   1855      42     3    0    0    0    0   
+docs/registers/merdian_all_experiment_results.md                                        25745     677     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/registers/merdian_reference.json                                                  610151    5513     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/registers/session_log_history.md                                                  615172    1176     0    0    0   28    0   
+docs/registers/tech_debt.md                                                           1075558    6521  1303  499   48  314   10   
+docs/research/MERDIAN_Signal_RuleBook_v1.1.md                                           14605     325     0    0    0    3    0   
+docs/research/MERDIAN_Signal_RuleBook_v1.docx                                           27148      --    --   --   --   --   --   BINARY
+docs/research/README.md                                                                  2496      45     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/research/adr003_phase1_respect_rate_2026-04-30.md                                   3237      67     0    1    0    0    0   
+docs/research/adr003_phase1_zone_availability_2026-04-30.md                              2991      48     0    1    0    0    0   
+docs/research/adr009_prereg_gex_zone_utility_2026-09-07.md                              37309     539     0   11    0    1    0   
+docs/research/build_readiness_2026-09-09.md                                             33889     628     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/research/capture_s83.md                                                            13527     196     1    1    1    3    0   
+docs/research/capture_s84.md                                                            43867     377    16    2    0    2    0   
+docs/research/data_inventory_2026-09-08.md                                              81354    1170     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/research/experiment_forensics_2026-09-11.md                                        27294     513     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/research/flip_audit_2026-09-08.md                                                  31296     612     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/research/gamma_metrics_tail_2026-09-09.md                                            884      36     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/research/gamma_metrics_tail_probe.py                                                6948     173     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/research/ict_structure_audit_2026-09-09.md                                        133417    2034     3   33    0    0    0   
+docs/research/iv_availability_2026-09-08.md                                             19820     419     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/research/parity_render_contract.md                                                 97133    1637     4    1    0    0    0   
+docs/research/s72_gex_view_fix.sql                                                      17765     398     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/runbooks/ENH-113-capture-derived-split-phase2.md                                    4972     129     0    0    0    1    0   
+docs/runbooks/MERDIAN_Strategy_QuickCard_v1.md                                           5861     182     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/runbooks/README.md                                                                  2277      48     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/runbooks/RUNBOOK_TEMPLATE.md                                                        2037      89     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/runbooks/reading_the_ambient_trajectory_dashboard.md                               18642     260     0    1    0    0    0   
+docs/runbooks/runbook_aws_cli_file_operations.md                                        12052     504     0    1    0    0    0   
+docs/runbooks/runbook_data_backfill_internet_outage.md                                  13600     430     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/runbooks/runbook_disaster_rebuild.md                                               28031     672     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/runbooks/runbook_enh113_phase2_capture_migration.md                                10787     341     0    0    0    2    0   
+docs/runbooks/runbook_phase2c_fallback.md                                                7309     267     0    0    0    1    0   
+docs/runbooks/runbook_phase2c_health_check.md                                            5901     196     0    0    0    1    0   
+docs/runbooks/runbook_recover_disk_full_lockout.md                                       8725     152     1    0    0    0    0   
+docs/runbooks/runbook_s42_phase1c_token_refresh.md                                       6998     212     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/runbooks/runbook_session_15_detector_fix.md                                        17528     272    10    1    0    0    0   
+docs/runbooks/runbook_update_dhan_token.md                                               5509     146     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/runbooks/runbook_update_kite_flow.md                                               13565     215     2    0    0    0    0   
+docs/session_notes/20260331_documentation_baseline.md                                    6294     147     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/session_notes/20260419_c08_breadth_writer.md                                        3717      54     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/session_notes/20260422_oi19_out_of_scope.md                                          871      26     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/session_notes/20260422_oi20_encoding_disposition.md                                 2290      64     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/session_notes/CURRENT.md                                                           14024     156     5    1    1    6    0   
+docs/session_notes/S69_incident_carryforward.md                                         20563     189     4    7    0    0    0   
+docs/session_notes/capture_s74.md                                                       17011     252     7    1    1    0    0   
+docs/session_notes/capture_s75.md                                                       13760     273     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/session_notes/s81_docclose_notes.md                                               115376    2082     9   11    0   18    0   
+docs/session_notes/session_log.md                                                       55974      21     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/session_notes/session_log_2026_04_11.md                                             4632     106     0    0    0    2    0   
+docs/session_notes/session_log_entry_20260417_18.md                                      4172      63     0    0    0    0    0   NO-ENTRY-ID-STRUCTURE
+docs/session_notes/session_log_prepend_20260421.md                                       8580      93     0    0    0    1    0   
+
+FILES: 165   BYTES: 8526714   LINES: 68060
+heading-anchored ID totals: {'TD': 2965, 'ADR': 1574, 'SD': 174, 'ENH': 1583, 'CASE': 21}
+all-mention ID totals     : {'TD': 7254, 'ADR': 4223, 'SD': 493, 'ENH': 6018, 'CASE': 55}
+
+FLAGGED (no heading-anchored entry ID): 51
+  docs/MERDIAN_Scheduler_Manifest.md  (5927 B, 151 L, 0 inline ID mentions)
+  docs/MERDIAN_Shadow_Tables_DDL.md  (8962 B, 276 L, 0 inline ID mentions)
+  docs/appendices/V18H_v2_RENUMBERING_NOTE.md  (4228 B, 95 L, 32 inline ID mentions)
+  docs/archive/s39_superseded/2026-05-27_enh83_alter_for_lovable_jsonb.sql  (10103 B, 257 L, 13 inline ID mentions)
+  docs/archive/s39_superseded/parameters_jsonb.py  (12067 B, 347 L, 5 inline ID mentions)
+  docs/audits/V19A_audit_report_20260422.md  (29073 B, 318 L, 29 inline ID mentions)
+  docs/cases/CASE-2026-06-02-SHORT-COVERING-SETUP.md  (14505 B, 290 L, 0 inline ID mentions)
+  docs/decisions/CASE-2026-05-14-breadth-cascade-token-and-bloat.md  (13526 B, 246 L, 9 inline ID mentions)
+  docs/decisions/CASE-2026-09-22-anon-privilege-exposure.md  (8607 B, 157 L, 15 inline ID mentions)
+  docs/decisions/CASE-2026-09-22-disk-full-access-lockout.md  (8749 B, 102 L, 14 inline ID mentions)
+  docs/lovable_prompts/lovable_prompt_health_add_ambient_writers.md  (2411 B, 38 L, 1 inline ID mentions)
+  docs/lovable_prompts/lovable_prompt_marketview_v5_home_refinement.md  (3927 B, 57 L, 1 inline ID mentions)
+  docs/lovable_prompts/lovable_prompt_marketview_v5_intraday_drift.md  (2454 B, 41 L, 0 inline ID mentions)
+  docs/lovable_prompts/lovable_prompt_marketview_v5_restructure.md  (6936 B, 115 L, 4 inline ID mentions)
+  docs/lovable_prompts/lovable_prompt_marketview_v6_ambient_trajectory.md  (17676 B, 301 L, 5 inline ID mentions)
+  docs/lovable_prompts/lovable_prompt_marketview_v7_trajectory_declutter.md  (10320 B, 182 L, 0 inline ID mentions)
+  docs/lovable_prompts/lovable_prompt_marketview_v8_trajectory_polish.md  (4849 B, 96 L, 0 inline ID mentions)
+  docs/operational/MERDIAN_Documentation_Protocol_v1.md  (11480 B, 310 L, 0 inline ID mentions)
+  docs/operational/MERDIAN_Documentation_Protocol_v2.md  (14553 B, 388 L, 5 inline ID mentions)
+  docs/operational/MERDIAN_Documentation_Protocol_v3.md  (18648 B, 392 L, 9 inline ID mentions)
+  docs/operational/MERDIAN_Session_Management_v1.md  (10742 B, 272 L, 0 inline ID mentions)
+  docs/registers/CLAUDE_history.md  (143384 B, 57 L, 511 inline ID mentions)
+  docs/registers/MERDIAN_Data_Inventory.md  (75809 B, 969 L, 2 inline ID mentions)
+  docs/registers/MERDIAN_Hedgewall_Parity_Spec.md  (20133 B, 355 L, 37 inline ID mentions)
+  docs/registers/MERDIAN_ICT_Zone_Reference.md  (9269 B, 212 L, 3 inline ID mentions)
+  docs/registers/archive/README.md  (2442 B, 53 L, 12 inline ID mentions)
+  docs/registers/merdian_all_experiment_results.md  (25745 B, 677 L, 0 inline ID mentions)
+  docs/registers/merdian_reference.json  (610151 B, 5513 L, 2194 inline ID mentions)
+  docs/research/README.md  (2496 B, 45 L, 2 inline ID mentions)
+  docs/research/build_readiness_2026-09-09.md  (33889 B, 628 L, 1 inline ID mentions)
+  docs/research/data_inventory_2026-09-08.md  (81354 B, 1170 L, 1 inline ID mentions)
+  docs/research/experiment_forensics_2026-09-11.md  (27294 B, 513 L, 0 inline ID mentions)
+  docs/research/flip_audit_2026-09-08.md  (31296 B, 612 L, 1 inline ID mentions)
+  docs/research/gamma_metrics_tail_2026-09-09.md  (884 B, 36 L, 0 inline ID mentions)
+  docs/research/gamma_metrics_tail_probe.py  (6948 B, 173 L, 0 inline ID mentions)
+  docs/research/iv_availability_2026-09-08.md  (19820 B, 419 L, 0 inline ID mentions)
+  docs/research/s72_gex_view_fix.sql  (17765 B, 398 L, 2 inline ID mentions)
+  docs/runbooks/MERDIAN_Strategy_QuickCard_v1.md  (5861 B, 182 L, 3 inline ID mentions)
+  docs/runbooks/README.md  (2277 B, 48 L, 0 inline ID mentions)
+  docs/runbooks/RUNBOOK_TEMPLATE.md  (2037 B, 89 L, 1 inline ID mentions)
+  docs/runbooks/runbook_data_backfill_internet_outage.md  (13600 B, 430 L, 0 inline ID mentions)
+  docs/runbooks/runbook_disaster_rebuild.md  (28031 B, 672 L, 2 inline ID mentions)
+  docs/runbooks/runbook_s42_phase1c_token_refresh.md  (6998 B, 212 L, 1 inline ID mentions)
+  docs/runbooks/runbook_update_dhan_token.md  (5509 B, 146 L, 0 inline ID mentions)
+  docs/session_notes/20260331_documentation_baseline.md  (6294 B, 147 L, 7 inline ID mentions)
+  docs/session_notes/20260419_c08_breadth_writer.md  (3717 B, 54 L, 0 inline ID mentions)
+  docs/session_notes/20260422_oi19_out_of_scope.md  (871 B, 26 L, 0 inline ID mentions)
+  docs/session_notes/20260422_oi20_encoding_disposition.md  (2290 B, 64 L, 0 inline ID mentions)
+  docs/session_notes/capture_s75.md  (13760 B, 273 L, 4 inline ID mentions)
+  docs/session_notes/session_log.md  (55974 B, 21 L, 155 inline ID mentions)
+  docs/session_notes/session_log_entry_20260417_18.md  (4172 B, 63 L, 7 inline ID mentions)

@@ -1,0 +1,35 @@
+text files :  138   bytes 7,432,679
+binary     :   27   bytes 1,094,035  (.docx -- excluded from RAG)
+TOTAL      :  165   bytes 8,526,714
+
+ESTIMATE (assumption: 4.0 chars/token, NOT measured -- tiktoken absent)
+  est tokens            ~    1,858,170
+  est chunks @ 512tok/15% overlap ~    4,270
+  384-dim float32 index ~      6.6 MB
+  768-dim float32 index ~     13.1 MB
+
+TOP 12 text files by bytes (chunk-count drivers):
+  1,075,558  docs/registers/tech_debt.md
+    790,734  docs/registers/CURRENT_history.md
+    615,172  docs/registers/session_log_history.md
+    610,151  docs/registers/merdian_reference.json
+    459,686  docs/registers/MERDIAN_Enhancement_Register.md
+    327,171  CLAUDE.md
+    320,123  docs/registers/MERDIAN_Assumption_Register.md
+    236,438  docs/registers/MERDIAN_System_Map.md
+    230,541  docs/registers/MERDIAN_Deployment_Topology.md
+    143,384  docs/registers/CLAUDE_history.md
+    133,417  docs/research/ict_structure_audit_2026-09-09.md
+    115,376  docs/session_notes/s81_docclose_notes.md
+
+TOP 10 by BYTES-PER-LINE (paragraph-per-line: breaks line-based chunkers):
+     2,665 B/line  (   55,974 B /    21 lines)  docs/session_notes/session_log.md
+     2,516 B/line  (  143,384 B /    57 lines)  docs/registers/CLAUDE_history.md
+       736 B/line  (  111,098 B /   151 lines)  docs/decisions/MERDIAN_Decision_Index.md
+       523 B/line  (  615,172 B / 1,176 lines)  docs/registers/session_log_history.md
+       326 B/line  (  320,123 B /   981 lines)  docs/registers/MERDIAN_Assumption_Register.md
+       280 B/line  (  327,171 B / 1,169 lines)  CLAUDE.md
+       242 B/line  (  790,734 B / 3,267 lines)  docs/registers/CURRENT_history.md
+       165 B/line  (1,075,558 B / 6,521 lines)  docs/registers/tech_debt.md
+       149 B/line  (   25,424 B /   171 lines)  docs/decisions/ADR-007-v18f-ict-pivot.md
+       144 B/line  (   13,101 B /    91 lines)  docs/decisions/ADR-018-breadth-feed-supervision-and-signal-subsystem-disposition.md

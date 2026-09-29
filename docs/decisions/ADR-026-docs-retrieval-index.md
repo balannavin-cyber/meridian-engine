@@ -2,10 +2,11 @@
 
 > **STATUS: ACCEPTED — Session 85, 2026-09-29.** Filed to `docs/decisions/`
 > by operator decision, with the §7 A1 thresholds, the D3 staleness floors and
-> the D1 embedding model all RULED at S85. **Four obligations remain owed
-> BEFORE the first real embedding run**, listed at §9: T1–T4 must pass,
-> `completed_at` must be added to `rag.corpus_snapshot`, the G3c grant question
-> must be decided, and the instance's burst mode must be established.
+> the D1 embedding model all RULED at S85, and **G3c RULED S85 — Option 1,
+> no IAM grant** (§8.1). **Three obligations remain owed BEFORE the first real
+> embedding run**, listed at §9: **T1–T4 must pass**, **`completed_at` must be
+> added to `rag.corpus_snapshot`**, and **the instance's burst mode must be
+> established**.
 >
 > **ID provenance:** `ADR-026` taken from the Decision Index reserved row
 > `ADR-026+ | Next-free | — | Available` (advanced from `ADR-025+` at the S80
@@ -553,28 +554,42 @@ the arithmetic below depends on them.)*
 
 **PROPOSED ALTERNATIVE — three parts, replacing the unimplementable check:**
 
-- **G3a — structural CPU budget (design-time, no API needed).** Bound
-  `CPUQuota × timeout` so a single run cannot materially move the balance, and
-  state the product in the run's log. At 50% × 20 min ≈ 10 credits against ~576
-  max, with `flock` single-instance (G4) and off-hours-only execution, the draw
-  is bounded by construction rather than by a reading. **This is the part that
-  actually replaces the check** — cost is arithmetic and belongs at design time.
-- **G3b — local contention proxy (runtime, implementable today).**
-  `CPUCreditBalance` is unreadable, but **`%steal` is** — `/proc/stat` field 8,
-  measured at 1,184,275 / 121,021,694 jiffies = **0.979% cumulative** over 7 days
-  of uptime. Sample `/proc/stat` twice a few seconds apart and compute **interval**
-  steal; abort if it exceeds a floor. Requires no installs (`mpstat` is absent and
-  is not needed). **Stated limit:** steal is a proxy for *contention or
-  throttling*, not a credit balance, and cumulative-since-boot is useless as a
-  gate — only the interval form is. It can also be near-zero on an instance whose
-  credits are healthy but about to be spent, so G3b detects a bad *present*, never
-  a bad *future*. That is why G3a, not G3b, is the load-bearing part.
-- **G3c — operator-side, one decision.** Either accept G3a+G3b and review
-  `CPUCreditBalance` in the console periodically, **or** grant the instance role
-  the two read-only actions (`cloudwatch:GetMetricStatistics`,
-  `ec2:DescribeInstanceCreditSpecifications`) and restore the original check.
-  The grant is minimal and read-only, but it widens a role currently scoped to
-  SSM, so it is an operator call and not a default.
+- **G3a — structural CPU budget. RULED S85.** `CPUQuota=50%` × a **hard
+  timeout of 20 minutes** per run, so one run consumes **≤ 10 CPU credits**
+  (0.5 vCPU × 20 min = 10 vCPU-min = 10 credits) against a ~576-credit ceiling,
+  with **`flock` enforcing single-instance** (G4) so two runs cannot sum past
+  it, and off-hours-only execution. **The product `CPUQuota × timeout` and the
+  resulting credit figure are written into every run's G7 record** — not merely
+  reasoned about once here.
+  *Fails when:* a run exceeds the 20-minute hard timeout and is killed by it,
+  or a G7 record lands without the credit figure — **an unlogged budget is not a
+  budget**. **This is the part that replaces the unreadable check**, because the
+  binding quantity is `CPUQuota × timeout` and this ruling fixes both factors.
+- **G3b — local contention proxy. RULED S85.** `CPUCreditBalance` is
+  unreadable, but **`%steal` is** — `/proc/stat` field 8, measured at
+  1,184,275 / 121,021,694 jiffies = **0.979 % cumulative** over 7 days of
+  uptime. **At run start, sample `/proc/stat` twice, 10 seconds apart, compute
+  the INTERVAL steal, and abort if interval `%steal` > 5 %.** The abort is a
+  **requeue to the next allowed window, not a failure**. Requires no installs
+  (`mpstat` is absent and is not needed).
+  *Fails when:* interval steal exceeds 5 % at start, which requeues the run.
+  **Three stated limits:** steal is a proxy for *contention or throttling*, not
+  a credit balance; **cumulative-since-boot is useless as a gate**, which is
+  why the sample is a 10-second interval and not the boot total; and it can read
+  near-zero on an instance whose credits are healthy but about to be spent — so
+  G3b detects a bad *present*, never a bad *future*. That is why G3a, not G3b,
+  is the load-bearing part.
+- **G3c — the grant question. RULED S85 (operator): Option 1 — NO IAM
+  grant.** G3a + G3b are accepted as the replacement, the instance role is
+  **left scoped to SSM**, and the operator reviews `CPUCreditBalance` **in the
+  AWS console periodically**. Neither `cloudwatch:GetMetricStatistics` nor
+  `ec2:DescribeInstanceCreditSpecifications` is added to the role.
+  *What this ruling accepts, stated so it is not mistaken for coverage:* there
+  is **no automated credit-balance gate, by decision**. G3a bounds the draw by
+  construction and G3b catches a contended present; **neither can see the
+  balance itself**, and no check in this ADR can. The residual is carried by a
+  human review cadence — a deliberate trade of automation for a role that stays
+  narrow.
 
 **Burst mode remains UNMEASURED.** It cannot be read from this host. The
 operator-side command is in §9.
@@ -758,15 +773,13 @@ abandoned one:
   **§8.1** guardrails G1–G8 and gated on tests T1–T4.
 
 The sole remaining item is a filing-time hygiene check, so **this ADR is
-ready to file** once it is done. Four things are nonetheless **owed before the
-first real embedding run** — obligations, not open questions:
+ready to file** once it is done. Three things are nonetheless **owed before
+the first real embedding run** — obligations, not open questions:
 
 1. **T1–T4 must pass.**
 2. **`completed_at` must be added to `rag.corpus_snapshot`** and honoured by
    every retrieval, per the §8.2 atomicity gap.
-3. **G3c must be decided** — accept G3a+G3b with periodic console review, or
-   grant the instance role the two read-only actions.
-4. **Burst mode must be established.** It **cannot be read from this host** —
+3. **Burst mode must be established.** It **cannot be read from this host** —
    measured S85: `ec2:DescribeInstanceCreditSpecifications` returns
    `UnauthorizedOperation` and CloudWatch is denied blanket (§8.1 G3 finding).
    **Run this read-only command from your own machine:**

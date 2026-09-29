@@ -283,6 +283,77 @@ Nothing else on this arm carries an expected value. Source: `scratch/s85_l78/a2b
 
 > **Observation — the convention ordering REVERSES at NIFTY dte 1.** On A0 and A1 (dte 4, 5, 6) `exact/365` gave the lowest gamma error and `dte/252` the highest. At NIFTY dte 1 that inverts: `dte/252` reads ATM **0.0055** where `exact/365` reads **0.0759** — a factor of ~14 on the same rows — and `dte/365` is worst at 0.1564. SENSEX at dte 3 keeps the usual order (`exact/365` 0.0297 best). **T1 is fixed on `exact/365` and is not changed here.** What this measures is that at 1 DTE the three conventions stop being cosmetically different, which is the case the §2.6 interpretation clause was written for. For the record, had A2 been a T1 arm, both symbols' `exact/365` ATM and NEAR sit under 0.10 and no refusal would have fired.
 
+### 2.10 A3 and E1 results (2026-09-29, pinned 10:15:06 IST)
+
+**The T1 arm and the expiry-day gamma arm are the same cycle** (§2.8): A3 reads SENSEX at dte 2, E1 reads NIFTY at dte 0. Instrument `scratch/s85_l78/a3.sql`, sha256 `85666a833df950bc541c8dd2422e7547fde33bc5bc2819ed5319f28bbe709c7b` (`a3_00_build.out:3`, `a3_02_sha.out:3`), built off the `d5930ee5…` instrument **re-verified at build time** (`a3_00_build.out:1`) with **one hunk, `4c4,5`**, the only edit being the `ts` pin (`a3_01_diff.out:2-6`):
+
+```
+4c4,5
+<    WHERE ts >= now() - interval '1 day'
+---
+>    WHERE ts <= timestamptz '2026-09-29 10:15:59+05:30'
+>      AND ts >= timestamptz '2026-09-29 10:15:59+05:30' - interval '1 day'
+```
+
+Helpers derived from the A2b pair by the same pin substitution — **pin-only edits, asserted**, every changed line checked to be a pin line: `a3_rows.sql` sha256 `43588da3fb740c45f27805c59e7d53af5cdcfd27ccb4010c608902f97b2c3e35` (`a3_04_helpers.out:1-2`), `a3_reff.sql` sha256 `b934e56f2df66c4d4c354d284e892fcdc89cfd024ffd254b90e1041c68d081f3` (`a3_04_helpers.out:3-4`).
+
+**Gate passed before the run** (`a3_03_gate.out:4-5`):
+
+| symbol | pinned IST | ≥ 10:15:00 | pinned rows | 09:15 ref | ref rows | pct vs ref | within 5 % |
+|---|---|---|---|---|---|---|---|
+| NIFTY | 10:15:06 | t | 1020 | 09:15:06 | 1020 | 0.00 | t |
+| SENSEX | 10:15:06 | t | 768 | 09:15:06 | 768 | 0.00 | t |
+
+| check | expected | observed | verdict |
+|---|---|---|---|
+| NIFTY dte | **0** | **0** | **MATCH** |
+| SENSEX dte | **2** | **2** | **MATCH** |
+
+Sources: `a3_05_result.out:4` and `:13`; `a3_07_apply.out:8` and `:16`.
+
+**Rows before → after the delta band** (`a3_06_rows_reff.out:4-11`): NIFTY ATM 18→17, NEAR 27→13, FAR 56→6, total **101→36**; SENSEX ATM 30→30, NEAR 47→45, FAR 128→38, total **205→113**.
+
+| symbol | conv | gamma_relerr ATM/NEAR/FAR | delta_abserr ATM/NEAR/FAR | implied_pts ATM/NEAR/FAR |
+|---|---|---|---|---|
+| NIFTY | exact/365 | **0.2657** / 0.4949 / 0.4973 | 0.0757 / 0.0615 / 0.0410 | 8.1 / −171.1 / −286.6 |
+| SENSEX | exact/365 | **0.0425** / 0.0439 / 0.1041 | 0.0079 / 0.0075 / 0.0068 | 19.1 / −22.7 / −111.1 |
+| SENSEX | dte/365 | 0.0940 / 0.0804 / 0.1576 | 0.0138 / 0.0184 / 0.0149 | 19.1 / −63.0 / −240.8 |
+| SENSEX | dte/252 | 0.0698 / 0.0505 / 0.0560 | 0.0107 / 0.0170 / 0.0120 | 18.2 / 82.8 / 232.1 |
+
+Source: `a3_05_result.out:4-15`. **NIFTY returned `exact/365` only — `dte/365` and `dte/252` produced 0 rows at dte 0**, which §2.8 pre-registered as expected and not a failure; the result set is twelve rows, three NIFTY and nine SENSEX (`a3_05_result.out:16`).
+
+**ATM `r_eff`** (`a3_06_rows_reff.out:18-19`), same method as §2.5:
+
+| symbol | conv | n | dte | spot | secs_to_expiry | T | median implied_pts | sd | SE(median) | ratio vs SE | r_eff |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| NIFTY | exact/365 | 17 | 0 | 22577.55 | 18893.6 | 0.00059911 | 8.1 | 54.079 | 16.438 | **0.49×** | 0.596859 |
+| SENSEX | exact/365 | 30 | 2 | 72114.51 | 191693.3 | 0.00607855 | 19.1 | 22.074 | 5.051 | **3.79×** | 0.043683 |
+
+**A3 (SENSEX, dte 2) — verdicts in the pre-registered order.**
+
+1. **Precondition PASS.** ATM median offset **19.1** against 3 × SE(median) = 3 × 5.051 = **15.153**; ratio **3.79×** (`a3_07_apply.out:9-10`, `a3_06_rows_reff.out:19`).
+2. **T1 PASS on this arm.** `exact/365` ATM **0.0425** and NEAR **0.0439**; the refusal condition requires *both* above 0.10 and neither is (`a3_07_apply.out:11-12`).
+3. **Interpretation clause NOT TRIGGERED.** It fires only on a refusal on `exact/365`, and no refusal occurred (`a3_07_apply.out:13-14`). No vendor time-convention divergence is recorded.
+
+**T1 is not yet decided** — §2.6 evaluates it across the dte 1–2 pair; the verdict follows A4 (Wed 2026-09-30).
+
+**E1 (NIFTY, dte 0) — verdicts in the pre-registered order.**
+
+1. **Precondition PASS.** ATM rows after the band **17 ≥ 10** (`a3_07_apply.out:17`, `a3_06_rows_reff.out:4`).
+2. **The refusal fires.** `exact/365` ATM **0.2657** and NEAR **0.4949**, both above the 0.10 bar T1 sets and §2.8 inherits unchanged (`a3_07_apply.out:18-19`).
+3. **Per §2.8 outcome use, W1's expiry-day charm stays UNRECORDED until re-tested.** E2 (Thu 2026-10-01, SENSEX dte 0) is unaffected by this result (`a3_07_apply.out:26-27`).
+4. **Offset / `r_eff` is a NO-TEST** at ratio **0.49×**, below the 3× precondition — the pre-registered expected outcome at dte 0, and **not read as a finding** (§2.8; `a3_07_apply.out:20-22`). **E1's `r_eff` of 0.596859 is not evidence**: it comes from an arm that failed its own precondition, with `sd` **54.079** against a median of **8.1** (`a3_06_rows_reff.out:18`, `a3_07_apply.out:23-24`).
+
+**Observations — recorded as observations, not findings.**
+
+**(a) A3's precondition clears by a narrower margin than A2's.** **3.79×** here (`a3_06_rows_reff.out:19`) against **6.41×** for SENSEX at dte 3 (§2.9). It passes the pre-registered bar; the margin is smaller, and on one arm that is a margin, not a trend.
+
+**(b) At SENSEX dte 2, `exact/365` remains the lowest-error convention.** ATM **0.0425** against `dte/252` **0.0698** and `dte/365` **0.0940** (`a3_05_result.out:13`, `:7`, `:10`). **The ordering reversal §2.9 measured at NIFTY dte 1 did not appear at this SENSEX arm.** Different symbol and different dte, so this neither confirms nor contradicts that observation — it records that the reversal is not present here.
+
+**(c) E1 against the only prior dte-0 reading.** A0 SENSEX at 14:10 IST (~80 min to expiry) read 0.8336 / 0.9918 / 1.0732 (§2.3, `a0_result.out:34-36`; §2.8). E1 at 10:15, `secs_to_expiry` **18893.6** (~5 h 15 m), reads **0.2657 / 0.4949 / 0.4973** (`a3_05_result.out:4-6`, `a3_06_rows_reff.out:18`) — roughly **3× tighter**, and still **~2.7× over** the 0.10 bar at ATM. §2.8 predicted no pass/fail at this hour, so this is the first 10:15 dte-0 point, and it is one point.
+
+**(d) SENSEX `r_eff` 0.043683 against A2's 0.038406** — about **+13.7 %**, inside T3's ±25 % band. **T3 is INFORMATIONAL** (§2.6) and bears on the vendor's convention, not on the go/no-go.
+
 ---
 
 ## 3. §D rows to file
@@ -360,9 +431,9 @@ Excluding the `dte = 0` SENSEX point, `r_eff` across three points reads **0.0364
 | item | when | note |
 |---|---|---|
 | **A2** | Mon **2026-09-28**, **10:15:59 IST** (`z1_td_and_weekdays.out:24`) | gradient point — NIFTY dte 1 / SENSEX dte 3; not a T1 arm |
-| **A3** | Tue **2026-09-29**, **10:15:59 IST** (`z1_td_and_weekdays.out:25`) | **T1 arm, SENSEX dte 2** — the first of the dte 1–2 pair; NIFTY dte 0: offset void (expected NO-TEST, §2.8); gamma tested at E1. Also carries **the NIFTY L9 max-pain arm owed from S82**: TD-S80-NEW-1 stage 1 is half-verified with the NIFTY arm outstanding |
+| **A3** | Tue **2026-09-29**, **10:15:59 IST** (`z1_td_and_weekdays.out:25`) | **ENH-98 arm DONE this session — §2.10.** T1 arm, SENSEX dte 2: precondition PASS (3.79×), T1 PASS on this arm; NIFTY dte 0 offset void as expected (§2.8), gamma tested at E1. **STILL OPEN — the NIFTY L9 max-pain arm owed from S82**: TD-S80-NEW-1 stage 1 remains half-verified with the NIFTY arm outstanding |
 | **A4** | Wed **2026-09-30**, **10:15:59 IST** | **T1 arm, SENSEX dte 1**; NIFTY dte 6 against the rolled front |
-| **E1** | Tue **2026-09-29**, **10:15:59 IST** | **NIFTY dte 0 gamma fidelity** (§2.8) — same cycle as A3 |
+| **E1** | Tue **2026-09-29**, **10:15:59 IST** | **DONE this session — §2.10.** NIFTY dte 0 gamma fidelity (§2.8), same cycle as A3: precondition PASS (17 ≥ 10), refusal fires on `exact/365` ATM 0.2657 / NEAR 0.4949; W1's expiry-day charm stays unrecorded until re-tested |
 | **E2** | Thu **2026-10-01**, **10:15:59 IST** | **SENSEX dte 0 gamma fidelity** (§2.8) |
 | **T1 verdict** | after A3 + A4 | not reachable on the current n; rule and thresholds pre-registered at §2.6 |
 | **Decisions L78-1 / L78-2 / L78-3** | after T1 | blocked on the verdict; scope stated at §2.6 |

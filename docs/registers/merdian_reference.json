@@ -4913,10 +4913,31 @@
       "truncated_each_run": false
     }
   },
-  "version": "v62",
-  "last_updated_session": "Session 84",
-  "last_updated_date": "2026-09-28",
+  "version": "v63",
+  "last_updated_session": "Session 85",
+  "last_updated_date": "2026-09-29",
   "change_log": [
+      {
+        "session": "S85",
+        "date": "2026-09-29",
+        "type": "Two halves: the ENH-98 A3+E1 arms run against the S84 pre-registration, then a feasibility inventory and ADR-026 filed ACCEPTED. No production change, no DDL, no database write. Three commits, all documentation. A3 (SENSEX dte 2, first T1 arm): gate passed 10:15:06 IST at 0.00 pct row deviation vs own 09:15 reference (NIFTY 1020, SENSEX 768); precondition PASS 3.79x; T1 PASS on this arm (exact/365 ATM 0.0425, NEAR 0.0439); interpretation clause NOT triggered. T1 itself UNDECIDED - sec 2.6 evaluates the dte 1-2 pair, verdict follows A4. E1 (NIFTY dte 0): precondition PASS (17 ATM rows), exact/365 ATM 0.2657 / NEAR 0.4949 -> refusal FIRED, so W1 expiry-day charm stays UNRECORDED until re-tested; offset NO-TEST at 0.49x and 0 rows for dte/365/dte/252 both pre-registered. ADR-026 FILED ACCEPTED (docs/decisions/ADR-026-docs-retrieval-index.md): rag schema on existing Supabase, pgvector 0.8.2 AVAILABLE and NOT INSTALLED, ID-anchored byte-budgeted chunking splitting within lines for six paragraph-per-line files and by key path for merdian_reference.json, hybrid ID-first retrieval over ~6300 heading-anchored entry IDs. ADR-027 DRAFTED not filed, depends on ADR-026, inherits its sec 6 write boundary VERBATIM asserted byte-identical, ID RESERVED.",
+        "summary": "ADRs_NEW=1 (ADR-026 ACCEPTED, first Decision Index row since ADR-025 at S80; next-free ADR-026+ -> ADR-028+ with ADR-027 RESERVED). ADRs_AMENDED=0. TDs_NEW=3 (TD-S85-NEW-1 completed_at atomicity S2, -2 bare sec 7.2 ambiguous corpus-wide S3, -3 first-build vs G3a 20-min timeout with resumability owed S2), TDs_CLOSED=0. Enhancement Register TRIGGERED (ENH-98, A3/E1). Assumption Register D.41 added, 8 rows, 5 of them self-scored withdrawals. RULINGS: A1 thresholds (ID-bearing recall@5=100 pct, prose-only recall@20>=60 pct / @5>=40 pct, >=20 questions per class frozen first); staleness floors (interactive age_doc_commits>3 OR age_days>=2, drafting >0, doc-commits only, re-index event-triggered never on a timer); embedding ONNX-local on EC2 bge-small-en-v1.5 384-dim, no text egress; G1-G8 with T1-T4; G3a 50 pct x 20-min hard timeout = <=10 credits/run logged in G7; G3b requeue if interval steal >5 pct over a 10 s /proc/stat sample; G3c Option 1 NO IAM grant, accepted with its gap stated (no automated credit-balance gate, by decision). FINDINGS: burst mode UNREADABLE from this host (DescribeInstanceCreditSpecifications UnauthorizedOperation; CloudWatch denied blanket INCLUDING the ListMetrics control, which is what makes it a finding not a guess), so G3's original credit check was UNIMPLEMENTABLE - recorded not dropped; CPUQuota bounds RATE not DRAW, the budget is CPUQuota x timeout (credit figures stated from knowledge, NOT measured); completed_at atomicity gap (doc_chunk FKs to corpus_snapshot so a half-built index is readable with no error); sec 7.2 belongs to capture_s74.md:182 not the Deployment Topology (whose sec 7.2 is Windows Task Scheduler) and not a Guardrails doc (0 such headings at HEAD); D3 declared in BOTH drafts, renumbered to D4-D7 via placeholders with 4 foreign refs masked and restored, now mechanically prevented by a COLLISION/AMBIGUOUS rule with a selftest arm; a checker FALSE CLEAN where an errored grep's || echo printed '(none - clean)'; a FALSE EXTERNAL in check_xrefs.py from treating a session marker as a document qualifier. WINDOWS SURFACES 0 docs/ references with positive controls - OPERATOR-MEASURED ~11:48-11:49 IST at C:\\GammaEnginePython: Get-ScheduledTask actions filtered on docs|.md|research -> 0, control Gamma|merdian|meridian -> 19 tasks (a NAME/PATH-FILTER match count, NOT a total inventory, so it does not contradict Topology's 20 or S76's 23); Select-String over top-level *.bat/*.ps1 -> 0, control python -> 199; EC2-measured by the tool, 31 tracked wrappers, 0 docs/ refs, control 28 files / 88 .py matches - different scope and control pattern, which is why 199 and 88 differ.",
+        "docs_updated": [
+          "CURRENT.md",
+          "CURRENT_history.md",
+          "session_log.md",
+          "session_log_history.md",
+          "merdian_reference.json",
+          "MERDIAN_Assumption_Register.md",
+          "MERDIAN_Enhancement_Register.md",
+          "tech_debt.md",
+          "CLAUDE.md",
+          "MERDIAN_Decision_Index.md (VERIFIED not edited this close - the ADR-026 row and ADR-027 reserved row were written in-session at f925939/881b03b; re-verified 1/1/1 with 0 stale next-free rows)",
+          "docs/decisions/ADR-026-docs-retrieval-index.md (NEW, ACCEPTED)",
+          "docs/research/s85_rag/ (NEW: ADR-027 draft, inventory.md, and the checker toolchain)"
+        ],
+        "git_state": "3a78769 -> f925939 -> 881b03b (all pushed; HEAD == origin/main == ls-remote at 881b03b). ~/meridian-engine NOT pulled - market hours - at 59c9349, three commits behind, 0 non-docs/ files; pull owed after 16:00 IST. The old '.py count must be 0' gate NO LONGER APPLIES: the gap carries 7 .py, all the docs/research/s85_rag checker toolchain, NONE scheduled - the intersection with the 26 cron/unit-invoked scripts is empty, measured."
+      },
       {
         "session": "S84",
         "date": "2026-09-28",

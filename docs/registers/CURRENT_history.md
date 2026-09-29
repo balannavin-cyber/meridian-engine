@@ -5,7 +5,7 @@
 | Document | `docs/registers/CURRENT_history.md` |
 | Type | Append-only archive of `CURRENT.md`'s session blocks. **Not** a working document. |
 | Split from | `CURRENT.md` at the Session 78 doc-close, 2026-09-14 |
-| Contents | Every block from **S79** through **S82**, appended at the end, verbatim. **CORRECTED S83:** this field read *"from `## Previous session S79`"* and was **stale again** — S80 was archived at the S82 close and the description did not move with it, which is the same self-description drift the S81 correction below records, recurring one session later. **Ordering note, measured S83:** blocks are **appended at the end**, not prepended — S79 sits at the top of the section and S80 below it — so this file is not newest-first, and S81 follows S80 at the end to match what the S82 close actually did. | **CORRECTED S81:** this field read *"from `## Previous session S76`"* and was **stale across three demotions** (S77, S78, S79) — the file's own description of itself drifted while its update rule worked correctly. **Measured S81: 76 H2 sections in total** (the field previously said 72). **The 61-session / 11-non-session split below is AS-AT-SPLIT and was NOT re-derived** — a regex over `## Previous session S…` returns 28, but older blocks use other heading forms, so 28 would be a *worse* number rather than a newer one. Recorded as unverified rather than replaced with a wrong figure. Original text follows — 61 session blocks plus 11 non-session blocks (`Live state snapshot`, `Mid-session checkpoints`, `Session-end checklist`, `Detail blocks`, `Historical Sessions Archive`), 72 H2 sections in all, spanning S76 back to Session 16. |
+| Contents | Every block from **S79** through **S83**, appended at the end, verbatim. **CORRECTED S83:** this field read *"from `## Previous session S79`"* and was **stale again** — S80 was archived at the S82 close and the description did not move with it, which is the same self-description drift the S81 correction below records, recurring one session later. **Ordering note, measured S83:** blocks are **appended at the end**, not prepended — S79 sits at the top of the section and S80 below it — so this file is not newest-first, and S81 follows S80 at the end to match what the S82 close actually did. | **CORRECTED S81:** this field read *"from `## Previous session S76`"* and was **stale across three demotions** (S77, S78, S79) — the file's own description of itself drifted while its update rule worked correctly. **Measured S81: 76 H2 sections in total** (the field previously said 72). **The 61-session / 11-non-session split below is AS-AT-SPLIT and was NOT re-derived** — a regex over `## Previous session S…` returns 28, but older blocks use other heading forms, so 28 would be a *worse* number rather than a newer one. Recorded as unverified rather than replaced with a wrong figure. Original text follows — 61 session blocks plus 11 non-session blocks (`Live state snapshot`, `Mid-session checkpoints`, `Session-end checklist`, `Detail blocks`, `Historical Sessions Archive`), 72 H2 sections in all, spanning S76 back to Session 16. |
 | Why | TD-S73-NEW-8. `CURRENT.md` had reached **749,576 bytes on disk / 752,652 in project knowledge across 3,076 lines and 62 session blocks**, in a file named *current*, read second at every session open. It was the second-largest file in a store at 92 % capacity. |
 | Project knowledge | **NOT uploaded.** Git is the archive; project knowledge is the retrieval surface. This file is reachable by `git log`/`grep` when a historical block is actually wanted. |
 | Caveat | Splitting is **necessary and not sufficient**, exactly as the S74 `CLAUDE.md` split was. The root cause is the eight-fold duplication of each session's findings across eight registers. TD-S73-NEW-8 stays **OPEN**. |
@@ -3262,3 +3262,50 @@ win the baseline's `max()` (W1 peak OI 9.8× W2's). **NIFTY arm owed 2026-09-29.
 13. **PK size check after upload** — do not project a byte total; read PK's own
     reported size. Its counter read **1,796,444** for a set whose git bytes sum to
     ~3.9 MB, so PK does not count raw bytes.
+
+## Previous session S83
+
+**Session 83 — 2026-09-24 → 2026-09-25 (Thu–Fri).** Build. Three ADR-025 parity
+layers authored, validated and deployed; **production Python unchanged**.
+
+| Field | Value |
+|---|---|
+| **Shipped** | **ENH-130** `v_iv_term_structure` (L9, 17 cols) · **ENH-131** `v_gex_repriced_flip` (L3, 18 cols) · **ENH-132** `v_iv_surface` (L10, 21 cols). Applied by the operator in the Supabase editor. Anon path verified by `SET ROLE anon`, not by object existence. |
+| **Parity count** | **BUILT STAYS 2 of 14.** ADR-025 D2 clauses 1/2/4 MET on all three; **clause 3 PENDING BY DECISION** under Amendment B1. Three ships that deliberately do not move the count — B1 working as written, not a lapse. |
+| **The gate record** | **Three of ENH-131's five gates FAILED** and the full record lives in the view's own COMMENT. Gate 2 compared a heavily-cancelled net against 1 % where net/gross runs **0.0095–0.341**; Gate 3(ii) used a ±5 % window blind to a 2→1 crossing-count change; Gate 4's ±0.01 r band was **~19× narrower** than the dispersion it bounded. Gate 5 passed 5/5 on three out-of-sample arms. |
+| **Four mis-specified gates, none loosened** | One shape: a threshold set before the quantity's scale was derived. Now a CLAUDE.md settled bullet. The builds shipped on separately pre-registered replacements, not on relaxed thresholds. |
+| **Host change** | One `mv`: `/etc/logrotate.d/meridian.PRE_20260922` → `/root/`. **TD-S83-NEW-1 filed and CLOSED** on an **observed** clean run (`Finished Rotate log files.` 2026-09-25 00:00:03), not on the fix. |
+| **Ledger** | TDs_NEW=7 (TD-S83-NEW-1..7), TDs_CLOSED=1. ADRs_NEW=0, ADRs_AMENDED=0, **no Decision Index row — stated as a decision**. Enhancement Register TRIGGERED, fifth consecutive session. |
+
+**Three things this session got wrong and recorded rather than absorbed.** Five
+figures in one COMMENT draft were wrong because they were read off rendered tables
+instead of files, and the queries had never been saved to `.out`. A `journalctl`
+read returning `No entries` was a **no-test**, not a clean result — the `sudo` read
+returned two nights of logrotate failures. And **the capture file written to drive
+this doc-close was itself wrong twice**: it predicted `[ -- ] NOT AUDITABLE` on a
+check that printed `[ OK ]`, and it blamed ADR-015 for a column naming the ADR does
+not use. All filed — §D.39, TD-S83-NEW-7.
+
+**`equity_intraday_last` is auditable on the schedule, and the S82 claim that it
+reads `[ -- ] NOT AUDITABLE` every night by design was wrong.** The mechanism is in
+§D.39.4, read from `scripts/eod_health_check.py:367-419`: NOT AUDITABLE requires the
+one-generation table to have moved **past** the audited date, and the 00:45 UTC slot
+runs **before** that day's successor refresh. Do not repeat the "every night" claim.
+
+## NEXT SESSION PICKS UP
+
+1. **Capture depth — the one decision that blocks two layers.** SENSEX furthest
+   listed expiry, NIFTY 5th leg, or formally record the ADR-025 **D3 deviation**.
+   Recommendation on record: add current + next **monthly** expiries (4 legs) as its
+   own measured ENH. Blocks L9 comparability and L10 depth; blocks neither build.
+2. **Scrub the reference product name from existing registers** (the parity spec
+   filename, ADR-025, older notes). New S83 lines already carry none.
+3. **`authenticated` / `service_role` default grants on new views** — Supabase
+   defaults gave both privileges on all three; flagged at deploy, not acted on.
+4. **Send the vendor methodology question on Greeks/IV** (drafted, not sent) — one
+   route to closing TD-S83-NEW-4 and TD-S83-NEW-5.
+5. **2026-09-29 — NIFTY L9 stage-1 max-pain arm** (TD-S80-NEW-1).
+6. **ENH-98 re-run with SENSEX at dte 1–2**; the multi-DTE offset test.
+7. **Parity build order continues: L7/L8 (ENH-98) next.**
+8. Everything under the S82 block's "Decisions owed" that S83 did not touch carries
+   unchanged.

@@ -64,6 +64,48 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > rather than deleted because removing a header is an operator call, not a doc-close
 > edit. **Recommend deletion next session.**
 
+### TD-S85-NEW-1 (S2 priority) — `rag.corpus_snapshot` has no `completed_at`, so a half-built index is readable with no error and degrades A1 while looking like a retrieval-quality problem
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Not blocking — the schema does not exist yet — but it must be fixed **before** the DDL is written, because after that the fix is a migration plus a re-index rather than a column. |
+| **Filed** | 2026-09-29 (Session 85) |
+| **Component** | **ADR-026** §5 schema · §8.2 Lane A step **A-10** · `rag.corpus_snapshot` · `rag.doc_chunk` · the D2 retrieval path. |
+| **Measured** | `doc_chunk` carries an **FK to `corpus_snapshot`**, so the snapshot row must be inserted **first**, before its chunks. Found while sequencing §8.2, not by review. |
+| **Consequence** | Retrieval keyed on *"snapshot exists"* can read a **half-built index mid-run**, or a **permanently partial one** if A-9 is killed at A-8's 600 MB memory cap or A-9's 20-minute timeout. It returns **fewer chunks than the corpus holds, with no error**, so it degrades **A1 recall** while presenting as a retrieval-quality problem rather than a truncated ingest. A test of recall alone cannot distinguish the two. |
+| **Proper fix** | Add `completed_at timestamptz` to `rag.corpus_snapshot`, NULL until A-10, and have **every** retrieval select only snapshots with `completed_at IS NOT NULL`. Operator DDL, like all `rag` DDL under ADR-026 §6. |
+| **Why a TD and not just the ADR's owed list** | ADR-026 §8.2 states the gap and §9 lists it as owed, but **an ADR's owed-list is not a watcher**. This register is the thing that fires. Same reasoning CLAUDE.md records for TD-S69-NEW-1 — a resolved or merely-noted item has no watcher. |
+| **Cross-ref** | ADR-026 §5, §8.2, §9 item 2 · ADR-021 (latest-run scoping) · TD-S37-03 (the silent-empty shape). |
+| **Status** | **OPEN.** |
+
+### TD-S85-NEW-2 (S3 priority) — a bare `§7.2` is ambiguous corpus-wide: two documents have one, and the reading that looks obvious is the wrong one
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Citation hygiene, no runtime effect — but it **already misled a session**, and the failure mode is a citation that resolves to plausible wrong content, which is worse than one that resolves to nothing. |
+| **Filed** | 2026-09-29 (Session 85) |
+| **Component** | `CLAUDE.md` (anti-patterns, settled decisions, version footers) · `docs/registers/tech_debt.md` · `MERDIAN_Assumption_Register.md` · `MERDIAN_Deployment_Topology.md` · `docs/session_notes/capture_s74.md`. |
+| **Measured** | The only heading matching deploy-direction is **`capture_s74.md:182` — `### 7.2 Deploy-direction inversion — still **UNRATIFIED**`**, under `## 7. Decisions`. **Deployment Topology §7.2 is `Windows Task Scheduler`** — an unrelated section, itself carrying the 20-vs-23 task discrepancy of TD-S76-NEW-14. The bare form is what `CLAUDE.md` uses. |
+| **Consequence** | S85 was **one step from qualifying a bare `§7.2` as "Deployment Topology §7.2"** and only stopped because the operator required the owner be measured. A reader resolving the bare form against the Topology finds a real §7.2 about Windows tasks and concludes the deploy-direction item is about schedulers. Additionally the `§7.3` / `§7.6` "Guardrails doc" premise **does not resolve at HEAD**: **0** such headings, **0** `bare-call` matches, **no** Guardrails file tracked — so that §7 series belongs to a document outside the repo. |
+| **Workaround** | Qualify at the point of citation: `` `capture_s74.md` §7.2 ``. Applied in ADR-026 and ADR-027 this session (4 occurrences), and the qualifier survives a line-wrap because the checker looks back across it. |
+| **Proper fix** | One pass qualifying every bare `§7.x` in `CLAUDE.md` and the registers with its owning document, and a note in the Doc Protocol that a cross-document section reference carries its document name — the sibling of the S84 line-citation rule (§D.40.6). |
+| **Cross-ref** | §D.40.6 (line citations decay) · TD-S76-NEW-14 (Topology §7.2's own defect) · `capture_s74.md` §7.2. |
+| **Status** | **OPEN.** |
+
+### TD-S85-NEW-3 (S2 priority) — whether the first full index build fits G3a's 20-minute hard timeout is UNMEASURED, and ADR-026 provides no resumability if it does not
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Blocks the first real embedding run, and the answer determines whether ADR-026 needs a design change rather than a parameter change. |
+| **Filed** | 2026-09-29 (Session 85) |
+| **Component** | **ADR-026** §8.1 **G3a** (`CPUQuota=50%` × 20-min hard timeout) · §8.2 Lane A steps **A-8**/**A-9** · §4 chunk estimate. |
+| **Measured** | **Nothing yet — that is the finding.** The corpus estimate is **~4,270 chunks** over 7,432,679 text bytes (`inventory.md` §4), an **estimate** at an assumed 4.0 chars/token because `tiktoken` is absent from this host. Throughput of `bge-small-en-v1.5` under ONNX at `CPUQuota=50%` on 2 vCPU is **unmeasured**. |
+| **Consequence** | If the full build exceeds 20 minutes, the timeout kills it at A-9 — and because there is no resumability, **every run restarts from zero and no run ever completes**. The snapshot then never reaches A-10, which (given TD-S85-NEW-1) is also the state in which a partial index is readable. The two defects compose. |
+| **Proper fix** | **Measure first:** embed a bounded sample under the real scope and extrapolate, stating the extrapolation. If the full build does not fit, the options are **(a)** resumable builds across runs — chunk-level checkpointing, snapshot completed only on the final pass; **(b)** a one-off, **operator-approved longer timeout for the initial build only**, whose credit cost is stated from `CPUQuota × timeout` (e.g. 40 min at 50 % ≈ **20 credits** of a ~576 ceiling); or **(c)** both. **The choice is made after the measurement, not before it.** |
+| **Explicitly owed, not ruled** | Recorded at operator instruction as an owed measurement. Neither a resumability design nor a timeout change is authorised by this entry. |
+| **Cross-ref** | ADR-026 §8.1 G3a/G3b/G3c, §8.2, §9 item 3 · **TD-S85-NEW-1** (they compose) · T4 (the 50-chunk sample, with its ~330 MB prediction). |
+| **Status** | **OPEN.** |
+
 ### TD-S84-NEW-7 (S2 priority) — the UI labels `flip_distance_pct` as sigma, so a spot-to-flip distance is rendered as a volatility band
 
 | Field | Value |

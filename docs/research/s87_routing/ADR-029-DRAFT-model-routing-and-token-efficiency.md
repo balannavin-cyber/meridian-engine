@@ -93,7 +93,8 @@ not as an omission.
   permission, any review, or any write discipline.
 - **It does not settle the absolute-path question.** `WS3.1_baseline.md §6` has
   now run and its finding is recorded at §6.1 below. The finding is a measurement;
-  what to do about the convention is a ruling, and that ruling is still owed.
+  what to do about the convention is a ruling, and that ruling was made by the
+  operator rather than by this document — it is recorded in `rulings_s87.md`.
 
 ---
 
@@ -389,10 +390,11 @@ own cross-check because the corpus grew mid-measurement, and the cross-check is
 the only thing that noticed (`WS3.1_baseline.md §1`). Every subsequent figure
 would have silently inherited the disagreement.
 
-### 6.1 The absolute-path rule — TESTED, ruling owed
+### 6.1 The absolute-path rule — TESTED, RULED
 
 This project currently prefers absolute paths over directory-changing compound
-commands. **That preference is now measured and is still not adopted here.**
+commands. **That preference is now measured, and the operator has ruled on it; see
+`rulings_s87.md`.**
 
 `WS3.1_baseline.md §3` reports per-form denial rates across both corpora, and
 `WS3.1_baseline.md §6` states why they cannot settle the question: these are
@@ -428,8 +430,19 @@ convention for `git`, drop it for every read-only verb, or retain it and accept 
 prompts — is the operator's call. Nothing else in this ADR depends on the
 convention either way.
 
-> **OPERATOR RULING OWED — whether the absolute-path convention is adopted,
-> retained provisionally, or dropped, now that `WS3.1_baseline.md §6` has run.**
+**The allow-rule test ran, and it passed.** A set of read-only `git -C` allow
+rules was added and then exercised in a fresh session against a bar written down
+beforehand: the read-only invocations were to run with no prompt, and a
+`push --dry-run` on the same path was to prompt. Both halves held, and the ruling
+that followed is recorded in `rulings_s87.md` with its date and the operator's
+words. **It is not restated here** — neither the ruling nor the residual limit
+recorded beside it, which §7 carries as its own row. The finding above is
+unchanged by the ruling: the convention buys prompts on the built-in match, and
+the allow rules are what pays for them.
+
+> **OPERATOR RULING #12 — RULED 2026-09-30 19:06 IST. See `rulings_s87.md`.**
+> The scope limit above survives the ruling: one verb, n=1 per command. Other
+> read-only verbs remain untested.
 
 ---
 
@@ -443,13 +456,14 @@ being promoted to a measured fact.
 
 | # | fact | source |
 |---|---|---|
-| a | A built-in read-only command set exists and is **not configurable**. Listing those verbs in an allow rule adds nothing and implies a permission that is not ours to grant. | `docs/registers/session_log_history.md`, the Session 73 entry dated 2026-09-06 (commits `2c26cfe` + `057e890` + `3b22278`), item (2) — the block recording that `allow` was left deliberately empty for this reason. |
-| b | User-level permission counts: **allow 2 / ask 15 / deny 22**. | `CURRENT.md` S86 block, Environment state row. |
+| a | A built-in read-only command set exists and is **not configurable**. Listing those verbs in an allow rule adds nothing and implies a permission that is not ours to grant — for the forms the built-in set matches. Forms it does not match, such as `git -C <path>` (§6.1), do need allow rules; ruling #12 added them. | `docs/registers/session_log_history.md`, the Session 73 entry dated 2026-09-06 (commits `2c26cfe` + `057e890` + `3b22278`), item (2) — the block recording that `allow` was left deliberately empty for this reason. |
+| b | User-level permission counts: **the allow / ask / deny counts in `~/.claude/settings.json` — changed at S87 by ruling #12, see `rulings_s87.md`**. | The live settings file. The `CURRENT.md` S86 block holds the pre-S87 values and is superseded by the S87 change — the restated-copy drift D15 names, observed here rather than argued. |
 | c | `ask` rules survive automatic-approval mode — the mode does not silently convert an ask into an allow. | **S87 starter prompt (project knowledge, not in repo); not verified by this pass.** |
 | d | A `Read` or `Edit` deny is a boundary **for the `Read` and `Edit` tools only, and not for other readers of the same file**. A `Read` deny does block the file commands the permission layer recognises; it does not reach readers it does not recognise, at least one of which is auto-approved read-only, nor code that opens the file itself. | `tech_debt.md`, the **Gap 2** row (*"`Read` deny does not cover every reader"*). |
 | e | A `Bash` deny is **bypassable by absolute path** — a deny written against a bare verb is not matched by the same verb invoked at its full path. **Measured on one form only.** The deny list is a speed bump, not a boundary. | `CURRENT.md` S86 block, verbatim, including its own scope limit: only the absolute-path form was tested, no other spelling was. |
 | f | **Sandbox is available and is NOT enabled.** Recorded as state, not as a remediation. Enabling it carries an installation cost and a network-allowlist cost. | State: `CURRENT.md` S86 block. Costs: **S87 starter prompt (project knowledge, not in repo); not verified by this pass.** |
 | g | **`.env` is never read from an agent session**, in any form. | Rule 19. Not a preference, and not subject to routing. |
+| h | The read-only `git diff` and `git log` allow rules added by ruling #12 **permit a file write**: both verbs accept an `--output=<file>` argument, so a rule matched on the verb alone is not a read-only boundary. **Recorded, not fixed.** | `rulings_s87.md`, the ruling #12 block. |
 
 Row (d) and row (e) are why §7 is a table rather than a paragraph. Each records a
 limit **with its own scope attached** — (d) names the tools the boundary holds
@@ -567,7 +581,7 @@ the numbering the body and this table already share does not move.
 | 9 | The sampling rate for the review that can trigger an automatic gear-up. | 4 |
 | 10 | The size and per-class composition of the evaluation suite, and the pass bar that decides adequacy for a class. | 5 |
 | 11 | Whether cost per passed task is compared at a fixed budget or at parity of outcome, and who grades. | 5 |
-| 12 | Whether the absolute-path convention is adopted, retained provisionally, or dropped, now that the `WS3.1_baseline.md` §6 experiment has run. | 6 |
+| 12 | Whether the absolute-path convention is adopted, retained provisionally, or dropped, now that the `WS3.1_baseline.md` §6 experiment has run. **RULED 2026-09-30 19:06 IST — see `rulings_s87.md`.** | 6 |
 | 13 | Whether sandbox is enabled, and if so who pays its installation and network-allowlist cost. | 7 |
 | 14 | Whether the Bash deny-bypass gap is closed, how, and whether the untested spellings are enumerated first. | 7 |
 | 15 | The current CLI pin: hold, advance, or unpin, and on what trigger (WS1.2). **RULED 2026-09-30 17:41 IST — hold.** See `rulings_s87.md`. | 8 |

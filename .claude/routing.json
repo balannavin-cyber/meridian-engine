@@ -1,0 +1,23 @@
+{
+  "mode": "shadow",
+  "classes": {
+    "TC1": {
+      "incumbent": "opus",
+      "shadow": "haiku"
+    },
+    "TC2": {
+      "incumbent": "opus",
+      "shadow": "sonnet"
+    },
+    "TC3": {
+      "incumbent": "opus",
+      "shadow": null
+    }
+  },
+  "gear_down_bar": {
+    "TC1": "10/10",
+    "TC2": "18/20",
+    "registered": "2026-09-30T14:22:00+05:30"
+  },
+  "source": "docs/research/s87_routing/rulings_s87.md"
+}

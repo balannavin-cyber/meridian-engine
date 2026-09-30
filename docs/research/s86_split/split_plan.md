@@ -546,6 +546,8 @@ The separate, real citation cost is that Rules 20-23 move **out of `CLAUDE.md`**
 `coupling_audit_2026-09-07.md`, `experiment_forensics_2026-09-11.md`,
 `ict_structure_audit_2026-09-09.md`). Those go stale under every option below.
 
+> **S87 correction (2026-09-30):** this six-file list is wrong in composition. The live Rule 20/21/22 citations were 11, not 10: it omits merdian_reference.json and MERDIAN_Experiment_Compendium_v1.md, and two of its files carry the bare form. Only the 3 Rule-20 citations needed re-pointing, because 21/22 stayed in core. Done at b282a05.
+
 | Option | What it does | Cost |
 |---|---|---|
 | **1. Renumber B6/B7 to Rules 24/25** | One monotonic series; Rules 20-23 unchanged | **0 citations** to re-point. Needs no new ID prefix, so no Rule 9 / Rule 10 ADR |
@@ -556,6 +558,8 @@ The separate, real citation cost is that Rules 20-23 move **out of `CLAUDE.md`**
 Rules 20-23 alone. It is the only option with measured-zero citation cost, it avoids
 the ADR overhead a new prefix triggers, and it changes exactly the two rules that are
 actually broken.
+> **S87 correction (2026-09-30):** superseded. 24/25 were not free (a retired S40 Rule 24 survives in CLAUDE_history.md), and the cost was 2 re-points, not 0. B6/B7 became Rules 26/27 at b282a05.
+
 
 **Sequencing, because the constraint bites here.** You have required Rule 18 (B6) move
 **verbatim**, and TD-S86-NEW-4 must not be fixed in the split because prompt B2

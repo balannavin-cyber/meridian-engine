@@ -246,7 +246,7 @@ Edge is real but concentrated. The +193% number alone overstates steady-yield ex
 **Setup (six fixes vs v2):**
 1. Query `hist_ict_htf_zones` not `ict_htf_zones` (Session 15's fix table)
 2. Drop `valid_to` filter — take most-recent ACTIVE zone per (TF, pattern) at each bar
-3. Era-aware Rule 20 (`ERA_BOUNDARY = 2026-04-07`)
+3. Era-aware `.claude/rules/python-writers.md` Rule 20 (`ERA_BOUNDARY = 2026-04-07`)
 4. Use `trade_date` column directly for date filters
 5. `EXPECTED_BARS = 81` (empirical, not 75)
 6. Distance histogram diagnostic added

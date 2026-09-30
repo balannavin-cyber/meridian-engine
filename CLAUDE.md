@@ -92,13 +92,6 @@ These are hard rules. Do not propose violations. Do not ask "what if we…".
 19. **NEVER run `bash -x`, `set -x`, `cat`, `grep`, or any other content-revealing command against `.env` — or against any script that sources it.** `bin/wsfeed_preflight.sh`, `run_ingest.sh`, and every `source .env &&` cron line all load the environment; tracing any of them prints every secret to the transcript. This happened in Session 71 and exposed `DHAN_TOTP_SEED`, `DHAN_PIN`, `SUPABASE_SERVICE_ROLE_KEY`, both Breeze keys, `ZERODHA_API_KEY`, and `TELEGRAM_BOT_TOKEN` — several of which never expire. **Scope every diagnostic to the specific check, never to the environment load.** To test whether a variable is set: `[ -n "$VAR" ] && echo set`. To trace a script that sources `.env`: bracket the sourcing block with `set +x` / `set -x`, or run the inner check alone with the environment already loaded. To compare a secret across hosts: `grep '^KEY=' .env | cut -d= -f2 | tr -d '\r\n' | sha256sum` — compare hashes, never values.
 18. **`trading_calendar` is a trust-anchor — validate it against the official NSE source before trusting ANY holiday gate.** Every holiday gate in MERDIAN fail-opens on this table (a wrong/empty calendar silently defeats all of them). The source of truth is `trading_calendar.json` (read by the V18E rule engine `trading_calendar.py`; the table is seeded from it by `seed_trading_calendar.py`). S60 found the JSON held only 2 (one misdated) of the 15 NSE-2026 equity holidays, so the table mismarked every holiday `is_open=true` since ~April and the pipeline ran the full compute chain on Muharram. When adding or trusting a gate, verify the calendar against the official NSE/BSE holiday list first; a gate over a wrong calendar is worse than no gate (it can suppress a real trading day). The canonical gate is `core/trading_calendar_gate.py` (`is_trading_day_today()` / `assert_trading_day_or_exit(log)`) — import it, do not roll a new inline copy. (Rule added 2026-06-26, TD-S60-NEW-2/3.)
 
-> **Two rules are numbered 18 and 19.** The hard rules above are the `trading_calendar`
-> trust-anchor (18) and the `.env`-tracing ban (19). A second, older pair — patch-script
-> EOL handling and the module-import grep — lives in `.claude/rules/python-writers.md`,
-> with **Rule 20** beside them. **Rules 21 and 22** are session-invariant and stay
-> in this file; **Rule 23** is in `.claude/rules/registers.md`. Renumbering and
-> citation re-pointing are deferred to phase 3.
-
 ---
 
 ## Session contract

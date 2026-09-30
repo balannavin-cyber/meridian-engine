@@ -3805,7 +3805,7 @@
       "severity": "S3",
       "discovered": "2026-05-01 (Session 15, ADR-003 Phase 1 v2 + Exp 44 + bar-coverage diagnostics)",
       "summary": "CLAUDE.md Rule 16 needs era-aware addendum (post-04-07 era). Rule 16 says: apply replace(tzinfo=None) to bar_ts and filter to in-session 09:15-15:30. Correct for pre-04-07 era only. Post-04-07 bars stored as true UTC; verbatim Rule 16 drops most of the day (~9 bars vs ~76 per session = false alarm 27.5% bar coverage). Era boundary: 2026-04-07. Workaround: pre-04-07 use replace(tzinfo=None); post-04-07 use astimezone(IST_TZ). Codified as Rule 20 in CLAUDE.md v1.10 (Session 15 close). Audit pending for repo scripts that apply Rule 16 verbatim.",
-      "see_also": "tech_debt.md TD-053 entry; CLAUDE.md Rule 20 (Session 15 codification)"
+      "see_also": "tech_debt.md TD-053 entry; .claude/rules/python-writers.md Rule 20 (Session 15 codification)"
     },
     "TD-054": {
       "status": "OPEN",

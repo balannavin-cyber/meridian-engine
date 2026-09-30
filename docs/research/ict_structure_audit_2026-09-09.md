@@ -1901,7 +1901,7 @@ contain them.
 |---|---|---|---|
 | 1 | Did the operator run *this* file, or a since-diverged Windows copy? (Q1) | off-host | md5 of `C:\GammaEnginePython\build_ict_primitives.py` vs `102ad3b3565b4effe229b90c2a59ef7e` |
 | 2 | Is the option-P&L cohort survivorship-filtered by tier? (Q4) | no DB access | the `count(*)` vs `count(option_pnl_30m)` split by `option_pnl_source` in Q4 |
-| 3 | Does `hist_spot_bars_1m` carry out-of-session rows, making **F-75** material? | no DB access | `SELECT count(*) FROM hist_spot_bars_1m WHERE (bar_ts AT TIME ZONE 'Asia/Kolkata')::time NOT BETWEEN '09:15' AND '15:30'` — era-aware per Rule 20 |
+| 3 | Does `hist_spot_bars_1m` carry out-of-session rows, making **F-75** material? | no DB access | `SELECT count(*) FROM hist_spot_bars_1m WHERE (bar_ts AT TIME ZONE 'Asia/Kolkata')::time NOT BETWEEN '09:15' AND '15:30'` — era-aware per `.claude/rules/python-writers.md` Rule 20 |
 | 4 | What does `merdian_eod_ict.bat` actually invoke? (Q6) | file is untracked and Windows-side | the file, or `schtasks /query /tn "\MERDIAN_ICT_EOD" /xml` |
 | 5 | Is the Pine parity claim of ADR-004 Amendment B true given **F-80**? | requires reading the three `.pine` files against TradingView session-alignment behaviour | a bar-boundary comparison on one session |
 | 6 | Does `ict_primitives` hold duplicate W/D rows from an earlier boundary-straddling run? (**F-78**) | no DB access | `SELECT symbol, timeframe, primitive_type, date_trunc('week', source_bar_ts), count(*) FROM ict_primitives WHERE timeframe IN ('W','D') GROUP BY 1,2,3,4 HAVING count(*) > 1` |

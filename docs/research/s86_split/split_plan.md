@@ -558,7 +558,7 @@ The separate, real citation cost is that Rules 20-23 move **out of `CLAUDE.md`**
 Rules 20-23 alone. It is the only option with measured-zero citation cost, it avoids
 the ADR overhead a new prefix triggers, and it changes exactly the two rules that are
 actually broken.
-> **S87 correction (2026-09-30):** superseded. 24/25 were not free (a retired S40 Rule 24 survives in CLAUDE_history.md), and the cost was 2 re-points, not 0. B6/B7 became Rules 26/27 at b282a05.
+> **S87 correction (2026-09-30):** superseded. 24/25 were not free (a retired S40 Rule 24 survives in CLAUDE_history.md), and the cost was not 0: 2 citations existed, 1 needed re-pointing (`tech_debt.md:119`; `s81_docclose_notes.md:1943` cites the bare B6 label and was left alone). B6/B7 became Rules 26/27 at b282a05.
 
 
 **Sequencing, because the constraint bites here.** You have required Rule 18 (B6) move

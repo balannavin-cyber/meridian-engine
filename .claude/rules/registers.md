@@ -46,8 +46,8 @@ C:\GammaEnginePython\                 (Windows local, PRIMARY LIVE)
       YYYYMMDD_<topic>.md             <- per-session detail when warranted
 
     decisions/                        <- optional ADRs (one per major decision)
-      ADR-001-options-only.md
-      ADR-002-5m-for-ict.md
+      ADR-001-stable-lies-defeat-duration-gates.md
+      ADR-002-market-structure-philosophy.md
       ...
 
     research/

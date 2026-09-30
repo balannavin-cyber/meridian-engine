@@ -33,13 +33,18 @@ BASE = Path("/home/ssm-user/meridian-cc/docs/research/s85_rag")
 REAL = {
     "ADR-026": Path("/home/ssm-user/meridian-cc/docs/decisions/ADR-026-docs-retrieval-index.md"),
     "ADR-027": BASE / "ADR-027-DRAFT-doc-close-drafting-and-verification.md",
+    "ADR-028": Path("/home/ssm-user/meridian-cc/docs/decisions/ADR-028-claude-md-split.md"),
 }
-LOCAL_IDS = {"ADR-026", "ADR-027"}
+LOCAL_IDS = {"ADR-026", "ADR-027", "ADR-028"}
 
 # ---- definitions: what each draft DECLARES -----------------------------
 DEFS = {
     "section": [re.compile(r"^#{2,4}\s+(\d+(?:\.\d+)?)[.\s]")],
-    "decision": [re.compile(r"\*\*(D\d)\s*[—-]")],
+    # D\d+, not D\d: ADR-028 declares D8-D12, and a single-digit pattern
+    # matches NEITHER the declaration nor a reference to D10/D11/D12 -- so the
+    # collision rule would have reported 0 for labels it could not see. A check
+    # that cannot see its subject is not a check.
+    "decision": [re.compile(r"\*\*(D\d+)\s*[—-]")],
     "guard": [re.compile(r"\*\*(G\d[a-c]?)\s*[—-]")],
     # A table-row declaration is a row whose FIRST cell is the token:
     # "| **V0** | ...". Matching "**V0**" anywhere in a row is wrong -- ADR-026's
@@ -56,7 +61,7 @@ DEFS = {
 # ---- references: what each draft CITES ---------------------------------
 TOKEN_RX = [
     ("section", re.compile(r"§\s*(\d+(?:\.\d+)?)\b")),
-    ("decision", re.compile(r"\b(D[1-9])\b")),
+    ("decision", re.compile(r"\b(D\d+)\b")),
     ("guard", re.compile(r"\b(G[1-8][a-c]?)\b")),
     ("test", re.compile(r"\b(T[1-9])\b")),
     ("arm", re.compile(r"\b(S-\d[ab]?)\b")),
@@ -66,7 +71,7 @@ TOKEN_RX = [
 ]
 
 # A foreign ADR id, or a named/filed document, immediately before the token.
-QUAL_LOCAL = re.compile(r"(ADR-0(?:26|27))\W{0,3}$")
+QUAL_LOCAL = re.compile(r"(ADR-0(?:26|27|28))\W{0,3}$")
 QUAL_FOREIGN_ADR = re.compile(r"(ADR-0\d\d)\W{0,3}$")
 # NOTE: a bare session marker (S84, S85) is deliberately NOT a qualifier here.
 # It was, and it produced a FALSE EXTERNAL: "FINDING S85 — G3's ..." classified
@@ -74,7 +79,7 @@ QUAL_FOREIGN_ADR = re.compile(r"(ADR-0\d\d)\W{0,3}$")
 # a check that does not fire. Session markers only ever precede "§D.N.N" refs,
 # which the section regex cannot match anyway (it requires a digit after §).
 QUAL_DOC = re.compile(
-    r"([\w./-]+\.md|Deployment Topology|Doc Protocol(?: v\d)?|"
+    r"([\w./-]+\.(?:md|txt)|Deployment Topology|Doc Protocol(?: v\d)?|"
     r"Assumption Register|Decision Index|System Map|Enhancement Register|"
     r"Experiment Compendium)\W{0,4}$")
 
@@ -106,24 +111,33 @@ def classify(raw, start):
 
 
 def collisions(decl, names, exempt=("section",)):
-    """Tokens DECLARED in both drafts. A bare use of one is ambiguous.
+    """Tokens DECLARED in MORE THAN ONE document. A bare use is ambiguous.
 
     `exempt` kinds are skipped -- see the EXEMPTION comment in run_check:
-    both drafts declare sections 1-9 by construction, so applying the rule to
-    them would flag every bare section reference.
+    every document declares sections 1-9 by construction, so applying the rule
+    to them would flag every bare section reference.
 
     D3 meant ADR-026's staleness floor and ADR-027's drafting agent at the same
     time until S85 renumbered ADR-027 to D4-D7. While that held, a bare "D3"
     resolved to whichever draft the reader happened to be in -- the S84
-    wrong-citation shape, inside one document pair.
+    wrong-citation shape, inside one document pair. S86 added a THIRD document
+    and renumbered ADR-028 to D8-D12 for the same reason, which is why this is
+    now an n-way test: the old two-name tuple unpack RAISED as soon as a third
+    document arrived, and had it been written as a [:2] slice it would instead
+    have gone on silently ignoring the new document -- loud beats lenient.
     """
-    a, b = names
+    kinds = {k for n in names for k in decl[n]}
     out = set()
-    for kind in set(decl[a]) | set(decl[b]):
+    for kind in kinds:
         if kind in exempt:
             continue
-        for tok in decl[a].get(kind, set()) & decl[b].get(kind, set()):
-            out.add((kind, tok))
+        seen = {}
+        for n in names:
+            for tok in decl[n].get(kind, set()):
+                seen.setdefault(tok, []).append(n)
+        for tok, owners in seen.items():
+            if len(owners) > 1:
+                out.add((kind, tok))
     return out
 
 
@@ -138,7 +152,7 @@ def run_check(paths, verbose=True):
     checked = 0
 
     for name, raw in docs.items():
-        sibling = "ADR-027" if name == "ADR-026" else "ADR-026"
+        others = [n for n in names if n != name]
         for kind, rx in TOKEN_RX:
             for m in rx.finditer(raw):
                 tok = m.group(1)
@@ -173,9 +187,9 @@ def run_check(paths, verbose=True):
                     continue
                 if tok in decl[name].get(kind, set()):
                     continue
-                if tok in decl[sibling].get(kind, set()):
+                if any(tok in decl[o].get(kind, set()) for o in others):
                     continue
-                dangling.add((name, tok, kind, "declared in neither draft"))
+                dangling.add((name, tok, kind, "declared in no checked document"))
 
     if verbose:
         print("DECLARED TARGETS")
@@ -228,9 +242,17 @@ SEEDS = [
 SEED_DUP = ("\n\n**G1 — seeded duplicate declaration.** "
             "A bare use follows: G1 governs nothing here.\n")
 
+# S86: the SAME shape one document further out. ADR-028 declares D8-D12; this
+# seeds a duplicate D8 declaration into the ADR-026 copy, which must surface as a
+# COLLISION. It is the case the renumber exists to prevent, and it also proves the
+# n-way generalisation of collisions() fires -- the old pair-only form could not
+# have compared ADR-026 against ADR-028 at all.
+SEED_DUP_D8 = ("\n\n**D8 — seeded duplicate declaration.** "
+               "A bare use follows: D8 governs nothing here.\n")
+
 
 def selftest():
-    n_seeds = len(SEEDS) + 1  # + the duplicate-declaration seed
+    n_seeds = len(SEEDS) + 2  # + the G1 and D8 duplicate-declaration seeds
     print("=" * 66)
     print(f"SELFTEST -- seeding {n_seeds} defects into temp copies "
           "(real drafts untouched)")
@@ -248,6 +270,9 @@ def selftest():
         # the duplicate-declaration seed goes in the OTHER draft
         with tmp["ADR-027"].open("a", encoding="utf-8") as fh:
             fh.write(SEED_DUP)
+        # ...and the D8 duplicate into ADR-026, colliding with ADR-028's D8
+        with target.open("a", encoding="utf-8") as fh:
+            fh.write(SEED_DUP_D8)
 
         dangling, external, _ = run_check(tmp, verbose=False)
         decl_t = {n: declared(p.read_text(encoding="utf-8"))
@@ -267,6 +292,11 @@ def selftest():
                 ("guard", "G1") in collide_t,
             "bare use of colliding token -> AMBIGUOUS":
                 any(t == "G1" and "BOTH drafts" in why
+                    for _, t, _, why in dangling),
+            "D8 declared in a THIRD document -> COLLISION":
+                ("decision", "D8") in collide_t,
+            "bare D8 with the collision live -> AMBIGUOUS":
+                any(t == "D8" and "BOTH drafts" in why
                     for _, t, _, why in dangling),
         }
         # The two foreign arms must ALSO not have resolved locally:

@@ -354,6 +354,85 @@ Source: `a3_05_result.out:4-15`. **NIFTY returned `exact/365` only — `dte/365`
 
 **(d) SENSEX `r_eff` 0.043683 against A2's 0.038406** — about **+13.7 %**, inside T3's ±25 % band. **T3 is INFORMATIONAL** (§2.6) and bears on the vendor's convention, not on the go/no-go.
 
+### 2.11 A4 result (2026-09-30, pinned 10:15:06 IST) — T1 is **UNDECIDED**
+
+**The second T1 arm, and it does not count.** Instrument `scratch/s86_l78/a4.sql`, sha256 `80926bac428b634e8c32164d22a65293570a58736c1a33b9a7a3f8efd5ee4a36`, derived from `a3.sql` by a **pin-only edit** and verified to carry **one hunk, `4c4,5`**, off the `d5930ee5…` instrument **re-verified at build time** — A3's exact shape (`a4_00_build.out`, `a4_01_diff.out`):
+
+```
+4c4,5
+<    WHERE ts >= now() - interval '1 day'
+---
+>    WHERE ts <= timestamptz '2026-09-30 10:15:59+05:30'
+>      AND ts >= timestamptz '2026-09-30 10:15:59+05:30' - interval '1 day'
+```
+
+Helpers and gate derived the same way, **every changed line asserted to be a date line**: `a4_rows.sql` `6b2836b492f873d41550cc53fb0568728bf1c4f6a17b517941fa1e950f7246f3`, `a4_reff.sql` `2794e2efd01574e0a8b2433f9577180616bacf65019004b76cbc782b22aaeec8`, `a4_gate.sql` `70f2c27f353b6ccf2caa817b7124b3911aea790f537cbe4b24b914ee0f79dc33` (`a4_00_build.out`). The two dates are equal-length, so all four files are **byte-length-identical to their A3 sources** — a length change would itself have been the tell, and it is asserted rather than inspected.
+
+**Pre-registration stamped before the arm.** `scratch/s86_l78/a4_02_prereg.out`, **operator-ratified 2026-09-30 10:07:42 IST**, ~8 minutes ahead of the target cycle. It carries the expected dte values, the gate thresholds **as coded**, and the **T1 pair rule**: clause **(a)** T1 refuses if the refusal condition fires on **any counting** SENSEX dte 1–2 arm; clause **(b)** if A4 is a **NO-TEST** on its own precondition, **T1 is UNDECIDED** — *not* "rests on A3 alone" — because §2.6 scopes T1 to SENSEX dte 1–2 and one dte-2 arm does not cover that scope. §2.6 states the refusal condition and its scope but writes **no combining clause for the two arms**; clause (a) is its literal per-arm reading in the conservative direction, clause (b) is the operator's ruling on the gap. Both predate the arm, so neither could be chosen after it.
+
+**Gate thresholds were not tightened to the observed value.** A3 and A2b each returned **0.00 %** row deviation; the coded gate2 bar is `abs(pct) <= 5.0`, and it stays there. The stamp records the distinction explicitly rather than promoting two measurements into a threshold.
+
+**The 10:17:00 IST hold was recorded, not skipped** (`a4_03_clock.out`). The first clock check read **10:09:51 IST** and **nothing was run** — no gate, no arm, no query. The re-check at **10:18:26 IST** released the arm. A hold that leaves no artefact is indistinguishable from a step that was never attempted.
+
+**Gate passed before the run** (`a4_04_gate.out:4-5`):
+
+| symbol | pinned IST | ≥ 10:15:00 | pinned rows | 09:15 ref | ref rows | pct vs ref | within 5 % |
+|---|---|---|---|---|---|---|---|
+| NIFTY | 10:15:06 | t | 936 | 09:15:06 | 936 | 0.00 | t |
+| SENSEX | 10:15:06 | t | 780 | 09:15:06 | 780 | 0.00 | t |
+
+| check | expected | observed | verdict |
+|---|---|---|---|
+| SENSEX dte | **1** | **1** | **MATCH** |
+| NIFTY dte | **6** | **6** | **MATCH** |
+
+Expecteds parsed from the stamp, not retyped; sources `a4_05_result.out:19` and `:10`.
+
+**Rows before → after the delta band** (`a4_06_rows_reff.out:9-16`): NIFTY ATM 18→18, NEAR 36→33, FAR 112→28, total **166→79**; SENSEX ATM 28→28, NEAR 55→32, FAR 100→39, total **183→99**.
+
+| symbol | conv | gamma_relerr ATM/NEAR/FAR | delta_abserr ATM/NEAR/FAR | implied_pts ATM/NEAR/FAR |
+|---|---|---|---|---|
+| NIFTY | exact/365 | **0.0243** / 0.0383 / 0.0299 | 0.0162 / 0.0073 / 0.0008 | 14.4 / 9.4 / −10.3 |
+| NIFTY | dte/365 | 0.0429 / 0.0392 / 0.0356 | 0.0166 / 0.0057 / 0.0023 | 14.5 / 5.2 / −32.2 |
+| NIFTY | dte/252 | 0.1248 / 0.0636 / 0.1390 | 0.0180 / 0.0328 / 0.0106 | 12.4 / 50.4 / 156.0 |
+| SENSEX | exact/365 | **0.0675** / 0.0760 / 0.0529 | 0.0144 / 0.0175 / 0.0147 | 10.0 / −84.5 / −287.6 |
+| SENSEX | dte/365 | 0.1418 / 0.1836 / 0.1215 | 0.0338 / 0.0354 / 0.0328 | 10.7 / −193.6 / −607.4 |
+| SENSEX | dte/252 | **0.0065** / 0.0158 / 0.0701 | 0.0045 / 0.0013 / 0.0001 | 9.0 / 5.0 / 2.1 |
+
+Source: `a4_05_result.out:4-21`, eighteen rows — **both symbols returned all three conventions**, unlike A3 where NIFTY at dte 0 gave `exact/365` only.
+
+**ATM `r_eff`** (`a4_06_rows_reff.out:24-25`), same method as §2.5:
+
+| symbol | conv | n | dte | spot | secs_to_expiry | T | median implied_pts | sd | SE(median) | ratio vs SE | r_eff |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| NIFTY | exact/365 | 18 | 6 | 22757.60 | 537293.9 | 0.01703748 | 14.4 | 2.628 | 0.776 | **18.57×** | 0.037194 |
+| SENSEX | exact/365 | 28 | 1 | 72849.66 | 105293.7 | 0.00333884 | 10.0 | 35.691 | 8.453 | **1.18×** | 0.041030 |
+
+**A4 (SENSEX, dte 1) — verdicts in the pre-registered order.** Every number below is **parsed from the `.out` artefacts and every verdict computed from the parsed value** by `apply_a4.py`, which asserts each lookup matches exactly one row and branches each verdict line on the computed result; `a4_07_apply.out` carries the raw source line for each figure and closes with `assertion failures: 0`.
+
+1. **Precondition FAIL — the arm is a NO-TEST.** ATM median offset **10.0** against 3 × SE(median) = 3 × 8.453 = **25.359**; ratio **1.18×** (`a4_07_apply.out`, `a4_06_rows_reff.out:25`). The SQL-reported `ratio_vs_se` agrees with the recomputation.
+2. **T1's refusal condition does not fire on this arm's numbers** — `exact/365` ATM **0.0675** and NEAR **0.0760**, neither above 0.10 — **but the arm does not count**, so this is not a T1 pass. §2.6: *"An arm counts only if its ATM median offset ≥ 3 × SE(median); otherwise that arm is a NO-TEST."*
+3. **Interpretation clause NOT TRIGGERED.** It fires only on a refusal on `exact/365`, and no refusal occurred.
+
+**T1 PAIR VERDICT — `UNDECIDED`.** A3 (dte 2) counted at 3.79× and did not refuse; A4 (dte 1) is a NO-TEST at 1.18×. Counting arms: **A3 only**; refusals among them: **none**. Clause (a) therefore returns no refusal, and clause (b) governs: **T1 is UNDECIDED**, the re-run is the next SENSEX dte 1 cycle, **Wed 2026-10-07 10:15:59 IST**, and **no L7/L8 view is proposed**. Per the stamp, **an UNDECIDED T1 is not a refusal and must not be recorded as one** — §2.6's "T1 FAIL → no L7/L8" and this outcome share a consequence but not a meaning.
+
+**Observations — recorded as observations, not findings.**
+
+**(a) The ≥ 3×SE precondition declines monotonically across three consecutive SENSEX arms, and it is now binding.** **6.41×** at dte 3 (A2, §2.9) → **3.79×** at dte 2 (A3, §2.10) → **1.18×** at dte 1 (here). §2.10(a) flagged A3's narrower margin and said that on one arm a margin is not a trend; there are now three points and the ordering is monotone. The mechanism is in the dispersion, not the centre: the SENSEX ATM offset roughly halved, **19.1 → 10.0**, while its SE(median) grew **5.051 → 8.453**, so `sd` **35.691** now stands at ~3.6× the median — the same shape as A2's NIFTY NO-TEST (`sd` 11.825 against a median of 3.2, 0.93×, §2.9). **Stated before the re-run rather than after it: on this gradient the 2026-10-07 dte 1 arm is more likely than not to be a NO-TEST as well.** If it is, T1 as written at §2.6 is scoped to a dte range whose lower half its own precondition may not admit, and that is a decision owed to the operator, not a result.
+
+**(b) The convention-ordering reversal §2.9 measured at NIFTY dte 1 IS present at SENSEX dte 1.** `dte/252` reads ATM **0.0065** where `exact/365` reads **0.0675** — a factor of ~10 on the same rows — and `dte/365` is worst at **0.1418**. §2.10(b) recorded the reversal **absent** at SENSEX dte 2 (`exact/365` best at 0.0425). So across five arms it is present at NIFTY dte 1 and SENSEX dte 1 and absent at SENSEX dte 2, dte 3 and NIFTY dte 4–6: **the reversal tracks dte 1, not the symbol.** Two points, and recorded as two.
+
+**(c) T1's fixed choice of `exact/365` is load-bearing at dte 1, and this arm shows it.** SENSEX `dte/365` reads ATM **0.1418** and NEAR **0.1836** — **both above 0.10**, so a T1 written on `dte/365` would have refused on this arm, while `dte/252` at 0.0065 / 0.0158 would have passed comfortably. **T1 is fixed on `exact/365` (§2.6) and is not changed here.** What this records is that at dte 1 the convention choice, not the data, decides the refusal — which is the case §2.6's interpretation clause was written for, arriving this time without a refusal to interpret.
+
+**(d) SENSEX `r_eff` 0.041030 is NOT evidence** and is recorded only so it is not later mistaken for a fourth point. It comes from the arm that failed its own precondition — same treatment as NIFTY's 0.042688 at §2.9 and E1's 0.596859 at §2.10. **NIFTY's 0.037194 at dte 6 IS a valid T3 point**: it passes its precondition at **18.57×** and sits inside the 3.64–3.81 % band §2.9 cites, at 3.72 %. NIFTY is not a T1 arm, so this bears on the vendor's convention only.
+
+**(e) The dte-1 far-strike offsets carry the stale-`ltp` signature.** SENSEX `exact/365` FAR **−287.6** and NEAR **−84.5** points against an ATM of **+10.0**; `dte/365` FAR reads **−607.4**. §2.7 and the S71 *"`ltp` is the last trade, not a price"* finding are the standing explanation for exactly this shape on thin strikes near expiry. **Not measured here** — no per-strike `ltp` freshness check was run on this cycle, so this is a resemblance, not a diagnosis.
+
+**(f) One discrepancy in recomputation, and it changes nothing.** `apply_a4.py` recomputes A3's ratio from the **displayed rounded** median and SE (19.1 / 5.051) and prints **3.78×** where §2.10 and the SQL report **3.79×**, which computes the ratio from unrounded inputs. Both sit above 3, so no verdict moves. Recorded because a number that differs from a published one should say why before someone else finds it.
+
+> **A pre-registration ambiguity, surfaced after the numbers and therefore NOT applied to this arm.** §2.6's precondition reads *"an arm counts only if…"*, which is what clause (b) and the verdict above rest on. But §2.8 gave the E1/E2 **gamma** test its own separate precondition — ATM rows after the band ≥ 10 — and §2.10 then recorded **E1's gamma refusal as firing** while E1's offset was a NO-TEST at **0.49×**. Read against that precedent, the ≥ 3×SE precondition gates the **offset / `r_eff`** reading and not the **gamma** reading, A4's gamma would count (28 ATM rows ≥ 10), and T1 would read **PASS** on both arms instead of UNDECIDED. **The two readings give different T1 verdicts on identical data.** This was noticed only after the arm was measured, so it cannot be used to settle it — choosing the reading that changes the verdict after seeing the numbers is the fitting this register exists to prevent. **The ratified clause (b) governs: T1 is UNDECIDED.** The ambiguity is filed as a §D candidate and a TD for a separate, pre-registered ruling before the 2026-10-07 re-run, so that arm is not measured under two live readings at once.
+
+
 ---
 
 ## 3. §D rows to file

@@ -4913,10 +4913,30 @@
       "truncated_each_run": false
     }
   },
-  "version": "v63",
-  "last_updated_session": "Session 85",
-  "last_updated_date": "2026-09-29",
+  "version": "v64",
+  "last_updated_session": "Session 86",
+  "last_updated_date": "2026-09-30",
   "change_log": [
+      {
+        "session": "S86",
+        "date": "2026-09-29 -> 2026-09-30",
+        "type": "Two halves: the ADR-028 CLAUDE.md split built, behaviourally tested and merged, then the ENH-98 A4 arm run to its pre-registration and a ten-entry doc-close. No production change, no DDL, no database write - the only database contact was three read-only roq.sh queries for A4.",
+        "summary": "ADRs_NEW=1 (ADR-028 ACCEPTED; Decision Index row added; next-free ADR-028+ -> ADR-030+ with ADR-029 RESERVED for model routing and token efficiency - the marker deliberately skips 029 because a marker naming a reserved ID is the S74 defect (d)). ADRs_AMENDED=0. TDs_NEW=10 (TD-S86-NEW-1 Doc Protocol Rule 7 amendment never reached v4 S2, -2 dhan-token runbook unexecutable S2, -3 check_dhan.py reads a variable nothing writes S3, -4 Rule 18 snippet strips the BOM from 27 files S2, -5 fictitious ADR-001/002 filenames CLOSED 76ad9a3 S3, -6 B4 fabrication on the no-tools arm S3, -7 merdian_reference.json _meta stamp stale S3, -8 doc-close skill is an empty shell S2, -9 capture_s84 precondition-scope ambiguity ruling OWED before 2026-10-07 S2, -10 check_xrefs blind to two-digit D labels CLOSED S3). TDs_CLOSED=2 (-5, -10). TD-S73-NEW-8 SUPERSEDED BY ADR-028: its '150k ceiling' was unsourced, in the wrong unit, and too generous - documented guidance is a 200-line target and a 4 MiB hard skip. Assumption Register D.42 added: 13 rows, 12 REFUTED / 1 WITHDRAWN, twelve of them defects in this session's own instruments, reasoning or drafts. Enhancement Register TRIGGERED (ENH-98 S86 block; status unchanged, build NOT started). ADR-028 measured: core 39,786 B / 258 lines, launch load 327,949 -> 39,786 B (-87.9 %), AC2 met under blind grading (before 10 / after 12 of 15, pass-bar clauses (a)(b)(c) all PASS, two gains, no regressions), AC1-lines FAILED at 258 against 200 and recorded as failed with the bound amended to bytes <= 40,960, CLI pinned 2.1.277 across both arms; the two gains are NOT claimed as effects of the split. ENH-98 A4 (SENSEX dte 1, 10:15:06 IST): gate PASS 0.00 % both symbols, dte MATCH both, precondition FAIL at 1.18x -> NO-TEST, T1 = UNDECIDED per the operator-ratified clause (b), re-run Wed 2026-10-07 10:15:59 IST, no L7/L8 proposed. Precondition gradient now three monotone points 6.41x -> 3.79x -> 1.18x, with the prediction that the re-run is likely another NO-TEST recorded BEFORE that arm. _meta.version left at v52 deliberately - TD-S86-NEW-7 is an operator decision, not a doc-close edit.",
+        "docs_updated": [
+          "ADR-028-claude-md-split.md",
+          "MERDIAN_Decision_Index.md",
+          "tech_debt.md",
+          "MERDIAN_Assumption_Register.md",
+          "MERDIAN_Enhancement_Register.md",
+          "CURRENT.md",
+          "CURRENT_history.md",
+          "session_log.md",
+          "merdian_reference.json",
+          "capture_s84.md",
+          "check_xrefs.py"
+        ],
+        "git_state": "76ad9a3 (ADR-028 split post-AC2 fix) + this doc-close commit. ~/meridian-engine NOT pulled - market hours - pull owed after 16:00 IST 2026-09-30 with git rev-parse equality verified, not byte size."
+      },
       {
         "session": "S85",
         "date": "2026-09-29",

@@ -15,3 +15,5 @@ If a read-only command prompts: the rules did not take effect, so investigate. I
 #12 test result, operator-observed 2026-09-30 ~19:03–19:05 IST, fresh session: commands 1–4 (read-only git -C) ran with no prompt; command 5 (push --dry-run) prompted and was declined. PASS as pre-registered at 18:47.
 #12 RULED 2026-09-30 19:06 IST, operator 'OK': keep the absolute-path convention together with the 8 git -C allow rules. Other verbs untested.
 Known limit: `git diff` and `git log` accept --output=<file>, so the diff/log allow rules technically permit a file write. Recorded, not fixed.
+
+WS2.3 — option A (checklist moved into the skill) attempted and VOID (s87_measure/ws23/result.md, sha256 14d77ff5…): B3's rubric is inverted for this change (the control passed 3/3). C-close discriminated on the register order (3/3 vs 0/3 vs 0/3). Per prereg §7, fall back to option B; RULED 2026-10-01 07:22 IST. Owed if A is revisited: a v2 pre-registration (B3 rubric scored on checklist CONTENT, baseline floor ≥ 1, C-close without its unfalsifiable criterion 1).

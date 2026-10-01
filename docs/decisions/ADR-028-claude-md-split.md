@@ -272,6 +272,45 @@ That is a real behavioural change and is what AC2 exists to detect.
    **TD-S73-NEW-8 corrected in the S86 doc-close `tech_debt.md` pass** (status
    **SUPERSEDED BY ADR-028**); **the five documents carrying the copied figure
    remain OWED** as an operator decision: correct in place, or annotate.
+
+   **Disposed S87 (2026-10-01) — annotated by erratum, operator ruling 06:44 IST.**
+   The five documents are **left byte-identical**; the correction lives here, in the
+   ADR that found the error, rather than in ten edits across four registers and a
+   session note. The reading to apply at every location below:
+
+   > **"150k" is the Claude Code CLI's 150.0k-CHARACTER warning for `CLAUDE.md`, not
+   > a token ceiling and not a byte ceiling.** Measured S87: the warning is *shown* on
+   > pre-split `6bba0ce` and *absent* on post-split `35588a2`
+   > (`docs/research/s87_routing/ws2_6_context_measure.md`). ADR-028 §2.1 is correct that
+   > the figure was uncited and in the wrong unit; it is now also **identified** — it
+   > is a real tool limit, in characters, that the project recorded in bytes.
+
+   **Ten occurrences, located S87** (`file:line`, newest measurement):
+
+   - `docs/session_notes/capture_s74.md:192` — **the source**: *"421,684 bytes — 2.8×
+     the 150k ceiling."* §2.1 cites this as `capture_s74.md` §8 without a path; the
+     file is under `docs/session_notes/`, **not** `docs/research/`.
+   - `docs/registers/CLAUDE_history.md:9` · `:602` · `:604` — three copies
+     (*"~2.8x the 150k context ceiling"* twice, *"still ~1.9x the 150k ceiling"* once).
+   - `docs/registers/session_log_history.md:7` · `:9`.
+   - `docs/registers/merdian_reference.json:4924` · `:5049`.
+   - `docs/registers/CURRENT_history.md:135` · `:156`.
+
+   **Two of the ten are not copies of the error, and are recorded as such rather than
+   counted in.** `merdian_reference.json:4924` is **already a correction** — it reads
+   *"TD-S73-NEW-8 SUPERSEDED BY ADR-028: its '150k ceiling' was unsourced, in the wrong
+   unit…"* — so it mentions the figure in the act of retracting it. And
+   `session_log_history.md:9` / `CURRENT_history.md:156` read *"407.3k against 150k,
+   **warned on every launch**"*: those two were describing the **tool's warning**, which
+   is the one thing in this family that was true. So the tally is **1 source + 7 copies
+   of the claim + 1 prior correction + 2 descriptions of the real warning**, not ten
+   identical errors.
+
+   **Why annotate rather than correct in place.** `CLAUDE_history.md`,
+   `session_log_history.md` and `CURRENT_history.md` are **history files**: ADR-028 D10
+   moved their content *verbatim* so conservation could be asserted, and editing them
+   now would break the property the split was verified on. A history that is corrected
+   in place stops being a record of what was believed at the time.
 4. **Confirm `ADR-028` still free** at filing time by the reserved-row method.
    **DONE at filing:** the reserved row read `| ADR-028+ | Next-free | — | Available |`
    and is advanced in the same pass that consumes the ID, with ADR-029 reserved.
@@ -373,3 +412,41 @@ the design isolates the split from run-to-run variance. A split that removes
 88 % of the launch load without breaking anything is the result; a split that
 makes the model better at its own canon is a claim this experiment cannot support
 and does not make.
+
+### 7.6 S87 amendment (2026-10-01) — the launch load measured in TOKENS, and the warning as a state change
+
+§7.4 and §7.5 above are **unchanged**. They recorded the launch load **in bytes**,
+deliberately, because *"the pre-split launch load was never measured in tokens and a
+token figure would be an inference dressed as a measurement."* It has since been
+measured. Source: `docs/research/s87_routing/ws2_6_context_measure.md`,
+operator-read `/context`, working directory / CLI / model held constant across both
+readings.
+
+| reading | commit | state | `CLAUDE.md` | over-limit warning |
+|---|---|---|---|---|
+| before | `6bba0ce` | pre-split | **128.9k tokens** | **shown** — over the 150.0k-char limit (318.5k chars) |
+| after | `35588a2` | post-pull | **14.3k tokens** | **absent** |
+
+**Token reduction 88.91%**, computed from the two readings. Corroborated from a
+different instrument — the blobs git holds — at **327949 → 40073 bytes,
+87.78%**: same order, independent of the tool.
+
+**The warning is the part that is not a matter of degree.** Before the split the file
+was over the character limit and the tool said so; after it, the warning is absent.
+That is a **state change**, not a smaller number, and it is what identifies the "150k"
+of ADR-028 §2.1 and ADR-028 §6 item 3 as a **character** limit.
+
+**The S86 figure, and the growth since.** §7.4 recorded **14.1k tokens at
+`76ad9a3`**, the split commit. The reading above is 14.3k at `35588a2`, the S86
+**doc-close** commit — so the file **grew at the doc-close**, by 1.42%, when the
+v1.58 footer and the S86 settled-decision rows were written into it. Measured against
+the S86 figure the reduction would read 89.06 %; **88.91% is the honest one**,
+because that is the file a session loads today. The gap between the two is the
+doc-close cost of one session, and it is the quantity to watch: **a split that is
+re-filled at every doc-close returns to the limit on its own.**
+
+**Not claimed.** The char figure in the warning (318.5k) does **not** reconcile
+with the file's own char count at `6bba0ce`, and no attempt is made to make it — the
+tool's char accounting is its own. Both readings are **n=1**, one observer, one box;
+nothing here establishes run-to-run stability of the `/context` figure itself. And this
+is a **size** reading only: it says nothing about behaviour, which is AC2's job.

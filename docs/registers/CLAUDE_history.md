@@ -19,6 +19,13 @@ The final entry is a single 82,953-byte line carrying v1.30 through v1.1 as one 
 
 ---
 
+*CLAUDE.md v1.58 — 2026-09-30 (Session 86 close). **ADR-028 FILED ACCEPTED** — the split
+shipped at `76ad9a3`; the binding core bound is **bytes ≤ 40,960** after AC1-lines FAILED at
+258 against 200 and was recorded as failed; AC2 met under blind grading. **ENH-98 A4 ran and
+T1 is UNDECIDED, not decided** — re-run Wed 2026-10-07; no L7/L8 proposed. TD-S86-NEW-1..10
+filed (2 CLOSED; TD-S73-NEW-8 SUPERSEDED); Assumption Register §D.42 added. Predecessor
+footers: `docs/registers/CLAUDE_history.md`.*
+
 *CLAUDE.md v1.57 — 2026-09-30 (Session 86). Split per ADR-028: core + 8 path-scoped rules +
 2 skills + history. Verbatim relocation only; no rule text was edited. Predecessor footers:
 `docs/registers/CLAUDE_history.md`.*

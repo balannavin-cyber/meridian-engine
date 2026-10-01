@@ -246,9 +246,9 @@ these, and cite by session number, never by line:
 | read-path scoping, recency floors, CAS timing | S69, S70 |
 | fail-open corollary and cross-tier identity | S71, S72 |
 
-*CLAUDE.md v1.58 — 2026-09-30 (Session 86 close). **ADR-028 FILED ACCEPTED** — the split
-shipped at `76ad9a3`; the binding core bound is **bytes ≤ 40,960** after AC1-lines FAILED at
-258 against 200 and was recorded as failed; AC2 met under blind grading. **ENH-98 A4 ran and
-T1 is UNDECIDED, not decided** — re-run Wed 2026-10-07; no L7/L8 proposed. TD-S86-NEW-1..10
-filed (2 CLOSED; TD-S73-NEW-8 SUPERSEDED); Assumption Register §D.42 added. Predecessor
-footers: `docs/registers/CLAUDE_history.md`.*
+*CLAUDE.md v1.59 — 2026-10-01 (Session 87 close). **ADR-029 FILED ACCEPTED** — model
+routing; 18 rulings closed, next-free `ADR-030+`. **TC1 shadow FAILED 6/10 vs 10/10**,
+nothing gears down. **ADR-028 §7 amended** with measured launch tokens; its *"150k"*
+erratum identifies a CHARACTER limit, the five copies byte-identical. `doc-close`
+carries the register order (**TD-S86-NEW-8 RESOLVED**); skill-body gate ≥ 500 B.
+TD-S87-NEW-1..5; §D.43. Predecessor footers: `docs/registers/CLAUDE_history.md`.*

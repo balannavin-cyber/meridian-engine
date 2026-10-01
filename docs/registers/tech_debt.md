@@ -64,6 +64,58 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > rather than deleted because removing a header is an operator call, not a doc-close
 > edit. **Recommend deletion next session.**
 
+### TD-S87-NEW-2 (S2 priority) — `check_xrefs` cannot see `AC29-n` labels or `§5a`/`§5b` references, and its document map is hard-coded, so every new ADR needs a patched private copy
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** It is the only cross-reference checker this project has, it is the gate every ADR is cleared through, and it is **silent** on two label families that ADR-029 uses throughout. A checker that reports `ALL CROSS-REFERENCES RESOLVE` while never having looked at a class of reference is worse than no checker, because the clean verdict is taken as coverage. |
+| **Filed** | 2026-10-01 (Session 87) |
+| **Component** | `check_xrefs` (canonical copy) · the S87 working copy `scratchpad/check_xrefs_with029.py` · its `REAL` map (line 33) and `PATTERNS` list (lines 64–71). |
+| **Measured — three distinct gaps** | **(a) `AC29-n` is invisible.** The `PATTERNS` list carries eight kinds — `section`, `decision`, `guard`, `test`, `arm`, `vcheck`, `crit`, `step` — and **none matches `AC29-1`**. Demonstrated rather than reasoned: `scan.py`'s *"AC29 PREFIX — visibility to each check_xrefs token pattern"* block prints **`no match`** for all eight. ADR-029's acceptance criteria are therefore unchecked for collision and for resolution. **(b) `§5a` / `§5b` do not match.** The section pattern is `§\s*(\d+(?:\.\d+)?)\b`; there is **no word boundary between `5` and `a`** because both are word characters, so a letter-suffixed section reference never matches. `WS3.1_baseline.md` §5a is cited in ADR-029 and in the Decision Index, and the checker has never resolved it. **(c) The document map is hard-coded.** `REAL` is a literal dict of four ADR paths, so adding ADR-029 required editing a **private copy under `scratchpad/`** — which is what S87 did, twice (once for the path, once at the `git mv`). |
+| **Consequence** | The gate's clean verdict covers only the label families someone remembered to add. Worse, because the map is hard-coded and the working copy lives outside the repository, **the copy that was actually run at S87 is not in version control** — the next session will either patch another copy or run a stale one, and nothing in the repo records which. This is Rule 0 at the level of the verifier: state what the check cannot see, in the same breath as the verdict. The S87 ADR-029 filing commit reports *437 references, 0 collisions* and that figure **excludes every `AC29-n` and every letter-suffixed section**. |
+| **Proper fix** | **(1)** Add an `("crit29", re.compile(r"\b(AC\d{2}-\d+)\b"))` pattern, or generalise `crit`, and add a letter suffix to the section pattern (`§\s*(\d+(?:\.\d+)?[a-z]?)`), each with a **negative control** proving it fires on a seeded bad reference. **(2)** Replace the hard-coded `REAL` map with a glob over `docs/decisions/ADR-*.md` plus any draft paths passed as arguments, so a new ADR needs no code edit. **(3)** **Commit the script into the repository** — `docs/research/s87_routing/scripts/` or a `bin/` home — so the thing that gates the ADRs is itself versioned. Until (3) lands, every run is of an unversioned artefact. |
+| **Cross-ref** | `TD-S87-NEW-1` (same class — a verifier that passes while blind to what it does not enumerate) · ADR-029 (the document whose labels it cannot see) · core `CLAUDE.md` **Rule 0** and the settled decision *"A verification method can only find what it enumerates."* |
+| **Status** | **OPEN.** |
+
+### TD-S87-NEW-3 (S3 priority) — the engine `.gitignore` does not cover rotated logs, so `9` untracked `*.log.N[.gz]` files sit in `git status` on the box after every rotation
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Nothing breaks, but it degrades a check that several procedures depend on. The AWS runner assertions and the S86/S87 behavioural harness both gate on *"working tree clean, only the known untracked entries tolerated"*; a tree that accumulates rotated logs makes that assertion either noisy or, worse, routinely overridden. |
+| **Filed** | 2026-10-01 (Session 87) |
+| **Component** | `.gitignore` (shared by `~/meridian-cc` and `~/meridian-engine`) lines 32–33 (`logs/`, `*.log`) and line 130 (`cron.log*`) · logrotate on the AWS box. |
+| **Measured** | `git -C /home/ssm-user/meridian-engine status --porcelain` lists **9** untracked files matching `*.log.N` or `*.log.N.gz`, among them `shadow_runner.log.1` and `shadow_runner.log.2.gz`…`.7.gz`, `gamma_engine_supervisor.log.1` and `ws_feed_zerodha.log.1`. **The cause is pattern shape, not a missing line:** `*.log` does **not** match `shadow_runner.log.1`, because the rotation suffix comes after the extension. `cron.log*` **does** match `cron.log.1`, which is why the cron rotations are absent from the list and the gap went unnoticed — one family was covered by a pattern written for a different reason. |
+| **Consequence** | After every rotation the engine tree is dirty with files no one intends to commit. The risk is not the files; it is that a clean-tree assertion which is *always* violated stops being read. S87's own harness tolerated exactly two untracked entries by name and would have aborted on these had it run against the engine tree. |
+| **Proper fix** | Add `*.log.[0-9]*` and `*.log.[0-9]*.gz` to `.gitignore`. **Edit in `~/meridian-cc` and reach the box by `git pull`, never by editing the box** — core `CLAUDE.md` **Rule 1**. Then re-measure `status --porcelain` on the engine tree and assert the rotated files are gone, since adding a pattern that does not match is the failure mode here. |
+| **Cross-ref** | `TD-S83-NEW-1` (logrotate, and the lesson that its failures are invisible to MERDIAN) · `TD-S80-NEW-16` (`/etc/logrotate.d/meridian` is outside version control) · core `CLAUDE.md` **Rule 1**. |
+| **Status** | **OPEN.** |
+
+### TD-S87-NEW-4 (S3 priority) — ruling #12's `git diff` and `git log` allow rules permit a file write, because both verbs accept `--output=<file>`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** No impact observed and none expected in normal use; it is recorded because the ruling it qualifies was adopted on a **pre-registered read-only** premise, and that premise is not exactly true. A known limit written down is a different thing from a known limit assumed away. |
+| **Filed** | 2026-10-01 (Session 87) |
+| **Component** | `~/.claude/settings.json` user-level allow rules — the eight read-only `git -C` entries added under operator ruling **#12** (2026-09-30 19:06 IST) · `rulings_s87.md`, which already records this limit in its closing line. |
+| **Measured** | `git diff` and `git log` both accept **`--output=<file>`**, which creates or truncates that file. The allow rules match on the verb, so `git -C <path> diff --output=<path>` is permitted without a prompt. **This is a capability of the verbs, read from their interface, not an observed incident** — no such invocation has occurred, and the entry says so rather than implying one. |
+| **Consequence** | The allowlist is **read-only in intent and not in enforcement**. The pre-registered PASS bar for #12 tested that four read-only commands do not prompt and that `push --dry-run` does — it did **not** test that the allowed verbs cannot write, and a bar cannot retroactively cover a case it did not name. |
+| **Proper fix** | Either narrow the two rules to reject `--output` (if the permission syntax can express an argument exclusion — **unverified, and the first step is to find out**), or accept the limit explicitly in the ruling and drop `diff`/`log` from the allowlist if it cannot. Until then this entry **is** the record, which is why it is filed rather than left in a closing line of `rulings_s87.md`. |
+| **Cross-ref** | ADR-029 §7 and appendix **#12** (RULED 2026-09-30 19:06 IST) · `rulings_s87.md` *"Known limit"* line · appendix **#14** (the Bash deny-bypass gap, DEFERRED to Sat 2026-10-03 — same family: a deny/allow surface whose spellings were never enumerated). |
+| **Status** | **OPEN.** |
+
+### TD-S87-NEW-5 (S3 priority) — `session_log.md` carried 11 entries against a documented "newest 10", so an earlier doc-close skipped the roll and nothing detected it for a whole session
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The register was over-length, not wrong — no entry was lost and the overflow file is intact. It is filed because it is a **missed step in the close procedure that no check looked for**, and the close procedure is the thing S87 just rebuilt. |
+| **Filed** | 2026-10-01 (Session 87) |
+| **Component** | `docs/session_notes/session_log.md` (the newest-10 window) · `docs/registers/session_log_history.md` (the overflow) · the doc-close register order. |
+| **Measured from git, not recalled** | `git show 707276a^:docs/session_notes/session_log.md` carries **11** entries matching `^2026-`; `git show 707276a:…` carries **10**. So the file was one over its documented window when S87 opened, and S87's own roll brought it back. The off-by-one means **exactly one** earlier close appended its entry and did not roll. |
+| **Consequence** | Small in itself, and that is the point: nothing in the repository asserts the window, so the only reason it was found is that a later close happened to look. A register with a documented length and no length check will drift by one per skipped close, and each individual drift is too small to notice. |
+| **Why it is now less likely, and why that is not a fix** | The populated `doc-close` skill (`be9c3d4`) makes the roll **step 6 of an explicit ordered procedure** — *"append the one-line entry, then roll the file to the newest 10 entries"* — where before it was one checklist line among eight with no order and no body. That raises the chance the step is performed; it **does not detect** a skip. **The actual fix is a check**: assert `grep -c '^2026-' session_log.md <= 10` at close, with a negative control on a deliberately over-length copy. Recorded as owed rather than claimed as closed by the skill. |
+| **Cross-ref** | `TD-S86-NEW-8` (**RESOLVED S87** — the skill that now carries the register order) · `TD-S73-NEW-8` (the newest-10 split itself, SUPERSEDED BY ADR-028) · the settled decision *"A verification method can only find what it enumerates."* |
+| **Status** | **OPEN.** |
+
 ### TD-S87-NEW-1 (S1 priority) — `merdian-runbooks` routes 7 of its 9 runbook targets to files that do not exist, including *Emergency stop live trading*, and the new skill-body gate passes it
 
 | Field | Value |

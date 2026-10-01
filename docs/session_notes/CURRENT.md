@@ -36,75 +36,85 @@ the second came out of running the suite against a bar written down first. The d
 both as open questions rather than resolving them, which is the only honest disposition for
 one suite on one class.
 
+
+**Since `707276a` — the registers were written and five more workstreams landed.** The
+S87 block above records the session as it stood at the first three commits; this is what
+followed, in commit order.
+
+| Workstream | Outcome |
+|---|---|
+| **WS2.1 — rule renumber** (`b282a05`) | B6/B7 → **Rules 26/27** (free repo-wide); **24 is NOT free** — the retired S40 Rule 24 survives in `CLAUDE_history.md`. **11** Rule-20/21/22 citations found, **3** re-pointed; **2** B6/B7 citations, **1** re-pointed. The core disambiguator note removed. Every figure in the pre-S87 estimate was wrong in the direction that made the renumber look safe (§D.43.11). |
+| **WS2.2 — BOM round-trip** (`dfeb261`) | The Rule 26 snippet now round-trips the BOM (`has_bom` → `enc`), demonstrated on a fixture showing both arms; the `:15` bullet reconciled so one rule has one statement, proved by grep. **TD-S86-NEW-4 RESOLVED.** Blast radius re-measured at **36** files (27 `.py` + 3 `.ps1` + 4 `.md` + 2 backups), not the 27 the entry recorded — and the `.ps1` files are the scheduled ones (§D.43.12). |
+| **WS2.3/2.4 — the `doc-close` skill** (`be9c3d4`) | **Option A was built, measured and came out VOID.** Three arms × two prompts × three runs, 0 aborts, one model, blind-graded by a fresh agent: **B3 baseline 0/3, change 0/3, control 3/3** — the control, with the content removed from *both* core and the skill, **passed**, because the empty core heading becomes conspicuous and the model names it, satisfying the *"Must cite"* clause that reciting the content does not. **B3's rubric is inverted for a relocation.** The purpose-built `C-close` discriminated correctly (change 3/3 · baseline 0/3 · control 0/3) on the register order, but the pre-registered VOID governed and was **not** overridden on C-close's strength. Operator ruled **option B** at 07:22 IST: core keeps the checklist, the skill gains the register order. **TD-S86-NEW-8 RESOLVED**; gate 2 extended to a **body ≥ 500 B** check that FAILS on the old 95 B shell. **WS2.4 found an S1**: `merdian-runbooks` passes the byte gate at 1026 B while **7 of its 9 runbook targets do not exist**, including *Emergency stop* — pre-existing, not a split regression (**TD-S87-NEW-1**). |
+| **WS2.5/2.6 — the `"150k"` figure, identified** (`0e52360`) | Disposed **by erratum in ADR-028**: the five documents stay **byte-identical** and the correction lives in the ADR that found the error. **`"150k"` is the CLI's 150.0k-CHARACTER warning**, not a token or byte ceiling — *shown* on `6bba0ce`, *absent* on `35588a2`. Ten occurrences located by `file:line`, and the tally recorded honestly: 1 source + 7 copies + 1 prior correction + 2 that describe the real warning. **ADR-028 §7.6 added**: launch load **128.9k → 14.3k tokens, 88.91 %**, corroborated 327,949 → 40,073 B (87.78 %); the file **grew 1.42 % at the S86 doc-close**, which is the quantity to watch. |
+| **WS3.2 — ADR-029 FILED ACCEPTED** (`af34e58`, `e8d9306`) | `git mv` into `docs/decisions/`; all **18** appendix rulings closed — ruled, or deferred with a date (**#4/#5 → S88**, **#13/#14 → Sat 2026-10-03**, **#9 until a class passes shadow**). Decision Index row added in ADR-028's format, the S86 reservation discharged, next-free **already** `ADR-030+` so it was asserted rather than advanced. Each of the 15 body `OPERATOR RULING OWED` blocks now carries a dated `→` mark beneath it, the heading itself byte-unchanged. |
+| **EOS part 1** (`6b32fb5`) | **TD-S87-NEW-2..5** filed; **Assumption Register §D.43** added (**17 rows, all REFUTED** — 7 carried from `WS3.1_baseline.md` §8, 10 new, of which 3 are this session's own instruments caught by review). `CLAUDE.md` **v1.58 → v1.59 at 39,592 → 39,592 B, exactly flat**: the first footer draft was 663 B against the old 510 and the growth-rule assertion stopped the write, so the footer was rewritten to fit rather than spend headroom. |
+| **ENH-98 E2 — the refusal FIRES** | Ratified pre-registration (`e2_02_prereg.out`, `41b4426b…`, ratified **05:59:47 IST**), gate passed first (both symbols 10:15:06 IST, 0.00 %), then the arm. SENSEX dte 0: precondition PASS (ATM rows **28 ≥ 10**), `exact/365` ATM **0.2620** / NEAR **0.5140** — both over 0.10 → **REFUSE**. **E1 and E2 have now both refused, so W1's "charm to 15:30" stays UNRECORDED and L78-3's expiry leg is NOT amended.** E2 is **not** a T1 arm: **T1 remains UNDECIDED.** The stamp **corrected §2.8's NIFTY dte from 2 to 5** before the arm (2 was a trading-day count); observed 5 — had the error been carried, a correct arm would have read as a MISS. `capture_s84.md` **§2.12**. |
+
+**Ledger, since `707276a`.** TDs_NEW **5** (TD-S87-NEW-1 **S1**, NEW-2..5), TDs_RESOLVED
+**2** (TD-S86-NEW-4, TD-S86-NEW-8), ADRs_NEW **1** (ADR-029 ACCEPTED), ADRs_AMENDED **1**
+(ADR-028 — erratum + §7.6), Decision Index rows **+1**, Assumption Register **§D.43 (17
+rows)**. Eight commits, all pushed, three-way sha verified on each. **No production code,
+no DDL. The only database contact all session was the E2 arm, read-only as `merdian_ro`.**
+
 ## NEXT SESSION PICKS UP
 
-**Time-boxed, in order**
+**In priority order. Items 1 and 2 are dated and must not slip past 2026-10-07.**
 
-1. **E2 — Thu 2026-10-01, 10:15:59 IST.** SENSEX dte 0 gamma fidelity, unaffected by E1's
-   refusal. Derive `e2.sql` from `a4.sql` by the same pin-only edit and stamp the
-   pre-registration **before** the arm.
-2. **TD-S86-NEW-9 — the T1 precondition-scope ruling. OWED BEFORE 2026-10-07.** Does
-   ≥ 3×SE gate the gamma reading or only the offset/`r_eff` reading? Pre-register and date
-   the ruling **before** the arm runs, amend `capture_s84.md` §2.6 in place with the
-   reversal left legible, and confirm or restate §2.11's verdict citing the ruling — **do
-   not silently recompute it.**
-3. **A4 re-run — Wed 2026-10-07, 10:15:59 IST**, the next SENSEX dte 1. Gated on item 2.
-   S86 recorded, before the arm, that the monotone precondition gradient makes another
-   NO-TEST more likely than not.
-4. **The NIFTY L9 stage-1 max-pain arm (TD-S80-NEW-1) — STILL OUTSTANDING.** Owed from S82,
-   not run at S85, S86 or S87. Named rather than carried silently for a fourth session.
+1. **TD-S86-NEW-9 — the owed operator ruling, BEFORE 2026-10-07.** §2.6's ≥ 3×SE
+   precondition does not say whether it gates the gamma reading or only the offset
+   reading, and on A4's data the two readings give **different T1 verdicts** (UNDECIDED
+   vs PASS). It must be ruled, **pre-registered and dated**, before the next arm runs, or
+   that arm is measured under two live readings at once.
+2. **A4 re-run — Wed 2026-10-07, 10:15:59 IST, SENSEX dte 1.** The next SENSEX dte-1
+   cycle and the arm T1 needs. Stated before the run: on the three-point precondition
+   gradient (6.41× → 3.79× → 1.18×) this arm is **more likely than not to be another
+   NO-TEST**; if it is, T1 as written is scoped to a dte range its own precondition may
+   not admit, and that is a decision owed to the operator, not a result.
+3. **The NIFTY L9 stage-1 max-pain arm — STILL OUTSTANDING** (TD-S80-NEW-1, owed from
+   S82). It rode on the A3 date and was not run, and has now been carried through S85,
+   S86 and S87.
+4. **TD-S87-NEW-1 (S1) — the seven missing runbooks.** Write them from
+   `RUNBOOK_TEMPLATE.md` or remove the rows, in incident-severity order:
+   `emergency_stop`, `restart_runner_local`, `restart_runner_aws`, then the rest. Add the
+   missing `disk_full_lockout` row. Then extend the gate with a **pointer-resolution**
+   check, because the body-bytes gate passes this skill.
+5. **S88 — the logging hooks** (ADR-029 appendix **#4/#5**, DEFERRED to S88). Permission
+   prompts and context-limit events must be logged **forward**; §5a established that
+   approvals are byte-invisible, so nothing retrospective can answer these.
+6. **Sat 2026-10-03, out of market hours** (ADR-029 **#13/#14**, DEFERRED). Sandbox
+   enable plus its install and network-allowlist cost, and the Bash deny-bypass gap with
+   the untested spellings **enumerated first**.
+7. **The TC2 suite** (ADR-029 **#10**) — 20 tasks, to be built. TC1 v1 is frozen at 10
+   tasks and its shadow **FAILED 6/10 against a 10/10 bar**, so nothing gears down; per
+   **#18** TC1 work must use deterministic tools and a task without one **is TC2**.
 
-**Owed work and decisions**
-
-5. **Pull `~/meridian-engine` → `e638059`.** Three commits behind, **all `docs/`**. Verify by
-   `git -C … rev-parse` equality, not by byte size.
-6. **WS2.1–2.5 — not started.** Only WS2.6 ran, and WS2.5's *origin* was traced without its
-   disposition being ruled. The five items, stated here so they live in the repo rather
-   than in a brief:
-   - **2.1 — renumber B6/B7 → Rules 24/25** in `.claude/rules/python-writers.md`, re-point
-     the **10** `CLAUDE.md Rule 20 / 21 / 22` citations, and **remove core's two-line
-     disambiguator** once they resolve. Run `check_xrefs` after, not before.
-   - **2.2 — TD-S86-NEW-4.** Make the BOM snippet **round-trip the BOM**, demonstrated on a
-     fixture that shows both arms — **before: BOM lost; after: BOM kept** — and run the
-     `git log` forensics on the **27** BOM-carrying files.
-   - **2.3 — TD-S86-NEW-8.** Populate the `doc-close` skill, with an **operator ruling owed
-     on whether the session-end checklist stays in core or moves into the skill** (the
-     growth rule applies), and **extend gate 2 to assert a non-trivial body** — with a
-     **negative control on the present empty shell**, or the gate proves nothing.
-   - **2.4 — the same check on `.claude/skills/merdian-runbooks/`.** Not measured at S86;
-     named rather than assumed clean.
-   - **2.5 — the five copied "150k" figures.** Origin found at S87: **the CLI's own 150.0k-
-     CHARACTER warning**, not a token or byte ceiling. **Operator ruling owed — correct in
-     place, or annotate** (ADR-028 §6 item 3).
-7. **The ADR-028 §7 amendment — OWED**, from `ws2_6_context_measure.md`. Cite the token
-   readings and the warning state change; **do not cite the char figure.**
-8. **The remaining ADR-029 rulings — 13 of 18**, listed one per line in the draft's
-   appendix and tracked in `rulings_s87.md`. **The draft cannot be filed until each has a
-   ruling or a dated deferral**, and the numeric bars in §9.1 must be fixed **before** any
-   further shadow run, not after.
-9. **The TC2 shadow run — NOT RUN.** Bar pre-registered at 18/20. TC1's result does not
-   transfer: it was a failure of *method* on one task type, and TC2's tasks are drafting
-   tasks with no line-counting in them.
-10. **Registers owed, none written this session** — Decision Index (no row yet, by
-    decision), `tech_debt.md`, Assumption Register **§D.43** sourced from
-    `WS3.1_baseline.md` §8, Enhancement Register.
-11. **Project-knowledge re-upload — Rule 12.** `CURRENT.md` and `session_log.md` at minimum,
-    plus `tech_debt.md`, `MERDIAN_Assumption_Register.md`, `MERDIAN_Decision_Index.md` and
-    `MERDIAN_Enhancement_Register.md` once item 10 is done. **Git commit and
-    project-knowledge upload are two destinations and both are required for session close.**
+**Also owed, undated:** TD-S87-NEW-2 (`check_xrefs` blind to `AC29-n` and letter-suffixed
+sections; the copy actually run is unversioned), TD-S87-NEW-3 (`.gitignore` rotated logs —
+fix in `meridian-cc`, then pull), TD-S87-NEW-5's actual fix (a length check on
+`session_log.md`, not just the skill's ordering), the **second engine pull** (the tree is
+behind by this session's commits; the pull waits until **16:00**), and the BOM `git log`
+forensics, which `git log -S` **cannot** answer (§D.43.13).
 
 ## OPERATOR RULINGS, S87
 
-Recorded in `docs/research/s87_routing/rulings_s87.md`, which is the only place their text
-lives. **Numbers and times only here** — a ruling transcribed into a second place is a ruling
-that can drift out of agreement with itself. **None authorises a build.**
+**All rulings are recorded in `docs/research/s87_routing/rulings_s87.md`**, which is the
+single source. This table points at it and does not restate the text — a ruling
+transcribed into a second place is a ruling that can drift out of agreement with itself.
 
-- **2026-09-30 14:22 IST** — ADR-029 appendix **#2**, **#3**, **#6** (partly — location only)
-  and **#8**, pre-registered before any shadow run.
-- **2026-09-30 17:41 IST** — ADR-029 appendix **#15**.
-- **2026-09-30 18:47 IST** — not a ruling: the **#12 test and its PASS bar, pre-registered
-  before the test ran**, with the revert condition stated for each failure direction.
-- **2026-09-30 19:06 IST** — ADR-029 appendix **#12**, after the test returned PASS.
+| # | Topic | Ruled at |
+|---|---|---|
+| **#2** | Where the class-to-model mapping file lives, and in what format | 2026-09-30 14:22 IST |
+| **#3** | The initial TC1/TC2/TC3 mapping | 2026-09-30 14:22 IST |
+| **#6** | Ledger location (schema owner followed at #6b) | 2026-09-30 14:22 IST |
+| **#8** | The shadow-agreement threshold for gearing down | 2026-09-30 14:22 IST |
+| **#15** | The CLI pin — **HOLD** | 2026-09-30 17:41 IST |
+| **#12** | The absolute-path convention, kept with the eight read-only `git -C` allow rules | 2026-09-30 19:06 IST |
+| **#1 · #4 · #5 · #6b · #7 · #9 · #10 · #11 · #13 · #14 · #16 · #17 · #18** | The thirteen remaining ADR-029 appendix slots, ruled or deferred-with-a-date in one pass | 2026-10-01 09:03 IST |
+| **ADR-028 `"150k"` disposition** | Annotate by erratum; the five documents stay byte-identical | 2026-10-01 06:44 IST |
+| **WS2.3 option B** | Option A is VOID on its own control; core keeps the checklist and the skill gains the register order | 2026-10-01 07:22 IST |
+| **E2 pre-registration** | Ratified as written, including the NIFTY dte 5 correction and the SENSEX-only scope of the 0-rows expectation | 2026-10-01 05:59:47 IST |
+| **`--max-turns` deviation** | Accepted: all arms share the config and every bar is within-WS2.3, so the runs continued | 2026-10-01 06:42:15 IST |
 
 ## Previous session S86
 

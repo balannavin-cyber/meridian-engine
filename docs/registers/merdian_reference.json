@@ -4918,6 +4918,32 @@
   "last_updated_date": "2026-09-30",
   "change_log": [
       {
+        "session": "S87",
+        "date": "2026-09-30 -> 2026-10-01",
+        "type": "model-routing ADR filed + the CLAUDE.md split's loose ends closed; one ENH-98 expiry-day arm refused. No production code, no DDL; the only database contact was the read-only E2 arm.",
+        "summary": "ADR-029 FILED ACCEPTED (af34e58, e8d9306): task classes TC1/TC2/TC3, routing as data, cost per PASSED task, gearing gated on shadow agreement; all 18 appendix rulings closed (#4/#5 deferred to S88, #13/#14 to Sat 2026-10-03, #9 until a class passes shadow); Decision Index row added, S86 reservation discharged, next-free already ADR-030+ so asserted not advanced. WS2.3/2.4 (be9c3d4): the doc-close skill populated with the register order -- option A (moving the checklist out of core) was built, measured across 3 arms x 2 prompts x 3 runs and came out VOID on its own pre-registered negative control, because B3's rubric is INVERTED for a relocation (control 3/3 vs baseline 0/3 and change 0/3); C-close discriminated 3/0/0 on the register order but the VOID governed. TD-S86-NEW-8 RESOLVED; gate 2 extended to assert a SKILL.md body >= 500 B, with a negative control that FAILS on the old 95 B shell. TD-S87-NEW-1 filed S1: merdian-runbooks passes the byte gate at 1026 B while 7 of its 9 runbook targets do not exist, including Emergency stop -- pre-existing, not a split regression, and the byte gate cannot see it. WS2.5/2.6 (0e52360): the tracked '150k ceiling' is identified as the Claude Code CLI's 150.0k-CHARACTER warning, not a token or byte ceiling -- shown on 6bba0ce, absent on 35588a2; disposed by ERRATUM in ADR-028 with all five carrying documents left byte-identical; ADR-028 section 7.6 records 128.9k -> 14.3k tokens (88.91 pct), corroborated 327,949 -> 40,073 B (87.78 pct), and the 1.42 pct growth at the S86 doc-close. WS2.1 (b282a05) B6/B7 renumbered to Rules 26/27; WS2.2 (dfeb261) the Rule 26 patch snippet now round-trips the BOM, TD-S86-NEW-4 RESOLVED, blast radius re-measured 27 -> 36 files including 3 scheduled .ps1. EOS (6b32fb5 + this commit): TD-S87-NEW-2..5 filed, Assumption Register section D.43 added (17 rows, all REFUTED, 3 of them this session's own instruments caught by review), CLAUDE.md v1.58 -> v1.59 at 39,592 -> 39,592 bytes exactly flat. ENH-98 E2 (capture_s84.md section 2.12): gate passed first, then SENSEX dte 0 with precondition PASS (ATM 28 >= 10) and exact/365 ATM 0.2620 / NEAR 0.5140, both over the 0.10 bar -- REFUSE. E1 and E2 have now both refused, so W1's charm-to-15:30 stays UNRECORDED and L78-3's expiry leg is not amended; E2 is not a T1 arm so T1 remains UNDECIDED, re-run Wed 2026-10-07. The ratified pre-registration corrected section 2.8's NIFTY dte from 2 to 5 before the arm ran; observed 5.",
+        "commits": [
+          "707276a",
+          "c008917",
+          "e72c652",
+          "b282a05",
+          "dfeb261",
+          "be9c3d4",
+          "0e52360",
+          "af34e58",
+          "e8d9306",
+          "6b32fb5"
+        ],
+        "ledger": {
+          "TDs_NEW": 5,
+          "TDs_RESOLVED": 2,
+          "ADRs_NEW": 1,
+          "ADRs_AMENDED": 1,
+          "decision_index_rows": 1,
+          "assumption_register_sections": 1
+        }
+      },
+      {
         "session": "S86",
         "date": "2026-09-29 -> 2026-09-30",
         "type": "Two halves: the ADR-028 CLAUDE.md split built, behaviourally tested and merged, then the ENH-98 A4 arm run to its pre-registration and a ten-entry doc-close. No production change, no DDL, no database write - the only database contact was three read-only roq.sh queries for A4.",

@@ -3125,6 +3125,20 @@ started; nothing below authorises it.**
 | **Status unchanged, again** | **IN BUILD (S81) — build NOT started.** S86 added one arm that does not count, an UNDECIDED go/no-go, a three-point gradient and a filed ambiguity. **No ruling or result in this block authorises the L7/L8 build.** An UNDECIDED T1 authorises nothing, exactly as a refusal would; the difference is that it is not yet a verdict. |
 | **Source** | `docs/research/capture_s84.md` **§2.11** (A4 result, in §2.10's shape) · `scratch/s86_l78/a4_0{0..8}_*.out` · `apply_a4.py` · TD-S86-NEW-9. |
 
+**S87 — E2 runs and the refusal FIRES, so W1's expiry-day charm stays unrecorded. T1 is untouched and still UNDECIDED. Build still NOT started.**
+
+| Field | Detail |
+|---|---|
+| **Instrument, unchanged in substance** | `scratch/s87_l78/e2.sql`, sha256 `899c5852e5601612…`, derived from `a4.sql` by a **pin-only edit** to `2026-10-01 10:15:59+05:30`, **one hunk `4c4,5`** off the re-verified `d5930ee5…` instrument. Helpers `e2_rows.sql` (`7a6fe5b4…`), `e2_reff.sql` (`a68003ac…`) and gate `e2_gate.sql` (`42b53a39…`) derived the same way; all four **byte-length-identical** to their A4 sources, every changed line asserted to be a date line. **All five hashes re-verified against `e2_00_build.out` before any database access.** |
+| **Pre-registration ratified BEFORE the arm, and it CORRECTED §2.8** | `e2_02_prereg.out`, sha256 `41b4426b…`, ratified **2026-10-01 05:59:47 IST**, ~4 h 16 m ahead of the cycle. §2.8 states NIFTY **dte 2** for this cycle; the query's `dte` is calendar-day subtraction, so the expected value is **5**. The 2 is a **trading**-day count (10-02 Gandhi Jayanti + weekend), reproduced exactly, so the origin was identified rather than guessed. Computed from `e2.sql`'s own definition and **controlled against A4's observed pair 2/2** before being stamped. §2.8's text is left unchanged. |
+| **Gate passed BEFORE the arm** | Both symbols at **10:15:06 IST** (≥ 10:15:00), **0.00 %** deviation against their own 09:15 — NIFTY 944/944, SENSEX 780/780. |
+| **E2 — SENSEX dte 0. The refusal FIRES** | Expected dte **0**, observed **0 — MATCH**; NIFTY expected **5** (corrected), observed **5 — MATCH**. Precondition **PASS**: ATM rows after the band **28 ≥ 10**, so the gamma test counts. `exact/365` ATM **0.2620**, NEAR **0.5140** — both over the 0.10 bar → **REFUSE**. |
+| **Outcome use — the expiry leg is NOT amended** | §2.8 requires a pass on **both** E1 and E2 to start the evidence count. **E1 refused (S85) and E2 refuses**, so W1's *"charm to 15:30"* stays **UNRECORDED** and **L78-3's expiry leg is not amended**. E2 is **not** a T1 arm (T1 is scoped to dte 1–2), so **T1 remains UNDECIDED** and the 2026-10-07 re-run stands. |
+| **Pre-registered absences all landed** | SENSEX `dte/365` and `dte/252` returned **0 rows** (`dte 0 ⇒ tt 0` trips the query's own `tt > 0`); NIFTY returned **all three** conventions, which the stamp required so that 0 NIFTY rows could not be read as the pre-registered absence; the dte-0 offset was an **expected NO-TEST** and is one at **0.09×**. |
+| **Observations** | **(a)** E1 and E2 — two symbols, two expiry days, same 10:15 cycle — agree closely: ATM 0.2657 vs **0.2620**, NEAR 0.4949 vs **0.5140**. **n = 2.** **(b)** SENSEX `r_eff` **0.090615** is **not** evidence (failed its own precondition, `sd` 178.134 on a median of 3.9). **(c)** NIFTY `r_eff` **0.035718** at **12.83×** is a valid T3 point at **3.57 %**, just **below** the 3.64–3.81 % band — recorded unadjusted. |
+| **Status unchanged, a fifth time** | **IN BUILD (S81) — build NOT started.** S87 added one pre-registered refusal and a corrected expectation. **Nothing here authorises the L7/L8 build.** |
+| **Source** | `docs/research/capture_s84.md` **§2.12** (E2 result, in §2.11's shape) · `scratch/s87_l78/e2_0{4,4b,5,6,7}_*.out` · `e2_02_prereg.out`. |
+
 | Field | Detail |
 |---|---|
 | Status | **IN BUILD (S81, 2026-09-23)** — deferral LIFTED |

@@ -435,6 +435,38 @@ Source: `a4_05_result.out:4-21`, eighteen rows — **both symbols returned all t
 
 ---
 
+
+### 2.12 E2 result (2026-10-01, pinned 10:15:06 IST) — the refusal **FIRES**
+
+**Pre-registration.** `scratch/s87_l78/e2_02_prereg.out`, sha256 `41b4426b3bdf8881…`,
+**operator-ratified 2026-10-01 05:59:47 IST** — about 4 h 16 m before the target cycle.
+The four `e2*.sql` files are pin-only edits of the A4 set, 2026-09-30 → 2026-10-01, each
+**byte-length-identical** to its source, `e2.sql` carrying **one hunk `4c4,5`** off the
+`d5930ee5…` instrument. Prereg sha and all four file shas were **re-verified against
+`e2_00_build.out` before any database access** (`e2_04b_hashes.out`, 4/4 + prereg MATCH).
+
+**The §2.8 NIFTY dte was corrected before the arm, and §2.8's own text is unchanged.**
+§2.8 states *"Same cycle gives NIFTY dte 2 (front 2026-10-06)"*. The query's `dte` is
+`(expiry_date − session_date)` — **calendar-day** subtraction — so 2026-10-06 − 2026-10-01
+is **5**. The stated 2 is the **trading**-day count (10-02 Gandhi Jayanti, 10-03/04
+weekend, leaving 10-05 and 10-06), and the arithmetic reproduces it exactly, which is how
+the origin was identified rather than guessed. The correction was computed from `e2.sql`'s
+own definition, **controlled against A4's observed pair** (the same function at
+session_date 2026-09-30 returns SENSEX 1 / NIFTY 6, reproducing A4 2/2), stamped and
+ratified **before** the arm. **§2.8 is left as written**; the correction lives here.
+
+| Field | Detail |
+|---|---|
+| **Gate passed BEFORE the arm** | Both symbols resolved to **10:15:06 IST** (≥ 10:15:00) at **0.00 %** row deviation against **their own** 09:15 cycle — NIFTY 944/944, SENSEX 780/780. The coded gate2 bar stays `abs(pct) <= 5.0`; 0.00 % is the measurement, not the bar. |
+| **dte — both MATCH, including the corrected one** | SENSEX expected **0**, observed **0**; NIFTY expected **5** (corrected), observed **5**. Had the uncorrected 2 been carried, a correct arm would have been recorded as a MISS. |
+| **E2 — SENSEX dte 0. The refusal FIRES** | Precondition **PASS**: ATM rows after the delta band **28 ≥ 10**, so the gamma test **counts**. `exact/365` ATM **0.2620**, NEAR **0.5140** — **both above the 0.10 bar T1 sets and §2.8 inherits unchanged**, so the refusal fires. |
+| **Every pre-registered absence landed** | SENSEX `dte/365` and `dte/252` returned **0 rows** — `dte 0 ⇒ tt 0` trips `e2.sql`'s own `c.tt > 0` filter — and the only SENSEX convention present is `exact/365`. NIFTY at dte 5 returned **all three** (dte/252, dte/365, exact/365), which the stamp required as a defect check rather than letting 0 NIFTY rows read as the pre-registered absence. The offset at dte 0 was pre-registered as an **expected NO-TEST** and is one: ratio **0.09×** against the 3× bar. |
+| **Outcome use — W1's expiry charm stays UNRECORDED** | §2.8: *"A pass on both E1 and E2 starts the evidence count. A fail on either keeps W1's expiry-day charm unrecorded until re-tested."* **E1 refused** (§2.10: ATM 0.2657 / NEAR 0.4949) and **E2 refuses**. So the evidence count does not start, W1's *"charm to 15:30"* stays **UNRECORDED**, and **L78-3's expiry leg is NOT amended**. |
+| **E2 is NOT a T1 arm** | T1 is scoped to SENSEX **dte 1–2**; this is dte 0. **T1 stays UNDECIDED** per §2.11, and **no L7/L8 proposal follows from E2 in either direction.** TD-S86-NEW-9's owed ruling does not bear on this arm. |
+| **Observations, recorded as observations** | **(a)** E1 and E2 are **different symbols on different expiry days at the same 10:15 cycle** and agree closely: ATM 0.2657 vs **0.2620**, NEAR 0.4949 vs **0.5140**, both ~2.6× over the ATM bar, with `secs_to_expiry` ~18,893 s in both. **n = 2, stated as 2** — two points are a pair, not a rate. **(b)** SENSEX `r_eff` **0.090615** is **NOT evidence**: it comes from the arm that failed its own offset precondition at 0.09×, `sd` **178.134** against a median of **3.9**. **(c)** NIFTY `r_eff` **0.035718** at **12.83×** **IS** a valid T3 point — **3.57 %**, just **below** the 3.64–3.81 % band of the four prior readings. Informational, not a gate, and not adjusted to fit the band. **(d)** The SENSEX FAR offset reads **-691.1** against an ATM of **3.9** — the stale-`ltp` signature again, a **resemblance and not a diagnosis**, since no per-strike `ltp` freshness check was run on this cycle. |
+| **The parse defect, found twice and fixed rather than worked around** | The verdict script's first two drafts died on their own uniqueness assertions: `SENSEX`/`ATM` matches in **both** `e2.sql`'s table and `e2_reff.sql`'s, and a positional column regex matched **0** rows in a 12-column table. **This is the §D.42.9 defect recurring in the same family of script** — `apply_a4.py` hit the identical two-table collision at S86. Fixed by parsing **section-scoped, then field-indexed**, with every lookup asserted to match exactly one row. The assertions are the only reason the wrong figure was never printed. |
+| **Source** | `scratch/s87_l78/e2_0{4,4b,5,6,7}_*.out` · gate `e2_05_gate.out` · arm `e2_06_arm.out` · verdict `e2_07_verdict.out` (0 blocking failures) · ratified stamp `e2_02_prereg.out`. |
+
 ## 3. §D rows to file
 
 **(a) The S83 L9 and L3 anon checks were no-tests; L10 was valid.**

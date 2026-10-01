@@ -46,7 +46,9 @@ keeps its original drafting wording, and none of them is owed any more** — the
 left unedited so the body reads as it did when the questions were posed, and the
 **Appendix is authoritative on what is outstanding.** Rewriting those headings to
 say the opposite of what they said would lose the record of what was open at
-drafting time; a reader who needs the current state reads the Appendix.
+drafting time, so instead **each one now carries a single `→` line directly
+beneath it** giving its ruling or dated deferral and pointing at the Appendix
+row and `rulings_s87.md`. The heading above each mark is byte-unchanged.
 points at `rulings_s87.md`. The deferrals are **#4/#5 to S88** (hook build plus
 test), **#13/#14 to Sat 2026-10-03** (out of market hours), and **#9 until a class
 passes shadow**. Nothing in this ADR is a measurement.
@@ -154,6 +156,7 @@ open.
 > verifier standing in for it where one exists. ADR-027 (DRAFT, not accepted) D5
 > proposes such a verifier for the doc-close path; it is a proposal, not an
 > available component.
+> → **RULED** 2026-10-01 — see Appendix #1 and `rulings_s87.md`.
 
 > **OPEN QUESTION — not a decision, and no part of D13 or D14 rests on it. A TC1
 > performer without deterministic tools counts by reading.** The TC1 v1 shadow run
@@ -202,9 +205,11 @@ document deliberately contains no model name, so that it cannot become one of th
 drifted copies.
 
 > **OPERATOR RULING OWED — where the mapping file lives, and in what format.**
+> → **RULED** 2026-09-30 — see Appendix #2 and `rulings_s87.md`.
 
 > **OPERATOR RULING OWED — the initial mapping itself: which model each of TC1,
 > TC2 and TC3 is assigned to at adoption.** No assignment is suggested here.
+> → **RULED** 2026-09-30 — see Appendix #3 and `rulings_s87.md`.
 
 **D16 — Per-class subagents are declared through `.claude/agents/*.md`
 frontmatter, so that the routing is exercised by configuration rather than by the
@@ -269,12 +274,15 @@ acquires a component that does not exist.
 
 > **OPERATOR RULING OWED — the mechanism by which permission prompts are logged
 > (R1).**
+> → **DEFERRED to S88** 2026-10-01 — see Appendix #4 and `rulings_s87.md`.
 
 > **OPERATOR RULING OWED — the mechanism by which context-limit events are logged
 > (R2).**
+> → **DEFERRED to S88** 2026-10-01 — see Appendix #5 and `rulings_s87.md`.
 
 > **OPERATOR RULING OWED — where the ledger lives, who owns its schema, and
 > whether it is a repository file or a register.**
+> → **RULED** (location 2026-09-30, schema owner 2026-10-01) — see Appendix #6 and `rulings_s87.md`.
 
 **D20 — The ledger is reviewed on a fixed recurring cadence, and the review is a
 scheduled obligation rather than an occasion.**
@@ -287,6 +295,7 @@ building the watcher that would have surfaced it. The review must be on a
 calendar.
 
 > **OPERATOR RULING OWED — the review cadence, and who performs it.**
+> → **RULED** 2026-10-01 — see Appendix #7 and `rulings_s87.md`.
 
 ---
 
@@ -334,9 +343,11 @@ ran (ADR-028 §4).
 
 > **OPERATOR RULING OWED — the shadow-run agreement threshold for gearing down:
 > how many runs, and what agreement rate.**
+> → **RULED** 2026-09-30 — see Appendix #8 and `rulings_s87.md`.
 
 > **OPERATOR RULING OWED — the sampling rate for the review that can trigger an
 > automatic gear-up.**
+> → **DEFERRED until a class passes shadow** 2026-10-01 — see Appendix #9 and `rulings_s87.md`.
 
 ---
 
@@ -369,9 +380,11 @@ verifier outcome column is joined to the cost column.
 
 > **OPERATOR RULING OWED — the size and per-class composition of the evaluation
 > suite, and the pass bar that decides adequacy for a class.**
+> → **RULED** 2026-10-01 — see Appendix #10 and `rulings_s87.md`.
 
 > **OPERATOR RULING OWED — whether cost per passed task is compared at a fixed
 > budget or at parity of outcome, and who grades.**
+> → **RULED** 2026-10-01 — see Appendix #11 and `rulings_s87.md`.
 
 ---
 
@@ -491,9 +504,11 @@ other way, and it is stated as an open item rather than assumed.
 
 > **OPERATOR RULING OWED — whether sandbox is enabled, and if so who pays its
 > installation and network-allowlist cost.**
+> → **DEFERRED to Sat 2026-10-03** 2026-10-01 — see Appendix #13 and `rulings_s87.md`.
 
 > **OPERATOR RULING OWED — whether row (e)'s deny-bypass gap is closed, how, and
 > whether the untested spellings are enumerated before or after.**
+> → **DEFERRED to Sat 2026-10-03** 2026-10-01 — see Appendix #14 and `rulings_s87.md`.
 
 ---
 
@@ -524,9 +539,11 @@ present pinned version, advances, or moves to a channel is a WS1.2 question.
 
 > **OPERATOR RULING OWED — the current CLI pin: hold, advance, or unpin, and on
 > what trigger. (WS1.2.)**
+> → **RULED** 2026-09-30 — see Appendix #15 and `rulings_s87.md`.
 
 > **OPERATOR RULING OWED — whether automatic updates stay disabled, and if they
 > are re-enabled, which channel the box follows given the recorded side effect.**
+> → **RULED** 2026-10-01 — see Appendix #16 and `rulings_s87.md`.
 
 ---
 

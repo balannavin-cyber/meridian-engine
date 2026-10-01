@@ -17,3 +17,18 @@ If a read-only command prompts: the rules did not take effect, so investigate. I
 Known limit: `git diff` and `git log` accept --output=<file>, so the diff/log allow rules technically permit a file write. Recorded, not fixed.
 
 WS2.3 — option A (checklist moved into the skill) attempted and VOID (s87_measure/ws23/result.md, sha256 14d77ff5…): B3's rubric is inverted for this change (the control passed 3/3). C-close discriminated on the register order (3/3 vs 0/3 vs 0/3). Per prereg §7, fall back to option B; RULED 2026-10-01 07:22 IST. Owed if A is revisited: a v2 pre-registration (B3 rubric scored on checklist CONTENT, baseline floor ≥ 1, C-close without its unfalsifiable criterion 1).
+
+ADR-029 rulings 2026-10-01 09:03 IST, operator 'OK' to all proposals:
+#1 A D14 risk-override review is **mechanical checks plus an operator read of a summary of ≤ 15 lines**, required before any canonical commit.
+#4 **DEFERRED to S88** — the permission-prompt logging mechanism is a hook build plus test, and is not started here.
+#5 **DEFERRED to S88 with #4** — context-limit logging ships with the same hook.
+#6 **Operator owns the ledger schema.** The schema is the `ledger_append.py` fields **as built**; location was already ruled 2026-09-30 14:22 IST.
+#7 A **ledger summary line in `session_log.md` at every doc-close**; the doc-close performs it.
+#9 **DEFERRED until a class passes shadow** — no gear-up sampling rate is set before there is a class to sample.
+#10 **TC1 = the frozen `tc1_v1` suite (10 tasks); TC2 = a 20-task suite still to be built; TC3 never gears down.**
+#11 **Cost per PASSED task at the pre-registered bar**, graded by a **fresh blind subagent**.
+#13 **DEFERRED to Sat 2026-10-03, outside market hours** — sandbox install and network-allowlist work does not run on a trading day.
+#14 **DEFERRED with #13** — the Bash deny-bypass gap is addressed in the same out-of-hours window.
+#16 **Automatic updates stay disabled**; revisit together with #15 at the end of shadow v1.
+#17 The four bars are fixed: **AC29-1 zero individual regressions · AC29-2 every TC1/TC2 check proven to fail on a seeded defect · AC29-3 routed cost per passed task ≤ unrouted, per class · AC29-4 100 % ledger completeness.**
+#18 **TC1 work must use deterministic tools** (`wc`, `grep -c`, …); a task for which no such tool exists **is TC2**.

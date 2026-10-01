@@ -1,9 +1,11 @@
-# ADR-029 (DRAFT) — Model routing and token efficiency
+# ADR-029 — Model routing and token efficiency
 
-> **STATUS: DRAFT. NOT FILED.** No Decision Index row is added by this file, no
-> register is edited, and nothing here is committed. The draft lives under
-> `docs/research/s87_routing/` precisely so that it is not mistaken for an
-> accepted decision sitting in `docs/decisions/`.
+> **STATUS: ACCEPTED 2026-10-01 (Session 87).** Filed. The Decision Index carries
+> its row, the reserved row is discharged, and the next-free marker stands at
+> `ADR-030+`. The file moved from `docs/research/s87_routing/` into
+> `docs/decisions/` at filing; every ruling it was waiting on landed 2026-10-01 09:03 IST
+> and is recorded in `docs/research/s87_routing/rulings_s87.md`, which this
+> document points at rather than restating.
 >
 > **ID provenance.** The Decision Index already carries a reserved row reading
 > *"ADR-029 | Model routing and token efficiency | … RESERVED S86 2026-09-30 —
@@ -37,7 +39,17 @@
 
 ### 0.1 Status
 
-**DRAFT.** Nothing below is in force. Every threshold is an open slot.
+**ACCEPTED 2026-10-01 (Session 87).** In force. Every threshold that was an open
+slot now carries a ruling or a dated deferral; the Appendix marks each one and
+points at `rulings_s87.md`. **Every `OPERATOR RULING OWED` heading in the body
+keeps its original drafting wording, and none of them is owed any more** — they are
+left unedited so the body reads as it did when the questions were posed, and the
+**Appendix is authoritative on what is outstanding.** Rewriting those headings to
+say the opposite of what they said would lose the record of what was open at
+drafting time; a reader who needs the current state reads the Appendix.
+points at `rulings_s87.md`. The deferrals are **#4/#5 to S88** (hook build plus
+test), **#13/#14 to Sat 2026-10-03** (out of market hours), and **#9 until a class
+passes shadow**. Nothing in this ADR is a measurement.
 
 ### 0.2 Context
 
@@ -169,9 +181,11 @@ open.
 > performer simply is not adequate for it, which is what the gear-down gate at §4
 > exists to establish and did.
 
-> **OPERATOR RULING OWED — whether TC1 work must use deterministic tools rather
+> **OPERATOR RULING #18 — whether TC1 work must use deterministic tools rather
 > than model reading, and if so whether a TC1 task for which no such tool exists
 > stops being TC1.**
+>
+> **RULED 2026-10-01 09:03 IST — see `rulings_s87.md` #18.**
 
 ---
 
@@ -570,28 +584,30 @@ the numbering the body and this table already share does not move.
 
 | # | ruling owed | § |
 |---|---|---|
-| 1 | What form a D14 risk-override review takes: same-class re-read, higher-class re-read, operator read, or a mechanical verifier where one exists. | 1 |
+| 1 | What form a D14 risk-override review takes: same-class re-read, higher-class re-read, operator read, or a mechanical verifier where one exists. **RULED 2026-10-01 09:03 IST — see `rulings_s87.md` #1.** | 1 |
 | 2 | Where the class-to-model mapping file lives, and in what format. **RULED 2026-09-30 14:22 IST — see `rulings_s87.md`.** | 2 |
 | 3 | The initial mapping itself — which model each of TC1, TC2 and TC3 is assigned to at adoption. **RULED 2026-09-30 14:22 IST — see `rulings_s87.md`.** | 2 |
-| 4 | The mechanism by which permission prompts are logged going forward (R1). | 3 |
-| 5 | The mechanism by which context-limit events are logged going forward (R2). | 3 |
-| 6 | Where the cost ledger lives, who owns its schema, and whether it is a repository file or a register. **PARTLY RULED 2026-09-30 14:22 IST — location only, see `rulings_s87.md`; schema owner still owed.** | 3 |
-| 7 | The ledger review cadence, and who performs it. | 3 |
+| 4 | The mechanism by which permission prompts are logged going forward (R1). **DEFERRED to S88, 2026-10-01 09:03 IST — see `rulings_s87.md` #4.** | 3 |
+| 5 | The mechanism by which context-limit events are logged going forward (R2). **DEFERRED to S88, 2026-10-01 09:03 IST — see `rulings_s87.md` #5.** | 3 |
+| 6 | Where the cost ledger lives, who owns its schema, and whether it is a repository file or a register. **PARTLY RULED 2026-09-30 14:22 IST — location only, see `rulings_s87.md`; schema owner still owed.** **Schema owner RULED 2026-10-01 09:03 IST — operator owns it; see `rulings_s87.md` #6.** | 3 |
+| 7 | The ledger review cadence, and who performs it. **RULED 2026-10-01 09:03 IST — see `rulings_s87.md` #7.** | 3 |
 | 8 | The shadow-run agreement threshold for gearing down: how many runs, and what agreement rate. **RULED 2026-09-30 14:22 IST — see `rulings_s87.md`.** | 4 |
-| 9 | The sampling rate for the review that can trigger an automatic gear-up. | 4 |
-| 10 | The size and per-class composition of the evaluation suite, and the pass bar that decides adequacy for a class. | 5 |
-| 11 | Whether cost per passed task is compared at a fixed budget or at parity of outcome, and who grades. | 5 |
+| 9 | The sampling rate for the review that can trigger an automatic gear-up. **DEFERRED 2026-10-01 09:03 IST until a class passes shadow — see `rulings_s87.md` #9.** | 4 |
+| 10 | The size and per-class composition of the evaluation suite, and the pass bar that decides adequacy for a class. **RULED 2026-10-01 09:03 IST — see `rulings_s87.md` #10.** | 5 |
+| 11 | Whether cost per passed task is compared at a fixed budget or at parity of outcome, and who grades. **RULED 2026-10-01 09:03 IST — see `rulings_s87.md` #11.** | 5 |
 | 12 | Whether the absolute-path convention is adopted, retained provisionally, or dropped, now that the `WS3.1_baseline.md` §6 experiment has run. **RULED 2026-09-30 19:06 IST — see `rulings_s87.md`.** | 6 |
-| 13 | Whether sandbox is enabled, and if so who pays its installation and network-allowlist cost. | 7 |
-| 14 | Whether the Bash deny-bypass gap is closed, how, and whether the untested spellings are enumerated first. | 7 |
+| 13 | Whether sandbox is enabled, and if so who pays its installation and network-allowlist cost. **DEFERRED to Sat 2026-10-03, ruled 2026-10-01 09:03 IST — see `rulings_s87.md` #13.** | 7 |
+| 14 | Whether the Bash deny-bypass gap is closed, how, and whether the untested spellings are enumerated first. **DEFERRED to Sat 2026-10-03, ruled 2026-10-01 09:03 IST — see `rulings_s87.md` #14.** | 7 |
 | 15 | The current CLI pin: hold, advance, or unpin, and on what trigger (WS1.2). **RULED 2026-09-30 17:41 IST — hold.** See `rulings_s87.md`. | 8 |
-| 16 | Whether automatic updates stay disabled, and which channel is followed if they are re-enabled. | 8 |
-| 17 | The numeric bar for each acceptance criterion in §9.1, fixed and dated before any shadow run. | 9 |
-| 18 | Whether TC1 work must use deterministic tools rather than model reading, and whether a TC1 task for which no such tool exists stops being TC1. | 1 |
+| 16 | Whether automatic updates stay disabled, and which channel is followed if they are re-enabled. **RULED 2026-10-01 09:03 IST — see `rulings_s87.md` #16.** | 8 |
+| 17 | The numeric bar for each acceptance criterion in §9.1, fixed and dated before any shadow run. **RULED 2026-10-01 09:03 IST — see `rulings_s87.md` #17.** | 9 |
+| 18 | Whether TC1 work must use deterministic tools rather than model reading, and whether a TC1 task for which no such tool exists stops being TC1. **RULED 2026-10-01 09:03 IST — see `rulings_s87.md` #18.** | 1 |
 
 ---
 
-*DRAFT. Not filed, not committed, no Decision Index row. Sources:
+*FILED ACCEPTED 2026-10-01 (Session 87); rulings 2026-10-01 09:03 IST, recorded in
+`docs/research/s87_routing/rulings_s87.md`. Decision Index row added and the
+ADR-029 reservation discharged in the same pass. Sources:
 `WS3.1_baseline.md` for every measurement cited; ADR-028 for the harness and
 toolchain pattern; ADR-026 and ADR-027 (DRAFT, not accepted) for the label
 namespaces; `CURRENT.md` S86 block, `docs/registers/session_log_history.md` and

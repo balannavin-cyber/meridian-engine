@@ -59,35 +59,42 @@ no DDL. The only database contact all session was the E2 arm, read-only as `merd
 
 ## NEXT SESSION PICKS UP
 
-**In priority order. Items 1 and 2 are dated and must not slip past 2026-10-07.**
+**The Parity build is the priority. Items 2–4 are dated and must not slip.**
 
-1. **TD-S86-NEW-9 — the owed operator ruling, BEFORE 2026-10-07.** §2.6's ≥ 3×SE
-   precondition does not say whether it gates the gamma reading or only the offset
-   reading, and on A4's data the two readings give **different T1 verdicts** (UNDECIDED
-   vs PASS). It must be ruled, **pre-registered and dated**, before the next arm runs, or
-   that arm is measured under two live readings at once.
-2. **A4 re-run — Wed 2026-10-07, 10:15:59 IST, SENSEX dte 1.** The next SENSEX dte-1
-   cycle and the arm T1 needs. Stated before the run: on the three-point precondition
-   gradient (6.41× → 3.79× → 1.18×) this arm is **more likely than not to be another
-   NO-TEST**; if it is, T1 as written is scoped to a dte range its own precondition may
-   not admit, and that is a decision owed to the operator, not a result.
-3. **The NIFTY L9 stage-1 max-pain arm — STILL OUTSTANDING** (TD-S80-NEW-1, owed from
-   S82). It rode on the A3 date and was not run, and has now been carried through S85,
-   S86 and S87.
-4. **TD-S87-NEW-1 (S1) — the seven missing runbooks.** Write them from
-   `RUNBOOK_TEMPLATE.md` or remove the rows, in incident-severity order:
-   `emergency_stop`, `restart_runner_local`, `restart_runner_aws`, then the rest. Add the
-   missing `disk_full_lockout` row. Then extend the gate with a **pointer-resolution**
-   check, because the body-bytes gate passes this skill.
-5. **S88 — the logging hooks** (ADR-029 appendix **#4/#5**, DEFERRED to S88). Permission
-   prompts and context-limit events must be logged **forward**; §5a established that
-   approvals are byte-invisible, so nothing retrospective can answer these.
-6. **Sat 2026-10-03, out of market hours** (ADR-029 **#13/#14**, DEFERRED). Sandbox
-   enable plus its install and network-allowlist cost, and the Bash deny-bypass gap with
-   the untested spellings **enumerated first**.
-7. **The TC2 suite** (ADR-029 **#10**) — 20 tasks, to be built. TC1 v1 is frozen at 10
-   tasks and its shadow **FAILED 6/10 against a 10/10 bar**, so nothing gears down; per
-   **#18** TC1 work must use deterministic tools and a task without one **is TC2**.
+1. **THE PARITY BUILD — the session's main work.** Operator-prioritised 2026-10-01 over the
+   runbook repair, which is parked (TD-S87-NEW-1). Everything below is either dated or
+   background; this is the item that gets the session's attention.
+2. **TD-S86-NEW-9 — the owed operator ruling, BEFORE 2026-10-07.** §2.6's ≥ 3×SE
+   precondition does not say whether it gates the gamma reading or only the offset reading,
+   and on A4's data the two readings give **different T1 verdicts** (UNDECIDED vs PASS). It
+   must be ruled, **pre-registered and dated**, before the next arm runs, or that arm is
+   measured under two live readings at once.
+3. **A4 re-run — Wed 2026-10-07, 10:15:59 IST, SENSEX dte 1.** The arm T1 needs. Stated
+   before the run: on the three-point precondition gradient (6.41× → 3.79× → 1.18×) this arm
+   is **more likely than not to be another NO-TEST**; if it is, T1 as written is scoped to a
+   dte range its own precondition may not admit — a decision owed to the operator, not a
+   result.
+4. **Sat 2026-10-03, out of market hours** (ADR-029 **#13/#14**, DEFERRED). Sandbox enable
+   plus its install and network-allowlist cost, and the Bash deny-bypass gap with the
+   untested spellings **enumerated first**.
+5. **The NIFTY L9 stage-1 max-pain arm — STILL OUTSTANDING** (TD-S80-NEW-1, owed from S82).
+   It rode on the A3 date, was not run, and has now been carried through S85, S86 and S87.
+
+**BACKGROUND / PARKED — not this session's work unless the Parity build frees time.**
+
+- **TD-S87-NEW-1 — PARKED, re-rated S1 → S3** (operator, 2026-10-01). **MERDIAN has never
+  placed an order** and the placer was never matured for use, so the seven dead runbook
+  routes have no live incident behind them. The phase-1 measurement is kept at
+  `s87_measure/runbooks/phase1.md` so the work is not repeated. Two measured facts survive
+  for whenever it is unparked: `docs/runbooks/README.md` carries the **same** eight dead
+  rows and names a **ninth** absent runbook the skill omits, and
+  `MERDIAN_Deployment_Topology.md:43,183` is **stale** on the order placer.
+- **S88 — the logging hooks** (ADR-029 **#4/#5**, DEFERRED to S88): **background.**
+  Permission prompts and context-limit events must be logged **forward** — §5a established
+  that approvals are byte-invisible, so nothing retrospective can answer these.
+- **The TC2 suite** (ADR-029 **#10**): **background.** 20 tasks, to be built. TC1 v1 is
+  frozen at 10 tasks and its shadow **FAILED 6/10 against a 10/10 bar**, so nothing gears
+  down; per **#18** TC1 work must use deterministic tools and a task without one **is TC2**.
 
 **Also owed, undated:** TD-S87-NEW-2 (`check_xrefs` blind to `AC29-n` and letter-suffixed
 sections; the copy actually run is unversioned), TD-S87-NEW-3 (`.gitignore` rotated logs —

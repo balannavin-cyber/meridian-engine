@@ -2,11 +2,126 @@
 
 > **Living file.** Overwritten at the end of every session to reflect what just happened and what the next session is for.
 > Claude reads this immediately after `CLAUDE.md` at session start. It replaces the practice of manually pasting a "session resume block."
-> **History.** Every session block before S83 lives in [`docs/registers/CURRENT_history.md`](../registers/CURRENT_history.md) — committed to git, **not** uploaded to project knowledge. Split at the S78 doc-close per **TD-S73-NEW-8**; S78 demoted to history at the S80 doc-close and **S81 at the S83 doc-close**, S82 at the S84 doc-close, **S83 at the S85 doc-close**, **S84 at the S86 doc-close** and **S85 at the S87 doc-close**, each moved verbatim rather than retyped. This file carries the current session and one predecessor, and nothing else.
+> **History.** Every session block before S83 lives in [`docs/registers/CURRENT_history.md`](../registers/CURRENT_history.md) — committed to git, **not** uploaded to project knowledge. Split at the S78 doc-close per **TD-S73-NEW-8**; S78 demoted to history at the S80 doc-close and **S81 at the S83 doc-close**, S82 at the S84 doc-close, **S83 at the S85 doc-close**, **S84 at the S86 doc-close** **S85 at the S87 doc-close** and **S86 at the S88 doc-close**, each moved verbatim rather than retyped. This file carries the current session and one predecessor, and nothing else.
 
 ---
 
 ## Last session
+
+**S88 — 2026-10-01 (Thursday, SENSEX expiry day), closed 2026-10-02.** One pre-registered test
+passed three times; everything else measured was negative, a correction, or a refusal by design.
+Full detail: `docs/research/capture_s88.md` §1–§6, with §5.7 correcting §5.3.
+
+**What was established**
+
+1. **L9 stage-1 max-pain, SENSEX arm: PASS ×3** (§1). Pre-registered before any OI or expiry data
+   was read; instrument hash verified before each run. PASS at **12:45:07, 14:55:06, 15:30:06 IST**
+   — arm A 0/0 both ways, arm B 197/197, no tie at minimum `total_pain` in any body. Mechanism:
+   W2-only strikes 0 and all three `max_pain_strike` agreeing, so **all 197 differing rows differ
+   in `total_pain` alone — the expiry mixture moved the magnitude and never the published level**,
+   while shared strikes where W2 OI > W1 grew 6 → 12 → 16. **TD-S80-NEW-1 is NOT closed: the NIFTY
+   arm is owed, next NIFTY expiry 2026-10-06 (measured).**
+2. **The S82 instrument did not exist in the tree and was rebuilt** (§1.2), stated as rebuilt
+   rather than implied continuous.
+3. **Marketview header reads a close two sessions old during every session** (§3, **TD-S88-NEW-1**).
+   Writer at **16:10 IST** (crontab line 24) + a newest-row reader with no date filter. NIFTY
+   2026-10-01: **−1.2953 %** shown against a settled **−0.8775 %** — overstated **0.4178 pp, 48 %
+   too large**; SENSEX only 0.0667 pp, and that is luck, not safety — the error is the gap between
+   two consecutive closes and is **unbounded**. **Fix belongs in the read layer**; moving the cron
+   cannot work, because no settled close exists before 16:00.
+4. **`open_0915_spot` is the 09:16 bar's CLOSE**, not the 09:15 open (§3.3, D.44.5) — proven by
+   comparison, 4/4, with `ohlc_open ≠ ohlc_close` on all 4 so the test was not vacuous.
+5. **The all-layers reconstruction returned a NEGATIVE result** (§5). 90/90 spine cells and
+   **540/540 layer cells** admitted on exact `ts` equality. **On the built layers, 2026-10-01 was
+   not distinguishable from the other five SENSEX expiry days before 12:15** — below chance on
+   SET A (34 vs 36), 5 above on SET B (38 vs 33). **08-27 scored highest in both** and its range is
+   **rank 5 of 17, 44 % of 10-01's**.
+6. **Eleven of twelve parity views carry no history** (D.44.3); L3 refuses wholesale on dte 0, L10
+   **partially** (keeps `ce_iv`/`pe_iv`), L9 publishes throughout and was limited by chain depth —
+   **and all of that was already documented at `MERDIAN_System_Map.md:1963-1976`** (§5.7).
+
+**Corrections I made to my own work inside the session** — recorded because they are the session's
+most transferable output: a **UTC/IST cast** that would have pinned every bucket to the same run
+and looked plausible (D.44.4); a **register-contradiction claim** that was an omission, not a
+conflict (§2.5 ii → §3.2, D.44.7); **"L10 is empty"**, too strong (§5.7, D.44.10); and a
+**NIFTY/SENSEX number mix** in a TD row, rebuilt with the arithmetic asserted against the artefact.
+
+**Registers touched:** `tech_debt.md` (TD-S88-NEW-1; update rows on TD-S81-NEW-16 and
+TD-S80-NEW-1), `MERDIAN_Assumption_Register.md` (**§D.44, 10 rows, all REFUTED**),
+`MERDIAN_Enhancement_Register.md` (**ENH-133…138, all PROPOSED**; Part 1 count recomputed
+**116 → 122**, having drifted 4 since S81 despite the "derive, don't carry" rule),
+`merdian_reference.json`, System Map §S88, `CLAUDE.md` footer. **No new ADR.**
+
+## NEXT SESSION PICKS UP
+
+**Dated, in order:**
+
+1. **Sat 2026-10-03, out of market hours** — ADR-029 **#13/#14**: sandbox enable plus install and
+   network-allowlist cost, and the Bash deny-bypass gap with the untested spellings enumerated first.
+2. **TD-S86-NEW-9 — the owed operator ruling, BEFORE 2026-10-07.** §2.6's ≥ 3×SE precondition does
+   not say whether it gates the gamma reading or only the offset reading, and on A4's data the two
+   give **different T1 verdicts**. Must be ruled, pre-registered and dated before the next arm runs.
+3. **Tue 2026-10-06 — the NIFTY L9 stage-1 arm** (TD-S80-NEW-1, owed since S82, carried through
+   S85/S86/S87/S88). Front expiry **measured** as 2026-10-06. **Pre-register that morning, before
+   any read**, by the §1.3 verdict order; the instrument is `scratch/s88_l9/l9_rebuilt_source.sql`
+   with the scope CTE set to NIFTY and that day's W1.
+4. **Optional, before 2026-10-06** — a pre-registered threshold for the fixed-strike OI tilt and/or
+   `ratio_pct`, if either is to be tested rather than described. **Unstamped means not a test.**
+5. **Wed 2026-10-07, 10:15:59 IST — A4 re-run**, SENSEX dte 1, gated on item 2.
+
+**PARITY BUILD QUEUE — S88's stated priority, and it comes before the ENH queue.**
+
+- **(a) TD-S88-NEW-1 repair.** A Lovable read-layer prompt was **drafted in chat 2026-10-01** and is
+  not in the tree. **Precondition before it ships:** a **single-run anon check in the SQL editor**
+  — one execution carrying `current_user` beside its rows — against `trading_calendar` and
+  `market_spot_snapshots` (the **16:00–16:10 IST `dhan_idx_i`** rows). `merdian_ro` cannot run it
+  (`permission denied to set role "anon"`), so it belongs to the editor under postgres.
+- **(b) §H phased Lovable prompts for the board.** Design doc **§A–G APPROVED 2026-10-01 13:04 IST
+  with four additions R1–R4**; the **§B.1a bindings are measured** (§2.2–§2.4). Note for whoever
+  writes them: `basis_pct` is a **futures-calendar artefact** across days (§5.4) and `open_0915_spot`
+  is the **09:16 close** (D.44.5) — both bindings must carry those qualifications.
+- **(c) Snapshot export into the board canvas.**
+
+**Build queue — nothing started, all operator-gated:** ENH-133…138 (Part 4 S88 footer).
+**ENH-133 and ENH-134 are alternatives, not a sequence.** **ENH-135 revisits a deliberate S62
+decision and is not a defect report.** **ENH-137 is shadow-only under ADR-029.**
+
+**Rulings owed:**
+
+- The **six ENH dispositions** (ENH-133…138).
+- The **five candidate rule lines** in `docs/research/s88_rule_lines_PROPOSED.md` — **proposed, not
+  applied, and deliberately NOT in `.claude/rules/`**.
+- Whether **`open_0915_spot` taking the 09:16 close is intended**, and whether `gap_open_pct`
+  should be recomputed off `raw->>'ohlc_open'`.
+- **L11 — decline or pending.** The design doc now says **PENDING**; the disposition is unresolved.
+- **E-D1 … E-D8:** `gex_cr` unit · canonical max pain · theme · legacy pin · NET-LONG γ source ·
+  signal row · ACCEL retirement · prototype corrections.
+- **TD-S87-NEW-1** (parked, S3) · the **CLI unpin** · the **five documents carrying the copied
+  "150k" figure**.
+
+**Owed probe:** `scratch/s88_design/markers_check` — the anon-path read in one execution carrying
+`current_user`, and `created_at` sampling on marker rows.
+
+## OPERATOR RULINGS, S88
+
+Recorded because each changed what was measured or what was written.
+
+- **Parity board design doc §A–G APPROVED** 2026-10-01 13:04 IST, **with four additions R1–R4** —
+  change marks on spot/VIX and the other levels; futures with basis and its change vs the previous
+  session; the pre-open print; the gap up/down.
+- **The tie clause gates BOTH arms, and all three bodies are counted**, evaluated before either
+  arm is read — a tie can fake arm A *and* arm B. **P3 accepted** (independently derived leg 1).
+  Both ruled **before** any OI or expiry data was read (§1.3).
+- **Engine pull is operator-terminal only.** Nothing under `~/meridian-engine` runs from Claude
+  Code, `git fetch` included. **Standing rule.**
+- **Claude Code runs in a plain SSM shell, not tmux.** Resume with
+  `cd /home/ssm-user/meridian-cc && claude --continue`.
+- **§4.5's wording kept as written** (the quartile result stated with its caveats inline).
+- **Price levels dropped from scoring; `d_oi_tilt` dropped from SET B** — both confounds named by
+  the operator, both recorded in the output rather than silently applied.
+- **Rule lines go to `docs/research/`, not `.claude/rules/`** — they are operator rules.
+
+## Previous session S87
 
 **Session 87 — 2026-09-30 (Wed).** One concern in three workstreams: **what this project's
 own Claude Code usage costs, and how the work should be routed**. A transcript baseline was
@@ -122,95 +237,3 @@ transcribed into a second place is a ruling that can drift out of agreement with
 | **WS2.3 option B** | Option A is VOID on its own control; core keeps the checklist and the skill gains the register order | 2026-10-01 07:22 IST |
 | **E2 pre-registration** | Ratified as written, including the NIFTY dte 5 correction and the SENSEX-only scope of the 0-rows expectation | 2026-10-01 05:59:47 IST |
 | **`--max-turns` deviation** | Accepted: all arms share the config and every bar is within-WS2.3, so the runs continued | 2026-10-01 06:42:15 IST |
-
-## Previous session S86
-
-**Session 86 — 2026-09-29 → 2026-09-30 (Tue–Wed).** Two halves: the **ADR-028 `CLAUDE.md`
-split** built, behaviourally tested and merged, then the **ENH-98 A4 arm** run to its
-pre-registration and a ten-entry doc-close. **No production change, no DDL, no database
-write** — the only database contact was three read-only `roq.sh` queries for A4.
-
-| Field | Value |
-|---|---|
-| **ADR-028 SHIPPED and FILED ACCEPTED** | The split is merged at **`76ad9a3`**. Core `CLAUDE.md` is **39,786 B / 258 lines** (172 content, 66 blank, 20 structural); launch load **327,949 → 39,786 B, −87.9 %**. Eight `.claude/rules/*.md` files carry `paths:` frontmatter, two skills exist, and all 23 discovery blocks + 6 version footers moved **verbatim** to the unloaded `docs/registers/CLAUDE_history.md`. `/context` post-merge: **only `CLAUDE.md` loads at launch, 14.1k tokens, no rules file, no size warning** — **OPERATOR-MEASURED**. Decisions renumbered **D8–D12** (ADR-026 owns D1–D3, ADR-027 D4–D7); Decision Index row added; next-free **`ADR-028+` → `ADR-030+`** with **ADR-029 reserved** for *model routing and token efficiency*. |
-| **AC2 met; AC1 failed on lines and was amended to bytes** | Blind graded, three runs per prompt, 2-of-3: **before 10 / after 12** of 15, pass-bar clauses **(a) (b) (c) all PASS**, two gains (B2, C1), **no regressions**. **AC1-lines FAILED at 258 against 200** and is recorded as failed; **AC1-bytes PASSED at 39,786 ≤ 40,960**. CLI pinned **`2.1.277`** across both arms. **The summary is deliberately weak where the evidence is weak:** no measured harm, launch load down 87.9 % in bytes, and **the two gains are NOT claimed as effects of the split** — n=2, one moved by a post-hoc re-grade, nothing isolates the split from run-to-run variance. |
-| **RULING 3 is post-hoc and labelled post-hoc** | Made **after** blind grading of both arms, unlike the pass bar and RULINGS 1–2. Bounded by two controls: applied to a **fresh blind re-grade of C1 and C2 only**, and the before-arm run RULING 1 locked as FAIL **still FAILs** under it. It moved ten individual run grades, six after and four before — visible in the tally, not folded in. |
-| **A4 (SENSEX dte 1) — T1 is UNDECIDED, not decided** | Gate passed before the run: both symbols **10:15:06 IST**, **0.00 %** row deviation against their own 09:15 reference (NIFTY 936, SENSEX 780). dte MATCH both symbols (SENSEX 1, NIFTY 6). Precondition **FAIL at 1.18×** (10.0 against 3 × 8.453 = 25.359) → **NO-TEST**. T1's refusal condition does not fire on this arm's numbers (`exact/365` ATM 0.0675, NEAR 0.0760) **but the arm does not count**. Per the operator-ratified clause (b), **T1 = UNDECIDED**; re-run **Wed 2026-10-07 10:15:59 IST**; **no L7/L8 proposed**. An UNDECIDED T1 is **not** a refusal and must not be recorded as one. |
-| **The precondition is now binding, and the gradient is three points** | **6.41×** (dte 3) → **3.79×** (dte 2) → **1.18×** (dte 1), monotone. The mechanism is dispersion: ATM offset **19.1 → 10.0** while SE(median) grew **5.051 → 8.453**, `sd` **35.691** at ~3.6× the median. **Stated before the re-run: on this gradient 2026-10-07 is more likely than not to be a NO-TEST too**, which would mean T1 is scoped to a dte range its own precondition may not admit. |
-| **A pre-registration ambiguity that flips T1 — TD-S86-NEW-9, ruling OWED** | §2.6's *"an arm counts only if…"* gives UNDECIDED; §2.8 + §2.10's precedent (E1's gamma refusal fired while its offset was a NO-TEST at 0.49×) gives **PASS on both arms**. **Same data, two verdicts.** Noticed *after* A4 was measured, so it cannot settle it — the ratified clause (b) governs. **An operator ruling is owed, pre-registered and dated, before 2026-10-07.** |
-| **Ledger** | TDs_NEW=**10** (TD-S86-NEW-1..10), TDs_CLOSED=**2** (NEW-5, NEW-10), **TD-S73-NEW-8 → SUPERSEDED BY ADR-028**. **ADRs_NEW=1 — ADR-028 ACCEPTED**; ADRs_AMENDED=0; Decision Index row added, marker advanced, ADR-029 reserved. Assumption Register **§D.42 added — 13 rows, 12 REFUTED / 1 WITHDRAWN, twelve of them defects in this session's own instruments or drafts**. Enhancement Register TRIGGERED (ENH-98, A4). |
-| **The `doc-close` skill is an empty shell** | Invoked at the start of this close and returned a heading and one sentence. 448 bytes, frontmatter promising the whole session-end procedure, **no procedure relocated into it**. The split's gate 2 checked skills for a `name:` key, which an empty body passes. **TD-S86-NEW-8** — populate or remove, and extend gate 2 to assert a non-trivial body. |
-| **Environment state** | CLI pinned **`2.1.277`**; **`DISABLE_AUTOUPDATER: "1"`** in the `env` key of `~/.claude/settings.json`. User-level permissions: **allow 2 / ask 15 / deny 22**. **Known gap, measured on one form only: a Bash deny is bypassable by absolute path** — `/bin/cat` does not match a deny written against `cat` — so the deny list is a speed bump and not a boundary. Only the absolute-path form was tested; no other spelling was. **Sandbox is NOT enabled.** Recorded as state, not as a remediation. |
-| **What the session's own instruments caught that reading did not** | `check_xrefs.py`, once fixed to see two-digit labels, found a bare **`A1`** in ADR-028 §7.1 resolving silently to **ADR-026's acceptance criterion A1** — a wrong citation inside the document being filed, written while re-pointing other documents' citations. The A4 apply step's parse-and-branch rewrite caught two defects in its own first draft. **§D.42.10 records that four of the five ADR draft defects were found by reading and only one by an instrument** — the instrument earned its place by finding the one that resolved to plausible wrong content. |
-
-**The split's gates were relocation gates, and that is the session's standing lesson.**
-Conservation proved every line moved intact and unaltered — and passed *because* two
-fictitious ADR filenames, present since before S86, were preserved faithfully
-(TD-S86-NEW-5). Gate 2 proved each skill file had a `name:` key and could not see that
-`doc-close` had no body (TD-S86-NEW-8). Neither gate was wrong; neither was a correctness
-gate, and nothing in the split claimed to be one.
-
-## NEXT SESSION PICKS UP
-
-**Time-boxed, in order**
-
-1. **TD-S86-NEW-9 — the T1 precondition-scope ruling. OWED BEFORE 2026-10-07.** Does
-   ≥ 3×SE gate the gamma reading or only the offset/`r_eff` reading? Pre-register and date
-   the ruling **before** the arm runs, amend `capture_s84.md` §2.6 in place with the
-   reversal left legible, and confirm or restate §2.11's verdict citing the ruling — **do
-   not silently recompute it.**
-2. **E2 — Thu 2026-10-01, 10:15:59 IST.** SENSEX dte 0 gamma fidelity. Unaffected by E1's
-   refusal. Derive `e2.sql` from `a4.sql` by the same pin-only edit and stamp the
-   pre-registration before the arm.
-3. **Pull `~/meridian-engine` after 16:00 IST today** → `git pull --ff-only origin main`.
-   Verify `git rev-parse` equality, not byte size. Check the `.py` intersection with the
-   26 cron/unit-invoked scripts is empty before pulling.
-4. **A4 re-run — Wed 2026-10-07, 10:15:59 IST**, next SENSEX dte 1. Gated on item 1.
-5. **The NIFTY L9 stage-1 max-pain arm (TD-S80-NEW-1) — STILL OUTSTANDING.** Owed from
-   S82, rode on the A3 date, not run at S85 and not run here. Named rather than carried
-   silently for a third session.
-
-**Owed decisions and follow-ups — none of them mine**
-
-6. **The CLI unpin is a deliberate decision, not a default.** `2.1.277` was pinned for the
-   ADR-028 comparison and both arms are graded, so the reason has expired. Unpinning also
-   re-exposes the `stable`-channel side effect the pin introduced. Decide explicitly;
-   `DISABLE_AUTOUPDATER` stays set until then.
-7. **ADR-029 — model routing and token efficiency.** ID reserved this session, **not
-   drafted**. Nothing is decided and no measurement is claimed.
-8. **The five documents carrying the copied "150k" figure** — ADR-028 §6 item 3's owed
-   decision: correct in place, or annotate. `TD-S73-NEW-8` is SUPERSEDED; the copies are not.
-9. **`merdian-runbooks` skill sibling check.** Not measured this session. TD-S86-NEW-8
-   names it rather than assuming it clean.
-10. **The `doc-close` skill fix — TD-S86-NEW-8.** Populate it with the session-end
-    procedure or remove it and its pointer; then extend gate 2 to assert a non-trivial
-    body for every emitted skill.
-11. **Project-knowledge re-upload — Rule 12.** `CURRENT.md`, `session_log.md`,
-    `merdian_reference.json`, `tech_debt.md`, `MERDIAN_Assumption_Register.md`,
-    `MERDIAN_Enhancement_Register.md`, `MERDIAN_Decision_Index.md`,
-    `docs/decisions/ADR-028-claude-md-split.md`, `docs/research/capture_s84.md` (§2.11 is
-    new), `CLAUDE.md` and the eight `.claude/rules/*.md` files. **Git commit and
-    project-knowledge upload are two destinations and both are required for session close.**
-
-## OPERATOR RULINGS, S86
-
-These exist only in chat and are recorded here, in ADR-028 and in the ENH-98 block.
-**None authorises a build.**
-
-- **T1 pair rule, clause (b).** If A4 is a NO-TEST on its own precondition, **T1 is
-  UNDECIDED** — not "rests on A3 alone" — because §2.6 scopes T1 to SENSEX dte 1–2 and one
-  dte-2 arm does not cover that scope. Re-run at the next SENSEX dte 1 cycle. Ratified
-  **2026-09-30 10:07:42 IST**, before the arm.
-- **Gate2 stays at the coded ≤ 5 %.** The 0.00 % of A2b and A3 is an observed value, not
-  the bar. A pre-registered gate is not tightened to what its predecessors returned.
-- **AC1's byte bound ratified at 40,960**, and the line bound recorded as **failed** rather
-  than reinterpreted.
-- **ADR-028's decisions renumber to D8–D12**, and every internal reference with them.
-- **The next-free marker advances to `ADR-030+`, not `ADR-029+`** — a marker naming a
-  reserved ID is the S74 defect (d) this table exists to prevent.
-- **`CURRENT.md` rolls the outgoing `## Previous session` block (S84), not the S85 one** —
-  rolling S85 would have left a gap at S84 in `CURRENT_history.md` and left S86 without its
-  immediate predecessor.
-- **ADR-028 §6 item 3 records the five copied figures as OWED**, not disposed, because the
-  `tech_debt.md` entry written in the same pass says they are owed.
-

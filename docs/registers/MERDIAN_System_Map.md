@@ -1978,3 +1978,61 @@ once per output row and the view took **2,715 ms**.
 measured at **0 NULLs against 20–134 zeros per side per leg**. `COMMENT`, `REVOKE` and `GRANT` ship
 as **live statements** in `sql/` (TD-S81-NEW-5), and the anon path was verified by `SET ROLE anon`
 rather than by object existence.
+
+## §S88 — Session 88: the parity layers carry no history, two of them refuse on the cohort they were built for, and the Marketview header reads a close two sessions old (2026-10-01/02)
+
+**The layers cannot answer a historical question as shipped.** **Eleven of twelve per-cycle parity
+views return exactly ONE distinct `ts`** — measured per view, not inferred from the view text
+(`scratch/s88_move/part5_depth.out`). Only `v_gex_net_gamma_river` carries history, 30 days. Any
+base-rate question must therefore either persist the layer outputs (ENH-133) or parameterise the
+shipped bodies (ENH-134); the two are **alternatives, not a sequence**.
+
+**The as-of pattern that works, and its gate.** One added line inside each `latest` CTE lateral —
+`AND <alias>.ts <= :'AS_OF'::timestamptz` — diff **1 added / 0 removed** on all six bodies tried,
+and **no metric reimplemented**, so there is no hand-written parity claim to defend. The gate is
+three computed conditions: parity sha equal at the view's own `ts`, a **control** at a different
+AS_OF proving the parameter is not inert, and the returned `ts` compared **by column name**. All
+six ADMITTED. **A parity test at the view's own `ts` is not sufficient on its own** — it cannot
+detect a `now()`-dependence, so a wall-clock scan is part of the gate (0 hits, and **0 non-builtin
+function names**, so none can hide in a UDF).
+
+**§S88.1 — dte-0 behaviour: this session re-measured what §1965-1976 already records.** L3
+`v_gex_repriced_flip` refuses wholesale (`:232`); L10 `v_iv_surface` **partially** (`:131`),
+keeping `ce_iv`/`pe_iv`; L9 does not refuse at all. The S88 grid confirms all three. **What S88
+adds is only the consequence:** on a six-day expiry cohort L3's `flip` and L10's `leg_skew_98` are
+NULL on **all 90 cells**, so neither can contribute to an expiry-day question — and L9's 60 NULL
+`term_slope` cells are the **single-expiry chain** of the four earlier days, not a skip.
+
+**§S88.2 — `market_spot_snapshots` session shape, measured.** The in-session series ends
+**15:15:04**; the **15:25–15:45 window is empty (0 rows)**; the only post-close row is **16:00:04
+`dhan_idx_i`**, whose value equals `index_futures_snapshots.spot_price` on its 16:00:06 row for
+both symbols. There is **no 15:29 or 15:30 row**, which is the same absence TD-S74-NEW-5 records as
+making `close_1530` unobtainable. Consequence: **the earliest settled close available is 16:00**,
+which is why TD-S88-NEW-1 cannot be fixed by moving the 16:10 cron earlier.
+
+**§S88.3 — the markers writer is scheduled, and the inventory had omitted it.** `crontab -l` line
+24 runs `build_market_spot_session_markers.py` at **16:10 IST Mon–Fri**; a second line shares
+`40 10 * * 1-5` for `run_equity_eod_until_done.py`. `merdian_reference.json` `aws_cron` carried
+only the second, and that omission was read mid-session as a contradiction with the S60
+`change_log` before `crontab -l` settled it (D.44.7). The entry is now added.
+
+**§S88.4 — `open_0915_spot` is the 09:16 bar's close.** Proven by comparison rather than by
+matching digits: `spot = ohlc_close` on 4 of 4 of those bars, `spot = ohlc_open` on 0 of 4, and
+`ohlc_open <> ohlc_close` on all 4 so the test was not vacuous. `get_open_0915`'s window is
+09:15:00–09:18:00 (`c9c2ab3`, S60) and no 09:15 row exists. `gap_open_pct` is therefore computed
+off that close. Whether that is intended is **open**.
+
+**§S88.5 — three tables are unreadable by every non-bypass role.** `gex_pin_maxpain_history`,
+`participant_oi_daily` and `fii_dii_cash_daily` have RLS on and **ZERO policies**, against
+`reltuples` of **10,930 / 1,630 / 33**. TD-S81-NEW-16 assumes policies exist and are `TO anon`, so
+its blanket-`merdian_ro` fix would not make these readable by Marketview either. **Latent, not
+live** — no `meridian-connect` reader exists for any of the three.
+
+**What the session set out to measure, and did not find.** Across six SENSEX expiry days × fifteen
+15-minute buckets, with **90/90 spine cells and 540/540 layer cells** admitted on exact `ts`
+equality, **2026-10-01 was not distinguishable from the other five before 12:15** — below the
+chance line on scale-free levels (34 vs 36) and five above on within-day changes (38 vs 33).
+**2026-08-27 scored highest in both** and its in-session range is **547.15 pts, rank 5 of 17**.
+The scoring excludes price levels, which rank by index level rather than behaviour, and excludes
+the change in a spot-re-anchored OI window, which compares different strike sets. **Negative
+result, recorded as such.**

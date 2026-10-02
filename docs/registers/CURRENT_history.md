@@ -3497,3 +3497,94 @@ These exist only in chat and are recorded here, in ADR-026 and in the ENH-98 blo
 - **ADR-026 filed; ADR-027 stays a draft with its ID reserved.**
 - **ADR-026 is MOVED, never copied, when filed** — two copies of an accepted ADR diverge,
   and once the index exists retrieval would return both.
+
+## Previous session S86
+
+**Session 86 — 2026-09-29 → 2026-09-30 (Tue–Wed).** Two halves: the **ADR-028 `CLAUDE.md`
+split** built, behaviourally tested and merged, then the **ENH-98 A4 arm** run to its
+pre-registration and a ten-entry doc-close. **No production change, no DDL, no database
+write** — the only database contact was three read-only `roq.sh` queries for A4.
+
+| Field | Value |
+|---|---|
+| **ADR-028 SHIPPED and FILED ACCEPTED** | The split is merged at **`76ad9a3`**. Core `CLAUDE.md` is **39,786 B / 258 lines** (172 content, 66 blank, 20 structural); launch load **327,949 → 39,786 B, −87.9 %**. Eight `.claude/rules/*.md` files carry `paths:` frontmatter, two skills exist, and all 23 discovery blocks + 6 version footers moved **verbatim** to the unloaded `docs/registers/CLAUDE_history.md`. `/context` post-merge: **only `CLAUDE.md` loads at launch, 14.1k tokens, no rules file, no size warning** — **OPERATOR-MEASURED**. Decisions renumbered **D8–D12** (ADR-026 owns D1–D3, ADR-027 D4–D7); Decision Index row added; next-free **`ADR-028+` → `ADR-030+`** with **ADR-029 reserved** for *model routing and token efficiency*. |
+| **AC2 met; AC1 failed on lines and was amended to bytes** | Blind graded, three runs per prompt, 2-of-3: **before 10 / after 12** of 15, pass-bar clauses **(a) (b) (c) all PASS**, two gains (B2, C1), **no regressions**. **AC1-lines FAILED at 258 against 200** and is recorded as failed; **AC1-bytes PASSED at 39,786 ≤ 40,960**. CLI pinned **`2.1.277`** across both arms. **The summary is deliberately weak where the evidence is weak:** no measured harm, launch load down 87.9 % in bytes, and **the two gains are NOT claimed as effects of the split** — n=2, one moved by a post-hoc re-grade, nothing isolates the split from run-to-run variance. |
+| **RULING 3 is post-hoc and labelled post-hoc** | Made **after** blind grading of both arms, unlike the pass bar and RULINGS 1–2. Bounded by two controls: applied to a **fresh blind re-grade of C1 and C2 only**, and the before-arm run RULING 1 locked as FAIL **still FAILs** under it. It moved ten individual run grades, six after and four before — visible in the tally, not folded in. |
+| **A4 (SENSEX dte 1) — T1 is UNDECIDED, not decided** | Gate passed before the run: both symbols **10:15:06 IST**, **0.00 %** row deviation against their own 09:15 reference (NIFTY 936, SENSEX 780). dte MATCH both symbols (SENSEX 1, NIFTY 6). Precondition **FAIL at 1.18×** (10.0 against 3 × 8.453 = 25.359) → **NO-TEST**. T1's refusal condition does not fire on this arm's numbers (`exact/365` ATM 0.0675, NEAR 0.0760) **but the arm does not count**. Per the operator-ratified clause (b), **T1 = UNDECIDED**; re-run **Wed 2026-10-07 10:15:59 IST**; **no L7/L8 proposed**. An UNDECIDED T1 is **not** a refusal and must not be recorded as one. |
+| **The precondition is now binding, and the gradient is three points** | **6.41×** (dte 3) → **3.79×** (dte 2) → **1.18×** (dte 1), monotone. The mechanism is dispersion: ATM offset **19.1 → 10.0** while SE(median) grew **5.051 → 8.453**, `sd` **35.691** at ~3.6× the median. **Stated before the re-run: on this gradient 2026-10-07 is more likely than not to be a NO-TEST too**, which would mean T1 is scoped to a dte range its own precondition may not admit. |
+| **A pre-registration ambiguity that flips T1 — TD-S86-NEW-9, ruling OWED** | §2.6's *"an arm counts only if…"* gives UNDECIDED; §2.8 + §2.10's precedent (E1's gamma refusal fired while its offset was a NO-TEST at 0.49×) gives **PASS on both arms**. **Same data, two verdicts.** Noticed *after* A4 was measured, so it cannot settle it — the ratified clause (b) governs. **An operator ruling is owed, pre-registered and dated, before 2026-10-07.** |
+| **Ledger** | TDs_NEW=**10** (TD-S86-NEW-1..10), TDs_CLOSED=**2** (NEW-5, NEW-10), **TD-S73-NEW-8 → SUPERSEDED BY ADR-028**. **ADRs_NEW=1 — ADR-028 ACCEPTED**; ADRs_AMENDED=0; Decision Index row added, marker advanced, ADR-029 reserved. Assumption Register **§D.42 added — 13 rows, 12 REFUTED / 1 WITHDRAWN, twelve of them defects in this session's own instruments or drafts**. Enhancement Register TRIGGERED (ENH-98, A4). |
+| **The `doc-close` skill is an empty shell** | Invoked at the start of this close and returned a heading and one sentence. 448 bytes, frontmatter promising the whole session-end procedure, **no procedure relocated into it**. The split's gate 2 checked skills for a `name:` key, which an empty body passes. **TD-S86-NEW-8** — populate or remove, and extend gate 2 to assert a non-trivial body. |
+| **Environment state** | CLI pinned **`2.1.277`**; **`DISABLE_AUTOUPDATER: "1"`** in the `env` key of `~/.claude/settings.json`. User-level permissions: **allow 2 / ask 15 / deny 22**. **Known gap, measured on one form only: a Bash deny is bypassable by absolute path** — `/bin/cat` does not match a deny written against `cat` — so the deny list is a speed bump and not a boundary. Only the absolute-path form was tested; no other spelling was. **Sandbox is NOT enabled.** Recorded as state, not as a remediation. |
+| **What the session's own instruments caught that reading did not** | `check_xrefs.py`, once fixed to see two-digit labels, found a bare **`A1`** in ADR-028 §7.1 resolving silently to **ADR-026's acceptance criterion A1** — a wrong citation inside the document being filed, written while re-pointing other documents' citations. The A4 apply step's parse-and-branch rewrite caught two defects in its own first draft. **§D.42.10 records that four of the five ADR draft defects were found by reading and only one by an instrument** — the instrument earned its place by finding the one that resolved to plausible wrong content. |
+
+**The split's gates were relocation gates, and that is the session's standing lesson.**
+Conservation proved every line moved intact and unaltered — and passed *because* two
+fictitious ADR filenames, present since before S86, were preserved faithfully
+(TD-S86-NEW-5). Gate 2 proved each skill file had a `name:` key and could not see that
+`doc-close` had no body (TD-S86-NEW-8). Neither gate was wrong; neither was a correctness
+gate, and nothing in the split claimed to be one.
+
+## NEXT SESSION PICKS UP
+
+**Time-boxed, in order**
+
+1. **TD-S86-NEW-9 — the T1 precondition-scope ruling. OWED BEFORE 2026-10-07.** Does
+   ≥ 3×SE gate the gamma reading or only the offset/`r_eff` reading? Pre-register and date
+   the ruling **before** the arm runs, amend `capture_s84.md` §2.6 in place with the
+   reversal left legible, and confirm or restate §2.11's verdict citing the ruling — **do
+   not silently recompute it.**
+2. **E2 — Thu 2026-10-01, 10:15:59 IST.** SENSEX dte 0 gamma fidelity. Unaffected by E1's
+   refusal. Derive `e2.sql` from `a4.sql` by the same pin-only edit and stamp the
+   pre-registration before the arm.
+3. **Pull `~/meridian-engine` after 16:00 IST today** → `git pull --ff-only origin main`.
+   Verify `git rev-parse` equality, not byte size. Check the `.py` intersection with the
+   26 cron/unit-invoked scripts is empty before pulling.
+4. **A4 re-run — Wed 2026-10-07, 10:15:59 IST**, next SENSEX dte 1. Gated on item 1.
+5. **The NIFTY L9 stage-1 max-pain arm (TD-S80-NEW-1) — STILL OUTSTANDING.** Owed from
+   S82, rode on the A3 date, not run at S85 and not run here. Named rather than carried
+   silently for a third session.
+
+**Owed decisions and follow-ups — none of them mine**
+
+6. **The CLI unpin is a deliberate decision, not a default.** `2.1.277` was pinned for the
+   ADR-028 comparison and both arms are graded, so the reason has expired. Unpinning also
+   re-exposes the `stable`-channel side effect the pin introduced. Decide explicitly;
+   `DISABLE_AUTOUPDATER` stays set until then.
+7. **ADR-029 — model routing and token efficiency.** ID reserved this session, **not
+   drafted**. Nothing is decided and no measurement is claimed.
+8. **The five documents carrying the copied "150k" figure** — ADR-028 §6 item 3's owed
+   decision: correct in place, or annotate. `TD-S73-NEW-8` is SUPERSEDED; the copies are not.
+9. **`merdian-runbooks` skill sibling check.** Not measured this session. TD-S86-NEW-8
+   names it rather than assuming it clean.
+10. **The `doc-close` skill fix — TD-S86-NEW-8.** Populate it with the session-end
+    procedure or remove it and its pointer; then extend gate 2 to assert a non-trivial
+    body for every emitted skill.
+11. **Project-knowledge re-upload — Rule 12.** `CURRENT.md`, `session_log.md`,
+    `merdian_reference.json`, `tech_debt.md`, `MERDIAN_Assumption_Register.md`,
+    `MERDIAN_Enhancement_Register.md`, `MERDIAN_Decision_Index.md`,
+    `docs/decisions/ADR-028-claude-md-split.md`, `docs/research/capture_s84.md` (§2.11 is
+    new), `CLAUDE.md` and the eight `.claude/rules/*.md` files. **Git commit and
+    project-knowledge upload are two destinations and both are required for session close.**
+
+## OPERATOR RULINGS, S86
+
+These exist only in chat and are recorded here, in ADR-028 and in the ENH-98 block.
+**None authorises a build.**
+
+- **T1 pair rule, clause (b).** If A4 is a NO-TEST on its own precondition, **T1 is
+  UNDECIDED** — not "rests on A3 alone" — because §2.6 scopes T1 to SENSEX dte 1–2 and one
+  dte-2 arm does not cover that scope. Re-run at the next SENSEX dte 1 cycle. Ratified
+  **2026-09-30 10:07:42 IST**, before the arm.
+- **Gate2 stays at the coded ≤ 5 %.** The 0.00 % of A2b and A3 is an observed value, not
+  the bar. A pre-registered gate is not tightened to what its predecessors returned.
+- **AC1's byte bound ratified at 40,960**, and the line bound recorded as **failed** rather
+  than reinterpreted.
+- **ADR-028's decisions renumber to D8–D12**, and every internal reference with them.
+- **The next-free marker advances to `ADR-030+`, not `ADR-029+`** — a marker naming a
+  reserved ID is the S74 defect (d) this table exists to prevent.
+- **`CURRENT.md` rolls the outgoing `## Previous session` block (S84), not the S85 one** —
+  rolling S85 would have left a gap at S84 in `CURRENT_history.md` and left S86 without its
+  immediate predecessor.
+- **ADR-028 §6 item 3 records the five copied figures as OWED**, not disposed, because the
+  `tech_debt.md` entry written in the same pass says they are owed.

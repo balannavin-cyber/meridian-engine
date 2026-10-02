@@ -2535,7 +2535,7 @@
       ],
       "constraint": "UNIQUE (trade_date_ist, symbol)",
       "status": "ACTIVE",
-      "critical_rule": "capture_quality field values: FULL | PARTIAL_OPEN_ONLY | PREMARKET_ONLY | POSTMARKET_ONLY | MISSING",
+      "critical_rule": "CORRECTED S88 (2026-10-01). capture_quality values, read from derive_capture_quality() in build_market_spot_session_markers.py:238-264 -- ELEVEN: COMPLETE | MISSING_POSTMARKET | MISSING_CLOSE_1530 | MISSING_PREMARKET | MISSING_OPEN_0915 | OPEN_CLOSE_ONLY | PARTIAL_OPEN_ONLY | PREMARKET_AND_OPEN_ONLY | PREMARKET_ONLY | POSTMARKET_ONLY | MISSING (catch-all, :264). The prior list was wrong in BOTH directions: it invented FULL, which the code never emits, and omitted seven real values including COMPLETE and MISSING_CLOSE_1530. Four of its five entries were real. NOTE: COMPLETE is UNREACHABLE -- close_1530 is structurally unobtainable, so the field moves MISSING -> MISSING_CLOSE_1530 and stops, and nothing reads it (TD-S74-NEW-5). Observed MISSING_CLOSE_1530 on both symbols 2026-09-30 via the anon path.",
       "open_items": []
     },
     "index_futures_snapshots": {
@@ -3485,6 +3485,12 @@
         "notes": "NOT YET PROVEN on AWS (A-02 open)"
       },
       {
+        "label": "MERDIAN_SESSION_MARKERS",
+        "time_ist": "16:10",
+        "cron": "40 10 * * 1-5  cd /home/ssm-user/meridian-engine && <env sourced> && /usr/bin/python3 build_market_spot_session_markers.py >> logs/marker.log 2>&1",
+        "notes": "ADDED S88 2026-10-01 from crontab -l line 24. This inventory previously OMITTED it, and that omission was read in capture_s88.md 2.5(ii) as a contradiction with the S60 change_log before crontab -l settled it (3.2, D.44.7). TWO separate cron lines share 40 10 * * 1-5: this one (markers) and MERDIAN_EOD (run_equity_eod_until_done.py). Host TZ is Etc/UTC with no CRON_TZ, so 40 10 UTC = 16:10 IST. 16:10 is AFTER the 15:30 close, which is the cause of TD-S88-NEW-1. Env-sourcing clause elided per Rule 19."
+      },
+      {
         "label": "MERDIAN_EOD",
         "time_ist": "16:10",
         "cron": "40 10 * * 1-5  cd /home/ssm-user/meridian-engine && /bin/bash -lc 'set -a; . ./.env; set +a; python3 run_equity_eod_until_done.py >> logs/eod.log 2>&1'",
@@ -3866,7 +3872,7 @@
     "adr_002_market_structure_philosophy": "Six architectural principles govern all gamma engine design decisions. P1: markets are zones not points -- every structural feature has a width, not just a level. P2: direction is minimum viable information, force (dealer Cr flow) is the actual edge. P3: know where sellers panic -- the flip zone is where short-gamma writers face cascading hedge requirements. P4: the regime has velocity not just position -- max gamma migration and GEX velocity are signals. P5: local context beats aggregate signal -- local GEX cluster around spot may be positive even when net GEX is negative (PINNED regime, Exp 23 required to define threshold). P6: DTE is a force multiplier not a risk flag -- same GEX at DTE=1 vs DTE=5 is categorically different. See docs/decisions/ADR-002-market-structure-philosophy.md. Established Session 12 (2026-04-28).",
     "capital_scaling_roadmap": "MERDIAN strategy evolves in three phases: Phase 1 (current) = directional naked options buying, capacity ceiling ~25,000 lots before market impact. Phase 2 = debit spreads when approaching capacity ceiling. Phase 3 = defined-risk selling (credit spreads, NOT naked shorts) -- requires full P1-P5 ADR-002 implementation first. Do not attempt Phase 3 until gex_strike_snapshots is live and Experiment 23 is validated. Established Session 12 (2026-04-28).",
     "rule_17_market_spot_session_markers_column_mismatch": {
-      "rule": "market_spot_session_markers.open_0915 does not exist in production. Live column is open_0915_ts. Never query this table for open price or gap data. Derive open_0915 from market_spot_snapshots first OPEN-window tick. Derive gap_open_pct from hist_spot_bars_5m prev_close.",
+      "rule": "CORRECTED S88 (2026-10-01). market_spot_session_markers.open_0915 does not exist -- that half stands. The claim that 'the live column is open_0915_ts' is STALE and was the misleading half: measured S88, the table carries open_0915_ts AND open_0915_spot, plus prev_close_spot, premarket_ref_ts/_spot, close_1530_ts/_spot, postmarket_ref_ts/_spot, gap_open_pct, premarket_move_pct, postmarket_move_pct, capture_quality, notes -- 18 columns. So the price AND the gap are both present as columns. WHAT STILL HOLDS, for a different reason than this rule gave: open_0915_spot is NOT the 09:15 open -- it is the 09:16 bar's CLOSE (spot = ohlc_close on 4 of 4 of those bars, spot = ohlc_open on 0 of 4, ohlc_open <> ohlc_close on all 4), because get_open_0915's window is 09:15:00-09:18:00 (c9c2ab3, S60) and no 09:15 row exists in market_spot_snapshots on either session measured. gap_open_pct is therefore computed off that close. ALSO: merdian_ro CANNOT read this table (RLS on, single policy TO anon), so a zero row count from it is the reader, not the data -- TD-S81-NEW-16. Evidence: docs/research/capture_s88.md 2.3(f), 2.4, 3.3; D.44.5. Whether taking the 09:16 close is INTENDED is an OPEN operator question, not settled by this correction.",
       "added": "2026-04-29 (Session 13)",
       "evidence": "detect_po3_session_bias.py received HTTP 400 on open_0915 query -- column does not exist."
     }
@@ -4913,10 +4919,21 @@
       "truncated_each_run": false
     }
   },
-  "version": "v65",
+  "version": "v66",
   "last_updated_session": "Session 87",
   "last_updated_date": "2026-10-01",
   "change_log": [
+      {
+        "session": "S88",
+        "date": "2026-10-01 -> 2026-10-02",
+        "type": "One pre-registered test passed three times; the all-layers reconstruction returned a NEGATIVE result. No production code, no DDL, no engine pull. Read-only database contact via bin/roq.sh throughout.",
+        "summary": "L9 stage-1 max-pain SENSEX arm PASS x3 (12:45:07 / 14:55:06 / 15:30:06 IST; arm A 0/0 both ways, arm B 197/197, no tie at minimum total_pain in any body). TD-S80-NEW-1 NOT closed -- the NIFTY arm is owed, next NIFTY expiry 2026-10-06 (measured). All 197 differing rows differ in total_pain ALONE: the mixture moved the magnitude and never the published max_pain level, while shared strikes with W2 OI > W1 grew 6 -> 12 -> 16. NEGATIVE RESULT: across six SENSEX expiry days x fifteen 15-min buckets, 90/90 spine cells and 540/540 layer cells admitted on exact ts equality, 2026-10-01 was NOT distinguishable from the other five before 12:15 (SET A 34 vs chance 36; SET B 38 vs 33); 2026-08-27 scored highest in BOTH sets on a rank-5-of-17 range (547.15 pts, 44% of 10-01's). ABOUT THE LAYERS: 11 of 12 per-cycle parity views return exactly ONE distinct ts so they carry no history (only v_gex_net_gamma_river does, 30 days); L3 refuses wholesale on dte 0 and L10 partially (keeps ce_iv/pe_iv) -- BOTH ALREADY DOCUMENTED at MERDIAN_System_Map.md:1963-1976, so the measurement confirms the record rather than discovering it. FILED TD-S88-NEW-1: the Marketview header computes its change against a close TWO SESSIONS OLD during every session (writer 16:10 IST + newest-row reader, no date filter); NIFTY showed -1.2953% against a settled -0.8775%, overstated 0.4178 pp / 48%, and the error equals the gap between two consecutive closes so it is unbounded; fix belongs in the read layer. Update rows on TD-S81-NEW-16 (a subset of RLS tables has ZERO policies so anon is blind too -- latent, no reader exists) and TD-S80-NEW-1. D.44 added, 10 rows ALL REFUTED, seven of them my own -- including a UTC/IST cast that would have pinned every bucket to the same run and looked plausible, and two claims written earlier in this same session then corrected within it. ENH-133..138 PROPOSED, none started; Part 1 ID count recomputed 116 -> 122 after drifting 4 since S81. THIS FILE: rule 17 corrected; capture_quality vocabulary 5 listed -> 11 emitted; aws_cron gains MERDIAN_SESSION_MARKERS at 16:10 IST. ALSO FOUND, not fixed: _meta.change_log is stale at S66 against the canonical top-level log at S87 -- the same two-copies shape TD-S86-NEW-7 records for the version fields, which names only the version field. No new ADR.",
+        "commits": [
+          "608c1c7 (capture S1-S4, earlier the same day)",
+          "this commit"
+        ],
+        "ledger": "tech_debt (1 new + 2 update rows), Assumption Register D.44 (10 rows), Enhancement Register (6 PROPOSED + Part 1 count 116->122), CURRENT.md roll (S86 -> history, byte-equality asserted), session_log (+1, S78 rolled to history newest-first), merdian_reference v65 -> v66 (canonical top-level field only), System Map S88, CLAUDE.md footer. Scratch NOT committed."
+      },
       {
         "session": "S87",
         "date": "2026-09-30 -> 2026-10-01",

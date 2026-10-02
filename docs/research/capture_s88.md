@@ -671,3 +671,331 @@ separate large-range expiry days from the rest.**
 days, five have fewer than five priors, so the usable set today is 11 and two of the four
 current top-quartile days leave it. **That argues for accumulating sessions rather than
 re-cutting these.**
+
+---
+
+## §5 All-layers reconstruction on SENSEX expiry days — EXPLORATORY (not pre-registered; no verdict)
+
+> **EXPLORATORY.** No hypothesis was stamped. Nothing in §5 is a verdict or a trading
+> reading. Appended below §4; §1–§4 untouched. All artefact sha256 computed at append time.
+
+### §5.1 Inventory and history depth
+
+Object names taken from `MERDIAN_Enhancement_Register.md:142-153` and the detail blocks, never
+guessed. Existence confirmed in `scratch/s88_move/part5_inventory.out`
+(`9815e45f5abcf0bede1aebc4ab8684901c9ecc0d5b1309c75b2c8b01af40c507`).
+
+| Layer | Object | Scalars taken | History depth, measured |
+|---|---|---|---|
+| L2 pin zone | `v_gex_strike_pin_zone` | peak_pin_strike, pin band | **1 ts** |
+| L3 (ENH-131) | `v_gex_repriced_flip` | flip, flip_minus_spot, flip_sigma, status | **1 ts** |
+| L6 (ENH-121) | `v_gex_abs_exposure` | net_gex_cr, abs_gex_cr | **1 ts** |
+| L9 (ENH-130) | `v_iv_term_structure` | term_slope, is_back, dte | **1 ts** |
+| L10 (ENH-132) | `v_iv_surface` | leg_skew_98, leg_status | **1 ts** |
+| L12 (ENH-122) | `v_gex_concentration` | hhi_net, top_strike_net | **1 ts** |
+| L12 (ENH-125) | `v_gex_strike_rank` | rank-1 strike, share_of_abs, iv_fresh | **1 ts** |
+| L13 (ENH-127) | `v_oi_rotation_since_open` | ce/pe_oi_delta_qty | **1 ts** |
+| max pain | `v_max_pain_by_strike`, `v_gex_max_pain`, `v_gex_pin_maxpain` | max_pain_strike, corridor_state | **1 ts** each |
+| L14 (ENH-126) | `v_gex_net_gamma_river` | daily net_gex_cr, gamma_side | **30 ts / 30 days** |
+
+**L1 gamma density — NOT FOUND** as a distinct object; per-strike `gamma_call`/`gamma_put`
+exist in `gex_strike_snapshots`, no density view. Skipped rather than substituted.
+
+**Eleven of twelve per-cycle views return exactly ONE distinct `ts`** — measured, not inferred
+from the view text (`part5_depth.out:4,10,16,22,28,34,40,46,52,58,64`; sha
+`2b2a8d51d616d9a8b0b890d5e26cf57ba6acb9fcb51e9e6ec1af833f38c2aad5`). Only
+`v_gex_net_gamma_river` carries history (`:70`), and it covers all six cohort days (`:101-106`).
+
+**Three stores read 0 rows, and that is not empty.** `gex_pin_maxpain_history`,
+`participant_oi_daily` and `fii_dii_cash_daily` have **RLS on with ZERO policies**
+(`part5_depth.out:112-114`) while `reltuples` estimates **10,930 / 1,630 / 33** rows. Zero
+policies means **`anon` cannot read them either**, so L18 (ENH-115) is unmeasurable here and
+`gex_pin_maxpain_history` is unreachable by the front end.
+
+### §5.2 The as-of method, and the parity record
+
+Because the layers are latest-only, each shipped body was reused with **one added line** inside
+its `latest` CTE lateral — `AND <alias>.ts <= :'AS_OF'::timestamptz` — and nothing else.
+**No metric was reimplemented**, so there is no hand-written parity claim to defend. Record:
+`part5_parityC.out`, 169 lines, `e0cabcbb1e57cb0c23ad8794fda0570f6ccba94d94e6b85d44a431463731be78`.
+
+Diffs are 1 added / 0 removed per body (`:20,:31,:42,:114,:125,:136`). Admitted bodies:
+
+| Body | sha256 of the ASOF file |
+|---|---|
+| `v_gex_repriced_flip__ASOF.sql` | `585afbeac32c9511f8037a91522b4965cd5e0029c4a35bdb5e82564755450836` |
+| `v_iv_term_structure__ASOF.sql` | `20750847b0da8e64ad2e93bba125a1e13cf64ccd0eaa6b887af48eb373ab1ced` |
+| `v_iv_surface__ASOF.sql` | `93a6ab8ae3cac447d02cfb178245b46ac41ab3ffce44848b9763514e2b026f6b` |
+| `v_gex_abs_exposure__ASOF.sql` | `2bbeddb081589957ec2cec2aa0f61eceae49fb2f50f405aa1a3b505a7dc5d63e` |
+| `v_gex_concentration__ASOF.sql` | `3794fd9b2f4fa168a8793dea2e1f2111a8974bf36885ce171ebc74e656d1747c` |
+| `v_gex_strike_rank__ASOF.sql` | `d3af390749302334ae79490a49be94d4f8c8def5236ebdd29d70956546d971c5` |
+
+Each was gated on **three computed conditions** — parity sha equal at the view's own ts, control
+output differing at an earlier AS_OF, and the returned `ts` **selected by column name** equal to
+the AS_OF. All six **ADMITTED** (`part5_parityC.out:80-82`, `:165-171`). The control is what
+makes the parity PASS a result rather than a tautology: without it, an inert parameter would
+also pass.
+
+**A `now()`-dependence would defeat a same-ts parity test** — it passes today and is wrong on
+past days. Scanned: **0 hits** for `now()`, `current_date`, `current_timestamp`,
+`localtimestamp`, `clock_timestamp`, `statement_timestamp`, `transaction_timestamp`,
+`timeofday`, `CURRENT_TIME` in all six bodies, and **0 non-builtin function names**, so no
+user-defined function can hide one (`part5_parityC.out:49-53`, `:114,:125,:136`). Every date
+expression is `ts`-derived.
+
+`v_gex_strike_rank`'s second lateral needed no separate bound: `:62` reads
+`vs.ts <= h.ts`, and `h.ts` traces to the line-18 CTE via `:32`, so pinning AS_OF moves it too
+(`part5_parityC.out:138-143`).
+
+**THE UTC/IST CAST TRAP, and it would have been silent.** The spine first emitted its as-of
+timestamps through `to_char(ts AT TIME ZONE 'Asia/Kolkata', …)` — IST wall-clock strings with
+**no offset**. The `roq.sh` session timezone is **UTC** (measured), so
+`'2026-10-01 11:30:07.908159'::timestamptz` reads as **11:30 UTC = 17:00 IST** — later than
+every run that day. **Every bucket would have pinned the same last run of the day, and all 15
+buckets per day would have looked plausible and identical.** Fixed by emitting `ts::text`,
+which carries `+00`, as `gex_ts_raw` / `chain_ts_raw`. **The proof the fix took is that all 540
+layer cells matched on exact `ts` equality (§5.3): under the bug every one would have
+mismatched.** Spine: `_p9_spine.sql`
+`5b2dd098bf29a630885d2e070e0066d74572d8f45ff101f06c3293e8ab7ff2fe`.
+
+Cost note, measured not assumed: bounding the four nearest-cycle laterals to the cell's own IST
+day took the plan from `cost=6972256.49..6972271.59` with a `Seq Scan on
+index_futures_snapshots` to `cost=757332.23..757347.33` with **no sequential scan** — a 9.2×
+reduction. The unbounded draft is kept as `_p9_spine_v0_UNBOUNDED.sql`
+(`25cad8b6a10fa92e0002eda5834ff0a1622de8e69c1df80fe9e7e3115b825620`) so the diff is reviewable.
+
+### §5.3 Grid coverage
+
+`part5_spine.csv` (`a963ec567db3968b274f3487d5b6f6f2d24786eb01a6db07014be2860946881f`) and
+`part5_grid.csv`, 90 rows × 45 columns
+(`f136af347fd563c31b0f9473e17b2bfed96f28e4a25f8d89f3be7225c4cb164b`). Six expiry days ×
+fifteen 15-minute buckets 09:30–13:00 IST.
+
+- **Spine: 90/90 cells admitted on all four feeds** — `gamma_metrics`, `gex_strike_snapshots`,
+  `option_chain_snapshots`, `index_futures_snapshots` — under the same-IST-date **and** ≤360 s
+  rule. **No STALE cell anywhere.**
+- **Layers: 540/540 cells admitted**, each on exact equality between the `ts` the view returned
+  (selected by name) and the spine's raw `ts` for that cell, **and** on the spine having marked
+  that feed OK. **Zero rejected.**
+- `ratio_n_prior_expiries = 5` on all 90; `iv_fresh = true` and `atm_iv_age_min = 0.0` on all 90.
+
+**L3 and L10 are empty on all 90 cells, by design.** `status = 'SKIPPED_EXPIRY'` throughout,
+and the branch is explicit in the shipped bodies: **`v_gex_repriced_flip:232`** and
+**`v_iv_surface:131`**, both `WHEN dte = 0 THEN 'SKIPPED_EXPIRY'::text`. Every day in this
+cohort is dte 0. **That is the view refusing, not the parameterisation failing** — and it is the
+settled 0-DTE reconstruction rule doing what it says.
+
+**L9 `term_slope` is usable on 30 of 90 cells** — 2026-09-24 and 2026-10-01 only, 15/15 each.
+The four earlier days carry `is_back = true` for leg 1, i.e. a **single-expiry chain**: the
+pre-depth-raise state TD-S80-NEW-1 describes. Excluded from scoring; it cannot be ranked
+against six days.
+
+Every other metric is **15/15 on all six days**.
+
+### §5.4 Scoring
+
+`part5_extremes.out`, 90 lines,
+`3740ea57cb83dac14cc341f8fb0603bea8e380e3269420c603ca582954f185aa`. Leave-one-out: a
+day-bucket-metric cell is EXTREME when it is **uniquely** highest or lowest of the six days at
+that same bucket; a tied extreme is not scored.
+
+**Two confounds were removed, both before scoring and both recorded in the output.**
+
+1. **Price levels rank by date, not behaviour.** SENSEX traded ~77k on 08-27 and ~72k on
+   10-01, so `spot`, `straddle_atm` in points, `legacy_flip`, `basis` in points, `net_gex` and
+   the raw L6 Crore values would have put 10-01 at LOW in **every** bucket by construction.
+   Dropped from scoring, retained in the grid (`part5_extremes.out:17-21`).
+2. **`d_oi_tilt_ce_over_pe` dropped from SET B.** The tilt is re-anchored at each cell's own
+   ATM, so its change since 09:30 compares **different strike sets** whenever spot moves —
+   the same confound §3/`_p7` was built to remove. The level stays in SET A, where one moment
+   is unaffected (`part5_extremes.out:22-26`).
+
+**SET A — 9 scale-free levels × 12 buckets. Chance 9 × 2/6 = 3.00 per bucket, 36.0 per day.**
+
+| Day | total | mean/bucket |
+|---|---|---|
+| 2026-08-27 | **60** | 5.00 |
+| 2026-09-17 | 40 | 3.33 |
+| 2026-09-24 | 38 | 3.17 |
+| **2026-10-01** | **34** | 2.83 |
+| 2026-09-03 | 32 | 2.67 |
+| 2026-09-10 | **12** | 1.00 |
+
+**SET B — 9 deltas since each day's own 09:30 cell × 11 buckets. Chance 3.00 per bucket, 33.0
+per day.** 09:30 is excluded because every delta is 0 there and all six days tie.
+
+| Day | total | mean/bucket |
+|---|---|---|
+| 2026-08-27 | **48** | 4.36 |
+| 2026-09-03 | 39 | 3.55 |
+| **2026-10-01** | **38** | 3.45 |
+| 2026-09-24 | 36 | 3.27 |
+| 2026-09-17 | 28 | 2.55 |
+| 2026-09-10 | **8** | 0.73 |
+
+Internal consistency checked rather than assumed: SET A totals sum to **216 = 9 × 12 × 2**;
+SET B to **197 = 9 × 11 × 2 − 1 tie**. The totals are **fixed by construction**, so only the
+distribution across days carries anything.
+
+**10-01 is below chance on SET A and 5 above on SET B. It is not the standout in either.
+08-27 is the most extreme day in both.** Ties: 0 in SET A, 1 in SET B.
+
+**10-01 first-and-sustained extremes.** SET A: `vix` and `basis_pct` HIGH from **09:30 for all
+12 buckets**; `oi_tilt_ce_over_pe` LOW from 10:45 for 3; the other six never ran 2 consecutive.
+SET B: `d_spot_pct` HIGH from **10:45** (run 5); `d_straddle_ratio_pct` LOW from 09:45 (3) and
+`d_vix` LOW from 09:45 (4); and `d_L12_hhi_net`, `d_L12r_share_of_abs`,
+`d_gamma_concentration_gm` **all first go extreme at 10:45**, run 2 each.
+
+**The 10:45 co-occurrence** — four of nine SET B metrics first extreme at the same bucket, with
+`d_spot_pct` turning HIGH there too — is recorded as co-occurrence at one bucket on one day.
+No mechanism is offered and none is implied.
+
+Two of the flags deserve their qualification stated:
+
+- **`vix` HIGH for all 12 buckets is a level, not a move.** 10-01 simply carried the highest
+  VIX of the six days all morning; it says nothing about intraday behaviour.
+- **`basis_pct` HIGH all morning is a futures-calendar artefact, not a positioning signal.**
+  The futures leg is the **October monthly** (SENSEX 2026-10-29, §2.3 c) while the option front
+  expiry is 2026-10-01, so `basis_pct` is dominated by **days to the futures expiry**, which
+  differs across the six cohort days by where each sits in its own monthly cycle. It is not
+  comparable across days as a positioning measure and should not be read as one.
+
+### §5.5 Fixed-strike tilt and the daily river
+
+The fixed-strike work is §3's, carried here for completeness: `part3_window.out`
+(`dfb18337c8c98c21b841552d552c19fa98cb911c59dff4231ea1f38e5b8985f4`) and `part4_fixed.out`
+(`eaff1e8c11b0d8129ced35837f870f7c255b778d9406b1bfdbfbfa5f09f9b8d5`), instruments
+`_p6_window.sql` (`38c9dad8eef2f6d82758d2c9b9dac8e86db279370cdbf4a849d4515920b05ff4`) and
+`_p7_fixed_strikes.sql` (`f0ca6f148bd7e64f53953bd3e2281aff7cd002a087de4fdf797a0146d69e6be6`).
+
+On the **fixed** 11:30 anchor carried to 12:15, 10-01 was the **only** one of the six days where
+both near sets moved calls up and puts down together: near_below calls **+1.7393 %** / puts
+**−0.9439 %**, near_above calls **+1.7972 %** / puts **−1.2785 %** of that day's 11:30
+front-expiry OI (`part4_fixed.out:45`). Whole-ladder calls **+4.7963 %**, puts **−3.0065 %** —
+the largest put reduction of either sign in the cohort. The comparison is complete on all six
+days: `ladder_strikes_1130` equals `strikes_matched_whole` and `min_n_matched_in_any_set` is 3
+everywhere (`part4_fixed.out:40-45`).
+
+**L14, the one layer with real history.** `v_gex_net_gamma_river` daily net gamma on the six
+days: −5,709,653 / −3,416,573 / +5,004,964 / −1,827,956 / +1,116,952 / **+9,547,961**
+(`part5_depth.out:101-106`), all `session_complete = true`. **10-01's +9.55M is the largest of
+the six and the only value above +5M**, with `n_runs` 80 against 83 on the other five. Recorded
+as a whole-session aggregate; it is **not** a pre-12:15 reading and cannot support one.
+
+### §5.6 Conclusion
+
+**On the built layers, 2026-10-01 was not distinguishable from the other five SENSEX expiry
+days before 12:15 IST.** It sat **below** the chance line on SET A (34 against 36) and 5 above
+on SET B (38 against 33), while **08-27 was the most extreme day in both sets** (60 and 48).
+
+**And the extremes score does not track range.** Measured this session
+(`part6_0827_range.out`, `980209b028d1534df4c9360f39dbe34b0e0943bebc0db974be63ac17bfa1b3d4`):
+**2026-08-27's in-session range was 547.15 pts / 0.7093 %, high 77689.84 at 09:16:02, low
+77142.69 at 14:09:02 — rank 5 of the 17 expiry days**, and **44 % of 10-01's 1238.56 pts**. So
+the day that scored *most* unusual on the layers had a middling range, and the day with by far
+the largest range scored unremarkably. 09-10, the least extreme day on both sets (12 and 8), is
+rank 15 of 17 by range (287.46) — the only end of the relationship that lines up.
+
+**Correction to anything resting on 08-27 as a large-range day: it is not one.** §5.4's tables
+are unchanged by this; what changes is that no reading of them may treat 08-27's high score as
+"the big day also looked big on the layers". It did not have a big day.
+
+Three further limits, stated rather than left to inference:
+
+1. **The two layers built for vol structure refuse on this cohort.** L3 and L10 are
+   `SKIPPED_EXPIRY` on all 90 cells by design, and L9 has two days. **Any expiry-day claim
+   resting on L3, L9 or L10 is currently unsupportable from the built layers**, and that is a
+   property of the layers' own design decision, not of this measurement.
+2. **n = 6, one symbol, one 3½-hour window**, and the leave-one-out has no spare degrees of
+   freedom — a day 1–2 flags off chance is noise.
+3. **Nothing here was pre-registered.** The metric sets, the bucket grid and the two confound
+   exclusions were all chosen after looking at the data, and two of them were chosen *because*
+   of what the first pass showed.
+
+---
+
+## §6 Doc-close obligations — what splices where
+
+Every edit below **splices from this file**. No content is to be re-derived at edit time.
+
+> **One source named in the S88 close instruction does not exist in the tree.** There is no
+> `carry_forward` artefact: the only matches are `PRE_*` register backups that happen to contain
+> the word, and `docs/session_notes/S69_incident_carryforward.md`, which is S69 and unrelated.
+> So §6 cannot splice from "carry_forward §5–§8". It is built instead from the obligations this
+> capture itself records — §1.6, §2.6, §3.2, §3.7, §4.7 and §5 — plus the specifics in the
+> operator's close instruction. **Stated rather than silently substituted.**
+
+| Destination | Splice source | Notes |
+|---|---|---|
+| `tech_debt.md` | §5.1, §3.5–§3.7, §1.6 | **Grep before minting.** (i) the three RLS-on/zero-policy tables (§5.1); (ii) the Marketview header prev-close defect (§3.5–§3.7). Cite an existing entry if found, else `TD-S88-NEW-n`. **Update TD-S80-NEW-1** with the SENSEX PASS ×3 row and the owed NIFTY arm (2026-10-06, measured §1.1). **No TD for `legacy flip_level`** — covered by L3. Cite by entry ID + row name, never by line |
+| `MERDIAN_Assumption_Register.md` | §5.2, §5.3, §2.4, §3.3 | New **§D rows, measured-this-session only**: L3/L10 refuse at dte 0 by design (`:232`/`:131`); `roq.sh` session TZ = **UTC**; the parity views are latest-`ts`-only (11 of 12); `open_0915_spot` is the **09:16 bar's close** |
+| `MERDIAN_Enhancement_Register.md` | §5.1, §5.2, §5.3 | **Six candidates as PROPOSED, operator to rule, no build authorised.** Check for existing IDs first: GEX/IV history table; as-of functions for the latest-only views; a dte-0 mode for L3/L10; `sql_guard.sh`; a `sql-reviewer` subagent (shadow only, ADR-029); a move-forensics skill |
+| `CURRENT.md` | §1.4, §4.6, §5.6, §6 | S88 block written after the outgoing *Previous* block is moved to `CURRENT_history.md` **verbatim**, with **byte equality asserted** |
+| `session_log.md` | §1.4, §4.6, §5.6 | One line: date · git hash · concern · outcome. Then roll to the newest 10 entries |
+| `merdian_reference.json` | §2.3 f, §2.5 iv, §3.1–§3.2 | Rule 17's *"the live column is `open_0915_ts`"* is stale — `open_0915_spot`, `prev_close_spot`, `gap_open_pct` all exist; replace the `capture_quality` vocabulary with the **eleven** values the code emits; **add `aws_cron` line 24** — the markers writer, `40 10 * * 1-5`, **16:10 IST** |
+| `CLAUDE.md` | §5.6, §6 | Footer bump + the Rule 17 copy correction. **This file is at the repo root, outside `docs/` — operator confirmation required before the edit** |
+| `MERDIAN_System_Map.md` | §5.3, §5.4, §5.6 | One **§S88** line |
+| `MERDIAN_Decision_Index.md` | — | **No new ADR this session.** Nothing to index |
+| `docs/research/s88_rule_lines_PROPOSED.md` | §5.2, §5.4, §3.6, §5.1 | The candidate rule lines, **PROPOSED only**. They are operator rules and do **not** go into `.claude/rules/` |
+| `docs/session_notes/S89_dev_starter.md` | §1.1, §4.7, §5.6 | Dated items, build queue, rulings owed |
+
+**Ordering note.** The `doc-close` skill's order is load-bearing: TDs are filed before the
+Assumption Register, which is filed before the Enhancement Register, because later steps cite
+the IDs the earlier ones mint. `tech_debt.md` files new entries at the **top**, so every line
+number in it decays on the next filing — cite it by entry ID plus row name.
+
+**What this session did NOT establish, and must not be written as if it had.** L3, L9 and L10
+cannot support an expiry-day claim (§5.3). 10-01 was not distinguishable on the built layers
+before 12:15 (§5.6). 08-27, the highest-scoring day, has a **rank-5-of-17** range (§5.6). The
+`+9.55M` river value is a whole-session aggregate, not a pre-12:15 reading (§5.5).
+
+---
+
+*Session capture — S88, 2026-10-01, closed 2026-10-02. §1 and §4's L9 arms are pre-registered
+and gated; §2, §3 and §5 are exploratory and labelled so in their own headings. §6 was written
+before any register edit so that every subsequent update splices from one verified source. The
+two layers built for vol structure refuse on the cohort this session asked about, and that
+refusal is by design.*
+
+### §5.7 Correction to §5.3 and §5.6 — the dte-0 refusal was already documented, and L10's is only partial
+
+Two things in §5.3 are wrong as written, found while sourcing the phrase *"the settled 0-DTE
+reconstruction rule"* for the Assumption Register. Both are recorded here rather than edited in
+place, so the original claim and its correction stay visible.
+
+**1. The rule is citable, and the per-view behaviour was already written down at S83.** §5.3
+presents the `SKIPPED_EXPIRY` refusal as though this session established it. It did not:
+
+- `.claude/rules/sql-views.md:20` (S62, 2026-07-01) carries the reconstruction discipline —
+  expiry-day 0-DTE flat-vol `net_gex` is **numerically unreconstructible** intraday, so expiry
+  days are live-sourced and the backfill emits an explicit logged `SKIPPED_EXPIRY`, never a
+  T-floor.
+- **`MERDIAN_System_Map.md:1963-1976` already documents the per-view behaviour**, under the
+  heading *"dte-0 behaviour DIFFERS BY VIEW and must not be generalised. Verified per file, not
+  assumed."* So §5.3's measurement is a **re-measurement that confirms the record**, not a
+  discovery. Stated because the opposite framing takes credit the register already holds.
+
+**2. L10 does not refuse wholesale — it skips PARTIALLY, and this session did not take what it
+keeps.** The System Map records that a dte-0 leg carries `leg_status = 'SKIPPED_EXPIRY'` with
+`iv`, `iv_over_atm`, `leg_atm_iv` and `leg_skew_98` withheld, **while `ce_iv` and `pe_iv` are
+KEPT so the degradation stays inspectable**. §5.3's *"L10 is empty on all 90 cells"* is therefore
+too strong: what is empty is **`leg_skew_98`**, the one scalar this session selected. `ce_iv` and
+`pe_iv` were available on all 90 cells and were **not** fetched. **L10 is not unusable on this
+cohort; it is unusable for the metric that was asked of it**, and a different question — raw
+per-side IV rather than a skew — could have been answered. That is a limitation of the selection,
+not of the layer.
+
+**L3's refusal is wholesale and the §5.3 statement stands for it:** `status = 'SKIPPED_EXPIRY'`
+with `flip` NULL, per S62.
+
+**L9's reading is unchanged and now corroborated:** the System Map records that L9 **does not
+skip** — a dte-0 front leg is kept with `front_is_0dte = true` as a *display flag only*. That
+matches the grid, where `front_is_0dte = true` on all 90 cells while `term_slope` is NULL on 60
+of them. So the 60 NULLs are **not** a dte-0 skip; they are the single-expiry chain of the four
+earlier days, as §5.3 says.
+
+**Consequence for §5.6's limit 1.** "The two layers built for vol structure refuse on this
+cohort" should read: **L3 refuses wholesale; L10 withholds its skew but publishes raw per-side
+IV; L9 publishes throughout and was limited by chain depth, not by any refusal.** The conclusion
+in §5.6 is unaffected — no L3, L9 or L10 scalar entered the scoring — but the reason differs per
+layer and must not be generalised, which is precisely what the System Map heading warns against.

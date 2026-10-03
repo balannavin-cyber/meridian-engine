@@ -57,6 +57,10 @@ Adopt now: the ordered read (§1.3 — regime → edges → pin → concentratio
 
 Pull ENH-133 (per-cycle aggregates: one row per run/symbol/expiry + pin state, written by the existing compute chain) into parity scope ahead of §H phase 2. ENH-133 and ENH-134 are COMPLEMENTS, not alternatives: ENH-134 (as-of functions) covers the already-stored window, committed with part5_parityC.out as its test; ENH-133 accumulates forward. Obligations: (i) ENH-133's table sits OUTSIDE pg_cron jobid 19's targets with its own stated retention; (ii) a new table owes its own schema ADR before any DDL (TD-S80-NEW-7 precedent) — the ENH-133 schema proposal is the next artefact, not an immediate table. Dual-purpose: the aggregates double as post-parity Q1 replay test data, and Candidate A writes into the same table.
 
+## D-6 — RULED 2026-10-03 (parity dovetail; band policy)
+
+Our measured bands only (ADR-016). The parity target's thresholds NEVER become the band that drives a state word. Until a band is measured on our own data, the value renders as a number alone (gap E-4) and the detail SCALE slot names the calibration gap. The target's thresholds are shown as labelled "reference" ONLY where he published a concrete number (e.g. HHI ≈0.10 / ≈0.25, as a faint reference mark tagged "reference"), and omitted everywhere else. A reference mark never drives a word and is drawn visually distinct from any measured band.
+
 ---
 
 ## Session facts behind the #14 ruling, recorded once

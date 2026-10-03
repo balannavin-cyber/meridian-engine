@@ -45,6 +45,18 @@ APPLICATION — PROSPECTIVE, from the 2026-10-07 dte-1 arm onward. A4's ratified
 
 Effect on 10-07: the arm's gamma counts if ATM rows ≥ 10, regardless of the offset ratio; T1 is decided on gamma_relerr (refuse only if exact/365 ATM and NEAR are both > 0.10).
 
+## D-1 — RULED 2026-10-03 (parity dovetail)
+
+Adopt the §1.2 mapping. Target-read elements enter parity ONLY as (a) definition detail for a layer already among the fourteen (L1/L2/L3–L5/L6/L12/L13 and the L7/L8 scope), binding under ADR-025 D3, or (b) presentation inside the approved board. Everything else — daily close card, realised/implied ratio, "selling blocked" gate, MTF leverage — files to spec §2.5 as a post-parity extension (ADR-025 D5).
+
+## D-2 — RULED 2026-10-03 (design re-approval; A–G approved 2026-10-01)
+
+Adopt now: the ordered read (§1.3 — regime → edges → pin → concentration → flow-vs-book → trigger → clock caveats) for the read slot (design D.4); the ladder's leader-relative bar mode and LONG/SHORT net-Γ tag (A.5); the "put wall ≈ flip" relationship row (no new compute). Adopt in principle but GATED, rendering progressively: the pin-state block (NO PIN/SHIFTING/STABLE/LOCKED, "held for", time boost) — state machine gated on ENH-133 (D-3), σ-distance gated on canonical σ (E-2), time boost gated on D-5 (else a stated D3 deviation). The read stays descriptive, ends in a structure reading, carries no band word without a measured band (D-6 / E-4; ADR-017 P1).
+
+## D-3 — RULED 2026-10-03
+
+Pull ENH-133 (per-cycle aggregates: one row per run/symbol/expiry + pin state, written by the existing compute chain) into parity scope ahead of §H phase 2. ENH-133 and ENH-134 are COMPLEMENTS, not alternatives: ENH-134 (as-of functions) covers the already-stored window, committed with part5_parityC.out as its test; ENH-133 accumulates forward. Obligations: (i) ENH-133's table sits OUTSIDE pg_cron jobid 19's targets with its own stated retention; (ii) a new table owes its own schema ADR before any DDL (TD-S80-NEW-7 precedent) — the ENH-133 schema proposal is the next artefact, not an immediate table. Dual-purpose: the aggregates double as post-parity Q1 replay test data, and Candidate A writes into the same table.
+
 ---
 
 ## Session facts behind the #14 ruling, recorded once
@@ -94,5 +106,5 @@ nothing prompted.**
 
 ---
 
-*S89 rulings, recorded 2026-10-03. All three rulings are the operator's text verbatim. Nothing here
+*S89 rulings, recorded 2026-10-03. Every ruling here is the operator's text verbatim. Nothing here
 authorises a build, an install, or a sandbox enable.*

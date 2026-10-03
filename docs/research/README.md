@@ -22,7 +22,7 @@ as a count.
 
 **Not scheduled, deliberately.** It is a watchdog, not an investigation. `gamma_metrics`
 is a 90-day rolling window trimmed by **pg_cron jobid 19** (`30 12 * * *`, calling
-`public.cleanup_gamma_engine_data()`), which is why no code in `meridian-engine` and no
+`public.cleanup_gamma_engine_daily()` — name corrected S89; this read `..._data`), which is why no code in `meridian-engine` and no
 scheduling surface on the AWS host appears to delete anything — the deleter is inside the
 database. The retention predicate is `created_at`, **not** `ts`, and the two diverge by up
 to a day.

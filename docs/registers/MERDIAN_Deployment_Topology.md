@@ -1441,7 +1441,7 @@ Neither is urgent at current free space, and neither is bounded. The logrotate c
 
 The repo reads clean too: every `.delete(` / `DELETE FROM` / `TRUNCATE` / `requests.delete` match in any `.py` or `.sh` resolves to a different table, to the `*_replay` set, or to a log string.
 
-**The deleter is `pg_cron jobid 19`, inside the database** — `30 12 * * *`, `select public.cleanup_gamma_engine_data()`. It has **zero callers in the repo**, which is not orphanhood: pg_cron invokes it where no filesystem search can reach.
+**The deleter is `pg_cron jobid 19`, inside the database** — `30 12 * * *`, `select public.cleanup_gamma_engine_daily()`. **Name corrected S89 (2026-10-03): the live job is `cleanup_gamma_engine_daily`; this read `..._data`.** It has **zero callers in the repo**, which is not orphanhood: pg_cron invokes it where no filesystem search can reach.
 
 ### S75.2 — the standing constraint this creates
 
@@ -1572,7 +1572,7 @@ The three counts (19 / 20 / 23) cannot be reconciled from this document, and the
 
 Measured (Part 2 audit): `historical_option_chain_snapshots` **stops 2026-06-03**; `option_chain_snapshots` **retains nothing before 2026-08-24**.
 
-**`pg_cron jobid 19` — the §S75.1 deleter — kept running for three months after its archiver stopped.** `30 12 * * *`, `select public.cleanup_gamma_engine_data()`, four deletes: `option_chain_snapshots` 90-day, its 14-day thinning, `raw_ingest_log` 14-day, `gamma_metrics` 90-day.
+**`pg_cron jobid 19` — the §S75.1 deleter — kept running for three months after its archiver stopped.** `30 12 * * *`, `select public.cleanup_gamma_engine_daily()`, four deletes: `option_chain_snapshots` 90-day, its 14-day thinning, `raw_ingest_log` 14-day, `gamma_metrics` 90-day.
 
 **DISABLED by the operator 2026-09-09 ~10:10 UTC** — `SELECT cron.alter_job(19, active := false);`. Verified `active=false`, with `schedule` (`30 12 * * *`) and `command` both intact.
 

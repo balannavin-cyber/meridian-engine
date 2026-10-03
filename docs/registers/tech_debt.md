@@ -64,6 +64,23 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > rather than deleted because removing a header is an operator call, not a doc-close
 > edit. **Recommend deletion next session.**
 
+### TD-S89-NEW-1 (S2 priority) — the ingest ran 83 cycles on a closed day and recorded the previous session's last spot every time, producing ~143k rows that pass every density check
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Nothing is broken loudly. The day looks complete, passes a row-count check and a distinct-`ts` check, and would poison any replay or base rate built over the window. |
+| **Filed** | 2026-10-03 (Session 89) |
+| **Component** | `option_chain_snapshots` (ingest wrote) · `trading_calendar` (no row for the date) · `gamma_metrics` (correctly empty) |
+| **The day** | **2026-10-02.** ~143k `option_chain_snapshots` rows across **83 distinct `ts`** spanning 08:50–15:40 IST — a full-looking session at the native 5-minute cadence. |
+| **The tell, and why row counts cannot find it** | `distinct_spot_values = 1` for **both** symbols: NIFTY pinned at **22421.95**, SENSEX at **71909.7**, `spot_range 0.00`. Control, 2026-10-01: **78** distinct spot values, ranges 402.10 / 1212.60. **Row count, `ts` count and cadence are all nominal on 10-02** — only a spot-variance check separates a traded day from a frozen one. |
+| **Provenance of the frozen values** | They are exactly 2026-10-01's **16:00:04** post-close prints (the same values recorded in `capture_s88.md` §3.6). So the ingest re-recorded the prior session's last-known spot on each of its 83 cycles. |
+| **Corroboration** | `gamma_metrics` has **no rows at all** for 10-02 — the gamma gate held while the ingest gate did not. And **10-02 is absent from `trading_calendar`**, which is the Rule 18 / ADR-020 fail-open shape: a missing calendar row lets part of the chain run on a closed day. |
+| **Workaround** | 2026-10-02 is **excluded from the S89 replay export** (8 trading days 09-22…10-01 exported; 10-02 deliberately not). Any consumer of that window inherits the exclusion. |
+| **Proper fix** | Two parts, and the second is the durable one: (1) seed `trading_calendar` so closed days carry a row with `is_open = false` rather than being absent; (2) **give the ingest the same computed gate the gamma chain already honours** — `core/trading_calendar_gate.py`, not a new inline copy. A spot-variance assertion is a useful *detector* but is not the fix. |
+| **Not a data-contamination-registry entry yet** | It may warrant one (`public.data_contamination_ranges`, Rule 13) so that future queries over 10-02 are gated automatically rather than by memory. **That is an operator decision, not filed here.** |
+| **Cross-ref** | **Rule 18** / **ADR-020** (the fail-open shape) · **Rule 13** (contamination registry) · `docs/research/capture_s89.md` §4 and §5 · `docs/research/capture_s88.md` §3.6 (the 16:00:04 prints) · `scratch/s89_export/manifest.tsv`. |
+| **Status** | **OPEN.** |
+
 ### TD-S88-NEW-1 (S2 priority) — the Marketview header computes its change against a close TWO SESSIONS old during every trading session, because the markers writer runs at 16:10 IST and the reader takes the newest row with no date filter
 
 | Field | Value |
@@ -2066,7 +2083,7 @@ Filed as a withdrawal rather than deleted, because the error is worth keeping: *
 |---|---|
 | **Priority** | **S1.** A deliberate, reversible change to live retention with **no scheduled review**. The failure mode is forgetting: unbounded growth on two tables against a Supabase ceiling nobody is watching. |
 | **Filed** | 2026-09-10 (Session 76) |
-| **Component** | `pg_cron jobid 19` — `30 12 * * *`, `select public.cleanup_gamma_engine_data();` |
+| **Component** | `pg_cron jobid 19` — `30 12 * * *`, `select public.cleanup_gamma_engine_daily();` **Name corrected S89 (2026-10-03): the live job is `..._daily`; this read `..._data`.** |
 | **Action taken** | Operator, 2026-09-09 ~10:10 UTC: `SELECT cron.alter_job(19, active := false);`. Verified `active=false`, with `schedule` and `command` **both intact** — the job is paused, not edited. |
 | **Why** | It was deleting `option_chain_snapshots` on a 90-day horizon while its archiver had been dark since 2026-06-05 (**TD-S76-NEW-1**). Stopping it stops the ongoing half of that loss. |
 | **What is now unbounded** | Four deletes are suspended: `option_chain_snapshots` 90-day, its 14-day thinning, `raw_ingest_log` 14-day, `gamma_metrics` 90-day. **`gamma_metrics` will grow past 90 days** — `docs/research/gamma_metrics_tail_probe.py` (Topology §S75.4) will read that correctly as a retention-rule change rather than a fault. **`raw_ingest_log`'s growth rate has never been measured**, so its trajectory is unknown, not merely unbounded. |

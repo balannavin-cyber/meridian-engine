@@ -504,11 +504,16 @@ other way, and it is stated as an open item rather than assumed.
 
 > **OPERATOR RULING OWED — whether sandbox is enabled, and if so who pays its
 > installation and network-allowlist cost.**
-> → **DEFERRED to Sat 2026-10-03** 2026-10-01 — see Appendix #13 and `rulings_s87.md`.
+> → **RULED 2026-10-03** (out of hours, as deferred) — see Appendix #13 and
+> `docs/research/s89_rulings/rulings_s89.md`. **Enable DEFERRED to a focused pass;
+> install cost and allowlist scope ruled.** Not restated here.
 
 > **OPERATOR RULING OWED — whether row (e)'s deny-bypass gap is closed, how, and
 > whether the untested spellings are enumerated before or after.**
-> → **DEFERRED to Sat 2026-10-03** 2026-10-01 — see Appendix #14 and `rulings_s87.md`.
+> → **RULED 2026-10-03** — see Appendix #14 and
+> `docs/research/s89_rulings/rulings_s89.md`. **Row (e) CONFIRMED on fresh ground; fix is
+> the OS sandbox (#13), verification deferred with the enable; the multi-spelling sweep
+> remains OWED.** Not restated here.
 
 ---
 
@@ -613,8 +618,8 @@ the numbering the body and this table already share does not move.
 | 10 | The size and per-class composition of the evaluation suite, and the pass bar that decides adequacy for a class. **RULED 2026-10-01 09:03 IST — see `rulings_s87.md` #10.** | 5 |
 | 11 | Whether cost per passed task is compared at a fixed budget or at parity of outcome, and who grades. **RULED 2026-10-01 09:03 IST — see `rulings_s87.md` #11.** | 5 |
 | 12 | Whether the absolute-path convention is adopted, retained provisionally, or dropped, now that the `WS3.1_baseline.md` §6 experiment has run. **RULED 2026-09-30 19:06 IST — see `rulings_s87.md`.** | 6 |
-| 13 | Whether sandbox is enabled, and if so who pays its installation and network-allowlist cost. **DEFERRED to Sat 2026-10-03, ruled 2026-10-01 09:03 IST — see `rulings_s87.md` #13.** | 7 |
-| 14 | Whether the Bash deny-bypass gap is closed, how, and whether the untested spellings are enumerated first. **DEFERRED to Sat 2026-10-03, ruled 2026-10-01 09:03 IST — see `rulings_s87.md` #14.** | 7 |
+| 13 | Whether sandbox is enabled, and if so who pays its installation and network-allowlist cost. **RULED 2026-10-03 — see `rulings_s89.md` #13.** (Deferral itself was ruled 2026-10-01 09:03 IST, `rulings_s87.md`.) | 7 |
+| 14 | Whether the Bash deny-bypass gap is closed, how, and whether the untested spellings are enumerated first. **RULED 2026-10-03 — see `rulings_s89.md` #14.** (Deferral itself was ruled 2026-10-01 09:03 IST, `rulings_s87.md`.) | 7 |
 | 15 | The current CLI pin: hold, advance, or unpin, and on what trigger (WS1.2). **RULED 2026-09-30 17:41 IST — hold.** See `rulings_s87.md`. | 8 |
 | 16 | Whether automatic updates stay disabled, and which channel is followed if they are re-enabled. **RULED 2026-10-01 09:03 IST — see `rulings_s87.md` #16.** | 8 |
 | 17 | The numeric bar for each acceptance criterion in §9.1, fixed and dated before any shadow run. **RULED 2026-10-01 09:03 IST — see `rulings_s87.md` #17.** | 9 |

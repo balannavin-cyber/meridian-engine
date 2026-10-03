@@ -1279,7 +1279,7 @@ Measurement session. **No file, table, runner or orchestration changed.** This s
 
 ### S75.A — `gamma_metrics` and `option_chain_snapshots` are trimmed, and the trimmer is not on any host
 
-`pg_cron jobid 19`, active, `30 12 * * *` (12:30 UTC daily), runs `select public.cleanup_gamma_engine_data()`. From `pg_proc.prosrc`:
+`pg_cron jobid 19`, active, `30 12 * * *` (12:30 UTC daily), runs `select public.cleanup_gamma_engine_daily()`. **Name corrected S89 (2026-10-03): the live job is `cleanup_gamma_engine_daily`; this read `..._data`.** From `pg_proc.prosrc`:
 
 | target | predicate | interval | effect |
 |---|---|---|---|

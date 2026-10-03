@@ -69,6 +69,23 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 **NOTE — 2026-10-03.** `v_gex_concentration.hhi_net` is the **top-1 gamma share, NOT a Herfindahl** — byte-identical to `v_gex_strike_rank` rank-1 `share_of_abs` and to `gamma_metrics.gamma_concentration` (0.0942 on 10-01); true HHI Σshare² ≈ 0.0464. The live board's 'HHI' label and D-6's ~0.10 / ~0.25 bands are therefore on **top-1 share**. `hhi_call` / `hhi_put` semantics **unverified**. Verify call/put and correct the board label before any Herfindahl claim.
 **FIX (phase-2 Pin tab):** the board's 'HHI' label should display the true `conc_hhi` (Σs²); keep top-1 share as a separate **'lead-strike share'** line. **ENH-133 now stores both.**
 
+### TD-S89-NEW-2 (S2 priority) — the ADR-016 parameter WRITE path does not exist: the ADR names a CLI that is absent, the register reads SHIPPED, and the table is empty
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Nothing is broken loudly — `core/parameters.py` reads fine and no live consumer has needed a parameter yet. It becomes blocking the moment any feature wants a calibrated threshold, which **ENH-133 does**. |
+| **Filed** | 2026-10-03 (Session 89) |
+| **Component** | `docs/decisions/ADR-016-parameter-calibration-pattern.md:64` (names the CLI) · `merdian_calibrate.py` (**absent**) · `core/parameters.py` (read-only, present, 9,769 B) · `merdian_parameters` (**0 rows**) · `MERDIAN_Enhancement_Register.md:3700` (ENH-83 reads SHIPPED) |
+| **The three-way disagreement, measured 2026-10-03** | (1) **ADR-016 §"Write API — CLI only in v0"** names **`merdian_calibrate.py` (ENH-83)** as the only write path. (2) **That file is not in the tree** — repo-wide `find -name 'merdian_calibrate*'` returns nothing. (3) **`merdian_parameters` measures 0 total rows, 0 live rows, 0 categories** — readable by `merdian_ro`, genuinely empty. Meanwhile the register row reads **`ENH-83 | Calibration console (SHIPPED S39)`**. |
+| **What exists, so the gap is precise** | `core/parameters.py` ships the **read** API only: `get_parameter_num` / `_text` / `_bool`, `get_parameters_by_category`, `invalidate_cache`, `ParameterNotFoundError`. There is **no insert, upsert or update function anywhere in it**. So the read side of ADR-016 is real and the write side is not. |
+| **Why "SHIPPED" is not evidence either way** | The register row is a claim about a console; it does not name an artefact a reader can open, and no verification in it tests that a parameter can be written. This is the S70 shape — **a verification method can only find what it enumerates** — and the enumeration here was "console shipped", not "a key can be written and read back". |
+| **Blast radius today** | **Zero live consumers.** ADR-017:85 says configurable thresholds live in `merdian_parameters` per ADR-016, and ENH-81's τ was to be read from it; with the table empty, anything that tried would raise `ParameterNotFoundError` or fall back to a hardcoded value. **Which of those two happens has not been audited** — a fallback would be the ADR-020 silent-default shape and is worth checking before any new consumer lands. |
+| **Workaround in use** | ENH-133 seeds its eight `pin_state.*` keys by a **one-off dated migration** (`sql/2026-10-03_s89_seed_pin_state_params.sql`, authored-not-applied, `ON CONFLICT DO NOTHING`) rather than through the missing CLI. That unblocks ENH-133 **without taking ENH-83's scope**, and is explicitly not a fix. |
+| **Proper fix** | Reconcile the three, in this order: (1) **decide whether ENH-83's write API is actually owed** or whether ADR-016 should be amended to name a migration-based write path; (2) if owed, build `merdian_calibrate.py` honouring the `valid_from` / `valid_to` lifecycle, `changed_by` and `change_reason`; (3) **correct the ENH-83 register row** either way — a row reading SHIPPED against an absent artefact is worse than one reading PARTIAL, because nothing signals the error. |
+| **Not ENH-133's problem to solve** | Stated because the temptation is to fold it in: ENH-133 needs **eight rows in a table**, not a CLI. Building the CLI inside ENH-133 would put console scope in a history-table deliverable and leave ENH-83 still reading SHIPPED. |
+| **Cross-ref** | **ADR-016** · **ADR-017** §:85 · **ADR-020** (absence is not a verdict — why the writer uses no default) · **ENH-83** · **ENH-133** · `docs/research/s89_rulings/ENH-133_writer_spec_S89.md` §7.1, §9 · `sql/2026-10-03_s89_seed_pin_state_params.sql`. |
+| **Status** | **OPEN.** |
+
 ### TD-S89-NEW-1 (S2 priority) — the ingest ran 83 cycles on a closed day and recorded the previous session's last spot every time, producing ~143k rows that pass every density check
 
 | Field | Value |

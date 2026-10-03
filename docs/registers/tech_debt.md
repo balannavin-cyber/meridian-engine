@@ -66,6 +66,9 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 
 **NOTE — 2026-10-03 (D-5a).** C1/C2 pressure proxies tested and declined. proximity-|netΓ| and OI-magnet (oi_call+oi_put)·Gaussian; top-5 gamma-inversion at chance over 12 NIFTY γ-runs; OI-magnet undefined at dte=0. Pointer: `docs/research/s89_rulings/pressure_leg_decline_S89.md`. Do not re-litigate without a newly disclosed formula or ENH-133 history enabling a materially different key.
 
+**NOTE — 2026-10-03.** `v_gex_concentration.hhi_net` is the **top-1 gamma share, NOT a Herfindahl** — byte-identical to `v_gex_strike_rank` rank-1 `share_of_abs` and to `gamma_metrics.gamma_concentration` (0.0942 on 10-01); true HHI Σshare² ≈ 0.0464. The live board's 'HHI' label and D-6's ~0.10 / ~0.25 bands are therefore on **top-1 share**. `hhi_call` / `hhi_put` semantics **unverified**. Verify call/put and correct the board label before any Herfindahl claim.
+**FIX (phase-2 Pin tab):** the board's 'HHI' label should display the true `conc_hhi` (Σs²); keep top-1 share as a separate **'lead-strike share'** line. **ENH-133 now stores both.**
+
 ### TD-S89-NEW-1 (S2 priority) — the ingest ran 83 cycles on a closed day and recorded the previous session's last spot every time, producing ~143k rows that pass every density check
 
 | Field | Value |

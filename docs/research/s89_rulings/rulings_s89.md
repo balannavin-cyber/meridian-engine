@@ -83,6 +83,47 @@ boost(T) = 2.53 · T^(−0.5), T in trading days to expiry, cap 3.70, floor T = 
 **D-5c — Conviction (ENH-122): D3 deviation, two-stage.**
 Stage 1 (now): (leader − runner-up margin) · boost(T). Stage 2: multiply by the 30-session HHI percentile once ENH-133 history exists.
 
+## ENH-133 — per-cycle layer-history table: scope RULED 2026-10-03
+
+Bound spec: **`docs/research/s89_rulings/ENH-133_schema_spec_S89.md`**. Authored, unapplied DDL:
+**`sql/2026-10-03_s89_gex_cycle_history.sql`**. Proposed table name `gex_cycle_history`.
+
+**The five scope decisions.**
+
+1. **ENH-133 and ENH-134 are COMPLEMENTS, not alternatives** (D-3). 133 accumulates forward;
+   134's as-of functions cover the already-stored window. Neither replaces the other.
+2. **Grain:** one row per `(symbol, expiry_date, ts)` at the 5-minute γ cadence, both expiry
+   legs, `run_id` stored not keyed. The key is a timestamp rather than a cycle ordinal, so a
+   future **1-minute pass (Candidate A)** writes into the same table unchanged.
+3. **Session gate = `distinct_spot > 1`, write-and-flag.** The row is written even when the
+   gate is false; the default history read filters `is_trading_session = true`. Row counts and
+   distinct-`ts` counts cannot do this job — 2026-10-02 passes both (TD-S89-NEW-1).
+4. **Retention: keep indefinitely, explicitly OUTSIDE `pg_cron` jobid 19.** Stated in the DDL
+   `COMMENT ON TABLE`, the spec and the registers; a future retention job must name this table
+   to touch it.
+5. **`pin_state` and `held_for_cycles` are STORED carry-forward**, not re-derived on read —
+   `held_for_cycles` counts only `is_trading_session = true` rows, so a holiday or frozen gap
+   does not increment it.
+
+**The pin-leader binding.** `pin_leader_strike` = `v_gex_strike_rank.strike` at
+`strike_rank = 1` (gamma concentration), `gamma_at_pin` = its `gex_cr`.
+`runnerup_share_ratio` = `share_of_abs(rank 2) / share_of_abs(rank 1)` — near 1 = not locked.
+`conviction` = `(1 − runnerup_share_ratio) · boost(T)` (D-5b / D-5c), with **T in TRADING days:
+`gamma_metrics.dte` is CALENDAR days (measured) and must be converted, never fed to `boost()`
+directly.** `conc_top1_share` carries `v_gex_concentration.hhi_net` under an **honest name** —
+it is the top-1 strike share, proven byte-identical to the rank-1 `share_of_abs` and to
+`gamma_metrics.gamma_concentration`, and **not** a Herfindahl (true Σs² is ~half). It is never
+named `hhi_*` in this table.
+
+**Five scalars the ruling named exist in NO relation** and are writer-derived, not selected:
+runner-up strike, runner-up margin, gamma at pin, top-5 share, per-rank shares.
+**`merdian_parameters` is EMPTY (0 rows, measured)**, so seeding the `pin_state.*` dot-keys is
+part of the writer deliverable, and a missing key leaves `pin_state` NULL with a reason —
+never a substituted default (ADR-020).
+
+**No DDL was applied and no writer was written.** The schema ADR is the next artefact
+(TD-S80-NEW-7 precedent); the spec is its input.
+
 ---
 
 ## Session facts behind the #14 ruling, recorded once

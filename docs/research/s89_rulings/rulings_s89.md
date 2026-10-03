@@ -61,6 +61,13 @@ Pull ENH-133 (per-cycle aggregates: one row per run/symbol/expiry + pin state, w
 
 Our measured bands only (ADR-016). The parity target's thresholds NEVER become the band that drives a state word. Until a band is measured on our own data, the value renders as a number alone (gap E-4) and the detail SCALE slot names the calibration gap. The target's thresholds are shown as labelled "reference" ONLY where he published a concrete number (e.g. HHI ≈0.10 / ≈0.25, as a faint reference mark tagged "reference"), and omitted everywhere else. A reference mark never drives a word and is drawn visually distinct from any measured band.
 
+## E-D2 / E-D5 / E-D7 / E-D8 — RULED 2026-10-03 (parity board, phase-1 decisions)
+
+- **E-D2 (canonical max pain, OI tab):** adopt `v_gex_max_pain` on the γ clock (same run as walls and pin); it also feeds the max-pain valley its candidate rows on that clock. NOT the chain-clock `v_max_pain_by_strike` (would mix clocks on the tab). Carried caveat: L19 off-spec (D5), COMMENT not live (E-12) → renders from the `sql/`-file text, flagged.
+- **E-D5 (net-long-γ strike, Gamma tab):** MEASURED 2026-10-03 — stored `gamma_metrics.max_gamma_strike` EQUALS the positive-`gex_cr` argmax on both symbols (NIFTY 22700, SENSEX 72000, matches=t). Ruling: use the stored column.
+- **E-D7 (ACCEL zone):** retire from Marketview; the gamma terrain shows amplifying pockets directly (E-15).
+- **E-D8 (prototype corrections):** max pain drawn in ink (`--rule`, dash-dot), not gold — gold is reserved for selection (one-meaning-per-hue); and the selected-row label switches to `--ink-2` to clear the 4.24:1 contrast failure (WCAG 4.5).
+
 ---
 
 ## Session facts behind the #14 ruling, recorded once

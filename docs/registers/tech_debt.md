@@ -64,6 +64,8 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 > rather than deleted because removing a header is an operator call, not a doc-close
 > edit. **Recommend deletion next session.**
 
+**NOTE — 2026-10-03 (D-5a).** C1/C2 pressure proxies tested and declined. proximity-|netΓ| and OI-magnet (oi_call+oi_put)·Gaussian; top-5 gamma-inversion at chance over 12 NIFTY γ-runs; OI-magnet undefined at dte=0. Pointer: `docs/research/s89_rulings/pressure_leg_decline_S89.md`. Do not re-litigate without a newly disclosed formula or ENH-133 history enabling a materially different key.
+
 ### TD-S89-NEW-1 (S2 priority) — the ingest ran 83 cycles on a closed day and recorded the previous session's last spot every time, producing ~143k rows that pass every density check
 
 | Field | Value |

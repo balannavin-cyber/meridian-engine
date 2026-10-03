@@ -68,6 +68,21 @@ Our measured bands only (ADR-016). The parity target's thresholds NEVER become t
 - **E-D7 (ACCEL zone):** retire from Marketview; the gamma terrain shows amplifying pockets directly (E-15).
 - **E-D8 (prototype corrections):** max pain drawn in ink (`--rule`, dash-dot), not gold — gold is reserved for selection (one-meaning-per-hue); and the selected-row label switches to `--ink-2` to clear the 4.24:1 contrast failure (WCAG 4.5).
 
+## D-4 / D-5a / D-5b / D-5c — RULED 2026-10-03 (parity dovetail; flow-vs-book, pressure leg, time boost, conviction)
+
+**D-4 — Flow-vs-book folds into ENH-98 (L7/L8) scope.**
+The today's-flow-vs-standing-book ΔOI classification (long buildup / short buildup / short covering / long unwinding, from OI change vs price change since previous close; delta-summed; SAME/OPPOSITE-sign badge vs the L13 standing book) is a PARITY PREREQUISITE for L7/L8, not a §2.5 extension — the parity target's vanna/charm reprice today's classified OI only (#596). Standard taxonomy; no D3 deviation. L7/L8 BUILT-vs-BLOCKED disposition remains gated on the 10-07 A4 re-run.
+
+**D-5a — Pressure ranking (ENH-125): DECLINED-ON-EVIDENCE (ADR-025 D4).**
+Formula undisclosed (#558). Proximity-weighted |netΓ| and an OI-magnet (oi_call+oi_put)·Gaussian tested read-only over the last 15 NIFTY γ-runs (3 dte-0 days NO-TEST; 12 testable). The defining property — a top-5 ranking that inverts the gamma order — is not reproducible: ρ_top5 mean −0.008 (c=0.75) / −0.083 (c=1.0), range −0.70..+0.80, 6/12 negative = chance. OI-magnet is undefined at dte=0 (σ_T→0). No defensible deviation proxy. Ladder keeps the net-Γ LONG/SHORT sign tag; no pressure-rank ordering ships. Pin location served by the γ-clock max-pain (E-D2). Evidence: `docs/research/s89_rulings/pressure_leg_decline_S89.md`.
+**Correction 2026-10-03: strictly-negative ρ_top5 is 6/12 at c=1.0 and 5/12 at c=0.75 (the 6th at c=0.75 is a float-zero, ρ=−1.4×10⁻¹⁷ on 09-21). The decline stands — mean ρ≈0 at both c (−0.0083 / −0.0833); 5/12 strengthens it. Detail: pressure_leg_decline_S89.md §4.**
+
+**D-5b — Time boost (L2): D3 deviation.**
+boost(T) = 2.53 · T^(−0.5), T in trading days to expiry, cap 3.70, floor T = 0.47. Reproduces the two disclosed anchors (1.13× at 5 DTE, 3.70× at the 1DTE close) under charm ∝ 1/√T. Not validatable against our data (his boost unobserved); stated as ours.
+
+**D-5c — Conviction (ENH-122): D3 deviation, two-stage.**
+Stage 1 (now): (leader − runner-up margin) · boost(T). Stage 2: multiply by the 30-session HHI percentile once ENH-133 history exists.
+
 ---
 
 ## Session facts behind the #14 ruling, recorded once

@@ -69,6 +69,12 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 **NOTE — 2026-10-03.** `v_gex_concentration.hhi_net` is the **top-1 gamma share, NOT a Herfindahl** — byte-identical to `v_gex_strike_rank` rank-1 `share_of_abs` and to `gamma_metrics.gamma_concentration` (0.0942 on 10-01); true HHI Σshare² ≈ 0.0464. The live board's 'HHI' label and D-6's ~0.10 / ~0.25 bands are therefore on **top-1 share**. `hhi_call` / `hhi_put` semantics **unverified**. Verify call/put and correct the board label before any Herfindahl claim.
 **FIX (phase-2 Pin tab):** the board's 'HHI' label should display the true `conc_hhi` (Σs²); keep top-1 share as a separate **'lead-strike share'** line. **ENH-133 now stores both.**
 
+### TD-S89-NEW-3 (S3 priority) — `r_sess` (futures-implied carry) and ENH-98's `r_eff` disagree 2.7× on a same-named quantity, and the split is unreconciled
+
+**S3 · Filed 2026-10-03 (Session 89) · Component:** `v_gex_repriced_flip.r_sess` · ENH-98 go/no-go instrument (`r_eff`) · `index_futures_snapshots`. **OPEN.**
+
+`r_sess` (futures-implied carry, measured **~0.100** on SENSEX, ~0.061 on NIFTY) vs ENH-98 `r_eff` (**3.57–3.81 %**) — a **2.7× gap on a same-named quantity**. Likely **DEFINITIONAL** (implied carry including dividend / borrow / basis vs a risk-free rate), **NOT reconciled**. **Immaterial to L7/L8** — ENH-98 spec §3 measures r-sensitivity at **0.22 % / 0.50 %** on SENSEX dte 1 across r ∈ [0, 0.12]. **Owed:** confirm the definitional split or reconcile it. Ref `docs/research/s89_rulings/ENH-98_L78_design_spec_S89.md` §3 / §11.
+
 ### TD-S89-NEW-2 (S2 priority) — the ADR-016 parameter WRITE path does not exist: the ADR names a CLI that is absent, the register reads SHIPPED, and the table is empty
 
 | Field | Value |

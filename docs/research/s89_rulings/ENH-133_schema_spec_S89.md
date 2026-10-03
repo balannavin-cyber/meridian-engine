@@ -33,7 +33,7 @@ same leg at the same instant.
 
 ## 2. COLUMNS — bound
 
-`NOT NULL` on **`symbol`, `expiry_date`, `ts`, `run_id`, `is_trading_session`** only.
+`NOT NULL` on **`symbol`, `expiry_date`, `ts`, `run_id`, `session_gate_state`** only.
 Every optional scalar is **NULLABLE** — measured reason: on the 10-01 run
 `gamma_metrics.breadth_regime` is an **empty string** and `otm_oi_velocity` /
 `spot_vs_range` are **NULL**, so a `NOT NULL` on a layer scalar would reject real
@@ -47,7 +47,8 @@ production rows.
 | `expiry_date` | `date` | `gamma_metrics.expiry_date` | NOT NULL |
 | `ts` | `timestamptz` | `gamma_metrics.ts` | NOT NULL — the γ run |
 | `run_id` | `uuid` | `gamma_metrics.run_id` | NOT NULL |
-| `is_trading_session` | `boolean` | **derived** (§3.6) | NOT NULL |
+| `session_gate_state` | `text` | **derived** (§3.6) | NOT NULL — `OPEN` \| `FROZEN` \| `PRE_TICK` |
+| `session_gate_ticks` | `integer` | **derived** (§3.6) | ticks seen up to `ts` at write time |
 | `chain_ts` | `timestamptz` | `option_chain_snapshots.ts` **for this `run_id`** | §2.1a |
 | `dte` | `integer` | `gamma_metrics.dte` | **CALENDAR days** — §3.5 |
 | `spot` | `numeric` | `gamma_metrics.spot` | |
@@ -112,8 +113,16 @@ nothing gamma-valued**; `v_gex_concentration` has `top_strike_net` — which is 
 | `put_wall_strike` | `numeric` | `v_gex_strike_walls.put_wall` |
 | `is_fresh` | `boolean` | `v_gex_pin_maxpain.is_fresh` / `v_gex_max_pain.is_fresh` |
 | `snapshot_age_min` | `numeric` | same pair |
-| `writer`, `writer_version` | `text` | the writer's own identity |
+| `writer`, `writer_version` | `text` | the writer's own identity — **never overwritten by the reconciler** |
+| `reconciled_at` | `timestamptz` | **RULED 2026-10-03** — NULL until the EOD reconciler finalises the row. **`reconciled_at IS NULL` is the canonical "unreconciled" signal** |
+| `reconciler_version` | `text` | the reconciler's own identity, mirroring `writer_version` |
 | `created_at` | `timestamptz NOT NULL DEFAULT now()` | DB clock |
+
+**Why `reconciled_at` and not "no PRE_TICK row".** The absence of a `PRE_TICK` state does **not** mean a
+row was reconciled: a date whose every cycle began after the first spot tick (~09:11 IST) is written with no
+`PRE_TICK` row at all, so it would be indistinguishable from a finalised date. **`reconciled_at IS NULL` is
+the signal**; the two provenances are separate facts and the reconciler never overwrites `writer` /
+`writer_version` (reconciler spec §6.1).
 
 **Freshness is persisted, never dropped.** Both views carry their own staleness verdict —
 measured `is_fresh = f` at `snapshot_age_min = 2670.7` reading on Saturday. Without these
@@ -189,20 +198,47 @@ DEFERRED** — `hhi_call` / `hhi_put` remain carried as unverified top-1-share-p
 `boost()` directly.** The DDL carries this as a column COMMENT so the trap travels with
 the schema.
 
-### 3.6 `is_trading_session` — the frozen-day discriminator
-`is_trading_session = (count(distinct spot) in market_spot_snapshots for that symbol, on
-that IST trading date, up to ts) > 1`.
+### 3.6 `session_gate_state` / `session_gate_ticks` — the three-state session gate
+
+**RULED 2026-10-03 — Option A of the writer spec §6.3.** A boolean cannot carry this:
+`false` would mean both "the market was frozen" and "the tape had not started yet", and
+the second is the normal state of the first 6–8 cycles of every trading day.
 
 Columns bound: `market_spot_snapshots.spot`, `.ts`, `.symbol` — all present.
 
-**Why a count of rows or of distinct `ts` cannot substitute:** 2026-10-02 carried ~143k
-chain rows across **83 distinct ts** spanning 08:50–15:40 and passes every density check,
-with `distinct_spot = 1` for both symbols (NIFTY 22421.95, SENSEX 71909.7, `spot_range
-0.00`). Control 2026-10-01: **78** distinct spot values. See **TD-S89-NEW-1**.
+**Write-time stamping (PROVISIONAL):**
 
-**The row is still WRITTEN when false.** The default history read filters
-`is_trading_session = true`. Writing-and-flagging keeps the frozen cycle inspectable;
+```
+ticks         = count of market_spot_snapshots for (symbol, this IST date, ts' <= ts)
+distinct_spot = count of distinct spot over that same window
+session_gate_ticks = ticks
+
+ticks == 0                            -> 'PRE_TICK'
+distinct_spot > 1                     -> 'OPEN'
+else (ticks >= 1, distinct_spot == 1) -> 'FROZEN'
+```
+
+**Why three states — measured.** The γ clock starts **08:30–08:40 IST** while the first
+`market_spot_snapshots` tick lands **~09:11:03** every day (the `41 3` cron, not the
+per-minute feed). Across 2026-09-22 … 10-01 that is **6–8 of 74–83 cycles per day** with
+zero ticks. A two-state gate stamps those real cycles not-a-session, excludes ~9 % of each
+day from the default read, and shortens every `held_for_cycles` streak that begins before
+09:11.
+
+**Why a count of rows or of distinct `ts` still cannot substitute for the OPEN/FROZEN
+half:** 2026-10-02 carried ~143k chain rows across **83 distinct ts** spanning 08:50–15:40
+and passes every density check, with `distinct_spot = 1` for both symbols (NIFTY 22421.95,
+SENSEX 71909.7, `spot_range 0.00`). Control 2026-10-01: **78** distinct spot values. See
+**TD-S89-NEW-1**.
+
+**The row is always WRITTEN.** The default history read filters
+`session_gate_state = 'OPEN'`. Writing-and-flagging keeps the frozen cycle inspectable;
 dropping it would make the gap indistinguishable from a writer outage.
+
+**PRE_TICK is FINALISED by the EOD reconciler**, which judges the whole completed date
+once the tape has settled and then recomputes `held_for_cycles` and `pin_state` over the
+final OPEN set — `docs/research/s89_rulings/ENH-133_reconciler_spec_S89.md`.
+`session_gate_ticks` is **not** rewritten: it records what the writer saw.
 
 ### 3.7 `pin_state`
 `pin_state ∈ {NO PIN, SHIFTING, STABLE, LOCKED}`, derived from `held_for_cycles`,
@@ -229,8 +265,11 @@ Two consequences, both load-bearing:
 
 ### 3.8 `held_for_cycles`
 Read the prior row for `(symbol, expiry_date)`; if its `pin_leader_strike` equals this
-row's, `held_for_cycles = prior + 1`, else `1`. **Count only `is_trading_session = true`
-rows**, so a holiday or frozen gap does not increment it.
+row's, `held_for_cycles = prior + 1`, else `1`. **Count only `session_gate_state = 'OPEN'`
+rows**, so a frozen or holiday date adds nothing. The write-time value is **provisional**:
+the EOD reconciler recomputes it over the finalised OPEN set and **carries the streak
+forward across an overnight or holiday gap** — a leader that persists continues its
+streak (reconciler spec §3.2, a recorded and overridable choice).
 
 ### 3.9 `repriced_flip` (L3) — clock-matched or NULL
 `v_gex_repriced_flip` **has no `run_id` and no `dte`**, names its expiry **`front_expiry`**,
@@ -270,7 +309,7 @@ postgres and cannot be delegated to `roq.sh`.
 |---|---|---|---|
 | **(a)** | Every bound source column exists in the live schema | an `information_schema` query returns **all** bound `(table, column)` pairs | a renamed or dropped source column; the test names pairs, so a missing one is identified, not merely counted |
 | **(b)** | Dry-run writer coverage | per-symbol **distinct-`ts` coverage = 100 %** of γ cycles in the window (**TD-S54-NEW-1** guard) | a writer that skips cycles; coverage is a ratio against the γ clock's own distinct `ts`, not a row count |
-| **(c)** | Frozen cycle handling | a frozen cycle (or the stored **2026-10-02** rows) lands `is_trading_session = false` **and** is excluded by the default read | a session gate keyed on row count or distinct `ts`, both of which 10-02 passes |
+| **(c)** | Frozen cycle handling | after reconciliation, every row of a frozen date (the stored **2026-10-02** rows) carries `session_gate_state = 'FROZEN'` **and** is excluded by the default read; **no row of a traded date is left `PRE_TICK`** | a session gate keyed on row count or distinct `ts`, both of which 10-02 passes; or a reconciler that promotes a frozen date |
 | **(d)** | `held_for_cycles` increments and resets | increments across a real stable-leader run and resets on the leader change | an off-by-one, or incrementing across a session gap |
 
 **Test (d) is rebound, because the run it was specified against does not exist.**
@@ -290,6 +329,12 @@ to increment across. Longest **consecutive** same-leader streaks in the window:
 `held_for_cycles` runs 1 → 73 over 08:50 → 14:50 and **resets to 1** on the first cycle
 after 14:50. The reset cycle's new leader must be read from the data at test time, not
 carried from this document.
+
+**The assertion is made AFTER reconciliation, not at write time.** That streak starts at
+**08:50**, before 09-30's first spot tick at **09:11:04**, so at write time its opening
+cycles are `PRE_TICK` and the run reads short. 09-30 traded (`day_distinct_spot > 1`), so
+the reconciler promotes them to `OPEN` and the 1 → 73 run is then continuous. **A(d)
+cannot pass at write time and is not expected to** — it is a reconciler test.
 
 ---
 

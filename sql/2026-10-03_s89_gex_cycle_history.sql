@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS public.gex_cycle_history (
     expiry_date             date          NOT NULL,
     ts                      timestamptz   NOT NULL,   -- the gamma run ts
     run_id                  uuid          NOT NULL,   -- gamma_metrics.run_id
-    is_trading_session      boolean       NOT NULL,   -- distinct_spot > 1 (see spec)
+    session_gate_state      text          NOT NULL,   -- OPEN | FROZEN | PRE_TICK
+    session_gate_ticks      integer,                  -- spot ticks seen up to ts at write
 
     -- ---- clock corroboration -------------------------------------------
     chain_ts                timestamptz,              -- option_chain_snapshots.ts for THIS run_id
@@ -65,10 +66,14 @@ CREATE TABLE IF NOT EXISTS public.gex_cycle_history (
     -- ---- provenance ------------------------------------------------------
     writer                  text,
     writer_version          text,
+    reconciled_at           timestamptz,              -- NULL until the EOD reconciler finalises this row
+    reconciler_version      text,                     -- the reconciler's own identity; writer/_version untouched
     created_at              timestamptz   NOT NULL DEFAULT now(),
 
     CONSTRAINT gex_cycle_history_pk
         PRIMARY KEY (symbol, expiry_date, ts),
+    CONSTRAINT gex_cycle_history_session_gate_ck
+        CHECK (session_gate_state IN ('OPEN','FROZEN','PRE_TICK')),
     CONSTRAINT gex_cycle_history_pin_state_ck
         CHECK (pin_state IS NULL OR pin_state IN ('NO PIN','SHIFTING','STABLE','LOCKED')),
     CONSTRAINT gex_cycle_history_repriced_src_ck
@@ -85,7 +90,7 @@ CREATE TABLE IF NOT EXISTS public.gex_cycle_history (
 -- Default history read is session-gated; this index serves it directly.
 CREATE INDEX IF NOT EXISTS ix_gex_cycle_history_sym_ts_session
     ON public.gex_cycle_history (symbol, ts DESC)
-    WHERE is_trading_session;
+    WHERE session_gate_state = 'OPEN';
 
 CREATE INDEX IF NOT EXISTS ix_gex_cycle_history_run
     ON public.gex_cycle_history (run_id);
@@ -96,7 +101,7 @@ CREATE INDEX IF NOT EXISTS ix_gex_cycle_history_run
 COMMENT ON TABLE public.gex_cycle_history IS
 'ENH-133 per-cycle layer history. One row per (symbol, expiry_date, ts) at the 5-minute gamma cadence, both expiry legs, written by the existing compute chain. Grain accommodates a future 1-minute pass (Candidate A) unchanged.
 RETENTION: KEEP INDEFINITELY. This table is explicitly NOT a target of pg_cron jobid 19 (cleanup_gamma_engine_daily, currently active=false). Any future retention job must name this table explicitly to touch it; a blanket gamma-chain cleanup must not.
-Rows are written even when is_trading_session = false; the DEFAULT history read filters is_trading_session = true. A frozen-market cycle (see TD-S89-NEW-1, 2026-10-02) is recorded and flagged, never silently dropped.
+Rows are written on every cycle regardless of session state; the DEFAULT history read filters session_gate_state = ''OPEN''. A frozen-market cycle (see TD-S89-NEW-1, 2026-10-02) is recorded and flagged FROZEN, never silently dropped.
 Scope ruled 2026-10-03 — docs/research/s89_rulings/rulings_s89.md; bound spec — docs/research/s89_rulings/ENH-133_schema_spec_S89.md. Complement to ENH-134 (as-of functions cover the already-stored window; this table accumulates forward).';
 
 COMMENT ON COLUMN public.gex_cycle_history.dte IS
@@ -120,17 +125,26 @@ COMMENT ON COLUMN public.gex_cycle_history.repriced_flip_level IS
 COMMENT ON COLUMN public.gex_cycle_history.repriced_flip_ts IS
 'The ts the L3 view actually RETURNED, stored so a reader can test the clock match rather than trust it. Compared by column name, never by position.';
 
-COMMENT ON COLUMN public.gex_cycle_history.is_trading_session IS
-'(count(distinct spot) in market_spot_snapshots for this symbol on this IST trading date up to ts) > 1. Row-count and distinct-ts checks CANNOT distinguish a traded day from a frozen one: 2026-10-02 had ~143k chain rows across 83 distinct ts and distinct_spot = 1 for both symbols (TD-S89-NEW-1). This column is the discriminator.';
+COMMENT ON COLUMN public.gex_cycle_history.session_gate_state IS
+'Three states, because two cannot tell a pre-open cycle from a closed market. OPEN = spot was observed to MOVE (distinct spot > 1). FROZEN = ticks exist but spot never moved — a closed or frozen book; 2026-10-02 carried ~143k chain rows across 83 distinct ts with distinct_spot = 1 for both symbols, so row-count and distinct-ts checks CANNOT find it (TD-S89-NEW-1). PRE_TICK = no spot tick existed yet at this ts, which is the NORMAL state of the first 6-8 cycles of every trading day: the gamma clock starts 08:30-08:40 IST while the first market_spot_snapshots tick lands ~09:11:03 IST (measured across 2026-09-22..10-01, 6-8 of 74-83 cycles per day). A two-state gate would have stamped those real cycles not-a-session. WRITE-TIME VALUE IS PROVISIONAL: PRE_TICK is FINALISED to OPEN or FROZEN by the EOD reconciler (reconcile_gex_cycle_history_session_local.py), which judges the whole completed date once the tape has settled. Spec: docs/research/s89_rulings/ENH-133_reconciler_spec_S89.md.';
+
+COMMENT ON COLUMN public.gex_cycle_history.session_gate_ticks IS
+'Count of market_spot_snapshots rows for this symbol on this IST date at or before ts, AS SEEN AT WRITE TIME. Kept so a PRE_TICK row is provably a tick-absence rather than a failed read: 0 means the tape had not started, NULL means the writer could not count. The reconciler does not rewrite this column — it records what the writer saw, not what was true by end of day.';
 
 COMMENT ON COLUMN public.gex_cycle_history.held_for_cycles IS
-'Consecutive cycles for which pin_leader_strike has been unchanged, counting only is_trading_session = true rows, so a holiday or frozen gap does not increment it. Starts at 1 on a leader change.';
+'Consecutive cycles for which pin_leader_strike has been unchanged, counting only session_gate_state = ''OPEN'' rows, so a frozen or holiday date adds nothing. Starts at 1 on a leader change. WRITE-TIME VALUE IS PROVISIONAL and is RECOMPUTED by the EOD reconciler over the finalised OPEN set, which also CARRIES THE STREAK FORWARD across an overnight or holiday gap — a leader that persists continues its streak. Spec: docs/research/s89_rulings/ENH-133_reconciler_spec_S89.md.';
 
 COMMENT ON COLUMN public.gex_cycle_history.pin_state IS
 'NO PIN | SHIFTING | STABLE | LOCKED, derived from held_for_cycles, runnerup_share_ratio and conc_top1_share using thresholds read from merdian_parameters (ADR-016 dot-keys). Thresholds are PROVISIONAL and owe D-6 calibration. A missing parameter key leaves this NULL with the reason in pin_state_reason — absence is not a verdict (ADR-020) and the writer must never substitute a default.';
 
 COMMENT ON COLUMN public.gex_cycle_history.conviction IS
 '(1 - runnerup_share_ratio) * boost(T), boost(T) = 2.53 * T^(-0.5), T in TRADING days to expiry, cap 3.70, floor T = 0.47 (D-5b / D-5c). Stage 1 only; Stage 2 multiplies by the 30-session conc_top1_share percentile once this table has history. The runner-up margin exists in NO relation and is computed by the writer — see the spec.';
+
+COMMENT ON COLUMN public.gex_cycle_history.reconciled_at IS
+'NULL until the EOD reconciler has finalised this row; set to the reconciler run''s timestamp when it has. This is the CANONICAL unreconciled signal — the absence of a PRE_TICK state is NOT, because a date whose every cycle began after the first spot tick (~09:11 IST) is written with no PRE_TICK row at all and would otherwise be indistinguishable from a reconciled one. The reconciler NEVER overwrites writer or writer_version: the two provenances are separate facts about the same row. Spec: docs/research/s89_rulings/ENH-133_reconciler_spec_S89.md §6.1.';
+
+COMMENT ON COLUMN public.gex_cycle_history.reconciler_version IS
+'Identity of the reconciler build that finalised this row, mirroring writer_version. Kept separate so a re-derivation after a rule change (reconciler spec §5, --recompute) is attributable without destroying the original write''s provenance.';
 
 COMMENT ON COLUMN public.gex_cycle_history.is_fresh IS
 'Persisted from v_gex_pin_maxpain / v_gex_max_pain, never dropped: without it a stale-book cycle is indistinguishable from a fresh one in history. Measured example 2026-10-03: is_fresh = f at snapshot_age_min = 2670.7 reading Saturday.';

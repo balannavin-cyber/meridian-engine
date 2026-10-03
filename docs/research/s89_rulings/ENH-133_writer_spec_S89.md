@@ -9,8 +9,10 @@
 > `sql/2026-10-03_s89_gex_cycle_history.sql` (authored-not-applied DDL),
 > `sql/2026-10-03_s89_seed_pin_state_params.sql` (authored-not-applied param seed).
 >
-> **§6 carries a measured defect in the `is_trading_session` gate that needs a ruling
-> before the writer is built.** Everything else is settled.
+> **§6's measured session-gate defect was RULED 2026-10-03 — Option A, the three-state gate
+> plus an EOD reconciler.** §6 now records the resolution; the reconciler is a separate
+> deliverable specified in **`ENH-133_reconciler_spec_S89.md`**. Everything in this file is
+> settled.
 
 ---
 
@@ -160,8 +162,13 @@ days.
 ### 5.2 `held_for_cycles`
 
 Read the prior row for `(symbol, expiry_date)` ordered by `ts DESC`, **restricted to
-`is_trading_session = true`**; if its `pin_leader_strike` equals this row's,
+`session_gate_state = 'OPEN'`**; if its `pin_leader_strike` equals this row's,
 `held_for_cycles = prior + 1`, else `1`. First-ever row for a leg: `1`.
+
+**Write-time values are PROVISIONAL.** A streak that begins before the day's first spot
+tick starts on `PRE_TICK` rows, which the write-time rule cannot count. The EOD reconciler
+recomputes `held_for_cycles` and `pin_state` over the finalised OPEN set and carries the
+streak across date boundaries — reconciler spec §3.2.
 
 ### 5.3 `repriced_flip` — clock-matched or NULL
 
@@ -188,7 +195,7 @@ number.
 
 ---
 
-## 6. `is_trading_session` — INDEPENDENCE CONFIRMED, GATE DEFECTIVE
+## 6. SESSION GATE — three states (RULED 2026-10-03, Option A)
 
 ### 6.1 Independence: confirmed
 
@@ -196,19 +203,15 @@ number.
 `run_market_state`:**
 
 ```
-41 3  * * 1-5   capture_market_spot_snapshot_local.py     (09:11 IST)
-*/1 03,04,…,09 * * 1-5   capture_spot_1m_v2.py            (08:30–15:29 IST, per minute)
+41 3  * * 1-5            capture_market_spot_snapshot_local.py   (09:11 IST)
+*/1 03,04,…,09 * * 1-5   capture_spot_1m_v2.py                   (08:30–15:29 IST, per minute)
 ```
 
 `build_market_state_snapshot_local.py` — the `run_market_state` step that runs **after**
-the hook — contains **no reference to `market_spot_snapshots`**. So the gate does not
-depend on a step that has not run. **That half of the question is answered: yes,
-independent.**
+the hook — contains **no reference to `market_spot_snapshots`**. The gate does not depend
+on a step that has not run.
 
-### 6.2 But the ticks are NOT present at the first cycles of the day — FLAGGED
-
-**The gate as specified would read `false` on 6–8 real cycles every trading day.**
-Measured, NIFTY, the γ clock against the spot tape:
+### 6.2 But the ticks are NOT present at the first cycles of the day — measured
 
 | date | first γ run | first spot tick | γ cycles | **cycles before the first tick** |
 |---|---|---|---|---|
@@ -221,39 +224,40 @@ Measured, NIFTY, the γ clock against the spot tape:
 | 2026-09-30 | 08:35:06 | 09:11:04 | 83 | **8** |
 | 2026-10-01 | 08:40:06 | 09:11:03 | 80 | **6** |
 
-At the first γ run of 2026-10-01 the gate's inputs are **0 ticks, 0 distinct spot**, so
-`distinct_spot > 1` is **false** — on a day that traded normally. The first tick lands at
-**09:11:03** every day, which is the `41 3` cron, **not** the per-minute feed; whatever
-the `*/1` line from 08:30 writes, it is not reaching this table before 09:11.
+At the first γ run of 2026-10-01 the gate's inputs are **0 ticks, 0 distinct spot**, on a
+day that traded normally. The first tick lands at **09:11:03** every day — the `41 3`
+cron, **not** the per-minute feed, whose 08:30 start is not reaching this table.
 
-**This is Rule 0 inverted — a check firing for a reason other than the one it names.**
-The gate is supposed to distinguish a traded day from a frozen book; here it reports
-"frozen" for *pre-open tick absence*. Consequences, both load-bearing:
+**A boolean gate therefore fires for a reason other than the one it names** (Rule 0
+inverted): it reports "frozen" for *pre-open tick absence*. It would exclude ~**9 %** of
+each day's rows from the default read and shorten every streak beginning before 09:11.
+**A whole-trading-date evaluation does not fix it** — at 08:40 the later ticks do not yet
+exist for the writer to read.
 
-1. ~**9 % of every day's rows** (6–8 of 74–83) are excluded by the default read
-   `is_trading_session = true`.
-2. **`held_for_cycles` does not increment across them** (§5.2 counts only `true` rows), so
-   a leader that holds from 08:35 reads a shorter streak than it had — and `pin_state`
-   depends on that count.
+### 6.3 Resolution — three states, write-time provisional
 
-**A whole-trading-date evaluation does not fix it either**, because at 08:40 the later
-ticks do not yet exist; the writer cannot read them at write time.
+```
+ticks         = count of market_spot_snapshots for (symbol, this IST date, ts' <= ts)
+distinct_spot = count of distinct spot over that same window
+session_gate_ticks = ticks
 
-### 6.3 Three ways out — needs a ruling
+ticks == 0                            -> session_gate_state = 'PRE_TICK'
+distinct_spot > 1                     -> session_gate_state = 'OPEN'
+else (ticks >= 1, distinct_spot == 1) -> session_gate_state = 'FROZEN'
+```
 
-The DDL is **unapplied**, so a schema change here is free.
+`session_gate_state` is `NOT NULL`; `session_gate_ticks` is nullable so that "the writer
+could not count" (NULL) stays distinguishable from "the tape had not started" (0).
 
-| Option | Change | Trade-off |
-|---|---|---|
-| **A — two-state, reconciled** (recommended) | add `session_gate_ticks integer` and `session_gate_state text` ∈ `{OPEN, FROZEN, PRE_TICK}`; writer stamps `PRE_TICK` when `ticks = 0`; a small end-of-day reconciler re-stamps that date's `PRE_TICK` rows once the tape is complete. Default read: `session_gate_state = 'OPEN'` | honest at every instant and self-correcting; costs **one more deliverable** (the reconciler) |
-| **B — calendar-assisted** | gate = `trading_calendar.is_open(date)` **AND** (`ticks = 0` **OR** `distinct_spot > 1`) | no reconciler; but **2026-10-02 is ABSENT from `trading_calendar`**, which is the Rule 18 fail-open shape — its pre-tick cycles would read `true`, i.e. the frozen day gets a true window |
-| **C — rename, accept** | keep the boolean, rename the intent to "spot has moved **by this ts** today"; the default read then needs its own pre-open handling | cheapest; but the column's name no longer answers "was this a trading session", and every future reader must know that |
+**`held_for_cycles` and `pin_state` at write time are PROVISIONAL**, carried forward over
+`OPEN` rows only. **Both are finalised by the EOD reconciler**, which is the only component
+that can see a completed date — `ENH-133_reconciler_spec_S89.md`.
 
-**Recommendation: A.** It is the only one of the three where a pre-open cycle and a frozen
-cycle are never conflated, and it keeps the frozen-day detection that is the whole point
-of the column. **I have not changed the DDL** — that is your call.
-
----
+**Option B was rejected and the reason is worth keeping.** Calendar-assisting the gate
+(`trading_calendar.is_open` AND (`ticks = 0` OR `distinct_spot > 1`)) needs no reconciler,
+but **2026-10-02 is ABSENT from `trading_calendar`** — the Rule 18 fail-open shape — so the
+frozen day's pre-tick cycles would read `OPEN`. The option that removes the reconciler is
+the one that hands the frozen day a true window.
 
 ## 7. PIN-STATE MACHINE
 
@@ -266,6 +270,15 @@ elif held_for_cycles >= pin_state.locked_held_for.<sym>
      and runnerup_share_ratio <= pin_state.locked_ratio_max.<sym>  -> 'LOCKED'
 else                                                         -> 'STABLE'
 ```
+
+### 7.0 ONE home for the state machine — RULED 2026-10-03
+
+**The ladder above lives in `core/pin_state.py` and nowhere else.** The writer and the EOD reconciler both
+import it; **neither carries its own copy.** Two implementations of one rule is the shape ADR-020 was written
+for — the gate said *no row → allow* while the seeder said *no row → closed* — and a parity claim between two
+copies is asserted only by a test that compares them, never by a comment (Rule 0 clause 4). With one home the
+comparison question does not arise. The missing-key behaviour in §7.1 is part of that shared helper, not of
+either caller.
 
 ### 7.1 Thresholds are read, never hardcoded
 
@@ -317,8 +330,8 @@ owed before any of these drive a displayed word.
 | **G3** | Provenance | `writer` and `writer_version` non-NULL on every row | a row whose origin cannot be traced after a version change |
 | **A(a)** | Source columns exist | an `information_schema` query returns **all** bound `(table, column)` pairs **by name** | a renamed or dropped source column |
 | **A(b)** | = G2 | | |
-| **A(c)** | Frozen handling | a frozen cycle (or the stored **2026-10-02** rows) is excluded by the default read | a gate keyed on row count or distinct `ts`, both of which 10-02 passes |
-| **A(d)** | `held_for_cycles` | increments **1 → 73** across **2026-09-30, leader 23000, 08:50 → 14:50 IST**, and **resets to 1** on the first cycle after 14:50 | an off-by-one, or incrementing across a session gap |
+| **A(c)** | Frozen handling | **after reconciliation**, every row of a frozen date carries `session_gate_state = 'FROZEN'` and is excluded by the default read, and **no row of a traded date is left `PRE_TICK`** | a gate keyed on row count or distinct `ts`, both of which 10-02 passes; or a reconciler that promotes a frozen date |
+| **A(d)** | `held_for_cycles` | **after reconciliation**, increments **1 → 73** across **2026-09-30, leader 23000, 08:50 → 14:50 IST**, and **resets to 1** on the first post-14:50 leader change | an off-by-one; a reconciler that fails to promote the pre-09:11 cycles; or a streak that resets across the overnight boundary when the leader did not change |
 
 **A(d) is bound to 09-30, not to 28–29 Sep.** Measured: 2026-09-28 has **four**
 interleaving rank-1 leaders (22800 ×49 spanning 09:20–14:15 *while* 23000 ×31 spans
@@ -327,10 +340,13 @@ streaks in the window: **09-30 / 23000 / 73 cycles**, then 09-25 / 23000 / 64, 0
 22600 / 48, 10-01 / 22700 / 25. The reset cycle's new leader is read from the data at
 test time, never carried from this document.
 
-**G2 and A(d) interact with the §6 defect.** If the gate stays as specified, A(d)'s
-expected run is shortened by the pre-tick cycles at the start of 09-30 — the streak begins
-**08:50**, which is **before** that day's first tick at **09:11:04**. So **A(d) cannot
-pass as written until §6 is ruled.** That is not a reason to loosen A(d).
+**A(d) is a RECONCILER test, not a writer test, and that follows from the measurement.**
+The 09-30 streak begins **08:50**, before that day's first tick at **09:11:04**, so at
+write time its opening cycles are `PRE_TICK` and the run reads short. 09-30 traded, so the
+reconciler promotes them to `OPEN` and the 1 → 73 run becomes continuous. **A(d) is
+asserted after reconciliation and is not expected to pass at write time.** A(d) was not
+loosened to accommodate the writer; the assertion moved to the component that can satisfy
+it.
 
 ---
 

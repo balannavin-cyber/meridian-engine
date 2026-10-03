@@ -4433,7 +4433,7 @@ TD-S80-NEW-7, TD-S80-NEW-8 · commit `85dfad2`.
 **Scope if approved.** One row per (run_id, symbol, expiry_date) carrying each layer's scalars, written by the existing compute chain. Not a backfill proposal — the window before the first write is unrecoverable except through ENH-134.
 
 **ORDERING NOTE, load-bearing.** ENH-133 and ENH-134 are **alternatives for the same gap, not a sequence.** A history table makes as-of functions unnecessary for new data but not for the existing window; as-of functions need no migration but re-derive on every read. **The choice is an operator decision and neither should be started before it.**
-**SUPERSEDED 2026-10-03 (D-3, `rulings_s89.md`):** ruled COMPLEMENTS, not alternatives — ENH-133 is pulled into parity scope and started; ENH-134 covers the stored window. See the D-3 note below.
+**SUPERSEDED 2026-10-03 (D-3, `rulings_s89.md`):** ruled COMPLEMENTS, not alternatives — ENH-133 is pulled into parity scope ahead of §H phase 2 (not yet started — schema ADR owed before DDL); ENH-134 covers the stored window. See the D-3 note below.
 
 **RULED 2026-10-03 (D-3, `rulings_s89.md`): pulled into parity scope ahead of §H phase 2; ENH-133/134 are COMPLEMENTS not alternatives; table sits outside jobid 19 targets with its own retention; schema ADR owed before DDL.**
 

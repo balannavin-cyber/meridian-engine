@@ -124,6 +124,14 @@ never a substituted default (ADR-020).
 **No DDL was applied and no writer was written.** The schema ADR is the next artefact
 (TD-S80-NEW-7 precedent); the spec is its input.
 
+## L11 (five-axis radar) — DECLINED-ON-EVIDENCE (2026-10-03)
+
+Absent from the parity target's terminal sample (`parity_target_render_study.md` §A2 — the terminal sample — not one of the 49 live values),
+landing-page illustration only (`parity_target_render_study.md` §A1), 0–10 per-axis scaling and axis feeds undisclosed
+(`parity_target_render_study.md` §F.4); composition-only, no new signal, three of five
+inputs unbuilt/gated. **ADR-025 D3** (reference doesn't render it) + **D4** (decline is a
+completed disposition, distinct from BLOCKED). **L11: PENDING → DECLINED-ON-EVIDENCE.**
+
 ---
 
 ## Session facts behind the #14 ruling, recorded once

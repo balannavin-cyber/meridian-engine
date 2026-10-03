@@ -88,7 +88,7 @@ Parking is not the same as leaving them unregistered. Clause 4 of D2 applies to 
 | L8 | Charm | **BLOCKED-ON-DECISION** | As L7; ships with it. |
 | L9 | IV term structure | **PENDING** | Requires an ingest change (§ below). Spec's live source claim refuted. |
 | L10 | IV surface | **PENDING** | 61/62 days in two blocks; must render the 2026-06-04 → 08-23 hole as absence. |
-| L11 | Five-axis radar | **PENDING** | Composition of five layers, three unbuilt. Last by construction. |
+| L11 | Five-axis radar | **PENDING** | Composition of five layers, three unbuilt. Last by construction. **[SUPERSEDED 2026-10-03 — **DECLINED-ON-EVIDENCE**. Absent from the terminal sample; composition-only; 0–10 scaling undisclosed. Ruling: `docs/research/s89_rulings/rulings_s89.md` → "L11 (five-axis radar)". Feeds the P6 closing amendment.]** |
 | L12 | Pin conviction | **PENDING** | HHI leg computes (ENH-122); ranked-candidates leg not built. Fails clauses 3 and 4. |
 | L13 | OI rotation | **PENDING** | Live straightforward; historical capped at 14 days by jobid 19. |
 | L14 | 30-session gamma river | **PENDING** | 299 days available. Watch the Cr-vs-unscaled unit convention — TD-S30-CANDIDATE-1 cost seven sessions to that class. |
@@ -343,7 +343,7 @@ The **S80 table above is left untouched as the S80 record.** This is the S81 sta
 | L8 | Charm | **PENDING** | as L7; ships with it |
 | L9 | IV term structure | **PENDING** | **unblocked at the source.** Capture depth **stage 1 (W1+W2) deployed and verified** — see B5. Depth 4 still gated, and see B3 on why that gate cannot currently be read |
 | L10 | IV surface | **PENDING** | — |
-| L11 | Five-axis radar | **PENDING** | — |
+| L11 | Five-axis radar | **PENDING** | **[SUPERSEDED 2026-10-03 — **DECLINED-ON-EVIDENCE**. Absent from the terminal sample; composition-only; 0–10 scaling undisclosed. Ruling: `docs/research/s89_rulings/rulings_s89.md` → "L11 (five-axis radar)". Feeds the P6 closing amendment.]** |
 | L12 | Pin conviction | **PENDING** | **both legs now compute**: HHI (ENH-122) + ranked (ENH-125). Fails clause 3 only |
 | L13 | OI rotation | **PENDING** | **live leg BUILT** (ENH-127). Historical leg still capped by jobid 19. Fails clause 3 only |
 | L14 | 30-session gamma river | **PENDING** | **BUILT** (ENH-126) on the gamma_metrics-only decision. Fails clause 3 only |

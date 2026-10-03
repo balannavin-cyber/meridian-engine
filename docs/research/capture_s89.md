@@ -151,3 +151,17 @@ plus `apt-get install bubblewrap socat`, and post-sandbox verification — all t
 database, `crontab -l` and greps for the host, and one operator-approved `/bin/cat` against a
 non-secret canary. No production code, no DDL, no engine pull, no register edits. The export is
 untracked and stays that way.*
+
+---
+
+## §6 — applied (2026-10-03, commit 91d284a)
+
+Written AFTER the register pass; §4 and §5 above were written BEFORE it and are left as-is for provenance, not rewritten.
+
+- §5 header "No register has been touched this session" is SUPERSEDED: 91d284a touched tech_debt.md, MERDIAN_System_Map.md, MERDIAN_Deployment_Topology.md, docs/research/README.md, ADR-029 and .claude/rules/data-access.md.
+- §4 "TD-S89-NEW-1 — assigned, not yet filed" is DISCHARGED: filed at the top of tech_debt.md.
+- §1 correction-policy question is RULED: correct live registers, leave archives and dated captures frozen (operator file list) — four live files corrected, six left frozen; scope recorded in data-access.md.
+- Still owed to the S89 close, untouched: CURRENT.md, session_log.md, merdian_reference.json, the S89_dev_starter supersede, and the project-knowledge upload.
+- The closing footer's "no register edits" clause is superseded by the first bullet above; its other three clauses (no production code, no DDL, no engine pull) stand.
+
+Commit 91d284a: 8 files, 277 insertions / 9 deletions, three-way sha match.

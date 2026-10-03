@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS public.gex_cycle_history (
     pin_state_reason        text,                     -- why NULL, when it is (missing param key etc.)
     held_for_cycles         integer,                  -- consecutive same-leader cycles, session-gated
     conviction              numeric,                  -- (1 - runnerup_share_ratio) * boost(T)
+    conviction_reason       text,                     -- why conviction is NULL, when it is
 
     -- ---- walls  (L4/L5) -------------------------------------------------
     call_wall_strike        numeric,                  -- v_gex_strike_walls.call_wall
@@ -145,6 +146,9 @@ COMMENT ON COLUMN public.gex_cycle_history.reconciled_at IS
 
 COMMENT ON COLUMN public.gex_cycle_history.reconciler_version IS
 'Identity of the reconciler build that finalised this row, mirroring writer_version. Kept separate so a re-derivation after a rule change (reconciler spec §5, --recompute) is attributable without destroying the original write''s provenance.';
+
+COMMENT ON COLUMN public.gex_cycle_history.conviction_reason IS
+'Why conviction is NULL, when it is: a null runnerup_share_ratio, trading_calendar unavailable (fail-open detected, so T is not trustworthy), or a null t_days. NULL when conviction resolved. Kept SEPARATE from pin_state_reason so the two gaps are never conflated — a valid pin_state must carry pin_state_reason NULL even on a cycle whose conviction could not be computed, and vice versa. Absence is not a verdict (ADR-020): a NULL conviction with no stored reason would be indistinguishable from one never attempted.';
 
 COMMENT ON COLUMN public.gex_cycle_history.is_fresh IS
 'Persisted from v_gex_pin_maxpain / v_gex_max_pain, never dropped: without it a stale-book cycle is indistinguishable from a fresh one in history. Measured example 2026-10-03: is_fresh = f at snapshot_age_min = 2670.7 reading Saturday.';

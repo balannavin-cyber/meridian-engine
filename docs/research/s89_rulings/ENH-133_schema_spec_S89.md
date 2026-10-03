@@ -21,13 +21,26 @@
 | Grain | **one row per `(symbol, expiry_date, ts)`** at the 5-minute γ cadence |
 | Primary key | `(symbol, expiry_date, ts)` |
 | `run_id` | **stored, not keyed** — `gamma_metrics.run_id` |
-| Expiry coverage | **per-expiry, both legs** (W1 and W2), not front-only |
+| Expiry coverage | **per-expiry, both legs** (W1 and W2), not front-only — but see the grain note: "both legs" is a property of the TABLE, not of one invocation |
 | Forward compatibility | the grain is a timestamp, not a cycle ordinal, so a future **1-minute pass (Candidate A)** writes into the same table **unchanged** |
 
-**Why `ts` and not `run_id` in the key.** `run_id` is one value per cycle across both
-legs, so it cannot distinguish the two expiry rows of the same cycle. Keying on
-`(symbol, expiry_date, ts)` admits both legs and still rejects a duplicate write of the
-same leg at the same instant.
+**What a `run_id` actually is — measured 2026-10-03, and it corrects an earlier reading in
+this file.** `run_pipeline` in `run_option_snapshot_and_gamma.py` is **per-symbol**
+(`main()` loops `for symbol in SYMBOLS`), and each call runs its own `run_ingest(symbol)`,
+so **each symbol gets its OWN `run_id`**. A `run_id` therefore carries **exactly ONE
+`(symbol, expiry_date)` row** in `gamma_metrics`: **493 of 493 run_ids** since 2026-09-29
+measured 1 row / 1 symbol / 1 expiry, and **zero** carried two symbols
+(`gex_strike_snapshots` has the same shape).
+
+So **both legs reach this table via SEPARATE run_ids** — one per symbol, and separate rows
+per expiry once capture depth ≥ 2 writes them. **"Both legs" is the TABLE's grain, not one
+invocation's output.**
+
+**Why `ts` and not `run_id` in the key.** Not because a `run_id` cannot distinguish two
+legs — today it never carries two. Because **two run_ids can share a `ts`** (the two
+symbols' cycles run in the same instant), so the key must **admit both while rejecting a
+duplicate of either**. `(symbol, expiry_date, ts)` does exactly that; `run_id` as a key
+would admit duplicates of the same leg written under a re-issued id.
 
 ---
 
@@ -98,6 +111,7 @@ different definitions on different clocks.
 | `pin_state_reason` | `text` | **derived** — why `pin_state` is NULL when it is |
 | `held_for_cycles` | `integer` | **derived** — §3.8 |
 | `conviction` | `numeric` | **derived** — §3.5 |
+| `conviction_reason` | `text` | **derived** — why `conviction` is NULL, when it is. **Kept separate from `pin_state_reason`**: a valid `pin_state` carries `pin_state_reason` NULL even when conviction could not be computed |
 
 **Five scalars the ruling named do not exist in any relation** and are therefore writer-
 derived, not selected: **runner-up strike, runner-up margin, gamma at pin, top-5 share,

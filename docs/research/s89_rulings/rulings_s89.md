@@ -35,6 +35,16 @@ remains owed and must come from an operator-authored or reference list. Log:
 `~/s89_canary/presandbox_20261003_0120.log` (2,337 B). Settings restored from `.bak_s89`,
 sha `c7f99908…`, deny count back to 22.
 
+## TD-S86-NEW-9 — RULED 2026-10-03 (pre-registered before the 2026-10-07 10:15:59 IST arm)
+
+The §2.6 ≥ 3×SE precondition gates the OFFSET / r_eff reading ONLY. The gamma reading (T1's gamma_relerr test) is gated independently by its own precondition — ATM rows ≥ 10 (§2.8) — as §2.10 established by precedent (E1's gamma refusal fired while its offset was a NO-TEST at 0.49×). Reading 2.
+
+Ruled on the design's structure, independent of any arm's outcome: ≥ 3×SE is defined on the offset median and its SE — a dispersion guard on the offset statistic — and does not bear on the gamma relative error, which has its own sample-size guard.
+
+APPLICATION — PROSPECTIVE, from the 2026-10-07 dte-1 arm onward. A4's ratified UNDECIDED (§2.11) STANDS as the historical record and is NOT retroactively flipped: the ambiguity surfaced after A4 was measured, so A4 is not re-scored under a rule adopted later. The 10-07 arm is the first measured under the fixed interpretation.
+
+Effect on 10-07: the arm's gamma counts if ATM rows ≥ 10, regardless of the offset ratio; T1 is decided on gamma_relerr (refuse only if exact/365 ATM and NEAR are both > 0.10).
+
 ---
 
 ## Session facts behind the #14 ruling, recorded once
@@ -68,7 +78,7 @@ nothing prompted.**
 
 ---
 
-## Still owed after these two rulings
+## Still owed after these rulings
 
 1. **The multi-spelling enumeration sweep** — explicitly *not* discharged by #14 beyond the one
    form. Needs an **operator-authored or reference list**; I am not to generate or extend it.
@@ -84,5 +94,5 @@ nothing prompted.**
 
 ---
 
-*S89 rulings, recorded 2026-10-03. Both rulings are the operator's text verbatim. Nothing here
+*S89 rulings, recorded 2026-10-03. All three rulings are the operator's text verbatim. Nothing here
 authorises a build, an install, or a sandbox enable.*

@@ -212,6 +212,8 @@ The NIFTY legs on A3 and A4 are stated because they are not absent, only unusabl
 
 **Corrected precondition.** An arm counts only if its **ATM median offset ≥ 3 × SE(median)**; otherwise that arm is a **NO-TEST**. This replaces the across-cycle framing described at §3(c). Applied to the four readings already in hand — dividing the two cited figures in each `r_eff.out` row — A0 NIFTY 12.2 / 0.932 ≈ 13.1× (`r_eff.out:19`), A1 NIFTY 9.8 / 1.089 ≈ 9.0× (`:28`), A1 SENSEX 45.5 / 2.054 ≈ 22.2× (`:29`) all clear it, while **A0 SENSEX 22.9 / 964.843 ≈ 0.02× does not** (`:20`). The precondition independently reaches the same verdict on the `dte = 0` arm that §2.5 reaches on other grounds.
 
+> **AMENDED S89 2026-10-03 (TD-S86-NEW-9, ADR-025 Amendment B; prospective from 2026-10-07):** this ≥ 3×SE precondition scopes the OFFSET / r_eff reading ONLY. The gamma reading (`gamma_relerr`, on which T1's refusal acts) is gated by its own precondition — ATM rows ≥ 10 (§2.8) — and counts whenever that is met, regardless of the offset ratio. Prior wording retained above.
+
 **Decision rule.**
 - **T1 PASS** → propose a self-computed L7 / L8 built on the **ENH-131 repricer**: vendor IV, `r` = the L3 session-median futures carry, `T` = exact/365, and `dte 0 → SKIPPED_EXPIRY`.
 - **T1 FAIL** → **no L7 / L8 view is proposed.** The refusal is the result, not a failure of the session.
@@ -415,6 +417,8 @@ Source: `a4_05_result.out:4-21`, eighteen rows — **both symbols returned all t
 3. **Interpretation clause NOT TRIGGERED.** It fires only on a refusal on `exact/365`, and no refusal occurred.
 
 **T1 PAIR VERDICT — `UNDECIDED`.** A3 (dte 2) counted at 3.79× and did not refuse; A4 (dte 1) is a NO-TEST at 1.18×. Counting arms: **A3 only**; refusals among them: **none**. Clause (a) therefore returns no refusal, and clause (b) governs: **T1 is UNDECIDED**, the re-run is the next SENSEX dte 1 cycle, **Wed 2026-10-07 10:15:59 IST**, and **no L7/L8 view is proposed**. Per the stamp, **an UNDECIDED T1 is not a refusal and must not be recorded as one** — §2.6's "T1 FAIL → no L7/L8" and this outcome share a consequence but not a meaning.
+
+> **TD-S86-NEW-9 RULED 2026-10-03 (prospective, from 2026-10-07):** ≥3×SE gates offset/r_eff only; gamma gated by rows≥10. **A4 is NOT recomputed under this ruling — it STANDS UNDECIDED** (the ratified clause (b) outcome) as its historical record. See `rulings_s89.md`.
 
 **Observations — recorded as observations, not findings.**
 

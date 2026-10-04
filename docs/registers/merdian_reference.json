@@ -734,6 +734,89 @@
     }
   },
   "files": {
+    "docs/decisions/ADR-030-per-cycle-layer-history.md": {
+      "local_path": null,
+      "aws_path": "/home/ssm-user/meridian-cc/docs/decisions/ADR-030-per-cycle-layer-history.md",
+      "purpose": "Schema ADR for gex_cycle_history. Deliberately SHORT -- it POINTS at ENH-133_schema_spec_S89.md rather than restating the schema. D1 adopts the per-cycle layer-history persistence pattern; D2 fixes retention OUTSIDE pg_cron jobid 19, keep indefinitely, ratifying spec section 4 rather than setting a new value.",
+      "status": "ACCEPTED S89 2026-10-04. Decision Index row added; next-free marker advanced ADR-030+ -> ADR-031+.",
+      "enh": "ENH-133",
+      "adr": "ADR-030"
+    },
+    "core/pin_state.py": {
+      "local_path": "C:\\GammaEnginePython\\core\\pin_state.py",
+      "aws_path": "/home/ssm-user/meridian-cc/core/pin_state.py",
+      "purpose": "ENH-133 pin-state machine, SINGLE HOME. NO PIN / SHIFTING / STABLE / LOCKED plus held_for_cycles carry-forward. Imported by write_gex_cycle_history_local.py and reconcile_gex_cycle_history_session_local.py; neither re-implements it.",
+      "reads": ["merdian_parameters (pin_state.* dot-keys)"],
+      "writes": [],
+      "status": "COMMITTED 2026-10-03 (S89, 0d0fb3f). NOT yet exercised against a live table -- gex_cycle_history does not exist until 2026-10-05.",
+      "enh": "ENH-133",
+      "adr": "ADR-030"
+    },
+    "write_gex_cycle_history_local.py": {
+      "local_path": "C:\\GammaEnginePython\\write_gex_cycle_history_local.py",
+      "aws_path": "/home/ssm-user/meridian-cc/write_gex_cycle_history_local.py",
+      "purpose": "ENH-133 per-cycle writer. One row per (symbol, expiry_date, ts) at the 5-minute gamma cadence, both expiry legs. Write-and-flag: the row is written even when the session gate is false.",
+      "reads": ["gamma_metrics", "gex_strike_snapshots", "v_gex_strike_rank", "v_gex_concentration", "option_chain_snapshots", "merdian_parameters"],
+      "writes": ["gex_cycle_history"],
+      "status": "COMMITTED 2026-10-03 (S89, 0d0fb3f). The orchestrator hook is a DIFF and is NOT applied: patches/2026-10-03_s89_orchestrator_gex_cycle_history_step.diff",
+      "enh": "ENH-133",
+      "adr": "ADR-030"
+    },
+    "reconcile_gex_cycle_history_session_local.py": {
+      "local_path": "C:\\GammaEnginePython\\reconcile_gex_cycle_history_session_local.py",
+      "aws_path": "/home/ssm-user/meridian-cc/reconcile_gex_cycle_history_session_local.py",
+      "purpose": "ENH-133 EOD reconciler. Settles the three-state session gate for the day once the session is complete, so an intraday PROVISIONAL verdict is resolved rather than left standing.",
+      "reads": ["gex_cycle_history", "option_chain_snapshots"],
+      "writes": ["gex_cycle_history"],
+      "status": "COMMITTED 2026-10-03 (S89, 0d0fb3f). NOT scheduled -- no cron line exists for it yet.",
+      "enh": "ENH-133",
+      "adr": "ADR-030"
+    },
+    "acceptance_enh133_local.py": {
+      "local_path": "C:\\GammaEnginePython\\acceptance_enh133_local.py",
+      "aws_path": "/home/ssm-user/meridian-cc/acceptance_enh133_local.py",
+      "purpose": "ENH-133 acceptance suite, spec section 5. Writer coverage is a RATIO against the gamma clock's own distinct ts, never a row count (TD-S54-NEW-1 guard).",
+      "reads": ["gex_cycle_history", "gamma_metrics"],
+      "writes": [],
+      "status": "COMMITTED 2026-10-03 (S89, 0d0fb3f). NOT yet run -- the table does not exist until 2026-10-05.",
+      "enh": "ENH-133",
+      "adr": "ADR-030"
+    },
+    "sql/2026-10-03_s89_gex_cycle_history.sql": {
+      "local_path": null,
+      "aws_path": "/home/ssm-user/meridian-cc/sql/2026-10-03_s89_gex_cycle_history.sql",
+      "purpose": "ENH-133 table DDL. Retention is stated in COMMENT ON TABLE: OUTSIDE pg_cron jobid 19, keep indefinitely.",
+      "reads": [],
+      "writes": ["gex_cycle_history"],
+      "status": "AUTHORED, NOT APPLIED. Applies Mon 2026-10-05 >= 16:00 IST against ADR-030.",
+      "enh": "ENH-133",
+      "adr": "ADR-030"
+    },
+    "sql/2026-10-03_s89_seed_pin_state_params.sql": {
+      "local_path": null,
+      "aws_path": "/home/ssm-user/meridian-cc/sql/2026-10-03_s89_seed_pin_state_params.sql",
+      "purpose": "Seeds the eight pin_state.* dot-keys by dated migration with ON CONFLICT DO NOTHING, because the ADR-016 CLI write path does not exist (TD-S89-NEW-2). Deliberately does NOT take ENH-83's scope.",
+      "reads": [],
+      "writes": ["merdian_parameters"],
+      "status": "AUTHORED, NOT APPLIED. Applies with the table on 2026-10-05.",
+      "enh": "ENH-133",
+      "adr": "ADR-030"
+    },
+    "sql/2026-10-03_s89_v_gex_greeks_l2.sql": {
+      "local_path": null,
+      "aws_path": "/home/ssm-user/meridian-cc/sql/2026-10-03_s89_v_gex_greeks_l2.sql",
+      "purpose": "ENH-98 parity L7/L8. Two views, v_gex_greeks_l2_strike and v_gex_greeks_l2_net. Four ANALYTIC Black-Scholes constructs -- explicitly NOT a finite difference off the ENH-131 grid, which sweeps spot at fixed sigma and T and so carries no sigma axis and no t axis. COMMENT and GRANT ship as LIVE statements (TD-S81-NEW-5).",
+      "reads": ["option_chain_snapshots", "index_futures_snapshots"],
+      "writes": [],
+      "status": "AUTHORED, NOT APPLIED. Applies Mon 2026-10-05 >= 16:00 IST, badged PROVISIONAL -- T1 pending 10-07, with a PRE-COMMITTED DROP if the 10-07 arm refuses T1. Pre-apply EXPLAIN 210.280/186.476 ms strike and 157.714/191.610 ms net, gate CTE loops=1 in both plans.",
+      "enh": "ENH-98"
+    },
+    "deploy/nginx/marketview.conf": {
+      "local_path": null,
+      "aws_path": "/etc/nginx/sites-available/marketview (live); tracked copy at /home/ssm-user/meridian-cc/deploy/nginx/marketview.conf",
+      "purpose": "Marketview nginx site config, brought under version control at S89 so the serving layer is rebuild-grade. :80 is a REDIRECTOR ONLY and serves no docroot; :443 carries auth_request to oauth2-proxy at SERVER level, so every location inherits the gate.",
+      "status": "TRACKED S89 2026-10-04 after the port-80 hardening. Live sha256 7a4e5ac7...; the pre-change backup is kept live at /etc/nginx/sites-available/marketview.PRE_PORT80_20261004_0400 and tracked alongside as deploy/nginx/marketview.PRE_PORT80_20261004_0400. Runbook: docs/runbooks/runbook_nginx_port80_hardening.md"
+    },
     "scripts/build_data_inventory.py": {
       "local_path": null,
       "aws_path": "/home/ssm-user/meridian-cc/scripts/build_data_inventory.py",
@@ -4919,10 +5002,16 @@
       "truncated_each_run": false
     }
   },
-  "version": "v66",
-  "last_updated_session": "Session 87",
-  "last_updated_date": "2026-10-01",
+  "version": "v67",
+  "last_updated_session": "Session 89",
+  "last_updated_date": "2026-10-04",
   "change_log": [
+      {
+        "session": "S89",
+        "date": "2026-10-03 -> 2026-10-04",
+        "type": "Fourteen operator rulings, one new ADR, two authored-not-applied DDL sets, a frontend deploy and a live security fix. No production Python changed, no DDL applied, engine not pulled.",
+        "summary": "ADR-030 FILED + ACCEPTED (per-cycle layer history, gex_cycle_history): deliberately SHORT, POINTS at ENH-133_schema_spec_S89.md rather than restating the schema; D1 adopts the per-cycle persistence pattern (one row per symbol/expiry_date/ts, both legs, run_id stored not keyed, timestamp key so a future 1-minute pass needs no renumbering, write-and-flag so a frozen session is FLAGGED rather than absent); D2 retention OUTSIDE pg_cron jobid 19, keep indefinitely, ratifying spec section 4 rather than setting a new value. DDL applies Mon 2026-10-05 >= 16:00 IST against it. Decision Index +1; next-free marker ADR-030+ -> ADR-031+; TD-S80-NEW-7's precedent satisfied in the order it intends (spec bound and DDL committed BEFORE the apply), though that TD itself stays OPEN because it is about gex_pin_maxpain_history. ENH-98 L7/L8 DESIGNED, AUTHORED, MEASURED PRE-APPLY, NOT BUILT: v_gex_greeks_l2_strike + v_gex_greeks_l2_net, four constructs per L78-1, analytic Black-Scholes and explicitly NOT a finite difference off the ENH-131 grid. Badged PROVISIONAL -- T1 pending 10-07 with a PRE-COMMITTED DROP if 10-07 refuses; an UNDECIDED 10-07 extends the stamp and fires nothing. Pre-apply EXPLAIN 210.280/186.476 ms strike, 157.714/191.610 ms net, gate CTE loops=1 both plans; two rejected gate shapes ran 11,040 and 26,424 ms, both over the PostgREST 8 s ceiling -- the ADR-021 failure reproduced inside the file's own first draft. D2 clauses 1/2/4 MET, clause 3 PENDING BY DECISION under Amendment B, so L7/L8 stay PENDING even if T1 passes. r barely matters and T does, the opposite of the L3 result: r over [0, 0.12] moves SENSEX dte-1 net dDelta/dt by 0.22 pct while the T convention moves dte-2 net dDelta/dt by 2.4x. dte 0 skipped on this layer's own evidence (net dDelta/dt -1,820 -> -23,744 -> -156,855 Cr/day across dte 2/1/0; d1 control 0.0031-0.0185 at dte 1-12 against 0.0643 at dte 0). A LIVE UN-GATED EXPOSURE FOUND AND CLOSED: nginx :80 was default_server with root /var/www/marketview, so any Host but the canonical one was served the whole SPA unauthenticated (651,242 B application/javascript measured); :443 was never exposed. Rewritten to a pure redirector; nginx -t then reload NOT restart (MainPID 550 unchanged); certbot renew --dry-run PASSED against the new config (authenticator is the nginx plugin, no webroot). The oauth2-proxy sign-in page embeds the requested path verbatim exactly once, so its size is 8484 + len(path): 8,485 B at /, 8,486 at /a, 8,495 at /aaaaaaaaaa, 8,509 at the 25-character asset paths. FORENSICS: the access log CANNOT answer the Host question (default combined format omits Host; :80 and :443 share one file), so response size discriminates. Over 9,194 lines 09-20 -> 10-04: 31 /assets/* serves at 200 with body > 20,000 B, 8 local and 23 external, of which 16 from one IP carrying a raw-IP Referer (the operator's browser) and 15 from 14 IPs with no Referer (DigitalOcean, Alibaba ranges). Bundle carries supabase.co x2, anon x4, eyJ x2, service_role x0 -- so NO rotation; but where RLS is off the GRANT alone is the boundary and it has no watcher. TD-S89-NEW-4 (TCP 80 at the security group; IMDSv2 attached-SG query MANDATORY first, per S39) and TD-S89-NEW-5 (anon-grant audit, starting at the two anon=rm views v_gex_max_pain and v_gex_pin_maxpain) filed. L11 PENDING -> DECLINED-ON-EVIDENCE; D-5a pressure leg DECLINED-ON-EVIDENCE; TD-S86-NEW-9 RULED; D-1..D-6, E-D2/E-D5/E-D7/E-D8, ENH-133 scope and L78-1/-2/-3 all ruled -- single source rulings_s89.md, never restated. Marketview IV tab shipped 75a4015 -> 6617ff6, deployed, three assets byte-identical to dist/ by cmp; Marketview Manual published as a claude.ai artifact. Assumption Register section D.45 added: 13 rows all REFUTED, ELEVEN of them my own claims withdrawn on measurement -- three 200s that proved nothing, a check that printed a verdict it never computed (sudo diff with process substitution cannot reach /dev/fd and the chain read non-execution as failure), a grep that counted my own comment, '2,757 un-gated serves' that is actually 4 with 46 responses of 496 B left UNEXPLAINED rather than explained away, a correction computed with the error it was correcting, and 'byte-identical' asserted from a size match without running cmp (the two sign-in responses are 8,509 B each but differ in exactly 8 bytes). The parity spec :292 effort total was NEVER a clean sum: the column is mixed-unit (4 rows in days = 2.5 d, 6 in hours = 17 h) and the spec states no day length. Enhancement Register Part 5 added with the Part-1 ID count DERIVED = 124 and the handle stated (distinct '### ENH-NN' headings); S88's 122 is not reproducible by any handle tried. The Decision Index maintenance clause was FIVE sessions stale on entry -- restamped in place per TD-S73-NEW-11 with the gap stated. NOTE ON THIS FILE: it is NOT plain json.dumps output -- some arrays are hand-compacted inline, so a re-dump would reformat thousands of lines. S89 asserted the format-fidelity roundtrip, found it FAILS, and edited by surgical text splice instead. LEDGER: TDs_NEW 5, TDs_CLOSED 0, ADRs_NEW 1, ADRs_AMENDED 0, Decision Index +1, section D.45 13 rows, reference v66 -> v67."
+      },
       {
         "session": "S88",
         "date": "2026-10-01 -> 2026-10-02",

@@ -2036,3 +2036,54 @@ chance line on scale-free levels (34 vs 36) and five above on within-day changes
 The scoring excludes price levels, which rank by index level rather than behaviour, and excludes
 the change in a spot-re-anchored OI window, which compares different strike sets. **Negative
 result, recorded as such.**
+
+---
+
+## §S89 — Session 89: five new files for a table that does not exist yet, two views authored against a go/no-go that is still undecided, and a serving layer brought under version control (2026-10-03/04)
+
+**No production Python changed. No DDL applied. Nothing under `~/meridian-engine` was run.**
+Everything below is either committed-and-unexercised or committed-and-unapplied, and each row says
+which.
+
+### S89.1 — new code, ENH-133 / ADR-030
+
+| File | Role | State |
+|---|---|---|
+| `core/pin_state.py` | **The pin-state machine's single home.** NO PIN / SHIFTING / STABLE / LOCKED plus `held_for_cycles` carry-forward. Imported by both the writer and the reconciler; **neither re-implements it** | COMMITTED `0d0fb3f`. **Never run against a live table** — `gex_cycle_history` does not exist until 2026-10-05 |
+| `write_gex_cycle_history_local.py` | ENH-133 per-cycle writer. One row per `(symbol, expiry_date, ts)` at the 5-min γ cadence, both expiry legs, **write-and-flag** | COMMITTED `0d0fb3f`. **Orchestrator hook is a DIFF, not applied**: `patches/2026-10-03_s89_orchestrator_gex_cycle_history_step.diff` |
+| `reconcile_gex_cycle_history_session_local.py` | EOD reconciler — settles the three-state session gate once the day is complete | COMMITTED `0d0fb3f`. **NOT scheduled; no cron line exists** |
+| `acceptance_enh133_local.py` | Acceptance suite, spec §5. Coverage is a **ratio against the γ clock's own distinct `ts`**, never a row count (TD-S54-NEW-1 guard) | COMMITTED `0d0fb3f`. **Not yet run** |
+
+**Reading the four together:** the chain is complete and **entirely unexercised**. The first real
+information about it arrives on 2026-10-05, and nothing before then should be read as validation.
+
+### S89.2 — new SQL, all AUTHORED-NOT-APPLIED
+
+| File | Object | Applies |
+|---|---|---|
+| `sql/2026-10-03_s89_gex_cycle_history.sql` | table `gex_cycle_history` | Mon 2026-10-05 ≥ 16:00 IST, **against ADR-030** |
+| `sql/2026-10-03_s89_seed_pin_state_params.sql` | 8 `pin_state.*` keys into `merdian_parameters` | with the table. By **dated migration, not a CLI** — the ADR-016 write path does not exist (**TD-S89-NEW-2**) |
+| `sql/2026-10-03_s89_v_gex_greeks_l2.sql` | views `v_gex_greeks_l2_strike`, `v_gex_greeks_l2_net` | same window, **badged PROVISIONAL — T1 pending 10-07**, with a **pre-committed DROP** if that arm refuses |
+
+Pre-apply EXPLAIN on the two views, run **inline as queries with no object created**: strike
+**210.280 / 186.476 ms**, net **157.714 / 191.610 ms**, `CTE Scan on gate` at **`loops = 1`** in
+both plans. Two rejected gate shapes measured **11,040 ms** (Seq Scan) and
+**26,424 ms** (490 loops) — both over the PostgREST 8 s ceiling, **the ADR-021 failure reproduced
+inside the file's own first draft**.
+
+### S89.3 — the serving layer enters version control
+
+`deploy/nginx/marketview.conf` (live, sha256 `7a4e5ac7…`) and
+`deploy/nginx/marketview.PRE_PORT80_20261004_0400` (pre-change, `b68e266c…`) are now tracked, each
+verified byte-identical to its host counterpart by `cmp`. **Until S89 the nginx config existed only
+on the host** — the same "one `DROP` from unrecoverable" shape ADR-025 D2 clause 4 names for views,
+on a file that decides whether the board is reachable at all. Runbook:
+`docs/runbooks/runbook_nginx_port80_hardening.md`.
+
+### S89.4 — what did NOT change, stated because the session looks larger than it is
+
+No table, view, function or index exists today that did not exist at S88. No orchestrator step was
+added — the hook is a diff. No cron line, no systemd unit. `gamma_metrics`,
+`gex_strike_snapshots` and `option_chain_snapshots` are untouched. **The only live change this
+session made to a running system was to nginx** (§S89.3), and that removed a surface rather than
+adding one.

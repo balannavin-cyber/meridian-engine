@@ -69,6 +69,40 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 **NOTE — 2026-10-03.** `v_gex_concentration.hhi_net` is the **top-1 gamma share, NOT a Herfindahl** — byte-identical to `v_gex_strike_rank` rank-1 `share_of_abs` and to `gamma_metrics.gamma_concentration` (0.0942 on 10-01); true HHI Σshare² ≈ 0.0464. The live board's 'HHI' label and D-6's ~0.10 / ~0.25 bands are therefore on **top-1 share**. `hhi_call` / `hhi_put` semantics **unverified**. Verify call/put and correct the board label before any Herfindahl claim.
 **FIX (phase-2 Pin tab):** the board's 'HHI' label should display the true `conc_hhi` (Σs²); keep top-1 share as a separate **'lead-strike share'** line. **ENH-133 now stores both.**
 
+### TD-S89-NEW-5 (S2 priority) — the Marketview bundle reached internet scanners while `:80` served it un-gated, so every anon-readable relation rested on RLS + GRANT alone, unwitnessed
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Nothing is broken and **no credential needs rotating** — `service_role` appears **0** times in the bundle. The server-side exposure is **closed** (S89 `:80` hardening). What this records is that the `anon` boundary was load-bearing in public for at least two weeks with no audit of what was read through it. |
+| **Filed** | 2026-10-04 (Session 89) |
+| **Component** | `/var/www/marketview/assets/*.js` · `/var/log/nginx/marketview.access.log*` · Supabase `anon` role · `v_gex_max_pain`, `v_gex_pin_maxpain` (the two `anon=rm` views) |
+| **How it was measured** | **Full method and the figure table are in `CASE-2026-09-22-anon-privilege-exposure` §10.2–§10.3; they are cited, not restated here**, so the two cannot drift apart. In outline: the access log **cannot** answer "which Host?" (default `combined` omits it, and `:80`/`:443` share one file), so **response size discriminates** — and the sign-in page's size is **`8484 + len(path)`** (§10.2), which is why equal size does **not** imply equal content. |
+| **The headline, separated rather than totalled** | **31** un-gated asset serves, **23 external**, of which **16 from ONE IP** (operator's browser, raw-IP `Referer`) and **15 from 14 distinct IPs with NO Referer**. Per-IP detail and the 4 external `index.html` serves: **§10.3**. The separation matters more than the total — a single total would read as 31 unknown parties. |
+| **A first-pass figure of mine that was WRONG, recorded because the correction is the useful part** | My first classification reported **2,757** "un-gated index.html hits". That filter caught 46 responses of **200 / 496 B**, which is **neither** `index.html` (878 B) **nor** the sign-in page (8,485 B). **496 B could not be reproduced** — oauth2-proxy returns 403 / 8,485 B on both paths probed. The confirmed un-gated HTML serves are **4**, not 2,757, and **the 496 B responses remain unidentified.** No explanation is offered, because inventing one to make the data fit is the named anti-pattern. |
+| **What the bundle contains — presence only, no values read** | `supabase.co` ×2 · `supabase` ×72 · `anon` ×4 · `eyJ` ×2 (two JWTs) · **`service_role` ×0.** |
+| **Why this is NOT a rotation incident** | The Supabase **anon key is designed to be public**, and **D.21.2 records that trust model as VALIDATED**. `service_role` is absent. Proposing a rotation would be the wrong fix — the same shape as CASE-2026-09-22's *"supply the key, never restore the grant"*. |
+| **Why it is nevertheless S2** | **TD-S81-NEW-2 established that where RLS is OFF, the GRANT alone is the boundary** — there is no policy to filter, and ~100 tables are in that state. This TD records that the key to that boundary demonstrably left the building, so the GRANT's correctness is now the only control — **and it has no watcher.** CASE-2026-09-22 §7(e) already owes a standing `relations_with_anon_non_select = 0` check that does not exist. |
+| **Where to start** | The two views measured at **`anon=rm`** rather than `anon=r` — **`v_gex_max_pain`** and **`v_gex_pin_maxpain`** (S89, from `pg_class.relacl`; the other ten board views read `anon=r`). They carry **MAINTAIN**, the CASE-2026-09-22 default-privileges shape, and are the only known live instances. **`information_schema.role_table_grants` CANNOT see this** — run as `merdian_ro` it omits `anon`'s grants entirely and returns a clean-looking list. **Use `pg_class.relacl`.** |
+| **Proper fix** | (1) audit every anon-readable relation against what the frontend actually reads (CASE §7(c), TD-S81-NEW-2); (2) **`ALTER DEFAULT PRIVILEGES`, not `REVOKE` alone** — `REVOKE` alone reproduces S39; (3) the standing check from CASE §7(e). |
+| **Not this TD's job** | Closing TCP 80 at the security group — that is **TD-S89-NEW-4**. |
+| **Cross-ref** | **CASE-2026-09-22-anon-privilege-exposure** §7, §10 (the S89 forensic addendum) · **TD-S81-NEW-1 / -2 / -3** · **D.21.1 / D.21.2** · **TD-S89-NEW-4** · `docs/runbooks/runbook_nginx_port80_hardening.md`. |
+| **Status** | **OPEN.** |
+
+### TD-S89-NEW-4 (S3 priority) — TCP 80 is still open to the world at the security group; the `:80` hardening makes the port answer only redirects, it does not close the port
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The exposure it guarded is already closed in nginx — `:80` serves no docroot and 301s everything to the gated host. This is the remaining belt: the port is reachable from `0.0.0.0/0` and need not be. |
+| **Filed** | 2026-10-04 (Session 89) |
+| **Component** | AWS security group on `i-0878c118835386ec2` (attached SG measured `launch-wizard-1` at S39) · `/etc/nginx/sites-available/marketview` · `deploy/nginx/` |
+| **Why the port cannot simply be shut** | **Let's Encrypt validates HTTP-01 over port 80.** Renewal here uses the **certbot nginx plugin** — `/etc/letsencrypt/renewal/marketview.meridianalpha.in.conf` reads `authenticator = nginx`, `installer = nginx`, with **no `webroot_path`** — and `snap.certbot.renew.timer` fires daily. Closing 80 outright breaks renewal unless the challenge moves to **DNS-01** first. **That decision is what this TD carries; it is not a one-line SG edit.** |
+| **MANDATORY PRECONDITION on any SG edit** | **Run the IMDSv2 attached-SG query from the running instance FIRST:** `TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600") && curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/security-groups`. **This is a settled decision, not advice** — S39 lost hours to SG edits applied to the orphan `launch-wizard-2` while the attached group was `launch-wizard-1`; Console naming and operator memory were both wrong. |
+| **What S89 did instead** | nginx `:80` rewritten to a pure redirector — no `root`, no `index`, no SPA fallback; `location / { return 301 https://marketview.meridianalpha.in$request_uri; }`. Verified **301** for raw-IP and unknown-Host (both previously **200**, the asset at 651,242 B), `:443` **unchanged at 200 / 8,485 B**, and **`certbot renew --dry-run` succeeded against the new config**. |
+| **What this does NOT undo** | Assets already fetched carry `Cache-Control: public, immutable, max-age=2592000` — **30 days**. **Closing a hole revokes nothing already served**; what was served is **TD-S89-NEW-5**. |
+| **Proper fix** | Decide whether 80 stays open for ACME or renewal moves to DNS-01; if it is to be closed, **IMDSv2 query first**, then the SG rule, then **re-run `certbot renew --dry-run` as the proof**. |
+| **Cross-ref** | **TD-S89-NEW-5** · **TD-S39-NEW-4** (the orphan `launch-wizard-2`, still owed deletion) · `docs/runbooks/runbook_nginx_port80_hardening.md` · `deploy/nginx/` · ADR-030 is unrelated and is not cited here. |
+| **Status** | **OPEN.** |
+
 ### TD-S89-NEW-3 (S3 priority) — `r_sess` (futures-implied carry) and ENH-98's `r_eff` disagree 2.7× on a same-named quantity, and the split is unreconciled
 
 **S3 · Filed 2026-10-03 (Session 89) · Component:** `v_gex_repriced_flip.r_sess` · ENH-98 go/no-go instrument (`r_eff`) · `index_futures_snapshots`. **OPEN.**

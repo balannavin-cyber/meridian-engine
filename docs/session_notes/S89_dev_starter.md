@@ -4,6 +4,7 @@
 |---|---|
 | Document | `docs/session_notes/S89_dev_starter.md` |
 | Written | S88 doc-close, 2026-10-02 |
+| **Status** | **SUPERSEDED at the S89 doc-close, 2026-10-04.** S89 is closed; this file is the worklist S88 wrote *for* it and is kept as that record, not as live guidance. **Current state and the next session's list are in `docs/session_notes/CURRENT.md`.** Two items here are specifically stale: the **L11 "decline or pending — unresolved"** line (`:88`) was **RULED DECLINED-ON-EVIDENCE** on 2026-10-03, and the §H/parity queue was reordered by rulings D-1…D-6. |
 | Read order | **`CLAUDE.md` → `CURRENT.md` → this file.** A dated worklist, not a substitute for either. |
 | Resume | **Claude Code runs in a plain SSM shell, not tmux.** `cd /home/ssm-user/meridian-cc && claude --continue` |
 | §0 provenance | **No S88 starter exists in the tree** (checked: no `docs/session_notes/S88*`, no `*starter*` file), so §0 is the operator's supplied text, not carried verbatim from a predecessor. |

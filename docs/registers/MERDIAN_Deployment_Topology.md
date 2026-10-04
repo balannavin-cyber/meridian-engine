@@ -1979,3 +1979,56 @@ The `eod_health_check` cron installed at S82 **fired on schedule for the first t
 session`**. That is the S82 line working as installed; no topology change follows from it. One S82
 expectation about its output did not hold and is recorded in §D.39 rather than here, because it is
 a claim about a check's semantics, not about deployment.
+
+---
+
+## §S89 — Session 89 (2026-10-03/04): the Marketview frontend gained a tab, and the port it was reachable on stopped serving the application
+
+Two changes on `i-0878c118835386ec2`, both in the **presentation** tier. **No Local↔AWS boundary
+moved, no runner, no cron line, no systemd unit, no token path.** The engine tree was **not
+pulled** — operator-terminal only, standing rule.
+
+### S89.A — Marketview redeploy, `75a4015 → 6617ff6`
+
+Eight commits from `balannavin-cyber1/meridian-connect`, headline being the **IV tab** (new
+`src/components/board/IVPanel.tsx`, 177 lines), an IV-smile dead-strike fix and a regime-label sign
+fix. Built with Vite 7.3.3 (1,857 modules, 9.20 s) and published by the canonical three-line deploy
+with a backup first: `/var/www/marketview.PRE_IV_20261004_0329`.
+
+**Verified at the file layer, and the distinction matters:** `index.html`,
+`index-B2zSVlAX.css` and `index-Bp8WxCgw.js` each **byte-identical to `dist/`** by `cmp`. The
+rsync reported `speedup 1.00` — a full transfer, expected, since every hashed asset name changed.
+**What was NOT verified is that the IV tab renders correctly against live data**; that needs an
+authenticated browser load, and the chain clock will read **2026-10-02 15:40 IST** because 10-02
+was Gandhi Jayanti and 10-03/04 are the weekend.
+
+### S89.B — nginx `:80` hardening (the live security change)
+
+`:80` was `default_server` with `root /var/www/marketview`, so **any `Host` other than
+`marketview.meridianalpha.in` was served the application unauthenticated** — measured at
+**651,242 B of `application/javascript`**. It is now a **redirector with no docroot**;
+`:443`, which carries `auth_request` at server level and was never exposed, is unchanged.
+
+Applied under a hash gate (`b68e266c…`), one diff hunk, `nginx -t` **before** the reload, and
+**`reload` not `restart`** — **MainPID 550 unchanged, `ActiveEnterTimestamp` still 2026-09-22**,
+which is the evidence of that. **`certbot renew --dry-run` PASSED against the new config**;
+renewal uses the **certbot nginx plugin** (`authenticator = nginx`, no `webroot_path`), so the
+`/.well-known/` location in the config is **inert** and labelled as such.
+
+**Topology consequence:** the host's HTTP surface is now **canonical-host-only**. Anything that
+reached Marketview by raw IP — including the `http://13.63.27.85/marketview` URL that appears in
+older registers — now receives a 301 to the gated host. **`scripts/smoke/smoke_probe_marketview_surfaces.py`
+is unaffected**: its `/_health` target was deliberately kept on `:80`, and it is the only
+unauthenticated target that probe has.
+
+**Two limits, recorded so they are not assumed away.** Already-fetched assets carry
+`Cache-Control: public, immutable, max-age=2592000` — **30 days** — so closing the hole revokes
+nothing already served (**TD-S89-NEW-5**). And **TCP 80 remains open at the security group**
+(**TD-S89-NEW-4**); closing it is a separate decision that must begin with the **IMDSv2
+attached-SG query**, per the settled S39 finding.
+
+### S89.C — the config is now rebuild-grade
+
+`deploy/nginx/marketview.conf` and `deploy/nginx/marketview.PRE_PORT80_20261004_0400` are tracked
+and `cmp`-verified against the host. Before S89 this file existed **only** on the instance, and the
+Disaster Rebuild runbook had no pointer to it.

@@ -624,6 +624,15 @@ If a phase fails irrecoverably, the system can be rolled back to the previous ph
 
 ---
 
+## Rebuild inputs added after this runbook was written
+
+- **`deploy/nginx/marketview.conf`** — the Marketview nginx site config, tracked from S89
+  (2026-10-04). Before then it existed **only** on the instance, so a host loss took the serving
+  layer with it. Restore to `/etc/nginx/sites-available/marketview`, symlink into `sites-enabled/`,
+  `nginx -t`, then reload. **`:80` is a redirector with no docroot and `:443` carries
+  `auth_request` to oauth2-proxy — a rebuild that omits the TLS half leaves the board ungated.**
+  Procedure and verification: `docs/runbooks/runbook_nginx_port80_hardening.md`.
+
 ## Related
 
 - **Source documents:**

@@ -124,6 +124,8 @@ make it work again is also the way that re-opens the hole.
 | (c) | **Restrict anon SELECT to the frontend's 23 relations.** `capital_tracker`, `app_settings` and others remain anon-readable and are consumed by nothing. | **TD-S81-NEW-2** |
 | (e) | **A STANDING CHECK**, because a resolved item has no watcher: a daily query asserting `relations_with_anon_non_select = 0`, wired into the proven `bin/disk_guard.sh` Telegram path or `eod_health_check`. **Without it, item 3 of the fix is trusted rather than verified.** | **TD-S81-NEW-3** |
 
+| **(f)** | **The anon key is now known to have reached parties other than the operator** — see §10, added S89. The exposure window for the KEY is wider than the window for any one relation, and no rotation is possible or needed (`service_role` is absent from the bundle). **What this makes urgent is (c) and (e), not a rotation.** | **TD-S89-NEW-5** |
+
 *(d) is §6 above — a behaviour change to expect, not work to do.*
 
 ---
@@ -155,3 +157,88 @@ Three of this project's standing findings arrived together, on one object:
 **Cross-ref.** D.21.1 (reopened as a live regression, then closed at the mechanism) · D.21.2 (trust
 model corrected) · **D.37.8** · TD-S69-NEW-1 · TD-S81-NEW-1 / -2 / -3 / -4 · TD-S80-NEW-10 and
 ENH-128 (`v_max_pain_by_strike`, the object that surfaced it) · ADR-021 · S39 13-surface REVOKE.
+
+---
+
+## 10. Forensic addendum — 2026-10-04 (S89): the anon key reached internet scanners
+
+**This is not a second incident.** It is evidence about the blast radius of the one above, and it
+is recorded here rather than in a new CASE so the exposure keeps a single file. **Adding a dated
+section sets an amendment convention this file did not previously have** — stated, because it is a
+precedent and not merely an edit.
+
+### 10.1 How the exposure happened a second way
+
+The S39/S80 story is about privileges *inside* the database. This is about the **key**. A separate
+defect on the Marketview host served the frontend bundle unauthenticated: nginx `:80` was
+`default_server` with `root /var/www/marketview`, so **any request whose `Host` was not
+`marketview.meridianalpha.in`** — a raw-IP hit included — received the application. Closed
+2026-10-04; `docs/runbooks/runbook_nginx_port80_hardening.md`.
+
+**`:443` was never exposed.** `auth_request` sits at server level there, so every path, assets
+included, returns the oauth2-proxy sign-in page.
+
+### 10.2 Method, and what the log cannot do
+
+**The access log cannot answer "which `Host`?"** — the format is nginx default `combined`, which
+**omits `Host`**, and `:80` and `:443` write to the same file. **Response size is the discriminator
+instead:** an un-gated serve is the real asset; a gated one is the sign-in page.
+
+**The sign-in page embeds the requested path verbatim, exactly once, so its size is
+`8484 + len(path)`** — measured 8,485 B at `/`, 8,486 at `/a`, 8,495 at `/aaaaaaaaaa`, 8,509 at the
+25-character asset paths. **Equal size therefore follows from equal path length and says nothing
+about equal content:** the real and bogus asset responses are both 8,509 B and differ in **exactly
+8 bytes**, the embedded filename (sha `37a26395…` vs `4862c6ee…`, `cmp -l` = 8).
+
+### 10.3 What was measured
+
+Over **9,194** access-log lines spanning **2026-09-20 → 10-04**, counting `200` responses on
+`/assets/*` with body **> 20,000 B**:
+
+| | count |
+|---|---|
+| un-gated asset serves, total | **31** |
+| — from `127.0.0.1` (the S89 probes themselves) | 8 |
+| — **external** | **23** |
+| of the external: from **one** IP carrying `Referer: http://13.63.27.85/marketview` then the canonical host — consistent with the operator's own browser | 16 |
+| of the external: **no `Referer`**, from **14 distinct IPs** — DigitalOcean (`165.22.255.13`, `146.190.98.133`, `134.122.123.32`), Alibaba (`47.89.246.29`) and others, mostly the **595,967 B** bundle — **the bundle live during the exposure window; the current asset measures 651,242 B, a later build**, so the two figures elsewhere in the registers are different builds and not a discrepancy | **15** |
+| external `index.html` serves (one `masscan/1.0`, one `CensysInspect`) | 4 |
+
+### 10.4 What the bundle contains — presence only, no values read
+
+`supabase.co` ×2 · `supabase` ×72 · `anon` ×4 · `eyJ` ×2 (two JWTs) · **`service_role` ×0.**
+
+### 10.5 The disposition, and the wrong fix
+
+**No rotation.** The Supabase **anon key is public by design** and **D.21.2 records that trust
+model as VALIDATED**; `service_role` is absent. Rotating would be the same error shape §6 already
+names — *supply the key, never restore the grant*.
+
+**What this does change is the weight on §7(c) and §7(e).** **TD-S81-NEW-2 established that where
+RLS is OFF the GRANT alone is the boundary** — there is no policy to filter, and ~100 tables are in
+that state. The key to that boundary is now known to be held by parties nobody chose, so the
+GRANT's correctness is the only remaining control, **and it still has no watcher**: §7(e)'s standing
+`relations_with_anon_non_select = 0` check does not exist.
+
+**Where to start:** the two views measured at **`anon=rm`** rather than `anon=r` —
+**`v_gex_max_pain`** and **`v_gex_pin_maxpain`** (S89, from `pg_class.relacl`; the other ten board
+views read `anon=r`). They carry **MAINTAIN**, the default-privileges shape §2 diagnoses, and are
+the only known live instances. **`information_schema.role_table_grants` cannot see this** — run as
+`merdian_ro` it omits `anon`'s grants entirely and returns a clean-looking list. Use
+`pg_class.relacl`.
+
+### 10.6 Two things this does not establish
+
+1. **Nothing here shows the key was USED.** It shows it was *served*. Whether any of those IPs
+   queried PostgREST is a question for the Supabase API log — which is **§7(a), still owed**.
+2. **Closing the hole revokes nothing already served.** Assets carry
+   `Cache-Control: public, immutable, max-age=2592000` — **30 days**.
+
+**One figure is recorded as unexplained rather than explained.** A first pass over the same log
+reported **2,757** un-gated `index.html` serves; the real count is **4**. The filter had caught 46
+responses of **`200 / 496 B`**, which match neither `index.html` (878 B) nor the sign-in page, and
+**could not be reproduced**. They remain unidentified, and no mechanism is proposed for them.
+
+**Cross-ref.** TD-S89-NEW-4 (TCP 80 at the security group; **IMDSv2 attached-SG query mandatory
+first**, S39) · **TD-S89-NEW-5** (this disposition) · TD-S81-NEW-2 · D.21.2 · §D.45.1, §D.45.3,
+§D.45.12 · `docs/runbooks/runbook_nginx_port80_hardening.md`.

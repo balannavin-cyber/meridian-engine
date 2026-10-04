@@ -177,7 +177,9 @@ As L7, ∂δ/∂t. Same source, same horizon, same ENH, same blocker. Ship with 
 | ENH | none |
 | Effort | ~1 day (rotatable 3-D render is the cost, not the data) |
 
-### L11 · Five-axis positioning radar — **ABSENT**
+### L11 · Five-axis positioning radar — **ABSENT** · **DECLINED-ON-EVIDENCE 2026-10-03 (S89)**
+
+> **DISPOSITION: DECLINED-ON-EVIDENCE** under ADR-025 **D3** (the reference does not render it) and **D4** (a decline is a completed disposition, not a hole). Absent from the parity target's terminal sample — it is a landing-page illustration, not one of the 49 live values — composition-only over five layers of which three are unbuilt or gated, and its 0–10 per-axis scaling and axis feeds are undisclosed. Ruling: `docs/research/s89_rulings/rulings_s89.md` → "L11 (five-axis radar)". ADR-025 carries the stamp at `:91` and `:346`. **The section below is left as written**, as the record of what was specced before the decline.
 
 | | |
 |---|---|
@@ -287,9 +289,19 @@ Ordered by value-per-hour, with dependencies respected.
 | 7 | **L13 OI rotation** | 4 h | Live is easy; historical is bounded at 14 d and that must be said on the panel |
 | 8 | **L7+L8 vanna/charm** | 0.5 d | Needs the ENH-98 deferral lifted first — an operator decision |
 | 9 | **L10 IV surface** | 1 d | 61/62 d with a rendered hole |
-| 10 | **L11 radar** | 0.5 d | Composition; last by construction |
+| ~~10~~ | ~~**L11 radar**~~ | ~~0.5 d~~ | **DECLINED-ON-EVIDENCE 2026-10-03 (S89)** — struck, not deleted. Excluded from the sums below |
 
-**Total ≈ 5 working days** of build, excluding the Marketview iteration cycles, which run
+**Total, parsed from the effort column above rather than carried: 2.0 d + 17 h across the nine
+live rows** (L11 struck). With L11 it is 2.5 d + 17 h.
+
+**This line previously read *"Total ≈ 5 working days"*, and that was never a clean sum.** The
+effort column is **mixed-unit** — four rows in days, six in hours — and **the spec states no
+hours-per-day anywhere**, so the two sub-sums cannot be collapsed without a factor the document
+does not supply. The collapsed figure is also **not invariant**: the all-rows day total is
+`2.5 + 17/f`, which rounds to 5 for f = 6…8 and to 4 at f ≥ 9; without L11 it is `2.0 + 17/f`,
+which rounds to 4 for f ≥ 7 and to 5 at f = 6. **So the old figure depended on an unstated
+convention and is retired rather than re-rounded** (S89, §D.45.8; the first correction to it was
+itself wrong, §D.45.9). Both sub-sums exclude the Marketview iteration cycles, which run
 through the existing Lovable → GitHub → AWS pipeline (`ENH-110` Phase 1, 3-line redeploy).
 
 The one-day figure that has been quoted in conversation appears nowhere in the registers

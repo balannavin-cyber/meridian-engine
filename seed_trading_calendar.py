@@ -77,12 +77,17 @@ def main() -> int:
     today = now_ist().date()
     rows = []
     skipped = []
+    closed_rows = []  # S90_SEED_CLOSED_DAYS (ADR-020 belt, ADR-031 D5, R0.8)
     for offset in range(days):
         d = today + timedelta(days=offset)
         date_str = d.strftime("%Y-%m-%d")
         cfg = get_session_config_for_date(date_str)
         if not cfg.is_open:
             skipped.append((date_str, cfg.notes))
+            # S90_SEED_CLOSED_DAYS: a closed day is written as a row, never left absent -- absence
+            # read as OPEN by inline gates is what ran the 2026-10-02 frozen ingest.
+            closed_rows.append({"trade_date": date_str, "is_open": False, "open_time": None,
+                                "holiday_name": cfg.notes, "notes": f"closed (seeder, {cfg.notes})"})
             continue
         rows.append({
             "trade_date": date_str,
@@ -106,6 +111,23 @@ def main() -> int:
     if dry_run:
         print("[DRY-RUN] no writes performed.")
         return 0
+
+    if closed_rows:
+        # S90_SEED_CLOSED_DAYS: ignore-duplicates, so an existing row (an operator-set special
+        # session, or a belt row) is never overwritten by this pass.
+        cresp = requests.post(
+            f"{supabase_url}/rest/v1/{TABLE}?on_conflict=trade_date",
+            headers={"apikey": service_key, "Authorization": f"Bearer {service_key}",
+                     "Content-Type": "application/json",
+                     "Prefer": "resolution=ignore-duplicates,return=representation"},
+            data=json.dumps(closed_rows), timeout=30)
+        if cresp.status_code not in (200, 201):
+            print(f"[ERROR] closed-day insert failed: HTTP {cresp.status_code} | {cresp.text[:500]}",
+                  file=sys.stderr)
+            return 1
+        cw = cresp.json() if cresp.text else []
+        print(f"[OK] closed days: {len(cw) if isinstance(cw, list) else 0} new of {len(closed_rows)} "
+              f"(existing rows left untouched).")
 
     if not rows:
         print("[OK] nothing to seed (all days in window are closed).")

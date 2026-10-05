@@ -114,6 +114,13 @@ def main():
         print(f"ERROR: Coverage script not found: {COVERAGE_SCRIPT}")
         sys.exit(1)
 
+    # S90_EOD_FULL_LAP: the cursor persists across days, so a sweep that stops when the cursor
+    # returns to 0 only covers [start_cursor, end). S90 measured 557 OK of 1,385 on
+    # 2026-10-05: 327 tickers unrefreshed since 09-25, the builder's 95 % gate never met.
+    # Now: one FULL lap -- continue past 0 and stop on returning to the start cursor.
+    start_cursor = None
+    wrapped = False
+
     for run_no in range(1, MAX_RUNS + 1):
         print()
         print("-" * 72)
@@ -129,6 +136,9 @@ def main():
         coverage_output = ""
 
         next_cursor = parse_value(ingest_output, "Next cursor")
+        if start_cursor is None:
+            _c = parse_value(ingest_output, "Cursor")
+            start_cursor = int(_c) if _c is not None and _c.isdigit() else 0
         status = parse_value(ingest_output, "Status")
         failures = parse_value(ingest_output, "Failures")
         processed = parse_value(ingest_output, "Processed")
@@ -196,7 +206,13 @@ def main():
             break
 
         if next_cursor == "0":
-            print("Stopping because cursor returned to 0 after progressing through the universe.")
+            if not start_cursor:
+                print("Stopping because cursor returned to 0 after a full lap from 0.")
+                break
+            wrapped = True
+            print(f"[S90_EOD_FULL_LAP] cursor wrapped to 0; continuing to start cursor {start_cursor}")
+        elif wrapped and next_cursor.isdigit() and int(next_cursor) >= start_cursor:
+            print(f"[S90_EOD_FULL_LAP] full lap complete (back at cursor {next_cursor} >= start {start_cursor})")
             break
 
         time.sleep(SLEEP_BETWEEN_RUNS_SEC)

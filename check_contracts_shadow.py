@@ -181,13 +181,19 @@ def scope_filters(c: Dict[str, Any]) -> Dict[str, str]:
 PAGE = 1000  # PostgREST max_rows cap observed on this project (S90 first read)
 
 
-def select_all(sb, table: str, columns: str, filters: Dict[str, str], order: str) -> List[Dict[str, Any]]:
-    """Page through a select; a single select is silently capped at PAGE rows."""
+def select_all(sb, table: str, columns: str, filters: Dict[str, str], order: str,
+               stop_after: Optional[datetime] = None) -> List[Dict[str, Any]]:
+    """Page through a select ordered ascending on `order`; a single select is silently
+    capped at PAGE rows. stop_after: stop once a page passes this time -- the client takes
+    one filter per column, so the upper bound is enforced by stopping, not by the query
+    (S90: an --as-of a week back otherwise paged every row up to today)."""
     out: List[Dict[str, Any]] = []
     while True:
         page = sb.select(table, columns=columns, filters=filters, order=order, limit=PAGE, offset=len(out))
         out.extend(page)
         if len(page) < PAGE or len(out) >= 200_000:
+            return out
+        if stop_after is not None and parse_ts(page[-1][order]) > stop_after:
             return out
 
 
@@ -216,7 +222,7 @@ def read_product(sb, c: Dict[str, Any], as_of: datetime):
     need = int(c.get("movement_window_cycles") or 3) + 1
     since = newest - timedelta(minutes=int(c["cadence_min"]) * (need + 1))
     rows = select_all(sb, c["relation_name"], ",".join(cols),
-                      {**scope_filters(c), t: f"gte.{since.isoformat()}"}, order=t)
+                      {**scope_filters(c), t: f"gte.{since.isoformat()}"}, order=t, stop_after=newest)
     window: Dict[Any, List[Dict[str, Any]]] = {}
     for r in rows:
         rt = parse_ts(r[t])
@@ -259,6 +265,12 @@ def main() -> int:
     own: Dict[str, Tuple[str, Optional[str]]] = {}
     detail: Dict[str, Dict[str, Any]] = {}
     for c in contracts:
+        historical = as_of < datetime.now(timezone.utc) - timedelta(minutes=15)
+        if historical and c["time_col"] not in (c.get("grain") or []):
+            # grain without a time column = one row per key, overwritten: no history to judge
+            own[c["product"]] = ("UNKNOWN", "latest-only product; cannot be judged as of a past time")
+            detail[c["product"]] = {"history": False}
+            continue
         if not is_daily(c) and not open_now:  # calendar first: no read outside the session
             own[c["product"]] = ("CLOSED", "outside session or closed day")
             detail[c["product"]] = {"calendar": "closed"}
@@ -271,6 +283,13 @@ def main() -> int:
             st, why, chk = own_status(c, newest, at_newest, window, as_of, open_now, behind)
         except Exception as e:  # a check that cannot run is UNKNOWN, never OK
             st, why, chk = "UNKNOWN", f"check failed: {type(e).__name__}: {e}"[:300], {}
+        vf = c.get("valid_from")
+        if vf and as_of < parse_ts(vf):
+            # contracts are not versioned yet (PK = product): a past as-of is judged by
+            # today's contract. Say so on the row rather than present it as in force.
+            note = f"contract applied retroactively (in force from {str(vf)[:10]})"
+            why = f"{why}; {note}" if why else (note if st != "OK" else None)
+            chk = {**chk, "contract_in_force": False}
         own[c["product"]] = (st, why)
         detail[c["product"]] = chk
 

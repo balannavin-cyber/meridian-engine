@@ -287,10 +287,12 @@ def execute_pipeline(run_ids: Dict[str, str]) -> bool:
     ])
 
     failed_steps: List[str] = []
+    LAST_FAILED_STEPS.clear()  # S90_RUNNER_LEDGER
 
     for cmd, label, timeout in steps:
         if not run_compute_step(cmd, label, timeout):
             failed_steps.append(label)
+            LAST_FAILED_STEPS.append(label)
             # Continue to next step (don't fail fast, so we see which steps break)
 
     if failed_steps:
@@ -303,6 +305,31 @@ def execute_pipeline(run_ids: Dict[str, str]) -> bool:
     return True
 
 
+# S90_RUNNER_LEDGER (ADR-031 D7.4, R01-F1): one script_execution_log row per cycle.
+# The ledger never blocks compute: any ledger error is logged and swallowed.
+LAST_FAILED_STEPS: List[str] = []
+
+
+def _ledger_open():
+    try:
+        return ExecutionLog(script_name="run_merdian_shadow_runner_aws.py", expected_writes={})
+    except Exception as e:
+        log_message(f"[LEDGER] open failed (compute continues): {e}", "WARN")
+        return None
+
+
+def _ledger_close(led, rc: int, reason: str, notes: str = "", error: str = "") -> int:
+    if led is not None:
+        try:
+            if reason == "SUCCESS":
+                led.complete(notes=notes or None)
+            else:
+                led.exit_with_reason(reason, exit_code=rc, notes=notes or None, error_message=error or None)
+        except Exception as e:
+            log_message(f"[LEDGER] close failed: {e}", "WARN")
+    return rc
+
+
 def main() -> int:
     """
     Main entry point.
@@ -312,18 +339,19 @@ def main() -> int:
     4. Log results
     """
     log_message("Shadow Runner starting (S46 Phase 2.c; TD-S54-NEW-1 per-symbol run_id)")
+    led = _ledger_open()
     # Holiday gate (TD-S60-NEW-2): reads the corrected trading_calendar; fail-open.
     # Closes the gap that ran the full compute chain on Muharram 2026-06-26.
     if not is_trading_day_today():  # TD-S60-NEW-3: shared core helper
         log_message("[HOLIDAY GATE] Market closed today -- orchestrator exiting (no compute).")
-        return 0
+        return _ledger_close(led, 0, "HOLIDAY_GATE")
 
     # Initialize Supabase client
     try:
         sb = SupabaseClient()
     except Exception as e:
         log_message(f"Failed to initialize Supabase: {e}", "ERROR")
-        return 1
+        return _ledger_close(led, 1, "DATA_ERROR", error=f"supabase init: {e}")
 
     # Fetch latest run_id per symbol from upstream ingest
     run_ids = fetch_latest_run_ids(sb)
@@ -333,7 +361,7 @@ def main() -> int:
             "Ingest may not have fired yet.",
             "WARN",
         )
-        return 1
+        return _ledger_close(led, 1, "SKIPPED_NO_INPUT", error="no run_id for any symbol")
 
     missing = [s for s in SYMBOLS if s not in run_ids]
     if missing:
@@ -350,10 +378,11 @@ def main() -> int:
 
     if success:
         log_message("Shadow runner cycle complete (contract met)", "INFO")
-        return 0
+        return _ledger_close(led, 0, "SUCCESS", notes=f"run_ids={run_ids}")
     else:
         log_message("Shadow runner cycle failed (contract not met)", "ERROR")
-        return 1
+        return _ledger_close(led, 1, "DATA_ERROR", notes=f"run_ids={run_ids}",
+                             error="failed steps: " + ", ".join(LAST_FAILED_STEPS))
 
 
 if __name__ == "__main__":

@@ -4,6 +4,10 @@ import sys
 import time
 from datetime import date, datetime, timedelta, timezone
 UTC = timezone.utc
+# S90_EOD_IST_DATE (ruling S90-H, R01-F10): Dhan stamps a daily candle at 00:00 IST, which is
+# 18:30 UTC the PREVIOUS day. Converting with tz=UTC dated every row one day early
+# (0 Fridays in equity_eod since 2025-07). The trade date is the IST calendar date.
+IST = timezone(timedelta(hours=5, minutes=30))
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -196,7 +200,7 @@ def parse_dhan_daily(data: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     for i in range(n):
         try:
-            trade_date = datetime.fromtimestamp(int(ts_arr[i]), tz=UTC).date().isoformat()
+            trade_date = datetime.fromtimestamp(int(ts_arr[i]), tz=IST).date().isoformat()
             row = {
                 "trade_date": trade_date,
                 "open": float(open_arr[i]) if open_arr[i] is not None else None,

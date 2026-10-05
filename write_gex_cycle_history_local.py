@@ -502,7 +502,8 @@ def main() -> int:
     legs = fetch_legs(run_id)
     if not legs:
         log = ExecutionLog(script_name=WRITER, expected_writes={TARGET_TABLE: 0},
-                           notes=f"run_id={run_id}")
+                           notes=f"run_id={run_id}",
+                           run_id=run_id, product_relation="gex_cycle_history")  # S90_R07_LEDGER
         return log.exit_with_reason(
             "SKIPPED_NO_INPUT", exit_code=0,
             error_message=f"no gamma_metrics rows for run_id={run_id}")
@@ -518,6 +519,7 @@ def main() -> int:
         expected_writes={TARGET_TABLE: n_expected},
         symbol=legs[0]["symbol"] if len({l["symbol"] for l in legs}) == 1 else None,
         notes=f"run_id={run_id} legs={n_expected}",
+        run_id=run_id, product_relation="gex_cycle_history",  # S90_R07_LEDGER
     )
 
     # Calendar health, once per run: previous_trading_day reports provenance,

@@ -268,6 +268,13 @@ def check_market_open(today_str: str) -> bool | None:
     None if no calendar row exists (allow run; merdian_start.py will
     upsert later).
     """
+    # S90_R08_GATE: delegate to the shared gate (ADR-020); absence is resolved by the rule
+    # engine, not allowed through. Errors fall back to the inline read (fail-open).
+    try:
+        from core.trading_calendar_gate import is_trading_day
+        return is_trading_day(today_str)
+    except Exception as e:
+        print(f"  [WARN] shared calendar gate unavailable ({e}); inline check")
     try:
         r = requests.get(
             f"{SUPABASE_URL}/rest/v1/trading_calendar",

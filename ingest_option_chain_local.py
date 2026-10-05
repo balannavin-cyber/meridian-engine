@@ -302,6 +302,13 @@ def _is_market_holiday() -> tuple[bool, str]:
     has already done the authoritative gating).
     """
     today_str = str(datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Kolkata")).date())
+    # S90_R08_GATE: delegate to the shared gate (ADR-020). The inline copy below read an
+    # ABSENT row as open, which ran the 2026-10-02 frozen ingest. Kept only as a fallback.
+    try:
+        from core.trading_calendar_gate import is_trading_day
+        return (not is_trading_day(today_str), today_str)
+    except Exception as e:  # fail-open, as before
+        print(f"  [WARN] shared calendar gate unavailable ({e}); inline check", file=sys.stderr)
     if not SUPABASE_URL or not SUPABASE_KEY:
         return (False, today_str)
     try:
@@ -462,6 +469,7 @@ def ingest_symbol(symbol: str, mode: str, log: ExecutionLog) -> int:
 
     snapshot_ts = utc_now_iso()
     run_id = str(uuid.uuid4())
+    log.set_run_id(run_id)  # S90_R07_LEDGER: front-expiry run; extra expiries keep their own run_ids
 
     # Extract rows. extract_option_rows can raise on malformed 'oc' shape.
     try:
@@ -621,6 +629,7 @@ def main() -> int:
         expected_writes={"option_chain_snapshots": EXPECTED_FLOOR[mode]},
         symbol=symbol_arg,
         notes=f"mode={mode} floor={EXPECTED_FLOOR[mode]}",
+        product_relation="option_chain_snapshots",  # S90_R07_LEDGER
     )
 
     # Defense-in-depth holiday gate. The supervisor already calendar-gates

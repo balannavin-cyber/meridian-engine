@@ -1320,6 +1320,7 @@ def main() -> int:
         expected_writes={TARGET_TABLE: 1, GSS_TARGET_TABLE: 1},  # ENH-80 (S37) v2
         symbol=expected_symbol,
         notes=f"run_id={run_id} run_type={run_type}",
+        run_id=run_id, product_relation="gamma_metrics",  # S90_R07_LEDGER
     )
 
     try:

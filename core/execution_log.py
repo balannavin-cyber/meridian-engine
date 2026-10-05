@@ -118,6 +118,19 @@ def _git_sha() -> str:
     return ""
 
 
+def _ledger_status(exit_reason: str, contract_met: Optional[bool]) -> Optional[str]:
+    """S90_R07_LEDGER: ADR-031 D2 status of the run's product, from its exit."""
+    if exit_reason == "SUCCESS":
+        return "OK" if contract_met else "DEGRADED"
+    if exit_reason in ("HOLIDAY_GATE", "OFF_HOURS"):
+        return "CLOSED"
+    if exit_reason in ("SKIPPED_NO_INPUT", "DATA_ERROR", "TOKEN_EXPIRED", "DEPENDENCY_MISSING", "TIMEOUT"):
+        return "MISSING"
+    if exit_reason == "CRASH":
+        return "UNKNOWN"
+    return None  # RUNNING, DRY_RUN
+
+
 def _today_ist() -> date:
     return datetime.now(_IST).date()
 
@@ -148,6 +161,8 @@ class ExecutionLog:
         symbol: Optional[str] = None,
         dry_run: bool = False,
         notes: Optional[str] = None,
+        run_id: Optional[str] = None,            # S90_R07_LEDGER
+        product_relation: Optional[str] = None,  # e.g. "gamma_metrics"; product = relation:symbol
     ):
         self.script_name = script_name
         self.invocation_id: UUID = uuid4()
@@ -156,6 +171,8 @@ class ExecutionLog:
         self.symbol = symbol
         self.dry_run = dry_run
         self.notes = notes
+        self.run_id = run_id
+        self.product_relation = product_relation
 
         self.host = _detect_host()
         self.git_sha = _git_sha()
@@ -222,6 +239,32 @@ class ExecutionLog:
         except Exception as e:
             self._warn(f"set_symbol PATCH exception: {e}")
 
+    def set_run_id(self, run_id: Optional[str]) -> None:
+        """S90_R07_LEDGER: attach the cycle run_id once known (best-effort, like set_symbol)."""
+        if self._finalised or not run_id:
+            return
+        self.run_id = str(run_id)
+        if not _SUPABASE_URL or not _SUPABASE_KEY:
+            return
+        try:
+            r = requests.patch(
+                f"{_SUPABASE_URL}/rest/v1/script_execution_log",
+                headers=self._headers,
+                params={"invocation_id": f"eq.{self.invocation_id}"},
+                json={"run_id": self.run_id},
+                timeout=10,
+            )
+            if r.status_code >= 300:
+                self._warn(f"set_run_id PATCH failed: status={r.status_code} body={r.text[:200]}")
+        except Exception as e:
+            self._warn(f"set_run_id PATCH exception: {e}")
+
+    @property
+    def product(self) -> Optional[str]:
+        if not self.product_relation:
+            return None
+        return f"{self.product_relation}:{self.symbol}" if self.symbol else self.product_relation
+
     def complete(self, notes: Optional[str] = None) -> int:
         """Normal completion path. Computes contract_met, writes final row,
         returns exit code (0). Caller typically does: sys.exit(log.complete())."""
@@ -266,6 +309,9 @@ class ExecutionLog:
             "expected_writes": self.expected,
             "git_sha": self.git_sha or None,
             "notes": self.notes,
+            "kind": "run",              # S90_R07_LEDGER
+            "run_id": self.run_id,
+            "product": self.product,
         }
 
     def _insert_opening_row(self) -> None:
@@ -342,6 +388,9 @@ class ExecutionLog:
             "exit_reason": exit_reason,
             "actual_writes": self.actual,
             "contract_met": contract_met,
+            "status": _ledger_status(exit_reason, contract_met),  # S90_R07_LEDGER
+            "run_id": self.run_id,
+            "product": self.product,
         }
         if notes is not None:
             patch_body["notes"] = notes

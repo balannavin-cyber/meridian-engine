@@ -557,6 +557,7 @@ def main() -> int:
         expected_writes={TARGET_TABLE: 1},
         symbol=None,
         notes=f"run_id={run_id}",
+        run_id=run_id, product_relation="volatility_snapshots",  # S90_R07_LEDGER
     )
 
     print("=" * 72)

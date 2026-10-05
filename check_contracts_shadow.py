@@ -266,8 +266,9 @@ def main() -> int:
     detail: Dict[str, Dict[str, Any]] = {}
     for c in contracts:
         historical = as_of < datetime.now(timezone.utc) - timedelta(minutes=15)
-        if historical and c["time_col"] not in (c.get("grain") or []):
-            # grain without a time column = one row per key, overwritten: no history to judge
+        g = c.get("grain") or []
+        if historical and c["time_col"] not in g and "run_id" not in g:
+            # grain with neither a time column nor run_id = one row per key, overwritten: no history
             own[c["product"]] = ("UNKNOWN", "latest-only product; cannot be judged as of a past time")
             detail[c["product"]] = {"history": False}
             continue

@@ -1,0 +1,4 @@
+\pset pager off
+\pset format csv
+\pset footer off
+SELECT * FROM public.volatility_snapshots WHERE symbol = 'NIFTY' AND ts >= '2026-09-29 03:30+00' AND ts < '2026-09-29 10:30+00' ORDER BY ts;

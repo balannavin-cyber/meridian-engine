@@ -1,0 +1,11 @@
+d1bc430acd771e53b69376cac18e698779e3ba3b339d0ae68185015133d76fda  ./FROZEN.txt
+2f100a206f239daa36094f39e52bf374429b74c10412e3d1a9a17fa5f8e14b59  ./inputs/gamma_metrics.csv.gz
+afd213248dfd5dbdb8f580c4814703582740dac9026245e76a7cb60307d6ba98  ./inputs/gex_strike.csv.gz
+082fe4c2617fd8ccddfda37115be6e4e82c9dd0d0eb474834ba766404e379857  ./inputs/ocs.csv.gz
+6dbb816bff33e1f537fe891e8beba54cb2f0c39ab875bae93eb85a078ffdfac3  ./inputs/spot.csv.gz
+3801cc765b35c57080a2d6621b8271477a6900a4c30d8fd0ee0865f8daf6aaf9  ./inputs/volatility.csv.gz
+29472238b6622bf0b775c1a898b2a7a4affbeaf8a7cfae6063281853588eac35  ./queries/gamma_metrics.sql
+383850458ad8dc6d3a07ade30ceb132bd46be81c4f520361a7e20df0304b37c3  ./queries/gex_strike.sql
+c08520e96677c0fafc6de8d44f66d94f33e2ac70ce88ff304d9d624b847acb15  ./queries/ocs.sql
+9a1b2a5005b1f5380268b130cfb04ce4ba26b3a441e342e5e971186d4ebec589  ./queries/spot.sql
+18d5492d2036d2fca9ffcf6b15a82b7d5923ebac70fa023a11e46234ad5c85f9  ./queries/volatility.sql

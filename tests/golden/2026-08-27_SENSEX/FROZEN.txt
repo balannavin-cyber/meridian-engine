@@ -1,0 +1,3 @@
+frozen_at_utc=2026-10-05T12:38:38Z
+meridian_cc_head=6e13a7f
+front_expiry_rule=min(expiry_date) >= 2026-08-27 in window

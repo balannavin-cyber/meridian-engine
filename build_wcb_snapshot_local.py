@@ -102,6 +102,58 @@ def fetch_latest_intraday_prices(sb: SupabaseClient, tickers: List[str]) -> List
     )
 
 
+# S90_WCB_LIVE_LTP (ruling S90-G, R01-F9): the move is live LTP (market_ticks, EQ) over the
+# PRIOR close. equity_intraday_last is refreshed once a day at 09:05 IST with Kite
+# ohlc().close, i.e. it IS the prior close -- it was being used as the live price, which
+# froze WCB for whole sessions (S90 MV-9). No ticks in the window => no live price =>
+# the constituent drops out (honest), never a stale fallback (ADR-023 D2).
+LIVE_TICK_WINDOW_MIN = 10
+
+
+def _bare(ticker: str) -> str:
+    return ticker.split(":", 1)[1] if ":" in ticker else ticker
+
+
+def fetch_live_ltp_from_ticks(sb: SupabaseClient, tickers: List[str]) -> List[Dict[str, Any]]:
+    if not tickers:
+        return []
+    by_bare = {_bare(t): t for t in tickers}
+    since = (datetime.now(timezone.utc) - timedelta(minutes=LIVE_TICK_WINDOW_MIN)).isoformat()
+    in_payload = "(" + ",".join('"' + b + '"' for b in by_bare) + ")"
+    latest: Dict[str, Dict[str, Any]] = {}
+    offset, page = 0, 1000
+    while True:
+        rows = retry_call(
+            lambda: sb.select(
+                table="market_ticks",
+                columns="tradingsymbol,last_price,ts",
+                filters={"instrument_type": "eq.EQ", "ts": f"gte.{since}",
+                         "tradingsymbol": f"in.{in_payload}"},
+                order="ts.desc", limit=page, offset=offset,
+            ),
+            attempts=3, delay_seconds=5.0, backoff_multiplier=1.5,
+            label="select market_ticks EQ for WCB basket",
+        )
+        for r in rows:
+            b = r.get("tradingsymbol")
+            if b in by_bare and b not in latest and r.get("last_price") is not None:
+                latest[b] = {"ticker": by_bare[b], "last_price": r["last_price"], "ts": r.get("ts")}
+        if len(rows) < page or len(latest) == len(by_bare):
+            break
+        offset += page
+    return list(latest.values())
+
+
+def fetch_prev_close_map(sb: SupabaseClient, tickers: List[str]) -> Dict[str, float]:
+    out: Dict[str, float] = {}
+    for r in fetch_latest_intraday_prices(sb, tickers):
+        t = str(r.get("ticker") or "").strip().upper()
+        v = to_float(r.get("last_price"))
+        if t and v:
+            out[t] = v
+    return out
+
+
 def fetch_daily_breadth_rows(sb: SupabaseClient, tickers: List[str]) -> List[Dict[str, Any]]:
     if not tickers:
         return []
@@ -215,6 +267,7 @@ def compute_wcb_snapshot(
     intraday_rows: List[Dict[str, Any]],
     daily_rows: List[Dict[str, Any]],
     latest_breadth_row: Optional[Dict[str, Any]],
+    prev_close_map: Optional[Dict[str, float]] = None,  # S90_WCB_LIVE_LTP
 ) -> Dict[str, Any]:
     intraday_map = build_price_map(intraday_rows)
     daily_map = build_daily_map(daily_rows)
@@ -258,7 +311,8 @@ def compute_wcb_snapshot(
             continue
 
         last_price = to_float(intraday.get("last_price"))
-        prev_close = to_float(daily.get("prev_close"))
+        prev_close = (prev_close_map.get(ticker) if prev_close_map is not None
+                      else to_float(daily.get("prev_close")))
 
         dma10 = to_float(daily.get("dma10"))
         dma20 = to_float(daily.get("dma20"))
@@ -436,7 +490,11 @@ def main() -> int:
         print(f"Active weight rows fetched: {len(weights_rows)}")
 
         tickers = [str(row["ticker"]).strip().upper() for row in weights_rows if row.get("ticker")]
-        intraday_rows = fetch_latest_intraday_prices(sb, tickers)
+        # S90_WCB_LIVE_LTP: live LTP from market_ticks; prior close from equity_intraday_last
+        intraday_rows = fetch_live_ltp_from_ticks(sb, tickers)
+        prev_close_map = fetch_prev_close_map(sb, tickers)
+        print(f"Live LTP tickers (last {LIVE_TICK_WINDOW_MIN} min): {len(intraday_rows)}; "
+              f"prior closes: {len(prev_close_map)}")
         daily_rows = fetch_daily_breadth_rows(sb, tickers)
         latest_breadth_row = fetch_latest_market_breadth_intraday(sb)
 
@@ -449,6 +507,7 @@ def main() -> int:
             intraday_rows=intraday_rows,
             daily_rows=daily_rows,
             latest_breadth_row=latest_breadth_row,
+            prev_close_map=prev_close_map,
         )
 
         print("-" * 72)

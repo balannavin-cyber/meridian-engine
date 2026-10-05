@@ -1,0 +1,5 @@
+-- S90 R2.1 golden day 2026-10-01 SENSEX — frozen input: counts. Read-only.
+\pset pager off
+\pset format csv
+\pset footer off
+SELECT 'ocs' AS rel, count(*) AS n, count(DISTINCT ts) AS n_ts FROM public.option_chain_snapshots WHERE symbol = 'SENSEX' AND expiry_date = '2026-10-01' AND ts >= '2026-10-01 03:30+00' AND ts < '2026-10-01 10:30+00' UNION ALL SELECT 'gex_strike', count(*), count(DISTINCT ts) FROM public.gex_strike_snapshots WHERE symbol = 'SENSEX' AND ts >= '2026-10-01 03:30+00' AND ts < '2026-10-01 10:30+00' UNION ALL SELECT 'gamma_metrics', count(*), count(DISTINCT ts) FROM public.gamma_metrics WHERE symbol = 'SENSEX' AND ts >= '2026-10-01 03:30+00' AND ts < '2026-10-01 10:30+00' UNION ALL SELECT 'volatility', count(*), count(DISTINCT ts) FROM public.volatility_snapshots WHERE symbol = 'SENSEX' AND ts >= '2026-10-01 03:30+00' AND ts < '2026-10-01 10:30+00' UNION ALL SELECT 'spot', count(*), count(DISTINCT ts) FROM public.market_spot_snapshots WHERE symbol = 'SENSEX' AND ts >= '2026-10-01 03:30+00' AND ts < '2026-10-01 10:30+00';

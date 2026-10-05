@@ -128,3 +128,7 @@ extend_hist_atm_option_bars.py
 merdian_ict_htf_zones.pine
 cache/
 cron.log*
+
+# S90 R2.1: golden-day fixtures are tracked in full
+!tests/golden/**/*.csv
+!tests/golden/**/*.txt

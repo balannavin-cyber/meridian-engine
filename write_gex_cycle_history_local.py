@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -530,11 +531,21 @@ def main() -> int:
     except Exception:
         calendar_healthy = False
 
-    try:
-        rows = [build_row(leg, calendar_healthy) for leg in legs]
-    except Exception as e:
+    # S90_ENH133_WIRE: bounded retry on statement timeout (57014) only. S90 first live run:
+    # NIFTY build_row hit 57014 on a cold view read and passed on the next attempt.
+    rows, last_err, attempts = None, None, 0
+    for attempts in range(1, 4):
+        try:
+            rows = [build_row(leg, calendar_healthy) for leg in legs]
+            break
+        except Exception as e:
+            last_err = e
+            if "57014" not in str(e):
+                break
+            time.sleep(3)
+    if rows is None:
         return log.exit_with_reason("DATA_ERROR", exit_code=1,
-                                    error_message=f"build_row failed: {e}")
+                                    error_message=f"build_row failed after {attempts} attempt(s): {last_err}")
 
     if len(rows) != n_expected:
         return log.exit_with_reason(

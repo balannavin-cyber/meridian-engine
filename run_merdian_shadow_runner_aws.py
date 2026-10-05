@@ -69,6 +69,10 @@ LOG_FILE = "/home/ssm-user/meridian-engine/shadow_runner.log"
 # run_id; the symbol-keyed downstream steps are invoked per symbol directly.
 SYMBOLS: List[str] = ["NIFTY", "SENSEX"]
 
+# S90_ENH133_WIRE (ruling S90-F, ADR-030): per-cycle layer history. OFF SWITCH: set False.
+# A code constant, not a parameter: a parameter read can fail open (roadmap risk 14).
+ENH133_WRITER_ENABLED: bool = True
+
 
 def log_message(msg: str, level: str = "INFO") -> None:
     """Log to file and stdout."""
@@ -203,6 +207,16 @@ def execute_pipeline(run_ids: Dict[str, str]) -> bool:
             f"compute_volatility_metrics {symbol}",
             60,
         ))
+
+    # S90_ENH133_WIRE: after gamma AND volatility (v_gex_strike_rank / v_gex_strike_walls read
+    # volatility_snapshots), before the symbol-keyed steps. Non-fatal like every step.
+    if ENH133_WRITER_ENABLED:
+        for symbol, run_id in run_ids.items():
+            steps.append((
+                ["python3", "write_gex_cycle_history_local.py", run_id],
+                f"write_gex_cycle_history {symbol}",
+                90,
+            ))
 
     # --- symbol-keyed downstream steps: always both symbols ---
     steps.extend([

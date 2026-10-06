@@ -1,0 +1,275 @@
+-- S90 R0.4 ENH-133 apply — Supabase SQL editor, ONE execution, as postgres.
+-- 1) gex_cycle_history DDL (as committed)  2) pin_state seed (value_type fixed, = 38a0a84)  3) P3 checks (last result shown).
+
+-- =====================================================================
+-- ENH-133 — per-cycle layer-history table  (gex_cycle_history)
+-- Authored Session 89, 2026-10-03.  Scope ruled 2026-10-03 (rulings_s89.md).
+--
+--   *** AUTHORED, NOT APPLIED. ***
+--   This file has NOT been run against the database. It is committed as the
+--   bound migration source so the DDL is reviewable before it exists.
+--   Spec: docs/research/s89_rulings/ENH-133_schema_spec_S89.md
+--
+-- Every column below is bound to a column proven to exist by introspection on
+-- 2026-10-03; the type follows the SOURCE type, not a convenience choice.
+-- Per the S81 rule, COMMENT and GRANT ship here as LIVE statements, never as
+-- commentary — a sql/ file that carries only the table body is not a rebuild
+-- source, and a rebuild from it fails silently at the access boundary.
+-- =====================================================================
+
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS public.gex_cycle_history (
+    -- ---- identity / clock / gate  (the only NOT NULL columns) ----------
+    symbol                  text          NOT NULL,
+    expiry_date             date          NOT NULL,
+    ts                      timestamptz   NOT NULL,   -- the gamma run ts
+    run_id                  uuid          NOT NULL,   -- gamma_metrics.run_id
+    session_gate_state      text          NOT NULL,   -- OPEN | FROZEN | PRE_TICK
+    session_gate_ticks      integer,                  -- spot ticks seen up to ts at write
+
+    -- ---- clock corroboration -------------------------------------------
+    chain_ts                timestamptz,              -- option_chain_snapshots.ts for THIS run_id
+    dte                     integer,                  -- gamma_metrics.dte — CALENDAR days (measured)
+    spot                    numeric,                  -- gamma_metrics.spot
+    atm_iv                  numeric,                  -- volatility_snapshots.atm_iv_avg
+
+    -- ---- regime / flip  (L6, L3) ---------------------------------------
+    net_gex                 numeric,                  -- gamma_metrics.net_gex
+    gamma_regime            text,                     -- gamma_metrics.regime
+    flip_level              numeric,                  -- gamma_metrics.flip_level
+    repriced_flip_level     double precision,         -- v_gex_repriced_flip.flip
+    repriced_flip_ts        timestamptz,              -- v_gex_repriced_flip.ts AS RETURNED
+    repriced_flip_source    text,                     -- 'CLOCK_MATCHED' | 'UNMATCHED_NULL'
+
+    -- ---- pin / concentration  (L1/L2/L12, E-D2) -------------------------
+    pin_leader_strike       numeric,                  -- v_gex_strike_rank.strike @ strike_rank = 1
+    gamma_at_pin            numeric,                  -- v_gex_strike_rank.gex_cr @ strike_rank = 1
+    runnerup_share_ratio    numeric,                  -- share_of_abs(r2) / share_of_abs(r1)
+    top5_share              numeric,                  -- cum_share_of_abs @ strike_rank = 5
+    top5_share_n_ranks      smallint,                 -- ranks actually available (edge: < 5)
+    conc_top1_share         numeric,                  -- v_gex_concentration.hhi_net — TOP-1 SHARE, NOT a Herfindahl
+    conc_top1_share_call    double precision,         -- hhi_call  — semantics UNVERIFIED
+    conc_top1_share_put     double precision,         -- hhi_put   — semantics UNVERIFIED
+    conc_hhi                numeric,                  -- true Herfindahl Σ(share_of_abs)^2 over ALL ranked strikes — distinct from conc_top1_share (top-1 share)
+    max_pain_strike         numeric,                  -- v_gex_max_pain.max_pain_strike (gamma clock, E-D2)
+    pin_state               text,                     -- NO PIN | SHIFTING | STABLE | LOCKED
+    pin_state_reason        text,                     -- why NULL, when it is (missing param key etc.)
+    held_for_cycles         integer,                  -- consecutive same-leader cycles, session-gated
+    conviction              numeric,                  -- (1 - runnerup_share_ratio) * boost(T)
+    conviction_reason       text,                     -- why conviction is NULL, when it is
+
+    -- ---- walls  (L4/L5) -------------------------------------------------
+    call_wall_strike        numeric,                  -- v_gex_strike_walls.call_wall
+    put_wall_strike         numeric,                  -- v_gex_strike_walls.put_wall
+
+    -- ---- freshness, persisted and never dropped -------------------------
+    is_fresh                boolean,                  -- v_gex_pin_maxpain / v_gex_max_pain
+    snapshot_age_min        numeric,                  -- idem
+
+    -- ---- provenance ------------------------------------------------------
+    writer                  text,
+    writer_version          text,
+    reconciled_at           timestamptz,              -- NULL until the EOD reconciler finalises this row
+    reconciler_version      text,                     -- the reconciler's own identity; writer/_version untouched
+    created_at              timestamptz   NOT NULL DEFAULT now(),
+
+    CONSTRAINT gex_cycle_history_pk
+        PRIMARY KEY (symbol, expiry_date, ts),
+    CONSTRAINT gex_cycle_history_session_gate_ck
+        CHECK (session_gate_state IN ('OPEN','FROZEN','PRE_TICK')),
+    CONSTRAINT gex_cycle_history_pin_state_ck
+        CHECK (pin_state IS NULL OR pin_state IN ('NO PIN','SHIFTING','STABLE','LOCKED')),
+    CONSTRAINT gex_cycle_history_repriced_src_ck
+        CHECK (repriced_flip_source IS NULL
+               OR repriced_flip_source IN ('CLOCK_MATCHED','UNMATCHED_NULL')),
+    -- an UNMATCHED L3 read must not carry a level: that is the whole point of the field
+    CONSTRAINT gex_cycle_history_repriced_null_ck
+        CHECK (repriced_flip_source IS DISTINCT FROM 'UNMATCHED_NULL'
+               OR repriced_flip_level IS NULL),
+    CONSTRAINT gex_cycle_history_held_for_ck
+        CHECK (held_for_cycles IS NULL OR held_for_cycles >= 1)
+);
+
+-- Default history read is session-gated; this index serves it directly.
+CREATE INDEX IF NOT EXISTS ix_gex_cycle_history_sym_ts_session
+    ON public.gex_cycle_history (symbol, ts DESC)
+    WHERE session_gate_state = 'OPEN';
+
+CREATE INDEX IF NOT EXISTS ix_gex_cycle_history_run
+    ON public.gex_cycle_history (run_id);
+
+-- ---------------------------------------------------------------------
+-- COMMENTS — live statements, not commentary (S81 rule)
+-- ---------------------------------------------------------------------
+COMMENT ON TABLE public.gex_cycle_history IS
+'ENH-133 per-cycle layer history. One row per (symbol, expiry_date, ts) at the 5-minute gamma cadence, both expiry legs, written by the existing compute chain. Grain accommodates a future 1-minute pass (Candidate A) unchanged.
+RETENTION: KEEP INDEFINITELY. This table is explicitly NOT a target of pg_cron jobid 19 (cleanup_gamma_engine_daily, currently active=false). Any future retention job must name this table explicitly to touch it; a blanket gamma-chain cleanup must not.
+Rows are written on every cycle regardless of session state; the DEFAULT history read filters session_gate_state = ''OPEN''. A frozen-market cycle (see TD-S89-NEW-1, 2026-10-02) is recorded and flagged FROZEN, never silently dropped.
+Scope ruled 2026-10-03 — docs/research/s89_rulings/rulings_s89.md; bound spec — docs/research/s89_rulings/ENH-133_schema_spec_S89.md. Complement to ENH-134 (as-of functions cover the already-stored window; this table accumulates forward).';
+
+COMMENT ON COLUMN public.gex_cycle_history.dte IS
+'gamma_metrics.dte, which is CALENDAR days to expiry — measured 2026-10-03 across 8 runs (dte == expiry_date - run_date on all; trading days ahead differed, e.g. 10-01 dte 5 = 2 trading days). boost(T) takes TRADING days, so the writer converts via trading_calendar; do NOT feed this column to boost() directly.';
+
+COMMENT ON COLUMN public.gex_cycle_history.conc_top1_share IS
+'v_gex_concentration.hhi_net, stored under an honest name: it is the TOP-1 STRIKE SHARE of total abs(gex_cr), NOT a Herfindahl. Measured 2026-10-03 on NIFTY 10-01: published value 0.09419433182919231685 is byte-identical to v_gex_strike_rank.share_of_abs at strike_rank 1 and to gamma_metrics.gamma_concentration, while the true Herfindahl (sum of squared shares) is 0.04635883019194746740 — a factor of ~2. Never name this column hhi_*.';
+
+COMMENT ON COLUMN public.gex_cycle_history.conc_top1_share_call IS
+'v_gex_concentration.hhi_call, carried verbatim. SEMANTICS UNVERIFIED: the net leg was proven to be a top-1 share rather than a Herfindahl, and the call/put legs have NOT been checked either way. Do not publish as a Herfindahl, and do not compare with conc_top1_share, until verified.';
+
+COMMENT ON COLUMN public.gex_cycle_history.conc_top1_share_put IS
+'v_gex_concentration.hhi_put, carried verbatim. SEMANTICS UNVERIFIED — see conc_top1_share_call.';
+
+COMMENT ON COLUMN public.gex_cycle_history.conc_hhi IS
+'True Herfindahl concentration = sum of squared per-strike shares (share_of_abs^2) over all ranked strikes for the run. Distinct from conc_top1_share, which is the single top strike''s share. Measured 2026-10-03 NIFTY 10-01: conc_hhi = 0.04635883019194746740 vs conc_top1_share 0.09419433182919231685 (factor ~2). This is the real HHI; conc_top1_share is dominance, not dispersion.';
+
+COMMENT ON COLUMN public.gex_cycle_history.repriced_flip_level IS
+'v_gex_repriced_flip.flip (L3), CLOCK-MATCHED to this row''s gamma run. That view carries NO run_id and NO dte, names its expiry front_expiry, and its latest row can sit on a different trading date than the gamma run (measured 2026-10-03: its latest was 2026-10-02 10:10:04+00 at the frozen spot 22421.95 while the gamma clock was 2026-10-01 09:50:07+00 — a ~1,460-minute gap on a frozen book). If the writer cannot match the clock it stores NULL here and UNMATCHED_NULL in repriced_flip_source. Kept SEPARATE from flip_level per ADR-025 B7: the two are different definitions and measured 22368.20 vs 22692.00 on those runs.';
+
+COMMENT ON COLUMN public.gex_cycle_history.repriced_flip_ts IS
+'The ts the L3 view actually RETURNED, stored so a reader can test the clock match rather than trust it. Compared by column name, never by position.';
+
+COMMENT ON COLUMN public.gex_cycle_history.session_gate_state IS
+'Three states, because two cannot tell a pre-open cycle from a closed market. OPEN = spot was observed to MOVE (distinct spot > 1). FROZEN = ticks exist but spot never moved — a closed or frozen book; 2026-10-02 carried ~143k chain rows across 83 distinct ts with distinct_spot = 1 for both symbols, so row-count and distinct-ts checks CANNOT find it (TD-S89-NEW-1). PRE_TICK = no spot tick existed yet at this ts, which is the NORMAL state of the first 6-8 cycles of every trading day: the gamma clock starts 08:30-08:40 IST while the first market_spot_snapshots tick lands ~09:11:03 IST (measured across 2026-09-22..10-01, 6-8 of 74-83 cycles per day). A two-state gate would have stamped those real cycles not-a-session. WRITE-TIME VALUE IS PROVISIONAL: PRE_TICK is FINALISED to OPEN or FROZEN by the EOD reconciler (reconcile_gex_cycle_history_session_local.py), which judges the whole completed date once the tape has settled. Spec: docs/research/s89_rulings/ENH-133_reconciler_spec_S89.md.';
+
+COMMENT ON COLUMN public.gex_cycle_history.session_gate_ticks IS
+'Count of market_spot_snapshots rows for this symbol on this IST date at or before ts, AS SEEN AT WRITE TIME. Kept so a PRE_TICK row is provably a tick-absence rather than a failed read: 0 means the tape had not started, NULL means the writer could not count. The reconciler does not rewrite this column — it records what the writer saw, not what was true by end of day.';
+
+COMMENT ON COLUMN public.gex_cycle_history.held_for_cycles IS
+'Consecutive cycles for which pin_leader_strike has been unchanged, counting only session_gate_state = ''OPEN'' rows, so a frozen or holiday date adds nothing. Starts at 1 on a leader change. WRITE-TIME VALUE IS PROVISIONAL and is RECOMPUTED by the EOD reconciler over the finalised OPEN set, which also CARRIES THE STREAK FORWARD across an overnight or holiday gap — a leader that persists continues its streak. Spec: docs/research/s89_rulings/ENH-133_reconciler_spec_S89.md.';
+
+COMMENT ON COLUMN public.gex_cycle_history.pin_state IS
+'NO PIN | SHIFTING | STABLE | LOCKED, derived from held_for_cycles, runnerup_share_ratio and conc_top1_share using thresholds read from merdian_parameters (ADR-016 dot-keys). Thresholds are PROVISIONAL and owe D-6 calibration. A missing parameter key leaves this NULL with the reason in pin_state_reason — absence is not a verdict (ADR-020) and the writer must never substitute a default.';
+
+COMMENT ON COLUMN public.gex_cycle_history.conviction IS
+'(1 - runnerup_share_ratio) * boost(T), boost(T) = 2.53 * T^(-0.5), T in TRADING days to expiry, cap 3.70, floor T = 0.47 (D-5b / D-5c). Stage 1 only; Stage 2 multiplies by the 30-session conc_top1_share percentile once this table has history. The runner-up margin exists in NO relation and is computed by the writer — see the spec.';
+
+COMMENT ON COLUMN public.gex_cycle_history.reconciled_at IS
+'NULL until the EOD reconciler has finalised this row; set to the reconciler run''s timestamp when it has. This is the CANONICAL unreconciled signal — the absence of a PRE_TICK state is NOT, because a date whose every cycle began after the first spot tick (~09:11 IST) is written with no PRE_TICK row at all and would otherwise be indistinguishable from a reconciled one. The reconciler NEVER overwrites writer or writer_version: the two provenances are separate facts about the same row. Spec: docs/research/s89_rulings/ENH-133_reconciler_spec_S89.md §6.1.';
+
+COMMENT ON COLUMN public.gex_cycle_history.reconciler_version IS
+'Identity of the reconciler build that finalised this row, mirroring writer_version. Kept separate so a re-derivation after a rule change (reconciler spec §5, --recompute) is attributable without destroying the original write''s provenance.';
+
+COMMENT ON COLUMN public.gex_cycle_history.conviction_reason IS
+'Why conviction is NULL, when it is: a null runnerup_share_ratio, trading_calendar unavailable (fail-open detected, so T is not trustworthy), or a null t_days. NULL when conviction resolved. Kept SEPARATE from pin_state_reason so the two gaps are never conflated — a valid pin_state must carry pin_state_reason NULL even on a cycle whose conviction could not be computed, and vice versa. Absence is not a verdict (ADR-020): a NULL conviction with no stored reason would be indistinguishable from one never attempted.';
+
+COMMENT ON COLUMN public.gex_cycle_history.is_fresh IS
+'Persisted from v_gex_pin_maxpain / v_gex_max_pain, never dropped: without it a stale-book cycle is indistinguishable from a fresh one in history. Measured example 2026-10-03: is_fresh = f at snapshot_age_min = 2670.7 reading Saturday.';
+
+-- ---------------------------------------------------------------------
+-- GRANTS — live statements (S81 rule).
+-- anon is deliberately NOT granted. Supabase DEFAULT PRIVILEGES have been
+-- observed to hand ALL on newly created objects to anon (S39 -> S81,
+-- CASE-2026-09-22-anon-privilege-exposure), so the REVOKE below is not
+-- belt-and-braces: it is the statement that prevents the default. If a later
+-- script fails on an empty service-role key, supply the key — never restore
+-- the grant.
+-- ---------------------------------------------------------------------
+REVOKE ALL ON TABLE public.gex_cycle_history FROM anon;
+GRANT SELECT ON TABLE public.gex_cycle_history TO merdian_ro;
+
+COMMIT;
+
+-- =====================================================================
+-- NOT INCLUDED, DELIBERATELY
+--   * No RLS enable. Enabling RLS with zero policies makes the table
+--     unreadable by every non-bypass role (TD-S81-NEW-16 family); if RLS is
+--     wanted, the policy ships in the same statement as the enable.
+--   * No backfill. The window before the first write is unrecoverable except
+--     through ENH-134; this table accumulates forward only.
+--   * No writer. The writer is a separate deliverable; its logic is specified
+--     in ENH-133_schema_spec_S89.md and is not implied by this DDL.
+-- =====================================================================
+
+-- =====================================================================
+-- ENH-133 — provisional pin_state thresholds into merdian_parameters (ADR-016)
+-- Authored Session 89, 2026-10-03.
+--
+--   *** AUTHORED, NOT APPLIED. ***
+--   This file has NOT been run against the database.
+--
+-- WHY A SEED MIGRATION AND NOT THE CLI: ADR-016 §"Write API — CLI only in v0"
+-- names `merdian_calibrate.py` (ENH-83) as the write path. That file is NOT in
+-- the tree (repo-wide find, 2026-10-03), while the register reads ENH-83
+-- SHIPPED (S39) and `merdian_parameters` measures 0 rows. Filed separately as a
+-- tech-debt item; building the CLI is ENH-83 scope, not ENH-133's. This seed is
+-- the minimum that unblocks ENH-133 without taking that scope.
+--
+-- ALL EIGHT VALUES ARE PROVISIONAL AND OWE D-6 CALIBRATION. They are a starting
+-- point chosen so the state machine runs, NOT a measured result. Nothing may
+-- cite them as calibrated.
+-- =====================================================================
+
+BEGIN;
+
+INSERT INTO public.merdian_parameters
+    (key, value_num, value_type, category, description,
+     min_value, max_value, valid_from, changed_by, change_reason)
+VALUES
+  ('pin_state.stable_held_for.NIFTY',   6,    'numeric', 'pin_state',
+   'Consecutive same-leader cycles at or above which pin_state leaves SHIFTING.',
+   1,   200,  now(), 'ENH-133 seed (S89)', 'ENH-133 provisional, owes D-6 calibration'),
+  ('pin_state.locked_held_for.NIFTY',   12,   'numeric', 'pin_state',
+   'Consecutive same-leader cycles at or above which pin_state may reach LOCKED.',
+   1,   400,  now(), 'ENH-133 seed (S89)', 'ENH-133 provisional, owes D-6 calibration'),
+  ('pin_state.locked_ratio_max.NIFTY',  0.50, 'numeric', 'pin_state',
+   'Maximum runnerup_share_ratio (r2 share / r1 share) permitted for LOCKED. Near 1 = not locked.',
+   0,   1,    now(), 'ENH-133 seed (S89)', 'ENH-133 provisional, owes D-6 calibration'),
+  ('pin_state.nopin_conc_floor.NIFTY',  0.04, 'numeric', 'pin_state',
+   'conc_top1_share below this reads NO PIN. NOTE: this is a TOP-1 SHARE floor, not a Herfindahl.',
+   0,   1,    now(), 'ENH-133 seed (S89)', 'ENH-133 provisional, owes D-6 calibration'),
+  ('pin_state.stable_held_for.SENSEX',  6,    'numeric', 'pin_state',
+   'Consecutive same-leader cycles at or above which pin_state leaves SHIFTING.',
+   1,   200,  now(), 'ENH-133 seed (S89)', 'ENH-133 provisional, owes D-6 calibration'),
+  ('pin_state.locked_held_for.SENSEX',  12,   'numeric', 'pin_state',
+   'Consecutive same-leader cycles at or above which pin_state may reach LOCKED.',
+   1,   400,  now(), 'ENH-133 seed (S89)', 'ENH-133 provisional, owes D-6 calibration'),
+  ('pin_state.locked_ratio_max.SENSEX', 0.50, 'numeric', 'pin_state',
+   'Maximum runnerup_share_ratio (r2 share / r1 share) permitted for LOCKED. Near 1 = not locked.',
+   0,   1,    now(), 'ENH-133 seed (S89)', 'ENH-133 provisional, owes D-6 calibration'),
+  ('pin_state.nopin_conc_floor.SENSEX', 0.04, 'numeric', 'pin_state',
+   'conc_top1_share below this reads NO PIN. NOTE: this is a TOP-1 SHARE floor, not a Herfindahl.',
+   0,   1,    now(), 'ENH-133 seed (S89)', 'ENH-133 provisional, owes D-6 calibration')
+ON CONFLICT DO NOTHING;
+
+COMMIT;
+
+-- ---------------------------------------------------------------------
+-- VERIFY AFTER APPLY — run this, do not assume the insert landed.
+-- Expect exactly 8 rows. ON CONFLICT DO NOTHING means a partial apply is
+-- SILENT, so the count is the check, not the absence of an error.
+-- ---------------------------------------------------------------------
+-- SELECT count(*) AS seeded, count(*) FILTER (WHERE valid_to IS NULL) AS live
+-- FROM public.merdian_parameters WHERE key LIKE 'pin_state.%';
+--
+-- And confirm the READ path resolves each one, which is what the writer does:
+-- SELECT key, value_num, value_type FROM public.merdian_parameters
+-- WHERE key LIKE 'pin_state.%' AND valid_to IS NULL ORDER BY key;
+
+-- =====================================================================
+-- NOT INCLUDED, DELIBERATELY
+--   * No UPDATE / upsert. ON CONFLICT DO NOTHING means a re-run cannot
+--     overwrite a calibrated value with a provisional one. Re-calibration
+--     goes through the ADR-016 valid_from / valid_to lifecycle, not this file.
+--   * No merdian_calibrate.py. ENH-83 scope.
+--   * No defaults in code. The writer reads each key with
+--     core.parameters.get_parameter_num(key) and NO fallback; a missing key
+--     leaves pin_state NULL with the reason recorded (ADR-020 — absence is
+--     not a verdict).
+-- =====================================================================
+
+-- S90 R0.4 — two checks merdian_ro CANNOT run. Supabase SQL editor, postgres
+-- role, ONE execution, SELECT only. current_user rides in the same result set.
+-- (ADR-030 D2 tripwire; seed visibility — merdian_ro is RLS-blind here.)
+SELECT current_user AS role_now,
+       (SELECT active FROM cron.job WHERE jobid = 19)            AS jobid19_active,       -- must be false
+       (SELECT jobname FROM cron.job WHERE jobid = 19)           AS jobid19_name,
+       (SELECT position('gex_cycle_history' in command) > 0
+          FROM cron.job WHERE jobid = 19)                        AS jobid19_names_table,  -- must be false
+       (SELECT count(*) FROM public.merdian_parameters
+          WHERE key LIKE 'pin_state.%' AND valid_to IS NULL)     AS pin_state_keys_active, -- 8 after seed
+       (SELECT string_agg(DISTINCT value_type, ',') FROM public.merdian_parameters
+          WHERE key LIKE 'pin_state.%')                          AS pin_state_value_types, -- must be 'numeric'
+       (SELECT count(*) FROM public.merdian_parameters
+          WHERE valid_to IS NULL)                                AS all_active_params,
+       public.get_parameter_num('pin_state.locked_held_for.NIFTY') AS read_back_locked_nifty; -- 12, not NULL

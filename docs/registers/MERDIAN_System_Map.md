@@ -2087,3 +2087,22 @@ added — the hook is a diff. No cron line, no systemd unit. `gamma_metrics`,
 `gex_strike_snapshots` and `option_chain_snapshots` are untouched. **The only live change this
 session made to a running system was to nginx** (§S89.3), and that removed a surface rather than
 adding one.
+
+## §S90 — Session 90 / AM-1: the spine — contracts, a status table, a readable ledger and closed days as rows (2026-10-05→06)
+
+Architecture recorded in **ADR-031**; progress in `docs/research/s90_agentic/agentic_layer_roadmap_S90.md` (§3 tracker). This section maps what now exists; it does not restate the ADR.
+
+| Component | Kind | Writes | Reads | Status |
+|---|---|---|---|---|
+| `data_contracts` (14 products) / `product_lineage` (12 edges) | tables, RLS + `merdian_ro` policy | SQL editor | contract runner | LIVE |
+| `check_contracts_shadow.py` | script, cron `*/5 3-10` | `cycle_health`, one ledger row per run | contracts, the products, `trading_calendar` | **SHADOW** — nothing consumes its output yet |
+| `cycle_health` + `v_cycle_health_daily` | table + view | the runner | `merdian_ro` | LIVE (SLO clock from 2026-10-06) |
+| `gex_cycle_history` (ADR-030) | table, front leg only (S90-B) | `write_gex_cycle_history_local.py` via the runner; reconciler at 16:25 IST | none yet | LIVE from 2026-10-06 09:15 |
+| `script_execution_log` + `kind/run_id/product/status` | the one ledger (ADR-031 D7) | `ExecutionLog` in every writer incl. the runner | `v_run_ledger_daily`, `v_run_trace`, `v_provenance_coverage_daily` | LIVE |
+| `get_parameter_num(key, as_of)` | function | — | replay / as-of reads | LIVE; no consumer yet |
+| `trading_calendar` closed-day rows | data | `seed_trading_calendar.py` (now writes closed days), belt rows 10-20 / 11-10 | `core/trading_calendar_gate.py`, now also from the chain ingest and spot capture | LIVE |
+| `build_wcb_snapshot_local.py` | writer change | WCB from live `market_ticks` LTP over the prior close | — | LIVE, validation 2026-10-06 09:30 |
+| `ingest_equity_eod_local.py` / `run_equity_eod_until_done.py` | writer changes | IST dates; one full lap per sweep | — | LIVE |
+| `tests/golden/` (6 days) | fixtures, 20 MB in git | — | replay / R1.6 / R2.1 | FROZEN; not yet in the deploy path |
+
+**Lineage now declared, not implied:** a product's status is the worst of its own and its required inputs', so the WCB case (fresh `ts`, stale inputs) reads STALE from the first cycle once a consumer reads `cycle_health`.

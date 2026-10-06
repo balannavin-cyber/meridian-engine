@@ -2032,3 +2032,24 @@ attached-SG query**, per the settled S39 finding.
 `deploy/nginx/marketview.conf` and `deploy/nginx/marketview.PRE_PORT80_20261004_0400` are tracked
 and `cmp`-verified against the host. Before S89 this file existed **only** on the instance, and the
 Disaster Rebuild runbook had no pointer to it.
+
+## §S90 — Session 90 / AM-1 (2026-10-05→06): the engine gained an observer that runs beside it, every writer gained a ledger row, and the frontend now runs ahead of its remote
+
+**Production tree.** `~/meridian-engine` fast-forwarded from `0f2901e` through `38a0a84…ca79717` (15 commits) — the evening deploys after 16:00 IST, and the last, **`ca79717` at 2026-10-06 04:53 IST, before the open, by operator choice** over the after-16:00 rule (noted once at the time).
+
+**Crontab — two lines added, mirror updated in the same commits** (`docs/registers/aws_crontab.txt` lines 62–64):
+
+| Line | Schedule (UTC) | Job | Commit |
+|---|---|---|---|
+| contract runner, shadow | `*/5 3-10 * * 1-5`, `timeout 240` | `check_contracts_shadow.py --write` → `cycle_health`, log `logs/check_contracts_shadow.log` | `6f9403f` |
+| ENH-133 reconciler | `55 10 * * 1-5`, `timeout 600` | `reconcile_gex_cycle_history_session_local.py` → finalises the previous trading date | `be36d48` |
+
+Live `crontab -l` was compared with the mirror (identical, 17:50 IST) before either was added.
+
+**In-process, no new schedule:** the ENH-133 writer runs inside `run_merdian_shadow_runner_aws.py` after gamma + volatility (`5ac0ed0`; off switch `ENH133_WRITER_ENABLED`). The runner now writes one `script_execution_log` row per cycle and cannot be blocked by the ledger (`6e13a7f`).
+
+**Database objects added (SQL editor, as postgres; files in `sql/`):** enum `merdian_status`; tables `data_contracts`, `product_lineage`, `cycle_health`, `gex_cycle_history`; views `v_cycle_health_daily`, `v_run_ledger_daily`, `v_run_trace`, `v_provenance_coverage_daily` (all `security_invoker`, `merdian_ro` only); function `get_parameter_num(text, timestamptz)`; columns `kind`, `run_id`, `product`, `status` on `script_execution_log`; backup tables `*_bak_s90_20261005` (drop after a clean week). **Revoked:** `EXECUTE` on `update_parameter()` from PUBLIC/anon/authenticated (S90-E). **Added:** `merdian_ro` read policies on `script_execution_log`, `merdian_parameters`, `dhan_scripmaster`.
+
+**Marketview.** `/var/www/marketview` rebuilt from `~/meridian-connect` at `6cdc0a1` (16:01 IST) and `265ceb0` (16:06 IST), nginx reloaded. **Those commits are on the box only** — `git push` there fails 403 on the HTTPS PAT, so the served bundle has no remote source until a deploy key is installed (TD-S90-NEW-2).
+
+**Observed, not changed:** `market_ticks` is emptied after every close by a job not yet traced (TD-S90-NEW-4); `merdian-wsfeed` inactive after the close, timer-driven (expected). Box at the close: disk 7.3 G / 29 G, 1.46 G RAM available.

@@ -129,3 +129,7 @@ the existing views latest-only) · ADR-020 (absence is not a verdict — why a m
 `pin_state` key is NULL with a reason, never a default) · TD-S80-NEW-7 · TD-S89-NEW-1 ·
 TD-S89-NEW-2 (the ADR-016 write path absent, which is why the `pin_state.*` keys are seeded by
 a dated migration rather than a CLI) · ENH-133 · ENH-134 · `rulings_s89.md` (D-3, ENH-133 scope).
+
+---
+
+**S90 annotation (2026-10-05, ruling S90-B, `docs/research/s90_agentic/rulings_s90.md`).** D1's "both expiry legs" is not achievable on the current source: `gamma_metrics` is `UNIQUE (symbol, ts)` and `UNIQUE (run_id)`, so it holds one expiry per symbol per cycle, and `gex_cycle_history` reads its legs from it. **Front leg (W1) only, by ruling, until a W2 compute path is separately ruled.** The PK `(symbol, expiry_date, ts)` is unchanged and admits W2 later without a migration. D2 is unaffected. **Applied 2026-10-05 ~17:05 IST; writer wired into `run_merdian_shadow_runner_aws.py` after gamma + volatility (`5ac0ed0`, off switch `ENH133_WRITER_ENABLED`, ruling S90-F); EOD reconciler `55 10 * * 1-5` (`be36d48`). First live cycle 2026-10-06 09:15 IST.**

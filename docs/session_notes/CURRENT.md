@@ -2,11 +2,109 @@
 
 > **Living file.** Overwritten at the end of every session to reflect what just happened and what the next session is for.
 > Claude reads this immediately after `CLAUDE.md` at session start. It replaces the practice of manually pasting a "session resume block."
-> **History.** Every session block before S83 lives in [`docs/registers/CURRENT_history.md`](../registers/CURRENT_history.md) — committed to git, **not** uploaded to project knowledge. Split at the S78 doc-close per **TD-S73-NEW-8**; S78 demoted to history at the S80 doc-close and **S81 at the S83 doc-close**, S82 at the S84 doc-close, **S83 at the S85 doc-close**, **S84 at the S86 doc-close** **S85 at the S87 doc-close** **S86 at the S88 doc-close** and **S87 at the S89 doc-close**, each moved verbatim rather than retyped — the S87 move asserted byte-identical at **19,184 B**, sha256 `52b9364b…` on both sides. This file carries the current session and one predecessor, and nothing else.
+> **History.** Every session block before S89 lives in [`docs/registers/CURRENT_history.md`](../registers/CURRENT_history.md) — committed to git, **not** uploaded to project knowledge. Split at the S78 doc-close per **TD-S73-NEW-8**; S78 demoted to history at the S80 doc-close and **S81 at the S83 doc-close**, S82 at the S84 doc-close, **S83 at the S85 doc-close**, **S84 at the S86 doc-close** **S85 at the S87 doc-close** **S86 at the S88 doc-close**, **S87 at the S89 doc-close** and **S88 at the S90 / AM-1 doc-close**, each moved verbatim rather than retyped — the S87 move asserted byte-identical at **19,184 B**, sha256 `52b9364b…` on both sides. This file carries the current session and one predecessor, and nothing else.
 
 ---
 
 ## Last session
+
+**S90 / AM-1 (Agentic Meridian Session 1) — 2026-10-05 (Monday, live session) → 2026-10-06 05:20 IST.**
+The first build session of the agentic layer: Stage 0 (spine) and the first Stage 1/2 harness
+items, built beside the live system. **AM-n numbering starts here; S-numbers continue in parallel
+(AM-1 = S90).** This block points and does not restate. Progress lives in **one** place, the
+tracker `docs/research/s90_agentic/agentic_layer_roadmap_S90.md` (v2.7, §3 Status/Session
+columns, each with linked evidence); rulings in `docs/research/s90_agentic/rulings_s90.md`
+(S90-A…I); the decision in **ADR-031**. Closed **hybrid** by operator ruling: the protocol files
+carry short pointer entries, and Doc Protocol v5 is drafted for ruling, not adopted.
+
+**What was established**
+
+1. **ADR-031 FILED and ACCEPTED (S90-C)** — the spine: data contracts with generated checks; one
+   status enum (`OK/DEGRADED/STALE/MISSING/CLOSED/NOT_COMPUTED/UNKNOWN`) propagated down the
+   lineage; provenance (**D3a: via `run_id` → ledger**, S90-I); rules read as-of, write path closed
+   to anon (S90-E); closed days are rows; a new table states RLS in its own DDL and is checked
+   after apply; `script_execution_log` is the one ledger and `merdian_ro` can read it.
+2. **Production changed — 15 commits `38a0a84..ca79717`, all pushed, production fast-forwarded**
+   (the last at **2026-10-06 04:53 IST, pre-market, by operator choice** over the after-16:00 rule):
+   contract runner in shadow every 5 minutes writing `cycle_health` (R1.2); ENH-133
+   `gex_cycle_history` applied, writer wired, reconciler scheduled (R0.4, ADR-030 front leg only
+   per S90-B); the runner and every chain/gamma/vol/history writer write ledger rows carrying
+   `run_id`/`product`/`status` (R0.7, R0.3); closed days written as rows and the chain ingest and
+   spot capture moved onto the shared calendar gate (R0.8) — **R01-F5, a repeat of 10-02 on
+   2026-10-20, closed before its date**; WCB reads live LTP (S90-G); the EOD sweep runs a full lap
+   and stamps dates in IST, with a one-time +1 day migration of two tables (S90-H); six golden days
+   frozen in `tests/golden/` (R2.1).
+3. **Database, applied in the SQL editor** (files in `sql/`, prefix `2026-10-05_s90` /
+   `2026-10-06_s90`): status enum, `data_contracts` (14), `product_lineage` (12), `cycle_health`;
+   `update_parameter()` revoked from PUBLIC/anon/authenticated; `get_parameter_num(key, as_of)`;
+   health views; ledger columns + `v_run_trace` + `v_provenance_coverage_daily`; `merdian_ro`
+   read policies on `script_execution_log`, `merdian_parameters`, `dhan_scripmaster`; the
+   dealer-flow sign fix (MV-1); DH-905 remap.
+4. **Marketview live check found 12 items (MV-1…12); MV-1/2/3/5/9 fixed, MV-4 partly** —
+   `docs/research/s90_agentic/marketview_live_check_S90.md`. The frontend fixes are deployed from
+   `~/meridian-connect` **`265ceb0`, which is NOT in GitHub** (TD-S90-NEW-2).
+5. **Twelve spine findings, R01-F1…F12** (`R0.1_spine_inventory_S90.md` §11): the orchestrator
+   wrote no ledger row (F1, fixed); `equity_eod` / `breadth_indicators_daily` dates one day early
+   since 2025-07 (F10, fixed); the EOD sweep covered only part of the universe each day (F11,
+   fixed); **DH-905, S67's "structural" 97.83 % ceiling, was stale IDs from series changes** (F12,
+   cured by hand: 28 remapped, 4 deactivated, 0 unmapped).
+
+**Corrections to my own work — §D.46, 13 rows.** The one to carry: **the Supabase SQL editor does
+not run a `BEGIN … temp table … COMMIT` script as one transaction in one session** — the DH-905
+remap landed while the editor reported `42P01` (§D.46.8). Gated multi-step writes go in **one
+`DO` block**.
+
+**Registers touched:** `tech_debt.md` (**TD-S90-NEW-1…11** + S90 status footer on six existing
+TDs), Assumption Register **§D.46**, Decision Index (**+ADR-031**, marker → `ADR-032+`),
+Enhancement Register (ENH-133 row, change log, Part 6 footer), System Map **§S90**, Deployment
+Topology **§S90**, `merdian_reference.json` **v68**, `CLAUDE.md` **v1.62**, ADR-030 S90
+annotation, `CURRENT_history.md` (S88 moved). **Doc Protocol v5 DRAFT** at
+`docs/operational/MERDIAN_Documentation_Protocol_v5_DRAFT.md`.
+
+## NEXT SESSION PICKS UP
+
+**Dated, today first.**
+
+1. **Tue 2026-10-06, 09:30 IST — the first live day of everything above.** Runbook
+   `docs/research/s90_agentic/runbook_2026-10-06_1600.md` §5 (it says 10-07: the deploy moved
+   forward, so it applies **today**). ENH-133 first rows (G1–G3, A(c)–A(e), R1–R6); WCB moving on
+   live ticks (S90-G); `v_provenance_coverage_daily` 100 % and `v_run_trace` for the latest cycle
+   (R0.3 / R0.7 exits); runner statuses in `cycle_health` (R1.2, the sample week starts).
+2. **Tue 2026-10-06, 16:10 IST — EOD run:** coverage should sit near 100 % of the active universe
+   now that DH-905 is cured; `breadth_indicators_daily` complete for 10-06 by next morning.
+3. **Tue 2026-10-06 — NIFTY L9 stage-1 max-pain arm** (TD-S80-NEW-1), pre-registered before any
+   read — carried from S89.
+4. **Wed 2026-10-07, 10:15:59 IST — A4 re-run, SENSEX dte 1** — carried from S89. **The ENH-98
+   L7/L8 views were NOT applied in S90** (S90-A scoped the apply to ENH-133), so the
+   pre-committed DROP has nothing to drop until they are.
+5. **~Tue 2026-10-13 — drop the S90-H backup tables** after a clean week (TD-S90-NEW-11).
+6. **Tue 2026-10-20 (holiday) — the first live test of R0.8:** no chain rows written,
+   `cycle_health` CLOSED (TD-S89-NEW-1 closes on it).
+
+**Undated — the tracker is the list** (roadmap §3). Next by its order: R1.10 scrip-map sync ·
+push Marketview (deploy key) · R0.6 authenticated Settings write + `config_version` · R1.7 status
+on Home (needs the browser read-path decision) · R0.7 fold the ADR-029 file ledger · the ~26
+other inline calendar gates · R1.6 against the fixture files · R2.1 diff in the deploy path ·
+**Doc Protocol v5 ruling** · ENH-133 tier (still operator-to-assign). S89's undated list stands
+below.
+
+## OPERATOR RULINGS, S90
+
+**All rulings live in `docs/research/s90_agentic/rulings_s90.md`**, the single source.
+
+| # | Topic |
+|---|---|
+| **S90-A / S90-F** | ENH-133 applied 10-05; writer wired the same night (F amends A) |
+| **S90-B** | ADR-030 D1: front leg (W1) only until a W2 compute path is ruled |
+| **S90-C** | ADR-031 accepted (roadmap A-8) |
+| **S90-D** | Stages 0–2 inside parity scope (A-5); parity closes at the Stage 2 exit |
+| **S90-E** | `update_parameter()` revoked from PUBLIC/anon/authenticated; Settings read-only |
+| **S90-G** | WCB: fix the writer (live LTP over the prior close, no stale fallback) |
+| **S90-H** | EOD dates: IST ingest + one-time +1 day migration |
+| **S90-I** | ADR-031 D3a: provenance via `run_id` → ledger |
+| **Close mode** | Hybrid close (2026-10-06 05:21 IST): the tracker holds progress; protocol files point; Doc Protocol v5 drafted, not ruled |
+
+## Previous session S89
 
 **S89 — 2026-10-03 (Saturday, out of hours), closed 2026-10-04.** Fourteen operator rulings, one
 new ADR, two authored-not-applied DDL sets, a frontend deploy and a live security fix — and
@@ -66,7 +164,7 @@ close), `MERDIAN_Assumption_Register.md` (**§D.45, 13 rows, all REFUTED, eleven
 `CASE-2026-09-22-anon-privilege-exposure` **§10**, `CLAUDE.md` footer. **One new ADR; no ADR
 amended.**
 
-## NEXT SESSION PICKS UP
+## NEXT SESSION PICKS UP — as S89 left it (SUPERSEDED by the S90 list above)
 
 **Dated, and the first two do not slip.**
 
@@ -112,119 +210,4 @@ is a ruling that can drift out of agreement with itself.
 | **L78-1 / -2 / -3** | Compute **both** constructs under distinct names; standing book primary; one daily 10:15 reading, calendar decay |
 | **CASE disposition** | **UPDATE** `CASE-2026-09-22`, do not open a new one |
 | **Parity spec `:292`** | State the parsed sums and the missing day-length factor — **do not publish another rounded guess** |
-
-## Previous session S88
-
-**S88 — 2026-10-01 (Thursday, SENSEX expiry day), closed 2026-10-02.** One pre-registered test
-passed three times; everything else measured was negative, a correction, or a refusal by design.
-Full detail: `docs/research/capture_s88.md` §1–§6, with §5.7 correcting §5.3.
-
-**What was established**
-
-1. **L9 stage-1 max-pain, SENSEX arm: PASS ×3** (§1). Pre-registered before any OI or expiry data
-   was read; instrument hash verified before each run. PASS at **12:45:07, 14:55:06, 15:30:06 IST**
-   — arm A 0/0 both ways, arm B 197/197, no tie at minimum `total_pain` in any body. Mechanism:
-   W2-only strikes 0 and all three `max_pain_strike` agreeing, so **all 197 differing rows differ
-   in `total_pain` alone — the expiry mixture moved the magnitude and never the published level**,
-   while shared strikes where W2 OI > W1 grew 6 → 12 → 16. **TD-S80-NEW-1 is NOT closed: the NIFTY
-   arm is owed, next NIFTY expiry 2026-10-06 (measured).**
-2. **The S82 instrument did not exist in the tree and was rebuilt** (§1.2), stated as rebuilt
-   rather than implied continuous.
-3. **Marketview header reads a close two sessions old during every session** (§3, **TD-S88-NEW-1**).
-   Writer at **16:10 IST** (crontab line 24) + a newest-row reader with no date filter. NIFTY
-   2026-10-01: **−1.2953 %** shown against a settled **−0.8775 %** — overstated **0.4178 pp, 48 %
-   too large**; SENSEX only 0.0667 pp, and that is luck, not safety — the error is the gap between
-   two consecutive closes and is **unbounded**. **Fix belongs in the read layer**; moving the cron
-   cannot work, because no settled close exists before 16:00.
-4. **`open_0915_spot` is the 09:16 bar's CLOSE**, not the 09:15 open (§3.3, D.44.5) — proven by
-   comparison, 4/4, with `ohlc_open ≠ ohlc_close` on all 4 so the test was not vacuous.
-5. **The all-layers reconstruction returned a NEGATIVE result** (§5). 90/90 spine cells and
-   **540/540 layer cells** admitted on exact `ts` equality. **On the built layers, 2026-10-01 was
-   not distinguishable from the other five SENSEX expiry days before 12:15** — below chance on
-   SET A (34 vs 36), 5 above on SET B (38 vs 33). **08-27 scored highest in both** and its range is
-   **rank 5 of 17, 44 % of 10-01's**.
-6. **Eleven of twelve parity views carry no history** (D.44.3); L3 refuses wholesale on dte 0, L10
-   **partially** (keeps `ce_iv`/`pe_iv`), L9 publishes throughout and was limited by chain depth —
-   **and all of that was already documented at `MERDIAN_System_Map.md:1963-1976`** (§5.7).
-
-**Corrections I made to my own work inside the session** — recorded because they are the session's
-most transferable output: a **UTC/IST cast** that would have pinned every bucket to the same run
-and looked plausible (D.44.4); a **register-contradiction claim** that was an omission, not a
-conflict (§2.5 ii → §3.2, D.44.7); **"L10 is empty"**, too strong (§5.7, D.44.10); and a
-**NIFTY/SENSEX number mix** in a TD row, rebuilt with the arithmetic asserted against the artefact.
-
-**Registers touched:** `tech_debt.md` (TD-S88-NEW-1; update rows on TD-S81-NEW-16 and
-TD-S80-NEW-1), `MERDIAN_Assumption_Register.md` (**§D.44, 10 rows, all REFUTED**),
-`MERDIAN_Enhancement_Register.md` (**ENH-133…138, all PROPOSED**; Part 1 count recomputed
-**116 → 122**, having drifted 4 since S81 despite the "derive, don't carry" rule),
-`merdian_reference.json`, System Map §S88, `CLAUDE.md` footer. **No new ADR.**
-
-## NEXT SESSION PICKS UP — as S88 left it (SUPERSEDED by the S89 list above)
-
-**Dated, in order:**
-
-1. **Sat 2026-10-03, out of market hours** — ADR-029 **#13/#14**: sandbox enable plus install and
-   network-allowlist cost, and the Bash deny-bypass gap with the untested spellings enumerated first.
-2. **TD-S86-NEW-9 — the owed operator ruling, BEFORE 2026-10-07.** §2.6's ≥ 3×SE precondition does
-   not say whether it gates the gamma reading or only the offset reading, and on A4's data the two
-   give **different T1 verdicts**. Must be ruled, pre-registered and dated before the next arm runs.
-3. **Tue 2026-10-06 — the NIFTY L9 stage-1 arm** (TD-S80-NEW-1, owed since S82, carried through
-   S85/S86/S87/S88). Front expiry **measured** as 2026-10-06. **Pre-register that morning, before
-   any read**, by the §1.3 verdict order; the instrument is `scratch/s88_l9/l9_rebuilt_source.sql`
-   with the scope CTE set to NIFTY and that day's W1.
-4. **Optional, before 2026-10-06** — a pre-registered threshold for the fixed-strike OI tilt and/or
-   `ratio_pct`, if either is to be tested rather than described. **Unstamped means not a test.**
-5. **Wed 2026-10-07, 10:15:59 IST — A4 re-run**, SENSEX dte 1, gated on item 2.
-
-**PARITY BUILD QUEUE — S88's stated priority, and it comes before the ENH queue.**
-
-- **(a) TD-S88-NEW-1 repair.** A Lovable read-layer prompt was **drafted in chat 2026-10-01** and is
-  not in the tree. **Precondition before it ships:** a **single-run anon check in the SQL editor**
-  — one execution carrying `current_user` beside its rows — against `trading_calendar` and
-  `market_spot_snapshots` (the **16:00–16:10 IST `dhan_idx_i`** rows). `merdian_ro` cannot run it
-  (`permission denied to set role "anon"`), so it belongs to the editor under postgres.
-- **(b) §H phased Lovable prompts for the board.** Design doc **§A–G APPROVED 2026-10-01 13:04 IST
-  with four additions R1–R4**; the **§B.1a bindings are measured** (§2.2–§2.4). Note for whoever
-  writes them: `basis_pct` is a **futures-calendar artefact** across days (§5.4) and `open_0915_spot`
-  is the **09:16 close** (D.44.5) — both bindings must carry those qualifications.
-- **(c) Snapshot export into the board canvas.**
-
-**Build queue — nothing started, all operator-gated:** ENH-133…138 (Part 4 S88 footer).
-**ENH-133 and ENH-134 are alternatives, not a sequence.** **ENH-135 revisits a deliberate S62
-decision and is not a defect report.** **ENH-137 is shadow-only under ADR-029.**
-
-**Rulings owed:**
-
-- The **six ENH dispositions** (ENH-133…138).
-- The **five candidate rule lines** in `docs/research/s88_rule_lines_PROPOSED.md` — **proposed, not
-  applied, and deliberately NOT in `.claude/rules/`**.
-- Whether **`open_0915_spot` taking the 09:16 close is intended**, and whether `gap_open_pct`
-  should be recomputed off `raw->>'ohlc_open'`.
-- **L11 — decline or pending.** The design doc now says **PENDING**; the disposition is unresolved. **[SUPERSEDED 2026-10-03 — RULED DECLINED-ON-EVIDENCE.** Absent from the parity target's terminal sample, composition-only, 0–10 scaling undisclosed; ADR-025 D3 + D4. Ruling: `docs/research/s89_rulings/rulings_s89.md` → "L11 (five-axis radar)"; ADR-025 `:91` and `:346` carry the stamp. **Annotated rather than rewritten, so the record of what S88 believed survives.]**
-- **E-D1 … E-D8:** `gex_cr` unit · canonical max pain · theme · legacy pin · NET-LONG γ source ·
-  signal row · ACCEL retirement · prototype corrections.
-- **TD-S87-NEW-1** (parked, S3) · the **CLI unpin** · the **five documents carrying the copied
-  "150k" figure**.
-
-**Owed probe:** `scratch/s88_design/markers_check` — the anon-path read in one execution carrying
-`current_user`, and `created_at` sampling on marker rows.
-
-## OPERATOR RULINGS, S88
-
-Recorded because each changed what was measured or what was written.
-
-- **Parity board design doc §A–G APPROVED** 2026-10-01 13:04 IST, **with four additions R1–R4** —
-  change marks on spot/VIX and the other levels; futures with basis and its change vs the previous
-  session; the pre-open print; the gap up/down.
-- **The tie clause gates BOTH arms, and all three bodies are counted**, evaluated before either
-  arm is read — a tie can fake arm A *and* arm B. **P3 accepted** (independently derived leg 1).
-  Both ruled **before** any OI or expiry data was read (§1.3).
-- **Engine pull is operator-terminal only.** Nothing under `~/meridian-engine` runs from Claude
-  Code, `git fetch` included. **Standing rule.**
-- **Claude Code runs in a plain SSM shell, not tmux.** Resume with
-  `cd /home/ssm-user/meridian-cc && claude --continue`.
-- **§4.5's wording kept as written** (the quartile result stated with its caveats inline).
-- **Price levels dropped from scoring; `d_oi_tilt` dropped from SET B** — both confounds named by
-  the operator, both recorded in the output rather than silently applied.
-- **Rule lines go to `docs/research/`, not `.claude/rules/`** — they are operator rules.
 

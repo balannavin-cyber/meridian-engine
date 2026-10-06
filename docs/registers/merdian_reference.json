@@ -5002,10 +5002,16 @@
       "truncated_each_run": false
     }
   },
-  "version": "v67",
-  "last_updated_session": "Session 89",
-  "last_updated_date": "2026-10-04",
+  "version": "v68",
+  "last_updated_session": "Session 90 / AM-1",
+  "last_updated_date": "2026-10-06",
   "change_log": [
+      {
+        "session": "S90 / AM-1",
+        "date": "2026-10-05 -> 2026-10-06",
+        "type": "Agentic Meridian Session 1: Stage 0 of the agentic layer built beside the live system. Production Python changed, DDL applied, engine pulled. Closed hybrid: progress lives in the roadmap tracker; protocol files point.",
+        "summary": "ADR-031 FILED + ACCEPTED (S90-C; D3a S90-I): data contracts + generated checks, one status enum propagated down the lineage, provenance via run_id -> script_execution_log, as-of parameter reads with the write path closed to anon (S90-E), closed days as rows, new-table access declared in DDL and checked, one ledger readable by merdian_ro. 15 commits 38a0a84..ca79717 pushed and deployed (last 2026-10-06 04:53 IST pre-market by operator choice): check_contracts_shadow.py in shadow */5 3-10 UTC writing cycle_health; ENH-133 gex_cycle_history applied + writer wired into run_merdian_shadow_runner_aws.py (off switch ENH133_WRITER_ENABLED) + reconciler 55 10 UTC, front leg only (S90-B); ExecutionLog run_id/product/status and a runner ledger row per cycle; seed_trading_calendar.py writes closed days and the chain ingest + spot capture use core/trading_calendar_gate.py; WCB from live market_ticks LTP (S90-G); EOD full lap + IST trade dates + one-time +1 day migration of equity_eod and breadth_indicators_daily (S90-H); six golden days in tests/golden. SQL applied (files in sql/ 2026-10-05_s90* / 2026-10-06_s90*): merdian_status, data_contracts, product_lineage, cycle_health, health views, get_parameter_num(text,timestamptz), ledger columns + v_run_trace + v_provenance_coverage_daily, merdian_ro policies on script_execution_log / merdian_parameters / dhan_scripmaster, update_parameter revoked, v_dealer_flow_sim sign fix (MV-1), DH-905 remap. Marketview fixes deployed from meridian-connect 265ceb0, not pushed (TD-S90-NEW-2). DH-905 cured: 28 remapped, 4 deactivated, 0 unmapped (S67's 97.83 % ceiling was stale ids from series changes). Assumption Register D.46 (13 rows, all REFUTED); TD-S90-NEW-1..11; Decision Index +ADR-031, marker ADR-032+; CLAUDE.md v1.62. File inventory for the new scripts and tables is NOT re-entered here under the hybrid close: see docs/research/s90_agentic/ and System Map S90."
+      },
       {
         "session": "S89",
         "date": "2026-10-03 -> 2026-10-04",

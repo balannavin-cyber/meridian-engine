@@ -3707,3 +3707,121 @@ transcribed into a second place is a ruling that can drift out of agreement with
 | **WS2.3 option B** | Option A is VOID on its own control; core keeps the checklist and the skill gains the register order | 2026-10-01 07:22 IST |
 | **E2 pre-registration** | Ratified as written, including the NIFTY dte 5 correction and the SENSEX-only scope of the 0-rows expectation | 2026-10-01 05:59:47 IST |
 | **`--max-turns` deviation** | Accepted: all arms share the config and every bar is within-WS2.3, so the runs continued | 2026-10-01 06:42:15 IST |
+
+---
+
+## Previous session S88
+
+**S88 — 2026-10-01 (Thursday, SENSEX expiry day), closed 2026-10-02.** One pre-registered test
+passed three times; everything else measured was negative, a correction, or a refusal by design.
+Full detail: `docs/research/capture_s88.md` §1–§6, with §5.7 correcting §5.3.
+
+**What was established**
+
+1. **L9 stage-1 max-pain, SENSEX arm: PASS ×3** (§1). Pre-registered before any OI or expiry data
+   was read; instrument hash verified before each run. PASS at **12:45:07, 14:55:06, 15:30:06 IST**
+   — arm A 0/0 both ways, arm B 197/197, no tie at minimum `total_pain` in any body. Mechanism:
+   W2-only strikes 0 and all three `max_pain_strike` agreeing, so **all 197 differing rows differ
+   in `total_pain` alone — the expiry mixture moved the magnitude and never the published level**,
+   while shared strikes where W2 OI > W1 grew 6 → 12 → 16. **TD-S80-NEW-1 is NOT closed: the NIFTY
+   arm is owed, next NIFTY expiry 2026-10-06 (measured).**
+2. **The S82 instrument did not exist in the tree and was rebuilt** (§1.2), stated as rebuilt
+   rather than implied continuous.
+3. **Marketview header reads a close two sessions old during every session** (§3, **TD-S88-NEW-1**).
+   Writer at **16:10 IST** (crontab line 24) + a newest-row reader with no date filter. NIFTY
+   2026-10-01: **−1.2953 %** shown against a settled **−0.8775 %** — overstated **0.4178 pp, 48 %
+   too large**; SENSEX only 0.0667 pp, and that is luck, not safety — the error is the gap between
+   two consecutive closes and is **unbounded**. **Fix belongs in the read layer**; moving the cron
+   cannot work, because no settled close exists before 16:00.
+4. **`open_0915_spot` is the 09:16 bar's CLOSE**, not the 09:15 open (§3.3, D.44.5) — proven by
+   comparison, 4/4, with `ohlc_open ≠ ohlc_close` on all 4 so the test was not vacuous.
+5. **The all-layers reconstruction returned a NEGATIVE result** (§5). 90/90 spine cells and
+   **540/540 layer cells** admitted on exact `ts` equality. **On the built layers, 2026-10-01 was
+   not distinguishable from the other five SENSEX expiry days before 12:15** — below chance on
+   SET A (34 vs 36), 5 above on SET B (38 vs 33). **08-27 scored highest in both** and its range is
+   **rank 5 of 17, 44 % of 10-01's**.
+6. **Eleven of twelve parity views carry no history** (D.44.3); L3 refuses wholesale on dte 0, L10
+   **partially** (keeps `ce_iv`/`pe_iv`), L9 publishes throughout and was limited by chain depth —
+   **and all of that was already documented at `MERDIAN_System_Map.md:1963-1976`** (§5.7).
+
+**Corrections I made to my own work inside the session** — recorded because they are the session's
+most transferable output: a **UTC/IST cast** that would have pinned every bucket to the same run
+and looked plausible (D.44.4); a **register-contradiction claim** that was an omission, not a
+conflict (§2.5 ii → §3.2, D.44.7); **"L10 is empty"**, too strong (§5.7, D.44.10); and a
+**NIFTY/SENSEX number mix** in a TD row, rebuilt with the arithmetic asserted against the artefact.
+
+**Registers touched:** `tech_debt.md` (TD-S88-NEW-1; update rows on TD-S81-NEW-16 and
+TD-S80-NEW-1), `MERDIAN_Assumption_Register.md` (**§D.44, 10 rows, all REFUTED**),
+`MERDIAN_Enhancement_Register.md` (**ENH-133…138, all PROPOSED**; Part 1 count recomputed
+**116 → 122**, having drifted 4 since S81 despite the "derive, don't carry" rule),
+`merdian_reference.json`, System Map §S88, `CLAUDE.md` footer. **No new ADR.**
+
+## NEXT SESSION PICKS UP — as S88 left it (SUPERSEDED by the S89 list above)
+
+**Dated, in order:**
+
+1. **Sat 2026-10-03, out of market hours** — ADR-029 **#13/#14**: sandbox enable plus install and
+   network-allowlist cost, and the Bash deny-bypass gap with the untested spellings enumerated first.
+2. **TD-S86-NEW-9 — the owed operator ruling, BEFORE 2026-10-07.** §2.6's ≥ 3×SE precondition does
+   not say whether it gates the gamma reading or only the offset reading, and on A4's data the two
+   give **different T1 verdicts**. Must be ruled, pre-registered and dated before the next arm runs.
+3. **Tue 2026-10-06 — the NIFTY L9 stage-1 arm** (TD-S80-NEW-1, owed since S82, carried through
+   S85/S86/S87/S88). Front expiry **measured** as 2026-10-06. **Pre-register that morning, before
+   any read**, by the §1.3 verdict order; the instrument is `scratch/s88_l9/l9_rebuilt_source.sql`
+   with the scope CTE set to NIFTY and that day's W1.
+4. **Optional, before 2026-10-06** — a pre-registered threshold for the fixed-strike OI tilt and/or
+   `ratio_pct`, if either is to be tested rather than described. **Unstamped means not a test.**
+5. **Wed 2026-10-07, 10:15:59 IST — A4 re-run**, SENSEX dte 1, gated on item 2.
+
+**PARITY BUILD QUEUE — S88's stated priority, and it comes before the ENH queue.**
+
+- **(a) TD-S88-NEW-1 repair.** A Lovable read-layer prompt was **drafted in chat 2026-10-01** and is
+  not in the tree. **Precondition before it ships:** a **single-run anon check in the SQL editor**
+  — one execution carrying `current_user` beside its rows — against `trading_calendar` and
+  `market_spot_snapshots` (the **16:00–16:10 IST `dhan_idx_i`** rows). `merdian_ro` cannot run it
+  (`permission denied to set role "anon"`), so it belongs to the editor under postgres.
+- **(b) §H phased Lovable prompts for the board.** Design doc **§A–G APPROVED 2026-10-01 13:04 IST
+  with four additions R1–R4**; the **§B.1a bindings are measured** (§2.2–§2.4). Note for whoever
+  writes them: `basis_pct` is a **futures-calendar artefact** across days (§5.4) and `open_0915_spot`
+  is the **09:16 close** (D.44.5) — both bindings must carry those qualifications.
+- **(c) Snapshot export into the board canvas.**
+
+**Build queue — nothing started, all operator-gated:** ENH-133…138 (Part 4 S88 footer).
+**ENH-133 and ENH-134 are alternatives, not a sequence.** **ENH-135 revisits a deliberate S62
+decision and is not a defect report.** **ENH-137 is shadow-only under ADR-029.**
+
+**Rulings owed:**
+
+- The **six ENH dispositions** (ENH-133…138).
+- The **five candidate rule lines** in `docs/research/s88_rule_lines_PROPOSED.md` — **proposed, not
+  applied, and deliberately NOT in `.claude/rules/`**.
+- Whether **`open_0915_spot` taking the 09:16 close is intended**, and whether `gap_open_pct`
+  should be recomputed off `raw->>'ohlc_open'`.
+- **L11 — decline or pending.** The design doc now says **PENDING**; the disposition is unresolved. **[SUPERSEDED 2026-10-03 — RULED DECLINED-ON-EVIDENCE.** Absent from the parity target's terminal sample, composition-only, 0–10 scaling undisclosed; ADR-025 D3 + D4. Ruling: `docs/research/s89_rulings/rulings_s89.md` → "L11 (five-axis radar)"; ADR-025 `:91` and `:346` carry the stamp. **Annotated rather than rewritten, so the record of what S88 believed survives.]**
+- **E-D1 … E-D8:** `gex_cr` unit · canonical max pain · theme · legacy pin · NET-LONG γ source ·
+  signal row · ACCEL retirement · prototype corrections.
+- **TD-S87-NEW-1** (parked, S3) · the **CLI unpin** · the **five documents carrying the copied
+  "150k" figure**.
+
+**Owed probe:** `scratch/s88_design/markers_check` — the anon-path read in one execution carrying
+`current_user`, and `created_at` sampling on marker rows.
+
+## OPERATOR RULINGS, S88
+
+Recorded because each changed what was measured or what was written.
+
+- **Parity board design doc §A–G APPROVED** 2026-10-01 13:04 IST, **with four additions R1–R4** —
+  change marks on spot/VIX and the other levels; futures with basis and its change vs the previous
+  session; the pre-open print; the gap up/down.
+- **The tie clause gates BOTH arms, and all three bodies are counted**, evaluated before either
+  arm is read — a tie can fake arm A *and* arm B. **P3 accepted** (independently derived leg 1).
+  Both ruled **before** any OI or expiry data was read (§1.3).
+- **Engine pull is operator-terminal only.** Nothing under `~/meridian-engine` runs from Claude
+  Code, `git fetch` included. **Standing rule.**
+- **Claude Code runs in a plain SSM shell, not tmux.** Resume with
+  `cd /home/ssm-user/meridian-cc && claude --continue`.
+- **§4.5's wording kept as written** (the quartile result stated with its caveats inline).
+- **Price levels dropped from scoring; `d_oi_tilt` dropped from SET B** — both confounds named by
+  the operator, both recorded in the output rather than silently applied.
+- **Rule lines go to `docs/research/`, not `.claude/rules/`** — they are operator rules.
+

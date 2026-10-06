@@ -19,6 +19,8 @@ The final entry is a single 82,953-byte line carrying v1.30 through v1.1 as one 
 
 ---
 
+*CLAUDE.md v1.61 — 2026-10-04 (Session 89 close). **ADR-030 FILED + ACCEPTED** — per-cycle layer history (`gex_cycle_history`); schema NOT in the ADR, it points at `ENH-133_schema_spec_S89.md`. DDL applies **Mon 2026-10-05 ≥ 16:00 IST**. **ENH-98 L7/L8 authored-not-applied**, badged **PROVISIONAL — T1 pending 10-07** with a pre-committed DROP; **build NOT started, a sixth time**. **A live un-gated `:80` surface found and closed** (651,242 B of bundle served to any non-canonical Host); `certbot renew --dry-run` PASSED after. **§D.45 — 13 rows all REFUTED, eleven my own**, incl. three 200s that proved nothing and a check that printed a verdict it never computed. **TD-S89-NEW-1…5**; Part-1 count **derived = 124** with the handle stated; reference **v67**. No ADR amended, no production Python, no DDL applied. Predecessor footers: `docs/registers/CLAUDE_history.md`.*
+
 *CLAUDE.md v1.59 — 2026-10-01 (Session 87 close). **ADR-029 FILED ACCEPTED** — model
 routing; 18 rulings closed, next-free `ADR-030+`. **TC1 shadow FAILED 6/10 vs 10/10**,
 nothing gears down. **ADR-028 §7 amended** with measured launch tokens; its *"150k"*

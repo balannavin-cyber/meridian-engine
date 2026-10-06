@@ -62,3 +62,5 @@
 */5 3-10 * * 1-5 cd /home/ssm-user/meridian-engine && source .env && /usr/bin/timeout 240 /usr/bin/python3 check_contracts_shadow.py --write >> logs/check_contracts_shadow.log 2>&1
 # S90 ENH-133 EOD reconciler (spec §5: 16:25 IST; skips current date => finalises previous trading date)
 55 10 * * 1-5 cd /home/ssm-user/meridian-engine && source .env && /usr/bin/timeout 600 /usr/bin/python3 reconcile_gex_cycle_history_session_local.py >> logs/reconcile_gex_cycle_history.log 2>&1
+# S90 / AM-1 tick freeze (TD-S90-NEW-4): copy market_ticks to ~/merdian_fixtures/ticks before pg_cron jobid 46 prunes rows older than 1 hour
+*/15 3-10 * * 1-5 cd /home/ssm-user/meridian-engine && /usr/bin/timeout 120 /bin/bash scripts/freeze_market_ticks.sh >> logs/freeze_market_ticks.log 2>&1

@@ -33,6 +33,8 @@
 22 10 * * 1-5 cd /home/ssm-user/meridian-engine && source .env && /usr/bin/python3 detect_ict_patterns_runner.py SENSEX >> logs/ict_eod.log 2>&1
 # S70: CAS settled-close bar (15:29 IST) -- ADR-022 D2. Auction freezes the index 15:15-15:28; the settled close lands in the 15:29 bar. Daily OHLC endpoint does not carry the same-day close (verified 18:32 IST), so intraday is the only source.
 50 10 * * 1-5 cd /home/ssm-user/meridian-engine && source .env && /usr/bin/python3 capture_cas_close.py >> logs/cas_close.log 2>&1
+# S90: CAS close reconciliation vs Dhan daily (ADR-022 D2), 08:50 IST (after the 08:35 token refresh) over the last 7 days. Corrects a 15:29 bar ONLY when the daily close and the 16:00 snapshot agree (operator ruling 2026-10-06); otherwise reports.
+20 03 * * 1-5 cd /home/ssm-user/meridian-engine && source .env && /usr/bin/python3 backfill_cas_close_from_daily.py --from "$(TZ=Asia/Kolkata date -d '7 days ago' +\%F)" --to "$(TZ=Asia/Kolkata date -d yesterday +\%F)" --auto-correct >> logs/cas_recon.log 2>&1
 
 # S71 ADR-022 D1: CAS window coverage 15:30-15:40 IST (10:00-10:10 UTC).
 # Derivatives trade to 15:40 while spot is frozen; nothing observed this window.

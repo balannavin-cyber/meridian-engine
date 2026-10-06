@@ -251,6 +251,75 @@ def fetch_daily_closes(symbol: str, frm: ddate, to: ddate) -> Dict[str, float]:
     raise RuntimeError(f"Dhan fetch_daily_closes({symbol}) failed after retries")
 
 
+# ── S90 auto-correct (operator ruling 2026-10-06) ────────────────────────────
+# A MISMATCH is corrected ONLY when two independent sources agree: the Dhan daily
+# close AND the 16:00 IST post-close snapshot (market_spot_snapshots, source_table
+# dhan_idx_i, first row at/after 16:00 that day). Anything else is reported and left.
+# 2026-10-05 SENSEX is the case: 15:29 bar 72312.23 (frozen, settled later),
+# daily 72382.47, 16:00 snapshot 72382.47.
+
+SNAP_1600_SOURCE = "dhan_idx_i"
+
+
+def fetch_snap_1600(symbol: str, d: str) -> float | None:
+    day = datetime.strptime(d, "%Y-%m-%d").date()
+    lo = datetime.combine(day, datetime.min.time(), IST).replace(hour=16)
+    hi = datetime.combine(day, datetime.min.time(), IST).replace(hour=23, minute=59, second=59)
+    r = requests.get(
+        f"{SUPABASE_URL}/rest/v1/market_spot_snapshots",
+        headers=sb_headers(),
+        params=[("select", "spot,ts"), ("symbol", f"eq.{symbol}"),
+                ("source_table", f"eq.{SNAP_1600_SOURCE}"),
+                ("ts", f"gte.{lo.astimezone(timezone.utc).isoformat()}"),
+                ("ts", f"lte.{hi.astimezone(timezone.utc).isoformat()}"),
+                ("order", "ts.asc"), ("limit", "1")],
+        timeout=TIMEOUT,
+    )
+    if r.status_code >= 300:
+        raise RuntimeError(f"Supabase GET market_spot_snapshots failed: {r.status_code} {r.text[:200]}")
+    rows = r.json()
+    return float(rows[0]["spot"]) if rows and rows[0].get("spot") is not None else None
+
+
+def plan_corrections(items, snaps):
+    """items: [(d, symbol, have, daily)]; snaps: {(d, symbol): float|None}.
+    Returns (fix, left): fix = [(d, symbol, have, daily, snap)] where snap agrees with daily."""
+    fix, left = [], []
+    for d, symbol, have, daily in items:
+        snap = snaps.get((d, symbol))
+        if snap is not None and abs(snap - daily) <= MATCH_EPSILON:
+            fix.append((d, symbol, have, daily, snap))
+        else:
+            left.append((d, symbol, have, daily, snap))
+    return fix, left
+
+
+def correct_close_bar(symbol: str, d: str, old: float, new: float) -> int:
+    """Set the 15:29 bar's close to `new`, only if it still holds `old`. Returns rows changed."""
+    iid = INSTRUMENTS[symbol]["instrument_id"]
+    day = datetime.strptime(d, "%Y-%m-%d").date()
+    bar_ts = (datetime.combine(day, datetime.min.time(), IST)
+              .replace(hour=CLOSE_BAR_IST[0], minute=CLOSE_BAR_IST[1])
+              .astimezone(timezone.utc).isoformat())
+    key = [("instrument_id", f"eq.{iid}"), ("bar_ts", f"eq.{bar_ts}")]
+    r = requests.get(f"{SUPABASE_URL}/rest/v1/hist_spot_bars_1m", headers=sb_headers(),
+                     params=[("select", "high,low,close")] + key, timeout=TIMEOUT)
+    if r.status_code >= 300:
+        raise RuntimeError(f"Supabase GET hist_spot_bars_1m failed: {r.status_code} {r.text[:200]}")
+    rows = r.json()
+    if len(rows) != 1 or abs(float(rows[0]["close"]) - old) > MATCH_EPSILON:
+        return 0
+    body = {"close": new,
+            "high": max(float(rows[0]["high"]), new),
+            "low": min(float(rows[0]["low"]), new)}
+    r = requests.patch(f"{SUPABASE_URL}/rest/v1/hist_spot_bars_1m",
+                       headers={**sb_headers(), "Prefer": "return=representation"},
+                       params=key + [("close", f"eq.{rows[0]['close']}")], json=body, timeout=TIMEOUT)
+    if r.status_code >= 300:
+        raise RuntimeError(f"Supabase PATCH hist_spot_bars_1m failed: {r.status_code} {r.text[:200]}")
+    return len(r.json())
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -260,6 +329,9 @@ def main() -> int:
     ap.add_argument("--to",   dest="to",  required=True, help="YYYY-MM-DD")
     ap.add_argument("--dry-run", action="store_true",
                     help="classify and report, write nothing")
+    ap.add_argument("--auto-correct", action="store_true",
+                    help="S90: correct a MISMATCH when the daily close and the 16:00 "
+                         "snapshot agree; otherwise report and leave it")
     args = ap.parse_args()
 
     log = ExecutionLog(
@@ -321,6 +393,7 @@ def main() -> int:
     # ── Classify ──────────────────────────────────────────────────────────────
     matches:   List[str] = []
     mismatches: List[str] = []
+    mm_items: List[Tuple[str, str, float, float]] = []   # (date, symbol, have, daily)
     to_write:  List[Tuple[str, str, float]] = []   # (date, symbol, close)
 
     all_dates = sorted({d for m in daily.values() for d in m})
@@ -340,12 +413,39 @@ def main() -> int:
                 mismatches.append(
                     f"{d}/{symbol} bar={have:.2f} daily={authoritative:.2f} "
                     f"delta={have - authoritative:+.2f}")
+                mm_items.append((d, symbol, have, authoritative))
                 print(f"  MISMATCH {d} {symbol:6s} bar={have:.2f} "
                       f"daily={authoritative:.2f} "
                       f"delta={have - authoritative:+.2f}  (NOT corrected)")
 
     print(f"\n  MATCH={len(matches)}  MISSING={len(to_write)}  "
           f"MISMATCH={len(mismatches)}")
+
+    corrected = 0
+    if args.auto_correct and mm_items:
+        try:
+            snaps = {(d, sym): fetch_snap_1600(sym, d) for d, sym, _, _ in mm_items}
+        except Exception as e:
+            print(f"[ERROR] 16:00 snapshot read failed: {e}", file=sys.stderr)
+            return log.exit_with_reason("DATA_ERROR", exit_code=1, error_message=str(e)[:2000])
+        fix, left = plan_corrections(mm_items, snaps)
+        for d, sym, have, dly, snap in fix:
+            if args.dry_run:
+                print(f"  WOULD CORRECT {d} {sym:6s} {have:.2f} -> {dly:.2f} (daily = 16:00 snapshot)")
+                continue
+            n = correct_close_bar(sym, d, have, dly)
+            corrected += n
+            print(f"  {'CORRECTED' if n == 1 else 'NOT CHANGED'} {d} {sym:6s} {have:.2f} -> {dly:.2f} "
+                  f"(daily = 16:00 snapshot){'' if n == 1 else ' -- bar changed since read'}")
+        for d, sym, have, dly, snap in left:
+            print(f"  LEFT {d} {sym:6s} bar={have:.2f} daily={dly:.2f} "
+                  f"snap1600={'none' if snap is None else f'{snap:.2f}'} -- sources disagree, not corrected")
+        if corrected:
+            log.record_write("hist_spot_bars_1m", corrected)
+        fixed = {(d, s) for d, s, *_ in fix} if not args.dry_run else set()
+        mismatches = [m for m, (d, s, _, _) in zip(mismatches, mm_items) if (d, s) not in fixed]
+        print(f"  AUTO-CORRECT: fixed={corrected if not args.dry_run else 0}"
+              f"{f' would_fix={len(fix)}' if args.dry_run else ''}  left={len(left)}")
 
     if mismatches:
         print("\n  *** MISMATCHES -- not auto-corrected, decide deliberately ***")
@@ -357,7 +457,7 @@ def main() -> int:
         return log.exit_with_reason(
             "SUCCESS" if not mismatches else "DATA_ERROR",
             exit_code=0,
-            notes=(f"match={len(matches)} missing=0 mismatch={len(mismatches)}"))
+            notes=(f"match={len(matches)} missing=0 mismatch={len(mismatches)} corrected={corrected}"))
 
     if args.dry_run:
         print(f"\n  DRY-RUN: would write {len(to_write)} bars.")

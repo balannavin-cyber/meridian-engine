@@ -557,10 +557,11 @@ An item may start only when its class's controls are met. Each class includes th
 
 | Class | Controls |
 |---|---|
+| _Deploy timing (S90-J)_ | RO / OFF / SC changes and Marketview via staging deploy any time; only LIVE waits for the window |
 | **RO** | Through `bin/roq.sh` (`merdian_ro`); bounded probes in market hours; no `.env` or credential read; nothing written to the live database |
 | **OFF** | RO controls, plus: runs on copies or after the close; timeouts; writes only its own artefacts (docs, fixture files, its own tables) |
 | **SC** | OFF controls, plus: new tables or processes only, live path untouched; additive migration with RLS policy in the same migration and post-apply read/anon check; capacity cost stated against R1.9; heartbeat; shadow before any consumer reads it; named off switch |
-| **LIVE** | SC controls, plus: operator ruling before start; deploy only after 16:00 IST by push and `git pull --ff-only` from the operator's terminal; never edit under `~/meridian-engine` directly; interlock constant where it gates capture; golden-day and seeded-day tests green before deploy; per-symbol coverage audit after cutover; written rollback |
+| **LIVE** | SC controls, plus: operator ruling before start; deploy only in the S90-J window (weekdays 16:30 → 07:45 IST, any time on weekends and holidays) by push and `git pull --ff-only` from the operator's terminal; never edit under `~/meridian-engine` directly; interlock constant where it gates capture; golden-day and seeded-day tests green before deploy; per-symbol coverage audit after cutover; written rollback |
 
 ---
 

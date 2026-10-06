@@ -435,3 +435,27 @@ class ExecutionLog:
     def _warn(self, msg: str) -> None:
         """Write to stderr. ExecutionLog must never break the calling script."""
         print(f"[execution_log WARN] {msg}", file=sys.stderr)
+
+
+def log_child_run(script_name: str, symbol: Optional[str], run_id: str, product_relation: str,
+                  n_rows: int, notes: Optional[str] = None, error: Optional[str] = None) -> None:
+    """S90_CHILD_RUN (ADR-031 D3a/D7): one ledger row for a sub-run inside an invocation that writes
+    under its own run_id -- e.g. each extra expiry leg of the chain ingest. Without it those rows
+    carry a run_id no ledger row names, so provenance coverage cannot reach 100 %. Never raises:
+    the ledger must not break the caller (module docstring, Design notes)."""
+    try:
+        child = ExecutionLog(
+            script_name,
+            expected_writes={} if error else {product_relation: int(n_rows)},
+            symbol=symbol,
+            notes=notes,
+            run_id=run_id,
+            product_relation=product_relation,
+        )
+        if error:
+            child.exit_with_reason("DATA_ERROR", exit_code=1, error_message=error)
+        else:
+            child.record_write(product_relation, int(n_rows))
+            child.complete()
+    except Exception as e:  # noqa: BLE001 -- best-effort by contract
+        print(f"[execution_log WARN] child run ledger failed: {e}", file=sys.stderr)

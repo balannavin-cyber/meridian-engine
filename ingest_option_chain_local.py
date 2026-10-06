@@ -21,7 +21,7 @@ from core.dhan_client import DhanClient
 # contract_met. Pattern mirrored from capture_spot_1m.py (the V19/V18G
 # ENH-71 reference implementation). See docs/MERDIAN_Master_V19.docx
 # governance rule `script_execution_log_contract`.
-from core.execution_log import ExecutionLog
+from core.execution_log import ExecutionLog, log_child_run  # S90_CHILD_RUN
 from core.supabase_client import SupabaseClient
 from gamma_engine_retry_utils import retry_call
 
@@ -469,7 +469,7 @@ def ingest_symbol(symbol: str, mode: str, log: ExecutionLog) -> int:
 
     snapshot_ts = utc_now_iso()
     run_id = str(uuid.uuid4())
-    log.set_run_id(run_id)  # S90_R07_LEDGER: front-expiry run; extra expiries keep their own run_ids
+    log.set_run_id(run_id)  # S90_R07_LEDGER: front-expiry run; extra expiries get their own ledger rows (S90_CHILD_RUN)
 
     # Extract rows. extract_option_rows can raise on malformed 'oc' shape.
     try:
@@ -576,6 +576,9 @@ def ingest_symbol(symbol: str, mode: str, log: ExecutionLog) -> int:
                 if not _rows:
                     print(f"  {_ed}: 0 rows -- skipped")
                     _failed.append(_ed)
+                    log_child_run("ingest_option_chain_local.py", symbol, _rid, "option_chain_snapshots", 0,
+                                  notes=f"extra expiry {_ed}; parent {log.invocation_id}",
+                                  error="0 rows extracted")  # S90_CHILD_RUN
                     continue
                 retry_call(
                     lambda r=_rows: sb.insert("option_chain_snapshots", r),
@@ -587,6 +590,9 @@ def ingest_symbol(symbol: str, mode: str, log: ExecutionLog) -> int:
                 _captured.append(_ed)
                 _extra_rows += len(_rows)
                 print(f"  {_ed}: run_id={_rid} rows={len(_rows)} OK")
+                # S90_CHILD_RUN: the leg's run_id gets its own ledger row (provenance, ADR-031 D3a)
+                log_child_run("ingest_option_chain_local.py", symbol, _rid, "option_chain_snapshots", len(_rows),
+                              notes=f"extra expiry {_ed}; parent {log.invocation_id}")
             except Exception as _e:
                 print(f"  {_ed}: FAILED {type(_e).__name__}: {_e}")
                 _failed.append(_ed)

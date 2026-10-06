@@ -29,4 +29,14 @@ f=m.propagate(own,[('gm','ocs')]); print('gm<-ocs    ',f['gm']); assert f['gm'][
 own={'gm':('CLOSED',None),'ocs':('MISSING','x')}
 f=m.propagate(own,[('gm','ocs')]); assert f['gm'][0]=='CLOSED'
 assert m.worse('CLOSED','OK')=='OK' and m.worse('STALE','MISSING')=='MISSING'
+# S90_SESSION_END: spot capture ends 15:14 by design; judged at 15:15 once past it
+spot={'product':'spot:N','cadence_min':1,'freshness_sla_min':5,'expected_per_cycle':{'rows':[1,1]},'movement_cols':[],'session_end_ist':'15:15:00'}
+a2=datetime(2026,10,5,9,54,tzinfo=U)  # 15:24 IST
+last=datetime(2026,10,5,9,44,tzinfo=U)  # 15:14 IST
+r=m.own_status(spot,last,[{}],{},a2,True,None); print('spot 15:24 ',r[0],r[2]); assert r[0]=='OK' and r[2].get('judged_at_session_end')=='15:15'
+died=datetime(2026,10,5,9,39,tzinfo=U)  # 15:09 IST: feed died before the end -> still caught
+r=m.own_status(spot,died,[{}],{},a2,True,None); print('spot died  ',r[0],r[1]); assert r[0]=='MISSING'
+r=m.own_status({**spot,'session_end_ist':None},last,[{}],{},a2,True,None); print('no end col ',r[0]); assert r[0]=='MISSING'
+mid=datetime(2026,10,5,8,30,tzinfo=U)  # 14:00 IST, before the end: clamp inactive
+r=m.own_status(spot,mid-timedelta(minutes=8),[{}],{},mid,True,None); print('spot 14:00 ',r[0]); assert r[0]=='MISSING' and 'judged_at_session_end' not in r[2]
 print('ALL PASS')

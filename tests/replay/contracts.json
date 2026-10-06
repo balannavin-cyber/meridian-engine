@@ -34,7 +34,8 @@
    "change_reason": "S90 seed from P4: 79-88k rows/day, 83-87 ts",
    "movement_window_cycles": 3,
    "valid_to": null,
-   "valid_from": null
+   "valid_from": null,
+   "session_end_ist": null
   },
   {
    "product": "option_chain_snapshots:SENSEX",
@@ -69,7 +70,8 @@
    "change_reason": "S90 seed from P4: 62-67k rows/day",
    "movement_window_cycles": 3,
    "valid_to": null,
-   "valid_from": null
+   "valid_from": null,
+   "session_end_ist": null
   },
   {
    "product": "market_spot_snapshots:NIFTY",
@@ -100,7 +102,8 @@
    "change_reason": "S90 seed from P4: 360 rows/day 09:16-15:15",
    "movement_window_cycles": 3,
    "valid_to": null,
-   "valid_from": null
+   "valid_from": null,
+   "session_end_ist": "15:15:00"
   },
   {
    "product": "market_spot_snapshots:SENSEX",
@@ -131,7 +134,8 @@
    "change_reason": "S90 seed from P4",
    "movement_window_cycles": 3,
    "valid_to": null,
-   "valid_from": null
+   "valid_from": null,
+   "session_end_ist": "15:15:00"
   },
   {
    "product": "gex_strike_snapshots:NIFTY",
@@ -166,7 +170,8 @@
    "change_reason": "S90 seed from P4: 8.7-11.9k rows/day, 80-84 runs",
    "movement_window_cycles": 3,
    "valid_to": null,
-   "valid_from": null
+   "valid_from": null,
+   "session_end_ist": null
   },
   {
    "product": "gex_strike_snapshots:SENSEX",
@@ -201,7 +206,8 @@
    "change_reason": "S90 seed from P4",
    "movement_window_cycles": 3,
    "valid_to": null,
-   "valid_from": null
+   "valid_from": null,
+   "session_end_ist": null
   },
   {
    "product": "gamma_metrics:NIFTY",
@@ -236,7 +242,8 @@
    "change_reason": "S90 seed: UNIQUE (symbol, ts), W1 only (S90-B)",
    "movement_window_cycles": 3,
    "valid_to": null,
-   "valid_from": null
+   "valid_from": null,
+   "session_end_ist": null
   },
   {
    "product": "gamma_metrics:SENSEX",
@@ -271,7 +278,8 @@
    "change_reason": "S90 seed",
    "movement_window_cycles": 3,
    "valid_to": null,
-   "valid_from": null
+   "valid_from": null,
+   "session_end_ist": null
   },
   {
    "product": "equity_intraday_last:ALL",
@@ -298,7 +306,8 @@
    "change_reason": "S90 seed: once daily 09:05 IST, holds PRIOR CLOSE (R01-F9)",
    "movement_window_cycles": 3,
    "valid_to": null,
-   "valid_from": null
+   "valid_from": null,
+   "session_end_ist": null
   },
   {
    "product": "breadth_indicators_daily:ALL",
@@ -326,7 +335,8 @@
    "change_reason": "S90 seed: frontier stalled at 2026-09-29 (R01-F9) - would read MISSING today (4 trading days behind, SLA 2)",
    "movement_window_cycles": 3,
    "valid_to": null,
-   "valid_from": null
+   "valid_from": null,
+   "session_end_ist": null
   },
   {
    "product": "weighted_constituent_breadth_snapshots:NIFTY",
@@ -357,7 +367,8 @@
    "change_reason": "S90 seed: values frozen since 2026-10-01 15:40 (MV-9) - would read STALE today (own movement + input)",
    "movement_window_cycles": 3,
    "valid_to": null,
-   "valid_from": null
+   "valid_from": null,
+   "session_end_ist": null
   },
   {
    "product": "weighted_constituent_breadth_snapshots:SENSEX",
@@ -388,7 +399,8 @@
    "change_reason": "S90 seed",
    "movement_window_cycles": 3,
    "valid_to": null,
-   "valid_from": null
+   "valid_from": null,
+   "session_end_ist": null
   },
   {
    "product": "gex_cycle_history:NIFTY",
@@ -417,7 +429,8 @@
    "change_reason": "S90 seed: applied 2026-10-05, writer not wired - would read MISSING until it is",
    "movement_window_cycles": 3,
    "valid_to": null,
-   "valid_from": null
+   "valid_from": null,
+   "session_end_ist": null
   },
   {
    "product": "gex_cycle_history:SENSEX",
@@ -446,7 +459,8 @@
    "change_reason": "S90 seed",
    "movement_window_cycles": 3,
    "valid_to": null,
-   "valid_from": null
+   "valid_from": null,
+   "session_end_ist": null
   }
  ],
  "lineage": [

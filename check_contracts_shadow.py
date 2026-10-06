@@ -101,7 +101,20 @@ def own_status(contract: Dict[str, Any], newest: Optional[Any], at_newest: List[
         if trading_days_behind > allowed:
             return "MISSING", f"newest {newest} is {trading_days_behind} trading days behind (allowed {allowed})", checks
     else:
-        age_min = (as_of - newest).total_seconds() / 60.0
+        # S90_SESSION_END: a product whose writer stops before the market closes (spot: the
+        # ADR-022 CAS guard ends capture at 15:14) is judged for freshness AS OF its own session
+        # end once that has passed. A feed that died before the end still fails; a product with
+        # no session_end_ist keeps the 15:30 session.
+        judged_at = as_of
+        end = contract.get("session_end_ist")
+        if end:
+            hh, mm = (int(x) for x in str(end)[:5].split(":"))
+            local = as_of.astimezone(IST)
+            end_dt = local.replace(hour=hh, minute=mm, second=0, microsecond=0)
+            if local > end_dt:
+                judged_at = end_dt.astimezone(as_of.tzinfo)
+                checks["judged_at_session_end"] = str(end)[:5]
+        age_min = (judged_at - newest).total_seconds() / 60.0
         checks["age_min"] = round(age_min, 1)
         if age_min > int(contract["freshness_sla_min"]):
             return "MISSING", f"newest row {age_min:.0f} min old (SLA {contract['freshness_sla_min']})", checks

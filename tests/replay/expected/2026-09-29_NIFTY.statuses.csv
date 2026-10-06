@@ -293,11 +293,11 @@ cycle_ist,product,status,own,reason
 15:15,option_chain_snapshots:NIFTY,OK,OK,
 15:20,gamma_metrics:NIFTY,OK,OK,
 15:20,gex_strike_snapshots:NIFTY,OK,OK,
-15:20,market_spot_snapshots:NIFTY,MISSING,MISSING,newest row 9 min old (SLA 5)
+15:20,market_spot_snapshots:NIFTY,OK,OK,
 15:20,option_chain_snapshots:NIFTY,OK,OK,
 15:25,gamma_metrics:NIFTY,OK,OK,
 15:25,gex_strike_snapshots:NIFTY,OK,OK,
-15:25,market_spot_snapshots:NIFTY,MISSING,MISSING,newest row 14 min old (SLA 5)
+15:25,market_spot_snapshots:NIFTY,OK,OK,
 15:25,option_chain_snapshots:NIFTY,OK,OK,
 15:30,gamma_metrics:NIFTY,CLOSED,CLOSED,outside session or closed day
 15:30,gex_strike_snapshots:NIFTY,CLOSED,CLOSED,outside session or closed day

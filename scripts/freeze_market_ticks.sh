@@ -14,9 +14,9 @@
 #   pruned); when it has to be clipped, the log line says gap=1.
 #
 # RISK CLASS: SC. Read-only on the database; writes only its own files.
-#   Off switch: comment out its crontab line. Retention: 30 days of directories.
+#   Off switch: comment out its crontab line. Retention: 10 days of directories.
 #
-# CRON (UTC): */15 3-10 * * 1-5  (09:00-16:15 IST, inside jobid 46's 60-minute horizon)
+# CRON (UTC): */5 3-10 * * 1-5  (09:00-16:15 IST, inside jobid 46's 60-minute horizon)
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")/.." && pwd)
@@ -57,4 +57,4 @@ rm -f "$f.tmp"
 echo "$end_s" > "$STATE"
 echo "$(date -u +%FT%TZ) window=$(iso "$start_s")..$(iso "$end_s") rows=$rows bytes=$(wc -c < "$f.gz") gap=$gap file=$f.gz"
 
-find "$ROOT" -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} +
+find "$ROOT" -mindepth 1 -maxdepth 1 -type d -mtime +10 -exec rm -rf {} +

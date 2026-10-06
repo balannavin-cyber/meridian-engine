@@ -198,6 +198,8 @@ def select_all(sb, table: str, columns: str, filters: Dict[str, str], order: str
 
 
 def count_exact(sb, table: str, filters: Dict[str, str]) -> int:
+    if hasattr(sb, "count_exact"):  # S90 replay harness: fixture client counts in memory
+        return sb.count_exact(table, filters)
     import requests
     h = dict(sb.headers); h["Prefer"] = "count=exact"; h["Range"] = "0-0"
     params = {"select": "*", **{k: sb._normalize_filter_value(v) for k, v in filters.items()}}
@@ -241,31 +243,15 @@ def trading_days_behind(newest_date_iso: str, as_of: datetime, prev_day) -> Opti
     return n if d <= newest_date_iso else None
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--write", action="store_true", help="upsert cycle_health (default: print only)")
-    ap.add_argument("--as-of", default=None)
-    a = ap.parse_args()
-
-    from core.supabase_client import SupabaseClient
-    from core.execution_log import ExecutionLog
-    from core.trading_calendar_gate import is_trading_day, previous_trading_day
-
-    as_of = parse_ts(a.as_of) if a.as_of else datetime.now(timezone.utc)
-    sb = SupabaseClient()
-    contracts = sb.select("data_contracts", filters={"valid_to": "is.null"})
-    edges = [(e["product"], e["requires"]) for e in sb.select("product_lineage")]
-    # Print mode touches no table at all, not even the ledger.
-    log = ExecutionLog(SCRIPT, expected_writes={"cycle_health": len(contracts)},
-                       notes=f"R1.2 shadow as_of={as_of.isoformat()}") if a.write else None
-    import subprocess
-    sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip() or "unknown"
+def evaluate(sb, contracts: List[Dict[str, Any]], edges: List[Tuple[str, str]], as_of: datetime,
+             now: datetime, is_trading_day, previous_trading_day):
+    """Score every contract as of `as_of`. I/O only through `sb`, so the S90 replay harness
+    (tests/replay) runs this exact code against frozen golden days with a fixture client."""
     open_now = session_open_at(as_of, is_trading_day)
-
     own: Dict[str, Tuple[str, Optional[str]]] = {}
     detail: Dict[str, Dict[str, Any]] = {}
     for c in contracts:
-        historical = as_of < datetime.now(timezone.utc) - timedelta(minutes=15)
+        historical = as_of < now - timedelta(minutes=15)
         g = c.get("grain") or []
         if historical and c["time_col"] not in g and "run_id" not in g:
             # grain with neither a time column nor run_id = one row per key, overwritten: no history
@@ -294,7 +280,30 @@ def main() -> int:
         own[c["product"]] = (st, why)
         detail[c["product"]] = chk
 
-    final = propagate(own, edges)
+    return propagate(own, edges), own, detail
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--write", action="store_true", help="upsert cycle_health (default: print only)")
+    ap.add_argument("--as-of", default=None)
+    a = ap.parse_args()
+
+    from core.supabase_client import SupabaseClient
+    from core.execution_log import ExecutionLog
+    from core.trading_calendar_gate import is_trading_day, previous_trading_day
+
+    as_of = parse_ts(a.as_of) if a.as_of else datetime.now(timezone.utc)
+    sb = SupabaseClient()
+    contracts = sb.select("data_contracts", filters={"valid_to": "is.null"})
+    edges = [(e["product"], e["requires"]) for e in sb.select("product_lineage")]
+    # Print mode touches no table at all, not even the ledger.
+    log = ExecutionLog(SCRIPT, expected_writes={"cycle_health": len(contracts)},
+                       notes=f"R1.2 shadow as_of={as_of.isoformat()}") if a.write else None
+    import subprocess
+    sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip() or "unknown"
+    final, own, detail = evaluate(sb, contracts, edges, as_of, datetime.now(timezone.utc),
+                                  is_trading_day, previous_trading_day)
     cycle_ts = floor_cycle(as_of)
     out = [{"product": p, "cycle_ts": cycle_ts.isoformat(), "status": s, "reason": r,
             "checks": {"own": own[p][0], **detail[p]}, "checker_version": sha}

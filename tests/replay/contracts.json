@@ -1,0 +1,502 @@
+{
+ "_note": "S90 seed as applied (sql/2026-10-05_s90_apply_S90E_r05_r11.sql) + SENSEX gex_strike rows widened to [100,200] (S90). valid_from nulled so replay reasons carry no retroactive-contract note. Refresh from the live table when contracts change, then re-pin.",
+ "contracts": [
+  {
+   "product": "option_chain_snapshots:NIFTY",
+   "relation_name": "option_chain_snapshots",
+   "scope_symbol": "NIFTY",
+   "scope_col": "symbol",
+   "time_col": "ts",
+   "grain": [
+    "run_id",
+    "strike",
+    "option_type"
+   ],
+   "cadence_min": 5,
+   "freshness_sla_min": 10,
+   "expected_per_cycle": {
+    "rows": [
+     800,
+     1100
+    ],
+    "expiries": [
+     2,
+     2
+    ]
+   },
+   "movement_cols": [
+    "spot"
+   ],
+   "calendar": "NSE_FO",
+   "tier": 1,
+   "writer": "ingest_option_chain_local.py",
+   "access_rls": "UNVERIFIED",
+   "change_reason": "S90 seed from P4: 79-88k rows/day, 83-87 ts",
+   "movement_window_cycles": 3,
+   "valid_to": null,
+   "valid_from": null
+  },
+  {
+   "product": "option_chain_snapshots:SENSEX",
+   "relation_name": "option_chain_snapshots",
+   "scope_symbol": "SENSEX",
+   "scope_col": "symbol",
+   "time_col": "ts",
+   "grain": [
+    "run_id",
+    "strike",
+    "option_type"
+   ],
+   "cadence_min": 5,
+   "freshness_sla_min": 10,
+   "expected_per_cycle": {
+    "rows": [
+     650,
+     900
+    ],
+    "expiries": [
+     2,
+     2
+    ]
+   },
+   "movement_cols": [
+    "spot"
+   ],
+   "calendar": "BSE_FO",
+   "tier": 1,
+   "writer": "ingest_option_chain_local.py",
+   "access_rls": "UNVERIFIED",
+   "change_reason": "S90 seed from P4: 62-67k rows/day",
+   "movement_window_cycles": 3,
+   "valid_to": null,
+   "valid_from": null
+  },
+  {
+   "product": "market_spot_snapshots:NIFTY",
+   "relation_name": "market_spot_snapshots",
+   "scope_symbol": "NIFTY",
+   "scope_col": "symbol",
+   "time_col": "ts",
+   "grain": [
+    "symbol",
+    "ts",
+    "source_table"
+   ],
+   "cadence_min": 1,
+   "freshness_sla_min": 5,
+   "expected_per_cycle": {
+    "rows": [
+     1,
+     1
+    ]
+   },
+   "movement_cols": [
+    "spot"
+   ],
+   "calendar": "NSE_FO",
+   "tier": 1,
+   "writer": "capture_spot_1m_v2.py",
+   "access_rls": "UNVERIFIED",
+   "change_reason": "S90 seed from P4: 360 rows/day 09:16-15:15",
+   "movement_window_cycles": 3,
+   "valid_to": null,
+   "valid_from": null
+  },
+  {
+   "product": "market_spot_snapshots:SENSEX",
+   "relation_name": "market_spot_snapshots",
+   "scope_symbol": "SENSEX",
+   "scope_col": "symbol",
+   "time_col": "ts",
+   "grain": [
+    "symbol",
+    "ts",
+    "source_table"
+   ],
+   "cadence_min": 1,
+   "freshness_sla_min": 5,
+   "expected_per_cycle": {
+    "rows": [
+     1,
+     1
+    ]
+   },
+   "movement_cols": [
+    "spot"
+   ],
+   "calendar": "BSE_FO",
+   "tier": 1,
+   "writer": "capture_spot_1m_v2.py",
+   "access_rls": "UNVERIFIED",
+   "change_reason": "S90 seed from P4",
+   "movement_window_cycles": 3,
+   "valid_to": null,
+   "valid_from": null
+  },
+  {
+   "product": "gex_strike_snapshots:NIFTY",
+   "relation_name": "gex_strike_snapshots",
+   "scope_symbol": "NIFTY",
+   "scope_col": "symbol",
+   "time_col": "ts",
+   "grain": [
+    "run_id",
+    "strike",
+    "expiry_date"
+   ],
+   "cadence_min": 5,
+   "freshness_sla_min": 10,
+   "expected_per_cycle": {
+    "rows": [
+     90,
+     160
+    ],
+    "expiries": [
+     1,
+     1
+    ]
+   },
+   "movement_cols": [
+    "gex_cr"
+   ],
+   "calendar": "NSE_FO",
+   "tier": 1,
+   "writer": "compute_gamma_metrics_local.py",
+   "access_rls": "UNVERIFIED",
+   "change_reason": "S90 seed from P4: 8.7-11.9k rows/day, 80-84 runs",
+   "movement_window_cycles": 3,
+   "valid_to": null,
+   "valid_from": null
+  },
+  {
+   "product": "gex_strike_snapshots:SENSEX",
+   "relation_name": "gex_strike_snapshots",
+   "scope_symbol": "SENSEX",
+   "scope_col": "symbol",
+   "time_col": "ts",
+   "grain": [
+    "run_id",
+    "strike",
+    "expiry_date"
+   ],
+   "cadence_min": 5,
+   "freshness_sla_min": 10,
+   "expected_per_cycle": {
+    "rows": [
+     100,
+     200
+    ],
+    "expiries": [
+     1,
+     1
+    ]
+   },
+   "movement_cols": [
+    "gex_cr"
+   ],
+   "calendar": "BSE_FO",
+   "tier": 1,
+   "writer": "compute_gamma_metrics_local.py",
+   "access_rls": "UNVERIFIED",
+   "change_reason": "S90 seed from P4",
+   "movement_window_cycles": 3,
+   "valid_to": null,
+   "valid_from": null
+  },
+  {
+   "product": "gamma_metrics:NIFTY",
+   "relation_name": "gamma_metrics",
+   "scope_symbol": "NIFTY",
+   "scope_col": "symbol",
+   "time_col": "ts",
+   "grain": [
+    "symbol",
+    "ts"
+   ],
+   "cadence_min": 5,
+   "freshness_sla_min": 10,
+   "expected_per_cycle": {
+    "rows": [
+     1,
+     1
+    ],
+    "expiries": [
+     1,
+     1
+    ]
+   },
+   "movement_cols": [
+    "net_gex",
+    "spot"
+   ],
+   "calendar": "NSE_FO",
+   "tier": 1,
+   "writer": "compute_gamma_metrics_local.py",
+   "access_rls": "UNVERIFIED",
+   "change_reason": "S90 seed: UNIQUE (symbol, ts), W1 only (S90-B)",
+   "movement_window_cycles": 3,
+   "valid_to": null,
+   "valid_from": null
+  },
+  {
+   "product": "gamma_metrics:SENSEX",
+   "relation_name": "gamma_metrics",
+   "scope_symbol": "SENSEX",
+   "scope_col": "symbol",
+   "time_col": "ts",
+   "grain": [
+    "symbol",
+    "ts"
+   ],
+   "cadence_min": 5,
+   "freshness_sla_min": 10,
+   "expected_per_cycle": {
+    "rows": [
+     1,
+     1
+    ],
+    "expiries": [
+     1,
+     1
+    ]
+   },
+   "movement_cols": [
+    "net_gex",
+    "spot"
+   ],
+   "calendar": "BSE_FO",
+   "tier": 1,
+   "writer": "compute_gamma_metrics_local.py",
+   "access_rls": "UNVERIFIED",
+   "change_reason": "S90 seed",
+   "movement_window_cycles": 3,
+   "valid_to": null,
+   "valid_from": null
+  },
+  {
+   "product": "equity_intraday_last:ALL",
+   "relation_name": "equity_intraday_last",
+   "scope_symbol": null,
+   "scope_col": null,
+   "time_col": "ts",
+   "grain": [
+    "ticker"
+   ],
+   "cadence_min": 1440,
+   "freshness_sla_min": 1440,
+   "expected_per_cycle": {
+    "rows": [
+     1200,
+     1400
+    ]
+   },
+   "movement_cols": [],
+   "calendar": "NSE_FO",
+   "tier": 2,
+   "writer": "refresh_equity_intraday_last.py",
+   "access_rls": "UNVERIFIED",
+   "change_reason": "S90 seed: once daily 09:05 IST, holds PRIOR CLOSE (R01-F9)",
+   "movement_window_cycles": 3,
+   "valid_to": null,
+   "valid_from": null
+  },
+  {
+   "product": "breadth_indicators_daily:ALL",
+   "relation_name": "breadth_indicators_daily",
+   "scope_symbol": null,
+   "scope_col": null,
+   "time_col": "trade_date",
+   "grain": [
+    "ticker",
+    "trade_date"
+   ],
+   "cadence_min": 1440,
+   "freshness_sla_min": 2880,
+   "expected_per_cycle": {
+    "rows": [
+     1200,
+     1400
+    ]
+   },
+   "movement_cols": [],
+   "calendar": "NSE_FO",
+   "tier": 2,
+   "writer": "run_equity_eod_until_done.py",
+   "access_rls": "UNVERIFIED",
+   "change_reason": "S90 seed: frontier stalled at 2026-09-29 (R01-F9) - would read MISSING today (4 trading days behind, SLA 2)",
+   "movement_window_cycles": 3,
+   "valid_to": null,
+   "valid_from": null
+  },
+  {
+   "product": "weighted_constituent_breadth_snapshots:NIFTY",
+   "relation_name": "weighted_constituent_breadth_snapshots",
+   "scope_symbol": "NIFTY",
+   "scope_col": "index_symbol",
+   "time_col": "ts",
+   "grain": [
+    "index_symbol",
+    "ts"
+   ],
+   "cadence_min": 5,
+   "freshness_sla_min": 10,
+   "expected_per_cycle": {
+    "rows": [
+     1,
+     1
+    ]
+   },
+   "movement_cols": [
+    "wcb_score",
+    "weighted_advances_pct"
+   ],
+   "calendar": "NSE_FO",
+   "tier": 2,
+   "writer": "build_wcb_snapshot_local.py",
+   "access_rls": "UNVERIFIED",
+   "change_reason": "S90 seed: values frozen since 2026-10-01 15:40 (MV-9) - would read STALE today (own movement + input)",
+   "movement_window_cycles": 3,
+   "valid_to": null,
+   "valid_from": null
+  },
+  {
+   "product": "weighted_constituent_breadth_snapshots:SENSEX",
+   "relation_name": "weighted_constituent_breadth_snapshots",
+   "scope_symbol": "SENSEX",
+   "scope_col": "index_symbol",
+   "time_col": "ts",
+   "grain": [
+    "index_symbol",
+    "ts"
+   ],
+   "cadence_min": 5,
+   "freshness_sla_min": 10,
+   "expected_per_cycle": {
+    "rows": [
+     1,
+     1
+    ]
+   },
+   "movement_cols": [
+    "wcb_score",
+    "weighted_advances_pct"
+   ],
+   "calendar": "BSE_FO",
+   "tier": 2,
+   "writer": "build_wcb_snapshot_local.py",
+   "access_rls": "UNVERIFIED",
+   "change_reason": "S90 seed",
+   "movement_window_cycles": 3,
+   "valid_to": null,
+   "valid_from": null
+  },
+  {
+   "product": "gex_cycle_history:NIFTY",
+   "relation_name": "gex_cycle_history",
+   "scope_symbol": "NIFTY",
+   "scope_col": "symbol",
+   "time_col": "ts",
+   "grain": [
+    "symbol",
+    "expiry_date",
+    "ts"
+   ],
+   "cadence_min": 5,
+   "freshness_sla_min": 10,
+   "expected_per_cycle": {
+    "rows": [
+     1,
+     1
+    ]
+   },
+   "movement_cols": [],
+   "calendar": "NSE_FO",
+   "tier": 1,
+   "writer": "write_gex_cycle_history_local.py (not wired, S90-A)",
+   "access_rls": "DISABLED_BY_DESIGN",
+   "change_reason": "S90 seed: applied 2026-10-05, writer not wired - would read MISSING until it is",
+   "movement_window_cycles": 3,
+   "valid_to": null,
+   "valid_from": null
+  },
+  {
+   "product": "gex_cycle_history:SENSEX",
+   "relation_name": "gex_cycle_history",
+   "scope_symbol": "SENSEX",
+   "scope_col": "symbol",
+   "time_col": "ts",
+   "grain": [
+    "symbol",
+    "expiry_date",
+    "ts"
+   ],
+   "cadence_min": 5,
+   "freshness_sla_min": 10,
+   "expected_per_cycle": {
+    "rows": [
+     1,
+     1
+    ]
+   },
+   "movement_cols": [],
+   "calendar": "BSE_FO",
+   "tier": 1,
+   "writer": "write_gex_cycle_history_local.py (not wired, S90-A)",
+   "access_rls": "DISABLED_BY_DESIGN",
+   "change_reason": "S90 seed",
+   "movement_window_cycles": 3,
+   "valid_to": null,
+   "valid_from": null
+  }
+ ],
+ "lineage": [
+  [
+   "gex_strike_snapshots:NIFTY",
+   "option_chain_snapshots:NIFTY"
+  ],
+  [
+   "gex_strike_snapshots:SENSEX",
+   "option_chain_snapshots:SENSEX"
+  ],
+  [
+   "gamma_metrics:NIFTY",
+   "option_chain_snapshots:NIFTY"
+  ],
+  [
+   "gamma_metrics:SENSEX",
+   "option_chain_snapshots:SENSEX"
+  ],
+  [
+   "weighted_constituent_breadth_snapshots:NIFTY",
+   "equity_intraday_last:ALL"
+  ],
+  [
+   "weighted_constituent_breadth_snapshots:NIFTY",
+   "breadth_indicators_daily:ALL"
+  ],
+  [
+   "weighted_constituent_breadth_snapshots:SENSEX",
+   "equity_intraday_last:ALL"
+  ],
+  [
+   "weighted_constituent_breadth_snapshots:SENSEX",
+   "breadth_indicators_daily:ALL"
+  ],
+  [
+   "gex_cycle_history:NIFTY",
+   "gamma_metrics:NIFTY"
+  ],
+  [
+   "gex_cycle_history:NIFTY",
+   "gex_strike_snapshots:NIFTY"
+  ],
+  [
+   "gex_cycle_history:SENSEX",
+   "gamma_metrics:SENSEX"
+  ],
+  [
+   "gex_cycle_history:SENSEX",
+   "gex_strike_snapshots:SENSEX"
+  ]
+ ]
+}

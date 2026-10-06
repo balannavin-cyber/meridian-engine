@@ -132,3 +132,5 @@ cron.log*
 # S90 R2.1: golden-day fixtures are tracked in full
 !tests/golden/**/*.csv
 !tests/golden/**/*.txt
+# S90 replay harness: pinned expected statuses are tracked
+!tests/replay/expected/*.csv

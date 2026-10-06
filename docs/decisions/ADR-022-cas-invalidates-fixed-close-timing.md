@@ -15,7 +15,7 @@
 
 ## Context
 
-MERDIAN's entire EOD layer was built against a market that closed at 15:30 IST. That is no longer the market MERDIAN trades.
+MERIDIAN's entire EOD layer was built against a market that closed at 15:30 IST. That is no longer the market MERIDIAN trades.
 
 **Effective 2026-08-03**, SEBI introduced the Closing Auction Session (CAS) for Category-I securities — every equity-cash stock with active F&O contracts — across NSE, BSE and MSEI:
 
@@ -24,13 +24,13 @@ MERDIAN's entire EOD layer was built against a market that closed at 15:30 IST. 
 | **Category-I (F&O) stocks** — continuous trading | 09:15 → **15:30** | 09:15 → **15:15** |
 | **Closing price, Category-I** | VWAP of trades 15:00–15:30 | **CAS equilibrium price.** Auction 15:15–15:35: order collection 15:15–15:30, matching + price publication 15:30–15:35. Reference price = VWAP **15:00–15:15**. Band ±3% of reference; limit + market orders only (no stop-loss, no iceberg). |
 | **Category-II (non-F&O) stocks** | 09:15 → 15:30, VWAP 15:00–15:30 | **unchanged** |
-| **Equity derivatives (index + stock F&O) — MERDIAN's instruments** | 09:15 → 15:30 | 09:15 → **15:40** |
+| **Equity derivatives (index + stock F&O) — MERIDIAN's instruments** | 09:15 → 15:30 | 09:15 → **15:40** |
 | **Post-close** | 15:40–16:00 | **15:50–16:00** |
 | **Pre-open** | 09:00–09:15, fixed phases | restructured from **2026-09-07**: 09:00–09:05 market+limit · 09:05–09:10 limit-only with system-driven **random close 09:08–09:10** · 09:10–09:12 matching · 09:12–09:15 transition |
 
 Market open time is unchanged; commodity and currency segments are untouched.
 
-The implication MERDIAN cares about most is second-order. **NIFTY and SENSEX are computed from constituents that are all Category-I names.** So the index's own settled level is now derived from CAS equilibrium prices published in the **15:30–15:35** window — and the index derivatives that MERDIAN actually trades keep trading for five minutes *after* that, to 15:40. There is no longer any instant at 15:30 at which "today's close" exists.
+The implication MERIDIAN cares about most is second-order. **NIFTY and SENSEX are computed from constituents that are all Category-I names.** So the index's own settled level is now derived from CAS equilibrium prices published in the **15:30–15:35** window — and the index derivatives that MERIDIAN actually trades keep trading for five minutes *after* that, to 15:40. There is no longer any instant at 15:30 at which "today's close" exists.
 
 This was found in S69 as a side-thread while diagnosing why the M5 ICT detector had written nothing since 2026-06-02. The `MERDIAN_ICT_EOD` Local task fires at **15:35** — squarely inside the auction/extended-derivatives window. It has been doing so since 2026-08-03 with nobody noticing, because a task that runs, exits 0, and writes zero rows looks identical to a quiet market.
 
@@ -38,11 +38,11 @@ This was found in S69 as a side-thread while diagnosing why the M5 ICT detector 
 
 **Three rules, in force from acceptance.**
 
-**D1 — No job may treat a wall-clock time as equivalent to "the close."** Any EOD-anchored job must fire strictly after the last event that can change the settled series it reads. For MERDIAN's instruments that boundary is **15:40 IST**, and the safe anchor is **≥ 15:45 IST**. `MERDIAN_ICT_EOD` moves from 15:35 to **15:45 or later**; every other close-anchored job is audited against the same boundary.
+**D1 — No job may treat a wall-clock time as equivalent to "the close."** Any EOD-anchored job must fire strictly after the last event that can change the settled series it reads. For MERIDIAN's instruments that boundary is **15:40 IST**, and the safe anchor is **≥ 15:45 IST**. `MERDIAN_ICT_EOD` moves from 15:35 to **15:45 or later**; every other close-anchored job is audited against the same boundary.
 
 **D2 — "Settled close" for an F&O-linked instrument means the CAS equilibrium price, not a VWAP.** Any code, comment, doc or column that describes the close as "the 15:00–15:30 VWAP" is now wrong for Category-I names and for the indices derived from them. `eod_spot` and every daily-OHLC consumer must be verified to be reading the vendor's *final* settled value, not an intraday-derived one — and the vendor's own publication time for that value must be established, not assumed.
 
-**D3 — A market-structure change is a first-class trigger for a pipeline audit, on the same footing as a schema change.** External timing/definition changes do not announce themselves in any log MERDIAN owns. They are found by reading exchange circulars, and the finding must produce an ADR and a job-by-job sweep — not a single patched cron line.
+**D3 — A market-structure change is a first-class trigger for a pipeline audit, on the same footing as a schema change.** External timing/definition changes do not announce themselves in any log MERIDIAN owns. They are found by reading exchange circulars, and the finding must produce an ADR and a job-by-job sweep — not a single patched cron line.
 
 **Exposure inventory at acceptance** (the D1/D2 audit scope, carried as this ADR's open follow-up):
 
@@ -69,7 +69,7 @@ That is the generalisable point: **an external timing change is invisible to eve
 |---|---|
 | **Move `MERDIAN_ICT_EOD` to 15:45 and stop there** | **Rejected as sufficient.** It fixes the one job that was found and leaves five others resting on the same refuted assumption. The assumption is the defect; the cron line is one instance of it. |
 | **Leave 15:35 — "five minutes of auction won't move a 5-minute ICT bar much"** | **Rejected outright.** The magnitude of the error is unknown and unmeasured, and the whole point of the M5 detector is displacement thresholds measured in tenths of a percent (ADR-016). An unquantified contamination on the exact quantity being thresholded is not tolerable, and "probably small" is a stable lie (ADR-001). |
-| **Anchor EOD jobs to a data-driven signal (wait until the vendor publishes a settled bar) rather than a clock** | **Deferred, not rejected — the better long-run design.** It removes the constant entirely and would survive the next timing change without an ADR. Not adopted now because it needs a per-vendor definition of "settled" that MERDIAN does not yet have (D2 must land first). Recorded as the successor design. |
+| **Anchor EOD jobs to a data-driven signal (wait until the vendor publishes a settled bar) rather than a clock** | **Deferred, not rejected — the better long-run design.** It removes the constant entirely and would survive the next timing change without an ADR. Not adopted now because it needs a per-vendor definition of "settled" that MERIDIAN does not yet have (D2 must land first). Recorded as the successor design. |
 | **Treat CAS as a data-quality problem and filter auction bars downstream** | **Rejected.** Pushes a market-structure fact into every consumer separately — the same fork-the-definition error rejected in ADR-021. Re-anchor once, at the schedule. |
 | **Wait for the vendor (Dhan/Zerodha) to signal the change** | **Rejected.** Vendors publish bars; they do not publish "your assumptions are now wrong." The S69 finding came from reading the circular, which is the only channel that carries it. |
 
@@ -78,7 +78,7 @@ That is the generalisable point: **an external timing change is invisible to eve
 **Positive**
 - The EOD layer gets an explicit, written boundary (15:40 / safe ≥ 15:45) where it previously carried an unwritten constant.
 - The M5 detector recalibration (ADR-016 follow-through) can now proceed without silently importing auction bars into the very measurement being recalibrated.
-- MERDIAN gains a documented trigger class — external market-structure change — that previously had no home in the protocol.
+- MERIDIAN gains a documented trigger class — external market-structure change — that previously had no home in the protocol.
 
 **Negative**
 - Every EOD-anchored artefact produced between **2026-08-03** and the completion of the D1 re-anchoring is of uncertain timing provenance. In practice the blast radius looks small (the M5 detector wrote nothing in the window, and the 16:00+ jobs are wall-clock safe), but "small" here is inferred, not measured.
@@ -114,7 +114,7 @@ The register's 15:40 figure was correct. The Session 71 scepticism about it was 
 
 ### A1.3 — The "15:29 bar" in this ADR describes a Dhan artefact, not the exchange schedule
 
-This ADR states that the settled close lands in the 15:29 bar. NSE publishes the CAS equilibrium price **between 3:30 and 3:35**. MERDIAN's own observations: the settled close arrives in the **15:34** bar on 2026-08-03/04/05 and in the **15:29** bar from 08-20 onward.
+This ADR states that the settled close lands in the 15:29 bar. NSE publishes the CAS equilibrium price **between 3:30 and 3:35**. MERIDIAN's own observations: the settled close arrives in the **15:34** bar on 2026-08-03/04/05 and in the **15:29** bar from 08-20 onward.
 
 The 15:34 observations match the exchange schedule. The 15:29 ones do not — which means the change is in **Dhan's bar timestamping**, not in the auction. The ADR's rationale should be read as describing the vendor's presentation of an exchange event, and any future vendor change will move it again.
 
@@ -132,7 +132,7 @@ A write-path marker was proposed and **rejected on reading the code**: `ingest_o
 
 ## Governance language
 
-> **The settled close is an announced equilibrium price, not a wall-clock constant (ADR-022, S69).** SEBI's Closing Auction Session (live 2026-08-03) ended continuous trading for F&O stocks at 15:15, sets the close by auction 15:15–15:35 (reference = VWAP 15:00–15:15), and extends index/stock derivatives to **15:40** (post-close 15:50–16:00; pre-open restructured 2026-09-07). NIFTY/SENSEX are built from Category-I constituents, so the index close now lands ~15:35–15:40. **No EOD job may fire before 15:40; safe anchor ≥ 15:45** — `MERDIAN_ICT_EOD` moves off 15:35. "Close" for an F&O-linked instrument means the CAS equilibrium price, never a 15:00–15:30 VWAP. An external market-structure change is a first-class audit trigger: it is invisible to every health check MERDIAN owns and surfaces only as slightly-wrong data.
+> **The settled close is an announced equilibrium price, not a wall-clock constant (ADR-022, S69).** SEBI's Closing Auction Session (live 2026-08-03) ended continuous trading for F&O stocks at 15:15, sets the close by auction 15:15–15:35 (reference = VWAP 15:00–15:15), and extends index/stock derivatives to **15:40** (post-close 15:50–16:00; pre-open restructured 2026-09-07). NIFTY/SENSEX are built from Category-I constituents, so the index close now lands ~15:35–15:40. **No EOD job may fire before 15:40; safe anchor ≥ 15:45** — `MERDIAN_ICT_EOD` moves off 15:35. "Close" for an F&O-linked instrument means the CAS equilibrium price, never a 15:00–15:30 VWAP. An external market-structure change is a first-class audit trigger: it is invisible to every health check MERIDIAN owns and surfaces only as slightly-wrong data.
 
 ## Open follow-ups
 

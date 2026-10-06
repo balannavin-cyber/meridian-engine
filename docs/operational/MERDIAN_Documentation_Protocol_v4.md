@@ -1,4 +1,4 @@
-# MERDIAN Documentation Protocol v4
+# MERIDIAN Documentation Protocol v4
 
 **Market Structure Intelligence & Options Decision Engine**
 
@@ -73,7 +73,7 @@ v4 is the first revision held to an exhaustive changelog standard. Going forward
 
 **Location:** Repo root (`C:\GammaEnginePython\CLAUDE.md`, mirrored on AWS).
 
-**Purpose:** Orient any new Claude session in 3 minutes. Tells Claude what MERDIAN is, where to look for what, what the non-negotiable rules are, and what NOT to reopen.
+**Purpose:** Orient any new Claude session in 3 minutes. Tells Claude what MERIDIAN is, where to look for what, what the non-negotiable rules are, and what NOT to reopen.
 
 **What it contains:**
 - Project one-liner
@@ -288,11 +288,11 @@ C:\GammaEnginePython\
 Every code commit that changes system behaviour has a corresponding documentation commit in the same push or the immediately following push.
 
 ```
-MERDIAN: [OPS] tech_debt.md — TD-007 added
-MERDIAN: [OPS] merdian_reference.json — file statuses updated
-MERDIAN: [OPS] CURRENT.md — session 2026-MM-DD recorded
-MERDIAN: [OPS] System Map — runner orchestration updated
-MERDIAN: [OPS] Decision Index — ADR-007 entry prepended
+MERIDIAN: [OPS] tech_debt.md — TD-007 added
+MERIDIAN: [OPS] merdian_reference.json — file statuses updated
+MERIDIAN: [OPS] CURRENT.md — session 2026-MM-DD recorded
+MERIDIAN: [OPS] System Map — runner orchestration updated
+MERIDIAN: [OPS] Decision Index — ADR-007 entry prepended
 ```
 
 ### 4.2 No major Master without register update
@@ -602,7 +602,7 @@ The ADR's "Governance language" one-line compressed form appends to CLAUDE.md's 
 2. Decision Index row prepended
 3. Assumption Register updated (if applicable)
 4. CLAUDE.md settled-decisions appended
-5. Single commit with all four files: MERDIAN: [OPS] ADR-NNN accepted, downstream updates
+5. Single commit with all four files: MERIDIAN: [OPS] ADR-NNN accepted, downstream updates
 ```
 
 ---
@@ -652,4 +652,4 @@ In v4, "rebuild-grade" is a property of the **markdown layer as a whole** (CLAUD
 
 ---
 
-*MERDIAN Documentation Protocol v4 — supersedes v3. Commit to Git. Do not modify without updating version number AND providing exhaustive changelog of changes from prior version. v3→v4 is the first revision held to the exhaustive-changelog standard; v4→v5 and beyond inherit it.*
+*MERIDIAN Documentation Protocol v4 — supersedes v3. Commit to Git. Do not modify without updating version number AND providing exhaustive changelog of changes from prior version. v3→v4 is the first revision held to the exhaustive-changelog standard; v4→v5 and beyond inherit it.*

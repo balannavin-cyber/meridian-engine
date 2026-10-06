@@ -19,9 +19,9 @@
 
 ## §1 The event
 
-On 11 March 2026, NIFTY fell approximately 450 points (opened ~24,240, closed ~23,800) — a clear, sustained directional session. MERDIAN produced DO_NOTHING for the majority of the session. **The system obeyed its rules. The rules were wrong.**
+On 11 March 2026, NIFTY fell approximately 450 points (opened ~24,240, closed ~23,800) — a clear, sustained directional session. MERIDIAN produced DO_NOTHING for the majority of the session. **The system obeyed its rules. The rules were wrong.**
 
-This is the founding failure event of the March 2026 architectural review. It produced (among other things) the Assumption Register, the Measure→Validate→Shadow→Promote framework, the Four Key Evidence Questions, and Walk-Forward Validation methodology. Every architectural document in MERDIAN traces some lineage to this session.
+This is the founding failure event of the March 2026 architectural review. It produced (among other things) the Assumption Register, the Measure→Validate→Shadow→Promote framework, the Four Key Evidence Questions, and Walk-Forward Validation methodology. Every architectural document in MERIDIAN traces some lineage to this session.
 
 ---
 
@@ -80,7 +80,7 @@ V18F (2026-04-11/12) ran the experiments the remediation framework demanded. The
 
 > **The signal-source problem the 11 March failure exposed was not a tuning problem within the existing engine. It was a problem that the engine's *trigger model* was wrong.**
 
-Pure ICT pattern detection (no MERDIAN regime filter) produced 86–94% standalone WR on Order Block patterns (Exp 15). Confidence-score gates that V15.1 spec'd as binary blocks turned out to be either correctly binary (LONG_GAMMA — symmetric across BULL_OB and BEAR_OB at 47.7% WR, below random — meaning the *gate* was right but the *trigger upstream of it* was wrong) or mistakenly binary (CONFLICT, VIX > 20 — both lifted produced higher accuracy).
+Pure ICT pattern detection (no MERIDIAN regime filter) produced 86–94% standalone WR on Order Block patterns (Exp 15). Confidence-score gates that V15.1 spec'd as binary blocks turned out to be either correctly binary (LONG_GAMMA — symmetric across BULL_OB and BEAR_OB at 47.7% WR, below random — meaning the *gate* was right but the *trigger upstream of it* was wrong) or mistakenly binary (CONFLICT, VIX > 20 — both lifted produced higher accuracy).
 
 The remediation V15.1 spec'd became moot:
 
@@ -111,8 +111,8 @@ These implications survive the pivot and remain authoritative:
 
 To prevent misreading:
 
-- This is **not** a record of a missed trade in the operational sense. MERDIAN was not in live trading on 11 March 2026; the system was running for measurement and shadow validation only. No capital was lost on this date.
-- The diagnosis is **not** "ICT patterns would have fired BUY_PE on 11 March 2026". ICT pattern detection didn't exist in MERDIAN until V18F (Apr 2026). What ICT detection on this date would have produced is an empirically open question — `detect_ict_patterns.py` could be run against `hist_spot_bars_5m` for that day to find out. (As of Session 23, this has not been done explicitly. Filed as low-priority enhancement candidate.)
+- This is **not** a record of a missed trade in the operational sense. MERIDIAN was not in live trading on 11 March 2026; the system was running for measurement and shadow validation only. No capital was lost on this date.
+- The diagnosis is **not** "ICT patterns would have fired BUY_PE on 11 March 2026". ICT pattern detection didn't exist in MERIDIAN until V18F (Apr 2026). What ICT detection on this date would have produced is an empirically open question — `detect_ict_patterns.py` could be run against `hist_spot_bars_5m` for that day to find out. (As of Session 23, this has not been done explicitly. Filed as low-priority enhancement candidate.)
 - The remediation supersession in §5 is **not** an indictment of the V15.1 review. The review correctly identified three real failure modes; what the review couldn't have known is that the right fix was upstream of the engine they were tuning. The V15.1 remediation path was the rational response given the architecture in front of them. The pivot was empirical, not retrospective wisdom.
 
 ---

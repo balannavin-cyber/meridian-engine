@@ -35,7 +35,7 @@ Create `/etc/systemd/system/merdian-dhan-token-refresh.service`:
 
 ```ini
 [Unit]
-Description=MERDIAN Dhan Token Refresh (AWS)
+Description=MERIDIAN Dhan Token Refresh (AWS)
 After=network-online.target
 Wants=network-online.target
 
@@ -53,7 +53,7 @@ Create `/etc/systemd/system/merdian-dhan-token-refresh.timer`:
 
 ```ini
 [Unit]
-Description=MERDIAN Dhan Token Refresh Timer (AWS)
+Description=MERIDIAN Dhan Token Refresh Timer (AWS)
 
 [Timer]
 OnCalendar=Mon-Fri 08:15:00 IST

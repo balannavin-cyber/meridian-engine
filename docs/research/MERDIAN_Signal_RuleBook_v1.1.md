@@ -1,4 +1,4 @@
-# MERDIAN Signal Rule Book v1.1
+# MERIDIAN Signal Rule Book v1.1
 
 **Market Structure Intelligence & Options Decision Engine**
 
@@ -146,7 +146,7 @@
 
 ### 4.1 BULL_FVG Core Rules
 
-**Rule 4.1.1 — REGIME CONTEXT REQUIRED:** BULL_FVG without MERDIAN regime context is near-random (50.3% WR, Exp 15). It must have SHORT_GAMMA + BULLISH breadth to qualify for TIER1 or TIER2 sizing.
+**Rule 4.1.1 — REGIME CONTEXT REQUIRED:** BULL_FVG without MERIDIAN regime context is near-random (50.3% WR, Exp 15). It must have SHORT_GAMMA + BULLISH breadth to qualify for TIER1 or TIER2 sizing.
 
 **Rule 4.1.2 — UNCONFLUENCED = TIER3 MINIMUM:** *(CHANGED from v1.0)* BULL_FVG detected by ICT without regime confirmation → TIER3 minimum sizing only (20% Kelly). Do not give full size to unconfluenced FVG.
 
@@ -320,6 +320,6 @@ SIGNAL FIRES → CHECK IN ORDER:
 
 ---
 
-*MERDIAN Signal Rule Book v1.1 — 2026-04-13*
+*MERIDIAN Signal Rule Book v1.1 — 2026-04-13*
 *Supersedes v1.0 (2026-04-10, git fcdf620)*
 *Next update: after Phase 4 live execution data (minimum 30 sessions)*

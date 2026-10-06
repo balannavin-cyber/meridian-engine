@@ -102,7 +102,7 @@ class.
 Nothing reaches a register, a commit, or project knowledge without the operator
 approving a rendered diff. The pipeline has no autonomous write path to `docs/`
 at any stage, in any mode, including a "trusted" one. **There is no `--yes`
-flag.** Note that MERDIAN's own convention runs the other way — a script exposing
+flag.** Note that MERIDIAN's own convention runs the other way — a script exposing
 only `--dry-run` is opt-*out* and writes by default, and roughly 60 scripts at
 repo root do exactly that (S72). This pipeline is opt-**in** and inverts that
 local convention deliberately.
@@ -403,7 +403,7 @@ only a filing-time hygiene check — every substantive ADR-026 decision is ruled
   `age_doc_commits > 3` OR `age_days >= 2`; **drafting absent when
   `age_doc_commits > 0`**, enforced here as **V9**.
 - **Embedding model** — ADR-026 D1: `bge-small-en-v1.5`, 384-dim, ONNX, local on
-  MERDIAN EC2, execution bounded by the ADR-026 §8.1 guardrails G1–G8 and gated
+  MERIDIAN EC2, execution bounded by the ADR-026 §8.1 guardrails G1–G8 and gated
   on tests T1–T4.
 
 All three still gate this ADR. They are settled, not waived.

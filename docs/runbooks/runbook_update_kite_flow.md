@@ -6,10 +6,10 @@
 
 | Field | Value |
 |---|---|
-| Operation | Refresh Zerodha Kite access_token daily AND propagate it to MERDIAN AWS so the WebSocket feeder can authenticate |
+| Operation | Refresh Zerodha Kite access_token daily AND propagate it to MERIDIAN AWS so the WebSocket feeder can authenticate |
 | Frequency | **Every trading day, closer to 06:00 IST.** Zerodha tokens expire at ~06:00 IST daily; doing this immediately after gives ~3hr buffer before 09:05 IST cron cascade starts. |
-| Environment | Two hosts: **MeridianAlpha AWS** (token source, semi-manual browser login) → **MERDIAN AWS** (token consumer, manual SSH+sed propagation). |
-| Prerequisites | (1) Browser-accessible machine for Zerodha login. (2) SSH access to MeridianAlpha AWS (`13.51.242.119`, key at `C:\MeridianAlpha\Security\malpha-key.pem`). (3) SSM access to MERDIAN AWS (`i-0878c118835386ec2` in `eu-north-1`). (4) `refresh_kite_token.py` on MeridianAlpha + `ws_feed_zerodha.py` on MERDIAN AWS present. |
+| Environment | Two hosts: **MeridianAlpha AWS** (token source, semi-manual browser login) → **MERIDIAN AWS** (token consumer, manual SSH+sed propagation). |
+| Prerequisites | (1) Browser-accessible machine for Zerodha login. (2) SSH access to MeridianAlpha AWS (`13.51.242.119`, key at `C:\MeridianAlpha\Security\malpha-key.pem`). (3) SSM access to MERIDIAN AWS (`i-0878c118835386ec2` in `eu-north-1`). (4) `refresh_kite_token.py` on MeridianAlpha + `ws_feed_zerodha.py` on MERIDIAN AWS present. |
 | Expected duration | ~5 minutes if everything works. Up to 30 min if something in the propagation chain breaks. |
 | Who can do this | Navin only — requires Zerodha account credentials. |
 | Last verified | 2026-05-14 (Step 2d added after partial-day outage caused by `.env` edit without consumer process restart — feeder held stale token in memory for 6+ hours despite correct .env). Previous: 2026-04-23 (Session 7, Step 2 skipped). |
@@ -20,7 +20,7 @@
 
 **Every morning before market open — target 06:00 IST or immediately after Zerodha access_tokens expire.**
 
-Downstream consumers that depend on a fresh token in MERDIAN AWS `.env`:
+Downstream consumers that depend on a fresh token in MERIDIAN AWS `.env`:
 - `ws_feed_zerodha.py` (AWS cron `44 3 * * 1-5` = 09:14 IST start) — populates `market_ticks`, blocks breadth cascade if auth fails
 - `refresh_equity_intraday_last.py` (AWS cron `35 3 * * 1-5` = 09:05 IST) — uses Kite REST `ohlc()` to populate `equity_intraday_last` for breadth reference prices
 
@@ -52,7 +52,7 @@ What to expect:
 - Script exchanges it via `kite.generate_session()` and writes the new `ZERODHA_ACCESS_TOKEN` to `~/meridian-alpha/.env`
 - Confirmation: `Token refreshed and saved to .env` + truncated access_token preview
 
-### Step 2 — Propagate the new token to MERDIAN AWS (~06:05 IST) — **MANUAL, HIGH RISK**
+### Step 2 — Propagate the new token to MERIDIAN AWS (~06:05 IST) — **MANUAL, HIGH RISK**
 
 This is the step that silently breaks breadth if skipped. **This is what was forgotten on 2026-04-22.**
 
@@ -64,13 +64,13 @@ grep ZERODHA_ACCESS_TOKEN ~/meridian-alpha/.env
 
 Copy the full value (everything after `ZERODHA_ACCESS_TOKEN=`). This is the new access_token.
 
-**2b. SSM into MERDIAN AWS** (new PowerShell window on Local):
+**2b. SSM into MERIDIAN AWS** (new PowerShell window on Local):
 
 ```powershell
 aws ssm start-session --target i-0878c118835386ec2 --region eu-north-1
 ```
 
-**2c. Patch `.env` on MERDIAN AWS:**
+**2c. Patch `.env` on MERIDIAN AWS:**
 
 ```bash
 cd /home/ssm-user/meridian-engine
@@ -87,7 +87,7 @@ Replace `NEW_TOKEN_HERE` with the actual token from step 2a. The `grep | tail -c
 
 `.env` edits only affect processes that **start after** the change. If `ws_feed_zerodha.py` is already running with the old token loaded in memory (e.g., started at yesterday's 09:14 IST cron and never restarted), it will continue to fail auth in a silent reconnect loop regardless of the new token in `.env`. **This was the failure mode on 2026-05-14 — token was correctly propagated at 06:00 IST but the running feeder held the prior token until manually killed at 18:09 IST. Six hours of breadth cascade plus a separate `market_ticks` Supabase write-timeout cascade triggered downstream.**
 
-Still on MERDIAN AWS:
+Still on MERIDIAN AWS:
 
 ```bash
 # Kill the feeder if it was running before this Step
@@ -110,11 +110,11 @@ cd /home/ssm-user/meridian-engine
 python3 refresh_equity_intraday_last.py
 ```
 
-### Step 3 — Verify authentication works on MERDIAN AWS (~06:10 IST) — **MANDATORY**
+### Step 3 — Verify authentication works on MERIDIAN AWS (~06:10 IST) — **MANDATORY**
 
 Without this check, you won't know Step 2 succeeded until 09:14 IST when the cron fires and fails silently. Today's 04-22 outage happened because Step 3 was never run.
 
-Still on MERDIAN AWS:
+Still on MERIDIAN AWS:
 
 ```bash
 cd /home/ssm-user/meridian-engine
@@ -165,7 +165,7 @@ If `today_rows = 0` at 09:20 IST the feeder auth failed silently, check `/home/s
 | Step 1: `Failed: ...` instead of token refreshed | The request_token was consumed twice or is stale | Re-do browser login, get a fresh request_token, retry Step 1 |
 | Step 1: Refresh returns same access_token as yesterday | Kite sometimes returns the same token within a session window - fine if it works | Continue to Step 3 and verify; if `profile()` works, token is valid even if unchanged |
 | Step 2c: `sed` silently does nothing, grep shows old token | Token format has a special char that broke sed's replacement pattern | Use `nano .env` directly instead of sed; manually replace the line; save with `Ctrl+O`, `Ctrl+X` |
-| Step 3: `AUTH FAILED: TokenException - Incorrect api_key or access_token.` | Token in MERDIAN AWS `.env` doesn't match what Kite expects | Re-read Step 2a token from MeridianAlpha; re-run Step 2c carefully; retry Step 3 |
+| Step 3: `AUTH FAILED: TokenException - Incorrect api_key or access_token.` | Token in MERIDIAN AWS `.env` doesn't match what Kite expects | Re-read Step 2a token from MeridianAlpha; re-run Step 2c carefully; retry Step 3 |
 | Step 3: `AUTH FAILED: NetworkError` | AWS can't reach Kite API | Check instance networking; check if Kite API is down (rare) |
 | 09:20 IST: market_ticks zero rows | Feeder started but can't auth - token propagation failed silently | Check `logs/ws_feed.log` for `Feed error` loop; if present, Kite auth broken - redo Steps 2-3 + restart feeder with `pkill -f ws_feed_zerodha.py && nohup python3 ws_feed_zerodha.py >> logs/ws_feed.log 2>&1 &` |
 | 09:20 IST: market_ticks zero rows BUT `kite.profile()` returns AUTH OK | Token in `.env` is good but a stale feeder process is running with the old token loaded in memory (Step 2d was skipped) | Run Step 2d. After `pkill && nohup`, verify `pgrep -f ws_feed_zerodha.py` shows a new PID; tail `logs/ws_feed.log` for `Subscribed. Feed live.` followed by tick activity. |
@@ -181,9 +181,9 @@ If `today_rows = 0` at 09:20 IST the feeder auth failed silently, check `/home/s
 
 **Related code files:**
 - `~/meridian-alpha/core/refresh_kite_token.py` (MeridianAlpha) - Step 1 script
-- `/home/ssm-user/meridian-engine/.env` (MERDIAN AWS) - where token lives
-- `/home/ssm-user/meridian-engine/ws_feed_zerodha.py` (MERDIAN AWS) - primary consumer, 09:14 IST cron
-- `/home/ssm-user/meridian-engine/refresh_equity_intraday_last.py` (MERDIAN AWS) - secondary consumer, 09:05 IST cron
+- `/home/ssm-user/meridian-engine/.env` (MERIDIAN AWS) - where token lives
+- `/home/ssm-user/meridian-engine/ws_feed_zerodha.py` (MERIDIAN AWS) - primary consumer, 09:14 IST cron
+- `/home/ssm-user/meridian-engine/refresh_equity_intraday_last.py` (MERIDIAN AWS) - secondary consumer, 09:05 IST cron
 
 **Related tables:**
 - `market_ticks` - populated by `ws_feed_zerodha.py`; if this is empty mid-session, token propagation likely failed
@@ -196,13 +196,13 @@ If `today_rows = 0` at 09:20 IST the feeder auth failed silently, check `/home/s
 - Both tokens must be fresh daily. Different mechanisms, different failure modes. Don't conflate.
 
 **Architectural known-gap (Session 7 finding, 2026-04-23):**
-- Step 2 (MeridianAlpha -> MERDIAN AWS sync) is fully manual and silently fragile
+- Step 2 (MeridianAlpha -> MERIDIAN AWS sync) is fully manual and silently fragile
 - Step 3 verification is not automated - today's 04-22 outage happened because Step 2 was skipped and nothing caught it until signals had been running on stale breadth for hours
-- **Proposed improvement (Session 9 candidate):** either (a) automate the SSH+sed via a Local Windows post-hook that fires after `refresh_kite_token.py` completes, or (b) add a pre-flight check on MERDIAN AWS at 09:10 IST that calls `kite.profile()` and alerts via Telegram on failure
+- **Proposed improvement (Session 9 candidate):** either (a) automate the SSH+sed via a Local Windows post-hook that fires after `refresh_kite_token.py` completes, or (b) add a pre-flight check on MERIDIAN AWS at 09:10 IST that calls `kite.profile()` and alerts via Telegram on failure
 
 **Additional gap surfaced 2026-05-14 (Session 29 incident):**
 - Step 2d (consumer restart after `.env` edit) was not previously documented. Failure mode is operationally indistinguishable from skipped Step 2 — `market_ticks` stays empty all day — but root cause is different and `sed`-ing the token again has no effect. Twice today the operator re-ran the entire Step 2 sequence without realizing the feeder process needed killing.
-- **Proposed improvement (TD-NEW-7 + TD-NEW-F):** wrap Steps 2c + 2d in a single SSM Run-Document or shell script so they execute atomically. Long-term, the MALPHA→MERDIAN AWS sync should be Supabase-mediated (mirroring the Dhan flow), eliminating manual sed entirely.
+- **Proposed improvement (TD-NEW-7 + TD-NEW-F):** wrap Steps 2c + 2d in a single SSM Run-Document or shell script so they execute atomically. Long-term, the MALPHA→MERIDIAN AWS sync should be Supabase-mediated (mirroring the Dhan flow), eliminating manual sed entirely.
 
 ---
 

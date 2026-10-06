@@ -1,4 +1,4 @@
-# MERDIAN Testing Protocol v1
+# MERIDIAN Testing Protocol v1
 
 **Market Structure Intelligence & Options Decision Engine**
 
@@ -16,9 +16,9 @@
 
 ## Why this document exists
 
-Testing rules in MERDIAN have lived inside the Change Protocol (preflight stages), inside session appendices (replay procedures), and inside Navin's head (canary discipline). Pulling them into one file gives Claude a single place to consult when asked "is this safe to run?" and gives Navin a single place to update when a new test stage is added.
+Testing rules in MERIDIAN have lived inside the Change Protocol (preflight stages), inside session appendices (replay procedures), and inside Navin's head (canary discipline). Pulling them into one file gives Claude a single place to consult when asked "is this safe to run?" and gives Navin a single place to update when a new test stage is added.
 
-This file does **not** define what *unit tests* exist for individual functions — those live alongside the code in `tests/` (or, where MERDIAN doesn't yet have them, are themselves tech debt — see `tech_debt.md`). This file defines the **system-level test gates** that prevent bad code from reaching the live market.
+This file does **not** define what *unit tests* exist for individual functions — those live alongside the code in `tests/` (or, where MERIDIAN doesn't yet have them, are themselves tech debt — see `tech_debt.md`). This file defines the **system-level test gates** that prevent bad code from reaching the live market.
 
 ---
 
@@ -203,10 +203,10 @@ Do **not** add gates speculatively. Gates that don't catch real failures become 
 
 ## What this document does NOT cover
 
-- **Unit tests for individual functions** — those live in `tests/` next to the code. Where MERDIAN currently has none, that is itself tech debt (consider TD-NNN).
-- **Performance / load testing** — MERDIAN's load is bounded by Dhan rate limits, not runtime; not currently relevant. If commercial API tier launches, add Gate 6.
+- **Unit tests for individual functions** — those live in `tests/` next to the code. Where MERIDIAN currently has none, that is itself tech debt (consider TD-NNN).
+- **Performance / load testing** — MERIDIAN's load is bounded by Dhan rate limits, not runtime; not currently relevant. If commercial API tier launches, add Gate 6.
 - **Security testing** — `.env` discipline + AWS SSM access controls cover current threat model. Add gate when commercial API exposes endpoints.
 
 ---
 
-*MERDIAN Testing Protocol v1 — Markdown, lives in `docs/operational/`. Update version number when a new gate is added or an existing gate's procedure changes.*
+*MERIDIAN Testing Protocol v1 — Markdown, lives in `docs/operational/`. Update version number when a new gate is added or an existing gate's procedure changes.*

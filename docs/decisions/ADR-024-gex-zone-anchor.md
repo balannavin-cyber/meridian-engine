@@ -536,11 +536,11 @@ without re-running.
 ### And the whole framing was wrong
 
 Hedgewall's own guide, sample readout: spot 56,748, **PIN 57,500 — +1.32 % from spot**.
-Their pin sits **further out than MERDIAN's**. A pin above spot is what the reference
+Their pin sits **further out than MERIDIAN's**. A pin above spot is what the reference
 implementation ships.
 
 **What contains spot is the corridor — floor to ceiling, put wall to call wall.** Their
-readout: *"Price sits between the put wall and the call wall."* MERDIAN's pin and accel zones
+readout: *"Price sits between the put wall and the call wall."* MERIDIAN's pin and accel zones
 **are** their call wall and put wall; the missing object was the corridor, which is now built
 as ENH-120 `v_gex_strike_walls`.
 

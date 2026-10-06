@@ -15,7 +15,7 @@
 
 ## Context
 
-MERDIAN is a point-in-time structural sensor: net GEX now, pin now, flip now, dealer flow now.
+MERIDIAN is a point-in-time structural sensor: net GEX now, pin now, flip now, dealer flow now.
 Every primitive is present-tense. ADR-002 v2 P4 named the missing dimension — "the regime has
 velocity, not just position" — but scoped velocity as a within-session derivative. This ENH extends
 regime-velocity across **nested timescales**: not "how fast is GEX moving this hour" but "what has
@@ -25,11 +25,11 @@ contradict it."
 The same live structural read means opposite things in different environments. A long-gamma
 23,950–24,000 pin in a *trend-up* environment is a coiling continuation setup; the identical pin in a
 *distribution* environment is a mean-reversion magnet inside a range that wants to resolve lower.
-MERDIAN today reads that pin **unconditionally**. This ENH gives it the ambient prior.
+MERIDIAN today reads that pin **unconditionally**. This ENH gives it the ambient prior.
 
 **Why buildable now and not before:** regime trajectories require history to diff against. The S62
 GEX + concentration backfill (full-window, both symbols) is that history. This ENH is the assembly of
-primitives MERDIAN already built (GEX history, concentration, dealer flow, breadth, the ENH-115
+primitives MERIDIAN already built (GEX history, concentration, dealer flow, breadth, the ENH-115
 participant source) into the one dimension ADR-002 named but never reached.
 
 ---
@@ -57,7 +57,7 @@ All heavy work is backward-looking and settled by close. It must NOT sit on the 
   positioning across the current + prior expiry cycle.
 - **Clock 2 — Cycle-So-Far (weekly/expiry-cycle, computed daily).** OI accumulation asymmetry through
   the current cycle + participant deltas leading into today. (OI can grow 5–10× Mon→Thu per ADR-002.)
-- **Clock 3 — Session Open (intraday).** MERDIAN's existing live pin/flip/accel/dealer-flow read.
+- **Clock 3 — Session Open (intraday).** MERIDIAN's existing live pin/flip/accel/dealer-flow read.
   UNCHANGED — now *interpreted against* Clocks 1+2 rather than in isolation.
 
 ### The four regime lenses (independent, cross-checking)
@@ -96,7 +96,7 @@ The value is the **single ambient statement** the four lenses reconcile into:
 
 ## The learning phase — expiry memory (three phases, N-gated)
 
-The prize: detecting patterns from *past weekly/monthly expiries* — MERDIAN building a **memory** of
+The prize: detecting patterns from *past weekly/monthly expiries* — MERIDIAN building a **memory** of
 how expiries resolve under conditions like today's. Built as a labeled event-store queried for base
 rates, NOT a prematurely-trained model.
 
@@ -145,7 +145,7 @@ The strip's job is to make **alignment vs divergence** legible in half a second.
 cage. One-diverging = the room is changing, reduce conviction. (ADR-017 P4 made visual.)
 
 ### Tier 3 — The Expiry Memory panel (expiry days / on demand — the Phase-B/C payoff)
-The capability that separates MERDIAN from every other GEX dashboard. A distribution readout:
+The capability that separates MERIDIAN from every other GEX dashboard. A distribution readout:
 > *"Past expiries matching today's ambient (N=23): held 61% · broke down 31% · broke up 8% · median
 > settlement −0.6% from open pin."*
 Plus a **"show analogs" affordance** (Phase C): the 5 most similar past expiries with dates and how each

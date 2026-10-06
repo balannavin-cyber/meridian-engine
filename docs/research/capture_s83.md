@@ -5,7 +5,7 @@ deployed: L9, L3, L10.** Every doc-close splice takes its content from this file
 below must be re-verified against the named file or database object before it is spliced;
 a mismatch is reported, never silently corrected.
 
-**Naming rule (operator, S83, standing):** the reference product is never named in any MERDIAN
+**Naming rule (operator, S83, standing):** the reference product is never named in any MERIDIAN
 artefact. Say "the parity target" or "the ADR-025 L<n> target". Every file written in this
 doc-close must grep 0 for the product name. Existing occurrences in older registers are NOT
 scrubbed in this close (operator decision owed, §7).

@@ -1,4 +1,4 @@
-# MERDIAN data inventory — historical GEX feasibility
+# MERIDIAN data inventory — historical GEX feasibility
 
 **Date measured:** 2026-09-08  ·  **Scope:** every relation exposed in Supabase schema `public`
 **Question:** for which calendar months can a per-strike GEX be computed for NIFTY and for SENSEX,

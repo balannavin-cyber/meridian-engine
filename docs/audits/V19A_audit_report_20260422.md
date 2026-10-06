@@ -1,4 +1,4 @@
-# Audit Report — MERDIAN Appendix V19A
+# Audit Report — MERIDIAN Appendix V19A
 
 **Auditor:** Independent review, operating from the 13-block Development Session Documentation Checklist (Appendices H/I origin, re-uploaded 2026-04-22).
 **Document under audit:** `MERDIAN_AppendixV19A.md` (62,340 bytes, 753 lines, draft pending docx render).
@@ -309,10 +309,10 @@ V19A is a rebuild-grade document in substance. A developer with no prior context
 - **Document hashed at audit time:** /home/claude/v19_appendices/MERDIAN_AppendixV19A.md
 - **Size:** 62,340 bytes, 753 lines
 - **Read in full:** Yes (lines 1-150, 150-450, 450-753, 260-336, 528-675 in separate views)
-- **Checklist applied:** MERDIAN Development Session Documentation Checklist (uploaded 2026-04-22) — 13 blocks + Quick Self-Audit
+- **Checklist applied:** MERIDIAN Development Session Documentation Checklist (uploaded 2026-04-22) — 13 blocks + Quick Self-Audit
 - **Cross-referenced:** merdian_reference.json v8 (commit 90b8c2d) for JSON deltas, CLAUDE.md v1.1 for governance rules, Documentation Protocol v3 for "rebuild-grade" definition (line 362-373)
 - **Auditor bias disclosure:** I (Claude) also authored V19A earlier in this session. An auditor cannot be fully independent of a document they wrote; this audit is adversarial self-review rather than external review. A human independent audit by Navin remains advisable before any high-stakes use of V19A (external review, regulatory submission).
 
 ---
 
-*Audit Report — MERDIAN Appendix V19A — 2026-04-22 — PASS with F-1 MODERATE + F-2/F-3/F-4 MINOR.*
+*Audit Report — MERIDIAN Appendix V19A — 2026-04-22 — PASS with F-1 MODERATE + F-2/F-3/F-4 MINOR.*

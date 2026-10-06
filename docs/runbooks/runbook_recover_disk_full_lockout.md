@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Established | Session 80, 2026-09-22 |
-| Applies to | `i-0878c118835386ec2` (meridian-server, eu-north-1b) and any MERDIAN EC2 host |
+| Applies to | `i-0878c118835386ec2` (meridian-server, eu-north-1b) and any MERIDIAN EC2 host |
 | Source | First execution, 2026-09-22. See `CASE-2026-09-22-disk-full-access-lockout.md` for the event record and the measured timeline. |
 | Executed end-to-end | **Yes, once** — 2026-09-22, ~09:28 → 10:17 IST. |
 

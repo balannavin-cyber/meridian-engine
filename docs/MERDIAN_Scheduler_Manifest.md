@@ -1,7 +1,7 @@
-# MERDIAN Windows Task Scheduler — Ownership Manifest
+# MERIDIAN Windows Task Scheduler — Ownership Manifest
 **Last updated:** 2026-04-04 (V18C session)  
 **Git hash at creation:** 3ec6212  
-**Authority:** This document is the single authoritative record of all Windows Task Scheduler tasks for MERDIAN Local.
+**Authority:** This document is the single authoritative record of all Windows Task Scheduler tasks for MERIDIAN Local.
 
 ---
 

@@ -1,4 +1,4 @@
-# MERDIAN Strategy Quick Card v1
+# MERIDIAN Strategy Quick Card v1
 
 **Print this. Laminate. Keep at terminal.**
 
@@ -177,6 +177,6 @@ STEP 7: Set EXIT RULES per ADR-012:
 
 ---
 
-**MERDIAN Strategy Quick Card v1 — Print, laminate, keep at terminal. Update frequency: Monthly (or per ENH-114 phase approval).**
+**MERIDIAN Strategy Quick Card v1 — Print, laminate, keep at terminal. Update frequency: Monthly (or per ENH-114 phase approval).**
 
 *Source: MERDIAN_Strategy_Reference_v1.md + Kakushadze & Serur (2018) "151 Trading Strategies"*

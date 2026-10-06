@@ -1,8 +1,8 @@
-# MERDIAN — roadmap to an intelligent, agentic MERDIAN (v2, 2026-10-05)
+# MERIDIAN — roadmap to an intelligent, agentic MERIDIAN (v2, 2026-10-05)
 
 **Status: v2.7 — LIVE TRACKER (S90 / Agentic MERIDIAN Session 1).** Stages 0–2 are ruled inside parity (S90-D) and ADR-031 is accepted (S90-C); this file is the single progress record for the agentic layer, and the Doc Protocol files point here rather than restating it. Items outside Stages 0–2 remain proposals; nothing here is a pre-registration. v1 (same path, earlier on 2026-10-05) answered the operator's seven-point sketch. v2 folds in the harness discussion that followed: ingest, compute and assumption harnesses; redundancy; the agent harness; staged build with exit tests; a tracker. The product is not named here, per the standing rule.
 
-**Goal, in the operator's words:** an intelligent, agentic MERDIAN that is self-learning, efficient, cost-effective and LLM-independent.
+**Goal, in the operator's words:** an intelligent, agentic MERIDIAN that is self-learning, efficient, cost-effective and LLM-independent.
 
 **Inputs:** v1 of this doc · `ADR-030` / `claude/ENH-133_schema_proposal_S89.md` · `claude/parity_dovetail_and_post_parity_plan_S89.md` · `claude/s89_1001_ladder_replay_findings.md` · `MERDIAN_Assumption_Register.md` · `tech_debt.md` (TD-081, TD-S82-NEW-3, TD-S69-NEW-2, TD-S89-NEW-1, TD-NEW-7, TD-NEW-L, TD-S53-NEW-5, ENH-83 write-path gap) · ADR-009, ADR-016, ADR-017, ADR-018, ADR-020, ADR-023, ADR-025, ADR-029 · `runbook_update_kite_flow.md` · `CLAUDE_history.md` S22 (Kite recovery path).
 
@@ -316,7 +316,7 @@ No source is ingested until its card is complete and ruled. The card:
 |---|---|
 | **One import path, same normalisation as live**, provenance `source=<vendor>` | Base rates must not mix two definitions of the same number |
 | **Greeks recomputed by the in-house engine (R3.3)** | Vendor history may lack Greeks or compute them differently |
-| **Overlap reconciliation** against MERDIAN's own captured days (`option_chain_snapshots` from 2026-08-24, `gex_strike_snapshots` from 2026-05-25) before any use | Proves the vendor's numbers match ours where both exist |
+| **Overlap reconciliation** against MERIDIAN's own captured days (`option_chain_snapshots` from 2026-08-24, `gex_strike_snapshots` from 2026-05-25) before any use | Proves the vendor's numbers match ours where both exist |
 | **Scored and quarantined (R3.7)** like our own history | Bad vendor days must not enter the event study |
 | **Train / holdout split by date, stamped before the first query** (ADR-009) | Prevents learning from the window used to judge |
 | **Storage decided against R1.9** — likely off the box (separate database or files) | Years of chain history will not fit a t3.small |

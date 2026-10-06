@@ -1,12 +1,12 @@
 # RUNBOOK: Disaster rebuild (cold rebuild from zero)
 
-> **Purpose.** If chat history, Supabase context, and local machine state are all partially or fully lost — this runbook enables MERDIAN to be rebuilt with minimal trial and error. Promotes V15.1/V16 Appendix A to current ICT-era state per Doc Protocol v4 Rule 9.6.
+> **Purpose.** If chat history, Supabase context, and local machine state are all partially or fully lost — this runbook enables MERIDIAN to be rebuilt with minimal trial and error. Promotes V15.1/V16 Appendix A to current ICT-era state per Doc Protocol v4 Rule 9.6.
 
 ---
 
 | Field | Value |
 |---|---|
-| **Operation** | Cold rebuild of MERDIAN from zero — local Windows + AWS shadow + Supabase backend + Dhan/Zerodha brokers |
+| **Operation** | Cold rebuild of MERIDIAN from zero — local Windows + AWS shadow + Supabase backend + Dhan/Zerodha brokers |
 | **Frequency** | As-needed (catastrophic failure / audit reproduction / fresh dev environment) |
 | **Environment** | Both Local primary + AWS shadow |
 | **Prerequisites** | Dhan account + TOTP authenticator · Zerodha account + TOTP · Supabase project credentials · AWS account with EC2 SSM access · GitHub access · Windows 10/11 machine · Python 3.12 · Git |
@@ -20,8 +20,8 @@
 
 Three triggers:
 
-1. **Catastrophic loss** — Local machine destroyed, Supabase project lost, or both. The runbook is the institutional knowledge of how MERDIAN goes back together.
-2. **Audit reproduction** — A reviewer needs to verify that MERDIAN can be rebuilt from `git` + Supabase + broker credentials alone. The runbook is the audit response.
+1. **Catastrophic loss** — Local machine destroyed, Supabase project lost, or both. The runbook is the institutional knowledge of how MERIDIAN goes back together.
+2. **Audit reproduction** — A reviewer needs to verify that MERIDIAN can be rebuilt from `git` + Supabase + broker credentials alone. The runbook is the audit response.
 3. **Fresh dev environment** — A new contributor or a clean Windows installation needs to come up from zero. The runbook is the onboarding path.
 
 This is **not** the runbook for routine operational restarts (use `runbook_restart_runner_local.md` / `_aws.md` instead) or for token rotation (use `runbook_update_dhan_token.md` / `runbook_update_kite_flow.md`). Those are scoped to a single component.

@@ -1,4 +1,4 @@
-# MERDIAN capture — Session 89 (2026-10-03, Saturday, out of hours)
+# MERIDIAN capture — Session 89 (2026-10-03, Saturday, out of hours)
 
 > Session capture. Written before any register edit, so every later update splices from one
 > verified source. **ADR-029 #13 and #14 are NOT restated here** — they live in

@@ -30,7 +30,7 @@ This ADR spends its words on the two decisions the spec *assumes* rather than ar
 
 ## D1 — Adopt a per-cycle layer-history PERSISTENCE pattern
 
-**Decision.** MERDIAN adopts a persisted per-cycle history for parity layer scalars: **one row
+**Decision.** MERIDIAN adopts a persisted per-cycle history for parity layer scalars: **one row
 per `(symbol, expiry_date, ts)`** at the γ cadence, both expiry legs, `run_id` stored and not
 keyed. `gex_cycle_history` is the first instance.
 

@@ -38,7 +38,7 @@ Concretely:
 - read the row's `ts`, compute age in minutes against `datetime.now(timezone.utc)`
 - floor from `MERDIAN_GEX_RECENCY_FLOOR_MIN`, default **15** minutes (the GEX writer's cadence is 5 minutes; 15 permits two missed cycles before the guard fires)
 - if the row is older than the floor, **drop the pin/accel data entirely** so the renderer no-ops, and record `pin_accel_stale=True` plus the observed age into the overlay's `raw`/header line
-- fail-safe to *absent*, never to *stale*. An overlay with no positioning boxes is a true statement about MERDIAN's knowledge; an overlay with week-old boxes is a false one.
+- fail-safe to *absent*, never to *stale*. An overlay with no positioning boxes is a true statement about MERIDIAN's knowledge; an overlay with week-old boxes is a false one.
 
 **D2 — the floor is a construction obligation, not a follow-up TD.** Any change that makes a derived read path faster, or narrows its scope, or adds a new consumer of a derived view, must land its recency floor in the same commit. A latency fix without a freshness floor is an incomplete change, and reviewing it as complete is the defect. Filing the floor as a TD "to do next" — which is what S69 did — is explicitly **not** sufficient: TD-S69-NEW-3 has now been open across two sessions while the exposure was live.
 
@@ -46,13 +46,13 @@ Concretely:
 
 ## Rationale
 
-This is not a data-driven decision — there is no cohort to measure. It rests on three observations, each with a concrete instance in MERDIAN's own history:
+This is not a data-driven decision — there is no cohort to measure. It rests on three observations, each with a concrete instance in MERIDIAN's own history:
 
 **A fast wrong answer is worse than a slow one.** ADR-001's founding case was a stability gate that produced confident output from insufficient evidence. The post-ADR-021 pin/accel path has the same signature: well-formed, immediate, and potentially describing a market state that no longer exists.
 
 **Freshness and correctness are independent properties, and speed work only addresses the latter.** ADR-021 guarantees the views compute the right zones for the run they are scoped to. It says nothing about whether that run is current. The `latest_run` CTE resolves `DISTINCT ON (symbol) … ORDER BY symbol, ts DESC` — which faithfully returns the newest row *that exists*, including when the newest row is stale. The scoping fix cannot detect writer failure by construction.
 
-**MERDIAN has already paid for this lesson twice and not generalised it.** ADR-018 D2 established recency floors after the breadth subsystem served stale data. TD-S61-NEW-1 applied one to options flow. Neither was promoted into a rule that binds new code, so ADR-021 — written by someone who knew both — still shipped without one. A principle that must be remembered separately at each site will eventually be forgotten at one of them.
+**MERIDIAN has already paid for this lesson twice and not generalised it.** ADR-018 D2 established recency floors after the breadth subsystem served stale data. TD-S61-NEW-1 applied one to options flow. Neither was promoted into a rule that binds new code, so ADR-021 — written by someone who knew both — still shipped without one. A principle that must be remembered separately at each site will eventually be forgotten at one of them.
 
 ## Alternatives considered
 
@@ -138,7 +138,7 @@ D1 remains **NOT IMPLEMENTED**, deliberately, pending the `52 10` + 120-minute d
 
 ## Governance language
 
-> **A read path made fast must be made fresh in the same pass (ADR-023, S70).** Every derived read path carries an explicit recency floor, and the floor ships in the same commit as any change to that path's latency or scope — filing it as a follow-up TD is not sufficient (TD-S69-NEW-3 stayed open across two sessions with the exposure live). `fetch_positioning_landscape()` takes a `MERDIAN_GEX_RECENCY_FLOOR_MIN` floor, default 15 minutes, and **fails to absent, never to stale**: an overlay with no positioning boxes is a true statement about what MERDIAN knows; an overlay with week-old boxes is a false one. Staleness is recorded in the artefact, not only in a log, so the operator can tell "writer stalled" from "no zones today."
+> **A read path made fast must be made fresh in the same pass (ADR-023, S70).** Every derived read path carries an explicit recency floor, and the floor ships in the same commit as any change to that path's latency or scope — filing it as a follow-up TD is not sufficient (TD-S69-NEW-3 stayed open across two sessions with the exposure live). `fetch_positioning_landscape()` takes a `MERDIAN_GEX_RECENCY_FLOOR_MIN` floor, default 15 minutes, and **fails to absent, never to stale**: an overlay with no positioning boxes is a true statement about what MERIDIAN knows; an overlay with week-old boxes is a false one. Staleness is recorded in the artefact, not only in a log, so the operator can tell "writer stalled" from "no zones today."
 
 ## Open follow-ups
 

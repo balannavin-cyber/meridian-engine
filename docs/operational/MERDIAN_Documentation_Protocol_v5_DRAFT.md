@@ -1,4 +1,4 @@
-# MERDIAN Documentation Protocol v5 — DRAFT (not in force)
+# MERIDIAN Documentation Protocol v5 — DRAFT (not in force)
 
 | Field | Value |
 |---|---|

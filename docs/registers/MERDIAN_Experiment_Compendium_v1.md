@@ -1,4 +1,4 @@
-# MERDIAN Experiment Compendium v1
+# MERIDIAN Experiment Compendium v1
 
 **Market Structure Intelligence & Options Decision Engine**
 
@@ -988,7 +988,7 @@ Strategy B underperforms because fixed lots (7/14/21) don't scale with compoundi
 **Date:** 2026-04-12
 **Script:** `experiment_15_pure_ict_compounding.py`
 
-**Question:** Can ICT patterns alone (no MERDIAN regime signals, gates, or filters) generate profitable returns with compounding capital? And does the 1H zone layer (MEDIUM context, ENH-37) add measurable edge?
+**Question:** Can ICT patterns alone (no MERIDIAN regime signals, gates, or filters) generate profitable returns with compounding capital? And does the 1H zone layer (MEDIUM context, ENH-37) add measurable edge?
 
 **Setup:**
 - ICTDetector with W/D/H zone simulation from hist_spot_bars_1m
@@ -1046,8 +1046,8 @@ T+30m wins by ₹3,06,635 (+41%). ICT exit WR collapses to 36.9% because price o
 
 **Verdict:**
 - 1H zones ADD EDGE — MEDIUM context is the most profitable context tier by WR. Keep in ENH-37.
-- BEAR_OB is self-contained — 94.4% WR with no MERDIAN gates. Strongest standalone ICT pattern.
-- BULL_FVG needs MERDIAN context — 50.3% WR alone is near-random. Must have SHORT_GAMMA + BULLISH breadth.
+- BEAR_OB is self-contained — 94.4% WR with no MERIDIAN gates. Strongest standalone ICT pattern.
+- BULL_FVG needs MERIDIAN context — 50.3% WR alone is near-random. Must have SHORT_GAMMA + BULLISH breadth.
 - T+30m exit confirmed once more. Final answer on exit question.
 - 1.1% max drawdown demonstrates the framework's robustness — trading 1 in 5 sessions, losses are shallow and recoveries fast.
 
@@ -1314,7 +1314,7 @@ From all experiments combined, the validated tier structure:
 - BEAR_OB | AFTERNOON (13:00-14:30) — -24.7% expectancy
 - **BEAR_OB | AFTERNOON + PO3_BEARISH: 33.3% WR — hard skip (move already done)**
 - BEAR_OB | DTE=0 or DTE=1 — use combined structure instead
-- BULL_FVG without MERDIAN regime context — 50.3% WR (near-random)
+- BULL_FVG without MERIDIAN regime context — 50.3% WR (near-random)
 - BEAR_FVG | HIGH context — -40.2% expectancy
 - LONG_GAMMA signals — validated below random
 - **BULL_OB MIDDAY + PO3_BULLISH: 30.3% WR — hard skip (premature)**
@@ -1343,6 +1343,6 @@ From Experiment 16 (confirmed; Session 11 additions noted):
 
 ---
 
-*MERDIAN Experiment Compendium v1 — 2026-04-12*
+*MERIDIAN Experiment Compendium v1 — 2026-04-12*
 *Living document. Prepend new experiments. Never delete prior findings.*
 *Last updated 2026-04-28 (Session 11 — Exp 34 through 41B)*

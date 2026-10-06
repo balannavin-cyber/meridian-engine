@@ -1,9 +1,9 @@
 ---
 name: merdian-runbooks
-description: Find and follow the MERDIAN runbook for a recurring operation - token rotation, runner restart, backfill, hash mismatch, DhanError 401, calendar rows, emergency stop, disk-full lockout. Use when the user asks how to perform an operational procedure, or when a runner, token or feed needs recovery.
+description: Find and follow the MERIDIAN runbook for a recurring operation - token rotation, runner restart, backfill, hash mismatch, DhanError 401, calendar rows, emergency stop, disk-full lockout. Use when the user asks how to perform an operational procedure, or when a runner, token or feed needs recovery.
 ---
 
-# MERDIAN runbooks
+# MERIDIAN runbooks
 
 Relocated verbatim from `CLAUDE.md` at Session 86 (ADR-028).
 

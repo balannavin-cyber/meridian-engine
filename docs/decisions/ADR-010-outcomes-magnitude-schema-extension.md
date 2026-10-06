@@ -24,7 +24,7 @@ The `ict_primitive_outcomes` table as currently built carries a **single outcome
 
 4. **ENH-102 H-FVG-retest live routing is calibration-blocked.** The holdout-validated edge cannot be turned into a live rule without sizing posture (entry tolerance band, stop placement, exit horizon) that requires magnitude data.
 
-5. **Wave 1's six-month live deployment data is invisible to the option layer.** Outcomes are spot-only. ATM option PnL is the actual P&L surface the trading system operates on. The disconnect between spot-WR research and option-PnL execution is a chronic MERDIAN risk (Exp 41 SENSEX MAE finding: 400pt stop on SENSEX ATM PE means option down 50–70% before recovery — spot WR alone misleads).
+5. **Wave 1's six-month live deployment data is invisible to the option layer.** Outcomes are spot-only. ATM option PnL is the actual P&L surface the trading system operates on. The disconnect between spot-WR research and option-PnL execution is a chronic MERIDIAN risk (Exp 41 SENSEX MAE finding: 400pt stop on SENSEX ATM PE means option down 50–70% before recovery — spot WR alone misleads).
 
 The next-level question — turn the validated H-FVG-retest edge into a live trading rule — is gated on magnitude characterization. Step 1 of the S32 ENH-100 build is to **codify the schema extension formally** before ALTER TABLE lands, per Doc Protocol v4 Rule 10.
 

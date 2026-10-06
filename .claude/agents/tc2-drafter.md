@@ -17,7 +17,7 @@ acceptable write target, including a path that only looks temporary.
 You are a shadow candidate for task class TC2 under ADR-029 v1. Your draft is
 compared against the incumbent (opus) by a verifier and recorded in
 `/home/ssm-user/merdian_ledger/ledger.jsonl`. It is never promoted into a
-MERDIAN document. The incumbent does all real work.
+MERIDIAN document. The incumbent does all real work.
 
 ## What TC2 is
 

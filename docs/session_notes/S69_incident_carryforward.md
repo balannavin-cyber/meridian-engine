@@ -92,10 +92,10 @@ Operator reported "no pin/accel zones on TradingView for days." Pulling that thr
 **SEBI Closing Auction Session went live 2026-08-03** (NSE + BSE, F&O/Category-I stocks). Verified via web search this session. Material changes:
 
 - **F&O stocks:** continuous trading ends **15:15** (was 15:30) → CAS auction 15:15–15:35 → **single equilibrium closing price** (replaces the 15:00–15:30 VWAP for these names).
-- **Index & stock derivatives (NIFTY/SENSEX F&O — MERDIAN's instruments):** trading **extended to 15:40**; post-close 15:50–16:00.
+- **Index & stock derivatives (NIFTY/SENSEX F&O — MERIDIAN's instruments):** trading **extended to 15:40**; post-close 15:50–16:00.
 - **Pre-open** similarly restructured from **2026-09-07** (random close 15:08-ish, order-type phases).
 
-**Why this matters to MERDIAN:** the entire EOD pipeline assumes "15:30 = clean settled close." That assumption is now false for F&O names, and several jobs fire *inside* the new auction/extended-derivatives window:
+**Why this matters to MERIDIAN:** the entire EOD pipeline assumes "15:30 = clean settled close." That assumption is now false for F&O names, and several jobs fire *inside* the new auction/extended-derivatives window:
 
 | Job | Schedule | CAS exposure |
 |---|---|---|

@@ -1,4 +1,4 @@
-# MERDIAN Documentation Protocol v3
+# MERIDIAN Documentation Protocol v3
 
 **Market Structure Intelligence & Options Decision Engine**
 
@@ -32,7 +32,7 @@ Rules 3, 4, 5 from v2 are unchanged.
 
 ## Why this revision exists
 
-The v1/v2 protocol made `.docx` the canonical rebuild-grade record. That worked while MERDIAN was being built up — `.docx` formatting let the audit-corrected appendices stand as standalone reconstruction documents. But three costs accumulated:
+The v1/v2 protocol made `.docx` the canonical rebuild-grade record. That worked while MERIDIAN was being built up — `.docx` formatting let the audit-corrected appendices stand as standalone reconstruction documents. But three costs accumulated:
 
 1. **Authoring friction.** Every code session ended with a heavy `.docx` write. Documentation lag became a real risk (the v2 "documentation debt rule" exists because of this).
 2. **AI session inefficiency.** Claude can't skim a `.docx` the way it can a markdown file. Every session resume meant either pasting the `.docx` (huge context cost) or extracting from `merdian_reference.json` (correct, but required Navin to know what to extract).
@@ -46,7 +46,7 @@ The fix is not to throw out `.docx` — it's still the right format for stakehol
 
 **Location:** Repo root (`C:\GammaEnginePython\CLAUDE.md`, mirrored on AWS).
 
-**Purpose:** Orient any new Claude session in 3 minutes. Tells Claude what MERDIAN is, where to look for what, what the non-negotiable rules are, and what NOT to reopen.
+**Purpose:** Orient any new Claude session in 3 minutes. Tells Claude what MERIDIAN is, where to look for what, what the non-negotiable rules are, and what NOT to reopen.
 
 **What it contains:**
 - Project one-liner
@@ -218,9 +218,9 @@ C:\GammaEnginePython\
 Every code commit that changes system behaviour has a corresponding documentation commit in the same push or the immediately following push.
 
 ```
-MERDIAN: [OPS] tech_debt.md — TD-007 added
-MERDIAN: [OPS] merdian_reference.json — file statuses updated
-MERDIAN: [OPS] CURRENT.md — session 2026-MM-DD recorded
+MERIDIAN: [OPS] tech_debt.md — TD-007 added
+MERIDIAN: [OPS] merdian_reference.json — file statuses updated
+MERIDIAN: [OPS] CURRENT.md — session 2026-MM-DD recorded
 ```
 
 ### 4.2 No major master without register update
@@ -389,4 +389,4 @@ In v3, "rebuild-grade" is a property of the **markdown layer as a whole** (CLAUD
 
 ---
 
-*MERDIAN Documentation Protocol v3 — supersedes v2. Commit to Git. Do not modify without updating version number.*
+*MERIDIAN Documentation Protocol v3 — supersedes v2. Commit to Git. Do not modify without updating version number.*

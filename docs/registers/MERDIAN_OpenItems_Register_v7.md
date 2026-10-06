@@ -1,4 +1,4 @@
-# MERDIAN — Master Open Items & Enhancement Status Register
+# MERIDIAN — Master Open Items & Enhancement Status Register
 
 **Market Structure Intelligence & Options Decision Engine**
 
@@ -127,7 +127,7 @@ Post-gate: Phase 4 promotion decision → ENH-41 code build → Execution layer 
 
 ---
 
-*MERDIAN Open Items Register v7 — 2026-04-13*
+*MERIDIAN Open Items Register v7 — 2026-04-13*
 *Supersedes v6 (2026-04-12).*
 
 
@@ -138,7 +138,7 @@ Post-gate: Phase 4 promotion decision → ENH-41 code build → Execution layer 
 | Opened | 2026-04-14 |
 | Blocking | ENH-51c (AWS primary) — if runner migrates to AWS but HTF zones not rebuilt, ICT detector uses stale zones |
 | Description | build_ict_htf_zones.py --timeframe D is currently MANUAL pre-market only. Must be added as AWS cron before AWS becomes primary compute. |
-| Fix | Add to MERDIAN AWS crontab: 30 3 * * 1-5 cd /home/ssm-user/meridian-engine && /bin/bash -lc 'set -a; . .env; set +a; python3 build_ict_htf_zones.py --timeframe D >> logs/htf_zones.log 2>&1' |
+| Fix | Add to MERIDIAN AWS crontab: 30 3 * * 1-5 cd /home/ssm-user/meridian-engine && /bin/bash -lc 'set -a; . .env; set +a; python3 build_ict_htf_zones.py --timeframe D >> logs/htf_zones.log 2>&1' |
 | Build when | Before ENH-51c (AWS primary promotion) |
 
 ---
@@ -178,7 +178,7 @@ New operational issues will be tracked in the Enhancement Register or session ap
 ### Session Changes (2026-04-14 — Holiday session + engineering)
 
 **Closed this session:**
-- OI-11 CLOSED — HTF zone rebuild cron added to MERDIAN AWS crontab (30 3 * * 1-5)
+- OI-11 CLOSED — HTF zone rebuild cron added to MERIDIAN AWS crontab (30 3 * * 1-5)
 - OI-12 CLOSED — market_ticks retention: pg_cron job 45 (30 14 * * 1-5, 2-day TTL)
 - OI-13 CLOSED — Telegram credentials added to .env. Exit monitor alerts confirmed.
 - OI-14 CLOSED — Holiday gate added to 4 Task Scheduler scripts (fix_process_control_final.py)
@@ -212,7 +212,7 @@ New operational issues will be tracked in the Enhancement Register or session ap
 
 **ZERO OPEN ITEMS REMAIN.**
 
-*MERDIAN Open Items Register — PERMANENTLY CLOSED 2026-04-15*
+*MERIDIAN Open Items Register — PERMANENTLY CLOSED 2026-04-15*
 *Superseded by operational monitoring. Future items tracked in Enhancement Register or session appendices.*
 
 ---
@@ -225,7 +225,7 @@ New operational issues will be tracked in the Enhancement Register or session ap
 
 **RE-RESOLVED via in-flight fix during Incident §1.4 (Session 29 firefighting). The original 2026-04-14 closure used a schedule design that proved unstable under accumulated load.**
 
-The original pg_cron job (`delete-old-market-ticks`, jobid 45, schedule `30 14 * * 1-5`, command `DELETE FROM public.market_ticks WHERE ts < now() - interval '2 days'`) was active from registration but **had been failing every weekday for 14+ consecutive runs since at least 2026-04-30** with `ERROR: canceling statement due to statement timeout` (Postgres error 57014). Failures were never surfaced because `cron.job_run_details` is not polled by any MERDIAN telemetry.
+The original pg_cron job (`delete-old-market-ticks`, jobid 45, schedule `30 14 * * 1-5`, command `DELETE FROM public.market_ticks WHERE ts < now() - interval '2 days'`) was active from registration but **had been failing every weekday for 14+ consecutive runs since at least 2026-04-30** with `ERROR: canceling statement due to statement timeout` (Postgres error 57014). Failures were never surfaced because `cron.job_run_details` is not polled by any MERIDIAN telemetry.
 
 Failed deletes left `market_ticks` accumulating without bound. By 2026-05-14 the table reached 62 GB (22 GB heap + 40 GB indexes). At that size, bulk INSERT from `ws_feed_zerodha.py` (2282 instruments × tick rate) began exceeding the same statement_timeout, producing the cascade documented in `CASE-2026-05-14-breadth-cascade-token-and-bloat.md`.
 

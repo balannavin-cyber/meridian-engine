@@ -1,4 +1,4 @@
-# MERDIAN — All Experiment Results
+# MERIDIAN — All Experiment Results
 # Consolidated reference file — all key numbers in one place
 # Generated: 2026-04-10
 # Sessions: Apr 2025 – Mar 2026 | NIFTY + SENSEX | 247 + 246 sessions
@@ -315,7 +315,7 @@ Judas: timing mismatch — needs 15-25 minute window, not 5-10.
 
 ---
 
-## EXPERIMENT 11 — ICT × MERDIAN Regime Intersection
+## EXPERIMENT 11 — ICT × MERIDIAN Regime Intersection
 
 ### 11A — Pattern × Gamma Regime
 | Label | N | T+30m Exp | WR |

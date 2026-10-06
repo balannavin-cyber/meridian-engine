@@ -12,8 +12,8 @@ Navin (operator) + Claude (architect)
 
 New operator-facing pages replacing three existing surfaces:
 
-- `localhost:8765` MERDIAN Live Dashboard (deprecate)
-- `localhost:8766` MERDIAN SIGNAL Dashboard (deprecate)
+- `localhost:8765` MERIDIAN Live Dashboard (deprecate)
+- `localhost:8766` MERIDIAN SIGNAL Dashboard (deprecate)
 - Lovable.ai project `e8fde6f9-58d0-4444-860d-508b3635b014` (reseed or replace)
 
 New surfaces: Marketview + Settings (Phase 1); Health, Order Placer, Journal in subsequent phases under their own ENHs.
@@ -73,7 +73,7 @@ The S37 substrate (per-strike GEX, PIN/ACCEL zones, dealer flow scenarios) is do
 - Display tab: theme/refresh/density/sparkline/confluence-highlight/stale-threshold toggles + keyboard shortcut reference
 - Connections tab: Dhan / Kite / AWS shadow runner / Supabase / Telegram rows with status badge (silent when healthy per ADR-017 Principle 3) + last-refresh inline + refresh-now button per row
 - Manual actions tab: three confirmation-gated buttons (refresh signal, regenerate Pine overlay, rebuild ICT zones)
-- About tab: MERDIAN version, last deployment, git commit hash, active ADRs link, session count
+- About tab: MERIDIAN version, last deployment, git commit hash, active ADRs link, session count
 - Drill-downs per the interaction table in Appendix B
 
 **Backend Phase 1:**
@@ -154,7 +154,7 @@ The prompt below is the operator-curated specification for Lovable.ai to execute
 ```
 PROJECT CONTEXT
 
-MERDIAN is a Market Structure Intelligence engine for intraday NIFTY and SENSEX
+MERIDIAN is a Market Structure Intelligence engine for intraday NIFTY and SENSEX
 options trading on Indian markets (NSE/BSE). The operator is a discretionary
 trader sitting at a desk during market hours 09:15-15:30 IST, sole user of the
 system. The current dashboard at lovable.dev/projects/e8fde6f9-58d0-4444-860d-
@@ -175,7 +175,7 @@ DESIGN PRINCIPLES (non-negotiable, from ADR-017)
 
 3. Confluence is the headline. When PIN/ACCEL overlaps an ICT zone, render the
    overlap as a dashed amber ring — not as a footnote on the individual
-   components. This is MERDIAN's primary value proposition.
+   components. This is MERIDIAN's primary value proposition.
 
 4. Motion not timestamps. Updating numbers get inline 3-5 tick sparklines
    instead of "last updated at HH:MM:SS" labels.
@@ -191,7 +191,7 @@ DESIGN PRINCIPLES (non-negotiable, from ADR-017)
 LAYOUT — APP SHELL
 
 Left nav (76px wide, vertical strip, secondary background):
-- Brand text "MERDIAN" vertical (rotated) at top, monospace, tertiary color
+- Brand text "MERIDIAN" vertical (rotated) at top, monospace, tertiary color
 - 5 icon-label stacks (icon 18px Tabler outline + 9px label below):
   - Market (icon: layout-dashboard) — HIGHLIGHTED on this page with info
     background + info text + rounded
@@ -497,7 +497,7 @@ End of Marketview prompt.
 ```
 PROJECT CONTEXT
 
-MERDIAN Settings page. Configuration surface for parameter calibration +
+MERIDIAN Settings page. Configuration surface for parameter calibration +
 display preferences + system connections. Companion to Marketview
 consolidation per ADR-017 + ENH-110. Implements ENH-83 calibration console
 graduated from PROPOSED build-deferred to required.
@@ -681,7 +681,7 @@ Manual actions tab:
    completion
 
 About tab:
-- MERDIAN version (from CLAUDE.md current footer)
+- MERIDIAN version (from CLAUDE.md current footer)
 - Last deployment timestamp
 - Git commit hash (current head)
 - Active ADRs (link to Decision Index)

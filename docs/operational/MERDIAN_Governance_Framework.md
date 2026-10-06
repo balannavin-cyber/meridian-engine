@@ -1,4 +1,4 @@
-# MERDIAN Governance Framework
+# MERIDIAN Governance Framework
 
 **Market Structure Intelligence & Options Decision Engine**
 
@@ -8,7 +8,7 @@
 |---|---|
 | Document | `MERDIAN_Governance_Framework.md` |
 | Location | `docs/operational/` |
-| Type | Governance — how decisions about MERDIAN are validated, shadowed, and promoted |
+| Type | Governance — how decisions about MERIDIAN are validated, shadowed, and promoted |
 | Established | 2026-05-09 (Session 23 — created per Doc Protocol v4 Rule 9.4) |
 | Source | V16 §3 (Measure→Validate→Shadow→Promote framework) + V16 §3.3 (Four Evidence Questions) + V16 §3.6 (Walk-Forward Validation) + V15.1 §18.1 / V16 §25.1 (Do-NOT-Revive list) — promoted to canonical markdown form |
 | Update rule | Rare. Any change to a governance rule requires a new version with exhaustive changelog (Doc Protocol v4 Rule 1). |
@@ -18,7 +18,7 @@
 
 ## Purpose
 
-This document is the consolidated record of MERDIAN's development governance. The four-stage Measure→Validate→Shadow→Promote framework, the Four Key Evidence Questions, the Walk-Forward Validation methodology, the Shadow Mode discipline, and the Do-NOT-Revive list — all of these were established in V16 §3 and §25 in March 2026 and have been preserved through every subsequent architectural change. ADR-002 and ADR-007 explicitly invoke this framework as the standard their decisions were measured against.
+This document is the consolidated record of MERIDIAN's development governance. The four-stage Measure→Validate→Shadow→Promote framework, the Four Key Evidence Questions, the Walk-Forward Validation methodology, the Shadow Mode discipline, and the Do-NOT-Revive list — all of these were established in V16 §3 and §25 in March 2026 and have been preserved through every subsequent architectural change. ADR-002 and ADR-007 explicitly invoke this framework as the standard their decisions were measured against.
 
 Two uses:
 
@@ -205,4 +205,4 @@ For clarity on scope:
 
 ---
 
-*MERDIAN Governance Framework — established Session 23, 2026-05-09. The V16 §3 framework is preserved unchanged; this document promotes it from `.docx`-locked archive to canonical markdown form. V19's "V19 does not supersede V16 on architecture" makes this Framework permanently authoritative on governance.*
+*MERIDIAN Governance Framework — established Session 23, 2026-05-09. The V16 §3 framework is preserved unchanged; this document promotes it from `.docx`-locked archive to canonical markdown form. V19's "V19 does not supersede V16 on architecture" makes this Framework permanently authoritative on governance.*

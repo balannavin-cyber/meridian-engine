@@ -9,7 +9,7 @@
 
 ## 1. Context
 
-MERDIAN's current ICT detection layer was assembled over Sessions 5-15 across multiple writers (`build_ict_htf_zones.py`, `detect_ict_patterns.py`, intraday helpers) with non-uniform interpretations of canonical ICT primitives. The S31 diagnostic established three load-bearing defects:
+MERIDIAN's current ICT detection layer was assembled over Sessions 5-15 across multiple writers (`build_ict_htf_zones.py`, `detect_ict_patterns.py`, intraday helpers) with non-uniform interpretations of canonical ICT primitives. The S31 diagnostic established three load-bearing defects:
 
 - **D-OB definition is non-canonical.** `detect_daily_zones` tags the prior day's own body as the order block whenever the day moved ≥0.4%. Canon requires the OB to be the *opposing-direction* candle preceding a displacement that creates an FVG. Result: ~5x over-detection at D timeframe.
 - **PDH/PDL conflate level with zone.** PDH/PDL are *price levels* by canon. Production adds a ±10/±20 buffer treating them as zones. The buffer was a rendering convenience that propagated into detection logic and downstream consumers.
@@ -17,7 +17,7 @@ MERDIAN's current ICT detection layer was assembled over Sessions 5-15 across mu
 
 Compounding context: every load-bearing experiment in the Compendium (Exp 2, 5, 10c, 11, 15, 17, 18, 23, 34, 35, 36, 40, 41) queries `hist_ict_htf_zones`, which was backfilled (Session 15) using the same broken detectors. The "edges" we promoted to production rules (ENH-76 88.2%, ENH-77 73.7%, ENH-78 90.9%, ENH-88 +12.8pp) are measured against this substrate. They are statistically valid statements about *what the broken detector tagged*, but the labels (BULL_OB, BEAR_OB, etc.) do not refer to canonical ICT primitives.
 
-This ADR specifies the canonical definition of every PD-array primitive MERDIAN will detect. S31-B implements detectors against this spec. S31-C rebuilds the edge measurement view and rewires consumers. The Compendium is not preserved; old WR numbers are explicitly marked SUPERSEDED-BY-CANONICAL.
+This ADR specifies the canonical definition of every PD-array primitive MERIDIAN will detect. S31-B implements detectors against this spec. S31-C rebuilds the edge measurement view and rewires consumers. The Compendium is not preserved; old WR numbers are explicitly marked SUPERSEDED-BY-CANONICAL.
 
 ---
 

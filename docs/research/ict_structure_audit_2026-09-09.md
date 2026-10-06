@@ -791,7 +791,7 @@ confirmation, and the displacement window is exactly one bar, not `[i+1, i+N]` w
 | Displacement window `[i+1, i+N]`, N=3 | window 0 | window 1 | window 1 | 5-bar close-to-close |
 | Threshold | `OB_MIN_MOVE_PCT = 0.40` (`:66`) | same | same | same (`detect_ict_patterns.py:42`) |
 
-**No OB detector anywhere in MERDIAN applies the FVG confirmation that ADR-004 §5.1 step 2 makes
+**No OB detector anywhere in MERIDIAN applies the FVG confirmation that ADR-004 §5.1 step 2 makes
 the defining test.** That is now established across all four implementations, not three.
 
 ---
@@ -1221,7 +1221,7 @@ below is of the file that actually binds, on both hosts.
 `*.sh`, `*.bat`, `*.ps1`, `*.service`, `*.timer` in `~/meridian-cc`: five hits, all
 docstring/comment references (`fill_2026_04_16_breeze.py:87`, `:182`; `ict_primitives.py:15`;
 `ict_primitives_PRE_S31B_SWEEP_DEDUP.py:15`; `audit_s32_enh100_falsification.py:76`). Systemd on
-this host carries **no MERDIAN unit except the wsfeed family** (`merdian-wsfeed.service`,
+this host carries **no MERIDIAN unit except the wsfeed family** (`merdian-wsfeed.service`,
 `-start.timer`, `-stop.service`, `-stop.timer`, `-alert.service`). And the register agrees in its
 own words — `merdian_reference.json` → `files["build_ict_primitives.py"].called_by` =
 `["operator (one-shot backfill); future Task Scheduler entry for ongoing emission TBD"]`.

@@ -298,7 +298,7 @@ so they take the multi-step procedures — which is exactly what the docs say to
 
 ### `.claude/skills/doc-close/SKILL.md`
 
-**Trigger description:** *"Run MERDIAN's end-of-session documentation close: update
+**Trigger description:** *"Run MERIDIAN's end-of-session documentation close: update
 CURRENT.md, session_log.md, tech_debt.md, merdian_reference.json, the Enhancement
 Register and the Decision Index, then commit with the `MERDIAN: [OPS]` prefix. Use
 when the user says the session is ending, asks to close out, or asks to file TDs or
@@ -312,7 +312,7 @@ update triggers. Core keeps only the 14-line checklist as the index.
 
 ### `.claude/skills/merdian-runbooks/SKILL.md`
 
-**Trigger description:** *"Find and follow the MERDIAN runbook for a recurring
+**Trigger description:** *"Find and follow the MERIDIAN runbook for a recurring
 operation — token rotation, runner restart, backfill, hash mismatch, DhanError 401,
 calendar rows, emergency stop, disk-full lockout. Use when the user asks how to
 perform an operational procedure, or when a runner, token or feed needs recovery."*
@@ -456,7 +456,7 @@ where a wrong call loses content.
 | 66 | register:ADR-002 | ADR-002, ENH-80, ENH-84 | ✅ **ADR-002 v2 ACCEPTED** (Session 27, 2026-05-11) — Market structure philosophy v2 supersedes v1. Six v1 principles preserved (P1 zones, P2 force, P3 |
 | 67 | register:TD-NEW-2 | TD-NEW-2, TD-097, TD-101 | ✅ **TD-NEW-2 RESOLVED** (Session 27, 2026-05-11) — `flip_level` regression starting 2026-05-08 across both NIFTY and SENSEX (3+ days of stuck values ~ |
 | 68 | register:TD-NEW-3 | TD-NEW-3 | ✅ **TD-NEW-3 RESOLVED** (Session 27, 2026-05-11) — `net_gex` stored ~10³ too large vs operational Crore convention; gamma engine had been writing raw  |
-| 69 | rule:sql-views.md | ADR-002, ENH-80 | ✅ **Phase 0a §3 sign-convention audit PASS** (Session 27, 2026-05-11) — MERDIAN `gamma_metrics.net_gex` sign matches external source-material across 2 |
+| 69 | rule:sql-views.md | ADR-002, ENH-80 | ✅ **Phase 0a §3 sign-convention audit PASS** (Session 27, 2026-05-11) — MERIDIAN `gamma_metrics.net_gex` sign matches external source-material across 2 |
 | 70 | CORE | TD-NEW-2, TD-NEW-3, TD-NEW-12 | ✅ **TD-NEW-2 + TD-NEW-3 P0 verification PASS — live cycle** (Session 28, 2026-05-12 09:25 IST) — S28 P0 mandate closed in ~10 minutes after market ope |
 | 71 | register:TD-NEW-12 | TD-NEW-12 | ✅ **TD-NEW-12 RESOLVED** (Session 28, 2026-05-13) — Shadow architecture not implemented for `gamma_metrics_shadow`. AWS `compute_gamma_metrics_local.p |
 | 72 | register:TD-NEW-4 | TD-NEW-4, TD-NEW-12, TD-NEW-12 | ✅ **TD-NEW-4 RESOLVED** (Session 28, 2026-05-13) — `dte` payload field in `compute_gamma_metrics_local.py::upsert_gamma_metrics()` was computed as `(d |
@@ -467,7 +467,7 @@ where a wrong call loses content.
 | 77 | rule:sql-views.md | TD-NEW-7 | ✅ **MALPHA catalogued as third environment in Deployment Topology** (Session 28, 2026-05-13) — Topology §1 expanded to three-environment side-by-side  |
 | 78 | register:TD-NEW-10 | TD-NEW-10, TD-NEW-11 | ✅ **`merdian_order_placer.py` catalogued as MERDIAN-AWS-only service** (Session 28, 2026-05-13) — Phase 4B Order Placer (HTTP server port 8767, Dhan-I |
 | 79 | register:ADR-012 | ADR-012, ENH-107, TD-S34-NEW-4 | ✅ **ADR-012 ACCEPTED** (Session 34, 2026-05-24) — Spot-anchored stop-loss doctrine for ICT retest entries; supersedes informal Compendium-era 30%+ pre |
-| 80 ⚠ | rule:research.md | — | ✅ **Universal big-move-day capture rate 99.2% (118/119)** (Session 34, 2026-05-24) — MERDIAN's ICT primitive layer sees every ≥1% intraday move struct |
+| 80 ⚠ | rule:research.md | — | ✅ **Universal big-move-day capture rate 99.2% (118/119)** (Session 34, 2026-05-24) — MERIDIAN's ICT primitive layer sees every ≥1% intraday move struct |
 | 81 | rule:research.md | ENH-108 | ✅ **Selection problem articulated** (Session 34, 2026-05-24) — Selection (which active zone of 50+ fires today) is the unsolved problem; capture (does |
 | 82 | register:ENH-108 | ENH-108, ADR-004, TD-S34-NEW-4 | ✅ **ENH-108 PROPOSED** (Session 34, 2026-05-24) — Second-touch / N-touch retest detection on ICT primitives. ADR-004 §10 records only `first_retest_ts |
 | 83 | register:TD-S34-NEW-4 | TD-S34-NEW-4, TD-080-adjacent | ✅ **TD-S34-NEW-4 FILED — `hist_option_bars_1m` post-2026-04-01 coverage gap (vendor → MERDIAN-ingest tier transition)** (Session 34, 2026-05-24). Two- |

@@ -10,7 +10,7 @@ on Home. Everything currently on Home demotes to drill-down.
 
 ## 0. CONTEXT — read before building
 
-MERDIAN is an intraday options-structure engine for NIFTY / SENSEX. Marketview is its operator
+MERIDIAN is an intraday options-structure engine for NIFTY / SENSEX. Marketview is its operator
 console. Today's Home page shows the ambient verdict headline, a four-lens strip, expiry-memory base
 rates, and an open-shift callout — all of them **point-in-time**: they say what the room is *right now*
 and nothing about how it *got here*.
@@ -291,7 +291,7 @@ Standard meridian-connect pipeline. After Lovable pushes to GitHub, on the AWS b
 
 ## 9. WHY THIS PANEL IS THE PRODUCT
 
-Every GEX dashboard shows a snapshot. What separates MERDIAN is knowing **how the room got here**:
+Every GEX dashboard shows a snapshot. What separates MERIDIAN is knowing **how the room got here**:
 that dealers have been persistently long gamma for three weeks (Clock 1), that this cycle the room has
 been quietly building a put floor since Monday (Clock 2), and that this morning the tape flipped short
 gamma anyway (Clock 3). Any one of those is a fact. Together they are a *decision*: the cage held for

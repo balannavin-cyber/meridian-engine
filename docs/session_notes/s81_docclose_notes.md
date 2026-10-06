@@ -1404,7 +1404,7 @@ instrumentation rather than of the system.
 - **CORRECTION 1 — "empty stdout" was an `awk` filter artefact, not the
   log.** The banner at `:221` prints unconditionally, and the log says:
   ```
-  MERDIAN - compute_basis_context_local (ENH-07 B)
+  MERIDIAN - compute_basis_context_local (ENH-07 B)
   Skipping NIFTY: no recent index_futures_snapshots rows.
   Skipping SENSEX: no recent index_futures_snapshots rows.
   ```
@@ -1772,7 +1772,7 @@ END because it died on the 401, and a `tail -16` had cut off its START.
   is no `@reboot` line of any kind. `ps -eo pid,etimes,cmd` shows **no
   placer process**; the only long-lived Python on the box is
   `ws_feed_zerodha.py` (Zerodha, holds no Dhan token). No systemd unit
-  hosts it either — the only MERDIAN unit is `merdian-wsfeed.service`.
+  hosts it either — the only MERIDIAN unit is `merdian-wsfeed.service`.
 - **The claim is carried in CLAUDE.md's settled-decisions** ("Phase 4B
   Order Placer … `@reboot` cron", S28) and in the Deployment Topology
   §3 / §7.1 entries written at the same time. It was true when written.
@@ -1786,7 +1786,7 @@ END because it died on the 401, and a `tail -16` had cut off its START.
   retired, silently lost (e.g. a crontab reinstall — the S53 shape, where
   a dropped line caused a 28 h blackout), or moved to a launch path not
   yet catalogued. **Do not re-add the line before answering that** — an
-  order placer is the one component in MERDIAN that can transact.
+  order placer is the one component in MERIDIAN that can transact.
 - **Bears on TD (d):** a daemon that caches the Dhan token at import
   (`merdian_order_placer.py:60`, module-level) and runs indefinitely is
   the **worst case in the B18 family** — it would hold an invalidated

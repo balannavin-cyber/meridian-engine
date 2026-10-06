@@ -1,4 +1,4 @@
-# CURRENT.md — MERDIAN Live Session State
+# CURRENT.md — MERIDIAN Live Session State
 
 > **Living file.** Overwritten at the end of every session to reflect what just happened and what the next session is for.
 > Claude reads this immediately after `CLAUDE.md` at session start. It replaces the practice of manually pasting a "session resume block."

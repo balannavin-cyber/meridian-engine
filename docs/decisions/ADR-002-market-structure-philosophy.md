@@ -54,7 +54,7 @@ The gamma flip is not a strike; it is a zone where dealer behaviour changes char
 
 **Buyer use.** Don't enter on edge-of-zone — wait for full traversal. Wick-fakes at zone boundaries are the trap.
 **Writer use.** Sell premium within pin-zone bounds. Reduce risk near edges.
-**MERDIAN gap pre-v2.** `flip_level`, `gamma_concentration` stored as scalars. No zone widths anywhere.
+**MERIDIAN gap pre-v2.** `flip_level`, `gamma_concentration` stored as scalars. No zone widths anywhere.
 
 ---
 
@@ -66,7 +66,7 @@ Knowing direction is not edge — direction is publicly available. Knowing **mag
 
 **Buyer use.** Sizing input. High-force tailwind → larger position. Low-force setup → standard or smaller.
 **Writer use.** Risk gate. High-force adverse scenarios → reduce or close positions. Force-aware position sizing on credit strategies.
-**MERDIAN gap pre-v2.** No dealer flow magnitude computed.
+**MERIDIAN gap pre-v2.** No dealer flow magnitude computed.
 
 ---
 
@@ -83,7 +83,7 @@ The edge is knowing (a) where trapped positioning is concentrated, (b) how large
 
 **Buyer use (HIGHEST PRIORITY for Phase 1).** The writer's *"if 23719 breaks, panic enters the system"* is the buyer's entry trigger inverted. Trade the cascade direction once spot crosses `short_strike_for_strike`. This is the single highest-conviction directional setup available from gamma intelligence.
 **Writer use.** Avoid net-short positions in the cascade direction. Sit out cascade-vulnerable days.
-**MERDIAN gap pre-v2.** `flip_level` stored. No magnitude of trapped positioning. No per-strike GEX time-series. Acceleration zone not a named engine output.
+**MERIDIAN gap pre-v2.** `flip_level` stored. No magnitude of trapped positioning. No per-strike GEX time-series. Acceleration zone not a named engine output.
 
 ---
 
@@ -99,7 +99,7 @@ The two views answer different questions and must both be available. The PDF sou
 
 **Buyer use.** Structure migrating toward your direction + zone breach = compound signal. Trade larger.
 **Writer use.** Structure migrating away from your sold strikes = early warning. Roll or close.
-**MERDIAN gap pre-v2.** No historical GEX derivative terms. No OI-change GEX view at all.
+**MERIDIAN gap pre-v2.** No historical GEX derivative terms. No OI-change GEX view at all.
 
 ---
 
@@ -111,7 +111,7 @@ Net GEX can be negative (aggregate SHORT_GAMMA) while local GEX around current s
 
 **Buyer use.** PINNED days are blocked-momentum days. Don't fight the pin — wait for breach or session end.
 **Writer use.** PINNED days are premium-collection days. Optimal short-straddle environment.
-**MERDIAN gap pre-v2.** Binary LONG/SHORT regime. PINNED state architecturally specified but unbuilt.
+**MERIDIAN gap pre-v2.** Binary LONG/SHORT regime. PINNED state architecturally specified but unbuilt.
 
 ---
 
@@ -123,7 +123,7 @@ Same spot, same GEX, on DTE=5 vs DTE=1 is a physically different situation. DTE=
 
 **Buyer use.** DTE-1 with high force is an *enhanced* setup, not a categorically rejected one. The DTE-1 gate should not be blanket. (Today, Session 26, this gate blocked every NIFTY signal on a clean −1.47% trend day.)
 **Writer use.** Phase 3 sellers must size by DTE-adjusted force. The same naked short option behaves catastrophically differently DTE=1 vs DTE=5.
-**MERDIAN gap pre-v2.** DTE is binary execution gate only.
+**MERIDIAN gap pre-v2.** DTE is binary execution gate only.
 
 ---
 
@@ -144,7 +144,7 @@ Realized vol from 15-min rolling spot return on `market_spot_snapshots`. Implied
 
 **Buyer use (CRITICAL for Phase 1).** Don't enter premium-buying signals when RR < 0.85. This is the largest single missing filter on today's signal stack. The Session 26 audit (-1.47% NIFTY trend day, 256 BUY_PE signals, 0 traded) had no vol-pricing context anywhere; conversely the gate stack could be approving direction at adverse vol pricing on other days without operator awareness. ENH-84 makes this visible.
 **Writer use.** Don't sell premium when RR > 1.2.
-**MERDIAN gap pre-v2.** No vol-pricing context anywhere. Premium decision implicit in gate stack, never explicit.
+**MERIDIAN gap pre-v2.** No vol-pricing context anywhere. Premium decision implicit in gate stack, never explicit.
 
 ---
 
@@ -156,7 +156,7 @@ For Phase 1 buyers, gamma is the dominant force. For Phase 3 writers, **vanna** 
 
 **Buyer use.** Mostly informational. Heavy negative vanna + rising IV = potential cascade entry signal (the writer's *"if 23719 breaks"* scenario is partly vanna-driven).
 **Writer use (MANDATORY for Phase 3).** Vanna-aware position sizing. Vanna-stop loss rules. Vanna event calendar (Fed, RBI, budget).
-**MERDIAN gap pre-v2.** No second-order Greeks computed.
+**MERIDIAN gap pre-v2.** No second-order Greeks computed.
 
 ---
 
@@ -184,7 +184,7 @@ ADR-002 v1 read as gamma-engine machinery for Phase 3 enablement. v2 makes expli
 
 This eliminates a category error v1 risked: building "writer's intelligence" and treating it as Phase 3-only. **The intelligence is universal. Only the interpretation flips.**
 
-**Today (Session 27), MERDIAN is in Phase 1 (buyer) mode. The most immediate value from ADR-002 v2 is the buyer-polarity reading of the writer's structural metrics.** Specifically: cascade-entry detection (P3 inversion), RR-aware premium-buying filter (P7), and PINNED-day blocked-momentum recognition (P5 inversion).
+**Today (Session 27), MERIDIAN is in Phase 1 (buyer) mode. The most immediate value from ADR-002 v2 is the buyer-polarity reading of the writer's structural metrics.** Specifically: cascade-entry detection (P3 inversion), RR-aware premium-buying filter (P7), and PINNED-day blocked-momentum recognition (P5 inversion).
 
 ---
 
@@ -339,16 +339,16 @@ Run dealer-flow output across the 4-point assumption grid on a representative se
 
 ### §3 Sign-convention audit (MANDATORY — pre-ENH-80 gate)
 
-**~2 hours.** Identify 3 publicly-documented NIFTY sessions with known GEX state (SpotGamma equivalents, options-writer Twitter posts, the Apr 28/29/30 dashboard screenshots in this ADR's source material). Compute MERDIAN's `net_gex` and `gamma_regime` on those sessions using the existing pipeline. Compare verdict.
+**~2 hours.** Identify 3 publicly-documented NIFTY sessions with known GEX state (SpotGamma equivalents, options-writer Twitter posts, the Apr 28/29/30 dashboard screenshots in this ADR's source material). Compute MERIDIAN's `net_gex` and `gamma_regime` on those sessions using the existing pipeline. Compare verdict.
 
-- If MERDIAN agrees with external reference → safe to proceed with ENH-80.
-- If MERDIAN inverts on any of the three → **entire downstream gamma-layer is upside-down**; fix sign convention before building anything atop it.
+- If MERIDIAN agrees with external reference → safe to proceed with ENH-80.
+- If MERIDIAN inverts on any of the three → **entire downstream gamma-layer is upside-down**; fix sign convention before building anything atop it.
 
 This is the lowest-cost, highest-asymmetry check in the build. **Phase 0a gate.**
 
 ### §4 λ-score formula
 
-The PDF dashboard exposes `λ-Score` as a composite without disclosing the formula. v2 specifies MERDIAN's own derivation: weighted linear combination fit against historical session-outcome target (e.g., absolute return / max-drawdown / pin-distance-from-EOD), with component features:
+The PDF dashboard exposes `λ-Score` as a composite without disclosing the formula. v2 specifies MERIDIAN's own derivation: weighted linear combination fit against historical session-outcome target (e.g., absolute return / max-drawdown / pin-distance-from-EOD), with component features:
 
 - `(gamma_wall_strike − spot) / spot` — pin proximity
 - `hedged_long_cr / |net_gex|` — pin force ratio
@@ -356,7 +356,7 @@ The PDF dashboard exposes `λ-Score` as a composite without disclosing the formu
 - `rr_ratio` — vol pricing
 - `flip_zone_upper − flip_zone_lower` — flip-band width
 
-Coefficients fit on 6 months of MERDIAN data once accumulated. Refit quarterly. **λ-Score is MERDIAN's own composite — not a clone of the writer's number.**
+Coefficients fit on 6 months of MERIDIAN data once accumulated. Refit quarterly. **λ-Score is MERIDIAN's own composite — not a clone of the writer's number.**
 
 ### §5 RR-ratio realized-vol window
 
@@ -376,7 +376,7 @@ ADR-002 v2 is distilled from an externally-validated practitioner system, not en
 ### Phase 0b — Overlay calibration study
 **~1–2 sessions.** Compute v2 metrics retroactively from `option_chain_snapshots` (data already available, no new ingestion). Tag every historical signal with the would-be gamma overlay. Test:
 
-- Does **PINNED state** (computed retroactively per `local_gex_cluster_cr` threshold candidates) correctly identify sessions where MERDIAN was confused about regime? Target: ≥ 5 confirmed mislabeled sessions identified retrospectively.
+- Does **PINNED state** (computed retroactively per `local_gex_cluster_cr` threshold candidates) correctly identify sessions where MERIDIAN was confused about regime? Target: ≥ 5 confirmed mislabeled sessions identified retrospectively.
 - Does **RR < 0.85** correctly predict the days where premium-buying signals underperformed despite correct direction? Conditional WR difference between RR<0.85 and RR>1.2 strata on completed BUY signals.
 - Does `gamma_wall_strike` distance correctly explain PINNED-blocked-momentum days? Confirm no-movement days had spot inside `pin_zone_lower/upper`.
 - Does `short_strike_for_strike` proximity correlate with cascade-day outcomes? On confirmed cascade events in 12-month lookback, what was spot's distance to `short_strike_for_strike` at signal time?
@@ -533,16 +533,16 @@ Encoded from the source material's practitioner commentary. To be cited in code 
 
 v1 cited no external literature. v2 records:
 
-| Concept | Standard reference | MERDIAN methodology |
+| Concept | Standard reference | MERIDIAN methodology |
 |---|---|---|
 | Per-strike GEX formula | `gamma × OI × spot² × 100` (SpotGamma, SqueezeMetrics convention) | Same. Verify in §3 sign audit. |
 | Dealer-positioning sign flip | Calls = dealer-short = negative gamma; Puts = dealer-short = positive gamma (standard convention) | Verify in §3 audit. |
-| Acceleration zone terminology | "Gamma desert" / "negative gamma cliff" in some literatures | MERDIAN uses "acceleration zone" matching source dashboard |
-| Pin zone vs max pain | Max pain is OI-only; pin zone is GEX-weighted | MERDIAN uses GEX-weighted (more precise — captures dealer hedge force, not just contract count) |
+| Acceleration zone terminology | "Gamma desert" / "negative gamma cliff" in some literatures | MERIDIAN uses "acceleration zone" matching source dashboard |
+| Pin zone vs max pain | Max pain is OI-only; pin zone is GEX-weighted | MERIDIAN uses GEX-weighted (more precise — captures dealer hedge force, not just contract count) |
 | Realized vol annualisation | 252-trading-day convention | Same — √252 factor from intraday window |
-| Implied vol source | ATM straddle for ATM IV; full-chain skew for surface analytics | MERDIAN uses ATM straddle for primary IV; chain skew is post-v2 scope |
+| Implied vol source | ATM straddle for ATM IV; full-chain skew for surface analytics | MERIDIAN uses ATM straddle for primary IV; chain skew is post-v2 scope |
 | Vanna/Charm computation | Black-Scholes analytic Greeks at each strike, aggregated | Same — derived from `option_chain_snapshots` gamma/delta/theta |
-| RR ratio thresholds | Practitioner convention varies (some use 1.0/0.7, others 1.2/0.85) | MERDIAN uses 1.2/0.85 matching source dashboard |
+| RR ratio thresholds | Practitioner convention varies (some use 1.0/0.7, others 1.2/0.85) | MERIDIAN uses 1.2/0.85 matching source dashboard |
 
 Phase 0a §3 sign audit catches inversions before downstream build.
 

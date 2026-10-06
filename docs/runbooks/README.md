@@ -1,4 +1,4 @@
-# MERDIAN Runbooks
+# MERIDIAN Runbooks
 
 **Purpose:** Step-by-step procedures for recurring operations. Claude consults these before asking Navin how to do something.
 
@@ -45,4 +45,4 @@ A runbook is: "Do these N steps in order. Expect this outcome. If it fails, chec
 
 ---
 
-*MERDIAN Runbooks index. Update the table above whenever a runbook is added, verified, or deprecated.*
+*MERIDIAN Runbooks index. Update the table above whenever a runbook is added, verified, or deprecated.*

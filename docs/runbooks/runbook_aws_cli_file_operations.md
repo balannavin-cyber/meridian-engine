@@ -1,6 +1,6 @@
-# **RUNBOOK: AWS CLI Login & File Operations on MERDIAN AWS**
+# **RUNBOOK: AWS CLI Login & File Operations on MERIDIAN AWS**
 
-**Purpose:** Access MERDIAN AWS instance (i-0878c118835386ec2) via AWS CLI + Systems Manager Session Manager; transfer files to/from EC2 using S3 intermediary or direct SCP
+**Purpose:** Access MERIDIAN AWS instance (i-0878c118835386ec2) via AWS CLI + Systems Manager Session Manager; transfer files to/from EC2 using S3 intermediary or direct SCP
 
 **Scope:** Local Windows → AWS S3 bucket → EC2 instance file operations
 
@@ -71,7 +71,7 @@ aws ssm start-session --target i-0878c118835386ec2 --document-name "AWS-StartInt
 ### **Step B.1 — Start SSM Session**
 
 ```powershell
-# Connect to MERDIAN AWS instance
+# Connect to MERIDIAN AWS instance
 aws ssm start-session --target i-0878c118835386ec2
 
 # Expected: prompt shows

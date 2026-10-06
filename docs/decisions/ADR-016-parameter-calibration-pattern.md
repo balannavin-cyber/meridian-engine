@@ -6,7 +6,7 @@
 
 ## Context
 
-S37 surfaced ENH-81's τ threshold as a tunable parameter — and immediately raised the question of where it should live. Today, MERDIAN has at least 8 clusters of magic-number heuristics scattered across code: `OTM_OI_VELOCITY_THRESHOLD=0.10`, `expansion_probability` weights, `gamma_zone` boundaries, TD-NEW-2 deep-ITM gamma threshold, Pine overlay proximity tiers, daily-audit thresholds, ENH-99 audit thresholds, and now ENH-81's τ. Every one of these will drift across regimes. Embedding them in code means a redeploy per tuning iteration. Env vars work but have no audit trail.
+S37 surfaced ENH-81's τ threshold as a tunable parameter — and immediately raised the question of where it should live. Today, MERIDIAN has at least 8 clusters of magic-number heuristics scattered across code: `OTM_OI_VELOCITY_THRESHOLD=0.10`, `expansion_probability` weights, `gamma_zone` boundaries, TD-NEW-2 deep-ITM gamma threshold, Pine overlay proximity tiers, daily-audit thresholds, ENH-99 audit thresholds, and now ENH-81's τ. Every one of these will drift across regimes. Embedding them in code means a redeploy per tuning iteration. Env vars work but have no audit trail.
 
 ADR-009 made calibration discipline a first-class architectural concern. This ADR operationalizes it: every tunable scalar/array becomes a row in a parameters table; every change is an event with a mandatory rationale; consumers read via a single helper.
 

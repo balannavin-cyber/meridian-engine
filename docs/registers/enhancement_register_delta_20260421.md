@@ -1,4 +1,4 @@
-# MERDIAN Enhancement Register — Delta 2026-04-21
+# MERIDIAN Enhancement Register — Delta 2026-04-21
 
 **Purpose:** Addendum to Enhancement Register v7 covering Session 3+4 of 2026-04-21. To be merged into v8 during next documentation debt closeout.
 

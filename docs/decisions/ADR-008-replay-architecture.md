@@ -104,7 +104,7 @@ These results are consistent with the architecture's design constraints, not sur
 
 This section is referenced from the Governance language above. It exists here so that future Claude sessions reading the ADR understand the intended use and do not chase the wrong validation target.
 
-**The question replay answers.** "If MERDIAN had used DIFFERENT signal logic on date D, what signals would have been generated?" This is the only question replay is designed to answer well. It is something live data cannot answer because live cannot be re-run with modified code.
+**The question replay answers.** "If MERIDIAN had used DIFFERENT signal logic on date D, what signals would have been generated?" This is the only question replay is designed to answer well. It is something live data cannot answer because live cannot be re-run with modified code.
 
 **The mechanic, in five steps.**
 1. Establish baseline. Run `replay_runner_for_date.py YYYY-MM-DD` with current production logic. `signal_snapshots_replay` now contains "what replay produced with current logic on that day".

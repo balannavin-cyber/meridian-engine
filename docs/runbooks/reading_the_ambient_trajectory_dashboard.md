@@ -1,4 +1,4 @@
-# Reading the MERDIAN Home Dashboard — Ambient Trajectory
+# Reading the MERIDIAN Home Dashboard — Ambient Trajectory
 
 **A card-by-card guide for someone seeing this screen for the first time.**
 
@@ -14,7 +14,7 @@
 
 ## 0. Before anything else: what this screen is *for*
 
-Every options dashboard on the internet shows you a **snapshot**: net gamma right now, max pain right now, pin risk right now. Those are facts, and MERDIAN has them too (they're in the top bar and the drill-down).
+Every options dashboard on the internet shows you a **snapshot**: net gamma right now, max pain right now, pin risk right now. Those are facts, and MERIDIAN has them too (they're in the top bar and the drill-down).
 
 But a snapshot cannot answer the question an options trader actually has at 9:15 in the morning, which is:
 
@@ -24,7 +24,7 @@ A pin at 24,300 means something completely different if dealers have been persis
 
 **Same number. Opposite trade.** The difference is not in the snapshot — it is in the *trajectory*.
 
-That is what this screen exists to show, and it is the one thing that separates MERDIAN from a GEX dashboard.
+That is what this screen exists to show, and it is the one thing that separates MERIDIAN from a GEX dashboard.
 
 ### One critical framing before you read a single number
 
@@ -34,7 +34,7 @@ That is what this screen exists to show, and it is the one thing that separates 
 
 ## 1. The three clocks (read this section or nothing else will make sense)
 
-MERDIAN models the market environment as **three clocks running at three different speeds.** Everything on the hero panel is one of these three, or price, or the divergence between them.
+MERIDIAN models the market environment as **three clocks running at three different speeds.** Everything on the hero panel is one of these three, or price, or the divergence between them.
 
 | Clock | Speed | Question it answers | Where it comes from |
 |---|---|---|---|

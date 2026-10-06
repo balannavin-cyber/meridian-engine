@@ -12,7 +12,7 @@
 
 ## Context
 
-MERDIAN runs in two environments simultaneously: Local Windows (`C:\GammaEnginePython\`, primary live pipeline, 17 Task Scheduler tasks per Topology §7.2) and AWS Meridian (`/home/ssm-user/meridian-engine/`, shadow pipeline, 5 cron entries per Topology §7.1). Several boundaries had unresolved Local↔AWS scope ambiguity surfaced by the Topology §9 audit Session 23 — 11 open boundary questions including:
+MERIDIAN runs in two environments simultaneously: Local Windows (`C:\GammaEnginePython\`, primary live pipeline, 17 Task Scheduler tasks per Topology §7.2) and AWS Meridian (`/home/ssm-user/meridian-engine/`, shadow pipeline, 5 cron entries per Topology §7.1). Several boundaries had unresolved Local↔AWS scope ambiguity surfaced by the Topology §9 audit Session 23 — 11 open boundary questions including:
 
 - Q1: post-market 16:00 IST dual-write (Local `MERDIAN_Post_Market_1600_Capture` vs. AWS `MERDIAN_Postmarket`) — **closed Session 25, dual-write empirically confirmed across 2026-05-04 → 2026-05-08**.
 - Q2: PreOpen 09:08 IST dual-write — **closed Session 25, original framing inaccurate; AWS sole writer at 09:08; Local 09:05 was different boundary, disposed (§9.A)**.
@@ -35,7 +35,7 @@ The canonical principle for "what runs on AWS vs Local" is a **capture/derived s
 | Stage | Scope | Local | AWS | Rationale |
 |---|---|---|---|---|
 | **Capture** | Source-of-truth ingest writers: `market_spot_snapshots`, `option_chain_snapshots`, `india_vix`, `market_breadth_intraday`, `ict_htf_zones` (rebuild from source bars) | **NO writers** (post-disposal state) | **Canonical** | Capture needs always-on cron infrastructure (laptop-independent). Pre-market, post-market, overnight. |
-| **Derived** | Computed-state writers: `gamma_metrics`, `volatility_snapshots`, `momentum_snapshots`, `market_state_snapshots`, `signal_snapshots` | **Canonical for production** | **Shadow only** (writes to `*_shadow` tables, not live tables) | Derived computation is where operator iteration speed matters — interactive debugging, ad-hoc SQL, replay what-ifs, experiment scripts. SSH-tunneled debugging is slower; signal-layer iteration is where MERDIAN improves. |
+| **Derived** | Computed-state writers: `gamma_metrics`, `volatility_snapshots`, `momentum_snapshots`, `market_state_snapshots`, `signal_snapshots` | **Canonical for production** | **Shadow only** (writes to `*_shadow` tables, not live tables) | Derived computation is where operator iteration speed matters — interactive debugging, ad-hoc SQL, replay what-ifs, experiment scripts. SSH-tunneled debugging is slower; signal-layer iteration is where MERIDIAN improves. |
 | **Orchestration** | Runner that dispatches the derived stage per cycle (`gamma_engine_supervisor.py` Local; `run_merdian_shadow_runner.py` AWS) | **Production** | **Shadow** (parallel; writes via Derived stage to `*_shadow` tables) | Both run in parallel; comparison between them feeds replay parity validation per ADR-008. Shadow-table pattern from ADR-008 generalizes. |
 | **Operator-facing tooling** | Dashboard, signal dashboard, exit monitor, trade logger, ICT zone visualizer | **Local only** | **None** | Operator-facing UI needs local responsiveness, file-system access, and discretionary-execution context. AWS adds round-trip latency without benefit. |
 
@@ -47,7 +47,7 @@ The canonical principle for "what runs on AWS vs Local" is a **capture/derived s
 
 **Capture on AWS = laptop-independent guarantee.** Pre-market, post-market, and overnight cron writers cannot depend on whether the operator's laptop is on, plugged in, awake, or surviving Windows update reboots. Topology §9 Q1 evidence (5 days of post-market dual-write across 2026-05-04 → 2026-05-08) and §9 Q2 evidence (09:08 AWS sole writer with token failure exposing reliability gap on 2026-05-07) both point the same way: capture has to live where always-on infrastructure does. AWS canonical for capture is the single durable answer.
 
-**Derived on Local = operator iteration speed.** Signal-layer computation is where MERDIAN improves over time. The operator reads tracebacks, dumps intermediate variables, runs ad-hoc SQL against snapshot tables, runs replay what-ifs, builds experiment scripts. SSH-tunneled debugging through AWS is not impossible but is *slower*. The capture/derived split is not infrastructure dogma — it's matching infrastructure to the workflow that produces system improvement.
+**Derived on Local = operator iteration speed.** Signal-layer computation is where MERIDIAN improves over time. The operator reads tracebacks, dumps intermediate variables, runs ad-hoc SQL against snapshot tables, runs replay what-ifs, builds experiment scripts. SSH-tunneled debugging through AWS is not impossible but is *slower*. The capture/derived split is not infrastructure dogma — it's matching infrastructure to the workflow that produces system improvement.
 
 **Runner straddles both — explicit decomposition disambiguates.** The runner does both *orchestration* (cron-equivalent dispatching subprocess calls per V19 §5.2 cycle) and *derived computation* (computing `gamma_metrics`, `volatility_snapshots`, etc.). Treating the runner as a single unit forces it to one environment. The decomposition splits orchestration (parallel both environments) from derived (Local canonical, AWS shadow), which is the architecturally correct move because it lets shadow-table replay parity work without giving up Local iteration speed.
 
@@ -61,7 +61,7 @@ The canonical principle for "what runs on AWS vs Local" is a **capture/derived s
 
 ## Alternatives considered
 
-**(b) Everything to AWS except dashboard + interactive tooling.** Capture + derived both on AWS; only operator-facing UI Local. **Rejected** — over-commits to cloud and degrades the iteration loop. Eliminates Local-vs-AWS dual-state confusion at the cost of harder local debugging, requires SSH access for any signal-layer investigation, and treats signal-layer iteration as a second-class concern. The iteration loop is where MERDIAN improves; this alternative penalizes the wrong thing.
+**(b) Everything to AWS except dashboard + interactive tooling.** Capture + derived both on AWS; only operator-facing UI Local. **Rejected** — over-commits to cloud and degrades the iteration loop. Eliminates Local-vs-AWS dual-state confusion at the cost of harder local debugging, requires SSH access for any signal-layer investigation, and treats signal-layer iteration as a second-class concern. The iteration loop is where MERIDIAN improves; this alternative penalizes the wrong thing.
 
 **(c) Hybrid by criticality, not layer.** Mission-critical writers (capture, signal generation, alerts) on AWS; supporting/exploratory tooling Local. **Rejected** — criticality classification is subjective and drifts over time. "Signal generation" appearing in the mission-critical list pulls signal-layer to AWS, contradicting (P2) operator priority. The semantic shape of (c) collapses into either (a) or (b) depending on how criticality is drawn; explicit (a) decomposition is cleaner.
 

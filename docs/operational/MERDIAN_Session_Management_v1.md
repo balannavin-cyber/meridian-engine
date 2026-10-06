@@ -1,4 +1,4 @@
-# MERDIAN Session Management v1
+# MERIDIAN Session Management v1
 
 **Market Structure Intelligence & Options Decision Engine**
 
@@ -16,7 +16,7 @@
 
 ## Why This Document Exists
 
-AI development sessions degrade. As context accumulates — code pastes, SQL results, error outputs, architectural discussions — the session window fills, response latency increases, and earlier context gets less weight. The typical MERDIAN session degrades noticeably around 60–80 exchanges of heavy code activity and becomes unreliable beyond 100.
+AI development sessions degrade. As context accumulates — code pastes, SQL results, error outputs, architectural discussions — the session window fills, response latency increases, and earlier context gets less weight. The typical MERIDIAN session degrades noticeably around 60–80 exchanges of heavy code activity and becomes unreliable beyond 100.
 
 The current pattern has been: work until degradation hits, then document under pressure, then struggle to resume in the next session. This is expensive and avoidable.
 
@@ -52,7 +52,7 @@ At the start of every new session, paste a structured resume block before any co
 **Format:**
 
 ```
-MERDIAN SESSION RESUME — [YYYY-MM-DD]
+MERIDIAN SESSION RESUME — [YYYY-MM-DD]
 
 LAST CLEAN STATE:      [Git commit hash or tag, e.g. v20260330-canary-pass]
 LOCAL_PREFLIGHT:       [PASS / FAIL / NOT_RUN]
@@ -64,7 +64,7 @@ LAST SESSION DID:
   - [one bullet]
   - [one bullet]
 
-THIS SESSION GOAL:     [one sentence, specific — not "continue working on MERDIAN"]
+THIS SESSION GOAL:     [one sentence, specific — not "continue working on MERIDIAN"]
 DO_NOT_REOPEN:         [settled items that must not be re-litigated, e.g. "do not reopen D-06 consumer concerns"]
 
 RELEVANT FILES:        [only files relevant to this session's goal]
@@ -189,7 +189,7 @@ preflight/fixtures/
 **Commit immediately:**
 
 ```
-MERDIAN: [OPS] Preflight fixtures captured — <date> clean live session
+MERIDIAN: [OPS] Preflight fixtures captured — <date> clean live session
 ```
 
 ---
@@ -219,7 +219,7 @@ Code sessions: no architecture. Architecture sessions: no code.
 1. Write/update checkpoint bullets into session_log.md entry
 2. Update merdian_reference.json for any changed statuses
 3. Update Open Items Register if items closed or added
-4. Commit: "MERDIAN: [OPS] Session log + reference JSON updated — YYYY-MM-DD"
+4. Commit: "MERIDIAN: [OPS] Session log + reference JSON updated — YYYY-MM-DD"
 5. Note next session goal explicitly in session_log entry
 ```
 
@@ -269,4 +269,4 @@ Start a new session when any of these are true:
 
 ---
 
-*MERDIAN Session Management v1 — 2026-03-31 — Commit to Git. Do not modify without updating version number.*
+*MERIDIAN Session Management v1 — 2026-03-31 — Commit to Git. Do not modify without updating version number.*

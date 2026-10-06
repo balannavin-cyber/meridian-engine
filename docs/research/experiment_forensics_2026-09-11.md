@@ -438,7 +438,7 @@ gives no reason to expect OB to beat FVG by 40 points.
 
 And this is consistent with S77's clean cohort: FVG `respected` 23–46 %, H
 OB+FVG +0.76 % at 52 % WR. Exp 15's 50.3 % was the closest the base series ever
-came to the clean answer, and it was read at the time as *"BULL_FVG needs MERDIAN
+came to the clean answer, and it was read at the time as *"BULL_FVG needs MERIDIAN
 context"* (`compendium:1050`) rather than as the control it actually was.
 
 ---

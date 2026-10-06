@@ -1,4 +1,4 @@
-# MERDIAN — Hedgewall parity specification
+# MERIDIAN — Hedgewall parity specification
 
 **Date:** 2026-09-14 (Session 78) · **Status:** DRAFT for operator review
 **Scope:** every layer on hedgewall.in, resolved to a source table, a computation, a
@@ -36,7 +36,7 @@ same things.
 | tier | span | cadence | per-strike fields | greeks |
 |---|---|---|---|---|
 | `hist_option_bars_1m` (GFDL vendor) | 2025-04-01 → 2026-05-07 | 1-min, 376/day | OHLC, volume, **oi**, 14 expiries/min | **none** — declared, never written |
-| `hist_option_greeks_1m` (MERDIAN solve) | 2025-04-01 → 2026-03-30 | 1-min, 193/192 days | **iv, gamma**, `r_used` | iv + gamma only, **no delta** |
+| `hist_option_greeks_1m` (MERIDIAN solve) | 2025-04-01 → 2026-03-30 | 1-min, 193/192 days | **iv, gamma**, `r_used` | iv + gamma only, **no delta** |
 | `historical_option_chain_snapshots` (HOCS) | 2026-03-16 → 2026-06-03 | 9/day → 64–68/day | ltp, bid, ask, oi, **iv, delta, gamma, theta, vega**, spot | full |
 | `gex_strike_snapshots` (GSS) | 2026-05-25 → present | 74–84/day | `gamma_call`, `gamma_put`, `oi_total_calls`, `oi_total_puts`, `gex_cr`, spot | gamma split CE/PE |
 | `option_chain_snapshots` (OCS) | 2026-08-24 → present | ~86/day | as HOCS | full |
@@ -223,7 +223,7 @@ As L7, ∂δ/∂t. Same source, same horizon, same ENH, same blocker. Ship with 
 ## 2.5 Beyond parity — measured additions from SpotGamma, Volland, SqueezeMetrics
 
 These are **not** Hedgewall layers. They are features the three comparable US/global
-terminals carry that Hedgewall does not, which MERDIAN's measured data supports.
+terminals carry that Hedgewall does not, which MERIDIAN's measured data supports.
 
 **They do not enter the §3 build order.** Parity first, extensions after. Interleaving
 them is how a scoped plan becomes a wish list.
@@ -265,7 +265,7 @@ them is how a scoped plan becomes a wish list.
 
 | | |
 |---|---|
-| What | SqueezeMetrics' DIX infers institutional positioning from dark-pool short-sale prints. **India publishes participant-wise OI directly.** MERDIAN reads the real thing where DIX approximates it |
+| What | SqueezeMetrics' DIX infers institutional positioning from dark-pool short-sale prints. **India publishes participant-wise OI directly.** MERIDIAN reads the real thing where DIX approximates it |
 | Source | `participant_oi_daily`, `fii_dii_cash_daily`, `v_participant_oi_latest` — **ENH-115 SHIPPED S63**, 270-day backfill, daily AWS cron |
 | Status | built, surfaced only inside the ENH-116 ambient layer — **no first-class panel** |
 | Effort | ~3 h to surface |
@@ -342,7 +342,7 @@ which is a different activity and is not on this list.
   from file), so delta/theta/vega before 2026-03-16 cannot be recovered from that source.
 - **HIRO-class order flow.** SpotGamma's HIRO *"measures the net delta, or directional
   exposure, being transferred to dealers in real time"* from trade-level tape with buy/sell
-  classification. MERDIAN captures **5-minute OI snapshots, not trades**.
+  classification. MERIDIAN captures **5-minute OI snapshots, not trades**.
   `options_flow_snapshots` and `oi_change` are the nearest proxy and are orders of
   magnitude coarser. This is a data-acquisition gap, not a compute one, and **no layer in
   this document closes it.**

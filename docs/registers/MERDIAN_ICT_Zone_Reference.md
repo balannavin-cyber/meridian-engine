@@ -1,6 +1,6 @@
-# MERDIAN ICT HTF Zone Behaviour Reference
+# MERIDIAN ICT HTF Zone Behaviour Reference
 
-**Purpose:** Field guide for reading and trading each zone type on the MERDIAN chart.
+**Purpose:** Field guide for reading and trading each zone type on the MERIDIAN chart.
 **Applies to:** NIFTY and SENSEX weekly/daily zones from `build_ict_htf_zones.py`
 **Last updated:** 2026-04-15
 
@@ -170,7 +170,7 @@ Example: W PDH + W BEAR_OB at same level → double resistance. Harder to break,
 
 ---
 
-## MERDIAN Signal Engine Integration
+## MERIDIAN Signal Engine Integration
 
 | Zone | Signal engine impact |
 |---|---|
@@ -189,7 +189,7 @@ Before market open each day:
 1. Note current price vs nearest zones above and below
 2. Identify nearest BEAR_OB (first resistance) and nearest BULL_OB (first support)
 3. Note if any PDH/PDL within 100-200 points — likely to be swept intraday
-4. When MERDIAN fires a signal, cross-reference: is price near a zone? Does the zone direction match the signal?
+4. When MERIDIAN fires a signal, cross-reference: is price near a zone? Does the zone direction match the signal?
 5. Zone confluence with signal = higher conviction trade
 
 ---
@@ -208,5 +208,5 @@ Zones change as new weekly bars form — PDH/PDL update every week, OBs persist 
 
 ---
 
-*MERDIAN ICT Zone Behaviour Reference — 2026-04-15*
+*MERIDIAN ICT Zone Behaviour Reference — 2026-04-15*
 *Cross-reference: MERDIAN_Enhancement_Register_v7.md (ENH-37, ENH-54)*

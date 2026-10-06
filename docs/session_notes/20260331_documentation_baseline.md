@@ -6,7 +6,7 @@
 
 ## What This Session Did
 
-This was a holiday session (NSE closed). No live market. Used entirely for establishing the documentation and governance foundation that was missing from MERDIAN's operational infrastructure.
+This was a holiday session (NSE closed). No live market. Used entirely for establishing the documentation and governance foundation that was missing from MERIDIAN's operational infrastructure.
 
 ---
 
@@ -95,7 +95,7 @@ copy <path>\20260331_documentation_baseline.md docs\session_notes\
 
 # Commit everything
 git add docs\
-git commit -m "MERDIAN: [OPS] Documentation baseline sprint — all masters, appendices, registers, operational protocols committed"
+git commit -m "MERIDIAN: [OPS] Documentation baseline sprint — all masters, appendices, registers, operational protocols committed"
 git push
 
 # Tag the documentation baseline
@@ -121,7 +121,7 @@ Requires terminal access to Local and AWS. Steps:
 4. Resolve AWS_DRIFT first (direct AWS edits that were not committed)
 5. Resolve LOCAL_ONLY (files on Local but not in Git)
 6. Resolve GIT_STALE (Local has newer uncommitted versions)
-7. Commit baseline: `git commit -m "MERDIAN: [OPS] Code baseline reconciliation — v0-baseline"`
+7. Commit baseline: `git commit -m "MERIDIAN: [OPS] Code baseline reconciliation — v0-baseline"`
 8. Tag: `git tag v0-baseline && git push --tags`
 9. Run Preflight Sprint 1 (Stages 0-3) against the baseline
 
@@ -144,4 +144,4 @@ Requires terminal access to Local and AWS. Steps:
 
 ---
 
-*Session Note — 2026-03-31 — Documentation Baseline Sprint — MERDIAN*
+*Session Note — 2026-03-31 — Documentation Baseline Sprint — MERIDIAN*

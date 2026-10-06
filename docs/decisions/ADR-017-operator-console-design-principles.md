@@ -6,12 +6,12 @@ PROPOSED — 2026-05-26 (Session 38)
 
 ## Context
 
-The MERDIAN engine produces decision-grade signals through a four-layer architecture (per ADR-002 v2): capture → compute → display → execution. The compute layer shipped Layer 2 substrate at S37 (ENH-80 per-strike GEX writer, ENH-81 Positioning Landscape views, Pine overlay v1+v2, Lovable.ai dashboard live).
+The MERIDIAN engine produces decision-grade signals through a four-layer architecture (per ADR-002 v2): capture → compute → display → execution. The compute layer shipped Layer 2 substrate at S37 (ENH-80 per-strike GEX writer, ENH-81 Positioning Landscape views, Pine overlay v1+v2, Lovable.ai dashboard live).
 
 S38 operator integration check on a live trading day (2026-05-26, 09:00–11:30 IST) surfaced that the display layer has **consolidation debt, not feature debt**. Three operator-facing surfaces exist in parallel:
 
-- `localhost:8765` (MERDIAN Live Dashboard) — light theme, systemic-state heavy (pipeline stages, AWS shadow runner, pre-open capture rows, Dhan token, session/state cards)
-- `localhost:8766` (MERDIAN SIGNAL) — dark theme, signal-execution heavy (BUY/SELL action, execution block, capital input, place-order surface, breadth strip)
+- `localhost:8765` (MERIDIAN Live Dashboard) — light theme, systemic-state heavy (pipeline stages, AWS shadow runner, pre-open capture rows, Dhan token, session/state cards)
+- `localhost:8766` (MERIDIAN SIGNAL) — dark theme, signal-execution heavy (BUY/SELL action, execution block, capital input, place-order surface, breadth strip)
 - Lovable.ai dashboard at `lovable.dev/projects/e8fde6f9-58d0-4444-860d-508b3635b014` — dark theme, GEX + Regime layer + PIN/ACCEL bands + GEX-by-strike histogram
 
 Operator switched between all three surfaces plus an external max-pain dashboard (VRDNation) during the integration check. Existing surfaces overlap in fields, conflict in presentation, and surface implicit / redundant / systemic content that does not drive decisions ("Auto-refresh 30s", "REGULAR_SESSION · 09:15–15:30", "Next: Market close 15:30 in 4h 30m", date stamps, "STALE · 1024h 44m ago" persisting when nothing is actually stale today, ICT empty-state messages, "Signal: 10:56 IST" timestamps when fresh data is implicit, prelim+final gap split, VIX on multiple cards).
@@ -20,13 +20,13 @@ Operator framing during the integration check:
 
 > *"Pre-lim, final? Just give gap + % then date and time for what? Market close 15:30 so? like no one knows? Regular Session, normal day — what does it mean — market open, time to close in so many places, not required. In order placement everything is a clutter."*
 
-The substrate is doing real work — today NIFTY PIN 24,100–24,300 stalled spot below 24,100 within the predicted 60-minute window; max-γ-inside-W/D BEAR_FVG confluence at 24,150–24,280 was the strongest cross-system signal MERDIAN produced today — but the display layer **hides that signal under noise**. The Pine overlay combined-view rendering also surfaced a visual occlusion bug where PIN/ACCEL boxes are hidden behind ICT zone fills at overlapping strike ranges.
+The substrate is doing real work — today NIFTY PIN 24,100–24,300 stalled spot below 24,100 within the predicted 60-minute window; max-γ-inside-W/D BEAR_FVG confluence at 24,150–24,280 was the strongest cross-system signal MERIDIAN produced today — but the display layer **hides that signal under noise**. The Pine overlay combined-view rendering also surfaced a visual occlusion bug where PIN/ACCEL boxes are hidden behind ICT zone fills at overlapping strike ranges.
 
 This ADR codifies the design principles for resolving the consolidation debt and protecting against future drift back into noise-heavy surfaces.
 
 ## Decision
 
-Adopt six design principles + one ergonomic corollary for all MERDIAN operator-facing surfaces. New surfaces conform; existing surfaces refactor per ENH-110.
+Adopt six design principles + one ergonomic corollary for all MERIDIAN operator-facing surfaces. New surfaces conform; existing surfaces refactor per ENH-110.
 
 ### Principle 1 — Three-filter content rule
 
@@ -62,7 +62,7 @@ When two or more structural systems agree at the same strike range — max γ in
 
 Canonical visual: dashed amber ring around the overlap region in the hero spatial chart, labeled with the confluence content (e.g., "★ confluence: PIN ∩ BEAR_FVG"). Subordinate to this, the underlying elements (max γ marker, ICT zone fill, PIN band) render at reduced visual weight inside the confluence region so the ring reads as the dominant signal.
 
-Confluence detection is the substrate's primary value proposition — it is what MERDIAN sees that an unaided operator does not. It must be the visual headline, not a derivable inference.
+Confluence detection is the substrate's primary value proposition — it is what MERIDIAN sees that an unaided operator does not. It must be the visual headline, not a derivable inference.
 
 ### Principle 5 — Motion replaces timestamps
 
@@ -104,7 +104,7 @@ Shortcuts documented in Settings → Display tab; visible on focused-element hov
 ### Operational
 
 - Three existing dashboards (`:8765`, `:8766`, current Lovable build) deprecate to one Marketview surface per ENH-110.
-- Operator workflow consolidates: pre-open and intraday no longer require tab-switching across MERDIAN surfaces. External tabs (TradingView, max-pain reference) remain peer surfaces — MERDIAN does not attempt to replicate the chart, and operator continues to use TradingView for price action.
+- Operator workflow consolidates: pre-open and intraday no longer require tab-switching across MERIDIAN surfaces. External tabs (TradingView, max-pain reference) remain peer surfaces — MERIDIAN does not attempt to replicate the chart, and operator continues to use TradingView for price action.
 - New "Journal" surface emerges as a first-class operator artifact for session-tagged annotations + automatic outcome-loop review (deferred to ADR-020).
 - ENH-83 calibration console graduates from PROPOSED build-deferred to required — Settings → Calibration tab needs it.
 
@@ -129,7 +129,7 @@ Shortcuts documented in Settings → Display tab; visible on focused-element hov
 
 ## Cross-references
 
-- ADR-002 v2 Layer 2.5 (display layer in MERDIAN architecture)
+- ADR-002 v2 Layer 2.5 (display layer in MERIDIAN architecture)
 - ADR-016 parameter calibration pattern (referenced in Settings → Calibration tab; ENH-83 graduation)
 - ENH-83 calibration console (graduates from PROPOSED build-deferred to required by ENH-110 Phase 1)
 - ENH-110 Consolidated Marketview build (implementation spec — companion to this ADR)
@@ -143,7 +143,7 @@ Shortcuts documented in Settings → Display tab; visible on focused-element hov
 ## Falsification criteria
 
 - If a new operator-facing widget is added between S38 and Y2-close and it does NOT pass the three-filter check at ship time, ADR-017 was not enforced and needs amendment or stronger gating.
-- If operator returns to manual tab-switching between MERDIAN surfaces post-ENH-110 Phase 1 ship, the role contract (Principle 2) was wrong — revisit page boundaries.
+- If operator returns to manual tab-switching between MERIDIAN surfaces post-ENH-110 Phase 1 ship, the role contract (Principle 2) was wrong — revisit page boundaries.
 - If confluence highlighting (Principle 4) does not surface a single actionable signal in the first 20 sessions post-ship, the principle was decoration not substance — revisit the detection criteria or retire the visual.
 - If the silence-is-healthy rule (Principle 3) causes operator to miss an actual stale condition (because they didn't realize absence-of-indicator was the signal), the asymmetry was too aggressive — revisit threshold and add subtle ambient indicator.
 

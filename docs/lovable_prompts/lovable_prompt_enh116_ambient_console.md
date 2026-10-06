@@ -1,7 +1,7 @@
 # ENH-116 — Ambient Environment console (Marketview) — Lovable build prompt
 
 **Paste this into the `meridian-connect` Lovable project.** It adds an **Ambient** view to the
-existing MERDIAN Marketview (Vite + React + shadcn/ui + Tailwind, Supabase anon client already
+existing MERIDIAN Marketview (Vite + React + shadcn/ui + Tailwind, Supabase anon client already
 configured via `import.meta.env.VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`). Read-only; anon
 `SELECT` is already granted on all three surfaces. Do **not** create a new Supabase project or
 scaffold new tables — read the existing ones.

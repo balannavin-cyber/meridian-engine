@@ -1,8 +1,8 @@
-# MERDIAN Data Inventory
+# MERIDIAN Data Inventory
 
 **Measured:** 2026-09-14  ·  **Regenerate:** `scripts/build_data_inventory.py` (no arguments)
 
-> **Use this register instead of re-deriving.** The extent of MERDIAN's option
+> **Use this register instead of re-deriving.** The extent of MERIDIAN's option
 > history has been re-derived from scratch at least a dozen times across 70+
 > sessions, each time from whichever table that session's brief named, producing
 > a different answer each time. If this file looks stale, **re-run the script** —

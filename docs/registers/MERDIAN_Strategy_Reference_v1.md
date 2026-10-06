@@ -1,4 +1,4 @@
-# MERDIAN Strategy Reference v1 — "151 Trading Strategies" Integration Framework
+# MERIDIAN Strategy Reference v1 — "151 Trading Strategies" Integration Framework
 
 **Source:** Kakushadze, Z. & Serur, J.A. (2018). "151 Trading Strategies." SSRN Electronic Journal. https://ssrn.com/abstract=3247865
 
@@ -10,17 +10,17 @@
 
 ## I. Overview
 
-MERDIAN currently operates a **directional options buying system** (Phase 4A manual execution, Phase 4B systematic). This reference document catalogs 151+ strategies from Kakushadze & Serur and identifies which are:
+MERIDIAN currently operates a **directional options buying system** (Phase 4A manual execution, Phase 4B systematic). This reference document catalogs 151+ strategies from Kakushadze & Serur and identifies which are:
 1. **Directly implementable** within NIFTY/SENSEX infrastructure
-2. **Timing-ready** via existing MERDIAN signals (ICT zones, gamma metrics, IV context)
+2. **Timing-ready** via existing MERIDIAN signals (ICT zones, gamma metrics, IV context)
 3. **Backtestable** against historical NIFTY/SENSEX data
 4. **Risk-manageable** within current margin/liquidity constraints
 
-The paper provides 550+ mathematical formulas for Greeks, premium decay, hedge ratios, and optimal sizing — all applicable to MERDIAN's signal layer.
+The paper provides 550+ mathematical formulas for Greeks, premium decay, hedge ratios, and optimal sizing — all applicable to MERIDIAN's signal layer.
 
 ---
 
-## II. MERDIAN Current State (S42)
+## II. MERIDIAN Current State (S42)
 
 **Current trading posture:** Directional naked options
 - **Instrument:** NIFTY/SENSEX call/put
@@ -40,9 +40,9 @@ The paper provides 550+ mathematical formulas for Greeks, premium decay, hedge r
 
 ## III. Strategy Catalog — Options (per Kakushadze & Serur Chapter 2)
 
-### A. Single-Leg Strategies (Current MERDIAN core)
+### A. Single-Leg Strategies (Current MERIDIAN core)
 
-| Strategy | Paper ref | Greeks | MERDIAN ready? | Notes |
+| Strategy | Paper ref | Greeks | MERIDIAN ready? | Notes |
 |---|---|---|---|---|
 | **Long Call** | §2.1 | Δ+, Γ+, Θ-, Ν+ | ✅ YES | Directional up. Current production trade. |
 | **Long Put** | §2.1 | Δ-, Γ+, Θ-, Ν+ | ✅ YES | Directional down. Current production trade. |
@@ -57,7 +57,7 @@ The paper provides 550+ mathematical formulas for Greeks, premium decay, hedge r
 
 ### B. Two-Leg Directional Spreads (Gamma/Theta trade-off)
 
-| Strategy | Paper ref | Max profit | Max loss | Θ decay | MERDIAN ready? | Priority | Notes |
+| Strategy | Paper ref | Max profit | Max loss | Θ decay | MERIDIAN ready? | Priority | Notes |
 |---|---|---|---|---|---|---|---|
 | **Bull Call Spread** | §2.6 | Width - debit | Debit paid | Θ+ (short leg) | ⏳ S43 | P1 | Buy ATM call + Sell OTM call. Directional up, capped loss. |
 | **Bear Call Spread** | §2.8 | Width - debit | Debit paid | Θ+ (short leg) | ⏳ S43 | P1 | Sell ATM call + Buy OTM call. Directional down, capped loss. |
@@ -72,7 +72,7 @@ The paper provides 550+ mathematical formulas for Greeks, premium decay, hedge r
 
 ### C. Volatility-Directional Hybrids (Multi-leg, gamma+vega play)
 
-| Strategy | Paper ref | Best for | Δ sens | Γ sens | Ν sens | MERDIAN ready? | Priority | Notes |
+| Strategy | Paper ref | Best for | Δ sens | Γ sens | Ν sens | MERIDIAN ready? | Priority | Notes |
 |---|---|---|---|---|---|---|---|
 | **Collar** | §2.53 | Cap/protect | Medium | Low | Low | ⏳ S43 | **P0** | Long call + short call (cap) + long put (protection). Maps to pin-risk-aware positioning. |
 | **Iron Condor** | §2.50 | Range-bound | ~0 | Low | Short | ⏳ S44 | P2 | Sell ATM call spread + Sell ATM put spread. Premium collection in low-vol regimes. |
@@ -88,7 +88,7 @@ The paper provides 550+ mathematical formulas for Greeks, premium decay, hedge r
 
 ### D. Ratio & Exotic Spreads (High leverage, tail risk)
 
-| Strategy | Paper ref | Use case | Risk profile | MERDIAN ready? | Notes |
+| Strategy | Paper ref | Use case | Risk profile | MERIDIAN ready? | Notes |
 |---|---|---|---|---|---|
 | **Call Ratio Backspread** | §2.36 | High-conviction short | Unlimited long risk | ❌ NOT S43 | Buy 1× OTM call + Sell 2× ATM call. Max loss if spot rallies hard. Deferrable. |
 | **Put Ratio Backspread** | §2.37 | High-conviction long | Unlimited short risk | ❌ NOT S43 | Buy 1× OTM put + Sell 2× ATM put. Max loss if spot drops hard. Deferrable. |
@@ -101,7 +101,7 @@ The paper provides 550+ mathematical formulas for Greeks, premium decay, hedge r
 
 ### E. Spread Variants (Butterflies, Condors, etc.)
 
-| Strategy | Paper ref | Δ | Max profit | Max loss | MERDIAN ready? | Notes |
+| Strategy | Paper ref | Δ | Max profit | Max loss | MERIDIAN ready? | Notes |
 |---|---|---|---|---|---|
 | **Long Call Butterfly** | §2.40 | ~0 | Wing width | Debit paid | ⏳ S44 | Buy 1 call, sell 2 middle calls, buy 1 OTM call. Profits near middle strike. Capital-efficient. |
 | **Short Call Butterfly** | §2.42 | ~0 | Debit paid | Wing width | ⏳ S44 | Inverse. Profits if move away from middle. |
@@ -113,9 +113,9 @@ The paper provides 550+ mathematical formulas for Greeks, premium decay, hedge r
 
 ---
 
-## IV. Timing Signals — MERDIAN Integration Points
+## IV. Timing Signals — MERIDIAN Integration Points
 
-### Which MERDIAN signals trigger which strategies?
+### Which MERIDIAN signals trigger which strategies?
 
 **Signal 1: Market structure (ICT zones)**
 
@@ -407,4 +407,4 @@ MONITOR: Track Greeks, monitor exit signals per ADR-012
 
 ---
 
-**MERDIAN Strategy Reference v1 — 2026-06-01 (S42). Pending ENH-114 filing for S43 action.**
+**MERIDIAN Strategy Reference v1 — 2026-06-01 (S42). Pending ENH-114 filing for S43 action.**

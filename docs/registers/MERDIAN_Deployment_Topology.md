@@ -1,4 +1,4 @@
-# MERDIAN Deployment Topology
+# MERIDIAN Deployment Topology
 
 **Market Structure Intelligence & Options Decision Engine**
 
@@ -8,7 +8,7 @@
 |---|---|
 | Document | `MERDIAN_Deployment_Topology.md` |
 | Location | `docs/registers/` |
-| Type | "What runs where" — Local Windows ↔ MERDIAN AWS EC2 ↔ MALPHA AWS EC2 boundary spec |
+| Type | "What runs where" — Local Windows ↔ MERIDIAN AWS EC2 ↔ MALPHA AWS EC2 boundary spec |
 | Established | 2026-05-09 (Session 23 — created per Doc Protocol v4 Rule 9.2; Task Scheduler audit by Navin in same session closed System Map §G.1) |
 | Update rule | Inline, same commit as the topology change. Triggers in Doc Protocol v4 Rule 1. |
 | Companion | `MERDIAN_System_Map.md` for full file/table inventory; this document for environment placement only. |
@@ -21,15 +21,15 @@
 
 ## Purpose
 
-A single answer to "where does X run? what runs only on Local? what runs only on MERDIAN AWS? what runs only on MALPHA AWS? what runs on multiple?" Replaces scattered guidance in V18 §15.4/15.5, V18A §13.5, V18E §7.4/7.5, and CLAUDE.md gotchas.
+A single answer to "where does X run? what runs only on Local? what runs only on MERIDIAN AWS? what runs only on MALPHA AWS? what runs on multiple?" Replaces scattered guidance in V18 §15.4/15.5, V18A §13.5, V18E §7.4/7.5, and CLAUDE.md gotchas.
 
-The three environments are not symmetric. Local Windows is the **primary live execution environment** for signal generation, broker authentication, dashboards, and Phase 4A manual execution. MERDIAN AWS EC2 is the **shadow execution environment** for scheduled redundancy, EOD ingestion, post-market capture, and Phase 4B order placement (Dhan IP-whitelisted endpoint). MALPHA AWS EC2 is the **Zerodha token gateway environment** — runs the Kite token refresh service that other environments consume; not a Meridian-pipeline host. Treating them as interchangeable produces real failures (see §6 AWS gotchas).
+The three environments are not symmetric. Local Windows is the **primary live execution environment** for signal generation, broker authentication, dashboards, and Phase 4A manual execution. MERIDIAN AWS EC2 is the **shadow execution environment** for scheduled redundancy, EOD ingestion, post-market capture, and Phase 4B order placement (Dhan IP-whitelisted endpoint). MALPHA AWS EC2 is the **Zerodha token gateway environment** — runs the Kite token refresh service that other environments consume; not a Meridian-pipeline host. Treating them as interchangeable produces real failures (see §6 AWS gotchas).
 
 ---
 
 ## §1 — Side-by-side environment summary
 
-| Aspect | Local Windows (PRIMARY LIVE) | MERDIAN AWS (SHADOW + AWS-only services) | MALPHA AWS (Kite gateway) |
+| Aspect | Local Windows (PRIMARY LIVE) | MERIDIAN AWS (SHADOW + AWS-only services) | MALPHA AWS (Kite gateway) |
 |---|---|---|---|
 | Path | `C:\GammaEnginePython\` | `/home/ssm-user/meridian-engine/` | `/home/ubuntu/meridian-alpha/` |
 | Instance | Navin's Windows desktop, multi-WAN home network | t3.small, instance `i-0e60e4ed9ce20cefb` per pre-S35 documentation (**S35 instance-ID drift surfaced — current console shows `i-0878c118835386ec2`; instance was rebuilt at unknown earlier session; Elastic IP `13.63.27.85` unchanged; reconcile at S36**), region eu-north-1, host `ip-172-31-35-90`, user `ssm-user` | EC2 at `13.51.242.119`, user `ubuntu` |
@@ -38,14 +38,14 @@ The three environments are not symmetric. Local Windows is the **primary live ex
 | Scheduler | **SUPERSEDED — see §S76.A: 23 tasks, all `Disabled`, none running (measured 2026-09-10).** Was: Windows Task Scheduler (20 `MERDIAN_*` tasks per Session 36; was 19 at S29 audit; was 17 at S23) | crontab (6 entries — see §7.1) | crontab (Kite token refresh schedule) |
 | Live signal generation | **SUPERSEDED — see §S76.A: no `python`/`pythonw` process on the host and every task `Disabled` (measured 2026-09-10); this host generates nothing.** Was: ✅ Primary | ❌ Shadow only (writes shadow rows; not production decisions) | ❌ Not a Meridian pipeline host |
 | Broker auth — Dhan | ✅ TOTP retry | ✅ Token pulled from Local-written Supabase 03:05 UTC | ❌ |
-| Broker auth — Zerodha (Kite) | ✅ KiteTicker WebSocket (NIFTY full chain) | ❌ Cannot — depends on MALPHA token | ✅ **Sole Kite token writer**; MERDIAN AWS reads from MALPHA (manual sed step today — TD-NEW-7) |
+| Broker auth — Zerodha (Kite) | ✅ KiteTicker WebSocket (NIFTY full chain) | ❌ Cannot — depends on MALPHA token | ✅ **Sole Kite token writer**; MERIDIAN AWS reads from MALPHA (manual sed step today — TD-NEW-7) |
 | Phase 4A manual execution | ✅ `merdian_trade_logger.py` + dashboard LOG TRADE button | ❌ | ❌ |
 | Phase 4B order placer (Dhan REST) | ❌ Not whitelisted; multi-WAN home IP unstable | ✅ `merdian_order_placer.py` HTTP server port 8767, AWS Elastic IP 13.63.27.85 Dhan-whitelisted, @reboot cron (S28 surfacing) | ❌ |
 | Dashboards | ✅ Three live dashboards (signal, monitor, live) | ❌ Headless | ❌ |
 | Supervisor | ✅ `gamma_engine_supervisor.py` + `start_supervisor_clean.ps1` | ❌ Cron-driven; no supervisor | ❌ |
 | Pipeline alert daemon | ✅ `merdian_pipeline_alert_daemon.py` | ❌ | ❌ |
 | Telemetry / heartbeat | ✅ `gamma_engine_telemetry_logger.py` writes `runtime/telemetry/*` | ❌ Not currently mirrored | ❌ |
-| EOD ingestion | ✅ Recovery path (when MERDIAN AWS misses) | ✅ Primary 16:10 IST cron | ❌ |
+| EOD ingestion | ✅ Recovery path (when MERIDIAN AWS misses) | ✅ Primary 16:10 IST cron | ❌ |
 | Post-market capture | ⚠ Topology question — task exists but JSON says AWS-only (see §6) | ✅ Cron 16:00 IST | ❌ |
 | `gamma_metrics_shadow` write target | ❌ Production `gamma_metrics` is Local's write target | ✅ **As of S28** AWS `compute_gamma_metrics_local.py --shadow` writes here (TD-NEW-12 RESOLVED). Pre-S28 wrote to production `gamma_metrics` (silent architectural invariant violation Apr 29 → May 13). | ❌ |
 | Code editing | ✅ Sole permitted edit point | ❌ FORBIDDEN except BREAK_GLASS (Change Protocol Step 8) | ❌ (separate repo, separate auth; not Meridian code surface) |
@@ -56,24 +56,24 @@ The three environments are not symmetric. Local Windows is the **primary live ex
 
 ## §1.5 — MALPHA: third environment, Zerodha token gateway
 
-MALPHA is a separate EC2 instance running the Kite (Zerodha) token refresh gateway. Until Session 28, MALPHA was treated inline in narrative as "Kite gateway, not Meridian" and was not given a row in this side-by-side. Two operational outages from manual MALPHA→MERDIAN AWS token propagation (2026-04-22 and 2026-05-12) surfaced that MALPHA is an unmissable third environment that the Meridian production pipeline depends on, even though it doesn't host any Meridian code.
+MALPHA is a separate EC2 instance running the Kite (Zerodha) token refresh gateway. Until Session 28, MALPHA was treated inline in narrative as "Kite gateway, not Meridian" and was not given a row in this side-by-side. Two operational outages from manual MALPHA→MERIDIAN AWS token propagation (2026-04-22 and 2026-05-12) surfaced that MALPHA is an unmissable third environment that the Meridian production pipeline depends on, even though it doesn't host any Meridian code.
 
 **Why MALPHA exists as a separate environment:**
 
-- Zerodha Kite Connect's API auth flow is **browser-redirect TOTP** — the same flow that prevents `ws_feed_zerodha.py` from running on MERDIAN AWS. MALPHA hosts the auth-browser-capable service in headless-but-interactive form.
+- Zerodha Kite Connect's API auth flow is **browser-redirect TOTP** — the same flow that prevents `ws_feed_zerodha.py` from running on MERIDIAN AWS. MALPHA hosts the auth-browser-capable service in headless-but-interactive form.
 - Multi-WAN home network on Local makes Local's Kite auth fragile (IP changes), but Kite Connect tolerates this for the *token refresh* leg. MALPHA gives stable IP for the *token writer* leg.
 - Architectural separation: Meridian's pipeline never touches Kite directly on AWS — it consumes Zerodha tokens from MALPHA via Supabase, same pattern as Dhan tokens.
 
-**MALPHA → MERDIAN AWS token propagation (current S28 state — fragile, TD-NEW-7):**
+**MALPHA → MERIDIAN AWS token propagation (current S28 state — fragile, TD-NEW-7):**
 
 - MALPHA writes refreshed Zerodha access token to its own `.env` and local file.
-- A **manual `sed` step** on MERDIAN AWS pulls the new token into `/home/ssm-user/meridian-engine/.env`. No automation.
-- This is the proximate cause of the 2026-04-22 and 2026-05-12 morning outages where MERDIAN AWS `ws_feed_zerodha.py` (also runs on MERDIAN AWS for shadow path? No — Local-only per §2; the dependency is for `ingest_option_chain_local.py` which uses Kite SDK on AWS for some calls) rejected the stale token.
+- A **manual `sed` step** on MERIDIAN AWS pulls the new token into `/home/ssm-user/meridian-engine/.env`. No automation.
+- This is the proximate cause of the 2026-04-22 and 2026-05-12 morning outages where MERIDIAN AWS `ws_feed_zerodha.py` (also runs on MERIDIAN AWS for shadow path? No — Local-only per §2; the dependency is for `ingest_option_chain_local.py` which uses Kite SDK on AWS for some calls) rejected the stale token.
 
 **TD-NEW-7 (S1) fix design (queued for S29+):**
 
 - MALPHA writes Zerodha access token to Supabase `system_config` table (same pattern as Dhan).
-- MERDIAN AWS `pull_token_from_supabase.py` extended to handle Zerodha key alongside Dhan.
+- MERIDIAN AWS `pull_token_from_supabase.py` extended to handle Zerodha key alongside Dhan.
 - Eliminates the manual step; same automation pattern eliminates the same failure class as Dhan token sync solved.
 
 **MALPHA as Meridian dependency:**
@@ -81,7 +81,7 @@ MALPHA is a separate EC2 instance running the Kite (Zerodha) token refresh gatew
 | Meridian operation | Depends on MALPHA? | How |
 |---|---|---|
 | Kite WebSocket on Local (`ws_feed_zerodha.py`) | No | Local has its own browser-auth flow |
-| Kite REST calls on MERDIAN AWS (`ingest_option_chain_local.py` etc.) | YES | MERDIAN AWS reads Kite access token from `.env` written via manual sed from MALPHA |
+| Kite REST calls on MERIDIAN AWS (`ingest_option_chain_local.py` etc.) | YES | MERIDIAN AWS reads Kite access token from `.env` written via manual sed from MALPHA |
 | Any AWS-side script that imports `kiteconnect` and requires auth | YES | Same |
 
 **Until TD-NEW-7 closes**, the Topology has three environments and a manual operational step between two of them. After TD-NEW-7 closes, the manual step becomes a Supabase replication that mirrors the Dhan token flow exactly.
@@ -90,18 +90,18 @@ MALPHA is a separate EC2 instance running the Kite (Zerodha) token refresh gatew
 
 ## §1.6 — Breeze (ICICI Direct) — historical options backfill source (NEW S35)
 
-ICICI Direct's Breeze retail API was used for the first time in MERDIAN at Session 35 to surgically fill a one-day chain coverage gap in `historical_option_chain_snapshots` (HOCS) for 2026-04-16. It is not an environment in the same sense as Local / MERDIAN AWS / MALPHA — it is an **external API consumed from MERDIAN AWS** — but it warrants topology codification because (a) its SEBI static-IP whitelist requirement makes the consumption boundary fixed to MERDIAN AWS, not arbitrary, and (b) ADR-013 PROPOSED 2026-05-24 may graduate Breeze to a canonical historical backfill source (ENH-109), at which point it becomes a regularly-scheduled service.
+ICICI Direct's Breeze retail API was used for the first time in MERIDIAN at Session 35 to surgically fill a one-day chain coverage gap in `historical_option_chain_snapshots` (HOCS) for 2026-04-16. It is not an environment in the same sense as Local / MERIDIAN AWS / MALPHA — it is an **external API consumed from MERIDIAN AWS** — but it warrants topology codification because (a) its SEBI static-IP whitelist requirement makes the consumption boundary fixed to MERIDIAN AWS, not arbitrary, and (b) ADR-013 PROPOSED 2026-05-24 may graduate Breeze to a canonical historical backfill source (ENH-109), at which point it becomes a regularly-scheduled service.
 
-**Why Breeze consumed only from MERDIAN AWS:**
+**Why Breeze consumed only from MERIDIAN AWS:**
 
-- ICICI Direct's Breeze API requires a SEBI-compliant static-IP whitelist after 2026-04-01. Operator already registered MERDIAN AWS Elastic IP `13.63.27.85` with ICICI Direct (the same IP that serves Dhan order placement per §3's `merdian_order_placer.py` entry). Local's multi-WAN home network has unstable IP and cannot satisfy the whitelist.
+- ICICI Direct's Breeze API requires a SEBI-compliant static-IP whitelist after 2026-04-01. Operator already registered MERIDIAN AWS Elastic IP `13.63.27.85` with ICICI Direct (the same IP that serves Dhan order placement per §3's `merdian_order_placer.py` entry). Local's multi-WAN home network has unstable IP and cannot satisfy the whitelist.
 - Auth uses a cookie-based session (API key + API secret + session-token request) rather than OAuth-redirect — no headless-but-interactive constraint that affects Zerodha. Consumption is straightforward Python `requests` calls.
 - Rate limit: 5000 calls/day budget + 100 calls/min throttle. Comfortably within budget for full-chain backfill of a single day (≈800-1000 calls per symbol per day across strikes × expiries × OHLC granularity); marginal for full-year backfill (would need cadence planning per ENH-109).
 
 **S35 demonstrated capability:**
 
-- `fill_2026_04_16_breeze_v3.py` (md5 `5eae3849776ec2a6061ed2100ecb0e13`) deployed to MERDIAN AWS at `/home/ssm-user/meridian-engine/`. Wrote 107,630 HOCS rows (NIFTY 61,899 + SENSEX 45,731) `source='breeze_backfill_s35'` in 4-5min wallclock from a single SSM session.
-- File transfer to MERDIAN AWS used nano multi-line paste after base64-single-line paste exceeded SSM terminal buffer (~4KB) — codified as operational finding in CLAUDE.md v1.25.
+- `fill_2026_04_16_breeze_v3.py` (md5 `5eae3849776ec2a6061ed2100ecb0e13`) deployed to MERIDIAN AWS at `/home/ssm-user/meridian-engine/`. Wrote 107,630 HOCS rows (NIFTY 61,899 + SENSEX 45,731) `source='breeze_backfill_s35'` in 4-5min wallclock from a single SSM session.
+- File transfer to MERIDIAN AWS used nano multi-line paste after base64-single-line paste exceeded SSM terminal buffer (~4KB) — codified as operational finding in CLAUDE.md v1.25.
 - SENSEX symbology on Breeze: `stock_code='BSESEN'` not `'SENSEX'`, empirically discovered via 6-variant probe (TD-S35-NEW-3 S4). NIFTY uses `stock_code='NIFTY'`. F&O: `product_type='options'` + `right` ∈ {`'call'`, `'put'`}. Exchange: `exchange_code='NFO'` (NIFTY) / `'BFO'` (SENSEX).
 - Two relevant Breeze functions:
   - `rollingoption` — ATM±N strikes per call across DTE range; 3-year lookback; high call efficiency. Best fit for ATM-anchored research (mirrors current vendor `hist_option_bars_1m` shape; ATM-only cap acceptable). Operator confirmed proven capable on S35.
@@ -125,8 +125,8 @@ These scripts only run on Local Windows. Either they require Windows-specific ru
 
 | Script | Why Local-only |
 |---|---|
-| `ws_feed_zerodha.py` | Zerodha KiteTicker WebSocket. Auth flow is browser-redirect TOTP. Cannot run headless on MERDIAN AWS. |
-| `run_option_snapshot_intraday_runner.py` | Primary live 5-min options runner. MERDIAN AWS has the shadow runner; this is production. |
+| `ws_feed_zerodha.py` | Zerodha KiteTicker WebSocket. Auth flow is browser-redirect TOTP. Cannot run headless on MERIDIAN AWS. |
+| `run_option_snapshot_intraday_runner.py` | Primary live 5-min options runner. MERIDIAN AWS has the shadow runner; this is production. |
 | `gamma_engine_supervisor.py` | Process supervision tied to Windows Task Scheduler. Restart-only model (V15.1: NEVER reload code on the fly). |
 | `start_supervisor_clean.ps1` | PowerShell — Windows native. Wired to `MERDIAN_Intraday_Supervisor_Start` task. |
 | `gamma_engine_monitor_dashboard.py` | GUI dashboard (Tkinter / Streamlit). |
@@ -141,7 +141,7 @@ These scripts only run on Local Windows. Either they require Windows-specific ru
 | `build_ict_htf_zones_historical.py` | Historical ICT zone backfill. |
 | `build_signal_regret_log_v1.py` | Regret log builder. |
 | `build_spot_bars_mtf.py` | Spot MTF rollup at 16:00 via `MERDIAN_Spot_MTF_Rollup_1600`. |
-| `merdian_start.py` | **CRITICAL — Local-only script that uses Windows-only `creationflags=CREATE_NO_WINDOW` and hardcoded Windows paths. Running on MERDIAN AWS causes frozen SSM terminal requiring EC2 reboot.** See §6 gotcha #1. |
+| `merdian_start.py` | **CRITICAL — Local-only script that uses Windows-only `creationflags=CREATE_NO_WINDOW` and hardcoded Windows paths. Running on MERIDIAN AWS causes frozen SSM terminal requiring EC2 reboot.** See §6 gotcha #1. |
 | `run_market_tape_1m.py` | Was scheduled via `MERDIAN_Market_Tape_1M` (now Ready). DhanError 401 — functionally disabled even though task is Ready. Replaced by `capture_spot_1m_v2.py`. |
 
 ### A.2 Newly catalogued (Session 23 Task Scheduler audit)
@@ -160,40 +160,40 @@ These scripts and wrappers were discovered via the canonical action mapping. Eac
 | `run_iv_context_once.ps1` | `MERDIAN_IV_Context_0905` (09:05 IST) | PowerShell wrapper around `compute_iv_context_local.py` |
 | `run_ict_htf_zones_daily.bat` | `MERDIAN_ICT_HTF_Zones_0845` (08:45 IST) | Bat wrapper around `build_ict_htf_zones.py`. **S28 update (TD-NEW-5):** chained Pine overlay generation appended as Call 3; `generate_pine_overlay.py` now invoked automatically after zone build. |
 | `run_po3_session_bias_once.bat` | `MERDIAN_PO3_SessionBias_1005` (10:05 IST) | Bat wrapper around `detect_po3_session_bias.py` |
-| `run_market_close_capture_once.bat` | `MERDIAN_Market_Close_Capture` (~15:30 IST) | Local mirror of MERDIAN AWS's `run_market_close_capture_once.py` |
-| `run_post_market_capture_once.bat` | `MERDIAN_Post_Market_1600_Capture` (~16:00 IST) | Local equivalent of MERDIAN AWS's `capture_postmarket_1600.py` (different script — see Topology §7.2 Note 2) |
+| `run_market_close_capture_once.bat` | `MERDIAN_Market_Close_Capture` (~15:30 IST) | Local mirror of MERIDIAN AWS's `run_market_close_capture_once.py` |
+| `run_post_market_capture_once.bat` | `MERDIAN_Post_Market_1600_Capture` (~16:00 IST) | Local equivalent of MERIDIAN AWS's `capture_postmarket_1600.py` (different script — see Topology §7.2 Note 2) |
 | `run_market_spot_session_markers_once.bat` | `MERDIAN_Session_Markers_1602` (16:02 IST) | Post-close session markers update wrapper |
 | `run_market_tape_1m.bat` | `MERDIAN_Market_Tape_1M` (functionally disabled) | Bat wrapper around `run_market_tape_1m.py` (auth-failing) |
-| `run_ws_feed_zerodha.bat` | `MERDIAN_WS_Feed_0900` (functionally disabled S28 TD-NEW-6) | Bat wrapper around `ws_feed_zerodha.py`. **S28 update (TD-NEW-6):** Local task DISABLED via `Disable-ScheduledTask`; was a dead-stub firing daily and polluting logs. The actual production WS feed runs on MERDIAN AWS only. |
+| `run_ws_feed_zerodha.bat` | `MERDIAN_WS_Feed_0900` (functionally disabled S28 TD-NEW-6) | Bat wrapper around `ws_feed_zerodha.py`. **S28 update (TD-NEW-6):** Local task DISABLED via `Disable-ScheduledTask`; was a dead-stub firing daily and polluting logs. The actual production WS feed runs on MERIDIAN AWS only. |
 | `run_spot_mtf_rollup_once.bat` | `MERDIAN_Spot_MTF_Rollup_1600` (16:00 IST) | Wraps `build_spot_bars_mtf.py` |
 
 These additions are pending integration into `merdian_reference.json` `files` (file paths and statuses) — that's a follow-up commit. This Topology is the canonical wiring map; the JSON is the canonical inventory.
 
 ---
 
-## §3 — MERDIAN AWS-only scripts
+## §3 — MERIDIAN AWS-only scripts
 
-These run only on MERDIAN AWS, primarily for scheduled redundancy or because AWS has reliable always-on cron when Local may be off, or for Dhan-IP-whitelisting reasons (Phase 4B order placer).
+These run only on MERIDIAN AWS, primarily for scheduled redundancy or because AWS has reliable always-on cron when Local may be off, or for Dhan-IP-whitelisting reasons (Phase 4B order placer).
 
-| Script | Why MERDIAN AWS-only |
+| Script | Why MERIDIAN AWS-only |
 |---|---|
 | `run_merdian_shadow_runner.py` | Shadow 5-min cycle. Breadth ingest disabled (V18E Guard 3 — single-writer rule). Runs in nohup. **S28 update (TD-NEW-12):** line 479 now passes `--shadow` flag to `compute_gamma_metrics_local.py` invocation. Routes AWS compute writes to `gamma_metrics_shadow` table (the architectural intent restored). |
 | `capture_postmarket_1600.py` | 16:00 IST close capture. JSON marks AWS-only. **Topology question:** Local also has `MERDIAN_Post_Market_1600_Capture` task — see §6 gotcha #5. |
 | `run_market_close_capture_once.py` | AWS parity for close capture. Created V18A. |
-| `merdian_order_placer.py` | **Phase 4B Order Placer (S28 surfacing)** — HTTP server on port 8767. Exposes `/place_order`, `/square_off`, `/order_status`, `/margin` endpoints called by Local dashboard's PLACE ORDER button. AWS-only because Dhan Trading API whitelists IP `13.63.27.85` (MERDIAN AWS Elastic IP); Local's multi-WAN home network has unstable IP. Launched via `@reboot` cron entry (deliberately persistent). Has been running deployed-but-low-traffic since 2026-04-29 (HTTP server idle most of the day, occasionally polled for margin / health). Was not catalogued in the original Topology — TD-NEW-11 (S3, documentation gap) filed Session 28 + closed here by the catalog. |
+| `merdian_order_placer.py` | **Phase 4B Order Placer (S28 surfacing)** — HTTP server on port 8767. Exposes `/place_order`, `/square_off`, `/order_status`, `/margin` endpoints called by Local dashboard's PLACE ORDER button. AWS-only because Dhan Trading API whitelists IP `13.63.27.85` (MERIDIAN AWS Elastic IP); Local's multi-WAN home network has unstable IP. Launched via `@reboot` cron entry (deliberately persistent). Has been running deployed-but-low-traffic since 2026-04-29 (HTTP server idle most of the day, occasionally polled for margin / health). Was not catalogued in the original Topology — TD-NEW-11 (S3, documentation gap) filed Session 28 + closed here by the catalog. |
 
 ---
 
-## §4 — Both-environments scripts (Local + MERDIAN AWS)
+## §4 — Both-environments scripts (Local + MERIDIAN AWS)
 
-These run on both Local and MERDIAN AWS. The boundary is operational, not architectural — Local is primary, MERDIAN AWS is shadow / fallback / EOD.
+These run on both Local and MERIDIAN AWS. The boundary is operational, not architectural — Local is primary, MERIDIAN AWS is shadow / fallback / EOD.
 
-| Script | Local role | MERDIAN AWS role |
+| Script | Local role | MERIDIAN AWS role |
 |---|---|---|
 | `capture_market_spot_snapshot_local.py` | 1-min spot capture (Step 1 of intraday runner) | Cron `MERDIAN_PreOpen` 09:08 IST + on-demand by shadow runner |
 | `capture_index_futures_snapshot_local.py` | Futures snapshot in cycle | Shadow capture |
 | `ingest_option_chain_local.py` | Step 2 of cycle (Dhan REST + writes via Zerodha WS path) | Shadow ingest. Note: depends on Zerodha access token propagated from MALPHA (§1.5 / TD-NEW-7). |
-| `ingest_breadth_from_ticks.py` | Live breadth ingest (single-writer) | **DISABLED on MERDIAN AWS** (Guard 3 — single-writer rule) |
+| `ingest_breadth_from_ticks.py` | Live breadth ingest (single-writer) | **DISABLED on MERIDIAN AWS** (Guard 3 — single-writer rule) |
 | `ingest_equity_eod_local.py` | EOD recovery path | Primary 16:10 IST cron via `run_equity_eod_until_done.py` wrapper |
 | `build_market_state_snapshot_local.py` | Step 7 of cycle | Shadow path |
 | `compute_gamma_metrics_local.py` | Step 3 — writes to **`gamma_metrics`** (no flag) | Shadow — writes to **`gamma_metrics_shadow`** (`--shadow` flag, S28 TD-NEW-12) |
@@ -208,7 +208,7 @@ These run on both Local and MERDIAN AWS. The boundary is operational, not archit
 | `run_equity_eod_until_done.py` | Manual recovery | Primary EOD cron |
 | `trading_calendar.py` | Hard gate at every cycle entry | Hard gate |
 | `stage2_db_contract.py` | Pre-write contract check | Pre-write contract check |
-| `refresh_dhan_token.py` | Local Task Scheduler trigger writes new token to .env + Supabase | MERDIAN AWS cron `MERDIAN_Token_Refresh` 09:05 IST + Supabase pull at 03:05 UTC |
+| `refresh_dhan_token.py` | Local Task Scheduler trigger writes new token to .env + Supabase | MERIDIAN AWS cron `MERDIAN_Token_Refresh` 09:05 IST + Supabase pull at 03:05 UTC |
 | `merdian_utils.py` | Utility imports | Utility imports |
 
 ---
@@ -231,7 +231,7 @@ These run on both Local and MERDIAN AWS. The boundary is operational, not archit
                           │ Supabase replication
                           ▼
    ┌─────────────────────────────────────────────────────────┐
-   │ MERDIAN AWS EC2                                         │
+   │ MERIDIAN AWS EC2                                         │
    │   Cron 03:05 UTC = 08:35 IST (shifted from 03:55 UTC)   │
    │     ↓                                                   │
    │   Pulls latest token from Supabase                      │
@@ -258,7 +258,7 @@ These run on both Local and MERDIAN AWS. The boundary is operational, not archit
                           │ MANUAL sed step (TD-NEW-7 S1 fragility)
                           ▼
    ┌─────────────────────────────────────────────────────────┐
-   │ MERDIAN AWS EC2                                         │
+   │ MERIDIAN AWS EC2                                         │
    │   /home/ssm-user/meridian-engine/.env updated by hand   │
    │   ↓                                                     │
    │   Kite REST calls work; ingest_option_chain_local.py    │
@@ -275,25 +275,25 @@ These run on both Local and MERDIAN AWS. The boundary is operational, not archit
    │     ↓                                                   │
    │   option_chain_snapshots (NIFTY full chain rows)        │
    │                                                         │
-   │   MERDIAN AWS does NOT participate in WebSocket path.   │
+   │   MERIDIAN AWS does NOT participate in WebSocket path.   │
    └─────────────────────────────────────────────────────────┘
 ```
 
-**Outages traced to manual step:** 2026-04-22 and 2026-05-12 both presented as `ingest_option_chain_local.py` failing AWS-side because Local had a stale Zerodha token. Fix design under TD-NEW-7: replace manual `sed` with Supabase `system_config` write on MALPHA + extend MERDIAN AWS `pull_token_from_supabase.py` to handle Zerodha key. Mirrors Dhan flow exactly.
+**Outages traced to manual step:** 2026-04-22 and 2026-05-12 both presented as `ingest_option_chain_local.py` failing AWS-side because Local had a stale Zerodha token. Fix design under TD-NEW-7: replace manual `sed` with Supabase `system_config` write on MALPHA + extend MERIDIAN AWS `pull_token_from_supabase.py` to handle Zerodha key. Mirrors Dhan flow exactly.
 
 ### 5.3 Token-related runbook references
 
 - `docs/runbooks/runbook_update_dhan_token.md` — full Dhan rotation procedure
-- `docs/runbooks/runbook_update_kite_flow.md` — Zerodha update + verification (Step 3 runs `/home/ssm-user/meridian-engine/check_kite_auth.py`). **Update S28:** runbook gap surfaced — runbook does not currently document the manual `sed` step on MERDIAN AWS. Update queued alongside TD-NEW-7 fix.
+- `docs/runbooks/runbook_update_kite_flow.md` — Zerodha update + verification (Step 3 runs `/home/ssm-user/meridian-engine/check_kite_auth.py`). **Update S28:** runbook gap surfaced — runbook does not currently document the manual `sed` step on MERIDIAN AWS. Update queued alongside TD-NEW-7 fix.
 - `docs/runbooks/runbook_recover_dhan_401.md` — DhanError 401 recovery
 
 ---
 
 ## §6 — AWS gotchas (DO NOT)
 
-These are operational rules learned from real failures. Each is honored by current code; documenting them here so they remain honored. **All §6 rules apply to MERDIAN AWS unless otherwise noted; MALPHA is a separate environment and operates under separate rules.**
+These are operational rules learned from real failures. Each is honored by current code; documenting them here so they remain honored. **All §6 rules apply to MERIDIAN AWS unless otherwise noted; MALPHA is a separate environment and operates under separate rules.**
 
-### 6.1 NEVER run `merdian_start.py` on MERDIAN AWS
+### 6.1 NEVER run `merdian_start.py` on MERIDIAN AWS
 
 Uses Windows-only `creationflags=CREATE_NO_WINDOW` and hardcoded Windows paths. Running on AWS:
 - **Causes frozen SSM Session Manager terminal**
@@ -301,7 +301,7 @@ Uses Windows-only `creationflags=CREATE_NO_WINDOW` and hardcoded Windows paths. 
 
 This script is Local-only by design. There is no Linux equivalent. AWS bootstraps via cron + nohup; no equivalent to Local's supervisor.
 
-### 6.2 NEVER use interactive `crontab -e` on MERDIAN AWS
+### 6.2 NEVER use interactive `crontab -e` on MERIDIAN AWS
 
 Always use the non-interactive temp-file install pattern:
 ```bash
@@ -314,14 +314,14 @@ crontab -l | head -30
 
 The reason: a malformed entry in interactive `crontab -e` can replace the entire crontab atomically with whatever was in the buffer. Snapshot every change to a timestamped file under `logs/`.
 
-### 6.3 NEVER direct-edit code on MERDIAN AWS (CLAUDE.md non-negotiable rule 1)
+### 6.3 NEVER direct-edit code on MERIDIAN AWS (CLAUDE.md non-negotiable rule 1)
 
-Edit only in Local. MERDIAN AWS receives code via `git pull`. The only exception is BREAK_GLASS (Change Protocol Step 8) and even that requires a Local commit to backfill within 24h. Direct edits on AWS:
+Edit only in Local. MERIDIAN AWS receives code via `git pull`. The only exception is BREAK_GLASS (Change Protocol Step 8) and even that requires a Local commit to backfill within 24h. Direct edits on AWS:
 - Get clobbered on next `git pull`
 - Create silent Local↔AWS hash mismatch (preflight FAIL)
 - Are a known anti-pattern from Sessions 4–6
 
-### 6.4 NEVER enable breadth ingest on MERDIAN AWS
+### 6.4 NEVER enable breadth ingest on MERIDIAN AWS
 
 V18E Guard 3 — single-writer rule. `ingest_breadth_from_ticks.py` running on both environments would produce double-writes to `market_breadth_intraday`. AWS shadow runner explicitly disables breadth ingest via flag. Do not "fix" the disabled flag without understanding the rule.
 
@@ -329,7 +329,7 @@ V18E Guard 3 — single-writer rule. `ingest_breadth_from_ticks.py` running on b
 
 Shadow runner writes to dedicated shadow tables / shadow columns. The output of AWS shadow is **not** a backup of Local live signals. Before `evaluate_shadow_vs_live.py` reports parity, do not act on AWS-emitted signals as if they were live decisions.
 
-**S28 update (TD-NEW-12 RESOLVED):** Until Session 28, this rule was honored in narrative but silently violated in code — `gamma_metrics_shadow` table existed but was empty, because `compute_gamma_metrics_local.py` on MERDIAN AWS wrote to production `gamma_metrics`, race-condition double-writing rows that Local wrote. Resolution: `--shadow` flag (TARGET_TABLE pattern) routes all reads + writes + telemetry to `gamma_metrics_shadow` when MERDIAN AWS invokes the script via `run_merdian_shadow_runner.py` line 479. Rule is now enforced architecturally, not just narratively. See D.11.1 in Assumption Register for the codified invariant.
+**S28 update (TD-NEW-12 RESOLVED):** Until Session 28, this rule was honored in narrative but silently violated in code — `gamma_metrics_shadow` table existed but was empty, because `compute_gamma_metrics_local.py` on MERIDIAN AWS wrote to production `gamma_metrics`, race-condition double-writing rows that Local wrote. Resolution: `--shadow` flag (TARGET_TABLE pattern) routes all reads + writes + telemetry to `gamma_metrics_shadow` when MERIDIAN AWS invokes the script via `run_merdian_shadow_runner.py` line 479. Rule is now enforced architecturally, not just narratively. See D.11.1 in Assumption Register for the codified invariant.
 
 ### 6.6 Cron entries must use the env-loading pattern
 
@@ -358,17 +358,17 @@ If a `<table>_shadow` exists for write-comparison purposes (e.g. `gamma_metrics_
 2. Periodic schema-diff sweep (suggested as ENH candidate) compares `information_schema.columns` between production and `<name>_shadow` for all known shadow-paired tables.
 3. NOTIFY pgrst, 'reload schema' after ALTER if PostgREST is caching old schema.
 
-### 6.9 Python version parity between Local and MERDIAN AWS (TD-NEW-13 S28)
+### 6.9 Python version parity between Local and MERIDIAN AWS (TD-NEW-13 S28)
 
-Local runs Python 3.12; MERDIAN AWS runs Python 3.10. The two stdlibs differ in `datetime.fromisoformat()` permissiveness — Python 3.10 rejects microsecond fractions that are not exactly 3 or 6 digits; Python 3.12 accepts arbitrary precision. Supabase serializes PostgreSQL timestamps with variable precision (2-7 digits common).
+Local runs Python 3.12; MERIDIAN AWS runs Python 3.10. The two stdlibs differ in `datetime.fromisoformat()` permissiveness — Python 3.10 rejects microsecond fractions that are not exactly 3 or 6 digits; Python 3.12 accepts arbitrary precision. Supabase serializes PostgreSQL timestamps with variable precision (2-7 digits common).
 
-**Symptom:** Code that parses ISO timestamps via `fromisoformat()` runs fine on Local, fails on MERDIAN AWS, on a fraction of timestamps (those whose microsecond field length happens to be non-3/6). Failures are silent on Local-only smoke tests.
+**Symptom:** Code that parses ISO timestamps via `fromisoformat()` runs fine on Local, fails on MERIDIAN AWS, on a fraction of timestamps (those whose microsecond field length happens to be non-3/6). Failures are silent on Local-only smoke tests.
 
 **Required discipline for any ISO-timestamp-parsing code path:**
 
 1. Normalize the microsecond field to exactly 6 digits before `fromisoformat()` via regex pad/truncate (see `_dte_from_ts` in `compute_gamma_metrics_local.py` for the canonical pattern).
-2. Smoke test on MERDIAN AWS — not just Local — when any new compute path consumes Supabase timestamps.
-3. Long-term: align Python versions (upgrade MERDIAN AWS to 3.12), but until then, normalize defensively.
+2. Smoke test on MERIDIAN AWS — not just Local — when any new compute path consumes Supabase timestamps.
+3. Long-term: align Python versions (upgrade MERIDIAN AWS to 3.12), but until then, normalize defensively.
 
 See D.11.3 in Assumption Register for the codified invariant. See CLAUDE.md B22 (filed S28) for the operational rule.
 
@@ -378,11 +378,11 @@ Editing `ZERODHA_ACCESS_TOKEN` in `/home/ssm-user/meridian-engine/.env` does **n
 
 **Diagnostic discipline:** When `market_ticks` is empty but `kite.profile()` returns AUTH OK, the failure mode is consumer-process-state, not token-propagation. Check `pgrep -f ws_feed_zerodha.py` — if the PID has been running since before the most recent `.env` edit, it must be killed and restarted. See `runbook_update_kite_flow.md` Step 2d (added S29).
 
-**Operational rule:** Any `.env` edit on MERDIAN AWS requires explicit consumer-process restart of every script that reads the affected variable. There is no exception "if the value didn't really change" — the operator cannot verify in-memory state without restarting.
+**Operational rule:** Any `.env` edit on MERIDIAN AWS requires explicit consumer-process restart of every script that reads the affected variable. There is no exception "if the value didn't really change" — the operator cannot verify in-memory state without restarting.
 
 ### 6.11 `pg_cron` failures are invisible by default (S29 firefighting, TD-NEW-B 2026-05-14)
 
-The `cron.job_run_details` table records every cron run with `status` and `return_message`, but no MERDIAN telemetry polls it. A job can fail every weekday for weeks without any operator-visible signal until a downstream consumer notices.
+The `cron.job_run_details` table records every cron run with `status` and `return_message`, but no MERIDIAN telemetry polls it. A job can fail every weekday for weeks without any operator-visible signal until a downstream consumer notices.
 
 **2026-05-14 incident:** `delete-old-market-ticks` (jobid 45) had been failing every weekday since at least 2026-04-30 (14+ consecutive runs) with `ERROR: canceling statement due to statement timeout`. Failed deletes left `market_ticks` accumulating without bound to 62 GB, which caused INSERTs from `ws_feed_zerodha.py` to also exceed statement_timeout, cascading into the §6.10 incident.
 
@@ -403,9 +403,9 @@ Empty result = healthy. Any rows = investigate. Add to morning session-start rit
 
 ---
 
-## §7 — Cron entries (MERDIAN AWS) and Task Scheduler entries (Local)
+## §7 — Cron entries (MERIDIAN AWS) and Task Scheduler entries (Local)
 
-### 7.1 MERDIAN AWS crontab (6 entries — S28 update)
+### 7.1 MERIDIAN AWS crontab (6 entries — S28 update)
 
 Source: `merdian_reference.json` `aws_cron`. Confirmed via `crontab -l > logs/aws_crontab_snapshot_*.txt` discipline.
 
@@ -446,13 +446,13 @@ Source: `Get-ScheduledTask -TaskName "MERDIAN_*"` PowerShell audit during S29 fi
 | `MERDIAN_Market_Tape_1M` | Ready (broken since 2026-04-07) | (unchanged) | (unchanged) | TRUE | IgnoreNew | **Still broken** — `run_market_tape_1m.py` fails DhanError 401 daily. `MERDIAN_Spot_1M` running `capture_spot_1m_v2.py` is the active replacement. Recommend Disabled; not closed S29. |
 | `MERDIAN_Orphan_Janitor` | Ready | `pythonw.exe` | `orphan_run_janitor.py` | TRUE | IgnoreNew | **NEW S36 (ENH-99 Component 2).** Weekly Mon-Fri 09:14 IST. Closes any `script_execution_log` row in state RUNNING aged > 5 min by PATCHing `exit_reason='DATA_ERROR'` + `notes='ORPHAN_RECOVERED: age_min=N'` prefix + `finished_at=now()` + `duration_ms=<min(actual_age_ms, 2147483647)>` (int4 clamp at `2^31-1` per D.18.4). 5min execution limit + battery flags + Interactive Limited principal. Smoke-fire test 2026-05-25 17:26:26 closed 22/24 orphans + 2 REPL stragglers; final state 0 RUNNING > 5min. |
 | `MERDIAN_PO3_SessionBias_1005` | Ready | `pythonw.exe` | `detect_po3_session_bias.py` | TRUE | IgnoreNew | S29 — wrapper `run_po3_session_bias_once.bat` dropped. ENH-75 SHIPPED S13. |
-| `MERDIAN_Post_Market_1600_Capture` | Ready | `pythonw.exe` | `C:\GammaEnginePython\capture_market_spot_snapshot_local.py` | TRUE | IgnoreNew | S29 migrated. **Same script as Market_Close_Capture but different boundary timing.** Different from MERDIAN AWS `capture_postmarket_1600.py` — see Note 2. |
-| `MERDIAN_PreOpen` | Disabled (S25) | `pythonw.exe` | `capture_spot_1m.py` | TRUE | IgnoreNew | **State=Disabled S25 — durable.** Settings hardened S29 even though disabled (defensive — in case ever re-enabled). Different script from MERDIAN AWS PreOpen — see Note 3 + §9.A. |
+| `MERDIAN_Post_Market_1600_Capture` | Ready | `pythonw.exe` | `C:\GammaEnginePython\capture_market_spot_snapshot_local.py` | TRUE | IgnoreNew | S29 migrated. **Same script as Market_Close_Capture but different boundary timing.** Different from MERIDIAN AWS `capture_postmarket_1600.py` — see Note 2. |
+| `MERDIAN_PreOpen` | Disabled (S25) | `pythonw.exe` | `capture_spot_1m.py` | TRUE | IgnoreNew | **State=Disabled S25 — durable.** Settings hardened S29 even though disabled (defensive — in case ever re-enabled). Different script from MERIDIAN AWS PreOpen — see Note 3 + §9.A. |
 | `MERDIAN_Session_Markers_1602` | Ready | `pythonw.exe` | `C:\GammaEnginePython\build_market_spot_session_markers.py` | TRUE | IgnoreNew | S29 migrated. Post-close session markers update — feeds `market_spot_session_markers.open_0915_ts` for next-day reference. |
 | `MERDIAN_Spot_1M` | Ready | `pythonw.exe` | `capture_spot_1m_v2.py` | TRUE | IgnoreNew | Already pythonw pre-S29. **Active 1-min spot ingester** replacing disabled `MERDIAN_Market_Tape_1M`. |
 | `MERDIAN_Spot_MTF_Rollup_1600` | Ready | `pythonw.exe` | `build_spot_bars_mtf.py` | TRUE | IgnoreNew | S29 migrated — was `Start-Process cmd /c run_spot_mtf_rollup_once.bat`. Now direct. S9 closure of TD-019/023, ENH-71 instrumented. |
 | `MERDIAN_Watchdog` | Ready | (unchanged — settings-only) | (unchanged) | TRUE | IgnoreNew | `.ps1` passive observer (state check, not process killer). Cannot migrate to pythonw — it's PowerShell, not Python. Settings hardened S29. |
-| `MERDIAN_WS_Feed_0900` | Disabled (S28) | (unchanged) | (unchanged) | TRUE | IgnoreNew | **State=Disabled S28 (TD-NEW-6) — durable.** Was dead-stub firing daily polluting logs; actual WS feed runs on MERDIAN AWS only. Settings hardened S29 defensively. |
+| `MERDIAN_WS_Feed_0900` | Disabled (S28) | (unchanged) | (unchanged) | TRUE | IgnoreNew | **State=Disabled S28 (TD-NEW-6) — durable.** Was dead-stub firing daily polluting logs; actual WS feed runs on MERIDIAN AWS only. Settings hardened S29 defensively. |
 
 **Counts (S29 final state):**
 - **13 actions on pythonw** (was 4 at S29-start; 9 migrated during S29 firefighting).
@@ -473,9 +473,9 @@ Source: `Get-ScheduledTask -TaskName "MERDIAN_*"` PowerShell audit during S29 fi
 
 **Note 1: `MERDIAN_Market_Tape_1M` Ready ≠ functional.** Task state shows `Ready` but `run_market_tape_1m.py` has been failing with `DhanError 401` on every run since 2026-04-07. `MERDIAN_Spot_1M` running `capture_spot_1m_v2.py` is the active replacement. Two cleanup paths: (a) disable `MERDIAN_Market_Tape_1M` in Task Scheduler to match script reality, (b) fix the auth issue. Recommend (a). Filed as TD candidate; not closed S29.
 
-**Note 2: Post-market capture is two different scripts on two environments.** Local task `MERDIAN_Post_Market_1600_Capture` runs `capture_market_spot_snapshot_local.py` (S29 — was `.bat` wrapper); MERDIAN AWS cron `MERDIAN_Postmarket` runs `capture_postmarket_1600.py`. Different scripts, parallel implementations of the same intent. Dual-write status confirmed S25 — disposition queued for ADR-006 execution gated on TD-080. After S29 migration to direct pythonw, the Local writer is `capture_market_spot_snapshot_local.py` not the prior `.bat` chain.
+**Note 2: Post-market capture is two different scripts on two environments.** Local task `MERDIAN_Post_Market_1600_Capture` runs `capture_market_spot_snapshot_local.py` (S29 — was `.bat` wrapper); MERIDIAN AWS cron `MERDIAN_Postmarket` runs `capture_postmarket_1600.py`. Different scripts, parallel implementations of the same intent. Dual-write status confirmed S25 — disposition queued for ADR-006 execution gated on TD-080. After S29 migration to direct pythonw, the Local writer is `capture_market_spot_snapshot_local.py` not the prior `.bat` chain.
 
-**Note 3: PreOpen 09:08 is two different scripts.** Local `MERDIAN_PreOpen` runs `capture_spot_1m.py`; MERDIAN AWS cron `MERDIAN_PreOpen` runs `capture_market_spot_snapshot_local.py`. Local task DISABLED S25 (durable); AWS is sole writer. Boundary closed at AWS. See §9.A.
+**Note 3: PreOpen 09:08 is two different scripts.** Local `MERDIAN_PreOpen` runs `capture_spot_1m.py`; MERIDIAN AWS cron `MERDIAN_PreOpen` runs `capture_market_spot_snapshot_local.py`. Local task DISABLED S25 (durable); AWS is sole writer. Boundary closed at AWS. See §9.A.
 
 **Note 4 (NEW S29): `MERDIAN_Dhan_Token_Refresh` and `MERDIAN_Intraday_Session_Start` — purpose pending verification.** Both tasks discovered during S29 audit but their actions were not modified (UNHANDLED in the migration script's whitelist). Settings hardened to `Hidden + IgnoreNew`. Operator should verify (a) what scripts they invoke, (b) what cadence, (c) whether they're production-active. Once verified, file a §A.2 catalog entry and update this table's Notes column. Filed as follow-up to TD-NEW-E (CLOSED in this rewrite, with the verification step as a follow-up).
 
@@ -511,7 +511,7 @@ Located under `C:\GammaEnginePython\runtime\`:
 | `runtime/logs/<runner>.log` | Per-runner log files |
 | `runtime/lock/*.lock` | Single-instance enforcement (TD-063 candidate) |
 
-### 8.2 MERDIAN AWS runtime artifacts
+### 8.2 MERIDIAN AWS runtime artifacts
 
 Located under `/home/ssm-user/meridian-engine/`:
 
@@ -545,7 +545,7 @@ cd ~/meridian-connect && git pull && npm run build && sudo rsync -av --delete di
 
 The Marketview frontend reads Supabase directly using a `service_role` key sourced from `/home/ssm-user/meridian-engine/.env` (the Python writer env — Marketview shares the .env, does not have its own). The key is embedded in the built JS bundle, which is fine since the build is served only on the SEBI-whitelisted Elastic IP `13.63.27.85` and the broader public-internet exposure of the key is governed by `.env` removal from the public Git repo (TD-S39-NEW-3, carry-forward to S41 — operator local `git rm --cached .env` + push still pending at S40 close; S40 curl verified key still present on `balannavin-cyber1/meridian-connect` main branch).
 
-MERDIAN AWS does **not** currently mirror Local's `runtime/telemetry/` directory. Heartbeat / health-snapshot infrastructure is Local-only.
+MERIDIAN AWS does **not** currently mirror Local's `runtime/telemetry/` directory. Heartbeat / health-snapshot infrastructure is Local-only.
 
 ### 8.3 MALPHA AWS runtime artifacts (S28 catalogued)
 
@@ -572,12 +572,12 @@ Items where the Local↔AWS boundary is unresolved or requires verification. Upd
 | 5 | Confirm the split between `merdian_watchdog.py --kill` (Python process killer) and `watchdog_check.ps1` (PowerShell health check) | LIKELY INTENTIONAL per audit | Worth filing as ENH/operational note documenting the two-watchdog architecture, so future sessions don't try to consolidate them. |
 | 6 | Should AWS gain telemetry mirroring (heartbeat / health snapshots) for full operational parity? | OPEN | ENH candidate. Not blocking. |
 | 7 | Static IP SSH whitelisting fragility from multi-WAN | OPEN | Move to AWS Systems Manager Session Manager. ENH candidate. |
-| 8 | MERDIAN AWS cron `MERDIAN_Postmarket` not yet proven (A-02 open) — needs one full day's evidence of successful run | **PARTIAL EVIDENCE S25 2026-05-10** | 5-day evidence captured 2026-05-04 → 2026-05-08 confirms `MERDIAN_Postmarket` cron writes `market_spot_snapshots` rows at 16:00 IST on every trading day in window (per Q1 dual-write audit). Operational reliability proven for the post-market boundary. A-02 status to be updated formally when ADR-006 disposition executes. |
-| 9 | MERDIAN AWS cron `MERDIAN_EOD` cursor-gate logic not ported from V17D1 (A-04 open) | OPEN | Code port required. |
+| 8 | MERIDIAN AWS cron `MERDIAN_Postmarket` not yet proven (A-02 open) — needs one full day's evidence of successful run | **PARTIAL EVIDENCE S25 2026-05-10** | 5-day evidence captured 2026-05-04 → 2026-05-08 confirms `MERDIAN_Postmarket` cron writes `market_spot_snapshots` rows at 16:00 IST on every trading day in window (per Q1 dual-write audit). Operational reliability proven for the post-market boundary. A-02 status to be updated formally when ADR-006 disposition executes. |
+| 9 | MERIDIAN AWS cron `MERDIAN_EOD` cursor-gate logic not ported from V17D1 (A-04 open) | OPEN | Code port required. |
 | 10 | Should `MERDIAN_Market_Tape_1M` task be disabled in Task Scheduler to match the script's DhanError 401 production reality? | OPEN — recommend YES | Single Task Scheduler change. File as TD if not already. |
 | 11 | Should TD-061 (pythonw migration) be extended to the 11 cmd-spawning tasks, given the precedent of `HB_Watchdog`/`Live_Dashboard`/`PreOpen`/`Spot_1M` already on pythonw? | OPEN | Operational ENH. Each .bat wrapper would need an equivalent direct pythonw call. Worth a session of consolidation work. |
-| **12** | **MALPHA → MERDIAN AWS Zerodha token propagation is manual `sed`. Should it move to Supabase `system_config` (Dhan-pattern)?** | **OPEN S28 — TD-NEW-7 S1 filed** | Two outages (2026-04-22, 2026-05-12) traced to this manual step. Fix: MALPHA writes token to Supabase; MERDIAN AWS `pull_token_from_supabase.py` extended to handle Zerodha key. Closes the failure class. ~60-90 min spans MALPHA + MERDIAN AWS + Supabase. S29+ work. |
-| **13** | **Did `merdian_order_placer.py` running on MERDIAN AWS since 2026-04-29 get catalogued in the Topology before S28?** | **CLOSED S28 — filed-as-error, now catalogued** | TD-NEW-10 filed during S28 as "process running un-audited" — investigated and confirmed intentional Phase 4B Order Placer (HTTP server port 8767, Dhan-IP-whitelisted Elastic IP 13.63.27.85, @reboot cron). Closed as filed-in-error. Topology gap → TD-NEW-11 (S3 documentation) filed and closed simultaneously here by adding the row to §3 and the cron entry to §7.1. |
+| **12** | **MALPHA → MERIDIAN AWS Zerodha token propagation is manual `sed`. Should it move to Supabase `system_config` (Dhan-pattern)?** | **OPEN S28 — TD-NEW-7 S1 filed** | Two outages (2026-04-22, 2026-05-12) traced to this manual step. Fix: MALPHA writes token to Supabase; MERIDIAN AWS `pull_token_from_supabase.py` extended to handle Zerodha key. Closes the failure class. ~60-90 min spans MALPHA + MERIDIAN AWS + Supabase. S29+ work. |
+| **13** | **Did `merdian_order_placer.py` running on MERIDIAN AWS since 2026-04-29 get catalogued in the Topology before S28?** | **CLOSED S28 — filed-as-error, now catalogued** | TD-NEW-10 filed during S28 as "process running un-audited" — investigated and confirmed intentional Phase 4B Order Placer (HTTP server port 8767, Dhan-IP-whitelisted Elastic IP 13.63.27.85, @reboot cron). Closed as filed-in-error. Topology gap → TD-NEW-11 (S3 documentation) filed and closed simultaneously here by adding the row to §3 and the cron entry to §7.1. |
 | **14** | **Should `gamma_metrics_shadow` history be backfilled?** | **OPEN S28** | TD-NEW-12 RESOLVED S28 wires AWS to write to `gamma_metrics_shadow` from S29 09:15 IST cron forward. Pre-S29, the table is empty (apart from a handful of S28 smoke-test rows). Optional backfill: re-run patched compute with `--shadow` on the 587 broken-window run_ids (and optionally Apr 29 → May 11 production-deployment-window cycles). Cost ~30-45 min. Operator decision. Forward-only is acceptable for `evaluate_shadow_vs_live.py` purposes. |
 
 These fourteen questions are the proper scope of ADR-006 (reserved — AWS migration scope) when it gets drafted. Items 1–3 and 12–14 in particular are the empirical observations ADR-006 needs as evidence base.
@@ -646,7 +646,7 @@ These fourteen questions are the proper scope of ADR-006 (reserved — AWS migra
   - **Asymmetry verdict** logic: if both endpoints succeed → `OK`; if only one succeeds → `PARTIAL` (logged with which endpoint, prepares for Mon triage); if both fail → `FAIL` (token-side problem, distinct from per-endpoint problem).
   - Backup `pull_token_from_supabase_PRE_S26.py` preserved.
 
-- **Sunday 2026-05-10 smoke test PASS** at 20:28 IST: token len=280, both probes 200 OK, verdict=`OK`. MERDIAN AWS cron `5 3 * * 1-5 /usr/bin/python3 /home/ssm-user/meridian-engine/pull_token_from_supabase.py` continues to fire weekday 03:05 UTC = 08:35 IST as before; no scheduler change.
+- **Sunday 2026-05-10 smoke test PASS** at 20:28 IST: token len=280, both probes 200 OK, verdict=`OK`. MERIDIAN AWS cron `5 3 * * 1-5 /usr/bin/python3 /home/ssm-user/meridian-engine/pull_token_from_supabase.py` continues to fire weekday 03:05 UTC = 08:35 IST as before; no scheduler change.
 
 **Mon 2026-05-12 verification triplet (P0b S27):**
 
@@ -669,7 +669,7 @@ WHERE ts >= (CURRENT_DATE + INTERVAL '3 hours 30 minutes')::timestamptz
   AND script_name LIKE '%PreOpen%' OR script_name LIKE '%capture_spot_1m%'
 ORDER BY ts;
 
--- (b) MERDIAN AWS 09:08 IST capture_market_spot_snapshot_local.py write succeeded
+-- (b) MERIDIAN AWS 09:08 IST capture_market_spot_snapshot_local.py write succeeded
 SELECT id, ts, symbol, spot, source_table FROM market_spot_snapshots
 WHERE ts >= (CURRENT_DATE + INTERVAL '3 hours 38 minutes')::timestamptz
   AND ts < (CURRENT_DATE + INTERVAL '3 hours 40 minutes')::timestamptz
@@ -732,7 +732,7 @@ WHERE ts >= CURRENT_DATE + INTERVAL '4 hours';
 
 **Discovery 1 — shadow architecture (TD-NEW-12 RESOLVED S28):**
 
-The architectural invariant in §6.5 ("AWS shadow output ≠ live output") was honored in narrative but silently violated in code from MERDIAN AWS shadow runner deployment (~2026-04-29) through 2026-05-13. `compute_gamma_metrics_local.py` on MERDIAN AWS wrote to production `gamma_metrics` table because the script hardcoded the target table name and the AWS shadow runner passed no flag to redirect. Result: race-condition double-writes against the same `(symbol, ts)` row that Local was upserting, UPSERT semantics determining which value persisted per cycle. `gamma_metrics_shadow` table existed in Supabase but had **0 rows** for 13 days.
+The architectural invariant in §6.5 ("AWS shadow output ≠ live output") was honored in narrative but silently violated in code from MERIDIAN AWS shadow runner deployment (~2026-04-29) through 2026-05-13. `compute_gamma_metrics_local.py` on MERIDIAN AWS wrote to production `gamma_metrics` table because the script hardcoded the target table name and the AWS shadow runner passed no flag to redirect. Result: race-condition double-writes against the same `(symbol, ts)` row that Local was upserting, UPSERT semantics determining which value persisted per cycle. `gamma_metrics_shadow` table existed in Supabase but had **0 rows** for 13 days.
 
 Diagnosis path during S28: investigating TD-080 (Dhan token probe-log triage) revealed that AWS option-chain ingest was succeeding 20/20 cycles per day but `gamma_metrics_shadow` had no rows today. Cross-check on `script_execution_log` showed AWS `compute_gamma_metrics_local.py` invocations had `actual_writes: {"gamma_metrics": 1}` — literally writing to the production table, telemetry-honest. Diagnostic SQL on `gamma_metrics` confirmed 2 writes per `(symbol, minute)` bucket for all of today's cycles before the patch landed.
 
@@ -752,19 +752,19 @@ Architectural codification: D.11.1 in Assumption Register, §6.5 update + new §
 
 **Discovery 2 — MALPHA as third environment (Topology gap closed in this rewrite):**
 
-MALPHA AWS (Kite gateway, EC2 at `13.51.242.119`, `ubuntu` user, `~/meridian-alpha`) was treated inline as "Kite gateway, not Meridian" in previous Topology revisions. It is a third environment that the Meridian production pipeline depends on for the Zerodha access token. Two outages (2026-04-22 and 2026-05-12) were traced to the manual `sed` step that propagates the token from MALPHA to MERDIAN AWS `.env`. The dependency is unmissable; the catalog gap obscured it.
+MALPHA AWS (Kite gateway, EC2 at `13.51.242.119`, `ubuntu` user, `~/meridian-alpha`) was treated inline as "Kite gateway, not Meridian" in previous Topology revisions. It is a third environment that the Meridian production pipeline depends on for the Zerodha access token. Two outages (2026-04-22 and 2026-05-12) were traced to the manual `sed` step that propagates the token from MALPHA to MERIDIAN AWS `.env`. The dependency is unmissable; the catalog gap obscured it.
 
 Resolution: new §1.5 added documenting MALPHA, new column in §1 side-by-side, TD-NEW-7 (S1) filed for the Supabase-based propagation fix (mirroring Dhan flow).
 
 **Discovery 3 — `merdian_order_placer.py` as MERDIAN-AWS-only service (Topology gap closed in this rewrite):**
 
-The Phase 4B Order Placer (HTTP server on port 8767) has been running on MERDIAN AWS via `@reboot` cron since 2026-04-29 (PID 579 confirmed S28). The architectural reason it's on AWS-not-Local is that Dhan Trading API whitelists the AWS Elastic IP `13.63.27.85`; Local's multi-WAN home network has unstable IP. The order placer responds to dashboard PLACE ORDER button clicks via HTTP. Previous Topology revisions did not catalog it (was a TD-NEW-11 documentation gap filed and closed in S28).
+The Phase 4B Order Placer (HTTP server on port 8767) has been running on MERIDIAN AWS via `@reboot` cron since 2026-04-29 (PID 579 confirmed S28). The architectural reason it's on AWS-not-Local is that Dhan Trading API whitelists the AWS Elastic IP `13.63.27.85`; Local's multi-WAN home network has unstable IP. The order placer responds to dashboard PLACE ORDER button clicks via HTTP. Previous Topology revisions did not catalog it (was a TD-NEW-11 documentation gap filed and closed in S28).
 
 Resolution: added to §3 AWS-only scripts, added to §7.1 @reboot cron entries, added to §8.2 runtime artifacts log path.
 
 **§9 Q12-Q14 dispositions:**
 
-- Q12 (MALPHA → MERDIAN AWS Zerodha token propagation): OPEN, TD-NEW-7 (S1) filed.
+- Q12 (MALPHA → MERIDIAN AWS Zerodha token propagation): OPEN, TD-NEW-7 (S1) filed.
 - Q13 (order placer catalog gap): CLOSED in this rewrite.
 - Q14 (`gamma_metrics_shadow` history backfill): OPEN; operator decision; forward-only acceptable.
 
@@ -773,7 +773,7 @@ Resolution: added to §3 AWS-only scripts, added to §7.1 @reboot cron entries, 
 - TD-NEW-12 RESOLVED Session 28 — commits `72622a9` + `de23467` + schema SQL.
 - TD-NEW-4 RESOLVED Session 28 — bundled with TD-NEW-12 (commit `72622a9`) — `dte` computed from `result.ts.date()` not `date.today()`.
 - TD-NEW-13 RESOLVED Session 28 — commit `447634c` — Python 3.10 microsecond normalization in `_dte_from_ts` helper.
-- TD-NEW-7 S1 OPEN — Zerodha token MALPHA → Supabase → MERDIAN AWS automation.
+- TD-NEW-7 S1 OPEN — Zerodha token MALPHA → Supabase → MERIDIAN AWS automation.
 - TD-NEW-11 (S3 documentation gap, order placer not catalogued) — CLOSED in this rewrite.
 - §6.5 (existing gotcha updated S28), §6.8 (new gotcha S28), §6.9 (new gotcha S28).
 - Assumption Register §D.11 — codified invariants from S28 production resolutions.
@@ -801,7 +801,7 @@ The morning incident (six-hour breadth cascade despite correct `.env` token stat
 
 **Discovery 3 — `pg_cron` failures are silent (codified as §6.11):**
 
-The deeper root cause of the breadth cascade — `delete-old-market-ticks` failing every weekday for 14+ days unnoticed — exposed a structural blind spot: `cron.job_run_details` records every cron run including failures, but no MERDIAN telemetry polls it. The failure mode is invisible until a downstream consumer notices.
+The deeper root cause of the breadth cascade — `delete-old-market-ticks` failing every weekday for 14+ days unnoticed — exposed a structural blind spot: `cron.job_run_details` records every cron run including failures, but no MERIDIAN telemetry polls it. The failure mode is invisible until a downstream consumer notices.
 
 **Resolution:** New §6.11 gotcha added (this rewrite). Operator session-start checklist SQL provided. TD-NEW-B (S1) filed for the polling daemon implementation. CLAUDE.md B26 anti-pattern line added.
 
@@ -835,11 +835,11 @@ The deeper root cause of the breadth cascade — `delete-old-market-ticks` faili
 
 **At session start:** Read §1 + §1.5 (the side-by-side summary plus MALPHA) plus the section relevant to the question being asked.
 
-**Before adding a new script:** Decide §2 / §3 / §4 placement explicitly. Don't default to "both" — Local has 17 already-scheduled tasks; MERDIAN AWS has 6 cron entries + 2 @reboot. New scheduling on either side is a topology change and per Doc Protocol v4 Rule 10 may require an ADR.
+**Before adding a new script:** Decide §2 / §3 / §4 placement explicitly. Don't default to "both" — Local has 17 already-scheduled tasks; MERIDIAN AWS has 6 cron entries + 2 @reboot. New scheduling on either side is a topology change and per Doc Protocol v4 Rule 10 may require an ADR.
 
 **Before changing cron / task / scheduler:** Update this document in the same commit as the change. Do not let scheduler reality drift from documentation again — Session 17 reactivation was visible only via Task Scheduler audit, not docs. Session 28 surfaced that the `@reboot` cron entries for `merdian_order_placer.py` and `merdian_signal_dashboard.py` had been live for two weeks without Topology mention; do not repeat.
 
-**Before any MERDIAN AWS operation:** Re-read §6 AWS gotchas. They are short and learned from real failures. §6.8 (shadow schema parity) and §6.9 (Python version parity) added S28. **§6.10 (token edits don't restart consumers) and §6.11 (pg_cron failures silent) added S29.**
+**Before any MERIDIAN AWS operation:** Re-read §6 AWS gotchas. They are short and learned from real failures. §6.8 (shadow schema parity) and §6.9 (Python version parity) added S28. **§6.10 (token edits don't restart consumers) and §6.11 (pg_cron failures silent) added S29.**
 
 **Before any MALPHA operation:** §1.5. MALPHA is not Meridian code; do not edit there. Coordinate token refresh boundary changes with TD-NEW-7 design.
 
@@ -853,9 +853,9 @@ The deeper root cause of the breadth cascade — `delete-old-market-ticks` faili
 | 2026-05-09 | Session 23 (action map pass) | **Canonical action map populated** for all 17 Task Scheduler entries via second PowerShell pass. Surfaced ~15 newly-catalogued scripts (added to §A.2). Three architectural insights: (a) TD-061 pythonw migration is partially complete (4 tasks already pythonw), (b) two-watchdog architecture (`merdian_watchdog.py --kill` + `watchdog_check.ps1`) is intentional, (c) `merdian_morning_start.ps1` (not `start_supervisor_clean.ps1`) is the supervisor entry point. PreOpen and Post-market "duplicates" reframed as different-scripts-same-table writes. §9 expanded from 8 to 11 open questions. |
 | 2026-05-10 | Session 25 | **§9 Q1 CLOSED** (post-market 16:00 dual-write empirically confirmed via 5-day audit 2026-05-04 → 2026-05-08; disposition queued for ADR-006 execution gated on TD-080). **§9 Q2 CLOSED and reframed** — original framing inaccurate; no actual dual-write at 09:08 IST; Local 09:05 task was a different (pre-open auction) boundary, not 09:08. **§9 Q8 PARTIAL EVIDENCE** — Postmarket cron 5-day reliability captured. **New §9.A section** documents Local `MERDIAN_PreOpen` (09:05 IST) DISABLED via PowerShell `Disable-ScheduledTask`, durable; `ret_session` anchor migrated 09:05 → 09:08 and validated via ADR-008 replay; Mon 2026-05-12 verification plan filed. **Phase α Q2 (capture/derived split, four-stage decomposition)** answered S25; ADR-006 drafting gated on TD-080 closure per Phase α Q3 sequencing. |
 | 2026-05-10 | Session 26 | **New §9.B section** documents TD-080 instrumentation deployment (commit `718ef39`): new Supabase table `dhan_token_probe_log` (12 columns) + view `v_dhan_token_probe_today`; `pull_token_from_supabase.py` extended 50 → 355 lines with atomic .env write + readback verify + post-write Dhan endpoint probes (`/v2/marketfeed/ltp` + `/v2/optionchain/expirylist`) + audit logging + asymmetry verdict logic; backup `_PRE_S26.py` preserved. Sunday 2026-05-10 smoke test PASS (token len=280, both probes 200 OK, verdict=OK). Mon 2026-05-12 verification triplet filed (3 SQL check blocks: 08:36 IST probe-log triage, 09:08 IST §9.A 3-check + TD-101 ret_session verification, first-cycle ENH-88 + ENH-55 absence verification + TD-101 writer-cadence verification). TD-080 root-cause investigation (P1 S27) gates ADR-006 drafting. **Note:** S26 also shipped 4 production code patches but only TD-080 is topology-scope (Local↔AWS boundary or new infrastructure); TD-079 zone validity, ENH-88 deploy, TD-101 writer fix, ENH-55 disable are recorded in `MERDIAN_Enhancement_Register.md`, `tech_debt.md`, `MERDIAN_System_Map.md` not here. |
-| 2026-05-13 | Session 28 | **Major Topology rewrite.** **§1 expanded** — three-environment side-by-side replaces two-environment (Local + MERDIAN AWS + MALPHA). **New §1.5 — MALPHA: third environment, Zerodha token gateway.** Explains why MALPHA exists separately, current manual `sed` propagation step (TD-NEW-7 S1), and Meridian dependency map. **§3 catalog gap closed** — added `merdian_order_placer.py` (Phase 4B Order Placer HTTP server on port 8767, Dhan-IP-whitelisted Elastic IP, @reboot cron, deployed 2026-04-29). **§4 updated** — `compute_gamma_metrics_local.py` row distinguishes Local target (`gamma_metrics`) from AWS target (`gamma_metrics_shadow` via `--shadow` flag, S28 TD-NEW-12). **§5.2 updated** — Zerodha token flow now shows MALPHA → manual sed → MERDIAN AWS dependency. **§6.5 updated** — shadow output gotcha now architecturally enforced not just narratively (TD-NEW-12). **Two new gotchas §6.8 (shadow schema parity) + §6.9 (Python 3.10 vs 3.12 fromisoformat).** **§7.1 expanded** — 5 entries → 6 entries (added `MERDIAN_WS_Stop` SIGKILL upgrade per TD-NEW-8) + 2 @reboot entries (signal dashboard + order placer). **§7.2 task updates** — `MERDIAN_PreOpen` State=Disabled per S25; `MERDIAN_WS_Feed_0900` State=Disabled per TD-NEW-6; `MERDIAN_ICT_HTF_Zones_0845` note about Pine overlay chaining per TD-NEW-5. **§8.2 expanded** — added MERDIAN AWS log paths (`order_placer.log`, `ws_feed.log`, `signal_dashboard.log`, `backfill_logs/`). **New §8.3 — MALPHA runtime artifacts.** **§9 questions Q12-Q14 added** covering MALPHA Zerodha propagation (TD-NEW-7 OPEN S1), order placer catalog (CLOSED), `gamma_metrics_shadow` history backfill (OPEN operator decision). **New §9.C section** — three S28 discoveries documented: shadow architecture restoration (TD-NEW-12), MALPHA third-environment (catalog gap), order placer fourth-AWS-service (catalog gap). Plus dispositions of Q12-Q14. **§10 updated** to point to §1.5 + the two new gotchas at session start reading list. Cross-refs to Assumption Register §D.11, CLAUDE.md B22 + B23, MERDIAN_Enhancement_Register.md (no ENH changes from S28; ENH-84 + ENH-85 formal filing is in the Enhancement Register itself), `tech_debt.md` (TD-NEW-4/5/6/7/8/9/10/11/12/13 lifecycle blocks). |
+| 2026-05-13 | Session 28 | **Major Topology rewrite.** **§1 expanded** — three-environment side-by-side replaces two-environment (Local + MERIDIAN AWS + MALPHA). **New §1.5 — MALPHA: third environment, Zerodha token gateway.** Explains why MALPHA exists separately, current manual `sed` propagation step (TD-NEW-7 S1), and Meridian dependency map. **§3 catalog gap closed** — added `merdian_order_placer.py` (Phase 4B Order Placer HTTP server on port 8767, Dhan-IP-whitelisted Elastic IP, @reboot cron, deployed 2026-04-29). **§4 updated** — `compute_gamma_metrics_local.py` row distinguishes Local target (`gamma_metrics`) from AWS target (`gamma_metrics_shadow` via `--shadow` flag, S28 TD-NEW-12). **§5.2 updated** — Zerodha token flow now shows MALPHA → manual sed → MERIDIAN AWS dependency. **§6.5 updated** — shadow output gotcha now architecturally enforced not just narratively (TD-NEW-12). **Two new gotchas §6.8 (shadow schema parity) + §6.9 (Python 3.10 vs 3.12 fromisoformat).** **§7.1 expanded** — 5 entries → 6 entries (added `MERDIAN_WS_Stop` SIGKILL upgrade per TD-NEW-8) + 2 @reboot entries (signal dashboard + order placer). **§7.2 task updates** — `MERDIAN_PreOpen` State=Disabled per S25; `MERDIAN_WS_Feed_0900` State=Disabled per TD-NEW-6; `MERDIAN_ICT_HTF_Zones_0845` note about Pine overlay chaining per TD-NEW-5. **§8.2 expanded** — added MERIDIAN AWS log paths (`order_placer.log`, `ws_feed.log`, `signal_dashboard.log`, `backfill_logs/`). **New §8.3 — MALPHA runtime artifacts.** **§9 questions Q12-Q14 added** covering MALPHA Zerodha propagation (TD-NEW-7 OPEN S1), order placer catalog (CLOSED), `gamma_metrics_shadow` history backfill (OPEN operator decision). **New §9.C section** — three S28 discoveries documented: shadow architecture restoration (TD-NEW-12), MALPHA third-environment (catalog gap), order placer fourth-AWS-service (catalog gap). Plus dispositions of Q12-Q14. **§10 updated** to point to §1.5 + the two new gotchas at session start reading list. Cross-refs to Assumption Register §D.11, CLAUDE.md B22 + B23, MERDIAN_Enhancement_Register.md (no ENH changes from S28; ENH-84 + ENH-85 formal filing is in the Enhancement Register itself), `tech_debt.md` (TD-NEW-4/5/6/7/8/9/10/11/12/13 lifecycle blocks). |
 | 2026-05-14 | Session 29 (firefighting) | **Operational Topology updates from unplanned firefighting session.** **§1 task count updated** 17 → 19. **Two new §6 gotchas added** — §6.10 (`.env` edits don't restart consumer processes, TD-NEW-A) + §6.11 (`pg_cron` failures invisible by default, TD-NEW-B). **§7.2 fully rewritten** — 17-task table → 19-task table reflecting S29 final state (13/19 pythonw migrations, 18/19 Hidden+IgnoreNew settings). Two new tasks documented (`MERDIAN_Dhan_Token_Refresh`, `MERDIAN_Intraday_Session_Start`) with action-untouched/settings-hardened state; pending operator verification of purpose. New Note 4 (NEW S29 tasks pending verification) + Note 5 (ICT_HTF Python orchestrator). Architectural insights section revised — TD-061 RESOLVED (was: partial since S17/S18). **New §9.D section** — S29 firefighting discoveries: Task Scheduler inventory drift (TD-NEW-E CLOSED), `.env` consumer-restart invariant (§6.10), `pg_cron` silent-failures invariant (§6.11). Full TD-lifecycle table for the session (TD-061/063/083 RESOLVED; TD-080 PROMOTED to S1 RECURRING; TD-NEW-A through J lifecycle). **§10 updated** to point to §6.10 + §6.11. Cross-refs to `CASE-2026-05-14-breadth-cascade-token-and-bloat.md`, `CASE-2026-05-14-spot-gap-backfill.md`, `MERDIAN_OpenItems_Register_v7.md` (OI-12 RE-RESOLVED block), CLAUDE.md v1.20 (B24-B28 + footer entries), `runbook_update_kite_flow.md` (5 edits applied + change-history row). **Zero new code shipped this session** — firefighting only; code patches deferred to single S29 close commit. |
-| 2026-05-24 | Session 35 | **Breeze cataloguing + MERDIAN AWS instance-ID drift surfacing.** **§1 Instance row updated** — annotation added that pre-S35 documented instance `i-0e60e4ed9ce20cefb` no longer matches current AWS console (current shows `i-0878c118835386ec2`); Elastic IP `13.63.27.85` unchanged; instance was rebuilt at unknown earlier session; reconcile at S36 P0_TERTIARY. **New §1.6 — Breeze (ICICI Direct) — historical options backfill source.** Catalogues Breeze as an external API consumed only from MERDIAN AWS due to SEBI static-IP whitelist on Elastic IP `13.63.27.85` (same whitelist that serves `merdian_order_placer.py` Dhan endpoint per §3); explains S35 demonstrated capability via `fill_2026_04_16_breeze_v3.py` writing 107,630 HOCS rows in 4-5min wallclock; SENSEX symbology `stock_code='BSESEN'` codified (not `'SENSEX'`, empirically discovered via 6-variant probe per TD-S35-NEW-3); rate limit (5000/day + 100/min throttle) sufficient for single-day fills, marginal for full-year (cadence planning per ENH-109); two Breeze functions documented (`rollingoption` for ATM-anchored research, `get_historical_data_v2` for full-chain Phase 3 GEX prerequisite). PROPOSED graduation to canonical historical backfill source pending ADR-013 decision; not on S36 critical path. Cross-refs to ADR-013 PROPOSED + ENH-109 PROPOSED + TD-S35-NEW-3 + HOCS table + ENH-106 v8 `option_pnl_source` audit column. **Zero new gotchas added this session** (Breeze consumption from MERDIAN AWS straightforward; SSM file transfer via nano multi-line paste codified as operational finding in CLAUDE.md v1.25 not as a §6 gotcha since not a "DO NOT" rule). **Zero scheduler changes this session** — Breeze consumption was one-shot manual invocation; if ENH-109 ships, a new MERDIAN AWS cron entry or systemd unit would be added at that time and Topology updated in the same commit per Update rule. **Zero MALPHA changes this session.** Cross-refs to ADR-013 PROPOSED, ENH-109 PROPOSED, `MERDIAN_System_Map.md` (HOCS table + `ingest_option_chain_local.py` writer + `get_hocs_distinct_expiries(text)` RPC + `idx_hocs_symbol_expiry` covering index all catalogued S35), CLAUDE.md v1.25 (Breeze operational findings), `tech_debt.md` (TD-S35-NEW-1/2/3/4 NEW filings + TD-S34-NEW-4 CLOSED-MECHANICAL resolution row). |
+| 2026-05-24 | Session 35 | **Breeze cataloguing + MERIDIAN AWS instance-ID drift surfacing.** **§1 Instance row updated** — annotation added that pre-S35 documented instance `i-0e60e4ed9ce20cefb` no longer matches current AWS console (current shows `i-0878c118835386ec2`); Elastic IP `13.63.27.85` unchanged; instance was rebuilt at unknown earlier session; reconcile at S36 P0_TERTIARY. **New §1.6 — Breeze (ICICI Direct) — historical options backfill source.** Catalogues Breeze as an external API consumed only from MERIDIAN AWS due to SEBI static-IP whitelist on Elastic IP `13.63.27.85` (same whitelist that serves `merdian_order_placer.py` Dhan endpoint per §3); explains S35 demonstrated capability via `fill_2026_04_16_breeze_v3.py` writing 107,630 HOCS rows in 4-5min wallclock; SENSEX symbology `stock_code='BSESEN'` codified (not `'SENSEX'`, empirically discovered via 6-variant probe per TD-S35-NEW-3); rate limit (5000/day + 100/min throttle) sufficient for single-day fills, marginal for full-year (cadence planning per ENH-109); two Breeze functions documented (`rollingoption` for ATM-anchored research, `get_historical_data_v2` for full-chain Phase 3 GEX prerequisite). PROPOSED graduation to canonical historical backfill source pending ADR-013 decision; not on S36 critical path. Cross-refs to ADR-013 PROPOSED + ENH-109 PROPOSED + TD-S35-NEW-3 + HOCS table + ENH-106 v8 `option_pnl_source` audit column. **Zero new gotchas added this session** (Breeze consumption from MERIDIAN AWS straightforward; SSM file transfer via nano multi-line paste codified as operational finding in CLAUDE.md v1.25 not as a §6 gotcha since not a "DO NOT" rule). **Zero scheduler changes this session** — Breeze consumption was one-shot manual invocation; if ENH-109 ships, a new MERIDIAN AWS cron entry or systemd unit would be added at that time and Topology updated in the same commit per Update rule. **Zero MALPHA changes this session.** Cross-refs to ADR-013 PROPOSED, ENH-109 PROPOSED, `MERDIAN_System_Map.md` (HOCS table + `ingest_option_chain_local.py` writer + `get_hocs_distinct_expiries(text)` RPC + `idx_hocs_symbol_expiry` covering index all catalogued S35), CLAUDE.md v1.25 (Breeze operational findings), `tech_debt.md` (TD-S35-NEW-1/2/3/4 NEW filings + TD-S34-NEW-4 CLOSED-MECHANICAL resolution row). |
 | 2026-05-25 | Session 36 | **TD-S30-CANDIDATE-1 closed-misdiagnosis + ENH-99 SHIPPED capture-layer resilience + Task Scheduler 19 → 20.** **§1 task count updated** 19 → 20 (`MERDIAN_Orphan_Janitor` added). **§7.2 heading updated** to 20-entry inventory; new row inserted alphabetically between `MERDIAN_Market_Tape_1M` and `MERDIAN_PO3_SessionBias_1005`. New task `MERDIAN_Orphan_Janitor` weekly Mon-Fri 09:14 IST, direct `pythonw.exe`, Hidden+IgnoreNew, 5min execution limit; ENH-99 Component 2 deliverable reaping orphan RUNNING rows in `script_execution_log` (int4 duration clamp at `2^31-1` per D.18.4). **S36 counts addendum added** to §7.2 (14/20 pythonw, 19/20 hardened). **Zero §1.x environment changes this session** — no instance ID reconcile yet (S35 P0_TERTIARY carry-forward to S37+; AWS console drift `i-0e60e4ed9ce20cefb` → `i-0878c118835386ec2` unchanged from S35 surfacing). **Zero MALPHA changes this session.** **Zero §6 gotchas added this session** (PostgREST `Prefer: return=representation` interaction with RLS codified in Assumption Register §D.18.3 not as a §6 "DO NOT" gotcha since the operational pattern is per-write-path not per-environment; int4 `duration_ms` clamp codified as D.18.4 not §6 for same reason — environment-agnostic engineering rules belong in Assumption Register, environment-specific DO-NOT rules belong here). **Zero §7.1 cron changes this session** — no AWS scheduler changes. Cross-refs to ENH-99 SHIPPED block in Enhancement Register, TD-S30-CANDIDATE-1 CLOSED-MISDIAGNOSIS in `tech_debt.md`, TD-080 CLOSED-via-ENH-99 in `tech_debt.md`, §D.18 in Assumption Register (4 rows), `MERDIAN_System_Map.md` §A.S36 + §B.S36 sections, CLAUDE.md v1.26. |
 | 2026-05-29 | Session 40 | **Marketview frontend graduates to a topology-relevant AWS resource.** **§8.2 expanded** — new sub-block "Marketview frontend (NEW S40)" catalogs `/home/ssm-user/meridian-connect/` (git clone of `balannavin-cyber1/meridian-connect`, Lovable-authored Vite + React SPA, public repo), `/home/ssm-user/meridian-connect/dist/` (Vite build output, S40 bundle `index-vDqPX1iO.js` ~537 KB), and `/var/www/marketview/` (nginx-served document root rendered at `http://13.63.27.85/marketview`). Canonical 3-line deploy command codified (`cd ~/meridian-connect && git pull && npm run build && sudo rsync -av --delete dist/ /var/www/marketview/ && sudo systemctl reload nginx`). Use `npm install` not `npm ci` (Lovable doesn't emit `package-lock.json`). The Marketview frontend reads Supabase directly via a `service_role` key sourced from `/home/ssm-user/meridian-engine/.env` (shared with the Python writer env) embedded in the built JS bundle — exposure is governed by carry-forward TD-S39-NEW-3 (`.env` removal from public repo still pending at S40 close; S40 curl verified key still present). **Zero §1 environment changes this session** — instance ID still `i-0878c118835386ec2`, Elastic IP unchanged. **Zero §3 catalog changes this session** — Marketview lives in §8.2 (runtime artifact) not §3 (script) because it is a static SPA, not a scheduled Python runner; §3's existing pattern restricted to scheduled compute paths. **Zero §6 gotchas added this session** — the `npm install` vs `npm ci` distinction is captured inline in §8.2 not as a DO-NOT rule because it is informational, not a footgun. **Zero §7 scheduler changes this session** — the Marketview deploy is on-demand (git pull when Lovable iterates), not scheduled. **Zero MALPHA changes this session.** Cross-refs to D.22 in Assumption Register (D.22.1 Lovable temporal-immutable column DEFAULT audit, D.22.2 atomic-card layout VALIDATED, D.22.3 stacked-by-strike charts VALIDATED), TD-S40-NEW-1/2/3 in `tech_debt.md`, TD-S37-01 CLOSED via patch_s40_enh83_view_tau_rewrite.py in `tech_debt.md`, `MERDIAN_System_Map.md` S40 update log (`v_max_pain_by_strike` view + `merdian_parameters.valid_to DROP DEFAULT` schema change), CLAUDE.md v1.30 (S40 settled-decisions footer). |
 
@@ -867,17 +867,17 @@ The deeper root cause of the breadth cascade — `delete-old-market-ticks` faili
 | 2026-06-18 | Session 56 (reconstructed at S57) | **Futures resolver fix + scripmaster reloader ported to AWS + futures cron re-enabled.** `capture_index_futures_snapshot_local.py` resolver corrected from a `DISPLAY_NAME ilike.*NIFTY*` substring match (which resolved NIFTY → NIFTYNXT50) to exact `UNDERLYING_SYMBOL = eq.{symbol}` + `INSTRUMENT = eq.FUTIDX` (commit `8eae351`); 3 garbage `index_futures_snapshots` rows deleted (NIFTYNXT50/BANKNIFTY/SENSEX50, 2026-03-27 era). NEW `reload_dhan_scripmaster.py` (commit `132eddc`) ports the scripmaster reload to AWS with a staging table `dhan_scripmaster_staging` + transactional swap RPC `swap_dhan_scripmaster()` (TRUNCATE-in-plpgsql) — 234,882 rows, FUTIDX resolves through Aug 2026 — replacing the non-atomic Local Windows-CSV loader. **§7.1 cron:** the two `capture_index_futures_snapshot_local.py` lines UNCOMMENTED — futures cron `*/5 04-09 UTC` re-enabled both symbols (the S53→S55 dark state is over). `run_ingest.sh` (`c893af9`) git-tracked, firing both symbols. **Breadth-feed supervision built (surfaced post-S57 from the git log, not in this row's original reconstruction):** S56 also authored + git-tracked the breadth-feed supervision scaffolding for rebuild-safety — wsfeed **preflight** (commit `afe8112`: tolerate `.env` special chars, drop `set -u` around `source`) + wsfeed **alert** script + **5 `systemd` units under `deploy/systemd/`** (commits `30cca59` + `b627914`). These were BUILT + committed but **NOT enabled on MALPHA** — which is why S57 still found the feed running unsupervised in an AWS `screen`. The cutover/enable onto MALPHA is ADR-018 D1 remaining work (TD-S57-NEW-1), not a build. Zero §1 environment changes (instance i-0878c118835386ec2, EIP 13.63.27.85). Cross-refs: ADR-018 (D1); tech_debt.md (TD-S53-NEW-6 tail, TD-S57-NEW-1); merdian_reference.json v36 S56 change_log. |
 | 2026-06-19 | Session 57 | **Breadth feed re-homed under supervision (ADR-018) + SMDM retired + ENH-SDM placed on AWS.** Root cause of the 23-day breadth outage: `ws_feed_zerodha.py` was running on **AWS** (not MALPHA as the topology documented) since 06-11 in a detached `screen`, holding an expired Zerodha token, 403-looping, writing zero-coverage rows — wrong host + no process supervision + no reader staleness detection. Remediated live (token refresh on MALPHA → `kite.profile()`=`OK: Navin Balan OV0782` → stale AWS PID 259620 `kill -9` → clean restart, 2213 instruments, Feed live, no 403s). **ADR-018 ACCEPTED** sets the durable topology: (D1) `ws_feed_zerodha.py` runs under a **`systemd` unit on MALPHA** (Restart=on-failure + single-instance enforcement + journald) — one host owns the Zerodha session end-to-end; unsupervised `screen`/`nohup` deployment of a long-running broker feed is prohibited going forward; WCB cron arg fixed same pass. (D2) every breadth/divergence reader applies a recency-floor guard on `fetch_latest_row`. (D3) SMDM retired (evidence-based vs ENH-30); (D4) ENH-SDM `compute_structural_divergence_local.py` → `structural_divergence_snapshots` placed **AWS orchestrator-integrated per ADR-006** (kept subsystem, not a Local orphan). Signal-subsystem orphans (options_flow / iv_context / shadow-v3, dropped by the S49 Local-disable) remain open dispositions. systemd unit build itself carries to S58 (TD-S57-NEW-1/2). Zero §1 environment changes (instance i-0878c118835386ec2, EIP 13.63.27.85). Cross-refs: ADR-018; tech_debt.md TD-S48-NEW-1 (CLOSED-DECISION) + TD-S57-NEW-1/2; merdian_reference.json v36; MERDIAN_System_Map.md S57 update-log. Anchor for ADR-018 (breadth-feed supervision). |
 
-| 2026-07-04 | Session 64 | **ENH-116 ambient loop scheduled on MERDIAN AWS + Marketview graduates to a public TLS/Google-auth-gated domain.** Three new Mon–Fri crontab lines on `i-0878c118835386ec2` (`SHELL=/bin/bash` line 1, flock+timeout, `crontab -l` verified): `0 16` (16:00 UTC/21:30 IST) `compile_market_environment_local.py` — placed after the ENH-115 participant ingest so Lens 3 reads a fresh board (moved up from an initial `15 13` for exactly that ordering); `15 16` (16:15 UTC) `accrue_expiry_outcomes.py` — expiry-days only, after the compiler; `55 3` (03:55 UTC/09:25 IST) `relate_ambient_to_open_local.py` — at open, reads the compiler row + the first live gamma cycle. Scheduled AWS-only (not Local) to avoid the S28-class double-write race on `market_environment_snapshots`. New Supabase tables `market_environment_snapshots` + `expiry_outcomes` + view `v_expiry_base_rates` (anon RLS quadruplet REVOKE-ALL→ENABLE-RLS→policy-SELECT→GRANT-SELECT on the two tables for the Lovable console read). **Public access stood up:** GoDaddy A-record `marketview.meridianalpha.in` → `13.63.27.85`; inbound TCP 443 added to the SG *attached* to `i-0878c118835386ec2` (confirmed via IMDSv2, not an orphan `launch-wizard-*`); certbot Let’s-Encrypt cert + http→https redirect; oauth2-proxy (Google provider, `http_address 127.0.0.1:4180`, `authenticated_emails_file /etc/oauth2-proxy-emails.txt`) with an nginx `auth_request` at **server level** on the serving 443 block — `/oauth2/` exempted, `= /index.html` and assets covered; proven by a cross-browser no-session test (`nginx -t`/reload alone did not prove it — a patcher twice scattered the directive into an orphan `return 404` block, leaving the site ungated). Marketview v5 (meridian-connect) built via Lovable→GitHub→AWS and rsynced to `/var/www/marketview/` (live). Carry-forward (S65): the console anon-grants SQL + 3 Lovable prompt docs remain uncommitted; rotate the Google `client_secret` (exposed plaintext during debugging) + run the non-allow-listed-account denial test (ENH-117). |
+| 2026-07-04 | Session 64 | **ENH-116 ambient loop scheduled on MERIDIAN AWS + Marketview graduates to a public TLS/Google-auth-gated domain.** Three new Mon–Fri crontab lines on `i-0878c118835386ec2` (`SHELL=/bin/bash` line 1, flock+timeout, `crontab -l` verified): `0 16` (16:00 UTC/21:30 IST) `compile_market_environment_local.py` — placed after the ENH-115 participant ingest so Lens 3 reads a fresh board (moved up from an initial `15 13` for exactly that ordering); `15 16` (16:15 UTC) `accrue_expiry_outcomes.py` — expiry-days only, after the compiler; `55 3` (03:55 UTC/09:25 IST) `relate_ambient_to_open_local.py` — at open, reads the compiler row + the first live gamma cycle. Scheduled AWS-only (not Local) to avoid the S28-class double-write race on `market_environment_snapshots`. New Supabase tables `market_environment_snapshots` + `expiry_outcomes` + view `v_expiry_base_rates` (anon RLS quadruplet REVOKE-ALL→ENABLE-RLS→policy-SELECT→GRANT-SELECT on the two tables for the Lovable console read). **Public access stood up:** GoDaddy A-record `marketview.meridianalpha.in` → `13.63.27.85`; inbound TCP 443 added to the SG *attached* to `i-0878c118835386ec2` (confirmed via IMDSv2, not an orphan `launch-wizard-*`); certbot Let’s-Encrypt cert + http→https redirect; oauth2-proxy (Google provider, `http_address 127.0.0.1:4180`, `authenticated_emails_file /etc/oauth2-proxy-emails.txt`) with an nginx `auth_request` at **server level** on the serving 443 block — `/oauth2/` exempted, `= /index.html` and assets covered; proven by a cross-browser no-session test (`nginx -t`/reload alone did not prove it — a patcher twice scattered the directive into an orphan `return 404` block, leaving the site ungated). Marketview v5 (meridian-connect) built via Lovable→GitHub→AWS and rsynced to `/var/www/marketview/` (live). Carry-forward (S65): the console anon-grants SQL + 3 Lovable prompt docs remain uncommitted; rotate the Google `client_secret` (exposed plaintext during debugging) + run the non-allow-listed-account denial test (ENH-117). |
 
 | 2026-07-04→07 | Session 65 | **Google OAuth client rotated on `i-0878c118835386ec2` (ENH-117 security fold).** The `client_secret` exposed plaintext in the S64 nginx-config dump was rotated by creating a NEW OAuth client — which changes BOTH `client_id` and `client_secret`. Authorised redirect URI `https://marketview.meridianalpha.in/oauth2/callback` (char-for-char to `redirect_url`); Authorised JavaScript origins cleared (oauth2-proxy is a server-side flow). `/etc/oauth2-proxy.cfg` updated with both new fields (`provider`/`redirect_url`/`cookie_secret`/`authenticated_emails_file` untouched); `systemctl restart oauth2-proxy` → `active (running)` PID 710516 @ 2026-07-04 08:05:42 UTC. **Exposure closes only on OLD-client delete** — login-verify + delete the old client in Google Console + non-allow-list denial test remain the closeout carry. No cron changes. Intraday-drift banner (Marketview) prompt ready — deploy via the meridian-connect Lovable→GitHub→AWS pipeline pending. The S64-carried console anon-grants SQL + Lovable prompt docs (count corrected 3→5) staged for commit (`docs/lovable_prompts/` + `sql/2026-07-03_enh116_console_anon_grants.sql`); git-land unconfirmed. |
 
-*MERDIAN Deployment Topology — established Session 23, 2026-05-09. Last updated Session 67, 2026-07-10 (§S67 — EOD chain's true AWS cron topology documented: `40 10 * * 1-5 run_equity_eod_until_done.py` [ingest→build→coverage chain runner], cron daemon confirmed firing via sentinel; Local `MERDIAN_EOD_Breadth_Refresh` + all 22 Local `MERDIAN_*` tasks confirmed correctly Disabled per ADR-006 [AWS-only, do-not-re-enable] — the §1 "20 active Local tasks" line is pre-migration and superseded for the EOD path; breadth/DMA freeze root cause = self-aborting loop [builder rc=1 loop-break at L182], NOT a missing cron; TD-S66-NEW-1 load-once-global CLOSED [read-at-use]; §S66 "decoupled builder" phrasing corrected. Commit `f5b9afd`. Carry to S68: track the `40 10` cron in-repo; trace the unidentified AWS `equity_eod` writer; credential durability [PAT expiry / `~/.git-credentials` truncation / SSH deploy key]). Previous Session 65, 2026-07-04→07 (S65 — Google OAuth client rotated on `i-0878c118835386ec2` [new client_id+client_secret in `/etc/oauth2-proxy.cfg`; oauth2-proxy active(running) PID 710516 @ 07-04 08:05:42 UTC; old-client delete + non-allow-list denial test pending; ENH-117 security fold]; no cron changes; intraday-drift banner deploy pending; S64-carried anon-grants SQL + Lovable prompt docs [count 3→5] staged). Previous Session 64, 2026-07-04 (§S64 — ENH-116 ambient loop scheduled on MERDIAN AWS: three Mon–Fri crons `0 16` compile / `15 16` accrue / `55 3` relate; new tables `market_environment_snapshots` + `expiry_outcomes` + view `v_expiry_base_rates`; Marketview graduated to a public TLS/Google-auth-gated domain marketview.meridianalpha.in via certbot + oauth2-proxy). Previous Session 63, 2026-07-02 (§S63 — ENH-115 FII/DII participant-positioning EOD writer scheduled on MERDIAN AWS: two Mon–Fri crontab lines 14:00 + 15:30 UTC; new tables `participant_oi_daily` + `fii_dii_cash_daily` + view `v_participant_oi_latest`; participant OI NSE-only, cash consolidated NSE+BSE+MSEI). Previous Session 57, 2026-06-19 (ADR-018 breadth-feed supervision model: ws_feed_zerodha.py re-homed to MALPHA under systemd — found running unsupervised on AWS with an expired token, 403-looping for 23 days; SMDM retired; ENH-SDM structural-divergence monitor placed AWS orchestrator-integrated per ADR-006); previous Session 56, 2026-06-18 (futures resolver exact-match fix + scripmaster reloader ported to AWS with staging+swap RPC + futures cron */5 04-09 UTC re-enabled); previous Session 55, 2026-06-17 (calendar seeder cron added 02:30 UTC + token cron `source .env` removed + futures parse-fixed but cron still commented pending scripmaster reload + duration_ms→bigint); previous Session 54, 2026-06-16 (S53–S54 crontab recovery: SHELL=/bin/bash restored as line 1 + 4 ingest lines reconstructed + 2 futures lines commented + ingest 04–09 UTC `*/5`); previous Session 40, 2026-05-29 (Marketview frontend graduates to topology-relevant AWS resource — §8.2 expanded with `/home/ssm-user/meridian-connect/`, `/home/ssm-user/meridian-connect/dist/`, `/var/www/marketview/` cataloging + 3-line canonical deploy command codified). Updated inline per Doc Protocol v4 Rule 1 + Rule 9.2. Anchor for ADR-006 (AWS migration scope) when drafted. Also anchor for ADR-013 (Breeze canonical historical backfill source) when drafted.*
+*MERIDIAN Deployment Topology — established Session 23, 2026-05-09. Last updated Session 67, 2026-07-10 (§S67 — EOD chain's true AWS cron topology documented: `40 10 * * 1-5 run_equity_eod_until_done.py` [ingest→build→coverage chain runner], cron daemon confirmed firing via sentinel; Local `MERDIAN_EOD_Breadth_Refresh` + all 22 Local `MERDIAN_*` tasks confirmed correctly Disabled per ADR-006 [AWS-only, do-not-re-enable] — the §1 "20 active Local tasks" line is pre-migration and superseded for the EOD path; breadth/DMA freeze root cause = self-aborting loop [builder rc=1 loop-break at L182], NOT a missing cron; TD-S66-NEW-1 load-once-global CLOSED [read-at-use]; §S66 "decoupled builder" phrasing corrected. Commit `f5b9afd`. Carry to S68: track the `40 10` cron in-repo; trace the unidentified AWS `equity_eod` writer; credential durability [PAT expiry / `~/.git-credentials` truncation / SSH deploy key]). Previous Session 65, 2026-07-04→07 (S65 — Google OAuth client rotated on `i-0878c118835386ec2` [new client_id+client_secret in `/etc/oauth2-proxy.cfg`; oauth2-proxy active(running) PID 710516 @ 07-04 08:05:42 UTC; old-client delete + non-allow-list denial test pending; ENH-117 security fold]; no cron changes; intraday-drift banner deploy pending; S64-carried anon-grants SQL + Lovable prompt docs [count 3→5] staged). Previous Session 64, 2026-07-04 (§S64 — ENH-116 ambient loop scheduled on MERIDIAN AWS: three Mon–Fri crons `0 16` compile / `15 16` accrue / `55 3` relate; new tables `market_environment_snapshots` + `expiry_outcomes` + view `v_expiry_base_rates`; Marketview graduated to a public TLS/Google-auth-gated domain marketview.meridianalpha.in via certbot + oauth2-proxy). Previous Session 63, 2026-07-02 (§S63 — ENH-115 FII/DII participant-positioning EOD writer scheduled on MERIDIAN AWS: two Mon–Fri crontab lines 14:00 + 15:30 UTC; new tables `participant_oi_daily` + `fii_dii_cash_daily` + view `v_participant_oi_latest`; participant OI NSE-only, cash consolidated NSE+BSE+MSEI). Previous Session 57, 2026-06-19 (ADR-018 breadth-feed supervision model: ws_feed_zerodha.py re-homed to MALPHA under systemd — found running unsupervised on AWS with an expired token, 403-looping for 23 days; SMDM retired; ENH-SDM structural-divergence monitor placed AWS orchestrator-integrated per ADR-006); previous Session 56, 2026-06-18 (futures resolver exact-match fix + scripmaster reloader ported to AWS with staging+swap RPC + futures cron */5 04-09 UTC re-enabled); previous Session 55, 2026-06-17 (calendar seeder cron added 02:30 UTC + token cron `source .env` removed + futures parse-fixed but cron still commented pending scripmaster reload + duration_ms→bigint); previous Session 54, 2026-06-16 (S53–S54 crontab recovery: SHELL=/bin/bash restored as line 1 + 4 ingest lines reconstructed + 2 futures lines commented + ingest 04–09 UTC `*/5`); previous Session 40, 2026-05-29 (Marketview frontend graduates to topology-relevant AWS resource — §8.2 expanded with `/home/ssm-user/meridian-connect/`, `/home/ssm-user/meridian-connect/dist/`, `/var/www/marketview/` cataloging + 3-line canonical deploy command codified). Updated inline per Doc Protocol v4 Rule 1 + Rule 9.2. Anchor for ADR-006 (AWS migration scope) when drafted. Also anchor for ADR-013 (Breeze canonical historical backfill source) when drafted.*
 
 ## §S58 (2026-06-22) — ws_feed supervision host CORRECTION + verified live
 
-**CORRECTION to the AWS↔MALPHA boundary:** the Zerodha `ws_feed_zerodha.py` is supervised on **MERDIAN AWS** (`i-0878c118835386ec2`, `ssm-user@`, `/home/ssm-user/meridian-engine`) under `systemd`, NOT MALPHA. Prior topology rows implying the feed runs on MALPHA / Local-only are superseded by the S56 unit files (`User=ssm-user`, `WorkingDirectory=/home/ssm-user/meridian-engine`, `ExecStart=.../ws_feed_zerodha.py`, `EnvironmentFile=.../.env`). MALPHA's role is unchanged: **Zerodha token gateway only** — it refreshes the token and propagates it to the AWS `.env` (TD-NEW-7); it hosts no Meridian pipeline code.
+**CORRECTION to the AWS↔MALPHA boundary:** the Zerodha `ws_feed_zerodha.py` is supervised on **MERIDIAN AWS** (`i-0878c118835386ec2`, `ssm-user@`, `/home/ssm-user/meridian-engine`) under `systemd`, NOT MALPHA. Prior topology rows implying the feed runs on MALPHA / Local-only are superseded by the S56 unit files (`User=ssm-user`, `WorkingDirectory=/home/ssm-user/meridian-engine`, `ExecStart=.../ws_feed_zerodha.py`, `EnvironmentFile=.../.env`). MALPHA's role is unchanged: **Zerodha token gateway only** — it refreshes the token and propagates it to the AWS `.env` (TD-NEW-7); it hosts no Meridian pipeline code.
 
-**systemd units (on MERDIAN AWS):** `merdian-wsfeed.service` (ExecStartPre `bin/wsfeed_preflight.sh` validates `kite.profile()`; `OnFailure` Telegram alert; `Restart=always`; StartLimitBurst=3), `merdian-wsfeed-alert.service`, `merdian-wsfeed-stop.service`, `merdian-wsfeed-start.timer` (Mon-Fri 03:40 UTC), `merdian-wsfeed-stop.timer` (Mon-Fri 10:05 UTC). Installed to `/etc/systemd/system/`, both timers `enable --now`. **Verified live 2026-06-22:** start.timer fired 03:40:01 UTC, preflight OK OV0782, single PID 452985, 2213 instruments, zero 403s.
+**systemd units (on MERIDIAN AWS):** `merdian-wsfeed.service` (ExecStartPre `bin/wsfeed_preflight.sh` validates `kite.profile()`; `OnFailure` Telegram alert; `Restart=always`; StartLimitBurst=3), `merdian-wsfeed-alert.service`, `merdian-wsfeed-stop.service`, `merdian-wsfeed-start.timer` (Mon-Fri 03:40 UTC), `merdian-wsfeed-stop.timer` (Mon-Fri 10:05 UTC). Installed to `/etc/systemd/system/`, both timers `enable --now`. **Verified live 2026-06-22:** start.timer fired 03:40:01 UTC, preflight OK OV0782, single PID 452985, 2213 instruments, zero 403s.
 
 **Recency-floor guard** (`build_market_state_snapshot_local.py`, both Local + AWS) verified live: zero STALE on the open, breadth ts seconds-old.
 
@@ -885,7 +885,7 @@ The deeper root cause of the breadth cascade — `delete-old-market-ticks` faili
 
 ## §S59 (2026-06-24) — AWS crontab: `refresh_equity_intraday_last.py` re-added (was missing)
 
-**AWS↔Local boundary change — missing cron restored on MERDIAN AWS.** The breadth prev-close reference table `equity_intraday_last` is refreshed pre-open by `refresh_equity_intraday_last.py` (Kite `ohlc()`, writes `last_price` + `ts`). That cron line was **never carried onto the AWS-only host** — `crontab -l | grep refresh_equity_intraday_last` returned empty — so the baseline froze 2026-05-20→2026-06-24 and breadth read BULLISH on down days (TD-S59-NEW-1, a verbatim re-run of C-09 / ADR-001). Re-added this session:
+**AWS↔Local boundary change — missing cron restored on MERIDIAN AWS.** The breadth prev-close reference table `equity_intraday_last` is refreshed pre-open by `refresh_equity_intraday_last.py` (Kite `ohlc()`, writes `last_price` + `ts`). That cron line was **never carried onto the AWS-only host** — `crontab -l | grep refresh_equity_intraday_last` returned empty — so the baseline froze 2026-05-20→2026-06-24 and breadth read BULLISH on down days (TD-S59-NEW-1, a verbatim re-run of C-09 / ADR-001). Re-added this session:
 
 ```
 35 3 * * 1-5 cd /home/ssm-user/meridian-engine && /usr/bin/python3 refresh_equity_intraday_last.py >> logs/refresh_equity_intraday_last.log 2>&1
@@ -899,7 +899,7 @@ UTC slot `35 3` = **09:05 IST**, deliberately AFTER the 03:00 UTC MALPHA→AWS t
 
 ## §S60 (2026-06-26, Muharram holiday) — marker-writer cron added + orchestrator holiday gate + shared core gate helper
 
-**1. `market_spot_session_markers` writer cron ADDED (AWS).** `build_market_spot_session_markers.py` had stalled after 2026-06-04 (unscheduled post-AWS-migration), freezing the frontend's `prev_close_spot` baseline 21 days and showing a phantom SENSEX +4.34% header (TD-S60-NEW-1). Cron added on MERDIAN AWS:
+**1. `market_spot_session_markers` writer cron ADDED (AWS).** `build_market_spot_session_markers.py` had stalled after 2026-06-04 (unscheduled post-AWS-migration), freezing the frontend's `prev_close_spot` baseline 21 days and showing a phantom SENSEX +4.34% header (TD-S60-NEW-1). Cron added on MERIDIAN AWS:
 
 ```
 40 10 * * 1-5 cd /home/ssm-user/meridian-engine && /usr/bin/python3 build_market_spot_session_markers.py >> logs/market_spot_session_markers.log 2>&1
@@ -917,7 +917,7 @@ Zero §1 environment changes (instance `i-0878c118835386ec2`, EIP `13.63.27.85`)
 
 ## §S61 (2026-06-27, Saturday market closed) — ENH-02 options-flow re-homed to AWS orchestrator + ENH-07 B basis-velocity writer wired
 
-**Orchestrator pipeline additions (MERDIAN AWS).** Two writers added to `run_merdian_shadow_runner_aws.py execute_pipeline` via the canonical Local→git→AWS `git pull` vector (no AWS-CLI/SCP):
+**Orchestrator pipeline additions (MERIDIAN AWS).** Two writers added to `run_merdian_shadow_runner_aws.py execute_pipeline` via the canonical Local→git→AWS `git pull` vector (no AWS-CLI/SCP):
 - `compute_options_flow_local.py` re-homed at the options_flow slot (was orphaned at the S49 migration) — ENH-02 substrate now advancing each cycle (TD-S61-NEW-1). Commits `8ddbc78` + `d16986c`.
 - `compute_basis_context_local.py` (ENH-07 B) tupled at L244-245 (after market_state, before trade_signal) — reads `index_futures_snapshots`, writes `basis_context_snapshots`. Commit `141386d`.
 
@@ -955,7 +955,7 @@ Cross-refs: tech_debt TD-S58-NEW-1 (RESOLVED) + TD-S62-NEW + TD-S62-NEW-2; Enhan
 
 ## §S63 (2026-07-02) — ENH-115 FII/DII participant-positioning EOD cron + tables (AWS)
 
-**ENH-115 P1 participant/cash EOD writer scheduled on MERDIAN AWS.** `ingest_participant_positioning.py` runs post-NSE-publish; two Mon–Fri crontab lines (snapshot-first install, `SHELL=/bin/bash` verified as crontab line 1; idempotent so a double-fire is safe):
+**ENH-115 P1 participant/cash EOD writer scheduled on MERIDIAN AWS.** `ingest_participant_positioning.py` runs post-NSE-publish; two Mon–Fri crontab lines (snapshot-first install, `SHELL=/bin/bash` verified as crontab line 1; idempotent so a double-fire is safe):
 
 ```
 0 14 * * 1-5  cd /home/ssm-user/meridian-engine && source .env && python3 ingest_participant_positioning.py >> logs/participant_positioning.log 2>&1
@@ -983,7 +983,7 @@ Cross-refs: tech_debt TD-S58-NEW-1 (RESOLVED) + TD-S62-NEW + TD-S62-NEW-2; Enhan
 
 ## S67 (2026-07-10) — the EOD chain's true AWS topology; Local-retired scheduler gap RESOLVED
 
-**Correction to the operative mental model (and to §S66's "decoupled DMA builder" phrasing):** the equity EOD → breadth-DMA pipeline is **cron'd on MERDIAN AWS, not Local.** The Local `MERDIAN_EOD_Breadth_Refresh` task (and all 22 `MERDIAN_*` Local Task Scheduler tasks) were **correctly Disabled at the AWS migration (~Jun 7, per ADR-006)** — this is the intended end-state, NOT to be re-enabled. The `§1` "20 active Local tasks" line and the `§3`/`§7` "Primary 16:10 IST cron via `run_equity_eod_until_done.py`" framing describe the pre-migration Local topology and are **superseded** for the EOD path by the AWS cron below.
+**Correction to the operative mental model (and to §S66's "decoupled DMA builder" phrasing):** the equity EOD → breadth-DMA pipeline is **cron'd on MERIDIAN AWS, not Local.** The Local `MERDIAN_EOD_Breadth_Refresh` task (and all 22 `MERDIAN_*` Local Task Scheduler tasks) were **correctly Disabled at the AWS migration (~Jun 7, per ADR-006)** — this is the intended end-state, NOT to be re-enabled. The `§1` "20 active Local tasks" line and the `§3`/`§7` "Primary 16:10 IST cron via `run_equity_eod_until_done.py`" framing describe the pre-migration Local topology and are **superseded** for the EOD path by the AWS cron below.
 
 **Canonical AWS EOD cron (live, confirmed firing S67):**
 ```
@@ -1054,13 +1054,13 @@ Incident session. Written at the **S70** doc-close from `docs/session_notes/S69_
 | Category-I (F&O) stocks — continuous trading | 09:15 → 15:30 | 09:15 → **15:15** |
 | Category-I closing price | VWAP of 15:00–15:30 | **CAS equilibrium price.** Auction **15:15–15:35** — order collection 15:15–15:30, matching + publication 15:30–15:35. Reference price = VWAP **15:00–15:15**. Band ±3% of reference. Limit + market orders only (no SL, no iceberg). |
 | Category-II (non-F&O) stocks | 09:15 → 15:30, VWAP 15:00–15:30 | **unchanged** |
-| **Equity derivatives (index + stock F&O) — MERDIAN's instruments** | 09:15 → 15:30 | 09:15 → **15:40** |
+| **Equity derivatives (index + stock F&O) — MERIDIAN's instruments** | 09:15 → 15:30 | 09:15 → **15:40** |
 | Post-close | 15:40–16:00 | **15:50–16:00** |
 | Pre-open | 09:00–09:15 | **restructured from 2026-09-07** — 09:00–09:05 market+limit · 09:05–09:10 limit-only with system-driven **random close 09:08–09:10** · 09:10–09:12 matching · 09:12–09:15 transition |
 
 Applies across **NSE, BSE and MSEI**. Commodity and currency segments untouched. Market open time unchanged.
 
-**Why this reaches MERDIAN's own instruments:** NIFTY and SENSEX are computed from Category-I constituents, so the index's settled level is now derived from CAS equilibrium prices published in the 15:30–15:35 window, and index derivatives keep trading to 15:40. **There is no longer any instant at 15:30 at which "today's close" exists.**
+**Why this reaches MERIDIAN's own instruments:** NIFTY and SENSEX are computed from Category-I constituents, so the index's settled level is now derived from CAS equilibrium prices published in the 15:30–15:35 window, and index derivatives keep trading to 15:40. **There is no longer any instant at 15:30 at which "today's close" exists.**
 
 **Boundary in force (ADR-022 D1): no EOD-anchored job may fire before 15:40 IST. Safe anchor ≥ 15:45 IST.**
 
@@ -1070,14 +1070,14 @@ Applies across **NSE, BSE and MSEI**. Commodity and currency segments untouched.
 |---|---|---|---|
 | `MERDIAN_ICT_EOD` → `detect_ict_patterns_runner.py` | **Local Windows Task Scheduler** | **15:35 IST** Mon–Fri | **EXPOSED — fires inside the auction / extended-derivatives window. Must move ≥ 15:45. P0.** |
 | `build_ict_htf_zones.py` daily-close logic | Local | EOD | **EXPOSED (definition)** — daily OHLC may be assembled mid-auction; the D-timeframe close definition changed for F&O-linked instruments. |
-| ambient compiler `eod_spot` / settlement anchor (`compile_market_environment_local.py`) | MERDIAN AWS | `0 16` cron (16:00 IST) | **Wall-clock SAFE, definition UNVERIFIED** — must be confirmed to read the CAS-settled value, not an intraday-derived one. |
-| `capture_postmarket_1600.py` | MERDIAN AWS | `30 10` UTC (16:00 IST) | **Probably safe, CONFIRM** — post-close now *ends* at 16:00 rather than starting at 15:40. |
-| `market_spot_session_markers` | MERDIAN AWS | `40 10` UTC (16:10 IST) | **Wall-clock safe, semantics UNCONFIRMED** — which value becomes `prev_close`. |
+| ambient compiler `eod_spot` / settlement anchor (`compile_market_environment_local.py`) | MERIDIAN AWS | `0 16` cron (16:00 IST) | **Wall-clock SAFE, definition UNVERIFIED** — must be confirmed to read the CAS-settled value, not an intraday-derived one. |
+| `capture_postmarket_1600.py` | MERIDIAN AWS | `30 10` UTC (16:00 IST) | **Probably safe, CONFIRM** — post-close now *ends* at 16:00 rather than starting at 15:40. |
+| `market_spot_session_markers` | MERIDIAN AWS | `40 10` UTC (16:10 IST) | **Wall-clock safe, semantics UNCONFIRMED** — which value becomes `prev_close`. |
 | Any pre-open-anchored logic | — | — | **DATED EXPOSURE 2026-09-07.** The random close 09:08–09:10 removes the fixed pre-open instant. Audit before that date, not after. |
 
 **Also required (D2):** establish the vendor's settled-close definition and publication time for Category-I instruments post-CAS — Dhan daily OHLC and Zerodha historical. D2 cannot be verified without it.
 
-### MERDIAN AWS EC2 — disk incident 2026-08-12 (root cause of the whole cascade)
+### MERIDIAN AWS EC2 — disk incident 2026-08-12 (root cause of the whole cascade)
 
 | Item | Value |
 |---|---|
@@ -1130,7 +1130,7 @@ Hardening owed to the 06:00 routine (runbook, not code — **TD-S69-NEW-6**): `d
 
 ## §S71 — Session 71 topology changes (2026-08-22→29)
 
-### S71.1 — MALPHA → MERDIAN token sync: the mechanism, finally documented
+### S71.1 — MALPHA → MERIDIAN token sync: the mechanism, finally documented
 
 §1.5 and §S70 both describe this hop as manual. **It is automated and has been since 2026-04-15.** MALPHA crontab:
 
@@ -1140,15 +1140,15 @@ Hardening owed to the 06:00 routine (runbook, not code — **TD-S69-NEW-6**): `d
 
 | Property | Value |
 |---|---|
-| **Transport** | Direct SSH, MALPHA → MERDIAN, key `~/.ssh/id_rsa` (RSA) on MALPHA against `~/.ssh/authorized_keys` on MERDIAN. Both files dated **2026-04-15**. |
-| **Contradicts** | The documented SSM-only access model for MERDIAN AWS. Port 22 is open from MALPHA's SG and `ssm-user` has an `authorized_keys` entry, neither of which §1 records. |
+| **Transport** | Direct SSH, MALPHA → MERIDIAN, key `~/.ssh/id_rsa` (RSA) on MALPHA against `~/.ssh/authorized_keys` on MERIDIAN. Both files dated **2026-04-15**. |
+| **Contradicts** | The documented SSM-only access model for MERIDIAN AWS. Port 22 is open from MALPHA's SG and `ssm-user` has an `authorized_keys` entry, neither of which §1 records. |
 | **Schedule** | `0 3 * * 1-5` = 08:30 IST, **after** the operator's ~06:00 IST manual refresh and **40 min before** the wsfeed timer at 03:40 UTC. |
 | **Observed** | Fires every weekday, verified in MALPHA syslog 08-17 → 08-29. Token SHA-256 identical on both hosts. |
 | **Why it looked broken** | `grep \| ssh` emits nothing on success, so `logs/token_sync_YYYYMM.log` stays empty. The 47-byte file holds one hand-typed `g36 redirect test` line from 08-17 — the day the `>> …log 2>&1` redirect was added, visible mid-series in syslog. **An empty log is the healthy state.** |
-| **Residual hazard (recorded, not fixed)** | The sync overwrites MERDIAN from MALPHA **unconditionally**. Refreshing MERDIAN directly without also refreshing MALPHA leaves a stale value that lands the next morning at 03:00 and fails the 03:40 preflight. Operator has declared token refresh out of scope for automation; no code written. |
+| **Residual hazard (recorded, not fixed)** | The sync overwrites MERIDIAN from MALPHA **unconditionally**. Refreshing MERIDIAN directly without also refreshing MALPHA leaves a stale value that lands the next morning at 03:00 and fails the 03:40 preflight. Operator has declared token refresh out of scope for automation; no code written. |
 | **Unquoted-substitution risk** | If `/tmp/ztoken` is ever empty the `sed` expression collapses to `s\|^ZERODHA_ACCESS_TOKEN=.*\|\|`, blanking the line. Not observed; noted. |
 
-### S71.2 — MERDIAN AWS crontab: 35 → 52 lines
+### S71.2 — MERIDIAN AWS crontab: 35 → 52 lines
 
 | Change | Lines | Rationale |
 |---|---|---|
@@ -1162,7 +1162,7 @@ Backup of the pre-change crontab: `docs/registers/aws_crontab_PRE_S71_20260824T0
 
 `/etc/logrotate.d/meridian`: `daily`, `rotate 7`, `compress`, `delaycompress`, `copytruncate`, `su ssm-user ssm-user`, covering `cron.log` and `logs/*.log`. **`copytruncate` is required** — every cron job holds its append handle open across the rotation.
 
-Before this, `/etc/logrotate.d/` held fourteen rules, all distro defaults, **none covering MERDIAN logs**. The ~107 MB regrowth since S69's `truncate -s 0` was unmanaged by design. This rule is what preserved the 08-18 and 08-25 preflight evidence into `.1` when the forced first rotation ran.
+Before this, `/etc/logrotate.d/` held fourteen rules, all distro defaults, **none covering MERIDIAN logs**. The ~107 MB regrowth since S69's `truncate -s 0` was unmanaged by design. This rule is what preserved the 08-18 and 08-25 preflight evidence into `.1` when the forced first rotation ran.
 
 Dead log artefacts now being rotated for nothing: `logs/ws_feed.log` and `logs/websocketLogs.log` are both 0 bytes and untouched since 2026-08-03 — the feed logs to `ws_feed_zerodha.log` via the unit's `StandardOutput=append:`.
 
@@ -1207,7 +1207,7 @@ Applied 2026-08-29: 197,254 rows swapped, NIFTY FUTIDX 2026-09-29→11-23, SENSE
 
 | Field | Before | After |
 |---|---|---|
-| **Host** | Local Windows Task Scheduler | **MERDIAN AWS crontab** |
+| **Host** | Local Windows Task Scheduler | **MERIDIAN AWS crontab** |
 | **Trigger** | `MERDIAN_ICT_EOD`, Mon–Fri **15:35 IST**, → `merdian_eod_ict.bat` | `20 10` + `22 10` UTC = **15:50 / 15:52 IST** |
 | **Entry point** | `merdian_eod_ict.bat` (3 lines: NIFTY, SENSEX, Pine) | two crontab lines calling `detect_ict_patterns_runner.py` directly |
 | **State** | `Ready` | **`Disabled`** on Local (durable) |
@@ -1270,7 +1270,7 @@ Every `*/1` and `*/5` intraday line is bounded `03-09` or `03,04,…,09` UTC. **
 | 2026-05-12 | outage |
 | **2026-08-18** | feed dead from 09:10 IST; `equity_intraday_last` 92h stale; breadth wrote **zero-coverage rows every minute all session** |
 
-**The fix has been designed since 2026-05-13 (TD-NEW-7, S1).** Dhan propagates automatically — refresh on Local → Supabase `system_config` → `pull_token_from_supabase.py` on the box. Zerodha does not: refresh on MALPHA → MALPHA's `.env` → **the operator reads it with `grep` and pastes it into a `sed` on MERDIAN.** A human is the transport layer, and there is no mechanism that could notice the step being missed.
+**The fix has been designed since 2026-05-13 (TD-NEW-7, S1).** Dhan propagates automatically — refresh on Local → Supabase `system_config` → `pull_token_from_supabase.py` on the box. Zerodha does not: refresh on MALPHA → MALPHA's `.env` → **the operator reads it with `grep` and pastes it into a `sed` on MERIDIAN.** A human is the transport layer, and there is no mechanism that could notice the step being missed.
 
 `grep -rn ZERODHA_ACCESS_TOKEN` returns three files — `wsfeed_preflight.sh`, `refresh_equity_intraday_last.py`, `ws_feed_zerodha.py` — **all consumers**. `pull_token_from_supabase.py` is not among them; the Zerodha token never reaches Supabase at all.
 
@@ -1627,7 +1627,7 @@ It is absent from **all** of:
 
 **Cadence.** Not once daily: doubles on 2026-08-12 (03:28:25 and 03:31:04), 08-27 (03:28 and 04:00) and 08-31 (00:49 and 02:43); 23 runs across 06-02 → 06-04 at `c21e7c3`; and three empty weekdays — 09-07, 09-08, 09-10. Since 2026-06-05 the label split is **13 `aws` / 59 `local`**, so the S76 search was scoped on a property true of **18 %** of the population.
 
-**Eliminated in S77, additionally:** systemd timers carrying `RandomizedDelaySec` (no unit on the host has it; 17 timers total, two MERDIAN, both wsfeed, both fixed `OnCalendar`), and user timers — `~/.config/systemd/user/` **does not exist**, so the earlier `systemctl --user` DBus failure concealed nothing.
+**Eliminated in S77, additionally:** systemd timers carrying `RandomizedDelaySec` (no unit on the host has it; 17 timers total, two MERIDIAN, both wsfeed, both fixed `OnCalendar`), and user timers — `~/.config/systemd/user/` **does not exist**, so the earlier `systemctl --user` DBus failure concealed nothing.
 
 **Refuted hypotheses, recorded so they are not retried:** that the builder is a step in a longer chain (17 of 30 runs have no predecessor within 15 minutes; those that do name a different script each time at gaps of 1.4 s to 10 m 34 s); and that `MERDIAN_HOST=local` is set in `.env`.
 
@@ -1966,7 +1966,7 @@ the Supabase SQL editor, and views are not topology.
 `logrotate.service`'s journal is **root-readable**. An unprivileged `journalctl -u
 logrotate.service` returns `No entries` — the same output a clean run would produce — so the first
 read of this session found nothing and would have ended the investigation there. The `sudo` read of
-the same unit and window returned both nights of failures. **Nothing in MERDIAN reads that journal
+the same unit and window returned both nights of failures. **Nothing in MERIDIAN reads that journal
 at all**, which is the larger gap and is recorded in TD-S83-NEW-1 rather than closed here.
 `bin/disk_guard.sh` (TD-S80-NEW-18, **RESOLVED S81**, first scheduled run observed) is the nearest
 existing watcher and does not cover this: a rotation that silently stops only becomes visible in

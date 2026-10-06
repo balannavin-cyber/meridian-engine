@@ -1,4 +1,4 @@
-# MERDIAN Data Backfill Runbook — Internet Outage Recovery
+# MERIDIAN Data Backfill Runbook — Internet Outage Recovery
 
 **Market Structure Intelligence & Options Decision Engine**
 
@@ -10,14 +10,14 @@
 | Version | v1 |
 | Created | 2026-05-04 |
 | Type | Runbook — operational procedure |
-| Trigger | Internet outage causing data gaps in MERDIAN primary tables |
+| Trigger | Internet outage causing data gaps in MERIDIAN primary tables |
 | Location | `docs/runbooks/` |
 
 ---
 
 ## Purpose
 
-Handle complete data recovery when internet connectivity disrupts MERDIAN's real-time data collection, causing gaps in:
+Handle complete data recovery when internet connectivity disrupts MERIDIAN's real-time data collection, causing gaps in:
 - Spot price bars (`hist_spot_bars_1m`)
 - Options premium bars (`hist_option_bars_1m`) 
 - Option chain snapshots (`option_chain_snapshots`)
@@ -33,7 +33,7 @@ Handle complete data recovery when internet connectivity disrupts MERDIAN's real
 **Primary triggers:**
 - Internet outage during market hours (9:15-15:30 IST)
 - ISP failover causing data collection gaps
-- Network-related MERDIAN process failures
+- Network-related MERIDIAN process failures
 - WiFi/router issues affecting laptop connectivity
 
 **Detection signals:**

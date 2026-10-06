@@ -6,7 +6,7 @@
 
 Commits 3a22735 through d15c494 (Session 3+4, 9 commits) carry a
 literal UTF-8 BOM (EF BB BF) embedded in the commit subject
-immediately before "MERDIAN". Confirmed via `git log --format="%s"
+immediately before "MERIDIAN". Confirmed via `git log --format="%s"
 | Format-Hex`. Not a display artifact.
 
 ## Root cause
@@ -19,7 +19,7 @@ the BOM prefix verbatim. `i18n.commitEncoding` was unset.
 
 ## Disposition
 
-History NOT rewritten. Force-push cost across Local + MERDIAN AWS
+History NOT rewritten. Force-push cost across Local + MERIDIAN AWS
 + MeridianAlpha consumer repos exceeds benefit for cosmetic BOMs.
 Commit hashes remain valid as audit trail for Session 3+4 work.
 

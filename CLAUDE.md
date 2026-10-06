@@ -1,7 +1,7 @@
-# CLAUDE.md — MERDIAN Engine Orientation
+# CLAUDE.md — MERIDIAN Engine Orientation
 
 > **Read this first, every session, before doing anything else.**
-> This file is the contract between Navin and any Claude session working on MERDIAN.
+> This file is the contract between Navin and any Claude session working on MERIDIAN.
 > If something here conflicts with a `.docx` master, this file wins on operational state.
 > The `.docx` masters win on architecture, governance, and historical decisions.
 
@@ -9,7 +9,7 @@
 
 ## What this project is
 
-MERDIAN — Market Structure Intelligence & Options Decision Engine. A live options decision engine for NIFTY and SENSEX weekly options, with shadow-mode validation, ICT pattern detection, Kelly tiered sizing, and a hist_pattern_signals research store. Two environments: **Local Windows (PRIMARY LIVE)** and **AWS t3.small (SHADOW)**, both pulling from a single Git repo.
+MERIDIAN — Market Structure Intelligence & Options Decision Engine. A live options decision engine for NIFTY and SENSEX weekly options, with shadow-mode validation, ICT pattern detection, Kelly tiered sizing, and a hist_pattern_signals research store. Two environments: **Local Windows (PRIMARY LIVE)** and **AWS t3.small (SHADOW)**, both pulling from a single Git repo.
 
 ---
 
@@ -62,7 +62,7 @@ These are hard rules. Do not propose violations. Do not ask "what if we…".
    - **A parity claim between two implementations is asserted only by a test that compares them, never by a comment.**
 
    Instances: F-25, F-81, F-82, coupling-audit rows 7–8, and two of this session's own assertions — detail in `docs/research/ict_structure_audit_2026-09-09.md`.
-0a. **A detector must be provable to read only bars at or before its entry bar, and that proof must be an assertion in a test, not a claim in a comment.** S77 established that every favourable ICT number MERDIAN has ever published came from detectors that conditioned on bars later than the bar they entered on. Two independent instances, six weeks apart, in code written by different passes:
+0a. **A detector must be provable to read only bars at or before its entry bar, and that proof must be an assertion in a test, not a claim in a comment.** S77 established that every favourable ICT number MERIDIAN has ever published came from detectors that conditioned on bars later than the bar they entered on. Two independent instances, six weeks apart, in code written by different passes:
    - `experiment_2_options_pnl.py:257-264` fires at bar `i` if `bars[i+5].close` is ≥0.40 % away, then emits bar `j ≤ i` and enters there (`:486`). Every trade begins immediately before a move the selection rule required to have happened. 96 points ÷ the ATM premium at each DTE reproduces the published +41.9 % to within two points — the headline was arithmetic, not behaviour.
    - **F-68**: `valid_from` set to the confirming bar's open rather than its close, across all 19,571 outcome rows.
 
@@ -90,7 +90,8 @@ These are hard rules. Do not propose violations. Do not ask "what if we…".
 16. **TD-029 timezone workaround for hist_spot_bars_5m.** `bar_ts` is stored as IST labeled as `+00:00`. Do NOT use `astimezone(IST)` — this adds 5:30 and shifts all bars. Use `dt.replace(tzinfo=None)` to treat the stored value as naive IST directly. Confirmed Session 11 — Exp 34 initial run had 3,450 bars instead of 18,895 due to this bug. (Rule added 2026-04-28.)
 17. **`market_spot_session_markers` — CORRECTED S88 (2026-10-01).** `open_0915` does not exist (that half stands), but **`open_0915_spot` does, and it is the 09:16 bar's CLOSE, not the 09:15 open** — so `gap_open_pct` is computed off that close. `merdian_ro` also cannot read this table at all (RLS, policy `TO anon`), so a zero from it is the **reader**, not the data. Detail: `merdian_reference.json` → `rule_17_market_spot_session_markers_column_mismatch`; §D.44.5; `capture_s88.md` §3.3. (Added 2026-04-29; corrected Session 88.)
 19. **NEVER run `bash -x`, `set -x`, `cat`, `grep`, or any other content-revealing command against `.env` — or against any script that sources it.** `bin/wsfeed_preflight.sh`, `run_ingest.sh`, and every `source .env &&` cron line all load the environment; tracing any of them prints every secret to the transcript. This happened in Session 71 and exposed `DHAN_TOTP_SEED`, `DHAN_PIN`, `SUPABASE_SERVICE_ROLE_KEY`, both Breeze keys, `ZERODHA_API_KEY`, and `TELEGRAM_BOT_TOKEN` — several of which never expire. **Scope every diagnostic to the specific check, never to the environment load.** To test whether a variable is set: `[ -n "$VAR" ] && echo set`. To trace a script that sources `.env`: bracket the sourcing block with `set +x` / `set -x`, or run the inner check alone with the environment already loaded. To compare a secret across hosts: `grep '^KEY=' .env | cut -d= -f2 | tr -d '\r\n' | sha256sum` — compare hashes, never values.
-18. **`trading_calendar` is a trust-anchor — validate it against the official NSE source before trusting ANY holiday gate.** Every holiday gate in MERDIAN fail-opens on this table (a wrong/empty calendar silently defeats all of them). The source of truth is `trading_calendar.json` (read by the V18E rule engine `trading_calendar.py`; the table is seeded from it by `seed_trading_calendar.py`). S60 found the JSON held only 2 (one misdated) of the 15 NSE-2026 equity holidays, so the table mismarked every holiday `is_open=true` since ~April and the pipeline ran the full compute chain on Muharram. When adding or trusting a gate, verify the calendar against the official NSE/BSE holiday list first; a gate over a wrong calendar is worse than no gate (it can suppress a real trading day). The canonical gate is `core/trading_calendar_gate.py` (`is_trading_day_today()` / `assert_trading_day_or_exit(log)`) — import it, do not roll a new inline copy. (Rule added 2026-06-26, TD-S60-NEW-2/3.)
+18. **`trading_calendar` is a trust-anchor — validate it against the official NSE source before trusting ANY holiday gate.** Every holiday gate in MERIDIAN fail-opens on this table (a wrong/empty calendar silently defeats all of them). The source of truth is `trading_calendar.json` (read by the V18E rule engine `trading_calendar.py`; the table is seeded from it by `seed_trading_calendar.py`). S60 found the JSON held only 2 (one misdated) of the 15 NSE-2026 equity holidays, so the table mismarked every holiday `is_open=true` since ~April and the pipeline ran the full compute chain on Muharram. When adding or trusting a gate, verify the calendar against the official NSE/BSE holiday list first; a gate over a wrong calendar is worse than no gate (it can suppress a real trading day). The canonical gate is `core/trading_calendar_gate.py` (`is_trading_day_today()` / `assert_trading_day_or_exit(log)`) — import it, do not roll a new inline copy. (Rule added 2026-06-26, TD-S60-NEW-2/3.)
+20. **The system is named MERIDIAN** (operator, 2026-10-06). Prose, titles, UI text and commit prefixes say MERIDIAN. **Identifiers keep their existing `merdian` / `MERDIAN_` spelling** — file names, tables (`merdian_parameters`), the role (`merdian_ro`), the enum (`merdian_status`), modules and paths — until renamed by ADR; never "correct" one in code, SQL or a path. History archives (`*_history.md`, `archive/`, `appendices/`) are left as written.
 
 ---
 
@@ -119,7 +120,7 @@ Before saying "done":
 ☐ Update Enhancement Register if any architectural thinking happened
 ☐ Update or create runbooks for any operational procedure Navin had to explain this session
 ☐ Append a one-line entry to session_log.md (date · git hash · concern · outcome)
-☐ Commit all documentation changes with prefix MERDIAN: [OPS] ...
+☐ Commit all documentation changes with prefix MERIDIAN: [OPS] ...
 ☐ Re-upload modified docs (CURRENT.md, session_log.md, merdian_reference.json, tech_debt.md, Enhancement Register, this file, operational protocols) to Claude.ai project knowledge — Rule 12 above
 ```
 
@@ -195,7 +196,7 @@ If any of these need to change, that is itself an architectural session — writ
 
 ## Rule 13 — Data contamination registry (added Session 7, 2026-04-23)
 
-MERDIAN tracks known data-integrity incidents in the Supabase table `public.data_contamination_ranges`. Before running ANY research query, experiment analysis, or model training that reads fields listed in `field_scope` from tables listed in `affected_tables`, check whether the query time window overlaps with a registered contamination range.
+MERIDIAN tracks known data-integrity incidents in the Supabase table `public.data_contamination_ranges`. Before running ANY research query, experiment analysis, or model training that reads fields listed in `field_scope` from tables listed in `affected_tables`, check whether the query time window overlaps with a registered contamination range.
 ---
 
 **Rule 21 — Always pipe long-running scripts through Tee-Object.** Any PowerShell invocation of an experiment, simulation, or diagnostic that runs longer than ~5 minutes MUST be invoked with `... 2>&1 | Tee-Object -FilePath "<name>_$(Get-Date -Format yyyyMMdd_HHmm).log"`. The first NIFTY full-year run of `experiment_15_pure_ict_compounding.py` was lost mid-session because it was run without Tee-Object, requiring a re-run that cost ~25 minutes of wall time. PowerShell's terminal scrollback is not a reliable archive. The .log file is.
@@ -211,7 +212,7 @@ The `$env:PYTHONIOENCODING = "utf-8"` prefix is also required whenever the scrip
 
 <!-- S58 (2026-06-22): +3 settled decisions (ADR-019 port-not-retire; ws_feed host=AWS not MALPHA; ENH-SDM observability-first). -->
 
-<!-- S59 (2026-06-24): +3 settled decisions (equity_intraday_last freshness=ts; breadth prev-close cron on MERDIAN AWS = re-run of C-09; daily ICT PDH/PDL unconditional, weekly filtered). -->
+<!-- S59 (2026-06-24): +3 settled decisions (equity_intraday_last freshness=ts; breadth prev-close cron on MERIDIAN AWS = re-run of C-09; daily ICT PDH/PDL unconditional, weekly filtered). -->
 
 <!-- S60 (2026-06-26): +2 settled decisions (trading_calendar trust-anchor / fixed-at-source; canonical core/trading_calendar_gate.py — import not inline). Rule 18 added (calendar trust-anchor). No ADR (bug-fix + helper-consolidation; Rule 10 bar not met). -->
 

@@ -1,4 +1,4 @@
-# MERDIAN Change Protocol v1
+# MERIDIAN Change Protocol v1
 
 **Market Structure Intelligence & Options Decision Engine**
 
@@ -126,7 +126,7 @@ fix_runner_indent.py, fix_atm_option_build.py, fix_expiry_lookup.py.
 ### STEP 2 — Commit Format (MANDATORY)
 
 ```
-MERDIAN: [TAG] <scope> — <intent>
+MERIDIAN: [TAG] <scope> — <intent>
 ```
 
 | Tag | Meaning |
@@ -147,10 +147,10 @@ Live session required for final confirmation? yes/no
 
 **Examples:**
 ```
-MERDIAN: [ENV] Windows token task path — fix SYSTEM account python path
-MERDIAN: [DATA] gamma_metrics — add gamma_zone column and unique index
-MERDIAN: [SIGNAL] E-02 shadow — gamma_zone classification in compute_gamma_metrics
-MERDIAN: [OPS] preflight Stage 0 — environment contract checks
+MERIDIAN: [ENV] Windows token task path — fix SYSTEM account python path
+MERIDIAN: [DATA] gamma_metrics — add gamma_zone column and unique index
+MERIDIAN: [SIGNAL] E-02 shadow — gamma_zone classification in compute_gamma_metrics
+MERIDIAN: [OPS] preflight Stage 0 — environment contract checks
 ```
 
 ---
@@ -250,7 +250,7 @@ If AWS must be edited directly (emergency only):
 ```
 1. Fix on AWS
 2. Immediately copy exact file to Local
-3. Commit with message: MERDIAN: [ENV] BREAK_GLASS — <reason>
+3. Commit with message: MERIDIAN: [ENV] BREAK_GLASS — <reason>
 4. Push → AWS git pull
 5. Verify hash match
 6. Document in Open Items Register same session
@@ -265,7 +265,7 @@ If live canary fails after promotion:
 ```
 1. git log --oneline -5    (identify last known-good commit)
 2. git checkout <prior_hash> -- <affected_files>
-3. Commit: MERDIAN: [TAG] ROLLBACK to <hash> — <reason>
+3. Commit: MERIDIAN: [TAG] ROLLBACK to <hash> — <reason>
 4. Push → AWS git pull → verify hash match
 5. Run preflight → confirm PASS
 6. Document rollback reason in register
@@ -342,7 +342,7 @@ Flow:   Local → Git → AWS → Preflight → Live Canary
 
 ### Core Problems This Protocol Solves
 
-MERDIAN has experienced repeated session losses from:
+MERIDIAN has experienced repeated session losses from:
 - Local ≠ AWS file drift (direct AWS edits left uncommitted)
 - Missing contract validation (import errors, signature drift discovered at live session)
 - Live sessions used as debuggers for basic environment failures
@@ -357,7 +357,7 @@ Every rule in this protocol traces to one of these failure modes.
 
 1. **No interpretation at runtime** — checklist must be executable under stress without ambiguity
 2. **Preflight over live debugging** — live market is a canary, not a test environment
-3. **DB is truth, logs are secondary** — consistent with MERDIAN's established V17D principle
+3. **DB is truth, logs are secondary** — consistent with MERIDIAN's established V17D principle
 4. **One codebase, two environments** — no forks, no divergence, no environment-specific code branches
 5. **Full-file promotion only** — no hand-patched partials. Every file in Git is a complete, reviewable file
 6. **No state outside Git** — release states, environment sync, and canary outcomes live in Git (commits + tags). No external spreadsheet, no memory. If it is not in Git, it did not happen.
@@ -454,4 +454,4 @@ Post-market Fixtures + docs + commit
 
 ---
 
-*MERDIAN Change Protocol v1 — 2026-03-31 — Commit to Git. Do not modify without updating version number.*
+*MERIDIAN Change Protocol v1 — 2026-03-31 — Commit to Git. Do not modify without updating version number.*

@@ -16,17 +16,17 @@
 
 On 2026-04-23, Session 7 diagnosed a breadth cascade failure that had been producing systematically wrong live-trading data for 27 consecutive trading days. The root cause was a writer-retirement gap: when `ingest_breadth_intraday_local.py` was retired on 2026-04-16 (C-08 closure), only one of its two responsibilities was replaced. The new writer `ingest_breadth_from_ticks.py` computed breadth but did not maintain the `equity_intraday_last` reference-price table. The reference froze at 2026-03-27 15:30 IST. Every subsequent breadth compute compared todays live LTPs against a month-old baseline, producing fabricated "BULLISH 92.x" readings on bearish days — directionally inverted from the NSE authoritative 32/68 adv/dec ratio.
 
-During those 27 days, MERDIAN passed its 10-session shadow gate (closed 2026-04-15). Every one of those gate sessions ran on corrupted breadth. The gate did not catch the corruption because **it couldnt**.
+During those 27 days, MERIDIAN passed its 10-session shadow gate (closed 2026-04-15). Every one of those gate sessions ran on corrupted breadth. The gate did not catch the corruption because **it couldnt**.
 
 The shadow gate as designed measures *stability* — does the signal engine produce consistent output across N sessions without crashing, without drifting outside expected ranges, without edge-case failures? Breadth was perfectly stable across all 10 gate sessions. It stably reported BULLISH 92 every cycle. A stable lie is indistinguishable from a stable truth when your only instrument is a stability meter.
 
 The duration knob was the wrong lever. A 20-session gate would have seen the same stable lie. A 30-session gate would have seen the same stable lie. Doubling the sample size of corrupted data does not surface the corruption — it just gives you more of it.
 
-What the gate needed — and did not have — was a cross-reference check: at each cycle, compare MERDIANs computed breadth against an independent source (NSE API, VRD Nation, sample broker calls) and flag disagreement. That check would have fired on 2026-03-28 — the first trading day the reference went stale. Instead we learned about it on 2026-04-23, 27 days later, via Navins manual observation that MERDIAN breadth was directionally opposite to VRD Nation.
+What the gate needed — and did not have — was a cross-reference check: at each cycle, compare MERDIANs computed breadth against an independent source (NSE API, VRD Nation, sample broker calls) and flag disagreement. That check would have fired on 2026-03-28 — the first trading day the reference went stale. Instead we learned about it on 2026-04-23, 27 days later, via Navins manual observation that MERIDIAN breadth was directionally opposite to VRD Nation.
 
 ## Decision
 
-**All future MERDIAN gates — shadow gates, promotion gates, validation gates — MUST pair stability testing with validity testing before a component can be promoted.**
+**All future MERIDIAN gates — shadow gates, promotion gates, validation gates — MUST pair stability testing with validity testing before a component can be promoted.**
 
 Specifically:
 
@@ -119,4 +119,4 @@ This is the one-line compressed form for future CLAUDE.md "settled decisions" ad
 
 ---
 
-*ADR-001 — 2026-04-23 — Session 7 close. First entry in `docs/decisions/`. Establishes the two-layer gate standard (stability + validity) for all future MERDIAN component promotion.*
+*ADR-001 — 2026-04-23 — Session 7 close. First entry in `docs/decisions/`. Establishes the two-layer gate standard (stability + validity) for all future MERIDIAN component promotion.*

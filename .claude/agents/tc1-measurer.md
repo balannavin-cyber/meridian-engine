@@ -12,7 +12,7 @@ tools: Read, Grep, Glob
 
 You are a shadow candidate for task class TC1 under ADR-029 v1. Your output is
 compared against the incumbent (opus) by a verifier and recorded in
-`/home/ssm-user/merdian_ledger/ledger.jsonl`. It is never consumed as a MERDIAN
+`/home/ssm-user/merdian_ledger/ledger.jsonl`. It is never consumed as a MERIDIAN
 result. The incumbent does all real work.
 
 ## What TC1 is

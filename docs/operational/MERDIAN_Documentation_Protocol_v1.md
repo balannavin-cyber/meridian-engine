@@ -1,4 +1,4 @@
-# MERDIAN Documentation Protocol v1
+# MERIDIAN Documentation Protocol v1
 
 **Market Structure Intelligence & Options Decision Engine**
 
@@ -23,7 +23,7 @@ This document answers four questions:
 3. When must it be updated?
 4. How does documentation connect to the Git protocol?
 
-Without these answers, documentation happens by feel — which is why MERDIAN has had gaps between what the register says and what the system actually is.
+Without these answers, documentation happens by feel — which is why MERIDIAN has had gaps between what the register says and what the system actually is.
 
 ---
 
@@ -131,7 +131,7 @@ Without these answers, documentation happens by feel — which is why MERDIAN ha
 
 ### Enhancement Register Update
 
-**Triggered by:** Any chat or session that produces architectural thinking about MERDIAN's future direction. This includes architecture planning sessions, commercial viability discussions, and research explorations (Heston, Monte Carlo, quantum, API design).
+**Triggered by:** Any chat or session that produces architectural thinking about MERIDIAN's future direction. This includes architecture planning sessions, commercial viability discussions, and research explorations (Heston, Monte Carlo, quantum, API design).
 
 **What it is:** The forward-looking register of proposed improvements. Not a session record — a living list of enhancements with their status, dependencies, and commercial relevance.
 
@@ -249,9 +249,9 @@ Three connections between documentation and the Git protocol:
 Every code commit that changes system behaviour should have a corresponding documentation commit in the same push or the immediately following push. This is not a separate workflow — it is the same push, or if there is insufficient time, the next push within the same session.
 
 ```
-MERDIAN: [OPS] Open Items Register v3 — C-01 status updated
-MERDIAN: [OPS] merdian_reference.json — V18A file statuses updated
-MERDIAN: [OPS] Appendix V18A v4 — session record committed
+MERIDIAN: [OPS] Open Items Register v3 — C-01 status updated
+MERIDIAN: [OPS] merdian_reference.json — V18A file statuses updated
+MERIDIAN: [OPS] Appendix V18A v4 — session record committed
 ```
 
 ### 4.2 No Major Master Without Register Update
@@ -307,4 +307,4 @@ If any of these is missing, the document is not rebuild-grade.
 
 ---
 
-*MERDIAN Documentation Protocol v1 — 2026-03-31 — Commit to Git. Do not modify without updating version number.*
+*MERIDIAN Documentation Protocol v1 — 2026-03-31 — Commit to Git. Do not modify without updating version number.*

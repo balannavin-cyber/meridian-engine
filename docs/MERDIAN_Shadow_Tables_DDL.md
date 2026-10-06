@@ -1,4 +1,4 @@
-# MERDIAN Shadow Tables — DDL Reference
+# MERIDIAN Shadow Tables — DDL Reference
 **Captured:** 2026-04-04 (V18C session)  
 **Source:** Supabase `information_schema.columns` live query  
 **Closes:** D-09 / E-06 from Open Items Register v3  

@@ -36,7 +36,7 @@ heading-anchored entry IDs (`TD-*` 2,965 · `ENH-N` 1,583 · `ADR-NNN` 1,574 ·
 `§D.N.N` 174 · `CASE-*` 21).
 
 CLAUDE.md records the cost of *not* having retrieval, repeatedly and by name.
-S70's most expensive failure was reasoning about MERDIAN's history without
+S70's most expensive failure was reasoning about MERIDIAN's history without
 reading it: TD-NEW-7 was diagnosed at S28 with the fix fully designed, carried
 ~40 sessions, produced a third outage, and was then re-derived from scratch
 while `project_knowledge_search` was never called. S66 walked six wrong theories
@@ -92,7 +92,7 @@ not be read as fixing a chunk length; the design is the ID-anchored, byte-budget
 rule above.
 
 **Embedding model — RULED S85: `bge-small-en-v1.5`, 384-dim, ONNX, run locally
-on MERDIAN EC2.** No document text leaves the host. This fixes `embed_dim = 384`
+on MERIDIAN EC2.** No document text leaves the host. This fixes `embed_dim = 384`
 and confirms the `vector(384)` column in §5 as a ruling rather than a
 placeholder; `embed_model` records the exact model id and revision so a snapshot
 built under a different model is distinguishable, and `corpus_snapshot`'s unique
@@ -769,7 +769,7 @@ abandoned one:
   **D3**, tested by **§7 A1-secondary** (seven arms, both boundaries from both
   sides). The drafting half is enforced as **ADR-027 V9**.
 - **Embedding provider and model** — RULED S85: `bge-small-en-v1.5`, 384-dim,
-  ONNX, local on MERDIAN EC2. Recorded in **D1**, with execution bounded by the
+  ONNX, local on MERIDIAN EC2. Recorded in **D1**, with execution bounded by the
   **§8.1** guardrails G1–G8 and gated on tests T1–T4.
 
 The sole remaining item is a filing-time hygiene check, so **this ADR is

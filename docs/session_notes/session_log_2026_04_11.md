@@ -1,4 +1,4 @@
-# MERDIAN Session Log
+# MERIDIAN Session Log
 
 ---
 

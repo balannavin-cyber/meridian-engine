@@ -1,6 +1,6 @@
 ---
 name: doc-close
-description: Gives the register-by-register order for MERDIAN's end-of-session documentation close. The session-end checklist in core CLAUDE.md under "What Claude must do at session end" governs WHAT must happen; this skill adds only the ORDER the registers are updated in. Use when the operator says close, or asks to close out, file TDs, or update the registers.
+description: Gives the register-by-register order for MERIDIAN's end-of-session documentation close. The session-end checklist in core CLAUDE.md under "What Claude must do at session end" governs WHAT must happen; this skill adds only the ORDER the registers are updated in. Use when the operator says close, or asks to close out, file TDs, or update the registers.
 ---
 
 # Session-end documentation close

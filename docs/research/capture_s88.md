@@ -1,4 +1,4 @@
-# MERDIAN capture — Session 88 (2026-10-01)
+# MERIDIAN capture — Session 88 (2026-10-01)
 
 > Session capture. §1 only at the time of writing; later sections are appended, never
 > inserted above an existing one, so the path:line citations below stay resolvable.
@@ -335,7 +335,7 @@ whether the close-vs-open choice was deliberate.
 
 **(ii) When does the markers writer write the day's row?**
 *Direction answered, current schedule NOT confirmed.* The same S60 `change_log` entry records
-*"cron 40 10 \* \* 1-5 (16:10 IST) added on MERDIAN AWS"* for the markers fix — **after the
+*"cron 40 10 \* \* 1-5 (16:10 IST) added on MERIDIAN AWS"* for the markers fix — **after the
 15:30 close**, which is the operator's hypothesis and matches §2.4's measurement that no
 10-01 row existed at ~13:25 IST. **But the register's own AWS cron inventory does not carry
 the markers writer at all:** `aws_cron.entries[4]` holds `40 10 * * 1-5` labelled

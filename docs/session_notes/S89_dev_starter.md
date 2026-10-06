@@ -89,7 +89,7 @@ Dispositions owed before any work. Three constraints already in the register:
 - **L11 — decline or pending.** The design doc now says **PENDING**; the disposition is unresolved.
 - **E-D1 … E-D8:** `gex_cr` unit · canonical max pain · theme · legacy pin · NET-LONG γ source ·
   signal row · ACCEL retirement · prototype corrections.
-- **TD-S87-NEW-1** (parked at S3 — MERDIAN has never placed an order).
+- **TD-S87-NEW-1** (parked at S3 — MERIDIAN has never placed an order).
 - **The CLI unpin.** `2.1.277` was pinned for the ADR-028 comparison and both arms are graded, so
   the reason has expired; unpinning re-exposes the `stable`-channel side effect.
 - **The five documents carrying the copied "150k" figure** (ADR-028 §6 item 3).

@@ -1,4 +1,5 @@
 import re
+import os
 import subprocess
 import sys
 import time
@@ -120,6 +121,7 @@ def main():
     # Now: one FULL lap -- continue past 0 and stop on returning to the start cursor.
     start_cursor = None
     wrapped = False
+    prev_next = None  # S90_CURSOR_GUARD: the cursor this runner left behind on its last run
 
     for run_no in range(1, MAX_RUNS + 1):
         print()
@@ -136,6 +138,14 @@ def main():
         coverage_output = ""
 
         next_cursor = parse_value(ingest_output, "Next cursor")
+        # S90_CURSOR_GUARD: 2026-10-06 an off-box writer advanced the SHARED cursor between our
+        # runs (from run 12 every run started 50 past where the previous one ended; ~450 tickers
+        # skipped). A run must start where the last one ended; say so loudly when it does not.
+        this_start = parse_value(ingest_output, "Cursor")
+        if prev_next is not None and this_start is not None and this_start != prev_next:
+            print(f"[S90_CURSOR_GUARD] CURSOR MOVED BY ANOTHER WRITER: last run ended at {prev_next}, "
+                  f"this run started at {this_start} (job {os.getenv('JOB_NAME', 'equity_eod')})")
+        prev_next = next_cursor
         if start_cursor is None:
             _c = parse_value(ingest_output, "Cursor")
             start_cursor = int(_c) if _c is not None and _c.isdigit() else 0

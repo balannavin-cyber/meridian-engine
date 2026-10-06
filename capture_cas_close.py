@@ -32,7 +32,9 @@ WHAT IT DOES
 Runs once per session at 15:50 IST. Requests a WIDE window (15:25-15:35)
 rather than a single minute -- single-minute requests inside the auction
 return an empty array. fetch_ohlc-equivalent takes the LAST bar in the
-window, which is 15:29.
+window, which is 15:29. (S90: Dhan now appends a call-time bar after the
+window, so the job takes the latest bar in a known close slot instead --
+S90_CAS_SLOT_PICK.)
 
 Guards, in order:
   1. Holiday gate (trading_calendar), same as capture_spot_1m_v2.
@@ -62,7 +64,7 @@ from 2026-08-03 forward is recoverable. Re-run build_ict_htf_zones.py
 afterwards -- the daily closes will have changed.
 
 Schedule (MERDIAN AWS crontab, UTC):
-  20 10 * * 1-5  cd /home/ssm-user/meridian-engine && source .env && \
+  50 10 * * 1-5  (16:20 IST)  cd /home/ssm-user/meridian-engine && source .env && \
                  /usr/bin/python3 capture_cas_close.py >> logs/cas_close.log 2>&1
 """
 
@@ -218,13 +220,31 @@ def fetch_cas_bar(symbol: str, trade_day: ddate) -> Dict | None:
             opens = body.get("open", [])
             if not opens:
                 return None
+            # S90_CAS_SLOT_PICK: Dhan ignores toDate and appends a bar stamped at
+            # call time (seen 2026-10-06: 15:26..15:29 then 18:30 / 17:00), so the
+            # LAST bar is no longer the close. Take the latest bar of the target
+            # session whose slot is a known close slot; if none, fall back to the
+            # last bar so Guard 2 still refuses it (no bar of unknown provenance
+            # is ever written).
+            stamps = body.get("timestamp") or []
+            i = len(opens) - 1
+            for j in range(len(opens) - 1, -1, -1):
+                t = int(stamps[j] or 0) if j < len(stamps) else 0
+                b_ist = datetime.fromtimestamp(t, IST)
+                if b_ist.date() == trade_day and (b_ist.hour, b_ist.minute) in CAS_CLOSE_BAR_SLOTS:
+                    i = j
+                    break
+            if i != len(opens) - 1:
+                print(f"  [INFO] {symbol}: {len(opens) - 1 - i} bar(s) after the close slot "
+                      f"ignored (vendor appends a call-time bar)")
+            vol = body.get("volume") or []
             return {
-                "open":      float(body["open"][-1]),
-                "high":      float(body["high"][-1]),
-                "low":       float(body["low"][-1]),
-                "close":     float(body["close"][-1]),
-                "volume":    int(body.get("volume", [0])[-1] or 0),
-                "timestamp": int(body.get("timestamp", [0])[-1] or 0),
+                "open":      float(body["open"][i]),
+                "high":      float(body["high"][i]),
+                "low":       float(body["low"][i]),
+                "close":     float(body["close"][i]),
+                "volume":    int((vol[i] if i < len(vol) else 0) or 0),
+                "timestamp": int((stamps[i] if i < len(stamps) else 0) or 0),
                 "n_bars":    len(opens),
             }
         if r.status_code == 429 and attempt < MAX_RETRIES:
@@ -400,12 +420,18 @@ def main() -> int:
             },
         })
 
-    try:
-        sb_insert("market_spot_snapshots", snap_rows)
-        print(f"  market_spot_snapshots: {len(snap_rows)} rows inserted")
-        log.record_write("market_spot_snapshots", len(snap_rows))
-    except Exception as e:
-        print(f"  [WARN] market_spot_snapshots write failed: {e}", file=sys.stderr)
+    # S90_CAS_SLOT_PICK: a snapshot's ts is the CAPTURE time, so a --date backfill of a past
+    # session would stamp that session's close onto today (the 2026-08-22 05:38 rows are
+    # exactly that). A past session's close goes to hist_spot_bars_1m only.
+    if trade_day != now_ist.date():
+        print(f"  market_spot_snapshots: skipped (backfill of {today_str}; snapshot ts would be today)")
+    else:
+        try:
+            sb_insert("market_spot_snapshots", snap_rows)
+            print(f"  market_spot_snapshots: {len(snap_rows)} rows inserted")
+            log.record_write("market_spot_snapshots", len(snap_rows))
+        except Exception as e:
+            print(f"  [WARN] market_spot_snapshots write failed: {e}", file=sys.stderr)
 
     # ── 2. hist_spot_bars_1m ─────────────────────────────────────────────────
     bar_rows = []

@@ -26,6 +26,7 @@ truncate and restart.
 from __future__ import annotations
 
 import os
+import re
 import sys
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -76,6 +77,27 @@ def _rows(result: Any) -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
+_FRAC = re.compile(r"\.(\d{1,6})(?=[+-]\d{2}:?\d{2}$|Z$|$)")
+
+
+def _norm_frac(ts_iso: str) -> str:
+    """Pad the microsecond fraction to 6 digits.
+
+    PostgREST trims trailing zeros, so a timestamp whose microseconds end in 0
+    arrives with 1, 2, 4 or 5 digits ('2026-10-07T03:30:07.61356+00:00').
+    Python 3.10's fromisoformat accepts a fraction of EXACTLY 3 or 6 digits, or
+    none at all, and raises ValueError on every other width; 3.11+ is
+    permissive. The box is 3.10, so an unpadded fraction killed ~1 cycle in 10
+    and that cycle's row is unrecoverable (ADR-030 D2: the table accumulates
+    forward and is never backfilled).
+
+    The regex is deliberately identical to check_contracts_shadow._FRAC. The
+    repo holds ~40 independent copies of this padding; one shared core/ helper
+    is the right fix and is NOT this change (see TS-PARSE findings, S91).
+    """
+    return _FRAC.sub(lambda m: "." + m.group(1).ljust(6, "0"), ts_iso)
+
+
 def _ist_date(ts_iso: str) -> date:
     """IST calendar date of a true timestamptz string.
 
@@ -84,7 +106,7 @@ def _ist_date(ts_iso: str) -> date:
     IST-as-UTC case, so astimezone is correct here and replace(tzinfo=None)
     would be wrong.
     """
-    return datetime.fromisoformat(ts_iso.replace("Z", "+00:00")).astimezone(IST).date()
+    return datetime.fromisoformat(_norm_frac(ts_iso.replace("Z", "+00:00"))).astimezone(IST).date()
 
 
 # ---------------------------------------------------------------- source reads

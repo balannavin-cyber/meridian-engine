@@ -29,6 +29,7 @@ which refuses a patch touching any column outside MUTABLE (guard R4).
 from __future__ import annotations
 
 import os
+import re
 import sys
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
@@ -109,8 +110,30 @@ def _today_ist() -> date:
     return datetime.now(timezone.utc).astimezone(IST).date()
 
 
+_FRAC = re.compile(r"\.(\d{1,6})(?=[+-]\d{2}:?\d{2}$|Z$|$)")
+
+
+def _norm_frac(ts_iso: str) -> str:
+    """Pad the microsecond fraction to 6 digits.
+
+    PostgREST trims trailing zeros, so a timestamp whose microseconds end in 0
+    arrives with 1, 2, 4 or 5 digits ('2026-10-07T03:30:07.61356+00:00').
+    Python 3.10's fromisoformat accepts a fraction of EXACTLY 3 or 6 digits, or
+    none at all, and raises ValueError on every other width; 3.11+ is
+    permissive. The box is 3.10.
+
+    Same defect and same fix as write_gex_cycle_history_local._norm_frac -- the
+    two _ist_date bodies were byte-identical, so the writer's crash was this
+    module's crash too (Rule 22: audit the parallel component). Regex is
+    deliberately identical to check_contracts_shadow._FRAC. The repo holds ~40
+    independent copies of this padding; one shared core/ helper is the right
+    fix and is NOT this change (see the TS-PARSE findings, S91).
+    """
+    return _FRAC.sub(lambda m: "." + m.group(1).ljust(6, "0"), ts_iso)
+
+
 def _ist_date(ts_iso: str) -> date:
-    return datetime.fromisoformat(ts_iso.replace("Z", "+00:00")).astimezone(IST).date()
+    return datetime.fromisoformat(_norm_frac(ts_iso.replace("Z", "+00:00"))).astimezone(IST).date()
 
 
 def _day_bounds(d: date) -> tuple[str, str]:

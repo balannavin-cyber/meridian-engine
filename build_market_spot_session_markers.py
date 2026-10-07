@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
@@ -26,11 +27,45 @@ def to_float(value: Any) -> float | None:
         return None
 
 
+# _S91 TD-S91-NEW-2 site 2 ---------------------------------------------------
+_FRAC = re.compile(r"\.(\d{1,6})(?=[+-]\d{2}:?\d{2}$|Z$|$)")
+
+
+def _norm_frac(ts_iso: str) -> str:
+    """Pad the microsecond fraction to 6 digits.
+
+    PostgREST trims trailing zeros, so a timestamp whose microseconds end in 0
+    arrives with 1, 2, 4 or 5 digits ('2026-10-07T03:30:07.61356+00:00').
+    Python 3.10's fromisoformat accepts a fraction of EXACTLY 3 or 6 digits, or
+    none at all, and raises ValueError on every other width; 3.11+ is
+    permissive. The box is 3.10.
+
+    Here the ValueError was swallowed by parse_ts's except, so the failure was
+    not a traceback but a clean exit one frame up:
+    latest_trade_date_from_spot -> parse_ts returns None ->
+    fail("Could not parse latest ts from market_spot_snapshots") -> exit 1.
+    2026-10-05 and 2026-10-06 have no market_spot_session_markers rows for that
+    reason. PAD, never strip: '.6' is 600000 us, and a strip would silently
+    discard sub-second precision on every row it touched.
+
+    Same defect and same fix as write_gex_cycle_history_local._norm_frac and
+    reconcile_gex_cycle_history_session_local._norm_frac (TD-S91-NEW-1,
+    bcadfa6); regex deliberately identical to check_contracts_shadow._FRAC. The
+    repo holds ~40 independent copies of this padding and core/ holds none; one
+    shared core/ helper is the right fix and is NOT this change -- it is
+    TD-S91-NEW-2's "proper fix" row, which also still owes sites 1, 3, 4, 5, 6.
+    """
+    return _FRAC.sub(lambda m: "." + m.group(1).ljust(6, "0"), ts_iso)
+
+
 def parse_ts(value: str | None) -> datetime | None:
+    # The except -> None is deliberately kept: callers test for None on a NULL
+    # ts (see build_row_for_symbol's post_dt guard), so genuinely bad input must
+    # still come back as None rather than raising.
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return datetime.fromisoformat(_norm_frac(value.replace("Z", "+00:00")))
     except Exception:
         return None
 

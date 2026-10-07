@@ -61,24 +61,60 @@ Topology **§S90**, `merdian_reference.json` **v68**, `CLAUDE.md` **v1.62**, ADR
 annotation, `CURRENT_history.md` (S88 moved). **Doc Protocol v5 DRAFT** at
 `docs/operational/MERDIAN_Documentation_Protocol_v5_DRAFT.md`.
 
+## AM-1 post-close (2026-10-06 → 10-07)
+
+**The delta after the AM-1 close**, folded into the registers at AM-2 / S91 (docs only). This
+block **points**; the detail lives in the registers named. Ten commits, `699398f..490b088`,
+`490b088` is HEAD.
+
+| Commit | What |
+|---|---|
+| `699398f` | Name correction in prose, titles and commit prefixes; identifiers unchanged (`CLAUDE.md` rule 20, ruling **S90-K**) |
+| `16f1378` | Deploy window by risk class (ruling **S90-J**); Marketview `/staging/` in `deploy/nginx` |
+| `47c795c` · `8f0007f` | Tick freeze every 5 min, 10-day retention — answers **TD-S90-NEW-4**; roadmap **R2.7** |
+| `a80176e` | Replay harness v0: `replay_contracts.py --check` over 6 golden days + `tests/run_offline.sh` (**R2.1**) |
+| `df80dec` | Per-leg ledger rows (`log_child_run`, ADR-031 D3a/D7) so chain provenance can reach 100 % (**R0.3**) |
+| `6d9f4f7` | CAS close picks the close-slot bar, not the last bar (**TD-S90-NEW-12**) |
+| `2e66d4f` | Spot contract session end 15:15 via `data_contracts.session_end_ist` (ruling **S90-L**, **R1.2**) |
+| `1708a1c` | CAS reconciliation, two-source auto-correct, scheduled 08:50 IST (ruling **S90-M**) |
+| `490b088` | EOD sweep on its own cursor row + cursor-moved guard (**TD-S90-NEW-14**) |
+
+**Marketview:** three further commits in `~/meridian-connect` — `eda1ca0`, `c53dbea`, `255cca0` —
+and **live = staging = `origin/main` = `255cca0`** (measured 2026-10-07), which **closes
+TD-S90-NEW-2**.
+
+**Database and data writes:** `sql/2026-10-06_s90_spot_session_end.sql` applied; **58 CAS close
+bars backfilled** plus 2026-10-06 captured live, **3 SENSEX bars hand-corrected**; DH-905 remaps
+verified at **1,379 / 1,381 = 99.86 %** coverage on 10-01.
+
+**New TD IDs: TD-S90-NEW-12 / -13 / -14** (`tech_debt.md`, prepended, plus an AM-2 addendum on the
+S90 status footer). **New rulings S90-K / -L / -M** (`rulings_s90.md`, the single source). Roadmap
+**v2.8**. `merdian_reference.json` **v69**.
+
 ## NEXT SESSION PICKS UP
 
 **Dated, today first.**
 
-1. **Tue 2026-10-06, 09:30 IST — the first live day of everything above.** Runbook
-   `docs/research/s90_agentic/runbook_2026-10-06_1600.md` §5 (it says 10-07: the deploy moved
-   forward, so it applies **today**). ENH-133 first rows (G1–G3, A(c)–A(e), R1–R6); WCB moving on
-   live ticks (S90-G); `v_provenance_coverage_daily` 100 % and `v_run_trace` for the latest cycle
-   (R0.3 / R0.7 exits); runner statuses in `cycle_health` (R1.2, the sample week starts).
-2. **Tue 2026-10-06, 16:10 IST — EOD run:** coverage should sit near 100 % of the active universe
-   now that DH-905 is cured; `breadth_indicators_daily` complete for 10-06 by next morning.
-3. **Tue 2026-10-06 — NIFTY L9 stage-1 max-pain arm** (TD-S80-NEW-1), pre-registered before any
+1. **Wed 2026-10-07 — verify the AM-1 post-close deploys. None of this is verified yet.**
+
+   | When (IST) | Check | PASS looks like |
+   |---|---|---|
+   | 08:50 | first scheduled CAS reconciliation, `logs/cas_recon.log` | every day MATCH; no MISMATCH and no auto-correct needed — **closes TD-S90-NEW-12** |
+   | 09:30 | `v_provenance_coverage_daily` after the first cycles | chain at **100 %** (was 52 % — one `run_id` per N legs) — **R0.3** exit |
+   | 15:20 / 15:25 | `cycle_health` for `market_spot_snapshots` | **OK**, judged at the product's own `session_end_ist`, not MISSING — **R1.2**, ruling **S90-L** |
+   | 16:10 | the `equity_eod_aws` lap | **`[S90_CURSOR_GUARD]` count 0** in `logs/eod.log`, and EOD coverage near 100 % of the active universe |
+   | 10:15:59 | **A4 re-run, SENSEX dte 1** (item 3 below) | per its own pre-commitment — if T1 refuses, the L7/L8 views are DROPped |
+
+   Also still owed from the 10-06 list, unverified here: ENH-133 first live rows (G1–G3,
+   A(c)–A(e), R1–R6), WCB moving on live ticks (S90-G), and `v_run_trace` for the latest cycle
+   (R0.7). Runbook `docs/research/s90_agentic/runbook_2026-10-06_1600.md` §5.
+2. **NIFTY L9 stage-1 max-pain arm** (TD-S80-NEW-1), pre-registered before any
    read — carried from S89.
-4. **Wed 2026-10-07, 10:15:59 IST — A4 re-run, SENSEX dte 1** — carried from S89. **The ENH-98
+3. **Wed 2026-10-07, 10:15:59 IST — A4 re-run, SENSEX dte 1** — carried from S89. **The ENH-98
    L7/L8 views were NOT applied in S90** (S90-A scoped the apply to ENH-133), so the
    pre-committed DROP has nothing to drop until they are.
-5. **~Tue 2026-10-13 — drop the S90-H backup tables** after a clean week (TD-S90-NEW-11).
-6. **Tue 2026-10-20 (holiday) — the first live test of R0.8:** no chain rows written,
+4. **~Tue 2026-10-13 — drop the S90-H backup tables** after a clean week (TD-S90-NEW-11).
+5. **Tue 2026-10-20 (holiday) — the first live test of R0.8:** no chain rows written,
    `cycle_health` CLOSED (TD-S89-NEW-1 closes on it).
 
 **Undated — the tracker is the list** (roadmap §3). Next by its order: R1.10 scrip-map sync ·

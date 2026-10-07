@@ -734,6 +734,71 @@
     }
   },
   "files": {
+    "scripts/freeze_market_ticks.sh": {
+      "local_path": null,
+      "aws_path": "/home/ssm-user/meridian-engine/scripts/freeze_market_ticks.sh",
+      "reads": [
+        "market_ticks (via bin/roq.sh as merdian_ro -- read-only, 30 s statement timeout)"
+      ],
+      "writes": [
+        "~/merdian_fixtures/ticks/<IST date>/ticks_<HHMM>_<HHMM>.csv.gz (FILES, not a table)",
+        "~/merdian_fixtures/ticks/.last_end (window cursor)"
+      ],
+      "call_signature": "no arguments; env TICK_FIXTURE_DIR, ROQ",
+      "cadence": "AWS cron */5 3-10 * * 1-5 (09:00-16:15 IST), timeout 120, logs/freeze_market_ticks.log",
+      "status": "LIVE -- NEW S90 / AM-1 (47c795c, cadence and retention 8f0007f). Risk class SC: read-only on the database, writes only its own files. Answers TD-S90-NEW-4 by NAMING the purge -- pg_cron jobid 46 (*/30 * * * 1-5) deletes market_ticks older than 1 hour, so the table holds roughly the last 60-90 minutes and nothing tick-based could be replayed after the close. Exports the window [previous end, now - 1 min), never starting more than 65 minutes back; a clipped window logs gap=1. Measured 353k rows / 8 MB per 15 min at the open and ~20 s of the 30 s timeout, which is why the cadence is 5 minutes and not 15. Retention: 10 days of directories. Off switch: comment out the crontab line. NOTHING CONSUMES THE FROZEN TICKS YET -- roadmap R2.7.",
+      "open_items": [
+        "TD-S90-NEW-4"
+      ]
+    },
+    "backfill_cas_close_from_daily.py": {
+      "local_path": "C:\\GammaEnginePython\\backfill_cas_close_from_daily.py",
+      "aws_path": "/home/ssm-user/meridian-engine/backfill_cas_close_from_daily.py",
+      "reads": [
+        "Dhan /v2/charts/historical (daily endpoint -- authoritative settled close)",
+        "hist_spot_bars_1m (the existing 15:29 IST bar)",
+        "the 16:00 dhan_idx_i snapshot (second independent source, S90-M)"
+      ],
+      "writes": [
+        "hist_spot_bars_1m (MISSING rows upserted; MISMATCH rows corrected ONLY on two-source agreement)",
+        "market_spot_snapshots.raw (source_script=backfill_cas_close_from_daily, cas_source=daily_endpoint)"
+      ],
+      "call_signature": "--from YYYY-MM-DD --to YYYY-MM-DD [--auto-correct]",
+      "cadence": "AWS cron 20 03 * * 1-5 = 08:50 IST (after the 08:35 token refresh), over the last 7 days, logs/cas_recon.log -- scheduled S90 / AM-1 (1708a1c). Also run manually for backfills.",
+      "status": "PRODUCTION -- companion to capture_cas_close.py under ADR-022 D2, NEW S70, extended and SCHEDULED S90 / AM-1 (1708a1c). The S70 docstring's never-auto-correct rule is now narrowed by ruling S90-M: a MISMATCH is auto-corrected when the Dhan daily close AND the 16:00 snapshot agree, and otherwise reported and left alone. This is the safety net for TD-S90-NEW-12 (the live job rejected every session 2026-08-24 to 2026-10-06) and for TD-S90-NEW-13 (SENSEX can settle after the 15:29 bar). Offline test tests/test_cas_recon_autocorrect.py.",
+      "open_items": [
+        "TD-S90-NEW-12",
+        "TD-S90-NEW-13"
+      ]
+    },
+    "tests/run_offline.sh": {
+      "local_path": null,
+      "aws_path": "/home/ssm-user/meridian-cc/tests/run_offline.sh",
+      "reads": [
+        "tests/golden/**/inputs/*.csv.gz (fixtures only)",
+        "tests/replay/contracts.json",
+        "tests/replay/expected/*.statuses.csv"
+      ],
+      "writes": [],
+      "call_signature": "bash tests/run_offline.sh  (exit 0 only if all suites pass; ~35 s)",
+      "cadence": "ON DEMAND -- any hour, no database and no network. NOT yet a hard deploy gate (roadmap R2.1 exit still open).",
+      "status": "PRODUCTION (test tier) -- NEW S90 / AM-1 (a80176e, extended by df80dec / 6d9f4f7 / 1708a1c). Runs 6 suites: contract-runner unit tests, seeded defects on a golden day, replay vs pinned statuses, ledger child runs (S90_CHILD_RUN), CAS close slot pick (S90_CAS_SLOT_PICK), CAS recon auto-correct. Lives in the meridian-cc clone.",
+      "open_items": []
+    },
+    "tests/replay/": {
+      "local_path": null,
+      "aws_path": "/home/ssm-user/meridian-cc/tests/replay/",
+      "reads": [
+        "tests/golden/*/inputs/*.csv.gz via fixture_client.py (in-memory stand-in for SupabaseClient, read-only)"
+      ],
+      "writes": [
+        "tests/replay/expected/*.statuses.csv (only under --pin)"
+      ],
+      "call_signature": "python3 tests/replay/replay_contracts.py [--check | --pin] ; python3 tests/replay/test_replay_seeded.py",
+      "cadence": "ON DEMAND / via tests/run_offline.sh. Not scheduled.",
+      "status": "PRODUCTION (test tier) -- replay harness v0, NEW S90 / AM-1 (a80176e), roadmap R2.1 / R1.6. README.md, fixture_client.py, replay_contracts.py, contracts.json, expected/ (6 pinned days), test_replay_seeded.py. Replays check_contracts_shadow.evaluate() -- the exact function the */5 cron runs -- at every 5-minute cycle 09:15-15:30 IST of each golden day. Combined pinned sha256 abdd2b16... from cat tests/replay/expected/*.statuses.csv (recomputed 2026-10-07). Re-pinned at 2e66d4f with exactly 8 cells MISSING -> OK (4 open days x the 15:20/15:25 slots; the 10-02 holiday pair reads CLOSED). Proven to catch a regression: moving SESSION_CLOSE 15:30 -> 15:20 fails --check with 8 differences on 2026-10-01 SENSEX. SCOPE STATED: only the relations frozen in the fixtures, front expiry only, for the fixture's own symbol.",
+      "open_items": []
+    },
     "docs/decisions/ADR-030-per-cycle-layer-history.md": {
       "local_path": null,
       "aws_path": "/home/ssm-user/meridian-cc/docs/decisions/ADR-030-per-cycle-layer-history.md",
@@ -5002,10 +5067,16 @@
       "truncated_each_run": false
     }
   },
-  "version": "v68",
-  "last_updated_session": "Session 90 / AM-1",
-  "last_updated_date": "2026-10-06",
+  "version": "v69",
+  "last_updated_session": "Session 91 / AM-2",
+  "last_updated_date": "2026-10-07",
   "change_log": [
+    {
+      "session": "S91 / AM-2",
+      "date": "2026-10-07",
+      "type": "Agentic Meridian Session 2, task 1: fold the AM-1 post-close delta into the registers. DOCS ONLY -- no code changed, no database writes, nothing touched under ~/meridian-engine, and the register edits were deliberately NOT committed.",
+      "summary": "Scope = the 10 commits 699398f..490b088 (HEAD 490b088) that landed after the AM-1 close, plus the three Marketview commits eda1ca0/c53dbea/255cca0 in ~/meridian-connect. RULINGS S90-K/-L/-M added to docs/research/s90_agentic/rulings_s90.md (the single source; S90-J was already present and was not duplicated): S90-K rename scope -- prose, titles, UI text and commit prefixes say MERIDIAN while identifiers keep their merdian/MERDIAN_ spelling until renamed by ADR (699398f, CLAUDE.md rule 20); S90-L spot contract session end -- per-product data_contracts.session_end_ist, spot 15:15, on the evidence of exactly 8 replay cells MISSING at 15:20/15:25 over the 4 OPEN golden days, the 10-02 holiday pair reading CLOSED (2e66d4f, sql/2026-10-06_s90_spot_session_end.sql); S90-M CAS reconciliation -- auto-correct a 15:29 bar only when the Dhan daily close AND the 16:00 dhan_idx_i snapshot agree, otherwise report and leave it alone (1708a1c, scheduled 20 03 * * 1-5 = 08:50 IST, logs/cas_recon.log). TECH DEBT: TD-S90-NEW-12 (S2 -- capture_cas_close.py took body[-1] and Dhan appends a call-time bar, so the job REJECTED every session 2026-08-24 to 2026-10-06; hist_spot_bars_1m closed on the frozen 15:14 value and daily/weekly closes changed when backfilled: 58 bars + 10-06 live, 3 SENSEX bars hand-corrected 08-24/09-23/10-05; gap prev-close NOT affected because get_prev_close_spot reads the first row >= 16:00; fixed by 6d9f4f7 + 1708a1c, closes on a clean 08:50 IST recon on 10-07), TD-S90-NEW-13 (S3 -- SENSEX can settle after the 15:29 bar; the S71 flat-bar rule held 55/58, not universally), TD-S90-NEW-14 (S2 -- unidentified off-box writer advanced the shared equity_eod cursor 16:31-17:28 IST on 10-06, ~450 tickers skipped, no equity_eod rows created, cursor left 750 PARTIAL_OK; this box, MALPHA, the Windows tasks and the cloud workspace all ruled out; isolated by 490b088 via JOB_NAME=equity_eod_aws and S90_CURSOR_GUARD; identify via Supabase API Gateway logs 11:00-12:00 UTC 10-06; casts doubt on the S68 disposition of TD-S66-NEW-5's untraced-writer residual). S90 status footer addendum: TD-S90-NEW-1 DH-905 remaps VERIFIED (1,379/1,381 = 99.86 % on 10-01; ROADSTAR deactivates via R1.10), TD-S90-NEW-2 CLOSED (origin/main in ~/meridian-connect measured 255cca054af52130d31753a03d372f374bbbcb8b = the deployed build), TD-S90-NEW-4 answered by the tick freeze (pg_cron jobid 46 named as the purge), TD-S90-NEW-9 unchanged. OWED AND NOT DONE: build_ict_htf_zones.py must be re-run on the corrected closes, and its SCRIPT-level invoker is still UNRESOLVED (S76 verdict in files.build_ict_htf_zones.py; absent from both crontabs, /etc/cron.*, every systemd unit, the orchestrator and run_ingest.sh; Windows task MERDIAN_ICT_HTF_Zones_0845 Disabled per ADR-006; the only scheduled relation is detect_ict_patterns_runner.py at 10:20/10:22 UTC, which imports detect_1h_zones and upsert_zones at :56 and rebuilds 1H zones only). ROADMAP v2.8: R0.3 + df80dec (per-leg ledger rows via log_child_run, chain was 52 % traced), R1.2 + 2e66d4f (session_end_ist clamp), R1.6 + tests/replay/test_replay_seeded.py, R2.1 + a80176e (replay harness v0 over 6 golden days, combined sha256 abdd2b16... RECOMPUTED from cat tests/replay/expected/*.statuses.csv, plus tests/run_offline.sh with 6 suites; still not a hard deploy gate), new R2.7 tick freeze (47c795c/8f0007f). CURRENT.md carries an AM-1 post-close block and the 10-07 verification table in place of the two now-past items; session_log.md one entry. Preflight discrepancy recorded: CURRENT.md is pure LF (0 CRLF), not mixed as briefed."
+    },
       {
         "session": "S90 / AM-1",
         "date": "2026-10-05 -> 2026-10-06",

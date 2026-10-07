@@ -69,6 +69,144 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 **NOTE — 2026-10-03.** `v_gex_concentration.hhi_net` is the **top-1 gamma share, NOT a Herfindahl** — byte-identical to `v_gex_strike_rank` rank-1 `share_of_abs` and to `gamma_metrics.gamma_concentration` (0.0942 on 10-01); true HHI Σshare² ≈ 0.0464. The live board's 'HHI' label and D-6's ~0.10 / ~0.25 bands are therefore on **top-1 share**. `hhi_call` / `hhi_put` semantics **unverified**. Verify call/put and correct the board label before any Herfindahl claim.
 **FIX (phase-2 Pin tab):** the board's 'HHI' label should display the true `conc_hhi` (Σs²); keep top-1 share as a separate **'lead-strike share'** line. **ENH-133 now stores both.**
 
+### TD-S91-NEW-1 (S2 priority) — the ENH-133 writer and reconciler crash on 1/2/4/5-digit microsecond fractions, and the lost cycles are unrecoverable
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** About **1 cycle in 10**, every day since ENH-133 went live, and **ADR-030 D2** makes the loss permanent: `gex_cycle_history` accumulates forward and is never backfilled. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | `write_gex_cycle_history_local.py` `_ist_date` · `reconcile_gex_cycle_history_session_local.py` `_ist_date` · `gex_cycle_history` |
+| **Evidence** | `logs/orchestrator.log`, cycles **09:05–09:25 IST 2026-10-07**: `ValueError: Invalid isoformat string '2026-10-07T03:30:07.61356+00:00'`. PostgREST trims trailing zeros from the microsecond fraction; **Python 3.10.12** (measured on the box) accepts a fraction of exactly 3 or 6 digits, or none at all, and raises on every other width. **Rows lost: 13 on 2026-10-06** — front leg 64 of 77 cycles against `gamma_metrics`, and the 11 mid-session gaps fall in **consecutive runs**, not singly — and **10 so far on 2026-10-07**. The **contract runner flagged them MISSING**: the ADR-031 spine reported this defect rather than a later reader finding it. |
+| **Both modules, not one** | The two `_ist_date` bodies were **byte-identical**, so the writer's crash was the reconciler's crash on the same strings (**Rule 22** — audit the parallel component). Fixing only the writer would have left the reconciler failing identically. |
+| **Fix prepared, UNCOMMITTED** | Test-first per **Rule 0**: `tests/test_cycle_history_ts_parse.py` runs fraction widths 0–6, both the `Z` and `+00:00` forms, the exact log string, and IST rollover in **both** directions, against **both modules**. Against unfixed code the failing widths are exactly **[1, 2, 4, 5]** — 0, 3 and 6 parse because bare `fromisoformat` accepts them — and that per-module signature is asserted, so "fixed" cannot be confused with "not hit yet". Pre-fix the reconciler read `[1, 2, 4, 5]` while the already-fixed writer read `[]`; post-fix both read `[]`, **36/36 PASS**. Fix is `_FRAC` + `_norm_frac`, regex deliberately identical to `check_contracts_shadow._FRAC`. Added to `tests/run_offline.sh` as **step 7/7**. |
+| **Deploy** | **LIVE, S90-J window, 16:30 IST or later.** Rollback `git revert <sha>` — one commit, no DDL, no data migration. First confirmation 2026-10-08 09:05–09:25 IST: `gex_cycle_history` should hold **77 of 77** front-leg cycles against `gamma_metrics`, not 64. |
+| **Not recovered** | The 23 rows already lost stay lost. This stops the bleeding; it does not backfill. |
+| **Status** | **OPEN — fix prepared and tested, PENDING DEPLOY.** |
+
+### TD-S91-NEW-2 (S3 priority) — six more unpadded `fromisoformat` sites, and ~40 copies of the same padding with no shared helper
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Each site is latent until a trimmed fraction reaches it; **TD-S91-NEW-1** is what one of them looks like when it fires. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | the scheduled writers listed below · `core/`, the helper that does not exist |
+| **Evidence — in priority order** | Grepped across every `.py` named in `docs/registers/aws_crontab.txt`. **1. `backfill_cas_close_from_daily.py:193`** — feeds the CAS reconciliation (**TD-S90-NEW-12**, *Fixed by* row). **2. `build_market_spot_session_markers.py:33`** — feeds the gap prev-close (**TD-S90-NEW-12**, *Not affected* row, which is why that row currently reads clean). **3. `generate_pine_overlay.py:278, 473, 495`** — three sites. **4. `refresh_health_dashboard.py:40`**. **5. `refresh_dhan_token.py:120`**. **6. `detect_ict_patterns_runner.py:228`** (`r["bar_ts"]`, exposed-probable). Sites 1 and 2 first, by the operator's ordering. |
+| **Already safe, measured not assumed** | `check_contracts_shadow.py` pads via its own `_FRAC`; `compile_market_environment_local.py` pads to 6 with a strip fallback. **Not exposed:** `accrue_expiry_outcomes.py`, `ingest_participant_positioning.py`, `relate_ambient_to_open_local.py` — all parse date-only CLI arguments. |
+| **The structural half** | `grep -rn "ljust(6"` finds **~40 independent copies** of this padding across the repo and **`core/` holds none** — the only `fromisoformat` in `core/` is `core/trading_calendar_gate.py`, on a date-only string. Both fixes in **TD-S91-NEW-1** say in their own docstrings that one shared `core/` helper is the right fix and is deliberately not that change, so the duplication is on the record rather than quietly added to. |
+| **Proper fix** | One `core/` timestamp helper, then retire the copies site by site. |
+| **Status** | **OPEN — none fixed.** |
+
+### TD-S91-NEW-3 (S2 priority) — the Zerodha feed was down 09:10–09:36 IST on a token that had verified 50 minutes earlier, and the mechanism is unidentified
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** 26 minutes of the open with no tick feed, and breadth wrote **zero-coverage rows** for the window. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | `bin/wsfeed_preflight.sh` · `ws_feed_zerodha.py` · the MALPHA→Supabase token sync (**TD-NEW-7** lineage) · `market_breadth_intraday` |
+| **Evidence** | Feed down **09:10–09:36 IST 2026-10-07**. Preflight **rejected** the token that had verified at **06:1x**. The MALPHA sync ran **06:15:01–03** per the journal. Token hashes on both sides **now match** (`cee632a0…`), compared as sha256 of the value per **Rule 19** — never the value. |
+| **Mechanism UNIDENTIFIED** | Two hypotheses, neither tested: (a) the token was invalidated by a later interactive login; (b) a bad copy landed at 06:15 and was replaced before the comparison. **n = 1 with no mechanism is n = 1 with no mechanism** — recorded as a gap, not narrated into a cause. The matching hashes are consistent with **both**, so they discriminate nothing. |
+| **Proposed guard** | An **08:40 IST AUTH check on the box** (crontab, LIVE) that **exercises** the token rather than checking its presence — a presence check cannot fail for the reason this incident names. Not implemented. |
+| **Stale doc found alongside** | **Deployment Topology §S71.1** states the sync runs at **08:30 (`0 3`)**; it actually runs at **06:15 (`45 0`)**. Wrong since S71. Correcting §S71.1 is a doc edit, owed, and not this entry's fix. |
+| **Status** | **OPEN — recovered, cause unidentified, guard not built.** |
+
+### TD-S91-NEW-4 (S3 priority) — `ws_feed_zerodha.log` stamps UTC time under an "IST" label
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Cosmetic until someone correlates the log against a real clock — which is exactly what **TD-S91-NEW-3** required. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | `ws_feed_zerodha.py` logging format · `ws_feed_zerodha.log` |
+| **Evidence** | Log lines carry a UTC timestamp with the literal label `IST`: a 5 h 30 m error. Found while timing the 09:10–09:36 outage, where it cost real minutes deciding which clock a line was in. |
+| **Proper fix** | Either stamp IST and keep the label, or stamp UTC and label it UTC. **A label that disagrees with its value is worse than no label**, because nothing signals the error. |
+| **Status** | **OPEN.** |
+
+### TD-S91-NEW-5 (S2 priority) — the `breadth_indicators_daily:ALL` contract allows 2 trading days behind against a settled lag of ~3, so it read MISSING all day
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** It took **WCB to STALE by lineage on both symbols** for the whole session, so a mis-specified gate degraded a live product. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | `data_contracts` row `breadth_indicators_daily:ALL` (`freshness_sla_min` 2880 = 2 trading days) · `check_contracts_shadow.py` daily branch · `weighted_constituent_breadth_snapshots:NIFTY` / `:SENSEX` via `product_lineage` |
+| **Evidence** | 2026-10-07: newest `trade_date` **2026-10-01**, so the daily freshness check read **MISSING** on every cycle and both WCB products inherited **STALE**. The Dhan EOD publication lag is **~3 trading days**, settled in **S65/S67** — so the contract's 2-day allowance sits **below the lag it is measuring** and cannot pass on a healthy day. |
+| **This is a mis-specified gate and is recorded as one** | Per the settled rule — derive a gate's threshold from the quantity's scale **before** measuring, and a mis-specified gate is recorded as mis-specified and **never loosened in place**. The 2880 came from the S90 seed, not from the measured lag. **Do not widen the row to make today pass.** |
+| **Proper fix** | Re-derive `freshness_sla_min` from the **measured** distribution of the Dhan EOD lag, write the derivation beside the number, then change the contract. **Today's 16:10 EOD run is the evidence point** for that measurement. |
+| **Status** | **OPEN — gate stands failed, deliberately.** |
+
+### TD-S91-NEW-6 (S3 priority) — `compute_basis_context` exits 1 every cycle and the cause has not been read
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Filed on the observation alone. Scope is unknown until the log is read, so the priority may move. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | `compute_basis_context`, a step in the per-cycle chain |
+| **Evidence** | **Exit 1 on every cycle**, observed 2026-10-07. **The cause has NOT been read** — no log line, no traceback, no consumer impact assessed. This entry records the observation and states that it records nothing more. |
+| **Next step** | Read the step's own log for one failing cycle before proposing anything. |
+| **Status** | **OPEN — observed, not diagnosed.** |
+
+### TD-S91-NEW-7 (S2 priority) — the offline fixture suite OOM-killed the box during pre-open and Session Manager became unreachable
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** It cost access to the box in the pre-open window of a live trading morning. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | `tests/replay/test_replay_seeded.py` · `tests/run_offline.sh` · the t3.small instance (1.9 GB) |
+| **Evidence** | `dmesg -T`, quoted: **03:21:24 UTC = 08:51:24 IST**, `Killed process 403065 (python3) anon-rss:911788kB`; **03:28:11 UTC = 08:58:11 IST**, `Killed process 403716 anon-rss:955396kB`. ~0.87 GB and ~0.91 GB on a box reading 1910 MB total / 638 MB free. **Session Manager became unreachable.** PID 403065 **is** step 2/6 — the suite printed `403065 Killed  python3 tests/replay/test_replay_seeded.py` itself, so that attribution is direct. |
+| **What is NOT attributed** | **PID 403716.** It coincides with a `/usr/bin/time -v` run that reported `Exit status: 0` and max RSS 958,852 kB, and a kill and a clean exit cannot both describe one process. Not enough of that invocation's output was captured to say which process died. **Stated as unexplained rather than explained away.** |
+| **Cause** | The S91 seeded cases bound a `FixtureClient` per case at module level, so a dozen full golden days stayed reachable at once. The file passed standalone at 08:49 and died inside the suite at 08:51, because step 1/6 had just run and the headroom was gone. |
+| **Fix applied, UNVERIFIED** | A `free()` helper clears each client's `tables` and `_sorted` and calls `gc.collect()`; every case frees before the next loads, and no module-level client outlives its case. **Not run.** The post-fix run is owed after 15:40 IST under `( ulimit -v 700000; … )`, with exits pre-registered in `scratch/s91/r16_result.txt`. |
+| **Rule to propose** | **No fixture-suite run between 08:30 and 15:40 IST**, and every such run under an explicit `ulimit -v` so a regression fails instead of killing the box. A `CLAUDE.md` rule, for operator ruling. |
+| **Status** | **OPEN — fix applied, unverified; rule not ruled.** |
+
+### TD-S91-NEW-8 (S3 priority) — the replay chain contract has no row band, so the harness cannot detect depth loss
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The pinned harness carries no depth check. Production is unaffected. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | `tests/replay/replay_contracts.py` `fixture_scope()` · `check_contracts_shadow.py` `in_range()` |
+| **Evidence** | `fixture_scope()` sets `exp["rows"] = None` and `in_range` returns True for None. Measured in `scratch/s91/r16_result.txt`, **CASE 6 / CONTROL D1 masking**: a chain mutated to **2 rows per cycle reads OK** under the shipped contract. A **Rule 0** instance in the harness itself — the chain shape check cannot fail for the reason it names. |
+| **Not fixed here** | Case 6 took **Option A**, a test-local band `[325, 450]` derived from scale: live SENSEX `[650, 900]` covers 2 expiries, the fixtures hold 1, measured front-only rows/cycle are 392 (08-27) and 394 (10-01), and 394 × 2 = 788 sits inside the live band. That proves the check works but leaves `fixture_scope` untouched. |
+| **Proper fix** | Option B — `fixture_scope` sets the halved band instead of None. Measured consequence: rows/cycle is constant within every golden day and all six sit inside their own halved band, so **no pinned cell should move**. That is a **prediction**, to be held by `replay_contracts.py --check` **before** any `--pin`, as its own deliberate change. |
+| **Status** | **OPEN.** |
+
+### TD-S91-NEW-9 (S3 priority) — the contract lookback bound is not floored to the cadence grid, so capture jitter moves the window edge
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** It changes no status today; it makes a continuity assertion unstateable. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | `check_contracts_shadow.py` `read_product()`, the `since = newest - timedelta(...)` bound |
+| **Evidence** | `since` is computed off `newest`, which carries capture jitter — chain timestamps land at second-of-minute 4–8. Measured in `scratch/s91/r16_result.txt` (**D2**): on the **clean** 10-01 SENSEX chain the window holds **4 cycles once, 5 cycles 39 times and 6 cycles 35 times** across its 75 cycles. Worked case, with the 12:00 cycle dropped: at 12:20 the 11:55 row falls **0.4 s** outside `since`, the window's own minimum slot becomes 12:05, and the hole stops being visible — not because it was filled but because the edge moved. |
+| **Consequence** | Any continuity check must compare **cadence-grid slots, never a count**. The grid form measured **0 gaps across 300 clean cycles** on four golden days; a count-based form would have fired on **40 of 75** clean cycles on 10-01 alone. |
+| **Proper fix** | Floor `since` to the cadence grid — `floor_cycle` already exists in the same module. Required before a continuity assertion can say "and no other cycles". |
+| **Status** | **OPEN.** |
+
+### TD-S91-NEW-10 (S3 priority) — a single dropped 5-minute cycle is undetectable by every check the contract runner has
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A real coverage hole with a named fix, and no instance of harm measured yet. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | `check_contracts_shadow.py` `own_status()` — the calendar / presence / freshness / shape / movement set |
+| **Evidence** | Measured in `scratch/s91/r16_result.txt`, **CASE 7a**, with the 12:00 chain cycle removed from the 10-01 fixture: **own OK at 12:00 (age 8.9), 12:05 (3.9) and 12:10 (3.9)**, `movement_points == 4` throughout, dependants OK. **Freshness** cannot see it — the SLA is 2× the cadence, so one hole never reaches the threshold. **Shape** cannot see it — it reads only the newest cycle. **Movement** cannot see it — the surviving signatures still differ. The same mutation on `gamma_metrics` is equally invisible, so the gap is in the **runner**, not in the relation. |
+| **And NOT a threshold change** | At cadence 5 / SLA 10 / read offset 4, *"one dropped cycle"* and *"one late write"* are the **same observation**, so **no SLA value separates them** — tightening to 9 would fail a healthy day with one late write. Detection has to come from a different axis. |
+| **Proper fix (Stage B, NOT started)** | A **continuity check** in `own_status()`, inserted before the movement block, which already has `window`, `cadence_min` and `need` in scope: floor every window key to its cadence slot, compute `span(min..max) − distinct slots`, record it as `checks["cycles_missing_in_window"]`, and `worse(status, "DEGRADED")` when > 0. **DEGRADED, not MISSING** — MISSING propagates to dependants as STALE, and a hole five minutes back does not make the current row stale. Needs **TD-S91-NEW-9** for a deterministic firing set. It changes the shadow runner, so it gets its own `replay_contracts.py --check` before any `--pin`. |
+| **Bearing on an earlier entry** | **TD-S72-NEW-8**, *Symptom* row (cross-ref **TD-S69-NEW-2**): *"a session that started on time and stopped 80 minutes early passed the health check"*, because `min_rows` was a floor and a first→last range check cannot see a truncated tail. Same blindness, one layer up. Noted while re-citing it: that entry's measured instances are **2026-07-31** (302 rows, ending 08:42 UTC) and **2026-08-17** (297, ending 08:39) — **not 08-20**, which the roadmap's *"08-20 shape"* wording implies, and 2026-08-20 is not a frozen golden day. |
+| **Status** | **OPEN — pinned as NOT-caught by `tests/replay/test_replay_seeded.py` case 7a, so Stage B must move a failing assertion rather than quietly widen anything.** |
+
+### TD-S91-NEW-11 (S3 priority) — two Claude Code sessions worked the same tree at once, and BOTH were rooted in the engine tree
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** No corruption found. The exposure is real and the detection was incidental. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | process, not code — the `~/meridian-cc` working tree · `~/meridian-engine` (PRIMARY, pull-only) |
+| **Evidence** | Two sessions overlapped **08:19–08:53 IST 2026-10-07** on the same tree, **one of them in auto mode rooted in `~/meridian-engine`**. Observed consequence: a file was rewritten by the other session between this one's read and its write, caught **only** because the write tool refused on a changed-since-read check. A concurrent edit to a different part of the same file would not have been caught that way. |
+| **This session too — not just the other one** | **The session filing this entry is ALSO rooted in `~/meridian-engine`**: its permission prompts read *"in /home/ssm-user/meridian-engine"*, and since **08:13** it has kept every write inside `~/meridian-cc` **only by using absolute paths**. The mitigation was the paths, not the rooting — nothing structural prevented a relative-path write from landing in the production tree, and a single omitted prefix would have done it. (One such slip did occur and was caught: a scratch `.sql` was written to `/tmp` instead of under `~/meridian-cc`, which was harmless only because `/tmp` is not the engine tree.) **The proposed rule therefore applies to this session as much as to the other one**, and this entry is not a report about someone else. |
+| **Why the engine tree is the sharper half** | `~/meridian-engine` is PRIMARY and receives code by `git pull` only (**CLAUDE.md Rule 1**, BREAK_GLASS excepted). A session rooted there can edit production directly, outside the Change Protocol, with no preflight hash comparison — the condition Rule 1 exists to prevent. |
+| **Rule to propose** | **One Claude Code session at a time on a given tree**, and **never root a session in `~/meridian-engine`**: root in `~/meridian-cc` and let the engine tree pull. A `CLAUDE.md` rule, for operator ruling. Absolute paths are a discipline, not a guardrail; the rule should remove the need for the discipline. |
+| **Status** | **OPEN — rule not ruled.** |
+
 ### TD-S90-NEW-12 (S2 priority) — `capture_cas_close.py` took the last bar, so the settled close was rejected on every session from 2026-08-24 to 2026-10-06
 
 | Field | Value |
@@ -7035,4 +7173,4 @@ All four verification conditions met. **(a)** The daily layer accumulates — 38
 
 
 
-**S90 / AM-1 (2026-10-05 → 06) — 11 new items filed (TD-S90-NEW-1..11), 0 closed; status changes on six existing items.** Ledger: **`TDs_NEW=11 (0×S1, 3×S2, 8×S3)` · `TDs_CLOSED=0`**. Hybrid close: each item points at its evidence in `docs/research/s90_agentic/`; progress on the agentic layer is tracked in the roadmap, not here. **Existing items, updated without editing their bodies** (anchors would not be unique, and the body is the record of what was believed): **TD-S89-NEW-1 → MITIGATED** — proper fix (2) deployed: closed days written as rows (`82619f8`, belt rows 10-20 / 11-10) and the chain ingest + spot capture on `core/trading_calendar_gate.py` (`ca79717`); the contract runner calls 10-02 CLOSED; **close after 2026-10-20 passes with no chain rows.** **TD-S89-NEW-2 → premise REFUTED** (§D.46.3): the table holds 16 rows and the write path exists as an anon-executable RPC; closed to anon by S90-E; the remaining half is **TD-S90-NEW-8** — recommend closing TD-S89-NEW-2 as superseded. **TD-S89-NEW-5 → evidence added**: R01-F8 measures `anon=rm` (MAINTAIN) on six base tables (`option_chain_snapshots`, `market_spot_snapshots`, `market_ticks`, `volatility_snapshots`, `script_execution_log`, `trading_calendar`), not only the two views. **TD-S81-NEW-16 → partly remediated further**: `merdian_ro` read policies added on `script_execution_log`, `merdian_parameters`, `dhan_scripmaster` (S90); new S90 tables carry RLS + a `merdian_ro` policy in their own DDL (ADR-031 D6). **TD-S82-NEW-4 → interacts**: the seeder now writes Muhurat 2026-11-08 CLOSED as the engine says; it self-heals through the merge when the engine is fixed. **TD-S88-NEW-1 → not reproduced** on 2026-10-05 10:27 (previous close resolved across the 10-02 holiday); one observation, not a closure. **AM-2 / S91 addendum (2026-10-07), folding in the AM-1 post-close delta.** Three items filed: **TD-S90-NEW-12** (CAS close rejected on every session 2026-08-24 → 10-06), **TD-S90-NEW-13** (SENSEX can settle after the 15:29 bar), **TD-S90-NEW-14** (off-box writer of the `equity_eod` cursor) — the S90 ledger becomes **`TDs_NEW=14 (0×S1, 5×S2, 9×S3)`**. Status on three S90 items, **bodies unedited**: **TD-S90-NEW-1 → DH-905 remaps VERIFIED** — after a clean `equity_eod_aws` lap (28 runs, guard 0), 2026-10-01 coverage is **1,379 / 1,381 = 99.86 %**; ANZEN is sporadic (fine); **ROADSTAR has never had an EOD row and Kite `ohlc()` is empty for it too**, so it deactivates via R1.10 — the recurrence half of the item stands **OPEN**. **TD-S90-NEW-2 → CLOSED 2026-10-07:** `git -C ~/meridian-connect fetch origin && git -C ~/meridian-connect rev-parse origin/main` prints **`255cca054af52130d31753a03d372f374bbbcb8b`**, the commit the deployed bundle was built from, so live = staging = `origin/main`. (The item's body names `265ceb0` as the deployed commit and the three post-close Marketview commits are `eda1ca0`, `c53dbea`, `255cca0`; the body is left as written.) **TD-S90-NEW-4 → the purge is now named, by the tick freeze** `47c795c` / `8f0007f`: `scripts/freeze_market_ticks.sh` on `*/5 3-10 * * 1-5` copies `market_ticks` to `~/merdian_fixtures/ticks` with 10-day retention, ahead of **`pg_cron` jobid 46**, which deletes rows older than 1 hour — what remains of the item is the retention decision under R1.9, and **nothing consumes the frozen ticks yet**. **TD-S90-NEW-9 unchanged.**
+**S90 / AM-1 (2026-10-05 → 06) — 11 new items filed (TD-S90-NEW-1..11), 0 closed; status changes on six existing items.** Ledger: **`TDs_NEW=11 (0×S1, 3×S2, 8×S3)` · `TDs_CLOSED=0`**. Hybrid close: each item points at its evidence in `docs/research/s90_agentic/`; progress on the agentic layer is tracked in the roadmap, not here. **Existing items, updated without editing their bodies** (anchors would not be unique, and the body is the record of what was believed): **TD-S89-NEW-1 → MITIGATED** — proper fix (2) deployed: closed days written as rows (`82619f8`, belt rows 10-20 / 11-10) and the chain ingest + spot capture on `core/trading_calendar_gate.py` (`ca79717`); the contract runner calls 10-02 CLOSED; **close after 2026-10-20 passes with no chain rows.** **TD-S89-NEW-2 → premise REFUTED** (§D.46.3): the table holds 16 rows and the write path exists as an anon-executable RPC; closed to anon by S90-E; the remaining half is **TD-S90-NEW-8** — recommend closing TD-S89-NEW-2 as superseded. **TD-S89-NEW-5 → evidence added**: R01-F8 measures `anon=rm` (MAINTAIN) on six base tables (`option_chain_snapshots`, `market_spot_snapshots`, `market_ticks`, `volatility_snapshots`, `script_execution_log`, `trading_calendar`), not only the two views. **TD-S81-NEW-16 → partly remediated further**: `merdian_ro` read policies added on `script_execution_log`, `merdian_parameters`, `dhan_scripmaster` (S90); new S90 tables carry RLS + a `merdian_ro` policy in their own DDL (ADR-031 D6). **TD-S82-NEW-4 → interacts**: the seeder now writes Muhurat 2026-11-08 CLOSED as the engine says; it self-heals through the merge when the engine is fixed. **TD-S88-NEW-1 → not reproduced** on 2026-10-05 10:27 (previous close resolved across the 10-02 holiday); one observation, not a closure. **AM-2 / S91 addendum (2026-10-07), folding in the AM-1 post-close delta.** Three items filed: **TD-S90-NEW-12** (CAS close rejected on every session 2026-08-24 → 10-06), **TD-S90-NEW-13** (SENSEX can settle after the 15:29 bar), **TD-S90-NEW-14** (off-box writer of the `equity_eod` cursor) — the S90 ledger becomes **`TDs_NEW=14 (0×S1, 5×S2, 9×S3)`**. Status on three S90 items, **bodies unedited**: **TD-S90-NEW-1 → DH-905 remaps VERIFIED** — after a clean `equity_eod_aws` lap (28 runs, guard 0), 2026-10-01 coverage is **1,379 / 1,381 = 99.86 %**; ANZEN is sporadic (fine); **ROADSTAR has never had an EOD row and Kite `ohlc()` is empty for it too**, so it deactivates via R1.10 — the recurrence half of the item stands **OPEN**. **TD-S90-NEW-2 → CLOSED 2026-10-07:** `git -C ~/meridian-connect fetch origin && git -C ~/meridian-connect rev-parse origin/main` prints **`255cca054af52130d31753a03d372f374bbbcb8b`**, the commit the deployed bundle was built from, so live = staging = `origin/main`. (The item's body names `265ceb0` as the deployed commit and the three post-close Marketview commits are `eda1ca0`, `c53dbea`, `255cca0`; the body is left as written.) **TD-S90-NEW-4 → the purge is now named, by the tick freeze** `47c795c` / `8f0007f`: `scripts/freeze_market_ticks.sh` on `*/5 3-10 * * 1-5` copies `market_ticks` to `~/merdian_fixtures/ticks` with 10-day retention, ahead of **`pg_cron` jobid 46**, which deletes rows older than 1 hour — what remains of the item is the retention decision under R1.9, and **nothing consumes the frozen ticks yet**. **TD-S90-NEW-9 unchanged.** **S91 / AM-2 (2026-10-07) — 11 new items filed, TD-S91-NEW-1…11, 0 closed.** Ledger: **`TDs_NEW=11 (0×S1, 4×S2, 7×S3)` · `TDs_CLOSED=0`**. **S2:** NEW-1 (ENH-133 writer + reconciler ts-fraction crash; 23 rows lost and unrecoverable under ADR-030 D2; fix tested, pending deploy), NEW-3 (Zerodha feed down 09:10–09:36, mechanism UNIDENTIFIED), NEW-5 (`breadth_indicators_daily` gate set below the settled Dhan lag, so it cannot pass on a healthy day), NEW-7 (the fixture suite OOM-killed the box in pre-open; one of the two kills unattributed). **S3:** NEW-2 (six more unpadded `fromisoformat` sites, ~40 copies of the padding, no `core/` helper), NEW-4 (UTC stamped under an IST label), NEW-6 (`compute_basis_context` exit 1, undiagnosed), NEW-8 / NEW-9 / NEW-10 (the R1.6 harness: no row band, un-floored lookback, single-dropped-cycle blind spot — evidence in `scratch/s91/r16_result.txt`), NEW-11 (two sessions on one tree, **both rooted in the engine tree, this one included**). **No existing entry body was edited.** Two fixes prepared and UNCOMMITTED (NEW-1 deploys ≥ 16:30 IST in the S90-J window; NEW-7 applied but unverified, post-15:40 run owed) and two rules proposed for ruling (NEW-7, NEW-11). **RULED 2026-10-07 ~11:50 IST:** both proposals were accepted — **TD-S91-NEW-7's rule as S91-A** (no fixture-suite run 08:30–15:40 IST; every run under an explicit `ulimit -v`) and **TD-S91-NEW-11's rule as S91-B** (one Claude Code session per tree; never root a session in `~/meridian-engine`). Codified as **`CLAUDE.md` rules 23 and 24** respectively; single source `docs/research/s91_agentic/rulings_s91.md`. Neither item is CLOSED by the ruling: NEW-7 still owes its post-15:40 verification run, and NEW-11 is a process item whose first compliance point is the next session's root. **Entry bodies unedited** — the ruling is recorded here, in the footer, not in the rows.

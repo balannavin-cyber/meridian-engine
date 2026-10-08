@@ -525,6 +525,20 @@ on BUILT layers stay on their own registers: E-D1 (the unit of `gex_cr`, shown o
 4. **R2.4** fixture scores reported (C1).
 5. **P6** closing amendment.
 
+### C6 — Rulings S92-C…F (same session, 17:06 IST)
+
+Recorded in `docs/research/s92_parity/rulings_s92.md`, not restated here. Their effect on C4 and C5:
+
+- **L7 / L8 (S92-C, S92-E).** D-4 is an **ADR-025 D3 deviation**, deferred to PPC-1 post-parity, so
+  it no longer blocks BUILT. The views carry the badge *"PROVISIONAL -- flow-vs-book (D-4) not built"*.
+  L7 and L8 become BUILT when the Flows tab reads `v_gex_greeks_l2_strike` / `_net` on the live board.
+  C5 item 1's "rule on D-4" is done.
+- **L12 (S92-D, S92-F).** The Pin tab reads `v_pin_board` (one session of `gex_cycle_history`, front
+  leg, anon through the view only). L12 becomes BUILT when it does, with the ranked-pressure leg
+  DECLINED-ON-EVIDENCE as a D3 deviation and conviction stage 2 not required. C5 item 2's
+  disposition question is done.
+- **C4 is not changed by C6.** BUILT stays 9 of 14 until the two tabs ship and are read as C3 was.
+
 ---
 
 ## Governance language

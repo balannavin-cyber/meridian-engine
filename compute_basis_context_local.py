@@ -33,6 +33,7 @@ except Exception:
 # CONTRACT (same shape as compute_options_flow_local.py): no CLI args;
 # discovers NIFTY+SENSEX itself; floor=1 row, typical=2; symbol=null.
 from core.execution_log import ExecutionLog
+from core.ts_parse import parse_pg_ts
 
 
 UTC = timezone.utc
@@ -59,16 +60,27 @@ def to_float(value: Any) -> Optional[float]:
 
 
 def parse_ts(value: Any) -> Optional[datetime]:
-    if not value:
-        return None
-    try:
-        text = str(value).replace("Z", "+00:00")
-        dt = datetime.fromisoformat(text)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=UTC)
-        return dt.astimezone(UTC)
-    except Exception:
-        return None
+    """S92-SITE7 -- TD-S91-NEW-2 site 7 / TD-S91-NEW-6.
+
+    Delegates to core.ts_parse.parse_pg_ts. The contract is UNCHANGED: falsy ->
+    None, naive -> assumed UTC, aware -> converted to UTC, bad input -> None.
+    The ONLY behavioural difference is that a microsecond fraction of 1, 2, 4 or
+    5 digits now parses instead of raising.
+
+    Why that mattered here. PostgREST trims trailing zeros, Python 3.10 (the box)
+    accepts widths 0/3/6 only, and the old body called a bare `fromisoformat`.
+    The `except -> None` then turned the ValueError into None, which
+    `compute_for_symbol` reads as `no_rows` for that symbol -- and because the
+    futures writer stamps ONE ts and reuses it for both symbols (measured: 203 of
+    203 distinct ts carry both), a single trimmed timestamp failed BOTH symbols
+    in the same cycle and the step exited DATA_ERROR, failing the whole
+    orchestrator cycle. Measured on 2026-10-08: 3 of 84 runs, rows[0] widths
+    4/5/5, against 0 of 69 successful runs carrying a failing width.
+
+    The padding logic is NOT reimplemented here -- see core/ts_parse.py, which
+    lifts it from write_gex_cycle_history_local.py:80-98 (bcadfa6).
+    """
+    return parse_pg_ts(value)
 
 
 def utc_now() -> datetime:

@@ -271,8 +271,16 @@ def main() -> int:
 
     if not out_rows:
         if all(s == "no_input" for s in per_symbol_status.values()) and per_symbol_status:
+            # S92-SKIP-EXIT0 -- TD-S91-NEW-15, operator ruling 2026-10-08.
+            # A skip is not a failure. exit_code 0; exit_reason UNCHANGED, so the
+            # ledger still records SKIPPED_NO_INPUT and the 12 structural cycles
+            # (08:31-09:26 IST, before futures capture starts at 09:30) remain
+            # countable instead of reading as DATA_ERROR in the exit code.
+            # error_message is kept: it is the only place statuses= survives.
+            # SCOPE: this call site only. run_merdian_shadow_runner_aws.py:364
+            # carries the same reason with exit_code=1 and is untouched.
             return log.exit_with_reason(
-                "SKIPPED_NO_INPUT", exit_code=1,
+                "SKIPPED_NO_INPUT", exit_code=0,
                 error_message=f"No recent index_futures_snapshots for either symbol. statuses={per_symbol_status}",
             )
         return log.exit_with_reason(

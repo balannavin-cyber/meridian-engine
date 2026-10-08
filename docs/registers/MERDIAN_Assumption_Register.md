@@ -1111,3 +1111,31 @@ claims or plans withdrawn on measurement** (D.46.2, .6, .8, .10, .11).
 REFUTED**). Five are my own (D.46.2, .6, .8, .10, .11). **D.46.8 is the one to carry**: a write
 landed while the tool reported a missing relation, and only a second gate that read zero rows on the
 old values revealed it.
+
+## D.47 — Session 91 / AM-2: an inference from absent output that pointed at the wrong exit path, a tool error read as a database fact, and an estimate offered where a replay was available (2026-10-07)
+
+Five rows. **Three are my own** (D.47.1, .3, .4), all the same shape — a conclusion
+reached without the measurement that was available at the time. One came from an
+**advisory instruction I acted on without testing** (D.47.2), and one was **filed this
+session and contradicted the same day** (D.47.5).
+
+| # | Assumption as held | Verdict on measurement |
+|---|---|---|
+| **D.47.1** | *(mine)* `compute_basis_context`'s silent exit-1 must be `DEPENDENCY_MISSING`, since every other `return 1` path is preceded by a `print`. | **REFUTED.** The `no_rows` branch sets its status with **no print** — I had enumerated the printing paths and missed the one that does not print, so the elimination was incomplete and named the wrong reason. The real path is `parse_ts(rows[0]["ts"]) is None` → `no_rows` ×2 → `DATA_ERROR`. **An elimination argument is only as good as the completeness of the enumeration, and mine was never checked for completeness.** The operator's ledger timestamps resolved it; the log alone, as I read it, did not. |
+| **D.47.2** | *(advisor — relayed instruction, not my inference)* `merdian_ro` is RLS-blind to `script_execution_log`, so the ledger cannot answer the question. I accepted it, stopped the read, **and escalated it into a contradiction filed against `CURRENT.md` §S90's claim that the read policy was applied.** | **REFUTED.** `merdian_ro` **can** read the table and **`CURRENT.md` is correct**; the contradiction is withdrawn. Two separate faults, attributed separately: the claim was **not mine**, but **acting on it without a test, and then promoting it to a register finding, was**. A relayed constraint is a hypothesis with a credible source, not a measurement — and the cost of testing it was one correctly-formed command, since `bin/roq.sh` takes SQL on **stdin** and my own earlier failure (`cannot read SQL file`) was a usage error of mine that made the relayed claim look corroborated. **Nothing becomes a register finding on authority alone; the bar is the same whoever states it.** |
+| **D.47.3** | *(mine)* Merging the two monitor condition keys would cut the 2026-10-07 replay to ≈14 sends. | **REFUTED — measured 93**, a 6.6× error. Merging keys absorbs `NOT_FIRING ↔ FAILED` only; the larger half of the flapping was `FAILED → OK → FAILED`, which one key cannot touch. The operator caught the estimate and required a replay. **A replay was available the whole time; I offered an estimate instead, and the number I invented happened to land on the figure the *combined* fix later produced, which would have read as confirmation.** |
+| **D.47.4** | *(mine)* A 5-tick recovery hold-down is enough, because a single missed cycle can read as clear for up to 5 ticks. | **REFUTED as reasoned, right as a value.** A *missed* cycle reads `NOT_FIRING` — unhealthy, not clear. The hazard is a single **successful** cycle sitting in the 5-minute look-back. Same number, wrong mechanism, and the comment asserted the wrong one until corrected. **A threshold whose derivation is wrong is a threshold nobody can re-derive.** |
+| **D.47.5** | *(filed, this session)* `compute_basis_context` exits 1 on **every** cycle. | **REFUTED — 21 of 84 = 25 %**, and two mechanisms, not one (12 structural `SKIPPED_NO_INPUT` + 9 `DATA_ERROR`). The figure was filed from an impression on the same day it was contradicted by a count of the same log. |
+
+**The one to carry: D.47.3.** The estimate was not merely wrong, it was wrong in the
+direction that would have validated a weaker fix — ≈14 is what (1)+(2) actually delivers,
+so had the operator accepted the estimate for (1) alone, shipping (1) alone would have
+looked like it hit its target while leaving 93 sends a day. **An estimate that coincides
+with the right answer for the wrong configuration is indistinguishable from a measurement
+until someone measures.**
+
+**Update log — Session 91 / AM-2 (2026-10-07):** §D.47 added (**5 rows, all REFUTED**) —
+**three mine** (D.47.1, .3, .4), **one advisor-sourced and acted on untested** (D.47.2),
+**one filed and contradicted the same session** (D.47.5). Sources:
+`scratch/s91/basis_context_findings_S91.md` §7 and
+`scratch/s91/telegram_flood_findings_S91.md`.

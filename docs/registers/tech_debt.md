@@ -69,6 +69,106 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 **NOTE — 2026-10-03.** `v_gex_concentration.hhi_net` is the **top-1 gamma share, NOT a Herfindahl** — byte-identical to `v_gex_strike_rank` rank-1 `share_of_abs` and to `gamma_metrics.gamma_concentration` (0.0942 on 10-01); true HHI Σshare² ≈ 0.0464. The live board's 'HHI' label and D-6's ~0.10 / ~0.25 bands are therefore on **top-1 share**. `hhi_call` / `hhi_put` semantics **unverified**. Verify call/put and correct the board label before any Herfindahl claim.
 **FIX (phase-2 Pin tab):** the board's 'HHI' label should display the true `conc_hhi` (Σs²); keep top-1 share as a separate **'lead-strike share'** line. **ENH-133 now stores both.**
 
+### TD-S91-NEW-12 (S2 priority) — the orchestrator health monitor sent a Telegram warning every minute, 24x7, and that is why a real alert was missed
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2 — and it is the delivery failure behind TD-S91-NEW-3.** The channel was instrumented and unreadable at the same time, which reports as healthy. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | `monitor_orchestrator_health.py` (`*/1 * * * *`, 24x7) · `telegram_utils` · the operator's alert chat |
+| **Evidence** | The orchestrator runs `*/5 03-09 * * 1-5` UTC, so for ~17 h a day and all weekend *"no orchestrator runs in the last 5 minutes"* is the **correct** state — and the pre-fix body sent on it every minute. **366** such lines in the live `logs/monitor.log` when first read; ~1,000 sends a night; chat at **4.1k unread and MUTED**. Replaying the full observed day of 2026-10-07 through the pre-fix logic: **835 sends** (561 not-firing + 274 failed). |
+| **Why it matters more than its own noise** | The 09:10 IST wsfeed preflight alert (**TD-S91-NEW-3**) **did fire, at 09:10:04 IST**, and landed in that muted chat unseen. This is the settled *"alerting that fires and is not read is a delivery problem, not an instrumentation gap"* shape, arriving from the monitor that was supposed to be the watcher. |
+| **The second defect, found only by replaying real data** | Gating alone was **not** enough. The real in-band sequence changes condition on **119 adjacent minute pairs**, so nothing ever stayed active for 30 minutes and a 30-minute re-notify engaged **zero** times: every change cost an alert plus a RECOVERED. Two keys with immediate recovery would still have sent **148**. A first version of the test passed **40/40** over that design, because its scenarios came from the spec (flat failure, clean recovery) and the real sequence is neither. |
+| **Fixed — `6a5c0e2`, pushed, box current** | Two gates: trading day via `core.trading_calendar_gate.is_trading_day_today` (rule 18 — imported, not re-rolled) **and** the orchestrator's own window **parsed from `crontab -l`**, giving an alertable band of 03:10–10:00 UTC (10-min start grace; `+step` at the end). Then **one** condition key (`orchestrator_unhealthy`), a 30-min re-notify, a **10-tick recovery hold-down**, and an **UNKNOWN** tick (ledger unreadable) that accrues no hold-down progress. State on disk, atomic write, because cron gives every tick a fresh interpreter. |
+| **Measured, not estimated** | Replay of the same day: **835 → 14 sends**, all in band (1 open + 13 re-notifies, 0 RECOVERED — the condition never cleared for 10 consecutive ticks). The one-key-only control measures **93**, so the hold-down carries the larger half; an earlier **estimate of ~14 for that control was wrong by 6.6×** and is recorded as such. |
+| **Hold-down = 10, with the derivation beside the number** | A single **successful** cycle sits in the 5-minute look-back for up to 5 ticks, so a 5-tick hold-down is satisfiable by one good cycle between two failing ones. Ten is two orchestrator cycles. (A *missed* cycle is not the hazard — it reads NOT_FIRING, which is unhealthy, not clear.) |
+| **Verification** | `tests/test_monitor_orchestrator_gate.py`, `tests/run_offline.sh` **step 9/9**, 54 cells. Off-session replays the same 60 ticks through the pre-fix logic as a control (**0 vs 60**); the fixture expectation is **computed by an independent episode model**, not read off a previous run. Fixture `tests/fixtures/monitor_conditions_2026-10-07.tsv` is conditions-only with pinned provenance (Rule 19). |
+| **Owed** | Unmute the chat and confirm ~14 in-session sends on 2026-10-08. Until it is unmuted the fix is unproven where it matters. |
+| **Source** | `scratch/s91/telegram_flood_findings_S91.md` |
+| **Status** | **FIXED `6a5c0e2` — awaiting the unmute + one live day.** |
+
+### TD-S91-NEW-13 (S2 priority) — `validate_compute_contracts.py` will send ~168 Telegram messages on the next weekday holiday, and that is 2026-10-20
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2, and DATED.** It has a deadline, not a backlog position: **before Tuesday 2026-10-20**. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | `validate_compute_contracts.py` (`4,9,…,59 03-09 * * 1-5`) — four send sites, `:72`, `:104`, `:139`, `:170` |
+| **Evidence** | **No trading-day gate** (`grep` for `trading_calendar` / `is_trading_day` / `HOLIDAY` returns nothing) and **no dedupe state**. Cron already scopes it to weekday 03–09 UTC, so unlike TD-S91-NEW-12 it does **not** flood overnight — the exposure is a **weekday holiday**. |
+| **The arithmetic, stated as arithmetic** | 12 runs/hour × 7 hours = **84 runs**. On a holiday the chain ingest and spot capture are gated (R0.8, S90), so `check_option_chain_fresh` fails first; `run()` composes the checks with `a() and b() and c()`, which **short-circuits**, so `:104` and `:139` never run. That leaves `:72` + `:170` = **2 sends per run ≈ 168 messages**. |
+| **Also floods in-session** | No dedupe, so a condition persisting in-window sends 2 messages per 5 minutes = **24/hour**. **Derived from the cadence, not observed** — it was **not** verified whether these sites fired during the 09:10–09:36 IST outage, and this row does not claim they did. |
+| **Next occurrence** | **Tue 2026-10-20**, already on the next-session list as the first live test of R0.8. The now-fixed monitor will be silent that day; this script will not be. |
+| **Proper fix** | The same calendar gate as TD-S91-NEW-12 (rule 18: import `core.trading_calendar_gate`) plus a 30-min per-condition dedupe in a `logs/` state file. The window gate is already supplied by cron here, so only those two are needed. |
+| **For whoever patches it** | The file carries a **UTF-8 BOM** (measured) — `read_bytes().decode('utf-8-sig')` and `write_bytes(...)` per `.claude/rules/python-writers.md`, or `ast.parse` rejects U+FEFF. It also holds **pre-existing mojibake** (`â€”`) that predates this session; fix it deliberately with the BOM handling, not incidentally. |
+| **Source** | `scratch/s91/telegram_flood_findings_S91.md` §2 |
+| **Status** | **OPEN — DUE before 2026-10-20.** |
+
+### TD-S91-NEW-14 (S2 priority) — `validate_compute_contracts.py:170` announces a cycle skip that never happens
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** An alert that describes a control which does not exist is worse than no alert: the reader stands down on a protection they do not have. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | `validate_compute_contracts.py:170` message text · the orchestrator's crontab line |
+| **Evidence** | The message reads *"Compute contracts violated — skipping this cycle"*. The script **skips nothing**: it exits non-zero, and the orchestrator's cron line is **independent** of it (`*/5 03-09` vs `4,9,…,59 03-09`). Nothing consumes this exit code, so no cycle is skipped by it. |
+| **Why it is filed apart from TD-S91-NEW-13** | That one is volume; this one is **content**. Gating the sends would leave every surviving message still asserting a skip that cannot occur. |
+| **Proper fix** | Either make the claim true (have the orchestrator consult the validator's verdict — a real design change, and the Rule 0 clause about a computed verdict reaching a named, scheduled consumer applies) or change the text to what actually happens. **Do not do both halves silently.** |
+| **Source** | `scratch/s91/telegram_flood_findings_S91.md` §2 |
+| **Status** | **OPEN.** |
+
+### TD-S91-NEW-15 (S2 priority) — `SKIPPED_NO_INPUT` exits 1, so 12 orchestrator cycles are marked failed every trading day by construction
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** It is the **largest single remaining contributor** to the non-zero cycle rate — 12 cycles/day against the 9 of the undiagnosed `DATA_ERROR` — and it is fully understood, so it is also the cheapest. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | `compute_basis_context_local.py` (`exit_with_reason("SKIPPED_NO_INPUT", exit_code=1)`) · `run_merdian_shadow_runner_aws.py:364` · the orchestrator's one-failing-step-fails-the-cycle rule (`:384`) |
+| **Mechanism, fully determined** | Futures capture runs `*/5 04,05,06,07,08,09 * * 1-5` UTC = **09:30 IST onward**; the orchestrator starts 03:00 UTC = **08:30 IST**. With `LOOKBACK_MIN = 30`, the first **12** cycles of every trading day have no `index_futures_snapshots` rows in window at all, both symbols read `no_input`, and the step returns `SKIPPED_NO_INPUT` with `exit_code=1` — which fails the whole cycle, because there is no partial-success grading. |
+| **Measured 2026-10-07** | 12 cycles, **08:31–09:26 IST**, each with `Skipping` printed twice; confirmed independently from the ledger (`exit_reason`) and from the per-cycle log grouping. |
+| **Deliberate at the keystroke; not as an outcome** | `ExecutionLog.exit_with_reason` defaults to `exit_code: int = 0`, and **both** call sites pass `1` explicitly, while the same orchestrator file uses **0** for `HOLIDAY_GATE` (`:347`) — so the author is distinguishing "closed" from "no input" on purpose. The *consequence* — 12 guaranteed non-zero cycles a day, **indistinguishable in the exit code and the ledger from a real data error** — does not look intended. Same class as TD-S91-NEW-12: a daily structural false failure that trains every reader and every downstream check to discount the signal. Note the monitor alerts on `exit_code != 0`, so pre-S91 these 12 were a Telegram source too. |
+| **RULING OWED** | Operator ruling requested: **`SKIPPED_NO_INPUT` → exit 0** (a skip is not a failure), leaving `DATA_ERROR` as the only non-zero reason. Not applied pending that ruling. |
+| **Not verified** | Whether `exit_code=1` on `SKIPPED_NO_INPUT` is the house convention at **every** call site in the repo; the survey was started and not finished. |
+| **Source** | `scratch/s91/basis_context_findings_S91.md` §4, §6.1 |
+| **Status** | **OPEN — mechanism settled, ruling owed.** |
+
+### TD-S91-NEW-16 (S2 priority) — the unidentified EOD cursor writer struck again, and this time it carried an expired Dhan token
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Recurrence of **TD-S90-NEW-14** after the own-cursor fix, so the fix contained the symptom and not the writer. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | `breadth_ingest_state` · the `equity_eod` cursor row · an unidentified host |
+| **Evidence** | **2026-10-07 17:28 IST**: the shared `equity_eod` cursor advanced **750 → 950** while no run of ours was active, and the writer's requests failed Dhan auth with **401 / DH-901**. So the host holds a **stale Dhan token** and is still running an EOD sweep against the shared cursor. The S90 fix moved our own lap onto `equity_eod_aws`, which is why our coverage survived — the stray writer is untouched by it. |
+| **What the 401 adds** | A new and much sharper identifying handle than S90 had: the host has credentials that **used to work**, so it is one of ours, not a third party — and it has not been re-provisioned since the token rotated. |
+| **Next step, named** | Search **API Gateway logs for 11:57–11:59 UTC** (the request window around the cursor move) to attribute the source IP / caller. Not done. |
+| **Candidates not yet excluded** | MALPHA · a Windows Task Scheduler job on the Local box · a stale clone on another host. S90 recorded "not this box, not MALPHA, not Windows tasks" as *unconfirmed*; the 401 means the elimination should be re-run, not inherited. |
+| **Status** | **OPEN — recurred, writer still unidentified, one named next step.** |
+
+### TD-S91-NEW-17 (S3 priority) — `check_kite_auth.py` is cited by the Topology and a runbook and does not exist
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A documentation defect, but of the kind that sends the next incident response to a file that is not there. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | `MERDIAN_Deployment_Topology.md` · the Zerodha/Kite runbook · the script that does not exist |
+| **Evidence** | Both documents name **`check_kite_auth.py`** as the Zerodha auth check. There is **no such file** in the repo or on the box. The check that actually exists and actually runs is **`bin/wsfeed_preflight.sh`**. |
+| **Why it surfaced now** | Found while tracing **TD-S91-NEW-3**, where the question *"what verified the token at 06:1x and what rejected it at 09:10"* had to be answered against the real artefact. A cited-but-absent script costs exactly the minutes an outage does not have. |
+| **Proper fix** | Correct both documents to `bin/wsfeed_preflight.sh`, and state in the same sentence what that script does and does not exercise — **TD-S91-NEW-3**'s proposed 08:40 guard exists because a presence check cannot fail for the reason the incident named. |
+| **Status** | **OPEN.** |
+
+### TD-S91-NEW-18 (S3 priority) — `market_spot_session_markers` reads `MISSING_CLOSE_1530` every day, and the cause is structural
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The column is wrong every day, which means `capture_quality` carries no information on this leg — a field that always says the same thing is not a measurement. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) |
+| **Component** | `build_market_spot_session_markers.py` `get_close_1530` (window 15:29:00–15:30:59 IST) · `market_spot_snapshots` · the spot capture schedule |
+| **Evidence** | `capture_quality` reads **`MISSING_CLOSE_1530`** daily. There are **no `market_spot_snapshots` rows between 15:25 and 16:00 IST** — the capture crons stop before the close window opens and resume at the 16:00 post-market snapshot, so the 15:29–15:30 window the builder reads can never be populated. **Structural, not a capture failure.** |
+| **Why this is not TD-S90-NEW-12** | That entry is about `capture_cas_close.py` picking the wrong bar from data that exists. This is about the marker builder reading a window in which **no row is ever written**. Different writer, different table, different failure. |
+| **Proper fix — two candidates, neither chosen** | (a) extend the spot capture to cover 15:25–15:40 IST, which ADR-022 D1 already did for the futures/chain legs and deliberately **not** for spot (jobs 1/5/6/8 were "deliberately NOT extended"); or (b) re-anchor `get_close_1530` onto the CAS close the system already captures (`capture_cas_close.py`, 15:29 bar). **(b) reads an existing source rather than adding a writer** and is the likely answer, but it changes what the column means and needs saying so. |
+| **Do not** | Widen the window until it passes without deciding which source the column is supposed to report. That is the settled *tolerance belongs at the boundary, canonicalisation belongs at the write* distinction. |
+| **Status** | **OPEN — structural, fix not chosen.** |
+
 ### TD-S91-NEW-1 (S2 priority) — the ENH-133 writer and reconciler crash on 1/2/4/5-digit microsecond fractions, and the lost cycles are unrecoverable
 
 | Field | Value |
@@ -79,22 +179,26 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Evidence** | `logs/orchestrator.log`, cycles **09:05–09:25 IST 2026-10-07**: `ValueError: Invalid isoformat string '2026-10-07T03:30:07.61356+00:00'`. PostgREST trims trailing zeros from the microsecond fraction; **Python 3.10.12** (measured on the box) accepts a fraction of exactly 3 or 6 digits, or none at all, and raises on every other width. **Rows lost: 13 on 2026-10-06** — front leg 64 of 77 cycles against `gamma_metrics`, and the 11 mid-session gaps fall in **consecutive runs**, not singly — and **10 so far on 2026-10-07**. The **contract runner flagged them MISSING**: the ADR-031 spine reported this defect rather than a later reader finding it. |
 | **Both modules, not one** | The two `_ist_date` bodies were **byte-identical**, so the writer's crash was the reconciler's crash on the same strings (**Rule 22** — audit the parallel component). Fixing only the writer would have left the reconciler failing identically. |
 | **Fix prepared, UNCOMMITTED** | Test-first per **Rule 0**: `tests/test_cycle_history_ts_parse.py` runs fraction widths 0–6, both the `Z` and `+00:00` forms, the exact log string, and IST rollover in **both** directions, against **both modules**. Against unfixed code the failing widths are exactly **[1, 2, 4, 5]** — 0, 3 and 6 parse because bare `fromisoformat` accepts them — and that per-module signature is asserted, so "fixed" cannot be confused with "not hit yet". Pre-fix the reconciler read `[1, 2, 4, 5]` while the already-fixed writer read `[]`; post-fix both read `[]`, **36/36 PASS**. Fix is `_FRAC` + `_norm_frac`, regex deliberately identical to `check_contracts_shadow._FRAC`. Added to `tests/run_offline.sh` as **step 7/7**. |
-| **Deploy** | **LIVE, S90-J window, 16:30 IST or later.** Rollback `git revert <sha>` — one commit, no DDL, no data migration. First confirmation 2026-10-08 09:05–09:25 IST: `gex_cycle_history` should hold **77 of 77** front-leg cycles against `gamma_metrics`, not 64. |
+| **FIX DEPLOYED — `bcadfa6`, pulled to the box 2026-10-07 12:23:53 UTC** | Measured, not assumed: the engine tree's `write_gex_cycle_history_local.py` mtime is **12:23:53 UTC**, matching the `pull --ff-only` in the reflog; `_norm_frac` is present ×2 in the running file and `_ist_date` now sits at line **101**, not 87. Rollback `git revert bcadfa6` — one commit, no DDL, no data migration. |
+| **UNVERIFIED BY ANY LIVE CYCLE, and today's log cannot verify it** | The orchestrator's last cycle of the day is **09:55 UTC** and the pull landed at **12:23:53 UTC**, so **every one of the 34 `write_gex_cycle_history` step-failures on 2026-10-07 predates the deploy by ≥ 2 h 43 m**. Today's log is evidence about the **old** artefact. The last failure carried the pre-fix traceback verbatim at line **87**: `ValueError: Invalid isoformat string: '2026-10-07T09:35:06.36058+00:00'`. |
+| **Verify** | **2026-10-08, 09:05–09:25 IST** — `gex_cycle_history` should hold **77 of 77** front-leg cycles against `gamma_metrics`, not 64. That is the first cycle set the fix has ever run against. |
 | **Not recovered** | The 23 rows already lost stay lost. This stops the bleeding; it does not backfill. |
-| **Status** | **OPEN — fix prepared and tested, PENDING DEPLOY.** |
+| **Status** | **FIX DEPLOYED 2026-10-07 12:23:53 UTC — VERIFICATION OWED 2026-10-08 09:05–09:25 IST (77/77).** |
 
-### TD-S91-NEW-2 (S3 priority) — six more unpadded `fromisoformat` sites, and ~40 copies of the same padding with no shared helper
+### TD-S91-NEW-2 (S3 priority) — SEVEN more unpadded `fromisoformat` sites, one now fixed, and ~40 copies of the same padding with no shared helper
 
 | Field | Value |
 |---|---|
 | **Priority** | **S3.** Each site is latent until a trimmed fraction reaches it; **TD-S91-NEW-1** is what one of them looks like when it fires. |
 | **Filed** | 2026-10-07 (Session 91 / AM-2) |
 | **Component** | the scheduled writers listed below · `core/`, the helper that does not exist |
-| **Evidence — in priority order** | Grepped across every `.py` named in `docs/registers/aws_crontab.txt`. **1. `backfill_cas_close_from_daily.py:193`** — feeds the CAS reconciliation (**TD-S90-NEW-12**, *Fixed by* row). **2. `build_market_spot_session_markers.py:33`** — feeds the gap prev-close (**TD-S90-NEW-12**, *Not affected* row, which is why that row currently reads clean). **3. `generate_pine_overlay.py:278, 473, 495`** — three sites. **4. `refresh_health_dashboard.py:40`**. **5. `refresh_dhan_token.py:120`**. **6. `detect_ict_patterns_runner.py:228`** (`r["bar_ts"]`, exposed-probable). Sites 1 and 2 first, by the operator's ordering. |
+| **Evidence — in priority order** | Grepped across every `.py` named in `docs/registers/aws_crontab.txt`. **1. `backfill_cas_close_from_daily.py:193`** — feeds the CAS reconciliation (**TD-S90-NEW-12**, *Fixed by* row). **2. ~~`build_market_spot_session_markers.py:33`~~ — FIXED `b48532e`** (see the row below). **3. `generate_pine_overlay.py:278, 473, 495`** — three sites. **4. `refresh_health_dashboard.py:40`**. **5. `refresh_dhan_token.py:120`**. **6. `detect_ict_patterns_runner.py:228`** (`r["bar_ts"]`, exposed-probable). **7. `compute_basis_context_local.py:61`** — added 2026-10-07, see below. Sites 1 and 2 first, by the operator's ordering. |
+| **Site 2 FIXED — `b48532e`** | `build_market_spot_session_markers.py` `parse_ts` now applies the same `_FRAC` / `_norm_frac` padding as `bcadfa6`, with the `except → None` deliberately kept (callers test for None on a NULL `ts`). **This site had already fired**: 2026-10-05 and 2026-10-06 wrote **no** `market_spot_session_markers` rows at all, because `latest_trade_date_from_spot` got `None` and `fail("Could not parse latest ts…")` exited 1. **Both dates backfilled.** Test `tests/test_marker_ts_parse.py`, `run_offline.sh` **step 8/9**: pre-fix **11 FAIL** with the failing widths exactly `[1,2,4,5]`, post-fix ALL PASS. The test asserts the **exact microsecond** (`.6` → 600000 µs), so a *stripping* fix fails it — padding and stripping are not interchangeable. |
+| **Site 7 added — and why the original grep could not see it** | `compute_basis_context_local.py:61` carries the same unpadded body (`grep -c "ljust(6\|_norm_frac\|_FRAC"` = **0**). It is on **neither** of this entry's original lists — not the six sites, not the "already safe" set — because **the grep was scoped to scripts named in `aws_crontab.txt`, and this one is reached as an orchestrator _step_, not as its own cron line.** That is the transferable defect: the enumeration's scope, not the site. **Any re-sweep must walk the orchestrator's step list as well as the crontab.** It is a *candidate* mechanism for **TD-S91-NEW-6**'s 9 `DATA_ERROR` cycles and **not** established as the cause there — see that entry's joint-probability row. |
 | **Already safe, measured not assumed** | `check_contracts_shadow.py` pads via its own `_FRAC`; `compile_market_environment_local.py` pads to 6 with a strip fallback. **Not exposed:** `accrue_expiry_outcomes.py`, `ingest_participant_positioning.py`, `relate_ambient_to_open_local.py` — all parse date-only CLI arguments. |
 | **The structural half** | `grep -rn "ljust(6"` finds **~40 independent copies** of this padding across the repo and **`core/` holds none** — the only `fromisoformat` in `core/` is `core/trading_calendar_gate.py`, on a date-only string. Both fixes in **TD-S91-NEW-1** say in their own docstrings that one shared `core/` helper is the right fix and is deliberately not that change, so the duplication is on the record rather than quietly added to. |
 | **Proper fix** | One `core/` timestamp helper, then retire the copies site by site. |
-| **Status** | **OPEN — none fixed.** |
+| **Status** | **OPEN — 1 of 7 fixed (site 2, `b48532e`); sites 1, 3, 4, 5, 6, 7 open; the shared helper not built.** |
 
 ### TD-S91-NEW-3 (S2 priority) — the Zerodha feed was down 09:10–09:36 IST on a token that had verified 50 minutes earlier, and the mechanism is unidentified
 
@@ -105,7 +209,9 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Component** | `bin/wsfeed_preflight.sh` · `ws_feed_zerodha.py` · the MALPHA→Supabase token sync (**TD-NEW-7** lineage) · `market_breadth_intraday` |
 | **Evidence** | Feed down **09:10–09:36 IST 2026-10-07**. Preflight **rejected** the token that had verified at **06:1x**. The MALPHA sync ran **06:15:01–03** per the journal. Token hashes on both sides **now match** (`cee632a0…`), compared as sha256 of the value per **Rule 19** — never the value. |
 | **Mechanism UNIDENTIFIED** | Two hypotheses, neither tested: (a) the token was invalidated by a later interactive login; (b) a bad copy landed at 06:15 and was replaced before the comparison. **n = 1 with no mechanism is n = 1 with no mechanism** — recorded as a gap, not narrated into a cause. The matching hashes are consistent with **both**, so they discriminate nothing. |
-| **Proposed guard** | An **08:40 IST AUTH check on the box** (crontab, LIVE) that **exercises** the token rather than checking its presence — a presence check cannot fail for the reason this incident names. Not implemented. |
+| **THE ALERT FIRED AND WAS NOT READ — delivery, not instrumentation** | The preflight **alerted at 09:10:04 IST**. It was missed because the operator's Telegram chat was **MUTED at 4.1k unread**, flooded by `monitor_orchestrator_health.py` at ~1,000 sends a night — filed as **TD-S91-NEW-12** and fixed in `6a5c0e2`. So this incident needed **no new instrumentation**; the signal existed and the channel was unusable. Exactly the settled *"check whether the existing signal was emitted and ignored before adding instrumentation"* rule, and it was not checked here until the flood was investigated for its own sake. **The guard below is still owed, but it is no longer the first thing owed.** |
+| **Proposed guard** | An **08:40 IST AUTH check on the box** (crontab, LIVE) that **exercises** the token rather than checking its presence — a presence check cannot fail for the reason this incident names. Not implemented; design agreed as the 08:40 Zerodha early-mode preflight. |
+| **Cited-but-absent script found while tracing this** | The Topology and the runbook name `check_kite_auth.py`, which does not exist; the real check is `bin/wsfeed_preflight.sh`. Filed **TD-S91-NEW-17**. |
 | **Stale doc found alongside** | **Deployment Topology §S71.1** states the sync runs at **08:30 (`0 3`)**; it actually runs at **06:15 (`45 0`)**. Wrong since S71. Correcting §S71.1 is a doc edit, owed, and not this entry's fix. |
 | **Status** | **OPEN — recovered, cause unidentified, guard not built.** |
 
@@ -132,16 +238,25 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Proper fix** | Re-derive `freshness_sla_min` from the **measured** distribution of the Dhan EOD lag, write the derivation beside the number, then change the contract. **Today's 16:10 EOD run is the evidence point** for that measurement. |
 | **Status** | **OPEN — gate stands failed, deliberately.** |
 
-### TD-S91-NEW-6 (S3 priority) — `compute_basis_context` exits 1 every cycle and the cause has not been read
+### TD-S91-NEW-6 (S3 priority) — `compute_basis_context` exits 1 on 21 of 84 cycles, and it is two mechanisms: 12 structural and 9 undiagnosed
 
 | Field | Value |
 |---|---|
-| **Priority** | **S3.** Filed on the observation alone. Scope is unknown until the log is read, so the priority may move. |
-| **Filed** | 2026-10-07 (Session 91 / AM-2) |
-| **Component** | `compute_basis_context`, a step in the per-cycle chain |
-| **Evidence** | **Exit 1 on every cycle**, observed 2026-10-07. **The cause has NOT been read** — no log line, no traceback, no consumer impact assessed. This entry records the observation and states that it records nothing more. |
-| **Next step** | Read the step's own log for one failing cycle before proposing anything. |
-| **Status** | **OPEN — observed, not diagnosed.** |
+| **Priority** | **S3**, unchanged — but the entry is now diagnosed to a code path rather than an observation. The structural half is split out as **TD-S91-NEW-15** because its fix is a ruling, not an investigation. |
+| **Filed** | 2026-10-07 (Session 91 / AM-2) · **CORRECTED the same session** |
+| **Component** | `compute_basis_context_local.py` `main()` / `compute_for_symbol` / `parse_ts` · a step in the per-cycle chain |
+| **CORRECTION — the filed claim was wrong** | This entry originally read *"exit 1 on every cycle"*. **Measured: 21 of 84 = 25 %**, and it is **two distinct mechanisms**, not one. The original row also said the cause had not been read; it has now been read, and the "every cycle" figure was never measured. Recorded as a correction rather than overwritten. |
+| **The split, two independent derivations agreeing** | **12 × `SKIPPED_NO_INPUT`, 08:31–09:26 IST** (structural — see TD-S91-NEW-15) and **9 × `DATA_ERROR`, 09:41 / 10:26 / 10:56 / 11:02 / 13:02 / 13:46 / 14:26 / 14:32 / 14:56 IST** (`statuses=no_rows`). Derived once from each failure's own captured stdout (the 12 print `Skipping` twice, the 9 print only the banner) and once from per-cycle grouping of the log; the two agree. Confirmed against `script_execution_log` `exit_reason`. |
+| **Why the 9 are silent, which is itself the measurement** | The script has one process exit (`:299`) and every `return 1` goes through `log.exit_with_reason(...)`, which writes reason + `error_message` to **`script_execution_log`** and **prints nothing**. Of the per-symbol statuses, **`no_rows` is the only one set without a `print`**. So "banner only" uniquely identifies `no_rows` for both symbols. |
+| **The code path, exactly** | `compute_for_symbol` returns `None` at only `:164` (`if not rows`) and `:168` (`if now_ts is None`), and **`:164` is unreachable from `main()`**, which already handles the empty case as `no_input`. Therefore, with input present: **`status == 'no_rows'` ⟺ `parse_ts(rows[0]["ts"])` returned `None`** — either a falsy `ts` (`:62`) or `fromisoformat` raising (`:70`). `DATA_ERROR` additionally needs `out_rows` empty, so **both** symbols must land there; one symbol alone upserts a row and the cycle exits 0. |
+| **MECHANISM OPEN between two candidates** | **(a) the unpadded fraction** — `parse_ts` at `:61-71` has no padding (`grep -c "ljust(6\|_norm_frac\|_FRAC"` = **0**), the same defect as TD-S91-NEW-1; filed as the 7th site on **TD-S91-NEW-2**. **(b) NULL `ts`** — `order=ts.desc` is **NULLS FIRST** in PostgreSQL, so one NULL-`ts` row anywhere in the 30-minute window lands at `rows[0]` and `parse_ts` returns `None` through the `if not value` branch, with no fraction involved. **The two produce an identical signature** and nothing observed distinguishes them. |
+| **And the rate does NOT settle it — the arithmetic is recorded because it cuts against the easy answer** | P(one PostgREST timestamp has a width 3.10 rejects) = **9.91 %** (widths 5/4/2/1 fail; 0/3/6 parse). Observed **9/72 = 12.5 %**, which matches the **single**-timestamp rate — but the path needs **both** symbols in one cycle, whose independent rate is **0.98 %**, expected **0.71**, and **P(X ≥ 9) = 4.14 × 10⁻⁸**. So the 12 %≈10 % agreement is **not** evidence for (a): it would require the two symbols' timestamps to be **correlated**, which is an untested extra claim. Padding alone is fitting the magnitude while ignoring a factor of 13. |
+| **Discriminating read, named** | Capture the raw `ts` strings PostgREST returns for the newest `index_futures_snapshots` row **per symbol** across several cycles and record the fraction widths, and check whether the column is nullable. **(a) predicts widths in {1,2,4,5}; (b) predicts a null at `rows[0]`.** Shipping the padding and watching the rate is a weaker discriminator — a null-driven residue would look like an incomplete fix. |
+| **Overlap with the other failing step** | Of the 21, **10 cycles also carried a `write_gex_cycle_history` failure** (7 of the 12 structural, 3 of the 9 `DATA_ERROR`); 11 were basis-only. Day totals: 46 met / 38 not met, 38 cycles with ≥ 1 step failure, **no cycle failing outside these two families**. |
+| **Forecast, and it is a prediction not a result** | With TD-S91-NEW-1's fix live and nothing else changed, **21 of the 38 failing cycles still fail and 17 become clean → 63/84 = 75.0 % contract-met**, against 54.8 % observed. Layering further: + TD-S91-NEW-15 → 89.3 %; + this entry diagnosed → 100 %. **If 2026-10-08 does not land near 75 %, either `bcadfa6` is not doing on the box what it did offline, or a third cause is present that 10-07's log does not contain.** |
+| **Consumer impact** | `basis_context_snapshots` is **display-only, context-not-gate** (S37), so a missed cycle degrades a surfaced field and gates nothing. Note the fail-soft asymmetry: a missing *prev* row is **not** a failure — the row still writes with `context_label` NULL — so consumers must read NULL as "not measured", never as NEUTRAL. |
+| **Source** | `scratch/s91/basis_context_findings_S91.md` §3, §5, §6.1 |
+| **Status** | **OPEN — code path settled, mechanism open between (a) and (b), one read owed.** |
 
 ### TD-S91-NEW-7 (S2 priority) — the offline fixture suite OOM-killed the box during pre-open and Session Manager became unreachable
 
@@ -153,9 +268,10 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Evidence** | `dmesg -T`, quoted: **03:21:24 UTC = 08:51:24 IST**, `Killed process 403065 (python3) anon-rss:911788kB`; **03:28:11 UTC = 08:58:11 IST**, `Killed process 403716 anon-rss:955396kB`. ~0.87 GB and ~0.91 GB on a box reading 1910 MB total / 638 MB free. **Session Manager became unreachable.** PID 403065 **is** step 2/6 — the suite printed `403065 Killed  python3 tests/replay/test_replay_seeded.py` itself, so that attribution is direct. |
 | **What is NOT attributed** | **PID 403716.** It coincides with a `/usr/bin/time -v` run that reported `Exit status: 0` and max RSS 958,852 kB, and a kill and a clean exit cannot both describe one process. Not enough of that invocation's output was captured to say which process died. **Stated as unexplained rather than explained away.** |
 | **Cause** | The S91 seeded cases bound a `FixtureClient` per case at module level, so a dozen full golden days stayed reachable at once. The file passed standalone at 08:49 and died inside the suite at 08:51, because step 1/6 had just run and the headroom was gone. |
-| **Fix applied, UNVERIFIED** | A `free()` helper clears each client's `tables` and `_sorted` and calls `gc.collect()`; every case frees before the next loads, and no module-level client outlives its case. **Not run.** The post-fix run is owed after 15:40 IST under `( ulimit -v 700000; … )`, with exits pre-registered in `scratch/s91/r16_result.txt`. |
+| **Fix applied and now VERIFIED — the owed post-15:40 run happened** | A `free()` helper clears each client's `tables` and `_sorted` and calls `gc.collect()`; every case frees before the next loads, and no module-level client outlives its case. **Evidence in: `( ulimit -v 700000; bash tests/run_offline.sh )` → `OFFLINE PASS`, exit 0, 9/9 steps**, run twice post-15:40 IST on 2026-10-07. **Step 2/9 is `tests/replay/test_replay_seeded.py` — the file that was OOM-killed — and it completed inside the 700 MB ceiling with no OOM and no loss of Session Manager.** The ceiling is the point: under `ulimit -v` a memory regression now **fails the suite** instead of killing the box. |
+| **What this run does NOT prove** | It was run **out of hours with no live capture chain competing**, which is the condition rule 23 exists to preserve. It shows the suite fits in 700 MB; it does **not** show the suite is safe inside 08:30–15:40 IST, and rule 23 still forbids that. |
 | **Rule to propose** | **No fixture-suite run between 08:30 and 15:40 IST**, and every such run under an explicit `ulimit -v` so a regression fails instead of killing the box. A `CLAUDE.md` rule, for operator ruling. |
-| **Status** | **OPEN — fix applied, unverified; rule not ruled.** |
+| **Status** | **FIX VERIFIED 2026-10-07 post-15:40 IST (suite 9/9 under `ulimit -v 700000`, no OOM) — rule 23 codified as CLAUDE.md rule 23 / ruling S91-A. Remaining: PID 403716 unattributed.** |
 
 ### TD-S91-NEW-8 (S3 priority) — the replay chain contract has no row band, so the harness cannot detect depth loss
 

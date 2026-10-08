@@ -3209,6 +3209,20 @@ unchanged, a sixth time.**
 - ENH-20 (delta hedging cadence, Tier 2 PROPOSED) — long-deferred companion that would consume the same compute layer.
 - TD-NEW-15 — cross-document rename propagation tracking the S27/S28 "ENH-85" → ENH-98 references.
 
+**S91 / AM-2 — T1 = PASS on the A5 arm, measured against a pre-registered expectation.
+The six-session blocker is cleared. The build is still NOT started.**
+
+| Field | Detail |
+|---|---|
+| **The arm** | **A5 — SENSEX dte 1**, read **2026-10-07 10:15:59 IST**, the re-run owed since S89 and carried through the S90 list. Artefacts in `scratch/s91_l78/`. |
+| **Pre-registered BEFORE the read, and the hash is the proof** | `a5_02_prereg.out`, sha256 **`2a978967f95680dcc68ac01fc4957a210debbb1accb921e618328cb35ef17eb4`**, recorded in `a5_02_prereg.sha256` before the result query ran. This is the clause the S83/§D.40.1 discipline exists for: **the belief was stated, then measured** — the number was not adjusted until it passed, and the hash is what makes that checkable rather than claimed. |
+| **Result — `exact/365`, SENSEX dte 1** | `gamma_relerr_med` **ATM 0.0716**, **NEAR 0.0369**, with **ATM rows n = 28 ≥ 10**. Against the other conventions on the same rows: `dte/365` ATM **0.1528** (NEAR 0.0768), `dte/252` ATM 0.0045. **`exact/365` is confirmed a third time**, and at dte 1 it separates from `dte/365` by a factor of ~2.1 at ATM. |
+| **NIFTY, same read, dte 6** | `exact/365` ATM **0.0204** / NEAR **0.0250** / FAR 0.0295, n = 18 / 29 / 58 — consistent with S82's 5-DTE reading and not the arm under test. |
+| **T1 PASSES — and what that does NOT mean** | The **row-count gate was pre-registered as independent of the offset ratio**: the gamma reading is gated on ATM rows ≥ 10 after the delta band, "whatever the offset ratio does". 28 ≥ 10, so the gamma verdict stands on its own. **T1 is no longer the L7/L8 blocker.** But **a PASS does not build the views, and does not authorise the build** — the same sentence this entry has carried since S81. Status is unchanged for a **seventh** session. |
+| **The pre-committed DROP has nothing to drop** | S89 badged the L7/L8 views **PROVISIONAL with a pre-committed DROP if 10-07 refused**. S90-A scoped its apply to ENH-133, so **the views were never created** — 10-07 did not refuse, and the DROP is moot rather than discharged. Recorded so a later reader does not infer the DROP was executed. |
+| **OPEN — `r_eff` 3.08 % against T3's definition** | NIFTY reads **`r_eff` 0.030777 = 3.08 %**. Pre-registration stated `r_eff` at dte 1 as **UNKNOWN**, deliberately not as an expected no-test, because the 3× guard has gone **both ways** on SENSEX (A4 at the same dte read **1.18×, FAIL**; A3 at dte 2 read **3.78×, PASS**) and a one-sided expectation would have been invented. **This reading gates the `r_eff` point ONLY and cannot touch the gamma verdict.** Owed: check 3.08 % against **T3's definition of `r_eff`** before it is used for anything — the `r_sess`/`r_eff` definitional split is still open as **TD-S89-NEW-3**. |
+| **Status** | **IN BUILD (S81) — build NOT started. T1 cleared; L7/L8 un-applied; `r_eff` definition owed.** |
+
 **History.** 2026-05-11 (Session 27) NEW verbally in ADR-002 v2 acceptance scope, as "ENH-85". 2026-05-13 (Session 28) formal Enhancement Register filing as **ENH-98**; renumbered ENH-85 → ENH-98 due to slot-85 collision with the PROPOSED-DEFERRED PO3 Session Direction Lock (ENH-85 OLD = filed Session 13, design space reduced via Exp 47b Session 15 — slower-anchor path falsified; remaining paths hard PO3 lock OR persistence filter; full entry at Part 4 § ENH-85). Status PROPOSED. Cross-doc rename propagation queued as TD-NEW-15.
 
 ---

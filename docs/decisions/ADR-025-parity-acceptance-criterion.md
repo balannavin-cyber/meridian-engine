@@ -8,7 +8,7 @@
 | Session | Session 80 |
 | Supersedes | Nothing. First acceptance ruling for the Hedgewall parity programme. |
 | Related | **TD-S79-NEW-22 (D0)** — the entry that filed this decision · `MERDIAN_Hedgewall_Parity_Spec.md` (S78) · ENH-120 / ENH-121 / ENH-122 (S79) · ENH-123 / ENH-124 (S80, off-spec) · TD-S79-NEW-15…-21 (L3 measured and declined) · ADR-021 (latest-run scoping) · ADR-017 (console design) · ADR-009 (pre-registration) · ADR-016 (parameter calibration) · TD-S79-NEW-3 (`sql/` as a superseded rebuild source) · TD-080 (Dhan 429, S1-recurring) |
-| Amended | **Amendment A**, 2026-09-22 (Session 80) — what shipped against what was ruled; session self-corrections; D2 clause 4 registration status. Body text above is unchanged. · **Amendment B**, 2026-09-23 (Session 81) — **REVERSES part of Consequences**: rendering is deferred until every layer carries a disposition, so D2 clause 3 is suspended and BUILT stays 2 of 14 **by decision**. Also rules the deferral's scope (it does not block repairs to shipped surfaces), corrects the effort figure to **days, not weeks**, records the S81 dispositions, and corrects two A1 statements. D1–D5 are otherwise unchanged. |
+| Amended | **Amendment A**, 2026-09-22 (Session 80) — what shipped against what was ruled; session self-corrections; D2 clause 4 registration status. Body text above is unchanged. · **Amendment B**, 2026-09-23 (Session 81) — **REVERSES part of Consequences**: rendering is deferred until every layer carries a disposition, so D2 clause 3 is suspended and BUILT stays 2 of 14 **by decision**. Also rules the deferral's scope (it does not block repairs to shipped surfaces), corrects the effort figure to **days, not weeks**, records the S81 dispositions, and corrects two A1 statements. D1–D5 are otherwise unchanged. · **Amendment C**, 2026-10-08 (Session 92) — **parity closes on D1 plus the P6 render pass** (ruling S92-A, amending S90-D); B1's suspension **spent** on its own trigger; clause-3 evidence measured from the live board (`meridian-connect` `255cca0`); **BUILT 9 of 14**, PENDING L7/L8/L12/L13, L11 DECLINED. |
 | Rule 10 class | **Programme scope and acceptance.** Governs a multi-session build. Mandatory ADR per Doc Protocol v4 Rule 10 and per TD-S79-NEW-22's own *Proper fix* clause. |
 
 ---
@@ -427,6 +427,106 @@ passed 2026-09-23 at 09:14 IST** (B5), so **all three are unblocked as of this d
 
 ---
 
+## Amendment C — 2026-10-08 (Session 92)
+
+*Appended without editing anything above. It records where parity now closes, that Amendment B1's
+trigger fired and rendering began without a record saying so, the clause-3 evidence the live board
+supplies, and the dispositions that follow. B4 is left standing as the S81 record; C4 is the current
+state.*
+
+### C1 — Where parity closes (ruling **S92-A**, amending S90-D)
+
+**Parity closes on D1 plus the P6 render pass**: every one of the fourteen layers carries a final
+disposition, the board renders every BUILT layer, and this ADR receives its closing amendment.
+S90-D had tied the close to the agentic roadmap's Stage 2 exit (golden days green on every deploy,
+parity fixture scores reported, one past day replays exactly). S92-A keeps **R2.4 — screenshot
+parity fixtures scored per field — inside parity as the D3 reference check**, and moves **R2.2,
+R2.3, R2.5 and R2.6 post-parity**. Single source: `docs/research/s92_parity/rulings_s92.md`.
+
+**R2.4 does not change D2.** Agreement with the reference is still **not** a BUILT condition; R2.4
+**reports** per-field scores. Turning any score into a gate needs its own ruling.
+
+### C2 — B1's trigger fired, and rendering began without a record
+
+B1 deferred parity presentation until every layer carried a disposition. **That condition has held
+since S81** (B4: no layer blank), and `parity_board_design.md` said so at S84–S85. The board was then
+built in the Marketview repository (`balannavin-cyber1/meridian-connect`) between **2026-10-03 and
+2026-10-06** — OI tab `cd945f2`, IV tab `d8c379f`, the S90 corrections `98b8930`, live headline and
+board stamps `c53dbea` / `255cca0` — and **no register, ADR or CURRENT.md entry recorded that the
+rendering pass had begun.** The Enhancement Register still read *"clause 3 PENDING BY DECISION"* on
+every view the board was already reading.
+
+**From this amendment B1's suspension is spent**: clause 3 is assessed on evidence, layer by layer,
+as D2 always intended. B2 (repairs to shipped surfaces are never blocked) is unaffected.
+
+### C3 — Clause-3 evidence, measured from the consumer side
+
+Read at **`meridian-connect` `255cca0`**, which was **live = staging** when measured on 2026-10-07
+(CURRENT.md, AM-1 post-close). Each binding is a query in deployed code, not a design intent. Where
+the S90 live check (`docs/research/s90_agentic/marketview_live_check_S90.md`, 2026-10-05) read the
+rendered values against the rows the page fetched, that is noted.
+
+| Layer | Object | Binding (`src/`) | Rendered as | Values read live |
+|---|---|---|---|---|
+| L1 | `gex_strike_snapshots` | `lib/board.ts:137` | the strike ladder | yes (S90) |
+| L2 | `v_gex_strike_pin_zone` | `lib/board.ts:349`, `pages/Board.tsx:94,378` | pin-band gutter | not separately |
+| L3 | `v_gex_repriced_flip` | `lib/board.ts:83` | strip FLIP, ladder rule, Home | yes (S90, MV-2 fixed) |
+| L4 / L5 | `v_gex_strike_walls` | `lib/board.ts:85` | corridor, OI-tab walls | yes (S90; MV-8 noted) |
+| L6 | `v_gex_abs_exposure` | `lib/board.ts:81` | net, gross, net/gross | yes (S90, MV-5 fixed) |
+| L9 | `v_iv_term_structure` | `lib/board.ts:87,254,421` | IV tab, both legs | yes (S90) |
+| L10 | `v_iv_surface` | `lib/board.ts:423` via `useIvTab` (`pages/Board.tsx:276`) | IV-tab smile | parity gaps only (S90) |
+| L12 | `v_gex_concentration`, `v_gex_strike_rank` | `lib/board.ts:354`, `:95-99` | top-strike share; pin and lead | rank yes (S90) |
+| L13 | **none** — ΔOI recomputed client-side from `gex_strike_snapshots` first vs latest run | `lib/board.ts:283-307`, `pages/Board.tsx:296-303` | OI-tab ΔOI; SENSEX "n/a" | — |
+| L14 | `v_gex_net_gamma_river` | `lib/board.ts:379`, `pages/Board.tsx:186` | Gamma-tab river | per-day values not checked |
+| L7 / L8 | views do not exist | — | Flows tab: *"layer not built yet"* | — |
+
+The Pin tab also renders *"layer not built yet"* (`components/board/LadderPanel.tsx:212`).
+
+**Clauses 1, 2 and 4 are already on record** for every layer moved below: ENH-120/121/122 EXPLAIN in
+TD-S79-NEW-14 (walls 2.507 ms, abs 1.077 ms, concentration 1.943 ms, `Index Only Scan`);
+ENH-125/126/127/130/131/132 *"D2 clauses 1/2/4 MET"* in their register rows; DDL for every object
+under `sql/`. Several detail panels say *"COMMENT not live"* (TD-S84-NEW-3): clause 4 asks for the
+DDL in `sql/`, which is met, so this is a documentation defect and not a clause failure.
+
+### C4 — Dispositions as at S92
+
+| # | layer | disposition | change since S81 (B4) |
+|---|---|---|---|
+| L1 | Gamma density per strike | **BUILT** | — (re-confirmed on the new board, C3) |
+| L2 | Pin zone | **BUILT** | — (re-confirmed: the pin-band gutter binds ENH-81) |
+| L3 | Flip level | **BUILT** | PENDING → BUILT. ENH-131; clause 3 met (C3) |
+| L4 | Call wall | **BUILT** | PENDING → BUILT. ENH-120 |
+| L5 | Put wall | **BUILT** | PENDING → BUILT. ENH-120 |
+| L6 | Net-vs-absolute GEX | **BUILT** | PENDING → BUILT. ENH-121 |
+| L7 | Vanna | **PENDING** | T1 **PASSED** 2026-10-07 (A5 arm). Views authored (`sql/2026-10-03_s89_v_gex_greeks_l2.sql`), **never applied**; the S89 DROP is moot. D-4 (flow-vs-book) unmet: its previous-close ΔOI input is PPC-1, parked post-parity |
+| L8 | Charm | **PENDING** | as L7 |
+| L9 | IV term structure | **BUILT** | PENDING → BUILT. ENH-130. TD-S80-NEW-1 (NIFTY stage-1 arm) stays open; it is a max-pain mixture check, not an L9 clause |
+| L10 | IV surface | **BUILT** | PENDING → BUILT. ENH-132 |
+| L11 | Five-axis radar | **DECLINED-ON-EVIDENCE** | S89, `d9a804a` |
+| L12 | Pin conviction | **PENDING** | HHI and rank legs render (C3). Ranked-**pressure** key DECLINED-ON-EVIDENCE (D-5a). Conviction (D-5c) not built; Pin tab empty |
+| L13 | OI rotation | **PENDING** | The board shows ΔOI but **does not read ENH-127**: it recomputes since-first-run client-side — a second implementation of a gated rule. SENSEX suppressed (TD-S84-NEW-4) |
+| L14 | 30-session gamma river | **BUILT** | PENDING → BUILT. ENH-126 |
+
+**BUILT: 9 of 14 · DECLINED-ON-EVIDENCE: 1 · PENDING: 4 (L7, L8, L12, L13).**
+
+D2 does not require a layer's values to be right, and C4 does not claim they are. Known open items
+on BUILT layers stay on their own registers: E-D1 (the unit of `gex_cr`, shown on the board as
+*"unit definition pending"*), MV-8 (degenerate corridor), TD-S84-NEW-3 (COMMENTs not live).
+
+### C5 — What remains before P6
+
+1. **L7 / L8.** Restamp the authored DDL's PROVISIONAL text from *"T1 pending"* to the A5 PASS, apply
+   it, render on the Flows tab, and rule on D-4 against PPC-1 (un-park it, or record a D3 deviation).
+2. **L12.** Build conviction stage 1 (D-5c) and pin state from `gex_cycle_history` on the Pin tab, and
+   rule how a layer with one leg DECLINED and the rest BUILT is disposed. Pin state depends on
+   ENH-133 acceptance (roadmap R0.4).
+3. **L13.** Bind `v_oi_rotation_since_open` or rule the client recompute acceptable — not both — and
+   decide whether the SENSEX guard gates the layer.
+4. **R2.4** fixture scores reported (C1).
+5. **P6** closing amendment.
+
+---
+
 ## Governance language
 
 **Doc Protocol v4 Rule 11.3.** The sentence that governs, quotable without the surrounding argument:
@@ -444,6 +544,11 @@ passed 2026-09-23 at 09:14 IST** (B5), so **all three are unblocked as of this d
 and the deferral covers **new parity presentation only**, never repairs to surfaces already shipped
 (**Amendment B2**).
 
+**As amended at S92:** B1's suspension is **spent** — its trigger had held since S81 and rendering
+began 2026-10-03 — so clause 3 is assessed on evidence again (**Amendment C2**). Parity closes on D1
+plus the P6 render pass, with R2.4 fixture scores reported but not gating (**Amendment C1**, ruling
+**S92-A**).
+
 **This ADR authorises nothing in production.** Every layer it governs is display-only. Any gate
 built on one would additionally require N ≥ 30 live-runtime-cohort validation per ADR-009 and
 **D.13.1**.
@@ -452,3 +557,7 @@ built on one would additionally require N ≥ 30 live-runtime-cohort validation 
 reorders immediately" and narrows nothing else.** B2 clarifies scope without changing D1–D5. B4
 supersedes the S80 disposition table as the current state and leaves it standing as the S80 record.
 B5 and B6 correct Amendment A without reversing its ruling.*
+
+*Amendment C — Session 92, 2026-10-08. **C1 records ruling S92-A** (where parity closes). **C2 ends
+B1's suspension on its own stated trigger** and narrows nothing else in B. C4 supersedes B4 as the
+current state and leaves it standing as the S81 record. D1–D5 are unchanged.*

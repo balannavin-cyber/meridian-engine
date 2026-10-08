@@ -35,7 +35,7 @@
  Stage 0  SPINE: contracts · status · provenance · ledger · as_of      ▼ foundation
 ```
 
-Stages 0–2 serve parity directly (admission by ruling A-5). Stages 3+ are post-parity. Stage 3 and Stage 4 can run in parallel. Stage 3b (global context: SPX, crude, US 10Y, US 30Y) starts after R0.8, R1.8 and R1.9, and its admission into the state vector waits for the Stage 4 event study (R3.12).
+Stages 0–2 serve parity directly (admission by ruling A-5). Stages 3+ are post-parity. **Amended S92-A (2026-10-08):** parity now closes on ADR-025 D1 + the P6 render pass, not at the Stage 2 exit; of Stage 2 only R2.4 stays inside parity (`docs/research/s92_parity/rulings_s92.md`). Stage 3 and Stage 4 can run in parallel. Stage 3b (global context: SPX, crude, US 10Y, US 30Y) starts after R0.8, R1.8 and R1.9, and its admission into the state vector waits for the Stage 4 event study (R3.12).
 
 ### 1.2 The four goals and what delivers each
 
@@ -123,19 +123,19 @@ Today ENH-133 applies (≥ 16:00 IST). The first five items, in order. Each is s
 
 **Stage 1 exit:** every check proven on its fixture; two weeks of SLO reporting; status visible on Home.
 
-### Stage 2 — Compute harness (parity closes here)
+### Stage 2 — Compute harness (~~parity closes here~~ — **amended S92-A**: parity closes on ADR-025 D1 + the P6 render pass; R2.4 stays in parity; R2.2/R2.3/R2.5/R2.6 post-parity — `docs/research/s92_parity/rulings_s92.md`, ADR-025 Amendment C1)
 
 | ID | Item | Risk | Builds on / absorbs | Exit evidence | Status | Session |
 |---|---|---|---|---|---|---|
 | R2.1 | Golden days frozen (10-01 SENSEX, 09-29 NIFTY, 08-27, a holiday), with a diff run on every deploy | OFF | Testing Protocol Gate 4 | Diff runs in the deploy path; green | **IN PROGRESS** — golden day #1 (10-01 SENSEX) designed: `docs/research/s90_agentic/R2.1_golden_day_1_design_S90.md`; **frozen 2026-10-05 17:26 IST**: 5 relations (chain 31,914 rows), 3.6 MB, `MANIFEST.sha256`, at `~/meridian-cc/tests/golden/2026-10-01_SENSEX/`; replay SQL re-run byte-identical to S89 (deterministic). committed **`37e9174`** (`~/meridian-cc` → origin/main; 18 files incl. `.gitignore` negation for `tests/golden/**/*.csv|*.txt`). **golden days #2–#6 frozen `e528a8d`** (09-29 NIFTY, 08-27 NIFTY/SENSEX, 10-02 NIFTY/SENSEX holiday): 6 fixtures, 20 MB. **Replay harness v0 (`a80176e`):** `tests/replay/replay_contracts.py --check` replays the contract runner at every 5-minute cycle of all six golden days against pinned statuses — combined `sha256 abdd2b16…` (`cat tests/replay/expected/*.statuses.csv | sha256sum`, recomputed 2026-10-07 and matching), **re-pinned at `2e66d4f` with exactly 8 cells MISSING → OK** (4 open days × the 15:20 / 15:25 slots) — and `tests/run_offline.sh` runs **6 suites** with no database and no network. **Still NOT a hard deploy gate** | S90 |
-| R2.2 | Invariants: shares sum to 1, leader = 100 %, HHI ∈ [1/n, 1], flip between sign-change strikes, put-call parity on chain prices | SC | §6 | Invariant table populated per cycle | NOT STARTED | |
-| R2.3 | Independent recompute of key numbers (a second, simple implementation, e.g. the 10-01 replay SQL for the ladder) | SC | `ladder_replay_1001.sql` | Agreement report per cycle | NOT STARTED | |
-| R2.4 | Screenshot parity fixtures (~60), scored per field | OFF | ADR-025 D3 | Fixture score per field reported | NOT STARTED | |
-| R2.5 | Input contracts per computed layer: NOT_COMPUTED with reason when inputs fail; status propagates down the lineage | LIVE | R0.5 | Seeded missing input → NOT_COMPUTED reaches Home | NOT STARTED | |
-| R2.6 | Purity: remove wall-clock time and latest-only reads from compute paths; `as_of` on every read function | LIVE | ENH-134 | One past day replays bit-for-bit | NOT STARTED | |
+| R2.2 | Invariants: shares sum to 1, leader = 100 %, HHI ∈ [1/n, 1], flip between sign-change strikes, put-call parity on chain prices | SC | §6 | Invariant table populated per cycle | NOT STARTED — **POST-PARITY (S92-A)** | S92 |
+| R2.3 | Independent recompute of key numbers (a second, simple implementation, e.g. the 10-01 replay SQL for the ladder) | SC | `ladder_replay_1001.sql` | Agreement report per cycle | NOT STARTED — **POST-PARITY (S92-A)** | S92 |
+| R2.4 | Screenshot parity fixtures (~60), scored per field | OFF | ADR-025 D3 | Fixture score per field reported | NOT STARTED — **inside parity (S92-A)**; scores reported, not a BUILT gate (ADR-025 C1) | S92 |
+| R2.5 | Input contracts per computed layer: NOT_COMPUTED with reason when inputs fail; status propagates down the lineage | LIVE | R0.5 | Seeded missing input → NOT_COMPUTED reaches Home | NOT STARTED — **POST-PARITY (S92-A)** | S92 |
+| R2.6 | Purity: remove wall-clock time and latest-only reads from compute paths; `as_of` on every read function | LIVE | ENH-134 | One past day replays bit-for-bit | NOT STARTED — **POST-PARITY (S92-A)** | S92 |
 | R2.7 | Tick freeze: copy `market_ticks` to fixtures before the hourly prune, so tick-based writers (WCB, breadth) can be tested and replayed after the close | SC | R1.9, R2.6, TD-S90-NEW-4 | A day of ticks on disk; a tick-based writer replays from them | **IN PROGRESS** — `scripts/freeze_market_ticks.sh` deployed `47c795c` then `8f0007f`: cron `*/5 3-10 * * 1-5` through `bin/roq.sh` to `~/merdian_fixtures/ticks/<IST date>/ticks_<HHMM>_<HHMM>.csv.gz`, **10-day retention**, `gap=1` logged when the window has to be clipped. Cadence set by measurement: **353k rows / 8 MB per 15 min at the open, ~20 s of a 30 s statement timeout**, so 15 minutes was cut to 5. **Names the purge TD-S90-NEW-4 asked for: `pg_cron` jobid 46 deletes `market_ticks` older than 1 hour.** **Nothing consumes the frozen ticks yet** | S90 |
 
-**Stage 2 exit:** golden days green on every deploy; parity fixture scores reported; one past day replays exactly. **Parity closes here.**
+**Stage 2 exit:** golden days green on every deploy; parity fixture scores reported; one past day replays exactly. ~~**Parity closes here.**~~ **Amended S92-A (2026-10-08): parity no longer closes at this exit** — only R2.4 remains a parity item; the rest of Stage 2 is post-parity and paused with the harness work until parity closes.
 
 ### Stage 3 — Redundancy and history hygiene (post-parity; parallel with Stage 4)
 

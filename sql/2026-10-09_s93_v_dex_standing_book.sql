@@ -499,13 +499,20 @@ GRANT SELECT ON public.v_dex_standing_book TO merdian_ro;
 --     FROM public.v_dex_standing_book
 -- ), r AS (
 --   SELECT c.symbol, c.expiry_date, c.strike,
+--          -- the gap predicate is the VIEW's, character for character:
+--          -- COALESCE on iv, because a NULL iv beside a zero delta is a
+--          -- GAP and a bare "c.iv = 0" is NULL there -- which makes the
+--          -- whole NOT(...) NULL, drops the row from the sum, and lets
+--          -- 4c diverge from the thing it is supposed to be checking.
 --          sum(CASE WHEN c.option_type = 'CE'
 --                    AND c.oi > 0
---                    AND NOT (c.delta IS NULL OR (c.delta = 0 AND c.iv = 0))
+--                    AND NOT (c.delta IS NULL
+--                             OR (c.delta = 0 AND COALESCE(c.iv, 0) = 0))
 --                   THEN c.delta * c.oi * c.spot / 1e7 END)  AS call_recon,
 --          sum(CASE WHEN c.option_type = 'PE'
 --                    AND c.oi > 0
---                    AND NOT (c.delta IS NULL OR (c.delta = 0 AND c.iv = 0))
+--                    AND NOT (c.delta IS NULL
+--                             OR (c.delta = 0 AND COALESCE(c.iv, 0) = 0))
 --                   THEN c.delta * c.oi * c.spot / 1e7 END)  AS put_recon
 --     FROM public.option_chain_snapshots c
 --     JOIN (SELECT DISTINCT symbol, expiry_date, settled_ts

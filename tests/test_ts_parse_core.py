@@ -15,6 +15,16 @@ WHAT WOULD MAKE THIS FAIL (Rule 0), stated before the cells:
   - The REAL wire strings are the ones measured on 2026-10-08, including the
     rows[0] of all three of that day's DATA_ERROR basis runs. If the helper
     cannot parse those, the fix does not fix the incident it was written for.
+  - S93 cells 8-10: the psql `+HH` offset. Cell 8 would fail if norm_offset were
+    dropped or mis-anchored; cell 9 is the WIDENING control and fails if any
+    input the pre-S93 body accepted now returns a different instant, which is the
+    only thing that makes a widening safe to assert; cell 10 fails if the pattern
+    were written unanchored, which turns the bare date `2026-10-08` into
+    `2026-10-08:00`. That mutant was RUN: it parses to the same instant,
+    2026-10-08 00:00:00, so cell 10's STRING-level assertion on norm_offset is
+    the only one that catches it and the `parse_pg_ts` cell beside it does not.
+    Cell 8's two FIXTURE strings are asserted to have been REJECTED before, so
+    the new cells cannot be passing for a pre-existing reason.
 
 THE CONTROLS ARE VERSION-AWARE, AND THAT IS NOT A LOOSENING.
   The padding exists because Python 3.10's fromisoformat rejects widths
@@ -25,13 +35,14 @@ THE CONTROLS ARE VERSION-AWARE, AND THAT IS NOT A LOOSENING.
   is not counted. The POSITIVE cells (1, 3, 5, 6, 7) assert on every version;
   only the control that measures the old interpreter's defect is version-gated.
 """
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from core.ts_parse import norm_frac, parse_pg_ts  # noqa: E402
+from core.ts_parse import norm_frac, norm_offset, parse_pg_ts  # noqa: E402
 
 UTC = timezone.utc
 fails = 0
@@ -217,6 +228,124 @@ try:
 except Exception as e:  # noqa: BLE001
     fails += 1
     print(f"  [FAIL] could not exercise compute_basis_context_local.parse_ts: {e}")
+
+# ---- 8. S93: the psql `+HH` offset ---------------------------------------------
+# PostgREST emits `+00:00`; psql emits `+00`, and bin/roq.sh is psql, so every
+# tests/golden/ fixture carries the two-digit form. Before S93 this module returned
+# None on it. The two FIXTURE strings below are the ones measured on
+# tests/golden/2026-10-01_SENSEX, and the second has NO fraction at all -- which is
+# how it is known that the offset was the defect and not the padding.
+print("\n--- 8. psql two-digit offset `+HH` (S93) ---")
+FIX_FRAC = "2026-10-01 03:30:07.358252+00"
+FIX_NOFRAC = "2026-10-01 09:45:00+00"
+OFFSETS = [
+    ("+00 (psql UTC), width 6", "2026-10-08T04:35:06.312290+00",
+     datetime(2026, 10, 8, 4, 35, 6, 312290, tzinfo=UTC)),
+    ("+00 (psql UTC), width 5 -- offset AND padding together",
+     "2026-10-08T04:35:06.31229+00",
+     datetime(2026, 10, 8, 4, 35, 6, 312290, tzinfo=UTC)),
+    ("+00 (psql UTC), no fraction", "2026-10-08T04:35:06+00",
+     datetime(2026, 10, 8, 4, 35, 6, tzinfo=UTC)),
+    ("+05 non-zero two-digit offset normalises to UTC",
+     "2026-10-08T09:35:06.312290+05",
+     datetime(2026, 10, 8, 4, 35, 6, 312290, tzinfo=UTC)),
+    ("-05 negative two-digit offset normalises to UTC",
+     "2026-10-07T23:35:06.312290-05",
+     datetime(2026, 10, 8, 4, 35, 6, 312290, tzinfo=UTC)),
+    ("+05:30 four-digit offset still works (pre-existing form)",
+     "2026-10-08T10:05:06.312290+05:30",
+     datetime(2026, 10, 8, 4, 35, 6, 312290, tzinfo=UTC)),
+    ("Z still works (pre-existing form)", "2026-10-08T04:35:06.312290Z",
+     datetime(2026, 10, 8, 4, 35, 6, 312290, tzinfo=UTC)),
+    ("no offset, naive, still assumed UTC (pre-existing form)",
+     "2026-10-08T04:35:06.312290",
+     datetime(2026, 10, 8, 4, 35, 6, 312290, tzinfo=UTC)),
+    ("FIXTURE golden/2026-10-01_SENSEX ocs.ts, space separator + `+00`",
+     FIX_FRAC, datetime(2026, 10, 1, 3, 30, 7, 358252, tzinfo=UTC)),
+    ("FIXTURE golden/2026-10-01_SENSEX spot.ts, `+00` and NO fraction",
+     FIX_NOFRAC, datetime(2026, 10, 1, 9, 45, 0, tzinfo=UTC)),
+]
+for label, ts, want in OFFSETS:
+    check(label, parse_pg_ts(ts), want)
+
+
+# ---- 9. WIDENING-ONLY, proved against the pre-S93 body, not asserted by hand ---
+# `pre_s93` is the S92 body verbatim minus the norm_offset call. The property is:
+# every input the OLD body accepted, the NEW body returns the IDENTICAL datetime
+# for. Written as a comparison rather than as a table of literals, because a table
+# of literals is a claim that the two agree and this is a test that they do
+# (CLAUDE.md rule 0: a parity claim between two implementations is asserted only by
+# a test that compares them).
+def pre_s93(value):
+    """The S92 parse_pg_ts body: norm_frac only, no offset normalisation."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(norm_frac(str(value).replace("Z", "+00:00")))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+print("\n--- 9. CONTROL: widening only -- nothing that parsed before has changed ---")
+CORPUS = ([ts for _w, (ts, _u) in WIDTHS.items()]
+          + [ts for _l, ts, _w in REAL]
+          + [ts for _l, ts, _w in OFFSETS]
+          + ["2026-10-08T04:35:06.312290Z", "2026-10-08T04:35:06.31229Z",
+             "2026-10-08T04:35:06Z", "2026-10-08T04:35:06.31229-05:00",
+             "2026-10-08T10:05:06.31229+05:30", "2026-10-08T04:35:06.31229",
+             "2026-10-08T04:35:06.31229+0000", "2026-10-08T04:35:06.+00:00",
+             "2026-10-08", "2026-10-08T04:35:06.1234567+00:00",
+             "", "garbage", "not-a-date", "   "])
+changed = [s for s in CORPUS
+           if pre_s93(s) is not None and parse_pg_ts(s) != pre_s93(s)]
+accepted_before = sum(1 for s in CORPUS if pre_s93(s) is not None)
+check(f"all {accepted_before} previously-parsing inputs are byte-identical after S93",
+      changed, [])
+# The other half of widening: the new forms must have been REJECTED before, or
+# cells 8 are passing for a reason that predates this change.
+newly = sorted({s for s in CORPUS
+                if pre_s93(s) is None and parse_pg_ts(s) is not None})
+print(f"      measured: {len(newly)} input(s) newly accepted by S93")
+check("the two FIXTURE strings were rejected by the pre-S93 body",
+      [pre_s93(FIX_FRAC), pre_s93(FIX_NOFRAC)], [None, None])
+check("every newly-accepted input carries a two-digit offset",
+      [s for s in newly if not re.search(r"[+-]\d{2}$", s)], [])
+# `+0530` is deliberately NOT handled (module docstring: neither wire emits it).
+# Asserted as unchanged rather than recorded, because "S93 left it alone" is a
+# property of this change and is testable; its VALUE is interpreter-defined.
+check("compact +0000 is untouched by S93 (still interpreter-defined)",
+      parse_pg_ts("2026-10-08T04:35:06.31229+0000"),
+      pre_s93("2026-10-08T04:35:06.31229+0000"))
+measured("compact +0530 (not normalised; neither wire emits it)",
+         parse_pg_ts("2026-10-08T10:05:06.31229+0530"))
+
+# ---- 10. norm_offset on its own, including the bare date it must NOT mangle ----
+print("\n--- 10. norm_offset: expansion, and the date it must not touch ---")
+check("norm_offset expands +00", norm_offset("2026-10-01 03:30:07.358252+00"),
+      "2026-10-01 03:30:07.358252+00:00")
+check("norm_offset expands +00 with no fraction",
+      norm_offset("2026-10-01 09:45:00+00"), "2026-10-01 09:45:00+00:00")
+check("norm_offset expands -05", norm_offset("2026-10-08T04:35:06-05"),
+      "2026-10-08T04:35:06-05:00")
+check("norm_offset leaves +00:00 alone", norm_offset("2026-10-08T04:35:06+00:00"),
+      "2026-10-08T04:35:06+00:00")
+check("norm_offset leaves +0000 alone", norm_offset("2026-10-08T04:35:06+0000"),
+      "2026-10-08T04:35:06+0000")
+check("norm_offset leaves a naive string alone",
+      norm_offset("2026-10-08T04:35:06.31229"), "2026-10-08T04:35:06.31229")
+# THE anchor check. An unanchored `([+-]\d{2})$` matches the tail of a bare date
+# and yields '2026-10-08:00' -- which fromisoformat parses to the SAME instant
+# (measured). So this string-level cell is the only one that fails under that
+# mutant; the parse-level cell below it passes either way and is kept for a
+# different mutation (norm_offset raising, or date-only breaking outright), not
+# for this one.
+check("norm_offset does NOT mangle a bare date", norm_offset("2026-10-08"),
+      "2026-10-08")
+check("parse_pg_ts still accepts a bare date (does NOT catch the anchor defect)",
+      parse_pg_ts("2026-10-08"), pre_s93("2026-10-08"))
 
 print(f"\nCORE TS PARSE {'ALL PASS' if fails == 0 else f'{fails} FAIL'}")
 sys.exit(1 if fails else 0)

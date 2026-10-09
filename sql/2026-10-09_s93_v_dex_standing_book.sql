@@ -529,15 +529,32 @@ GRANT SELECT ON public.v_dex_standing_book TO merdian_ro;
 --     n_put_dex_positive equals the put strike count, the PE flip was
 --     copied from GEX and the negation is doubled.
 
--- 4d  THE GAP IS A GAP (NULL is never rendered as 0), the leg totals are
---     internally consistent, and the gap OI they do NOT cover is
---     reported beside them.
---     FAILS IF: n_zero_where_gap_c or _p > 0 (a gap published as 0); or
---     gap_oi_unaccounted <> 0 (the leg's gap OI does not equal the sum
---     of the per-strike gap OI); or leg_net_dex_cr differs from
---     leg_call_dex_cr + leg_put_dex_cr by more than 1e-6.
---     EXPECTED: n_zero_where_gap_c = 0, n_zero_where_gap_p = 0,
---     gap_oi_unaccounted = 0, leg_total_mismatch = 0.
+-- 4d  THE GAP IS A GAP: NULL is never rendered as 0.
+--     FAILS IF: n_zero_where_gap_c > 0 or n_zero_where_gap_p > 0 -- a
+--     side carrying un-deltaed OI published 0 instead of NULL.
+--     EXPECTED: n_zero_where_gap_c = 0, n_zero_where_gap_p = 0.
+--     THAT IS THE WHOLE CHECK. It can fail for a modelling defect
+--     because it reads the oi_*_no_delta CASE against the *_dex_cr CASE:
+--     a COALESCE(.., 0) added to the dex arms, or the arms reordered so
+--     a gap falls through to 0, makes it fire.
+--
+--     ARITHMETIC SANITY ONLY -- CANNOT FAIL FOR A MODELLING DEFECT.
+--     leg_total_mismatch and gap_oi_unaccounted are also selected below,
+--     and neither is a check (CLAUDE.md rule 0):
+--       * leg_net_dex_cr is sum(COALESCE(call,0) + COALESCE(put,0)) and
+--         leg_call_dex_cr + leg_put_dex_cr is sum(COALESCE(call,0)) +
+--         sum(COALESCE(put,0)). Equal by linearity of SUM, for ANY
+--         definition of the dex arms. It is the same window sum split in
+--         two.
+--       * leg_gap_oi_qty is sum(oi_call_no_delta + oi_put_no_delta) OVER
+--         the leg, so max() of it over the group equals sum() of its own
+--         rows by construction.
+--     They are kept because a non-zero would mean float accumulation or
+--     a planner bug, which is worth seeing -- but a modelling defect
+--     cannot move either, so they are NOT in FAILS IF and NOT in
+--     EXPECTED as assertions. The leg-total property that CAN fail is
+--     tested by 4i, against an independent implementation.
+--
 --     ALSO EXPECTED, and NOT a failure: sum_net_dex <> leg_net_dex_cr
 --     whenever n_gap_strikes > 0 -- the 1,390.01 Cr NIFTY W1 case. The
 --     columns report it so the discrepancy is visible rather than
@@ -545,11 +562,14 @@ GRANT SELECT ON public.v_dex_standing_book TO merdian_ro;
 --     leave out. Read the two together; the leg total alone is the
 --     measured PART of the leg, not a complete total.
 -- SELECT symbol, expiry_date,
---        max(leg_n_gap_strikes)                                  AS n_gap_strikes,
+--        -- THE CHECK:
 --        count(*) FILTER (WHERE oi_call_no_delta > 0 AND call_dex_cr = 0)  AS n_zero_where_gap_c,
 --        count(*) FILTER (WHERE oi_put_no_delta  > 0 AND put_dex_cr  = 0)  AS n_zero_where_gap_p,
+--        -- ARITHMETIC SANITY ONLY (identities -- cannot fail for a modelling defect):
 --        max(leg_gap_oi_qty) - sum(oi_call_no_delta + oi_put_no_delta)     AS gap_oi_unaccounted,
 --        max(abs(leg_net_dex_cr - (leg_call_dex_cr + leg_put_dex_cr)))     AS leg_total_mismatch,
+--        -- CONTEXT, not assertions:
+--        max(leg_n_gap_strikes)                                            AS n_gap_strikes,
 --        sum(net_dex_cr)                                                   AS sum_net_dex,
 --        max(leg_net_dex_cr)                                               AS leg_net_dex_cr,
 --        max(leg_gap_oi_qty)                                               AS leg_gap_oi_qty,

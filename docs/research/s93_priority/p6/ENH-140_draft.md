@@ -125,8 +125,10 @@ views left it with ALL (TD-S92-NEW-4). The base table's own `anon = rm` (R01-F8 
 TD-S81-NEW-2) is neither widened nor relied on.
 
 **Artefacts.** `sql/2026-10-09_s93_v_dex_standing_book.sql` (Sections 1→3 apply, Section 4
-verifies: 4a anon grain, 4b cost, 4c independent in-SQL recompute, 4d gap handling and leg
-totals with their uncovered OI, 4e WITHDRAWN, 4f chain-side liveness cross-check, 4g
+verifies: 4a anon grain, 4b cost, 4c independent in-SQL recompute, 4d NULL-is-a-gap
+(`n_zero_where_gap_c/_p`; its `leg_total_mismatch` and `gap_oi_unaccounted` are labelled
+ARITHMETIC SANITY ONLY — identities that cannot fail for a modelling defect, rule 0),
+4e WITHDRAWN, 4f chain-side liveness cross-check, 4g
 COMMENT `len 7614` / `md5 634428a33305107247c43910c3729669`, 4h ACL, 4i view vs the offline expected table) ·
 `docs/research/s93_priority/p6/P6_dex_design_note.md` ·
 `tests/test_dex_recompute.py` (+ `docs/research/s93_priority/p6/expected/`).

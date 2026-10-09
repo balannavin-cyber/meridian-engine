@@ -609,7 +609,7 @@ itself:
 | **A1** | `gex_cr` rebuilt in Python from the fixture's chain equals the fixture's stored `gex_cr` per strike, **joined by `run_id`**, max abs diff < 1e-6 Cr | `inputs/gex_strike.csv.gz` — written by **production**, not by this test | the harness's units, the `/1e7` scaling, the CE/PE flip or the deep-ITM guard being wrong. **This is the load-bearing check**: DEX shares every one of those with GEX, so a scale or sign error shows here first. Joined by `run_id` because that is the key §2(c) measured the two relations share — equal `ts` between them is not an established fact |
 | **A2** | every positive `oi` is an exact multiple of 20 (SENSEX) | §2(a): `public.instruments.lot_size`, and ADR-014 §2.3's S75 correction — **not** from the fixture | a vendor switch from quantity to contracts — which would silently rescale every ₹ figure by 20× |
 | **A3** *(recompute only)* | `put_dex_cr ≤ 0` and `call_dex_cr ≥ 0` on every strike where the side has OI and a live delta, **and the negative case is non-vacuous** | §2(b), measured sign | the §3 double-flip **in the Python**. A copied `PE → −1` makes `put_dex` positive and this fails on the first put strike. The **view's** sign is 4c / 4i |
-| **A4** *(recompute only)* | a side with OI and no delta is `None`, never `0.0`; and `oi_*_no_delta` accounts for exactly that OI, cross-checked against an **independent row-level count** over the same run | the gap definition | a `COALESCE(…, 0)` creeping into **the Python**, which would assert a measurement never made. The **view's** is 4d |
+| **A4** *(recompute only)* | a side with OI and no delta is `None`, never `0.0`; and `oi_*_no_delta` accounts for exactly that OI, cross-checked against an **independent row-level count** over the same run | the gap definition | a `COALESCE(…, 0)` creeping into **the Python**, which would assert a measurement never made. The **view's** is 4d (`n_zero_where_gap_c/_p`) |
 | **A6** | `delta` is read as a gap only when `iv = 0`; no fixture row has `delta = 0 AND iv > 0 AND oi > 0` | §2(b), measured across 55,228 rows | the vendor emitting a true zero delta with a live iv, which would mean the marker needs revisiting — a **real** finding, not a test bug |
 | **A7** | the settled-run selector picks the last cycle at or before 15:15 IST, and that cycle's ts is a cycle the fixture holds | ENH-126 rule + `queries/ocs.sql` window | an off-by-one in the ceiling, or a `created_at` ordering slipping in |
 | **A8** | **the session selector's liveness clause, run over the fixture's own `market_spot_snapshots` rows — the same relation the view reads.** The live fixture day is **accepted**; a synthetic copy with one frozen spot is **rejected**; row and cycle counts in the window are identical across the two | §1's liveness rule (ADR-030 / ENH-133 §3.6) and the measured 2026-10-02 control | the liveness clause being dropped, inverted, or written as a row/cycle count — all three of which 2026-10-02 passes. **The synthetic frozen copy is what makes this a test**: the live fixture alone would pass a selector with no liveness clause at all. **Clause 1 (explicit calendar closure) is NOT tested here** — the fixture carries no `trading_calendar` rows, so clause 1 is live-only (Section 4) |
@@ -621,10 +621,23 @@ an **algebraic identity of the lines immediately above it** — both sides are s
 same two `COALESCE`d quantities — so it could not fail for the reason it named (Rule 0,
 clauses 1 and 3). No external expected value for the leg totals exists offline: the fixture
 carries *gamma*, not delta, so there is nothing production-written to anchor a delta total
-against. The leg-total property is therefore asserted by **view check 4d** (additivity, in
-SQL) and **4i** (against this CSV), and the numbers are **printed here as observations,
-never asserted** — the test prints them on an `obs` line so they are visible without
-pretending to be checks.
+against. The leg-total property is therefore asserted by **view check 4i** alone (the view
+against this CSV, two independent implementations), and the numbers are **printed here as
+observations, never asserted** — the test prints them on an `obs` line so they are visible
+without pretending to be checks.
+
+**An earlier draft of this paragraph also cited view check 4d "(additivity, in SQL)" — the
+same error, one layer down.** 4d's `leg_total_mismatch` compares
+`sum(COALESCE(call,0) + COALESCE(put,0))` against
+`sum(COALESCE(call,0)) + sum(COALESCE(put,0))`: equal by linearity of `SUM` for *any*
+definition of the dex arms, so it is the same window sum split in two. Its
+`gap_oi_unaccounted` is a window sum compared with the sum of its own rows. Both were
+relabelled **"ARITHMETIC SANITY ONLY — cannot fail for a modelling defect"** and removed
+from 4d's `FAILS IF` and `EXPECTED`; `n_zero_where_gap_c/_p` remains the real check there,
+because it reads the `oi_*_no_delta` CASE against the `*_dex_cr` CASE and a `COALESCE(…, 0)`
+in the dex arms makes it fire. **Rule 0 caught the same shape twice in one session, once in
+the Python and once in the SQL** — which is the argument for stating what would make a check
+fail *before* writing it, not after.
 
 **Output goes outside the frozen fixture.** `tests/golden/2026-10-01_SENSEX/` is frozen
 (R2.1, `MANIFEST.sha256`) and the test **never writes into it** — it verifies that manifest

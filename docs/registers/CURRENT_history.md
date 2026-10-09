@@ -4066,3 +4066,124 @@ below.
 | **S90-H** | EOD dates: IST ingest + one-time +1 day migration |
 | **S90-I** | ADR-031 D3a: provenance via `run_id` → ledger |
 | **Close mode** | Hybrid close (2026-10-06 05:21 IST): the tracker holds progress; protocol files point; Doc Protocol v5 drafted, not ruled |
+
+## Previous session S91 / AM-2
+
+**S91 / AM-2 (Agentic Meridian Session 2) — 2026-10-06 → 2026-10-07 (Tuesday–Wednesday, live
+session).** Two parts. **Part 1** folded the AM-1 post-close delta into the registers and
+codified two operator rulings (`f455e97`, docs only). **Part 2 — this close — shipped two
+live fixes and diagnosed a third defect that had been filed on an impression.** This block
+points; the detail lives in the files named.
+
+**Three commits, `b48532e` → `6a5c0e2` + this close. All pushed; the box is current.**
+
+| Commit | What |
+|---|---|
+| `bcadfa6` · `67a91ce` | *(part 1)* TD-S91-NEW-1 `_ist_date` fraction padding, writer + reconciler; R1.6 seeded cases 5–11; rule 23 guard in `run_offline.sh` |
+| `b48532e` | **TD-S91-NEW-2 site 2** — `build_market_spot_session_markers.py` `parse_ts` pads 1/2/4/5-digit fractions. 10-05 and 10-06 had **no marker rows at all**; both backfilled. Test step 8/9 |
+| `6a5c0e2` | **TD-S91-NEW-12** — the orchestrator monitor's Telegram flood. Gated on trading day **and** the orchestrator's own crontab window; one condition key, 30-min re-notify, 10-tick hold-down, UNKNOWN ticks inert. Test step 9/9, 54 cells |
+
+**What was established**
+
+1. **An alert channel that was instrumented and unreadable at the same time.**
+   `monitor_orchestrator_health.py` sent on `*/1` 24×7 while the orchestrator runs `*/5
+   03-09` UTC: ~1,000 sends a night, chat **4.1k unread and MUTED** — and the 09:10 IST
+   wsfeed preflight alert (**TD-S91-NEW-3**) **did fire, at 09:10:04 IST**, into that muted
+   chat. The incident needed no new instrumentation. Replay of the real 2026-10-07 day:
+   **835 → 14 sends.**
+2. **Gating was not enough, and only a replay showed it.** The in-band condition changes on
+   **119 adjacent minute pairs**, so a 30-minute re-notify engaged **zero** times; two keys
+   with immediate recovery would still have sent **148**. A first test passed **40/40** over
+   that design because its scenarios came from the spec and the real sequence is neither
+   flat failure nor clean recovery. One key + a 10-tick hold-down → 14; **one key alone
+   measures 93**, so the hold-down carries the larger half.
+3. **TD-S91-NEW-6 was filed as "exits 1 every cycle" and is 21 of 84 = 25 %, in two
+   mechanisms** — 12 structural `SKIPPED_NO_INPUT` (08:31–09:26 IST, futures capture starts
+   09:30) + 9 `DATA_ERROR` `no_rows` (09:41…14:56 IST). The code path is now exact:
+   `no_rows ⟺ parse_ts(rows[0]["ts"]) is None`. **The mechanism is open between two
+   candidates** — the unpadded fraction (a 7th TD-S91-NEW-2 site, `compute_basis_context_local.py:61`)
+   and a NULL `ts` reaching `rows[0]` through `order=ts.desc`'s NULLS FIRST. **The observed
+   12.5 % matches the single-timestamp rate (9.91 %), but the path needs both symbols in one
+   cycle, whose independent rate is 0.98 % — P(X ≥ 9) = 4.14 × 10⁻⁸.** So the rate agreement
+   is not evidence; one discriminating read is owed.
+4. **TD-S91-NEW-1's fix is deployed and unverified by any cycle.** Pulled to the box
+   **12:23:53 UTC** (file mtime matches); the orchestrator's last cycle of the day was
+   **09:55 UTC**, so all 34 of its failures **predate the deploy**. Today's log is evidence
+   about the old artefact. **77/77 on 2026-10-08 09:05–09:25 IST is the first real test.**
+5. **TD-S91-NEW-7 verified** — the owed post-15:40 run happened: `( ulimit -v 700000; bash
+   tests/run_offline.sh )` → **`OFFLINE PASS`, 9/9**, with step 2 (the file that OOM-killed
+   the box) completing inside the ceiling. Under `ulimit -v` a memory regression now **fails
+   the suite** instead of killing the box.
+6. **ENH-98 T1 = PASS on the A5 arm** (SENSEX dte 1, 10:15:59 IST; `exact/365` ATM **0.0716**
+   / NEAR **0.0369**, ATM rows **28 ≥ 10**), against a pre-registration hashed **before** the
+   read (`2a978967f956…`). **T1 is no longer the L7/L8 blocker; a PASS does not build the
+   views.** The S89 pre-committed DROP is **moot, not discharged** — S90-A never created
+   them. Open: NIFTY **`r_eff` 3.08 %** to check against T3's definition (TD-S89-NEW-3).
+
+**Corrections to my own work — §D.47, 5 rows, all REFUTED.** Three mine, one an advisory
+claim I acted on untested, one filed-and-contradicted the same day. **The one to carry,
+D.47.3:** I estimated one-key-alone at "≈14 sends" where a replay was available; it measures
+**93**, and ≈14 is what the *combined* fix delivers — so the estimate would have validated a
+weaker fix. **An estimate that coincides with the right answer for the wrong configuration is
+indistinguishable from a measurement until someone measures.**
+
+**Registers touched:** `tech_debt.md` (**TD-S91-NEW-12…18 filed**; **-1** → FIX DEPLOYED,
+**-2** → 1 of 7 fixed + 7th site, **-3** → the alert fired and was missed, **-6** → corrected
+and diagnosed, **-7** → VERIFIED), Assumption Register **§D.47**, Enhancement Register
+(**ENH-98 S91 block**), `CURRENT.md` (S89 → `CURRENT_history.md`, byte equality asserted at
+8,079 B / sha256 `e2bec976…`), `session_log.md`, `merdian_reference.json` **v70**,
+`CLAUDE.md` footer **v1.64**, **S92 starter**. Sources:
+`scratch/s91/telegram_flood_findings_S91.md`, `scratch/s91/basis_context_findings_S91.md`.
+
+**No ADR filed; no DDL applied; no data migration.** Two rulings are owed (below).
+
+## NEXT SESSION PICKS UP — as S91 left it (SUPERSEDED by the S92 list above)
+
+**S92 starter: `docs/session_notes/S92_dev_starter.md`. VERIFY FIRST — four things shipped
+this session and none of them is verified.**
+
+1. **Thu 2026-10-08 — the verification block. Do this before anything else.**
+
+   | When (IST) | Check | PASS looks like |
+   |---|---|---|
+   | 09:05–09:25 | `gex_cycle_history` front leg vs `gamma_metrics` | **77 of 77**, not 64 — **TD-S91-NEW-1** closes on it |
+   | after 15:30 | orchestrator contract-met rate for the day | **≈ 75 %** (63/84) against 54.8 % on 10-07 — this is a **prediction**; a miss means `bcadfa6` is not doing on the box what it did offline, or a third cause exists |
+   | 16:10 | `market_spot_session_markers` row written **by cron**, not by hand | a row for 10-08 — **TD-S91-NEW-2** site 2 proven on the live path |
+   | end of day | Telegram volume, **after unmuting the chat** | **≈ 14 in-session sends**, no overnight traffic — **TD-S91-NEW-12** closes on it. Until the chat is unmuted the fix is unproven where it matters |
+
+2. **Two operator rulings owed:** **`SKIPPED_NO_INPUT` → exit 0** (TD-S91-NEW-15 — 12 daily
+   false-failed cycles, mechanism settled, fix is a ruling not an investigation) and
+   **Doc Protocol v5** (drafted at S90, still not ruled).
+3. **The basis discriminating read** (TD-S91-NEW-6): raw `ts` strings per symbol for the
+   newest `index_futures_snapshots` row across several cycles, plus whether the column is
+   nullable. Fraction → widths {1,2,4,5}; NULL → a null at `rows[0]`.
+4. **`validate_compute_contracts.py` — DUE before Tue 2026-10-20** (TD-S91-NEW-13). ~168
+   Telegram messages on a weekday holiday, and 10-20 is the next one. Fix is the same shape
+   as `6a5c0e2`: calendar gate + 30-min dedupe. **TD-S91-NEW-14** (`:170` asserts a cycle
+   skip that never happens) travels with it.
+5. **08:40 IST Zerodha early-mode preflight — design agreed, NOT built** (TD-S91-NEW-3). It
+   must **exercise** the token, not check its presence.
+6. **Stage B** of the agentic layer · **R1.10 scrip-map sync (ROADSTAR)** ·
+   **`build_ict_htf_zones` re-run** · **Marketview Pin/Flows — a parallel session**.
+7. **Dated carries:** **~Tue 2026-10-13** drop the S90-H backup tables after a clean week
+   (TD-S90-NEW-11) · **Tue 2026-10-20** the first live test of R0.8, no chain rows written
+   and `cycle_health` CLOSED (TD-S89-NEW-1 closes on it, and TD-S91-NEW-13 must land first).
+8. **Remaining TD-S91-NEW-2 sites:** 1, 3, 4, 5, 6, 7 — and the shared `core/` timestamp
+   helper, which is the actual fix. **Any re-sweep must walk the orchestrator's step list as
+   well as the crontab**: site 7 was invisible to the original grep for exactly that reason.
+9. **NIFTY L9 stage-1 max-pain arm** (TD-S80-NEW-1), pre-registered before any read —
+   carried from S89 through S90 and S91, still owed.
+
+## OPERATOR RULINGS, S91
+
+**All rulings live in `docs/research/s91_agentic/rulings_s91.md`**, the single source. This
+table points and does not restate.
+
+| # | Topic |
+|---|---|
+| **S91-A** | No fixture-suite run 08:30–15:40 IST, and every run under an explicit `ulimit -v` → `CLAUDE.md` rule 23 |
+| **S91-B** | One Claude Code session per tree, and never root one in `~/meridian-engine` → `CLAUDE.md` rule 24 |
+| **S91-C** | Monitor dedupe: **30-min re-notify** (the "60 min → 1 send" in the original brief was arithmetically impossible and was withdrawn) |
+| **S91-D** | Monitor flapping: implement **both** one-key **and** a hold-down of **10 consecutive clear ticks** — two cycles, because one *successful* cycle spans 5 ticks of the look-back |
+| **S91-E** | A probe failure is **UNKNOWN**, not a clear tick: skip both the send and the hold-down that minute |
+| **Owed** | `SKIPPED_NO_INPUT` → exit 0 · Doc Protocol v5 |

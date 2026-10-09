@@ -69,6 +69,39 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 **NOTE — 2026-10-03.** `v_gex_concentration.hhi_net` is the **top-1 gamma share, NOT a Herfindahl** — byte-identical to `v_gex_strike_rank` rank-1 `share_of_abs` and to `gamma_metrics.gamma_concentration` (0.0942 on 10-01); true HHI Σshare² ≈ 0.0464. The live board's 'HHI' label and D-6's ~0.10 / ~0.25 bands are therefore on **top-1 share**. `hhi_call` / `hhi_put` semantics **unverified**. Verify call/put and correct the board label before any Herfindahl claim.
 **FIX (phase-2 Pin tab):** the board's 'HHI' label should display the true `conc_hhi` (Σs²); keep top-1 share as a separate **'lead-strike share'** line. **ENH-133 now stores both.**
 
+### TD-S93-NEW-1 (S2 priority) — `run_offline.sh`'s `PIPESTATUS` idiom is positional, so inserting any command between a pipeline and its test silently disables that step's check
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Nothing is wrong today — all 11 steps are checked. The debt is that the suite's correctness depends on an invisible adjacency rule, and breaking it produces a step that always passes. A test that cannot fail is the CLAUDE.md rule 0 shape, arrived at by an edit rather than by a design. |
+| **Filed** | 2026-10-09 (Session 93) |
+| **Component** | `tests/run_offline.sh` — all 11 step lines, each of the form `… \| tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] \|\| rc=1` |
+| **Measured** | `PIPESTATUS` is reset by the next command. Demonstrated 2026-10-09: with an `echo` inserted between the pipeline and the test, a step exiting 2 yielded **`rc=0`** — the failure vanished. With no command in between (the file as committed) the same step yields `rc=1`, and exit 1 → `rc=1`, exit 0 → `rc=0`. The mutant control on step 11 (a stub exiting 2) printed `OFFLINE FAIL`, suite exit 1, so **the file is correct as it stands**; this entry is about how easily it stops being correct. `set -uo pipefail` is set (line 8) but does not help, because no step reads `$?`. |
+| **Proper fix** | Capture in the same statement, so the value cannot be clobbered by an intervening line: `… \| tail -1; s=${PIPESTATUS[0]}; [ "$s" -eq 0 ] \|\| rc=1`. Eleven mechanical edits. A `step()` shell function taking a label and a command would be better still and is a larger change. |
+| **Status** | **OPEN — NOT FIXED.** Found while wiring step 11; deliberately not changed in the same commit, because rewriting all eleven step lines is a separate edit from adding one. |
+
+### TD-S93-NEW-2 (S3 priority) — `.gitignore:43 *.csv` silently excludes the DEX expected table, so the offline recompute's record is local-only
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** No number is wrong and no check is defeated — view check 4i reads two **live** exports and needs nothing from the repo but the test file. The cost is that the record of what the recompute produced on the frozen golden day never leaves the machine that ran it. |
+| **Filed** | 2026-10-09 (Session 93) · P6 design note **carry 9** |
+| **Component** | `.gitignore:43` (`*.csv`) vs `docs/research/s93_priority/p6/expected/dex_standing_book_1001_SENSEX.csv`, written by `tests/test_dex_recompute.py` on every run |
+| **Measured** | The path produces **no `??` line** in `git status`, not even under `--untracked-files=all`; `git check-ignore -v` is what surfaced it, returning `.gitignore:43:*.csv`. This is the S68 shape already codified in `.claude/rules/data-access.md` (*"`git status` clean ≠ file tracked … `git check-ignore -v` is the only tell"*). Side effect worth keeping: because the path is ignored, running the offline suite leaves **no git noise** despite step 11 being the one non-read-only step. |
+| **Proper fix** | A `.gitignore` **negation** for that path — *not* `git add -f`, which, per the same rule, hides the problem for the next file. The alternative is equally defensible: record in the design note that the artefact is deliberately regenerated and stop implying it is committed. **Which of the two is a repo-policy call about which generated artefacts belong in git, and is not P6's to make.** |
+| **Status** | **OPEN — operator call.** Recorded in the P6 design note §7 and carry 9. |
+
+### TD-S93-NEW-3 (S3 priority) — P1 precondition §6.6 rests on an operator-reported editor message, with no artefact in the repo
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The pre-registration is satisfied and the P1 verdict does not depend on this: §6.6 is a *precondition* (the replay equals the shipped rule), and a failure would have stopped Part 2 rather than biased it. The debt is evidentiary — one of six preconditions cannot be re-checked from the repo. |
+| **Filed** | 2026-10-09 (Session 93) |
+| **Component** | `docs/research/s92_priority/p1/p1_part3_replay_check.sql` · `p1/README.md` step 3 row · `P1_level_test_result_2026-10-09.md` Preconditions |
+| **Measured** | The other five preconditions have sources in the repo: §6.2 is **asserted by `p1_score.py`** against Part 1b before scoring (non-zero exit on mismatch), and §6.1 / §6.3 / §6.4 / §6.5 are recorded in `p1/README.md` and `p1/part1b_result_2026-10-09_0923.json` (`grid_failures: null`, `multi_spot_runs: 0`, `multi_expiry_runs: 0`). §6.6 has **only** the operator's report that the Supabase SQL editor returned *"Success. No rows returned"* after 15:40 IST on 2026-10-09. No result file was exported. Until this close, `p1/README.md` step 3 carried only the **plan** (*"run after 15:40 IST; expect zero rows"*), so nothing distinguished "Part 3 passed" from "Part 3 was scheduled". |
+| **Proper fix** | Re-run `p1_part3_replay_check.sql` through `bin/roq.sh` and commit the (empty) output beside the other P1 artefacts, so the zero-row result is a file. Cheap, but it is a **different** run against a **later** GEX run than the one Part 2 was gated on — so it corroborates the rule, it does not retrospectively evidence that night's check. State which of the two is wanted before running it. |
+| **Status** | **OPEN.** The outcome is now recorded in `p1/README.md` step 3 and in the result doc, both marked operator-reported. |
+
 ### TD-S92-NEW-6 (S3 priority) — the Marketview build box has no bun and Lovable updates only `bun.lock`, so a dependency change breaks the install — and the guards hide why
 
 | Field | Value |
@@ -184,7 +217,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **RULING OWED** | Operator ruling requested: **`SKIPPED_NO_INPUT` → exit 0** (a skip is not a failure), leaving `DATA_ERROR` as the only non-zero reason. Not applied pending that ruling. |
 | **Not verified** | Whether `exit_code=1` on `SKIPPED_NO_INPUT` is the house convention at **every** call site in the repo; the survey was started and not finished. |
 | **Source** | `scratch/s91/basis_context_findings_S91.md` §4, §6.1 |
-| **Status** | **PARTLY FIXED (S92).** Ruling **S92-B**: `compute_basis_context_local.py` returns exit 0 on `SKIPPED_NO_INPUT` (`e0b9d03`), `exit_reason` unchanged so the 12 structural cycles stay countable. **`run_merdian_shadow_runner_aws.py:364` is deliberately untouched** (no option-chain rows at all is a different condition) and stays OPEN. **Verification owed:** 2026-10-09 08:31–09:26 IST, 12 no-input cycles exit 0. *(Was: mechanism settled, ruling owed.)* |
+| **Status** | **BASIS SITE VERIFIED 2026-10-09 — 12/12 no-input cycles exit 0.** Ruling **S92-B**: `compute_basis_context_local.py` returns exit 0 on `SKIPPED_NO_INPUT` (`e0b9d03`), `exit_reason` unchanged so the 12 structural cycles stay countable. The owed verification is discharged: **2026-10-09, 12 of 12 no-input basis cycles exited 0.** **`run_merdian_shadow_runner_aws.py:364` is deliberately untouched** (no option-chain rows at all is a different condition) and **stays OPEN — this TD is not closed**. *(Was: PARTLY FIXED (S92), verification owed. Before that: mechanism settled, ruling owed.)* **Evidence provenance:** measured 2026-10-09 ~12:28 IST by a read-only `bin/roq.sh` query run by the operator in S93 (not by CC); output reported in the S93 chat, not committed to the repo. |
 
 ### TD-S91-NEW-16 (S2 priority) — the unidentified EOD cursor writer struck again, and this time it carried an expired Dhan token
 
@@ -238,7 +271,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **UNVERIFIED BY ANY LIVE CYCLE, and today's log cannot verify it** | The orchestrator's last cycle of the day is **09:55 UTC** and the pull landed at **12:23:53 UTC**, so **every one of the 34 `write_gex_cycle_history` step-failures on 2026-10-07 predates the deploy by ≥ 2 h 43 m**. Today's log is evidence about the **old** artefact. The last failure carried the pre-fix traceback verbatim at line **87**: `ValueError: Invalid isoformat string: '2026-10-07T09:35:06.36058+00:00'`. |
 | **Verify** | **2026-10-08, 09:05–09:25 IST** — `gex_cycle_history` should hold **77 of 77** front-leg cycles against `gamma_metrics`, not 64. That is the first cycle set the fix has ever run against. |
 | **Not recovered** | The 23 rows already lost stay lost. This stops the bleeding; it does not backfill. |
-| **Status** | **FIX DEPLOYED 2026-10-07 12:23:53 UTC — VERIFICATION OWED 2026-10-08 09:05–09:25 IST (77/77).** |
+| **Status** | **VERIFIED 2026-10-09 — `gex_cycle_history` front leg vs `gamma_metrics` 78/78 (10-08) and 77/77 (10-09).** Fix deployed 2026-10-07 12:23:53 UTC; the owed verification is discharged on **two** consecutive days, which is what makes it a verification rather than one clean day. *(Was: FIX DEPLOYED 2026-10-07 12:23:53 UTC — VERIFICATION OWED 2026-10-08 09:05–09:25 IST (77/77). The owed figure was 77/77; 10-08 measured **78/78** — one more cycle than predicted, not one fewer, so the prediction was low rather than the check failing.)* **Evidence provenance:** measured 2026-10-09 after 17:15 IST (post-close re-check) by a read-only `bin/roq.sh` query run by the operator in S93 (not by CC); output reported in the S93 chat, not committed to the repo. |
 
 ### TD-S91-NEW-2 (S3 priority) — SEVEN more unpadded `fromisoformat` sites, one now fixed, and ~40 copies of the same padding with no shared helper
 
@@ -311,7 +344,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Forecast, and it is a prediction not a result** | With TD-S91-NEW-1's fix live and nothing else changed, **21 of the 38 failing cycles still fail and 17 become clean → 63/84 = 75.0 % contract-met**, against 54.8 % observed. Layering further: + TD-S91-NEW-15 → 89.3 %; + this entry diagnosed → 100 %. **If 2026-10-08 does not land near 75 %, either `bcadfa6` is not doing on the box what it did offline, or a third cause is present that 10-07's log does not contain.** |
 | **Consumer impact** | `basis_context_snapshots` is **display-only, context-not-gate** (S37), so a missed cycle degrades a surfaced field and gates nothing. Note the fail-soft asymmetry: a missing *prev* row is **not** a failure — the row still writes with `context_label` NULL — so consumers must read NULL as "not measured", never as NEUTRAL. |
 | **Source** | `scratch/s91/basis_context_findings_S91.md` §3, §5, §6.1 |
-| **Status** | **FIXED `bd91d27` (S92) — mechanism SETTLED; verification owed.** (a) is the mechanism: PostgREST trims trailing zeros, Python 3.10.12 rejects fraction widths 1/2/4/5, and the futures writer stamps one `ts` for both symbols — per-run trace of 2026-10-08's 84 runs: the 3 DATA_ERROR runs had widths 4, 5, 5; 0 of 69 SUCCESS runs carried a failing width. (b) is **impossible**, not unobserved: `index_futures_snapshots.ts` is `is_nullable = NO`. **Closes on a full trading day with 0 basis DATA_ERROR runs** — 2026-10-09 is the first. *(Was: mechanism open between (a) and (b).)* |
+| **Status** | **VERIFIED 2026-10-09 — 0 `DATA_ERROR` over 84 runs. CLOSES.** The closing condition this entry set for itself — *"a full trading day with 0 basis DATA_ERROR runs"* — is met on the first such day, 2026-10-09: **84 runs, 0 `DATA_ERROR`**, against **3 on 10-08** (recorded in the mechanism below) and the **9** this entry's own heading records for its 10-07 filing day. Fixed by `bd91d27` (S92). Mechanism, settled before the verification and unchanged by it: (a) PostgREST trims trailing zeros, Python 3.10.12 rejects fraction widths 1/2/4/5, and the futures writer stamps one `ts` for both symbols — per-run trace of 2026-10-08's 84 runs: the 3 DATA_ERROR runs had widths 4, 5, 5; 0 of 69 SUCCESS runs carried a failing width. (b) is **impossible**, not unobserved: `index_futures_snapshots.ts` is `is_nullable = NO`. *(Was: FIXED `bd91d27` (S92) — mechanism SETTLED; verification owed. Before that: mechanism open between (a) and (b).)* **Evidence provenance:** measured 2026-10-09 after 17:15 IST (post-close re-check) by a read-only `bin/roq.sh` query run by the operator in S93 (not by CC); output reported in the S93 chat, not committed to the repo. **Note:** 84 runs with 0 `DATA_ERROR` is one day; the 25 % rate this entry was filed on spanned two mechanisms, and the 12 structural `SKIPPED_NO_INPUT` cycles are TD-S91-NEW-15's, now exiting 0. |
 
 ### TD-S91-NEW-7 (S2 priority) — the offline fixture suite OOM-killed the box during pre-open and Session Manager became unreachable
 

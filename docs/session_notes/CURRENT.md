@@ -2,11 +2,121 @@
 
 > **Living file.** Overwritten at the end of every session to reflect what just happened and what the next session is for.
 > Claude reads this immediately after `CLAUDE.md` at session start. It replaces the practice of manually pasting a "session resume block."
-> **History.** Every session block before S89 lives in [`docs/registers/CURRENT_history.md`](../registers/CURRENT_history.md) — committed to git, **not** uploaded to project knowledge. Split at the S78 doc-close per **TD-S73-NEW-8**; S78 demoted to history at the S80 doc-close and **S81 at the S83 doc-close**, S82 at the S84 doc-close, **S83 at the S85 doc-close**, **S84 at the S86 doc-close** **S85 at the S87 doc-close** **S86 at the S88 doc-close**, **S87 at the S89 doc-close** and **S88 at the S90 / AM-1 doc-close**, each moved verbatim rather than retyped — the S87 move asserted byte-identical at **19,184 B**, sha256 `52b9364b…` on both sides. **S89 moved at the S91 close**, asserted byte-identical at **8,079 B**, sha256 `e2bec976…` on both sides. **S90 (with the AM-1 post-close block) moved at the S92 close**, asserted byte-identical at **9,482 B**, sha256 `8466bfbb…` on both sides. This file carries the current session and one predecessor, and nothing else.
+> **History.** Every session block before S89 lives in [`docs/registers/CURRENT_history.md`](../registers/CURRENT_history.md) — committed to git, **not** uploaded to project knowledge. Split at the S78 doc-close per **TD-S73-NEW-8**; S78 demoted to history at the S80 doc-close and **S81 at the S83 doc-close**, S82 at the S84 doc-close, **S83 at the S85 doc-close**, **S84 at the S86 doc-close** **S85 at the S87 doc-close** **S86 at the S88 doc-close**, **S87 at the S89 doc-close** and **S88 at the S90 / AM-1 doc-close**, each moved verbatim rather than retyped — the S87 move asserted byte-identical at **19,184 B**, sha256 `52b9364b…` on both sides. **S89 moved at the S91 close**, asserted byte-identical at **8,079 B**, sha256 `e2bec976…` on both sides. **S90 (with the AM-1 post-close block) moved at the S92 close**, asserted byte-identical at **9,482 B**, sha256 `8466bfbb…` on both sides. **S91 / AM-2 moved at the S93 close**, asserted byte-identical at **9,208 B**, sha256 `d5dc4e19…` on both sides. This file carries the current session and one predecessor, and nothing else.
 
 ---
 
 ## Last session
+
+**S93 — 2026-10-09 (Friday, live session).** P1 scored and returned **NO on both arms**, which
+is the S92-I decision point; P6 authored, tested and committed but **not applied**; three S91
+defects verified; one shared parser widened. This block points; the detail lives in the files
+named. Rulings: `docs/research/s92_parity/rulings_s93.md` (S93-A, S93-B).
+
+**`origin/main` — all pushed; production tree `~/meridian-engine` pull owed** (operator,
+`git pull --ff-only`). `cf40b95` `core/ts_parse.py` accepts the psql `+HH` offset · `333fc33`
+the P6 offline test adopts `core.ts_parse`, first run · `71cd100` wired in as `run_offline.sh`
+step **11/11** · `62de679` **P1 scored** · this close.
+**meridian-connect: untouched** (live stays `417e966`).
+
+**What was established**
+
+1. **P1 (level test) is DONE and the answer is NO.** A-NIFTY holdout **−0.116**, 97.5 %
+   [−0.365, 0.102]; B-NIFTY holdout **−0.0867**, [−0.282, 0.0902]. Both intervals include zero
+   **and** both holdout means are below half their calibration means, so each fails §5.8 on
+   both limbs. The null is the pre-registration's §5.5 offset-preserving null, in its words:
+   *"Each level's side of spot and its distance in σ are preserved; only 'these are today's
+   strikes' is broken."* Pre-registration `7a708a64…` unchanged and unamended. Result doc:
+   `docs/research/s92_priority/P1_level_test_result_2026-10-09.md`.
+2. **Two post-hoc patterns are recorded and marked unclaimable.** Calibration *e* positive and
+   holdout *e* negative in **7 of 8** primary rows; `e_dA` positive at DTE 0–1 and negative at
+   DTE 4+ in all four cells. Both are read off the data that produced the NO, after seeing it;
+   (a) is what a calibration-fitted effect leaves when it does not transfer. A DTE-conditioned
+   test is a **new** pre-registration, never an amendment.
+3. **P6 is AUTHORED — NOT APPLIED (S93-A).** The view, design note and offline test are in git;
+   no `CREATE`/`COMMENT`/`GRANT` has been issued. **ENH-140 stays UNFILED** pending S93-B.
+   Roadmap §2.1's P6 row now says so. Its Section 4 checks, 4i included, are **unrun** because
+   there is no live object.
+4. **The offline suite is 11 steps and the DEX test is in it.** Wired only after its first
+   standalone pass. A non-zero exit — including the test's own rule-23 refusal, exit 2 — is a
+   FAIL, proved by a mutant stub: `OFFLINE FAIL`, suite exit 1. Peak RSS 293,000 kB under
+   `ulimit -v 700000`; **the ceiling was not raised**.
+5. **Three S91 verifications closed on measured evidence** (operator-run `roq.sh` reads):
+   **TD-S91-NEW-6** 0 `DATA_ERROR` over 84 runs → **CLOSES**; **TD-S91-NEW-15** 12/12 no-input
+   basis cycles exit 0 → basis site verified (`run_merdian_shadow_runner_aws.py:364` **stays
+   open**); **TD-S91-NEW-1** `gex_cycle_history` front leg vs `gamma_metrics` **78/78** (10-08)
+   and **77/77** (10-09).
+6. **`core/ts_parse.py` widened, in its own commit.** There are **two wires, not one**:
+   PostgREST renders UTC as `+00:00`, psql as `+00`, and `bin/roq.sh` is psql — so golden
+   fixtures exported via `roq.sh` carry a form the shared parser returned **None** on (the
+   `2026-10-01_SENSEX` fixture did — the P6 test's first run died on it). `norm_offset`
+   added, stated as the module's one piece of new logic. Widening proved by re-parsing the
+   corpus through the pre-S93 body: **23 inputs byte-identical, 7 newly accepted**.
+
+**Corrections to my own work.** The first run of the P6 test **failed on the fixture's
+timestamp format** and reached no assertion — `ast.parse` and `py_compile` cannot see a string
+format, so "compiled, not run" bought nothing here. Four documents said view check **4i points
+at the expected CSV**; 4i reads two *live* exports and never opens it. The test still cited
+**4d "(additivity, in SQL)"** for the leg totals after 4d's additivity arms had been relabelled
+arithmetic-sanity-only. I claimed one heredoc invocation is what 4i's `run_id` check **depends
+on** — psql runs each statement in autocommit with its own snapshot, so it narrows the race and
+the set-equality assertion is the guard. Three statements drafted into the P1 result doc were
+struck before writing, each false against the scorer output: a "nearer zero than any other"
+claim, `n = 17` for the smallest DTE bucket (it is **15**), and an uncited "clean" over four
+preconditions. An EOL check written in text mode **could not report CRLF at all** and was redone
+in binary. A `PIPESTATUS` demo and an `awk` range gate each measured nothing and were rebuilt.
+
+**Registers touched:** `rulings_s93.md` (**new**, S93-A / S93-B), roadmap §2.1 (P1 → DONE, P6 →
+AUTHORED — NOT APPLIED, decision point), `tech_debt.md` (**TD-S93-NEW-1…3 filed**; TD-S91-NEW-1,
+-6, -15 verified), Enhancement Register (Part 8 note; **no id minted**), P6 design note (§4.3,
+§7, carry 9), `p1/README.md`, `CURRENT.md` (S91 / AM-2 → `CURRENT_history.md`, byte equality
+asserted at **9,208 B** / sha256 `d5dc4e19…`), `session_log.md`.
+
+**No ADR filed, none amended. No DDL applied. No data migration.** One ruling is owed: S93-B.
+
+## NEXT SESSION PICKS UP
+
+1. **S93-B — the P2–P8 re-plan ruling. This is the gate on everything below.** P1 returned NO
+   on both arms, which is the S92-I decision point: *"the operator re-plans everything below
+   before more is built."* Nothing further is built until it is made.
+2. **Pull the production tree** — `~/meridian-engine`, `git pull --ff-only` to `62de679` plus
+   this close. Four commits are on `origin/main` and the box has none of them; `core/ts_parse.py`
+   is shared code, so until the pull the box runs the pre-S93 parser. Preflight compares the two
+   hashes (rule 2), so this is also the gate on any live run.
+3. **DEX view apply — ONLY if S93-B allows it.** Sections 1→3 as **one execution**, then
+   Section 4 including **4i** (export the view and the chain for the same `run_id`s, then
+   `python3 tests/test_dex_recompute.py --compare --view <csv> --chain <csv>`). The file is
+   `sql/2026-10-09_s93_v_dex_standing_book.sql`; nothing in it has touched the database.
+4. **Telegram, chat unmuted** — ≈ 14 in-session sends, none overnight. **TD-S91-NEW-12** closes
+   on it and is still not recorded as done.
+5. **3D view** — check it after a full live session, then delete
+   `/var/www/marketview.bak-1deeb87` (the S92-J rollback copy).
+6. **Tue 2026-10-20 (weekday holiday)** — validator silent; no chain rows; `cycle_health`
+   CLOSED. **TD-S91-NEW-13**, **TD-S89-NEW-1 / R0.8**.
+7. **~Tue 2026-10-13** — drop the S90-H backup tables (**TD-S90-NEW-11**).
+8. **Rulings owed:** **S\*** the re-priced zero-Δ level (P6 §5.2) · **vendor delta vs an
+   in-house Black–Scholes delta** (P6 carry 8 — note §4.3: on the 10-01 dte-0 fixture, 112/112
+   gap rows carry `iv = 0`, so a BS delta would fill none of them) · **ADR-015's
+   sign-convention gloss**, inverted against the ADR-014 §2.3 it claims to carry unchanged
+   (P6 §3.1, carry 7) · whether a BUILT layer that later breaks **reopens parity** (left open by
+   ADR-025 Amendment D) · **Doc Protocol v5** (drafted S90, still not ruled).
+9. **Filed this session:** **TD-S93-NEW-1** (`run_offline.sh`'s positional `PIPESTATUS` — eleven
+   mechanical edits) · **-2** (`.gitignore:43 *.csv` hides the DEX expected table; a negation
+   rule, never `git add -f`) · **-3** (P1 §6.6 has no artefact).
+10. **Carried:** TD-S91-NEW-2 sites 1, 3, 4, 5, 6 → adopt `core.ts_parse` · TD-S91-NEW-3
+    08:40 IST Zerodha preflight (design agreed, not built) · TD-S80-NEW-1 NIFTY L9 stage-1 arm ·
+    TD-S92-NEW-1 / -3 / -4 / -5 / -6.
+
+## OPERATOR RULINGS, S93
+
+**All rulings live in `docs/research/s92_parity/rulings_s93.md`**, the single source.
+
+| # | Topic |
+|---|---|
+| **S93-A** | P6 authored, tested and committed ahead of P1's decision point, and **not applied**; ENH-140 stays unfiled |
+| **S93-B** | **OWED** — the P2–P8 re-plan after P1 returned NO on both arms |
+
+## Previous session S92
 
 **S92 — 2026-10-08 → 2026-10-09 (Thursday–Friday, live sessions).** The parity programme driven
 to closure, a post-parity priority track ruled, its first item pre-registered and part-run, and
@@ -78,7 +188,7 @@ roadmap §2.1 and R2.4, Enhancement Register (clause-3 rows; **ENH-139** filed f
 (TD-S92-NEW-2 → Resolved; TD-S92-NEW-5, -6), ENH-139 → LIVE, `rulings_s92.md` S92-J, reference
 `_s92_addendum.post_close_delta`, `CLAUDE.md` footer, S93 starter §2, `lovable_prompts/s92/README.md`.
 
-## NEXT SESSION PICKS UP
+## NEXT SESSION PICKS UP — as S92 left it (SUPERSEDED by the S93 list above)
 
 **S93 starter: `docs/session_notes/S93_dev_starter.md`.**
 
@@ -123,123 +233,3 @@ roadmap §2.1 and R2.4, Enhancement Register (clause-3 rows; **ENH-139** filed f
 | **S92-I** | Post-parity priority track P1–P8, followed to conclusion |
 | **S92-J** | The 3D view, optional at `/board/3d`, reading one view |
 
-## Previous session S91 / AM-2
-
-**S91 / AM-2 (Agentic Meridian Session 2) — 2026-10-06 → 2026-10-07 (Tuesday–Wednesday, live
-session).** Two parts. **Part 1** folded the AM-1 post-close delta into the registers and
-codified two operator rulings (`f455e97`, docs only). **Part 2 — this close — shipped two
-live fixes and diagnosed a third defect that had been filed on an impression.** This block
-points; the detail lives in the files named.
-
-**Three commits, `b48532e` → `6a5c0e2` + this close. All pushed; the box is current.**
-
-| Commit | What |
-|---|---|
-| `bcadfa6` · `67a91ce` | *(part 1)* TD-S91-NEW-1 `_ist_date` fraction padding, writer + reconciler; R1.6 seeded cases 5–11; rule 23 guard in `run_offline.sh` |
-| `b48532e` | **TD-S91-NEW-2 site 2** — `build_market_spot_session_markers.py` `parse_ts` pads 1/2/4/5-digit fractions. 10-05 and 10-06 had **no marker rows at all**; both backfilled. Test step 8/9 |
-| `6a5c0e2` | **TD-S91-NEW-12** — the orchestrator monitor's Telegram flood. Gated on trading day **and** the orchestrator's own crontab window; one condition key, 30-min re-notify, 10-tick hold-down, UNKNOWN ticks inert. Test step 9/9, 54 cells |
-
-**What was established**
-
-1. **An alert channel that was instrumented and unreadable at the same time.**
-   `monitor_orchestrator_health.py` sent on `*/1` 24×7 while the orchestrator runs `*/5
-   03-09` UTC: ~1,000 sends a night, chat **4.1k unread and MUTED** — and the 09:10 IST
-   wsfeed preflight alert (**TD-S91-NEW-3**) **did fire, at 09:10:04 IST**, into that muted
-   chat. The incident needed no new instrumentation. Replay of the real 2026-10-07 day:
-   **835 → 14 sends.**
-2. **Gating was not enough, and only a replay showed it.** The in-band condition changes on
-   **119 adjacent minute pairs**, so a 30-minute re-notify engaged **zero** times; two keys
-   with immediate recovery would still have sent **148**. A first test passed **40/40** over
-   that design because its scenarios came from the spec and the real sequence is neither
-   flat failure nor clean recovery. One key + a 10-tick hold-down → 14; **one key alone
-   measures 93**, so the hold-down carries the larger half.
-3. **TD-S91-NEW-6 was filed as "exits 1 every cycle" and is 21 of 84 = 25 %, in two
-   mechanisms** — 12 structural `SKIPPED_NO_INPUT` (08:31–09:26 IST, futures capture starts
-   09:30) + 9 `DATA_ERROR` `no_rows` (09:41…14:56 IST). The code path is now exact:
-   `no_rows ⟺ parse_ts(rows[0]["ts"]) is None`. **The mechanism is open between two
-   candidates** — the unpadded fraction (a 7th TD-S91-NEW-2 site, `compute_basis_context_local.py:61`)
-   and a NULL `ts` reaching `rows[0]` through `order=ts.desc`'s NULLS FIRST. **The observed
-   12.5 % matches the single-timestamp rate (9.91 %), but the path needs both symbols in one
-   cycle, whose independent rate is 0.98 % — P(X ≥ 9) = 4.14 × 10⁻⁸.** So the rate agreement
-   is not evidence; one discriminating read is owed.
-4. **TD-S91-NEW-1's fix is deployed and unverified by any cycle.** Pulled to the box
-   **12:23:53 UTC** (file mtime matches); the orchestrator's last cycle of the day was
-   **09:55 UTC**, so all 34 of its failures **predate the deploy**. Today's log is evidence
-   about the old artefact. **77/77 on 2026-10-08 09:05–09:25 IST is the first real test.**
-5. **TD-S91-NEW-7 verified** — the owed post-15:40 run happened: `( ulimit -v 700000; bash
-   tests/run_offline.sh )` → **`OFFLINE PASS`, 9/9**, with step 2 (the file that OOM-killed
-   the box) completing inside the ceiling. Under `ulimit -v` a memory regression now **fails
-   the suite** instead of killing the box.
-6. **ENH-98 T1 = PASS on the A5 arm** (SENSEX dte 1, 10:15:59 IST; `exact/365` ATM **0.0716**
-   / NEAR **0.0369**, ATM rows **28 ≥ 10**), against a pre-registration hashed **before** the
-   read (`2a978967f956…`). **T1 is no longer the L7/L8 blocker; a PASS does not build the
-   views.** The S89 pre-committed DROP is **moot, not discharged** — S90-A never created
-   them. Open: NIFTY **`r_eff` 3.08 %** to check against T3's definition (TD-S89-NEW-3).
-
-**Corrections to my own work — §D.47, 5 rows, all REFUTED.** Three mine, one an advisory
-claim I acted on untested, one filed-and-contradicted the same day. **The one to carry,
-D.47.3:** I estimated one-key-alone at "≈14 sends" where a replay was available; it measures
-**93**, and ≈14 is what the *combined* fix delivers — so the estimate would have validated a
-weaker fix. **An estimate that coincides with the right answer for the wrong configuration is
-indistinguishable from a measurement until someone measures.**
-
-**Registers touched:** `tech_debt.md` (**TD-S91-NEW-12…18 filed**; **-1** → FIX DEPLOYED,
-**-2** → 1 of 7 fixed + 7th site, **-3** → the alert fired and was missed, **-6** → corrected
-and diagnosed, **-7** → VERIFIED), Assumption Register **§D.47**, Enhancement Register
-(**ENH-98 S91 block**), `CURRENT.md` (S89 → `CURRENT_history.md`, byte equality asserted at
-8,079 B / sha256 `e2bec976…`), `session_log.md`, `merdian_reference.json` **v70**,
-`CLAUDE.md` footer **v1.64**, **S92 starter**. Sources:
-`scratch/s91/telegram_flood_findings_S91.md`, `scratch/s91/basis_context_findings_S91.md`.
-
-**No ADR filed; no DDL applied; no data migration.** Two rulings are owed (below).
-
-## NEXT SESSION PICKS UP — as S91 left it (SUPERSEDED by the S92 list above)
-
-**S92 starter: `docs/session_notes/S92_dev_starter.md`. VERIFY FIRST — four things shipped
-this session and none of them is verified.**
-
-1. **Thu 2026-10-08 — the verification block. Do this before anything else.**
-
-   | When (IST) | Check | PASS looks like |
-   |---|---|---|
-   | 09:05–09:25 | `gex_cycle_history` front leg vs `gamma_metrics` | **77 of 77**, not 64 — **TD-S91-NEW-1** closes on it |
-   | after 15:30 | orchestrator contract-met rate for the day | **≈ 75 %** (63/84) against 54.8 % on 10-07 — this is a **prediction**; a miss means `bcadfa6` is not doing on the box what it did offline, or a third cause exists |
-   | 16:10 | `market_spot_session_markers` row written **by cron**, not by hand | a row for 10-08 — **TD-S91-NEW-2** site 2 proven on the live path |
-   | end of day | Telegram volume, **after unmuting the chat** | **≈ 14 in-session sends**, no overnight traffic — **TD-S91-NEW-12** closes on it. Until the chat is unmuted the fix is unproven where it matters |
-
-2. **Two operator rulings owed:** **`SKIPPED_NO_INPUT` → exit 0** (TD-S91-NEW-15 — 12 daily
-   false-failed cycles, mechanism settled, fix is a ruling not an investigation) and
-   **Doc Protocol v5** (drafted at S90, still not ruled).
-3. **The basis discriminating read** (TD-S91-NEW-6): raw `ts` strings per symbol for the
-   newest `index_futures_snapshots` row across several cycles, plus whether the column is
-   nullable. Fraction → widths {1,2,4,5}; NULL → a null at `rows[0]`.
-4. **`validate_compute_contracts.py` — DUE before Tue 2026-10-20** (TD-S91-NEW-13). ~168
-   Telegram messages on a weekday holiday, and 10-20 is the next one. Fix is the same shape
-   as `6a5c0e2`: calendar gate + 30-min dedupe. **TD-S91-NEW-14** (`:170` asserts a cycle
-   skip that never happens) travels with it.
-5. **08:40 IST Zerodha early-mode preflight — design agreed, NOT built** (TD-S91-NEW-3). It
-   must **exercise** the token, not check its presence.
-6. **Stage B** of the agentic layer · **R1.10 scrip-map sync (ROADSTAR)** ·
-   **`build_ict_htf_zones` re-run** · **Marketview Pin/Flows — a parallel session**.
-7. **Dated carries:** **~Tue 2026-10-13** drop the S90-H backup tables after a clean week
-   (TD-S90-NEW-11) · **Tue 2026-10-20** the first live test of R0.8, no chain rows written
-   and `cycle_health` CLOSED (TD-S89-NEW-1 closes on it, and TD-S91-NEW-13 must land first).
-8. **Remaining TD-S91-NEW-2 sites:** 1, 3, 4, 5, 6, 7 — and the shared `core/` timestamp
-   helper, which is the actual fix. **Any re-sweep must walk the orchestrator's step list as
-   well as the crontab**: site 7 was invisible to the original grep for exactly that reason.
-9. **NIFTY L9 stage-1 max-pain arm** (TD-S80-NEW-1), pre-registered before any read —
-   carried from S89 through S90 and S91, still owed.
-
-## OPERATOR RULINGS, S91
-
-**All rulings live in `docs/research/s91_agentic/rulings_s91.md`**, the single source. This
-table points and does not restate.
-
-| # | Topic |
-|---|---|
-| **S91-A** | No fixture-suite run 08:30–15:40 IST, and every run under an explicit `ulimit -v` → `CLAUDE.md` rule 23 |
-| **S91-B** | One Claude Code session per tree, and never root one in `~/meridian-engine` → `CLAUDE.md` rule 24 |
-| **S91-C** | Monitor dedupe: **30-min re-notify** (the "60 min → 1 send" in the original brief was arithmetically impossible and was withdrawn) |
-| **S91-D** | Monitor flapping: implement **both** one-key **and** a hold-down of **10 consecutive clear ticks** — two cycles, because one *successful* cycle spans 5 ticks of the look-back |
-| **S91-E** | A probe failure is **UNKNOWN**, not a clear tick: skip both the send and the hold-down that minute |
-| **Owed** | `SKIPPED_NO_INPUT` → exit 0 · Doc Protocol v5 |

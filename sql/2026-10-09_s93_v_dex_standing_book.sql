@@ -642,18 +642,27 @@ GRANT SELECT ON public.v_dex_standing_book TO merdian_ro;
 --   FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 --  WHERE n.nspname = 'public' AND c.relname = 'v_dex_standing_book';
 
--- 4i  THE OFFLINE EXPECTED TABLE, and THE CHECK THAT CATCHES A DOUBLED
---     PE FLIP IN THIS SQL. tests/test_dex_recompute.py recomputes DEX in
---     Python from the frozen golden day, independently of this file, and
---     writes
+-- 4i  THE CHECK THAT CATCHES A DOUBLED PE FLIP IN THIS SQL: this view
+--     against an independent Python recompute, strike by strike.
+--     tests/test_dex_recompute.py --compare reads TWO LIVE EXPORTS -- this
+--     view's own output, and the chain rows for the SAME run_ids -- then
+--     recomputes DEX from the chain and diffs. The expected values are
+--     computed by that recompute and never read back off the view (S81).
+--
+--     NOT the offline expected table. The same test file, run WITHOUT
+--     --compare, recomputes from the frozen golden day and writes
 --       docs/research/s93_priority/p6/expected/dex_standing_book_1001_SENSEX.csv
---     (NOT into tests/golden/2026-10-01_SENSEX/, which is frozen --
---     R2.1, MANIFEST.sha256). The expected values are computed offline
---     and never read back off the view (S81).
+--     (never into tests/golden/2026-10-01_SENSEX/, which is frozen --
+--     R2.1, MANIFEST.sha256). That table is the offline run's OUTPUT and
+--     is NOT an input to 4i; 4i never opens it. It is also gitignored
+--     (.gitignore:43 `*.csv`), so it is local-only -- design note §7,
+--     carry 9. This does not affect 4i, which needs only the two live
+--     exports and the test file.
+--
 --     The golden day is 2026-10-01 and this view is scoped to the newest
---     session, so the comparison is NOT a query against the view for a
---     historical date. It is run by exporting this view's output AND the
---     chain rows for the same run_ids, then diffing:
+--     session, so 4i is NOT a query against the view for a historical
+--     date. Run it by exporting this view's output AND the chain rows for
+--     the same run_ids, then diffing:
 --
 --       bash bin/roq.sh <<'SQL' > /tmp/dex_view.csv
 --       \pset format csv
@@ -679,12 +688,19 @@ GRANT SELECT ON public.v_dex_standing_book TO merdian_ro;
 --     not; or the two exports cover different run_ids -- which means a
 --     new run landed between the reads and is the S81 false-alarm shape,
 --     not a defect. Re-export both together in that case.
---     EXERCISED 2026-10-09 on synthetic inputs, four arms: agreeing
---     (PASS, 2 strikes, 0.000e+00 Cr), a doubled PE flip (CAUGHT,
---     put_dex_cr off by 1.440e+03 Cr), a gap published as 0 instead of
---     NULL (CAUGHT, NULL-ness differs), and a run_id drift between the
---     two exports (CAUGHT). So the check can fail for each reason it
---     names.
+--     EXERCISED 2026-10-09 on synthetic inputs, four arms. RE-RUN later
+--     the same day after the core.ts_parse adoption, against rebuilt
+--     inputs (3 strikes, one with a put gap) because the first run's
+--     synthetic files were never committed: agreeing (PASS, 3 strikes,
+--     max abs diff 2.220e-16 Cr -- float representation), a doubled PE
+--     flip (CAUGHT, 4 failures, put_dex_cr off by 1.440e+01 and
+--     5.184e+00 Cr with net_dex_cr following each), a gap published as 0
+--     instead of NULL (CAUGHT, NULL-ness differs), and a run_id drift
+--     between the two exports (CAUGHT, short-circuits before comparing
+--     any strike). Exit codes 0/1/1/1. So the check can fail for each
+--     reason it names. The first run's figures (2 strikes, 1.440e+03 Cr)
+--     were a different synthetic and are superseded, not contradicted --
+--     design note §7 carries both.
 --     This is the check that proves the SQL and an independent Python
 --     implementation agree. The offline test's own A3/A4 assert the
 --     PYTHON side only; nothing offline can speak for this file.

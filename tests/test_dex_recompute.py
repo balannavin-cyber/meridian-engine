@@ -35,6 +35,19 @@ TWO MODES.
              against a chain read taken at another moment is the S81
              false-alarm shape, and the run_id column is what detects it.
 
+TIMESTAMPS. Every ts in this file is read by `core.ts_parse.parse_pg_ts` through
+the `parse_ts` wrapper below -- the shared helper, not a local regex
+(TD-S91-NEW-2). The first run of this file, 2026-10-09 ~17:25 IST, died on
+`ValueError: Invalid isoformat string: '2026-10-01 03:30:07.358252+00'`: the
+fixture is a psql export and carries a TWO-DIGIT offset, which Python 3.10's
+`fromisoformat` rejects. The helper did not accept that form either -- it
+returned None -- so the adoption required widening `core/ts_parse.py` first
+(`norm_offset`, S93, commit cf40b95). Design note §7 records the sequence.
+
+A None from the parser RAISES (`TsParseError`) and is reported as a FAIL. It is
+never skipped: a skipped row would shrink A7's cycle list and A8's window counts,
+and those assertions would then fail for the wrong reason.
+
 CLAUDE.md rule 23: NOT between 08:30 and 15:40 IST on a weekday, and never
 without an explicit `ulimit -v`. The fixture is 31,914 chain rows over 81 cycles
 (counts.csv) -- exactly the memory profile that rule exists for. The guard below
@@ -50,8 +63,10 @@ passes here is not evidence about the SQL.
   * The SQL's scale and sign are tested by VIEW CHECK 4c (an independent
     in-SQL recompute with different algebra).
   * The SQL's agreement with THIS recompute, strike by strike, is VIEW CHECK
-    4i -- the view against the CSV this file writes. That is where a doubled
-    PE sign flip in the SQL would be caught.
+    4i -- `--compare`, which reads the view's LIVE output and the chain rows
+    for the SAME run_ids and recomputes from the chain. It does NOT read the
+    expected CSV this file writes; that table is this file's output, not 4i's
+    input. 4i is where a doubled PE sign flip in the SQL would be caught.
   * The SQL's session-liveness clause reads market_spot_snapshots live and is
     tested by SECTION 4 against 2026-10-02 (distinct_spot = 1 on both
     symbols). A8 below exercises the same selector logic offline on the
@@ -100,8 +115,15 @@ clause 3: an expected value obtained by running the thing is not an assertion):
   leg_put, which is an algebraic identity of the lines above it and so could
   not fail (rule 0 clause 1/3). No external expected value for the leg totals
   exists offline -- the fixture carries gamma, not delta -- so the leg-total
-  property is tested by VIEW CHECK 4d (additivity, in SQL) and 4i (against this
-  CSV), and the numbers are PRINTED here as observations, never asserted.
+  property is tested by VIEW CHECK 4i ALONE -- the view against a live-chain
+  recompute, two independent implementations -- and the numbers are PRINTED
+  here as observations, never asserted.
+      NOT by 4d. 4d's additivity arms were relabelled ARITHMETIC SANITY ONLY
+      (33f6abe) because `sum(COALESCE(c,0) + COALESCE(p,0))` equals
+      `sum(COALESCE(c,0)) + sum(COALESCE(p,0))` by linearity of SUM, for ANY
+      definition of the dex arms -- the same could-not-fail shape as A5, one
+      layer down. 4d's real check is `n_zero_where_gap_c/_p`, which is what A4
+      below defers to.
 
 FIXTURE LIMITS, stated rather than discovered: the golden day carries W1 ONLY
 (expiry_date is 2026-10-01 on every row) at dte 0, so it exercises one leg and
@@ -109,7 +131,10 @@ cannot exercise multi-leg ranking or the dte > 0 path.
 
 OUTPUT. The expected table goes to docs/research/s93_priority/p6/expected/.
 tests/golden/2026-10-01_SENSEX/ is FROZEN (R2.1, MANIFEST.sha256) and this file
-never writes into it.
+never writes into it. That table is this run's OUTPUT and is NOT read by 4i.
+It is also gitignored (.gitignore:43 `*.csv`, silently -- no `??` line), so it
+is LOCAL-ONLY; see design note §7 (carry 9). 4i is unaffected: it needs two live
+exports and this file, nothing else from the repo.
 
 Exit 0 = all pass. Exit 1 = a real failure. Exit 2 = refused to run.
 """
@@ -125,6 +150,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+
+from core.ts_parse import parse_pg_ts  # noqa: E402
+
+
 GOLDEN = REPO / "tests" / "golden" / "2026-10-01_SENSEX"
 OUTDIR = REPO / "docs" / "research" / "s93_priority" / "p6" / "expected"
 SYMBOL = "SENSEX"
@@ -185,9 +215,41 @@ def num(v):
     return float(v)
 
 
-def ist_hhmm(ts: str) -> int:
-    d = datetime.fromisoformat(ts).astimezone(IST)
+class TsParseError(Exception):
+    """A timestamp the shared parser could not read. Never skipped, never defaulted."""
+
+
+def parse_ts(value, where: str) -> datetime:
+    """core.ts_parse.parse_pg_ts, with None promoted to a loud failure.
+
+    TD-S91-NEW-2: the fix is to ADOPT the shared helper, not to carry a local
+    regex. Every timestamp in this file goes through this function.
+
+    parse_pg_ts returns None on bad input BY CONTRACT -- its own docstring calls
+    that silence deliberate, because its production callers test for None rather
+    than catching. In a test, silence is the one thing a bad timestamp must not
+    buy. A skipped row would shrink A7's cycle list and A8's window counts, and
+    both of those do fail when they go vacuous -- but they would then fail for
+    the wrong reason, naming a selector defect when the real fault was a
+    timestamp nobody could read. So None raises here and `__main__` turns it into
+    a FAIL line and exit 1.
+    """
+    dt = parse_pg_ts(value)
+    if dt is None:
+        raise TsParseError(
+            f"{where}: core.ts_parse.parse_pg_ts returned None for {value!r}. "
+            f"Not skipped -- a timestamp this file cannot read invalidates every "
+            f"cycle- and window-scoped assertion below it")
+    return dt
+
+
+def ist_hhmm_dt(d: datetime) -> int:
+    d = d.astimezone(IST)
     return d.hour * 100 + d.minute
+
+
+def ist_hhmm(ts, where: str = "ist_hhmm") -> int:
+    return ist_hhmm_dt(parse_ts(ts, where))
 
 
 # ----------------------------------------------------------- session selector
@@ -201,20 +263,39 @@ def session_is_live(spot_rows: list[dict], session_date, symbol: str) -> int:
     for r in spot_rows:
         if r["symbol"] != symbol:
             continue
-        d = datetime.fromisoformat(r["ts"]).astimezone(IST)
+        d = parse_ts(r["ts"], "market_spot_snapshots.ts").astimezone(IST)
         if d.date() != session_date or d.hour * 100 + d.minute > CEIL_HHMM:
             continue
         seen.add(r["spot"])
     return len(seen)
 
 
-def pick_settled_ts(rows: list[dict]) -> str | None:
-    """A7: last cycle at or before 15:15 IST. Ordered by ts, never created_at."""
-    best = None
+def pick_settled_ts(rows: list[dict]) -> tuple[str | None, datetime | None]:
+    """A7: last cycle at or before 15:15 IST. Ordered by ts, never created_at.
+
+    Returns (the raw ts string, its parsed instant). ORDERED ON THE PARSED
+    INSTANT, never on the string.
+
+    No mis-sort is claimed on this fixture, because none was measured -- with one
+    separator and one offset form held constant, text order does agree with
+    instant order, zero-trimmed fractions included (a trailing `+` sorts below
+    every digit, so a prefix-shorter fraction lands where padding would put it).
+    The reason is that the agreement is a property of the EXPORT, not of the
+    column: it holds only while every row shares one separator and one offset
+    form, and nothing in the fixture or in roq.sh guarantees that. A mixed `T`
+    and space separator alone inverts it -- space sorts below `T` -- and a
+    re-export is not required to preserve either. Comparing instants needs no
+    such invariant to hold.
+
+    The raw string is still what comes back, because it is the key the chain rows
+    are filtered by and the value written into the expected CSV.
+    """
+    best, best_dt = None, None
     for r in rows:
-        if ist_hhmm(r["ts"]) <= CEIL_HHMM and (best is None or r["ts"] > best):
-            best = r["ts"]
-    return best
+        dt = parse_ts(r["ts"], "option_chain_snapshots.ts")
+        if ist_hhmm_dt(dt) <= CEIL_HHMM and (best_dt is None or dt > best_dt):
+            best, best_dt = r["ts"], dt
+    return best, best_dt
 
 
 def recompute(rows: list[dict]) -> tuple[dict, dict]:
@@ -389,21 +470,24 @@ def main() -> int:
                  f"{len(spot_rows)} market_spot_snapshots rows")
 
     # ---- A7: the settled run -----------------------------------------------
-    settled_ts = pick_settled_ts(ocs)
-    all_ts = sorted({r["ts"] for r in ocs})
+    settled_ts, settled_dt = pick_settled_ts(ocs)
+    # every distinct cycle ts, parsed ONCE, and ordered on the instant
+    ts_dt = {t: parse_ts(t, "option_chain_snapshots.ts") for t in {r["ts"] for r in ocs}}
+    all_ts = sorted(ts_dt, key=lambda t: ts_dt[t])
     if settled_ts is None:
         failures.append("A7: no cycle at or before 15:15 IST")
         return report()
     if settled_ts not in all_ts:
         failures.append("A7: settled ts is not a cycle the fixture holds")
     else:
-        later_eligible = [t for t in all_ts if t > settled_ts and ist_hhmm(t) <= CEIL_HHMM]
+        later_eligible = [t for t in all_ts
+                          if ts_dt[t] > settled_dt and ist_hhmm_dt(ts_dt[t]) <= CEIL_HHMM]
         if later_eligible:
             failures.append(f"A7: {len(later_eligible)} later cycles also sit at or before "
                             f"15:15 -- the selector did not pick the last")
         else:
-            d = datetime.fromisoformat(settled_ts).astimezone(IST)
-            n_after = len([t for t in all_ts if t > settled_ts])
+            d = settled_dt.astimezone(IST)
+            n_after = len([t for t in all_ts if ts_dt[t] > settled_dt])
             notes.append(f"A7 settled ts {d:%Y-%m-%d %H:%M:%S} IST; "
                          f"{n_after} later cycles correctly excluded (all after 15:15)")
 
@@ -518,15 +602,15 @@ def main() -> int:
                      "an absent greek from a true zero")
 
     # ---- A8: the session selector's liveness clause, on the real relation --
-    sess_date = datetime.fromisoformat(settled_ts).astimezone(IST).date()
+    sess_date = settled_dt.astimezone(IST).date()
     live_n = session_is_live(spot_rows, sess_date, SYMBOL)
     frozen_rows = [dict(r, spot="72143.8") for r in spot_rows]
     frozen_n = session_is_live(frozen_rows, sess_date, SYMBOL)
     n_live_in_window = sum(
         1 for r in spot_rows
         if r["symbol"] == SYMBOL
-        and datetime.fromisoformat(r["ts"]).astimezone(IST).date() == sess_date
-        and ist_hhmm(r["ts"]) <= CEIL_HHMM)
+        and parse_ts(r["ts"], "market_spot_snapshots.ts").astimezone(IST).date() == sess_date
+        and ist_hhmm(r["ts"], "market_spot_snapshots.ts") <= CEIL_HHMM)
     if live_n <= 1:
         failures.append(f"A8: the fixture day reads distinct_spot = {live_n} on "
                         f"market_spot_snapshots and would be REJECTED as frozen -- the "
@@ -565,9 +649,12 @@ def main() -> int:
     observations.append(f"sum(net_dex_cr) {sum_net:.2f} Cr differs from the leg total by "
                         f"{(leg_call + leg_put) - sum_net:.2f} Cr -- the one-sided-gap "
                         f"residue. NOT asserted here (no external expected value exists "
-                        f"offline); asserted by view checks 4d and 4i")
+                        f"offline); asserted by view check 4i alone -- NOT 4d, whose "
+                        f"additivity arms are arithmetic sanity only (identities)")
 
-    # ---- emit the expected table for view check 4i ------------------------
+    # ---- emit the expected table: this run's OUTPUT, not 4i's input --------
+    # 4i (--compare) reads two LIVE exports and never opens this file. This is a
+    # readable record of what the recompute produced on the frozen day.
     OUTDIR.mkdir(parents=True, exist_ok=True)
     outp = OUTDIR / "dex_standing_book_1001_SENSEX.csv"
     with outp.open("w", newline="") as fh:
@@ -604,4 +691,12 @@ def report() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        rc = main()
+    except TsParseError as exc:
+        # A FAIL line and exit 1, not a traceback and not a skip: an unreadable
+        # timestamp is a test failure with a name, and it must land in the same
+        # report as every other failure so it cannot be mistaken for a crash.
+        failures.append(str(exc))
+        rc = report()
+    sys.exit(rc)

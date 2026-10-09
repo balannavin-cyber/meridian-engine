@@ -129,12 +129,16 @@ verifies: 4a anon grain, 4b cost, 4c independent in-SQL recompute, 4d NULL-is-a-
 (`n_zero_where_gap_c/_p`; its `leg_total_mismatch` and `gap_oi_unaccounted` are labelled
 ARITHMETIC SANITY ONLY — identities that cannot fail for a modelling defect, rule 0),
 4e WITHDRAWN, 4f chain-side liveness cross-check, 4g
-COMMENT `len 7614` / `md5 634428a33305107247c43910c3729669`, 4h ACL, 4i view vs the offline expected table) ·
+COMMENT `len 7614` / `md5 634428a33305107247c43910c3729669`, 4h ACL, 4i view vs an
+independent Python recompute from a live chain export, same `run_id`s — **not** against the
+offline expected table, which 4i never reads) ·
 `docs/research/s93_priority/p6/P6_dex_design_note.md` ·
-`tests/test_dex_recompute.py` (+ `docs/research/s93_priority/p6/expected/`).
+`tests/test_dex_recompute.py` (+ `docs/research/s93_priority/p6/expected/`, which is the
+offline run's output and is gitignored by `.gitignore:43 *.csv`, so local-only — §7 carry 9).
 
-**Carries:** apply + Section 4; run the offline test after 15:40 IST under
-`( ulimit -v 700000; … )` and then wire it into `tests/run_offline.sh`; the S\* ruling; the
+**Carries:** apply + Section 4; ~~run the offline test after 15:40 IST~~ **run 2026-10-09
+17:45:28 IST, PASS (11 ok, 0 failed)** — wiring it into `tests/run_offline.sh` is still
+owed; the S\* ruling; the
 vendor-vs-BS-delta ruling; the board read (as ADR-025 C7 was measured); and the ADR-015
 gloss correction, which is its own change and is not made here.
 ```

@@ -351,6 +351,49 @@ Consequences, stated so no consumer has to infer them:
 - **The per-strike profile and the level where it balances are the robust products**, which
   is why §7's S\* is specified as a *level* and the view's content is the *shape*.
 
+### 4.3 On an expiry day the greek gaps decide the SIGN, not only the magnitude
+
+Measured on the dte-0 golden fixture (SENSEX 2026-10-01, settled run 15:15:06 IST,
+§7.2's run):
+
+| quantity | value |
+|---|---|
+| `leg_net_dex_cr` — the leg total over each side's **measured** contribution | **−16,179.01 Cr** |
+| `sum(net_dex_cr)` — the per-strike column, which NULL-propagates | **+10,284.33 Cr** |
+| the one-sided-gap residue between them | **−26,463.35 Cr** |
+| gap strikes | **95 of 197** |
+
+**The two totals carry OPPOSITE SIGNS.** This is not the §4.2 magnitude problem one notch
+further on; it is a different claim. §4.2 says a nearly-cancelling net is poorly determined
+in size. This says that on an expiry day the residue (−26,463.35 Cr) is **larger in
+magnitude than the net itself** (+10,284.33 Cr), so which strikes happen to carry greeks
+decides which way the book points. A reader who sums the per-strike column reads the leg as
+**long** delta; the leg total over the measured sides reads **short**. Both are correct
+about what they measure, and neither is the leg.
+
+The 2026-10-09 NIFTY W1 figures in the view's `COMMENT` show the same mechanism at a
+harmless size — a 1,390.01 Cr discrepancy against a −3,446.47 Cr net, same sign. **dte 0 is
+where it inverts**, because that is where the vendor's greeks are thinnest and the gap is
+ITM-concentrated and put-asymmetric (§2(b)).
+
+Consequence, and it is a read rule rather than a caveat: **`leg_net_dex_cr` is read together
+with `leg_gap_oi_qty`, or not at all** — which is what the view's `COMMENT` already says
+("they are the measured part of the leg, not a complete total"); §4.3 is the measured case
+that shows the rule is load-bearing and not boilerplate. No surface renders a leg total
+without the gap quantity beside it.
+
+**This also bears on carry 8 (vendor delta vs an in-house Black–Scholes delta), and it
+narrows that option rather than widening it.** On this fixture every one of the **112**
+positive-OI gap rows carries `delta = 0` **and `iv = 0`** (112 of 112, measured; zero rows
+with `iv > 0`). A BS delta is computed *from* `iv`, so on these rows there is no input to
+compute it from: **switching to an in-house delta would not fill a single gap strike here**,
+and the §4.3 inversion would survive the switch unchanged. Two limits on that statement,
+stated rather than left implicit: the fixture holds **no `delta IS NULL` rows at all**, so
+that branch of the gap marker is unexercised and nothing is claimed about the `iv` carried
+by rows reaching it; and this is one symbol on one expiry day. What would fill these strikes
+is an `iv` from somewhere other than the vendor's own row — a surface fit, or a neighbouring
+strike — which is a larger change than carry 8 describes and is not proposed here.
+
 ---
 
 ## 5. The Zero-Δ strike
@@ -586,10 +629,86 @@ access-control one.
 `tests/golden/2026-10-01_SENSEX`, **independently of the SQL**, and asserts against values
 that do not come from running the view.
 
-**Written now; NOT RUN.** Authored at 2026-10-09 ~13:00 IST, inside the rule-23 window
-(08:30–15:40 IST). It runs only after **15:40 IST**, under
+**Authored 2026-10-09 ~13:00 IST, inside the rule-23 window (08:30–15:40 IST), so it was
+committed COMPILED BUT NOT RUN.** First run 2026-10-09, immediately after an in-session
+clock read of **17:23:19 IST** — the run itself prints no wall clock and wrote no artefact,
+so that read is the evidence and the minute is not narrowed further. Run under
 `( ulimit -v 700000; … )`. The fixture is 31,914 chain rows over 81 cycles (`counts.csv`),
 which is exactly the memory profile rule 23 exists for.
+
+### 7.1 The first run failed, on the fixture's timestamp format
+
+It did not reach a single assertion:
+
+```
+ValueError: Invalid isoformat string: '2026-10-01 03:30:07.358252+00'
+  tests/test_dex_recompute.py:215 in pick_settled_ts -> :189 in ist_hhmm
+```
+
+**Two wires, not one.** The fixture is a `bin/roq.sh` export and `roq.sh` is psql, which
+renders a UTC `timestamptz` with a **two-digit** offset (`+00`); PostgREST renders `+00:00`.
+Python 3.10 rejects the former. **This is what "compiled, not run" buys and what it does
+not**: `ast.parse` and `py_compile` cannot see a string format, so the file was
+syntactically perfect and dead on its first input. The window rule that deferred the run is
+correct and is not the thing to change; what the deferral costs is that a whole class of
+defect waits until after 15:40 to surface, and that cost should be expected rather than
+re-discovered.
+
+**The fix is adoption, not a local regex** (TD-S91-NEW-2): every timestamp in the file now
+goes through `core.ts_parse.parse_pg_ts`. But adopting the shared helper **did not by itself
+fix it** — the helper returned `None` on `+00` too, because `FRAC_RE`'s lookahead requires a
+four-digit offset, so the fraction went unpadded *and* the string went unparsed. A module
+calling itself *the* shared parser while silently returning `None` on the form its own
+export tool produces hands every adopting site a `None` it is then free to skip. So the
+helper was widened first, in **its own commit** (`cf40b95`, `norm_offset`, S93), gated on a
+control that re-parses the whole corpus through the pre-S93 body: **23 previously-parsing
+inputs byte-identical, 7 newly accepted, all two-digit-offset**, and the two fixture strings
+asserted to have been *rejected* before, so the new cells cannot pass for a pre-existing
+reason. `+0000` and `+05:30:30` are deliberately left unhandled; neither wire emits them.
+
+**A `None` from the parser raises and is reported as a FAIL — never skipped.** Measured, not
+asserted: with `parse_pg_ts` patched to return `None`, the run prints
+`FAIL option_chain_snapshots.ts: … returned None for '2026-10-01 03:30:07.358252+00'` and
+exits 1. A skipped row would shrink A7's cycle list and A8's window counts, and both of
+those *do* fail when they go vacuous — but they would then name a selector defect when the
+real fault was a timestamp nobody could read.
+
+**`ts` is also now ordered as parsed instants, not as text** (`pick_settled_ts`, and the
+two later-cycle comparisons in A7, which had the same defect). No mis-sort is claimed on
+this fixture, because none was measured: with one separator and one offset form held
+constant, text order *does* agree with instant order, zero-trimmed fractions included. The
+point is that the agreement is a property of the export and not of the column — it holds
+only while every row shares one separator and one offset form, and nothing in the fixture or
+in `roq.sh` guarantees that. `expiry_date` keeps its explicit `strptime('%Y-%m-%d')`: it is
+a date column, not a timestamp.
+
+### 7.2 First passing run — 2026-10-09 17:45:28 IST
+
+The time was read from the `mtime` of the artefact that run wrote
+(`expected/dex_standing_book_1001_SENSEX.csv`), which is the last thing the test does; the
+failing runs before it wrote nothing, so the stamp was unambiguous at the time it was read.
+**That citation does not reproduce** — every later run overwrites the file, and the mtime had
+already moved to 17:56:24 by the end of this session. The time above is the measurement, not
+a pointer to one; re-reading the mtime now gives the latest run, not the first.
+
+`DEX_RECOMPUTE PASS (11 ok, 2 observed, 0 failed)`, exit 0. Every assertion non-vacuous:
+
+| | measured on the first passing run |
+|---|---|
+| fixture | `MANIFEST.sha256` verified, 16 files; 31,914 chain rows, 12,195 `gex_strike` rows, 361 `market_spot_snapshots` rows |
+| **A7** | settled ts **2026-10-01 15:15:06 IST**; 5 later cycles correctly excluded |
+| **A1** | matches production on **161 strikes** (`run_id b4e767ec`), max abs diff **0.000e+00 Cr** |
+| **A2** | all **250** positive-oi rows exact multiples of 20 |
+| **A3** | **83** strikes with `put_dex < 0`, 0 positive, 0 `call_dex < 0` |
+| **A4** | **95** gap strikes, **10,867,300** units of un-deltaed OI, matching the independent row-level count |
+| **A6** | no row has `delta = 0` beside a live `iv` |
+| **A8** | live fixture `distinct_spot` = **360** accepted, synthetic frozen copy = **1** rejected, over an identical **361** rows |
+| **A9** | fixture `dte = 0`; the `dte > 0` path is not exercised |
+| output | 197 strikes to `expected/dex_standing_book_1001_SENSEX.csv` |
+| observations | leg totals call **51,303.52** / put **−67,482.53** / net **−16,179.01** Cr; `sum(net_dex_cr)` **10,284.33** Cr, one-sided-gap residue **−26,463.35** Cr — printed, not asserted |
+
+The full offline suite was run alongside, since the `core/ts_parse.py` change is shared:
+**10/10 steps, `OFFLINE PASS`, exit 0.**
 
 **What it tests, and what it cannot.** It tests **this Python recompute**. It cannot test
 the view — there is no database offline — and the distinction is load-bearing, because an
@@ -642,24 +761,55 @@ fail *before* writing it, not after.
 **Output goes outside the frozen fixture.** `tests/golden/2026-10-01_SENSEX/` is frozen
 (R2.1, `MANIFEST.sha256`) and the test **never writes into it** — it verifies that manifest
 on the way in. The expected table is written to
-`docs/research/s93_priority/p6/expected/dex_standing_book_1001_SENSEX.csv`, and view check
-4i points there.
+`docs/research/s93_priority/p6/expected/dex_standing_book_1001_SENSEX.csv`.
 
-**What this test does not do.** It cannot run the SQL, so it does not compare Python against
-the view. **Check 4i does, and it is built, not owed** — `--compare --view <csv> --chain
-<csv>` recomputes from an exported chain read and diffs the view strike by strike. **The
+**That table is NOT an input to view check 4i.** 4i (`--compare`) reads two **live** exports
+— the view's own output and the chain rows for the same `run_id`s — recomputes from the
+chain and diffs the view strike by strike; it never opens the expected CSV. The expected
+table is the offline run's **output**, a readable record of what the recompute produced on
+the frozen day. (An earlier draft of this paragraph, and of three other files, said 4i
+"points there"; it does not, and the §7 arms were re-run against live-shaped CSVs, not
+against this one.)
+
+**FINDING, 2026-10-09 — that path is gitignored, and silently.** `.gitignore:43` is `*.csv`,
+so the expected table **cannot be committed as things stand** and produces **no `??` line**
+in `git status` — not even under `--untracked-files=all`. This is the S68 shape named in
+`.claude/rules/data-access.md` ("`git status` clean ≠ file tracked … `git check-ignore -v`
+is the only tell"), and `git check-ignore -v` is how it was found here. **Consequence, stated
+narrowly: the offline expected table is LOCAL-ONLY.** It does not reach git, so the record
+of what the recompute produced on the frozen day exists only on the machine that ran it, and
+a reader elsewhere must re-run the test to see it. **4i is unaffected** — it takes two live
+exports and needs nothing from the repo but the test file itself. Two defensible resolutions
+— a `.gitignore` negation for this path (the rule's remedy: a negation, **never `git add
+-f`**, which hides the problem for the next file), or deciding the artefact is deliberately
+regenerated and saying so instead of implying it is committed. **Not resolved in this
+session**: it is a repo-policy question about which generated artefacts belong in git, not a
+P6 question. Carry 9.
+
+**What this test does not do.** It cannot run the SQL, so its default mode does not compare
+Python against the view. **Check 4i does, and it is built, not owed** — `--compare --view
+<csv> --chain <csv>` takes the **view's live output** and the **chain rows for the same
+`run_id`s**, recomputes from the chain, and diffs the view strike by strike. Both inputs are
+live exports; the frozen golden day and the expected table play no part in it. **The
 expected values are computed by the recompute and never read back off the view** (the S81
 rule: an expected value handed to a verifier is computed from the artefact, never recalled).
 
 4i was **exercised on synthetic inputs** so that it is known to fail for each reason it
-names, rather than assumed to:
+names, rather than assumed to. **Re-run 2026-10-09 after the `core.ts_parse` adoption.** The
+S93 originals were not committed (`synth/`), so the inputs were rebuilt — 3 strikes, two
+two-sided and one with a put gap — and the figures below are that rebuild's, not the earlier
+run's. The agreeing arm's view CSV is computed by **explicit arithmetic** (`delta · oi ·
+spot / 1e7`, written out per strike) and **never** by calling `recompute()`: generating the
+view side from the thing under test would make that arm a tautology instead of a control.
 
 | arm | result |
 |---|---|
-| agreeing view and recompute | **PASS** — 2 strikes, max abs diff 0.000e+00 Cr |
-| a **doubled PE sign flip** in the view | **CAUGHT** — `put_dex_cr` off by 1.440e+03 Cr, and `net_dex_cr` with it |
-| a **gap published as 0** instead of NULL | **CAUGHT** — NULL-ness differs on `put_dex_cr` and `net_dex_cr` |
-| the two exports covering **different `run_id`s** | **CAUGHT** — reported as the S81 false-alarm shape (re-export together), not as a defect |
+| agreeing view and recompute | **PASS** — 3 strikes, max abs diff **2.220e-16 Cr** (float representation, 10 orders inside the 1e-6 tolerance) |
+| a **doubled PE sign flip** in the view | **CAUGHT** — 4 failures: `put_dex_cr` off by **1.440e+01** and **5.184e+00 Cr**, and `net_dex_cr` with each |
+| a **gap published as 0** instead of NULL | **CAUGHT** — NULL-ness differs on `put_dex_cr` and `net_dex_cr` at the gap strike (view `'0.0000000000'`, recompute `None`) |
+| the two exports covering **different `run_id`s** | **CAUGHT** — reported as the S81 false-alarm shape (re-export together), not as a defect; it short-circuits before comparing any strike |
+
+Exit codes: 0, 1, 1, 1.
 
 The `run_id` column is in both exports for that last reason: a latest-run-scoped view
 compared against a chain read taken at another moment is exactly the S81 pairing error, and
@@ -680,13 +830,14 @@ Wiring is owed after the first post-15:40 run passes.
 | # | Owed | To whom |
 |---|---|---|
 | 1 | **Operator ruling on S\*** (§5.2): own view vs columns; L3 gate record inherited or re-run for the delta curve | operator |
-| 2 | Run the offline test after 15:40 IST under `( ulimit -v 700000; … )`, then wire it into `run_offline.sh` | next session |
+| 2 | ~~Run the offline test after 15:40 IST~~ **done 2026-10-09 17:45:28 IST, PASS (§7.2)**; wiring it into `run_offline.sh` is still owed, and is now unblocked — the bar was a test nobody had seen green | next session |
 | 3 | Apply the view (Section 1→2→3) and run Section 4; it has not touched the database | next session |
 | 4 | **P2 settles the dealer side** (§3.2) and §4.2's sign question. Until it returns there is no dealer column and the board carries *"open-interest delta — dealer side unruled (P2)"* | P2, S92-I item 2 |
 | 5 | Observation for the operator: L3's *"iv of zero removed none on any arm"* is era-specific (§5.3). Not a defect; not re-opened here | operator |
 | 6 | The §4.1 parity failure is a property of the vendor's greeks, measured on one day. Whether it holds across the window is unmeasured | P4 (Greeks evidence) |
 | 7 | **ADR-015's sign-convention gloss is inverted against ADR-014 §2.3, which it claims to carry unchanged** (§3.1). The code and the stored column are not in doubt. Amending an ACCEPTED ADR is its own change and is not done here | operator |
-| 8 | **OPEN RULING — vendor delta or an in-house Black-Scholes delta?** The book as authored reads the vendor's `delta` column. §4.1 measured put–call parity on it at a mean of **0.816–0.882** against a theoretical ≈1, so an in-house BS delta from each leg's own `iv` (the §5.2 repricer's `Φ(d1)` / `Φ(d1) − 1`, which the S\* spec needs anyway) is a live alternative for the **book** as well as the level. The two differ by the §4.2 factor of 1.6–2.9× on `net_dex`. **Not changed in this session** — the view ships on the vendor column pending the ruling, and switching it **reuses the S\* repricer inputs (T, `r_sess`, the dte-0 refusal) and is not a one-line change** | operator |
+| 9 | **`.gitignore:43 *.csv` silently excludes `expected/dex_standing_book_1001_SENSEX.csv`** (no `??` line even under `--untracked-files=all`; found with `git check-ignore -v`), so the **offline expected table is local-only** — the record of what the recompute produced on the frozen day does not reach git. **4i is unaffected**: it reads two live exports. Resolve by a `.gitignore` negation for that path, or by recording that the artefact is deliberately regenerated — **never `git add -f`**. Repo policy, not a P6 question | operator / next session |
+| 8 | **OPEN RULING — vendor delta or an in-house Black-Scholes delta?** The book as authored reads the vendor's `delta` column. §4.1 measured put–call parity on it at a mean of **0.816–0.882** against a theoretical ≈1, so an in-house BS delta from each leg's own `iv` (the §5.2 repricer's `Φ(d1)` / `Φ(d1) − 1`, which the S\* spec needs anyway) is a live alternative for the **book** as well as the level. The two differ by the §4.2 factor of 1.6–2.9× on `net_dex`. **Not changed in this session** — the view ships on the vendor column pending the ruling, and switching it **reuses the S\* repricer inputs (T, `r_sess`, the dte-0 refusal) and is not a one-line change**. **§4.3 narrows this option:** on the dte-0 fixture all 112 positive-OI gap rows carry `iv = 0`, and a BS delta is computed *from* `iv`, so the switch would **fill no gap strike** and would not touch the sign inversion §4.3 measures. Filling them needs an `iv` from outside the vendor's own row (a surface fit or a neighbouring strike), which is a larger change than this carry describes | operator |
 
 ---
 

@@ -157,7 +157,7 @@ Sortable table of all 122 IDs. For full detail see Part 4.
 | ENH-136 | `sql_guard.sh` - pre-flight for ad-hoc SQL: write-verb scan, quote-pair balance, wall-clock-function scan, day-bound check on correlated laterals | — | **PROPOSED (S88 — tier not assigned, operator to rule)** |
 | ENH-137 | `sql-reviewer` subagent, SHADOW ONLY per ADR-029 - review generated SQL for the sql_guard classes plus unbounded laterals and position-indexed column refs | — | **PROPOSED (S88 — tier not assigned, operator to rule)** |
 | ENH-138 | Move-forensics skill - package the S88 cohort/bucket/as-of/leave-one-out pipeline with both confound exclusions as defaults | — | **PROPOSED (S88 — tier not assigned, operator to rule)** |
-| ENH-139 | Optional 3D view read surface - `v_gex_strike_terrain`: settled run per session x strike for the 14 newest sessions, with ENH-123 writer pain, for Marketview `/board/3d` | display | **AUTHORED 2026-10-09 (S92, ruling S92-J) - not applied.** `sql/2026-10-09_s92_v_gex_strike_terrain.sql`. Not a parity layer. Fixture: max pain 28/28 vs `gex_pin_maxpain_history`, ACL anon=r/merdian_ro=r, 90 ms. Consumer: `docs/lovable_prompts/s92/lovable_prompt_lab3d_optional.md` under `mv_lovable_guard_lab3d.sh`. Closes TD-S92-NEW-2 when live. |
+| ENH-139 | Optional 3D view read surface - `v_gex_strike_terrain`: settled run per session x strike for the 14 newest sessions, with ENH-123 writer pain, for Marketview `/board/3d` | display | **APPLIED + VERIFIED 2026-10-09 (S92, ruling S92-J)** - 14 sessions per symbol as anon; full pain curve equal to ENH-123 on the same run (NIFTY 54 / SENSEX 85 strikes, 0 mismatches). Consumer not yet built. `sql/2026-10-09_s92_v_gex_strike_terrain.sql`. Not a parity layer. Fixture: max pain 28/28 vs `gex_pin_maxpain_history`, ACL anon=r/merdian_ro=r, 90 ms. Consumer: `docs/lovable_prompts/s92/lovable_prompt_lab3d_optional.md` under `mv_lovable_guard_lab3d.sh`. Closes TD-S92-NEW-2 when live. |
 | ENH-SDM | Structural Divergence Monitor (ADR-018 D4) | context | **PROPOSED** |
 
 ## Part 2 -- Active Work (not yet delivered or under monitoring)
@@ -4536,7 +4536,7 @@ strike), checked against `gex_pin_maxpain_history`, an independently written sto
 **Privileges.** `REVOKE ALL … FROM anon, authenticated`, then `GRANT SELECT` to anon and `merdian_ro`
 — it does **not** repeat TD-S92-NEW-4.
 
-**Not a parity layer** (ADR-025 D5) and display-only (S37). **Status: AUTHORED, not applied.** Applied
+**Not a parity layer** (ADR-025 D5) and display-only (S37). **Status: APPLIED and VERIFIED 2026-10-09** (14 sessions per symbol; pain curve equal to ENH-123 strike for strike on the same run; a first cut ranked a holiday date with only a 15:40 run and showed 13 — fixed the same morning, TD-S92-NEW-5). **Earlier fixture claim corrected:** the "28 / 28 against `gex_pin_maxpain_history`" was true only on the synthetic fixture; live, that table is an S80 one-time backfill ending 2026-09-18 and matches none of the 14 sessions, so the live check is against ENH-123 instead. Applied
 and verified by Section 4 of its own file; live when the Lovable round passes `mv_lovable_guard_lab3d.sh`
 and `/staging/` is read against the view.
 

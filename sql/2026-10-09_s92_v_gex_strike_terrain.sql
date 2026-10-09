@@ -10,6 +10,13 @@
 -- APPLIED 2026-10-09 ~10:25 IST; 4a showed 13 sessions, not 14 (a holiday date
 -- with only a 15:40 run took a ranking slot). REVISED the same morning: dates
 -- are ranked only after a settled run is found (settled_all -> settled).
+-- VERIFIED LIVE 2026-10-09 10:32-10:34 IST, after the revision:
+--   4a anon: 14 sessions per symbol (2026-09-21 .. 10-09), 13 complete; NIFTY 742
+--      rows (28 NULL gex_cr), SENSEX 1,169 rows (75 NULL gex_cr).
+--   4b 104 ms (first form; the revision removes 3,520 per-row EXISTS loops).
+--   4c vs ENH-123 v_gex_max_pain on the same run: NIFTY 54 strikes, SENSEX 85,
+--      pain_mismatch 0 and 0; max pain 22500 = 22500, 72300 = 72300.
+--   4d anon=r, merdian_ro=r, no authenticated (postgres / service_role as Supabase owns).
 --
 -- WHY THIS VIEW EXISTS
 --   The operator's 3D experiment (meridian-connect branch lab-3d, 78fb26e,
@@ -227,21 +234,26 @@ SET LOCAL ROLE anon;
 EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM public.v_gex_strike_terrain;
 COMMIT;
 
--- 4c. Max pain against an INDEPENDENT store (Rule 0: a parity claim is a test).
---     gex_pin_maxpain_history holds max_pain_strike per run, written by a
---     separate path (S80). Expect mismatched = 0; report missing.
-WITH t AS (SELECT DISTINCT symbol, session_date, run_id, expiry_date, max_pain_strike
-             FROM public.v_gex_strike_terrain)
+-- 4c. Max pain against an INDEPENDENT implementation (Rule 0: a parity claim is a test).
+--     RUN DURING MARKET HOURS, before 15:15 IST, when session 1's settled run IS the
+--     latest run: then ENH-123 v_gex_max_pain (the O(n^2) self-join) covers the same
+--     run_id, strike by strike. Expect pain_mismatch = 0 and equal max-pain strikes.
+--     No rows = a new run landed between the two reads; run it again.
+--     (Superseded first form: a join to gex_pin_maxpain_history. That table is an
+--     S80 one-time BACKFILL, 2026-05-25 -> 2026-09-18, with no live writer, so for
+--     any window after 09-18 the join matches nothing and the check cannot fail --
+--     measured 2026-10-09: with_history_row = 0 of 28.)
+WITH t AS (SELECT symbol, run_id, strike, writer_pain, max_pain_strike
+             FROM public.v_gex_strike_terrain WHERE session_rank = 1),
+     v AS (SELECT symbol, run_id, candidate_strike AS strike, total_pain, max_pain_strike
+             FROM public.v_gex_max_pain)
 SELECT t.symbol,
-       count(*)                                                                AS sessions,
-       count(h.run_id)                                                         AS with_history_row,
-       count(*) FILTER (WHERE h.run_id IS NOT NULL
-                          AND h.max_pain_strike IS DISTINCT FROM t.max_pain_strike) AS mismatched,
-       string_agg(t.session_date || ' view=' || t.max_pain_strike || ' hist=' || h.max_pain_strike, ', ')
-         FILTER (WHERE h.run_id IS NOT NULL AND h.max_pain_strike IS DISTINCT FROM t.max_pain_strike) AS detail
+       count(*)                                                           AS strikes_compared,
+       count(*) FILTER (WHERE v.total_pain IS DISTINCT FROM t.writer_pain) AS pain_mismatch,
+       min(t.max_pain_strike)                                             AS terrain_max_pain,
+       min(v.max_pain_strike)                                             AS enh123_max_pain
   FROM t
-  LEFT JOIN gex_pin_maxpain_history h
-    ON h.symbol = t.symbol AND h.run_id = t.run_id AND h.expiry_date = t.expiry_date
+  JOIN v ON v.symbol = t.symbol AND v.run_id = t.run_id AND v.strike = t.strike
  GROUP BY t.symbol ORDER BY t.symbol;
 
 -- 4d. ACL. Expect anon=r and merdian_ro=r only; no authenticated entry.

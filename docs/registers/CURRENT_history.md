@@ -3933,3 +3933,136 @@ is a ruling that can drift out of agreement with itself.
 | **CASE disposition** | **UPDATE** `CASE-2026-09-22`, do not open a new one |
 | **Parity spec `:292`** | State the parsed sums and the missing day-length factor — **do not publish another rounded guess** |
 
+## Previous session S90 / AM-1
+
+**S90 / AM-1 (Agentic Meridian Session 1) — 2026-10-05 (Monday, live session) → 2026-10-06 05:20 IST.**
+The first build session of the agentic layer: Stage 0 (spine) and the first Stage 1/2 harness
+items, built beside the live system. **AM-n numbering starts here; S-numbers continue in parallel
+(AM-1 = S90).** This block points and does not restate. Progress lives in **one** place, the
+tracker `docs/research/s90_agentic/agentic_layer_roadmap_S90.md` (v2.7, §3 Status/Session
+columns, each with linked evidence); rulings in `docs/research/s90_agentic/rulings_s90.md`
+(S90-A…I); the decision in **ADR-031**. Closed **hybrid** by operator ruling: the protocol files
+carry short pointer entries, and Doc Protocol v5 is drafted for ruling, not adopted.
+
+**What was established**
+
+1. **ADR-031 FILED and ACCEPTED (S90-C)** — the spine: data contracts with generated checks; one
+   status enum (`OK/DEGRADED/STALE/MISSING/CLOSED/NOT_COMPUTED/UNKNOWN`) propagated down the
+   lineage; provenance (**D3a: via `run_id` → ledger**, S90-I); rules read as-of, write path closed
+   to anon (S90-E); closed days are rows; a new table states RLS in its own DDL and is checked
+   after apply; `script_execution_log` is the one ledger and `merdian_ro` can read it.
+2. **Production changed — 15 commits `38a0a84..ca79717`, all pushed, production fast-forwarded**
+   (the last at **2026-10-06 04:53 IST, pre-market, by operator choice** over the after-16:00 rule):
+   contract runner in shadow every 5 minutes writing `cycle_health` (R1.2); ENH-133
+   `gex_cycle_history` applied, writer wired, reconciler scheduled (R0.4, ADR-030 front leg only
+   per S90-B); the runner and every chain/gamma/vol/history writer write ledger rows carrying
+   `run_id`/`product`/`status` (R0.7, R0.3); closed days written as rows and the chain ingest and
+   spot capture moved onto the shared calendar gate (R0.8) — **R01-F5, a repeat of 10-02 on
+   2026-10-20, closed before its date**; WCB reads live LTP (S90-G); the EOD sweep runs a full lap
+   and stamps dates in IST, with a one-time +1 day migration of two tables (S90-H); six golden days
+   frozen in `tests/golden/` (R2.1).
+3. **Database, applied in the SQL editor** (files in `sql/`, prefix `2026-10-05_s90` /
+   `2026-10-06_s90`): status enum, `data_contracts` (14), `product_lineage` (12), `cycle_health`;
+   `update_parameter()` revoked from PUBLIC/anon/authenticated; `get_parameter_num(key, as_of)`;
+   health views; ledger columns + `v_run_trace` + `v_provenance_coverage_daily`; `merdian_ro`
+   read policies on `script_execution_log`, `merdian_parameters`, `dhan_scripmaster`; the
+   dealer-flow sign fix (MV-1); DH-905 remap.
+4. **Marketview live check found 12 items (MV-1…12); MV-1/2/3/5/9 fixed, MV-4 partly** —
+   `docs/research/s90_agentic/marketview_live_check_S90.md`. The frontend fixes are deployed from
+   `~/meridian-connect` **`265ceb0`, which is NOT in GitHub** (TD-S90-NEW-2).
+5. **Twelve spine findings, R01-F1…F12** (`R0.1_spine_inventory_S90.md` §11): the orchestrator
+   wrote no ledger row (F1, fixed); `equity_eod` / `breadth_indicators_daily` dates one day early
+   since 2025-07 (F10, fixed); the EOD sweep covered only part of the universe each day (F11,
+   fixed); **DH-905, S67's "structural" 97.83 % ceiling, was stale IDs from series changes** (F12,
+   cured by hand: 28 remapped, 4 deactivated, 0 unmapped).
+
+**Corrections to my own work — §D.46, 13 rows.** The one to carry: **the Supabase SQL editor does
+not run a `BEGIN … temp table … COMMIT` script as one transaction in one session** — the DH-905
+remap landed while the editor reported `42P01` (§D.46.8). Gated multi-step writes go in **one
+`DO` block**.
+
+**Registers touched:** `tech_debt.md` (**TD-S90-NEW-1…11** + S90 status footer on six existing
+TDs), Assumption Register **§D.46**, Decision Index (**+ADR-031**, marker → `ADR-032+`),
+Enhancement Register (ENH-133 row, change log, Part 6 footer), System Map **§S90**, Deployment
+Topology **§S90**, `merdian_reference.json` **v68**, `CLAUDE.md` **v1.62**, ADR-030 S90
+annotation, `CURRENT_history.md` (S88 moved). **Doc Protocol v5 DRAFT** at
+`docs/operational/MERDIAN_Documentation_Protocol_v5_DRAFT.md`.
+
+## AM-1 post-close (2026-10-06 → 10-07)
+
+**The delta after the AM-1 close**, folded into the registers at AM-2 / S91 (docs only). This
+block **points**; the detail lives in the registers named. Ten commits, `699398f..490b088`,
+`490b088` is HEAD.
+
+| Commit | What |
+|---|---|
+| `699398f` | Name correction in prose, titles and commit prefixes; identifiers unchanged (`CLAUDE.md` rule 20, ruling **S90-K**) |
+| `16f1378` | Deploy window by risk class (ruling **S90-J**); Marketview `/staging/` in `deploy/nginx` |
+| `47c795c` · `8f0007f` | Tick freeze every 5 min, 10-day retention — answers **TD-S90-NEW-4**; roadmap **R2.7** |
+| `a80176e` | Replay harness v0: `replay_contracts.py --check` over 6 golden days + `tests/run_offline.sh` (**R2.1**) |
+| `df80dec` | Per-leg ledger rows (`log_child_run`, ADR-031 D3a/D7) so chain provenance can reach 100 % (**R0.3**) |
+| `6d9f4f7` | CAS close picks the close-slot bar, not the last bar (**TD-S90-NEW-12**) |
+| `2e66d4f` | Spot contract session end 15:15 via `data_contracts.session_end_ist` (ruling **S90-L**, **R1.2**) |
+| `1708a1c` | CAS reconciliation, two-source auto-correct, scheduled 08:50 IST (ruling **S90-M**) |
+| `490b088` | EOD sweep on its own cursor row + cursor-moved guard (**TD-S90-NEW-14**) |
+
+**Marketview:** three further commits in `~/meridian-connect` — `eda1ca0`, `c53dbea`, `255cca0` —
+and **live = staging = `origin/main` = `255cca0`** (measured 2026-10-07), which **closes
+TD-S90-NEW-2**.
+
+**Database and data writes:** `sql/2026-10-06_s90_spot_session_end.sql` applied; **58 CAS close
+bars backfilled** plus 2026-10-06 captured live, **3 SENSEX bars hand-corrected**; DH-905 remaps
+verified at **1,379 / 1,381 = 99.86 %** coverage on 10-01.
+
+**New TD IDs: TD-S90-NEW-12 / -13 / -14** (`tech_debt.md`, prepended, plus an AM-2 addendum on the
+S90 status footer). **New rulings S90-K / -L / -M** (`rulings_s90.md`, the single source). Roadmap
+**v2.8**. `merdian_reference.json` **v69**.
+
+## NEXT SESSION PICKS UP — as S90 left it (SUPERSEDED by the S91 list above)
+
+**Dated, today first.**
+
+1. **Wed 2026-10-07 — verify the AM-1 post-close deploys. None of this is verified yet.**
+
+   | When (IST) | Check | PASS looks like |
+   |---|---|---|
+   | 08:50 | first scheduled CAS reconciliation, `logs/cas_recon.log` | every day MATCH; no MISMATCH and no auto-correct needed — **closes TD-S90-NEW-12** |
+   | 09:30 | `v_provenance_coverage_daily` after the first cycles | chain at **100 %** (was 52 % — one `run_id` per N legs) — **R0.3** exit |
+   | 15:20 / 15:25 | `cycle_health` for `market_spot_snapshots` | **OK**, judged at the product's own `session_end_ist`, not MISSING — **R1.2**, ruling **S90-L** |
+   | 16:10 | the `equity_eod_aws` lap | **`[S90_CURSOR_GUARD]` count 0** in `logs/eod.log`, and EOD coverage near 100 % of the active universe |
+   | 10:15:59 | **A4 re-run, SENSEX dte 1** (item 3 below) | per its own pre-commitment — if T1 refuses, the L7/L8 views are DROPped |
+
+   Also still owed from the 10-06 list, unverified here: ENH-133 first live rows (G1–G3,
+   A(c)–A(e), R1–R6), WCB moving on live ticks (S90-G), and `v_run_trace` for the latest cycle
+   (R0.7). Runbook `docs/research/s90_agentic/runbook_2026-10-06_1600.md` §5.
+2. **NIFTY L9 stage-1 max-pain arm** (TD-S80-NEW-1), pre-registered before any
+   read — carried from S89.
+3. **Wed 2026-10-07, 10:15:59 IST — A4 re-run, SENSEX dte 1** — carried from S89. **The ENH-98
+   L7/L8 views were NOT applied in S90** (S90-A scoped the apply to ENH-133), so the
+   pre-committed DROP has nothing to drop until they are.
+4. **~Tue 2026-10-13 — drop the S90-H backup tables** after a clean week (TD-S90-NEW-11).
+5. **Tue 2026-10-20 (holiday) — the first live test of R0.8:** no chain rows written,
+   `cycle_health` CLOSED (TD-S89-NEW-1 closes on it).
+
+**Undated — the tracker is the list** (roadmap §3). Next by its order: R1.10 scrip-map sync ·
+push Marketview (deploy key) · R0.6 authenticated Settings write + `config_version` · R1.7 status
+on Home (needs the browser read-path decision) · R0.7 fold the ADR-029 file ledger · the ~26
+other inline calendar gates · R1.6 against the fixture files · R2.1 diff in the deploy path ·
+**Doc Protocol v5 ruling** · ENH-133 tier (still operator-to-assign). S89's undated list stands
+below.
+
+## OPERATOR RULINGS, S90
+
+**All rulings live in `docs/research/s90_agentic/rulings_s90.md`**, the single source.
+
+| # | Topic |
+|---|---|
+| **S90-A / S90-F** | ENH-133 applied 10-05; writer wired the same night (F amends A) |
+| **S90-B** | ADR-030 D1: front leg (W1) only until a W2 compute path is ruled |
+| **S90-C** | ADR-031 accepted (roadmap A-8) |
+| **S90-D** | Stages 0–2 inside parity scope (A-5); parity closes at the Stage 2 exit |
+| **S90-E** | `update_parameter()` revoked from PUBLIC/anon/authenticated; Settings read-only |
+| **S90-G** | WCB: fix the writer (live LTP over the prior close, no stale fallback) |
+| **S90-H** | EOD dates: IST ingest + one-time +1 day migration |
+| **S90-I** | ADR-031 D3a: provenance via `run_id` → ledger |
+| **Close mode** | Hybrid close (2026-10-06 05:21 IST): the tracker holds progress; protocol files point; Doc Protocol v5 drafted, not ruled |

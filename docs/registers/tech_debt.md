@@ -145,7 +145,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Proper fix** | The same calendar gate as TD-S91-NEW-12 (rule 18: import `core.trading_calendar_gate`) plus a 30-min per-condition dedupe in a `logs/` state file. The window gate is already supplied by cron here, so only those two are needed. |
 | **For whoever patches it** | The file carries a **UTF-8 BOM** (measured) — `read_bytes().decode('utf-8-sig')` and `write_bytes(...)` per `.claude/rules/python-writers.md`, or `ast.parse` rejects U+FEFF. It also holds **pre-existing mojibake** (`â€”`) that predates this session; fix it deliberately with the BOM handling, not incidentally. |
 | **Source** | `scratch/s91/telegram_flood_findings_S91.md` §2 |
-| **Status** | **OPEN — DUE before 2026-10-20.** |
+| **Status** | **FIX COMMITTED `0965755` (S92), on the box; verification owed on Tue 2026-10-20.** Trading-day gate at the entry point and a 30-minute **per-key** dedupe around all four send sites, reusing `6a5c0e2`'s helpers (imported lazily; dedupe fails open, never quiet). The weekday holiday is the only live test. *(Was: OPEN — DUE before 2026-10-20.)* |
 
 ### TD-S91-NEW-14 (S2 priority) — `validate_compute_contracts.py:170` announces a cycle skip that never happens
 
@@ -158,7 +158,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Why it is filed apart from TD-S91-NEW-13** | That one is volume; this one is **content**. Gating the sends would leave every surviving message still asserting a skip that cannot occur. |
 | **Proper fix** | Either make the claim true (have the orchestrator consult the validator's verdict — a real design change, and the Rule 0 clause about a computed verdict reaching a named, scheduled consumer applies) or change the text to what actually happens. **Do not do both halves silently.** |
 | **Source** | `scratch/s91/telegram_flood_findings_S91.md` §2 |
-| **Status** | **OPEN.** |
+| **Status** | **FIXED `0965755` (S92)** — the `:170` message now says what the code does; travelled with TD-S91-NEW-13. *(Was: OPEN.)* |
 
 ### TD-S91-NEW-15 (S2 priority) — `SKIPPED_NO_INPUT` exits 1, so 12 orchestrator cycles are marked failed every trading day by construction
 
@@ -173,7 +173,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **RULING OWED** | Operator ruling requested: **`SKIPPED_NO_INPUT` → exit 0** (a skip is not a failure), leaving `DATA_ERROR` as the only non-zero reason. Not applied pending that ruling. |
 | **Not verified** | Whether `exit_code=1` on `SKIPPED_NO_INPUT` is the house convention at **every** call site in the repo; the survey was started and not finished. |
 | **Source** | `scratch/s91/basis_context_findings_S91.md` §4, §6.1 |
-| **Status** | **OPEN — mechanism settled, ruling owed.** |
+| **Status** | **PARTLY FIXED (S92).** Ruling **S92-B**: `compute_basis_context_local.py` returns exit 0 on `SKIPPED_NO_INPUT` (`e0b9d03`), `exit_reason` unchanged so the 12 structural cycles stay countable. **`run_merdian_shadow_runner_aws.py:364` is deliberately untouched** (no option-chain rows at all is a different condition) and stays OPEN. **Verification owed:** 2026-10-09 08:31–09:26 IST, 12 no-input cycles exit 0. *(Was: mechanism settled, ruling owed.)* |
 
 ### TD-S91-NEW-16 (S2 priority) — the unidentified EOD cursor writer struck again, and this time it carried an expired Dhan token
 
@@ -242,7 +242,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Already safe, measured not assumed** | `check_contracts_shadow.py` pads via its own `_FRAC`; `compile_market_environment_local.py` pads to 6 with a strip fallback. **Not exposed:** `accrue_expiry_outcomes.py`, `ingest_participant_positioning.py`, `relate_ambient_to_open_local.py` — all parse date-only CLI arguments. |
 | **The structural half** | `grep -rn "ljust(6"` finds **~40 independent copies** of this padding across the repo and **`core/` holds none** — the only `fromisoformat` in `core/` is `core/trading_calendar_gate.py`, on a date-only string. Both fixes in **TD-S91-NEW-1** say in their own docstrings that one shared `core/` helper is the right fix and is deliberately not that change, so the duplication is on the record rather than quietly added to. |
 | **Proper fix** | One `core/` timestamp helper, then retire the copies site by site. |
-| **Status** | **OPEN — 1 of 7 fixed (site 2, `b48532e`); sites 1, 3, 4, 5, 6, 7 open; the shared helper not built.** |
+| **Status** | **OPEN — 2 of 7 fixed and the shared helper BUILT (S92).** Site 2 `b48532e` (S91); **site 7 `bd91d27`** adopts **`core/ts_parse.py` (`f60708d`)**, the shared parser lifted verbatim from the four live copies (41 asserted cells, `tests/run_offline.sh` step 10/10, `0eceee1`). **Sites 1, 3, 4, 5, 6 open** — each is now an adoption of `core.ts_parse.parse_pg_ts`, not a new fix. *(Was: 1 of 7 fixed; the shared helper not built.)* |
 
 ### TD-S91-NEW-3 (S2 priority) — the Zerodha feed was down 09:10–09:36 IST on a token that had verified 50 minutes earlier, and the mechanism is unidentified
 
@@ -300,7 +300,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Forecast, and it is a prediction not a result** | With TD-S91-NEW-1's fix live and nothing else changed, **21 of the 38 failing cycles still fail and 17 become clean → 63/84 = 75.0 % contract-met**, against 54.8 % observed. Layering further: + TD-S91-NEW-15 → 89.3 %; + this entry diagnosed → 100 %. **If 2026-10-08 does not land near 75 %, either `bcadfa6` is not doing on the box what it did offline, or a third cause is present that 10-07's log does not contain.** |
 | **Consumer impact** | `basis_context_snapshots` is **display-only, context-not-gate** (S37), so a missed cycle degrades a surfaced field and gates nothing. Note the fail-soft asymmetry: a missing *prev* row is **not** a failure — the row still writes with `context_label` NULL — so consumers must read NULL as "not measured", never as NEUTRAL. |
 | **Source** | `scratch/s91/basis_context_findings_S91.md` §3, §5, §6.1 |
-| **Status** | **OPEN — code path settled, mechanism open between (a) and (b), one read owed.** |
+| **Status** | **FIXED `bd91d27` (S92) — mechanism SETTLED; verification owed.** (a) is the mechanism: PostgREST trims trailing zeros, Python 3.10.12 rejects fraction widths 1/2/4/5, and the futures writer stamps one `ts` for both symbols — per-run trace of 2026-10-08's 84 runs: the 3 DATA_ERROR runs had widths 4, 5, 5; 0 of 69 SUCCESS runs carried a failing width. (b) is **impossible**, not unobserved: `index_futures_snapshots.ts` is `is_nullable = NO`. **Closes on a full trading day with 0 basis DATA_ERROR runs** — 2026-10-09 is the first. *(Was: mechanism open between (a) and (b).)* |
 
 ### TD-S91-NEW-7 (S2 priority) — the offline fixture suite OOM-killed the box during pre-open and Session Manager became unreachable
 

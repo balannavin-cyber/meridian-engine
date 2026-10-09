@@ -5067,9 +5067,9 @@
       "truncated_each_run": false
     }
   },
-  "version": "v70",
-  "last_updated_session": "Session 91 / AM-2 (part 2 close)",
-  "last_updated_date": "2026-10-08",
+  "version": "v71",
+  "last_updated_session": "Session 92",
+  "last_updated_date": "2026-10-09",
   "change_log": [
     {
       "session": "S91 / AM-2",
@@ -5829,5 +5829,6 @@
         "scratch/s91/basis_context_findings_S91.md"
       ],
       "git_state": "HEAD 6a5c0e2 + this docs close; local == origin/main == engine tree before the close commit (measured 0 ahead / 0 behind)."
-    }
+    },
+  "_s92_addendum": {"session": "S92", "date": "2026-10-08 -> 2026-10-09", "scope": "Hedgewall parity driven to closure (ADR-025 Amendments C and D); post-parity priority track ruled (S92-I); P1 level test pre-registered and part-run; optional 3D view authored (S92-J); S91 defects fixed.", "parity": {"status": "CLOSED 2026-10-09", "adr": "ADR-025 Amendment D (579d273)", "dispositions": "BUILT 13 of 14 (L1-L10, L12-L14), L11 DECLINED-ON-EVIDENCE, PENDING 0", "marketview_live": "meridian-connect 1deeb87", "r24": "docs/research/s92_parity/r24/ (REPORTED, not gating)"}, "views_added": {"v_pin_board": "S92-D, sql/2026-10-08_s92_v_pin_board.sql - Pin tab read surface over gex_cycle_history (latest OPEN session, front leg); anon through the view only", "v_gex_strike_terrain": "S92-J, sql/2026-10-09_s92_v_gex_strike_terrain.sql - AUTHORED, NOT APPLIED; optional 3D view (ENH-139)"}, "files_added": {"core/ts_parse.py": "Shared PostgREST timestamp parser (f60708d): FRAC_RE, norm_frac, parse_pg_ts; fraction widths 0-6, Z, offsets, naive -> UTC, bad -> None. tests/test_ts_parse_core.py = run_offline step 10/10.", "docs/lovable_prompts/s92/": "Lovable safeguard kit: mv_lovable_guard.sh v2, mv_lovable_guard_lab3d.sh (S92-J one-time), acl_fingerprint.sql, prompts", "docs/research/s92_priority/": "P1 pre-registration (git hash-object 7a708a64c4bb73f0712a6d6e78f92a5d411a8ece) and p1/ SQL + scorer"}, "files_changed": {"compute_basis_context_local.py": "e0b9d03 SKIPPED_NO_INPUT exits 0 (S92-B); bd91d27 parse_ts delegates to core.ts_parse (TD-S91-NEW-6 / -2 site 7)", "validate_compute_contracts.py": "0965755 trading-day gate + 30-min per-key dedupe (TD-S91-NEW-13/14)", "tests/run_offline.sh": "step 10/10 added (0eceee1)"}, "rulings": "docs/research/s92_parity/rulings_s92.md S92-A..J", "open": "P1 Parts 3 and 2 after 15:40 IST 2026-10-09; S92-J apply; verifications TD-S91-NEW-1/-6/-12/-13/-15; ruling owed on whether a BUILT layer that later breaks reopens parity"}
 }

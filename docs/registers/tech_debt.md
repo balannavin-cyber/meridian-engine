@@ -69,6 +69,50 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 **NOTE — 2026-10-03.** `v_gex_concentration.hhi_net` is the **top-1 gamma share, NOT a Herfindahl** — byte-identical to `v_gex_strike_rank` rank-1 `share_of_abs` and to `gamma_metrics.gamma_concentration` (0.0942 on 10-01); true HHI Σshare² ≈ 0.0464. The live board's 'HHI' label and D-6's ~0.10 / ~0.25 bands are therefore on **top-1 share**. `hhi_call` / `hhi_put` semantics **unverified**. Verify call/put and correct the board label before any Herfindahl claim.
 **FIX (phase-2 Pin tab):** the board's 'HHI' label should display the true `conc_hhi` (Σs²); keep top-1 share as a separate **'lead-strike share'** line. **ENH-133 now stores both.**
 
+### TD-S92-NEW-1 (S3 priority) — the OI tab still calls open interest "contracts" in three explanations, and the unit is quantity
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Wording only; no number on the board is wrong. S3 because the word asserts a unit conversion the data does not support. |
+| **Filed** | 2026-10-09 (Session 92) |
+| **Component** | `meridian-connect` `src/components/board/LadderPanel.tsx` `DETAIL` entries for Total OI and the call / put OI walls (live `1deeb87`) |
+| **Measured** | ENH-127's S81 measurement: NIFTY `oi` divides by 65 on 13,090/13,090 rows and by 75 on only 729; SENSEX by 20 on 18,037/18,037 — `oi` is **shares-equivalent at the current lot size**, not contracts. The L13 bind (S92-G) removed "contracts" from the ΔOI item; Lovable reported the three remaining uses and left them because the L13 brief was scoped to ΔOI. |
+| **Proper fix** | One Lovable pass under the S92 guard (`docs/lovable_prompts/s92/`, layout-only mode): replace "contracts" with "quantity" in those explanations. Do not divide by a lot size — that needs an instrument master with effective dates (deferred in ENH-127). |
+| **Status** | **OPEN.** |
+
+### TD-S92-NEW-2 (S2 priority) — a 3D view on branch `lab-3d` reads two tables directly as `anon`, outside the view boundary
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Nothing is deployed: the guard refused the build and the work was removed from `main`. S2 because merging the branch as it stands would put direct anon reads of a large table into the live bundle. |
+| **Filed** | 2026-10-09 (Session 92) |
+| **Component** | `meridian-connect` branch **`lab-3d`** (tip `78fb26e`): `src/pages/Lab3D.tsx`, `src/lib/terrain.ts`, the `/board/3d` route in `src/App.tsx`, packages `three`, `@react-three/fiber`, `@react-three/drei`, `@types/three` |
+| **Measured** | The S92 guard (`mv_lovable_guard.sh e3fc3d3`) failed on: paths outside the allowlist (`package.json`, `bun.lock`, `src/App.tsx`, `src/lib/terrain.ts`, `src/pages/Lab3D.tsx`) and three added reads — `supabase.from("trading_calendar")`, and two `supabase.from("gex_strike_snapshots")` — made from `src/lib/terrain.ts`. ACL fingerprint before and after: **identical**, so the database was not changed. |
+| **Proper fix** | Before any merge: route the reads through a view in the `v_pin_board` pattern (S92-D) with its DDL under `sql/`; measure it as `anon` inside the 3 s `statement_timeout`; review the four packages; build on `/staging/` under the guard. It is **outside parity** (ADR-025 D5) and is not a parity condition. |
+| **Status** | **OPEN — parked by operator choice.** |
+
+### TD-S92-NEW-3 (S3 priority) — `sql/2026-10-03_s89_v_gex_greeks_l2.sql` says its V2 probe is "committed with this file", and it is not in git
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The view and its live COMMENT are correct; what is missing is the query that reproduces one verification bar. |
+| **Filed** | 2026-10-09 (Session 92) |
+| **Component** | `sql/2026-10-03_s89_v_gex_greeks_l2.sql:559` cites `scratch/s89_l78/p8_ctl.sql` |
+| **Measured** | `git ls-files \| grep -c p8_ctl` → **0**; `scratch/s89_l78/` does not exist in the repository. |
+| **Proper fix** | Recover the probe from the S89 working tree if it survives and commit it beside the SQL file; otherwise re-author it from the V2 text and say so in the file. |
+| **Status** | **OPEN.** |
+
+### TD-S92-NEW-4 (S3 priority) — the S92 views grant `authenticated` more than `SELECT`, through default privileges
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** No surface signs in as `authenticated`; the Marketview path is `anon`, which holds `SELECT` only on these views. |
+| **Filed** | 2026-10-09 (Session 92) |
+| **Component** | `v_pin_board` (`sql/2026-10-08_s92_v_pin_board.sql`), `v_gex_greeks_l2_strike`, `v_gex_greeks_l2_net` |
+| **Measured** | The S92 ACL read showed `authenticated=rm` on the new views. The SQL files `REVOKE ALL … FROM anon` and grant `anon` / `merdian_ro` `SELECT`; they do not touch `authenticated`, so the role inherits Supabase's default privileges — the CASE-2026-09-22 mechanism, on a role the S81 fix did not sweep. |
+| **Proper fix** | Fold into the **TD-S89-NEW-5** audit: decide whether `authenticated` should hold anything on `public` views, then add `REVOKE ALL … FROM authenticated` to the three files and apply. Cross-ref the provisional **P4** (anon `MAINTAIN` on three older views). |
+| **Status** | **OPEN.** |
+
 ### TD-S91-NEW-12 (S2 priority) — the orchestrator health monitor sent a Telegram warning every minute, 24x7, and that is why a real alert was missed
 
 | Field | Value |

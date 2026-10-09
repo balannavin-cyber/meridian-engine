@@ -18,8 +18,10 @@ WHY THIS EXISTS
 
 THERE ARE TWO WIRES, NOT ONE — added S93, measured, see `norm_offset`
     PostgREST renders a UTC `timestamptz` as `+00:00`. **psql renders it as
-    `+00`** — a TWO-digit offset — and `bin/roq.sh` is psql, so every
-    `tests/golden/` fixture and every CSV export in this repo carries that form.
+    `+00`** — a TWO-digit offset — and `bin/roq.sh` is psql, so golden fixtures
+    and CSV exports produced through it carry that form. (Measured on one:
+    `tests/golden/2026-10-01_SENSEX`. Every psql export is expected to carry it,
+    but only that fixture was checked.)
     Python 3.10's `fromisoformat` rejects it, and `FRAC_RE`'s lookahead requires
     a four-digit offset, so before S93 this module returned **None** on it: the
     fraction went unpadded AND the string went unparsed. Measured 2026-10-09 on
@@ -114,8 +116,9 @@ def norm_offset(ts_iso: str) -> str:
     """Expand a trailing two-digit UTC offset to `[+-]HH:MM`. S93.
 
     `+00` -> `+00:00`, `+05` -> `+05:00`. This is psql's rendering of a
-    `timestamptz` (`bin/roq.sh`, every `tests/golden/` fixture); PostgREST's
-    `+00:00` is already in the target form and is returned unchanged.
+    `timestamptz` (`bin/roq.sh`, and the `tests/golden/2026-10-01_SENSEX` fixture
+    measured in the module docstring); PostgREST's `+00:00` is already in the
+    target form and is returned unchanged.
 
     WIDENING ONLY, by construction rather than by hope. The pattern is anchored
     at `$` and requires a two-digit offset, so it cannot match `+00:00`,

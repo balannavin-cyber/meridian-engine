@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # S90 / AM-1 — every offline check in one command. No database, no network.
+# 11 steps as of S93. Every step's exit code is checked and ANY non-zero is a FAIL,
+# including a step's own rule-23 refusal (exit 2) — a refusal is never a skip.
 #   ( ulimit -v 700000; bash tests/run_offline.sh )   -> exit 0 only if all pass
 # NOT any hour, and not without a memory ceiling: see the rule 23 guard below. Exit 2 is a
 # refusal to run (nothing was tested); exit 1 is a real test failure.
@@ -31,23 +33,49 @@ rule23_guard() {
 rule23_guard || exit $?
 
 rc=0
-echo "== 1/10 contract runner unit tests";   python3 tests/test_check_contracts_shadow.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 2/10 seeded defects on golden day"; python3 tests/replay/test_replay_seeded.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 3/10 replay vs pinned statuses";    python3 tests/replay/replay_contracts.py --check | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 4/10 ledger child runs (S90_CHILD_RUN)"; python3 tests/test_execution_log_child.py 2>/dev/null | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 5/10 CAS close slot pick (S90_CAS_SLOT_PICK)"; python3 tests/test_cas_close_slot_pick.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 6/10 CAS recon auto-correct (two sources)"; python3 tests/test_cas_recon_autocorrect.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 7/10 cycle-history ts fraction widths (ENH-133 _ist_date)"; python3 tests/test_cycle_history_ts_parse.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 1/11 contract runner unit tests";   python3 tests/test_check_contracts_shadow.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 2/11 seeded defects on golden day"; python3 tests/replay/test_replay_seeded.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 3/11 replay vs pinned statuses";    python3 tests/replay/replay_contracts.py --check | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 4/11 ledger child runs (S90_CHILD_RUN)"; python3 tests/test_execution_log_child.py 2>/dev/null | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 5/11 CAS close slot pick (S90_CAS_SLOT_PICK)"; python3 tests/test_cas_close_slot_pick.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 6/11 CAS recon auto-correct (two sources)"; python3 tests/test_cas_recon_autocorrect.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 7/11 cycle-history ts fraction widths (ENH-133 _ist_date)"; python3 tests/test_cycle_history_ts_parse.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S91: TD-S91-NEW-2 site 2 (marker writer parse_ts) and the orchestrator-monitor alert
 # gate. Both are pure-Python, no fixtures and no golden days, so neither contributes to
 # the rule 23 memory ceiling -- they are in this suite for the single-command property.
-echo "== 8/10 marker writer ts fraction widths (TD-S91-NEW-2 site 2)"; python3 tests/test_marker_ts_parse.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 9/10 orchestrator monitor alert gate + dedupe"; python3 tests/test_monitor_orchestrator_gate.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 8/11 marker writer ts fraction widths (TD-S91-NEW-2 site 2)"; python3 tests/test_marker_ts_parse.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 9/11 orchestrator monitor alert gate + dedupe"; python3 tests/test_monitor_orchestrator_gate.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S92: TD-S91-NEW-2 site 7 / TD-S91-NEW-6. core.ts_parse is the shared PostgREST
 # timestamp parser; this exercises widths 0-6, Z, offsets, naive and malformed input,
 # and the five real wire strings from 2026-10-08 including the rows[0] of that day's
 # three DATA_ERROR basis runs. Pure Python, no fixtures, no golden day -- it adds
 # nothing to the rule 23 memory ceiling.
-echo "== 10/10 core.ts_parse shared ts parser (TD-S91-NEW-2 site 7)"; python3 tests/test_ts_parse_core.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 10/11 core.ts_parse shared ts parser (TD-S91-NEW-2 site 7)"; python3 tests/test_ts_parse_core.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+# S93: P6 / ENH-140 offline DEX recompute. UNLIKE steps 8-10 this one DOES load a golden
+# day -- tests/golden/2026-10-01_SENSEX, 31,914 chain rows over 81 cycles -- so it is the
+# first addition since S90 that moves this suite's memory profile, and it is the reason the
+# rule 23 ceiling is not decoration. Wired in only after its first standalone pass
+# (2026-10-09 17:45:28 IST); an unrun test in a single-command suite puts a test nobody has
+# seen green in front of the next person who runs it.
+#
+# MEASURED 2026-10-09, 11 steps under ( ulimit -v 700000 ): peak RSS 293,000 kB for the
+# whole suite, 110,856 kB for this step alone, wall 1:11 / 0.89 s. Stated as what it is --
+# `ulimit -v` caps ADDRESS SPACE, not RSS, so these are not the quantity the ceiling
+# constrains and they are not headroom. The evidence the ceiling is not breached is that the
+# run exits 0 under it; RSS is recorded only so a future regression has a baseline to be
+# compared against.
+#
+# A NON-ZERO EXIT IS A FAILURE HERE, INCLUDING 2, and that was PROVED rather than assumed:
+# a copy of this file with step 11 replaced by a stub exiting 2 printed OFFLINE FAIL and
+# exited 1. The test carries its own rule 23 guard and returns 2 in-window, which the
+# `-eq 0` test below turns into rc=1 -- never a skip. In practice this suite's own guard
+# refuses first and identically (both block Mon-Fri 08:30-15:40 IST), so the test's guard
+# binds only when it is run standalone; the two agreeing is what makes a refusal here mean
+# the suite was mis-invoked rather than that the clocks disagree.
+#
+# This step WRITES docs/research/s93_priority/p6/expected/dex_standing_book_1001_SENSEX.csv
+# on every run. That path is gitignored (.gitignore:43 `*.csv`), so running the suite leaves
+# no git noise -- but it is not a read-only step, unlike every other one here.
+echo "== 11/11 DEX recompute vs golden day (S93 / ENH-140 P6)"; python3 tests/test_dex_recompute.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 echo "OFFLINE $([ $rc -eq 0 ] && echo PASS || echo FAIL)"
 exit $rc

@@ -18,7 +18,17 @@ TWO MODES.
              The recompute is this file's, so the comparison is between two
              independent implementations; the expected values are computed
              here and never read back off the view (S81). Both inputs are
-             exported with bin/roq.sh, e.g.
+             exported with bin/roq.sh, which reads SQL from a file argument
+             OR from stdin -- verified in its source, not assumed:
+             bin/roq.sh:89-97 does SQL=$(cat) when no file is given and
+             stdin is not a TTY, and dies with exit 2 on a bare TTY. So
+             `bash bin/roq.sh <<'SQL' > out.csv` is valid.
+
+             One invocation NARROWS the race between the two exports; it
+             does not close it, because psql runs each statement in
+             autocommit with its own snapshot. The guard is the run_id
+             set-equality check below, which makes a mid-read run FAIL and
+             name the re-export -- never pass silently.
 
                \\pset format csv
                SELECT symbol, expiry_date, strike, call_dex_cr, put_dex_cr,

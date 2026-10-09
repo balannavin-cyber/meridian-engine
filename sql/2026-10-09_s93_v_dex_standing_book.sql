@@ -664,6 +664,22 @@ GRANT SELECT ON public.v_dex_standing_book TO merdian_ro;
 --     date. Run it by exporting this view's output AND the chain rows for
 --     the same run_ids, then diffing:
 --
+--     THE HEREDOCS BELOW ARE A SUPPORTED INVOCATION, verified in the
+--     source rather than assumed: bin/roq.sh:89-97 reads a file argument
+--     if given, and otherwise -- stdin not being a TTY -- does SQL=$(cat).
+--     A TTY with no argument dies with exit 2 and "no SQL given". So
+--     `roq.sh < file`, `roq.sh file.sql` and a heredoc are all valid.
+--
+--     ONE INVOCATION NARROWS THE RACE; IT DOES NOT CLOSE IT. psql runs
+--     each statement in autocommit with its OWN snapshot, so a GEX run
+--     landing between the two SELECTs is still possible in one heredoc.
+--     What makes that safe is not the invocation but the run_id
+--     SET-EQUALITY assertion in --compare: a run landing mid-read makes
+--     4i FAIL and name the S81 re-export, never pass silently. Closing
+--     the race properly would need both SELECTs in one REPEATABLE READ
+--     transaction; the assertion is relied on instead, deliberately,
+--     because a detected skew is as good as a prevented one here.
+--
 --       bash bin/roq.sh <<'SQL' > /tmp/dex_view.csv
 --       \pset format csv
 --       SELECT symbol, expiry_date, strike, call_dex_cr, put_dex_cr,

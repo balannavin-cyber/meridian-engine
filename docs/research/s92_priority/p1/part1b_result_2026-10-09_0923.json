@@ -1,0 +1,12 @@
+[
+  {"symbol": "NIFTY", "n_open_days": 93, "n_eligible": 85, "n_calibration": 56,
+   "last_calibration_date": "2026-08-26", "first_holdout_date": "2026-08-27",
+   "dropped": "2026-05-25 no_t0_run, 2026-06-03 no_t0_run, 2026-06-04 no_t0_run, 2026-06-05 no_t0_run, 2026-06-08 no_t0_run, 2026-06-10 no_same_day_iv, 2026-06-11 no_t0_run, 2026-06-17 no_t0_run",
+   "grid_failures": null, "multi_spot_runs": 0, "multi_expiry_runs": 0,
+   "t0_earliest": "09:15:04.249851", "t0_latest": "09:25:07.156554", "iv_age_min_median": 0, "iv_age_min_max": "5.0"},
+  {"symbol": "SENSEX", "n_open_days": 93, "n_eligible": 84, "n_calibration": 56,
+   "last_calibration_date": "2026-08-27", "first_holdout_date": "2026-08-28",
+   "dropped": "2026-05-25 no_t0_run, 2026-06-02 lt_300_min, 2026-06-03 no_t0_run, 2026-06-04 no_t0_run, 2026-06-05 no_t0_run, 2026-06-08 no_t0_run, 2026-06-10 no_t0_run, 2026-06-11 lt_300_min, 2026-06-17 no_t0_run",
+   "grid_failures": null, "multi_spot_runs": 0, "multi_expiry_runs": 0,
+   "t0_earliest": "09:15:04.285784", "t0_latest": "10:00:07.093766", "iv_age_min_median": 0, "iv_age_min_max": "0.0"}
+]

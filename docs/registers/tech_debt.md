@@ -113,6 +113,17 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Proper fix** | Fold into the **TD-S89-NEW-5** audit: decide whether `authenticated` should hold anything on `public` views, then add `REVOKE ALL … FROM authenticated` to the three files and apply. Cross-ref the provisional **P4** (anon `MAINTAIN` on three older views). |
 | **Status** | **OPEN.** |
 
+### TD-S92-NEW-5 (S3 priority) — `trading_calendar` has no row for 2026-10-02, a holiday that `trading_calendar.json` lists
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The day is past, so no live gate can misfire on it again. It matters to readers of history: any consumer that counts sessions by "has data and is not marked closed" counts 10-02 as a session. |
+| **Filed** | 2026-10-09 (Session 92) |
+| **Component** | `public.trading_calendar` (row absent); `trading_calendar.json` (`{"date": "2026-10-02", "name": "Mahatma Gandhi Jayanti"}`) |
+| **Measured** | 2026-10-09, SQL editor: `trading_calendar.is_open` for 2026-10-02 reads **NULL (no row)**, both symbols. `gex_strike_snapshots` still holds **one run per symbol at 15:40:04 IST** on that date. The S90 belt (`sql/2026-10-05_s90_calendar_closed_days.sql`) wrote closed rows for **future** holidays only (10-20, 11-10); 10-02 had already passed. Found because `v_gex_strike_terrain` (S92-J) ranked 10-02 as a session and showed 13 sessions instead of 14; the view is fixed to rank only dates with a run at or before 15:15, so it no longer depends on this row. **P1 is unaffected**: its eligibility requires `is_open = true`, which a missing row is not. |
+| **Proper fix** | Insert the closed row in the S90 pattern — `INSERT INTO public.trading_calendar (trade_date, is_open, open_time, holiday_name, notes) VALUES ('2026-10-02', false, NULL, 'Mahatma Gandhi Jayanti', 'Holiday (S92, back-filled; TD-S92-NEW-5)') ON CONFLICT (trade_date) DO NOTHING;` — a data write, operator's call. Then check every other 2026 holiday in the JSON against the table for the same gap. |
+| **Status** | **OPEN.** |
+
 ### TD-S91-NEW-12 (S2 priority) — the orchestrator health monitor sent a Telegram warning every minute, 24x7, and that is why a real alert was missed
 
 | Field | Value |

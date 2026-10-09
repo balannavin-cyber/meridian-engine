@@ -6,8 +6,10 @@
 --   public.v_gex_strike_terrain   grain (symbol, session_date, strike)
 -- =====================================================================
 --
--- AUTHORED 2026-10-09 (S92). Read-only view; deploys any time. Nothing in
--- this file has been run against the database.
+-- AUTHORED 2026-10-09 (S92). Read-only view; deploys any time.
+-- APPLIED 2026-10-09 ~10:25 IST; 4a showed 13 sessions, not 14 (a holiday date
+-- with only a 15:40 run took a ranking slot). REVISED the same morning: dates
+-- are ranked only after a settled run is found (settled_all -> settled).
 --
 -- WHY THIS VIEW EXISTS
 --   The operator's 3D experiment (meridian-connect branch lab-3d, 78fb26e,
@@ -83,30 +85,39 @@ WITH RECURSIVE syms AS (
                    AND g.ts < (b.d::timestamp AT TIME ZONE 'Asia/Kolkata'))
           FROM back b
          WHERE b.step_n < 20 AND b.d IS NOT NULL
-     ), sessions AS (
-        SELECT b.symbol, b.d AS session_date,
-               row_number() OVER (PARTITION BY b.symbol ORDER BY b.d DESC) AS session_rank
+     ), candidates AS (
+        -- Explicitly closed dates out (a missing calendar row is not a verdict).
+        SELECT b.symbol, b.d AS session_date
           FROM back b
          WHERE b.d IS NOT NULL
            AND NOT EXISTS (SELECT 1 FROM trading_calendar tc
                             WHERE tc.trade_date = b.d AND tc.is_open = false)
-     ), settled AS (
-        SELECT s.symbol, s.session_date, s.session_rank, r.run_id, r.ts,
+     ), settled_all AS MATERIALIZED (
+        -- Settled run per candidate date. A date with no run at or before 15:15
+        -- has no settled run and drops out HERE, BEFORE ranking -- so it cannot
+        -- use up one of the 14 slots. (Measured 2026-10-09: 2026-10-02, a holiday
+        -- with no trading_calendar row, carries one 15:40 run per symbol and had
+        -- taken a slot, leaving 13 sessions.)
+        SELECT c.symbol, c.session_date, r.run_id, r.ts,
                EXISTS (SELECT 1 FROM gex_strike_snapshots g2
-                        WHERE g2.symbol = s.symbol
-                          AND g2.ts >= (s.session_date + TIME '15:10') AT TIME ZONE 'Asia/Kolkata'
-                          AND g2.ts <  (s.session_date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')
+                        WHERE g2.symbol = c.symbol
+                          AND g2.ts >= (c.session_date + TIME '15:10') AT TIME ZONE 'Asia/Kolkata'
+                          AND g2.ts <  (c.session_date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')
                  AS session_complete
-          FROM sessions s
+          FROM candidates c
           CROSS JOIN LATERAL (
                SELECT g.run_id, g.ts
                  FROM gex_strike_snapshots g
-                WHERE g.symbol = s.symbol
-                  AND g.ts >= s.session_date::timestamp AT TIME ZONE 'Asia/Kolkata'
-                  AND g.ts <= (s.session_date + TIME '15:15') AT TIME ZONE 'Asia/Kolkata'
+                WHERE g.symbol = c.symbol
+                  AND g.ts >= c.session_date::timestamp AT TIME ZONE 'Asia/Kolkata'
+                  AND g.ts <= (c.session_date + TIME '15:15') AT TIME ZONE 'Asia/Kolkata'
                 ORDER BY g.ts DESC
                 LIMIT 1) r
-         WHERE s.session_rank <= 14
+     ), settled AS MATERIALIZED (
+        SELECT x.* FROM (
+            SELECT sa.*, row_number() OVER (PARTITION BY sa.symbol ORDER BY sa.session_date DESC) AS session_rank
+              FROM settled_all sa) x
+         WHERE x.session_rank <= 14
      ), runrows AS (
         SELECT st.symbol, st.session_date, st.session_rank, st.run_id, st.ts, st.session_complete,
                g.expiry_date, g.dte, g.strike, g.spot,

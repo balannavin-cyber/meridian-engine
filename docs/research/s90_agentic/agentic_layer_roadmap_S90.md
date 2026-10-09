@@ -1,6 +1,6 @@
 # MERIDIAN — roadmap to an intelligent, agentic MERIDIAN (v2, 2026-10-05)
 
-**Status: v2.8 — LIVE TRACKER (S90 / Agentic MERIDIAN Session 1; the AM-1 post-close delta folded in at AM-2 / S91, 2026-10-07).** Stages 0–2 are ruled inside parity (S90-D) and ADR-031 is accepted (S90-C); this file is the single progress record for the agentic layer, and the Doc Protocol files point here rather than restating it. Items outside Stages 0–2 remain proposals; nothing here is a pre-registration. v1 (same path, earlier on 2026-10-05) answered the operator's seven-point sketch. v2 folds in the harness discussion that followed: ingest, compute and assumption harnesses; redundancy; the agent harness; staged build with exit tests; a tracker. The product is not named here, per the standing rule.
+**Status: v2.8 — LIVE TRACKER (S90 / Agentic MERIDIAN Session 1; the AM-1 post-close delta folded in at AM-2 / S91, 2026-10-07).** Stages 0–2 are ruled inside parity (S90-D) and ADR-031 is accepted (S90-C); this file is the single progress record. **S92-I (2026-10-09): parity closed; §2.1 holds the operator's post-parity priority track (P1–P8), followed to conclusion** for the agentic layer, and the Doc Protocol files point here rather than restating it. Items outside Stages 0–2 remain proposals; nothing here is a pre-registration. v1 (same path, earlier on 2026-10-05) answered the operator's seven-point sketch. v2 folds in the harness discussion that followed: ingest, compute and assumption harnesses; redundancy; the agent harness; staged build with exit tests; a tracker. The product is not named here, per the standing rule.
 
 **Goal, in the operator's words:** an intelligent, agentic MERIDIAN that is self-learning, efficient, cost-effective and LLM-independent.
 
@@ -80,6 +80,38 @@ Today ENH-133 applies (≥ 16:00 IST). The first five items, in order. Each is s
 **R2.1 (freeze golden days)** is cheap and independent (OFF); it can start alongside any of these.
 
 **Go/no-go:** RO and OFF items may start now. SC and LIVE items start only after rulings A-5 and A-8 and only when their class's controls (§11.3) are met. R0.4 is the exception: already ruled and scheduled.
+
+
+### 2.1 Post-parity priority track — operator ruling S92-I (2026-10-09)
+
+**Starts now:** parity closed at `meridian-engine` `579d273` (ADR-025 Amendment D). These eight items
+are the operator's priority to-do and are **followed to conclusion**: each ends **DONE** with evidence
+or **DECLINED-ON-EVIDENCE**, never left open. They run ahead of the rest of §3 unless the operator
+says otherwise. Risk classes and the §11.3 controls apply as for any other item. Ruling text:
+`docs/research/s92_parity/rulings_s92.md` (S92-I).
+
+| ID | Item | Risk | Builds on / absorbs | Exit evidence | Status | Session |
+|---|---|---|---|---|---|---|
+| **P1** | **Level test** — how often the day's high / low lands within X pts (or Yσ) of a top-3 positive-γ strike, the pin, or a wall, against a null of random strikes at the same distance | RO | `gex_strike_snapshots` (from 2026-05-25), ADR-009 | Pre-registration committed **before** the first query; result table with the null | NOT STARTED | |
+| **P2** | **Dealer-side check** — the dealer-short assumption behind every exposure sign, tested daily against NSE participant-wise OI (client / pro / FII / DII) | RO | ENH-115 (`participant_oi_daily`), Assumption Register | Per-day agreement table; register row updated | NOT STARTED | |
+| **P3** | **Invariants and independent recompute** | SC | **= R2.2 + R2.3** (§3 Stage 2; their rows carry the status) | As R2.2 and R2.3 | NOT STARTED | |
+| **P4** | **Greeks evidence** — replay ∂Δ/∂σ and ∂Δ/∂t from 2026-05-25 (as R2.4 replayed γ), then a pre-registered test: does the sign of ∂Δ/∂t at 10:15 on expiry days predict the 10:15 → close direction? | RO | ENH-98 views, ENH-131 repricer, R2.4 replay method | Pre-registration; replay table; result. n ≈ 19 expiries per symbol, so **indicative** | NOT STARTED | |
+| **P5** | **PPC-1** — previous-close OI baseline per strike | LIVE | PPC-1 (parked post-parity, S92-E) | Baseline row per strike per session, checked against the chain over several sessions | NOT STARTED | |
+| **P6** | **DEX standing book** plus zero-Δ strike, on the board | LIVE | delta / OI / spot already in the chain; Lovable kit `docs/lovable_prompts/s92/` | View + ENH entry + DDL in `sql/`; board read as ADR-025 C7 was | NOT STARTED | |
+| **P7** | **Flow leg** for DEX, ∂Δ/∂σ and ∂Δ/∂t (absorbs ENH-98 **D-4**, the L7/L8 D3 deviation) | LIVE | P5, P6 | Flow-vs-book shown on the board; L7/L8 badge *"flow-vs-book (D-4) not built"* retired | NOT STARTED | |
+| **P8** | **∂Δ/∂t every cycle on expiry day** | LIVE | **P4 must show predictive value**; a ruling amending L78-3 | Per-cycle values on expiry day on the board — or DECLINED-ON-EVIDENCE if P4 does not | NOT STARTED | |
+
+**Decision points.** After **P1**: if the levels do not beat the null, the operator re-plans everything
+below before more is built. After **P4**: if ∂Δ/∂t does not predict, **P8 is DECLINED-ON-EVIDENCE**
+and ∂Δ/∂σ / ∂Δ/∂t stay display-only.
+
+**Order.** P1 → P2 → P3 → P4 → P5 → P6 → P7 → P8. P5 and P6 are independent of P1–P4 and may run
+alongside them. Estimated 10–15 sessions in total.
+
+**Not on this track (triaged medium or low, 2026-10-09):** ΔOI × price four-case, volume ≥ OI, book
+split by expiry, per-strike exposure through the session, price × time surfaces, 1-min flow cadence,
+stock F&O. Longer-horizon, not on this track: R2.6 then a replay scrubber, 5-year 1-min history,
+the agentic position layer; a regulatory check runs in parallel before anything is shown to others.
 
 ---
 

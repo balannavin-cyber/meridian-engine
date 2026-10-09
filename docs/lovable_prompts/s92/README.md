@@ -13,7 +13,7 @@ to the public repo, TD-S39-NEW-3; S40: guessed column names). Recorded in ADR-02
 | `baseline_pin_flows_2026-10-09.json` | 32 exact strings captured from live before the pass; staging was read against them. | Data frozen until 09:15 IST. |
 | `l13_measure.sql` | M1 anon EXPLAIN · M2 per-symbol summary · M3 top-5 \|Δ\| per side. **Run each block on its own** — the editor shows only the last statement's result. | Before the L13 prompt. |
 | `lovable_prompt_l13_rotation.md` | L13 bind of `v_oi_rotation_since_open` (S92-G), SENSEX withheld (S92-H). | Base `5563bb7` → live `1deeb87`. |
-| `lovable_prompt_lab3d_optional.md` | Optional 3D view at `/board/3d` reading `v_gex_strike_terrain` (S92-J). | After the view passes Section 4 live. |
+| `lovable_prompt_lab3d_optional.md` | Optional 3D view at `/board/3d` reading `v_gex_strike_terrain` (S92-J). | Base `1deeb87` → live `417e966`. |
 | `mv_lovable_guard_lab3d.sh` | **One-time** guard for S92-J: allows exactly `three`, `@react-three/fiber`, `@react-three/drei`, `@types/three`, the lazy `/board/3d` route, `Lab3D.tsx`, `terrain.ts`; one read of `v_gex_strike_terrain`; no raw-table reads; **fails if three.js lands in the entry chunk**. | `bash ~/mv_lovable_guard_lab3d.sh <BASE>` |
 
 **Guard checks (any one fails the build):** a path outside the allowlist (`src/pages/Board.tsx`,
@@ -27,6 +27,13 @@ a lockfile checksum `…tEYjHy8O…` matched the JWT prefix); the words *vanna*/
 fa642324…`, `anon_public_privs 249 63c4a8e7…`, `anon_writable_objs 0`). The guard stopped one build
 (`78fb26e`, an operator 3D experiment — TD-S92-NEW-2). Lovable cannot set commit messages; commits
 are identified by SHA.
+
+**S92-J record.** ACL fingerprint identical before and after the round (`relations 344 d985125a…`,
+`anon_public_privs 250 436d93b7…`, `anon_writable_objs 0`). Guard `1deeb87` → `b6ffec1`, then
+`417e966` (legend + phone-width labels): PASS both, three.js absent from the entry chunk. One stop on
+the way — the box has no bun and `package-lock.json` was untracked, so `npm ci --silent` failed
+silently (TD-S92-NEW-6). Promoted from the checked commit with no pull; previous live kept at
+`/var/www/marketview.bak-1deeb87`.
 
 **Always:** verify `/staging/` in a browser against figures measured from SQL before promoting; a
 browser check also caught what the guard cannot (CSS `uppercase` turning ∂Δ/∂t into ∂Δ/∂T).

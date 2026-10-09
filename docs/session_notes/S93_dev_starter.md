@@ -28,12 +28,9 @@ Folder `docs/research/s92_priority/p1/` — read its `README.md` table first.
 
 ## 2. S92-J — the optional 3D view
 
-1. Apply `sql/2026-10-09_s92_v_gex_strike_terrain.sql` Sections 1–3; run 4a, 4b, 4c, 4d **each alone**.
-   PASS: anon reads 14 sessions per symbol; 4b well under 1 s; 4c `mismatched = 0`; 4d anon=r and
-   merdian_ro=r only.
-2. ACL fingerprint → note BASE → paste `docs/lovable_prompts/s92/lovable_prompt_lab3d_optional.md`
-   → `bash ~/mv_lovable_guard_lab3d.sh <BASE>` → ACL fingerprint again → read `/staging/board/3d`
-   against the view → promote. Closes TD-S92-NEW-2.
+**DONE 2026-10-09 (S92 post-close)** — live at `meridian-connect` `417e966`; TD-S92-NEW-2 resolved.
+Residuals: TD-S92-NEW-6 (box install path); delete `/var/www/marketview.bak-1deeb87` once live has
+run a full session.
 
 ## 3. Verifications owed (none recorded as done)
 

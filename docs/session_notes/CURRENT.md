@@ -17,9 +17,10 @@ in the files named. Rulings: `docs/research/s92_parity/rulings_s92.md` (S92-A…
 `0c36c7e` TD-S91-NEW-15, -13, -14 · `f60708d` / `0eceee1` / `bd91d27` / `146a324` `core/ts_parse.py`
 and TD-S91-NEW-2 site 7 / TD-S91-NEW-6 · `5f51231` S92-C…F + `v_pin_board` · `8853539` ADR-025 C7/C8 ·
 `e85cf7a` R2.4 · **`579d273` ADR-025 Amendment D — parity CLOSED** · `1606305` S92-I · `b70a025` /
-`698dc93` P1 pre-registration, SQL and scorer · `a34a312` S92-J · this close.
-**meridian-connect:** `5563bb7` Pin/Flows design pass · **`1deeb87` L13 bind — live** · branch
-`lab-3d` `78fb26e` (the 3D experiment, not on `main`).
+`698dc93` P1 pre-registration, SQL and scorer · `a34a312` S92-J · `eb69ac4` close · **post-close
+delta:** `9f7cc30` / `e9f65fd` view fixes and live verification · this delta (S92-J live).
+**meridian-connect:** `5563bb7` Pin/Flows design pass · `1deeb87` L13 bind · **`417e966` optional 3D view —
+live 2026-10-09 ~11:20 IST** (S92-J; base `1deeb87`; rollback copy `/var/www/marketview.bak-1deeb87`).
 
 **What was established**
 
@@ -46,23 +47,36 @@ and TD-S91-NEW-2 site 7 / TD-S91-NEW-6 · `5f51231` S92-C…F + `v_pin_board` ·
    `git hash-object 7a708a64…`) with SQL and scorer committed before any outcome query. Part 1
    passed: **N = 85 NIFTY / 84 SENSEX**, split fixed at 2026-08-26 / 08-27, no grid, spot or expiry
    failures, no contamination range. **Part 3 and Part 2 are owed after 15:40 IST.**
-6. **S92-J — the 3D view, optional.** `v_gex_strike_terrain` authored (settled run per session,
-   NULL `gex_cr` where no gamma, ENH-123 pain by running sums); on a synthetic fixture: max pain
-   28/28 against `gex_pin_maxpain_history`, ACL anon=r / merdian_ro=r, 90 ms. Lovable prompt and a
-   one-time guard that fails if three.js reaches the 2D bundle. **Not yet applied.**
+6. **S92-J — the 3D view, optional, LIVE** (`meridian-connect` `417e966`, ~11:20 IST 10-09).
+   `v_gex_strike_terrain` applied and verified live: 14 sessions per symbol as anon; pain curve
+   equal to ENH-123 `v_gex_max_pain` strike for strike (NIFTY 54 / SENSEX 85, 0 mismatches); ACL
+   anon=r / merdian_ro=r. Lovable round under `mv_lovable_guard_lab3d.sh 1deeb87`: guard PASS (one
+   read of the view, no raw-table reads, three.js absent from the 672 KB entry chunk); **ACL
+   fingerprint identical before and after** (relations 344, anon_public_privs 250,
+   anon_writable_objs 0); `/staging/` read against SQL — 14 sessions 09-21 → 10-09, peak |γ|
+   5,802,384 / 6,344,113, expiry days, NULL holes (28 / 75 cells), max pain 22500 / 72400 on the
+   10:55 run — all equal; 375 px no sideways scroll; legend "optional view". Promoted from the
+   checked commit with no pull. **Closes TD-S92-NEW-2.** Install snag filed as TD-S92-NEW-6.
 
 **Corrections to my own work.** The P1 Part 2 extract was committed as one statement that took
 **49 s** on a fixture; it was rebuilt on temp tables (**3 s, identical output**) **before** it was run
 against the database. A side-chat candidate list carried L7/L8 as "not started" the morning they
 went live; corrected against ADR-025 C7 before it reached the tracker. The P1 pre-registration's
 leader tie-break differs from `v_gex_strike_rank`'s **on exact ties only**; recorded in
-`p1/README.md`, and Part 2 reports `ties_at_rank3`.
+`p1/README.md`, and Part 2 reports `ties_at_rank3`. **Post-close:** the first live apply of
+`v_gex_strike_terrain` showed **13** sessions (10-02, a holiday with no calendar row and only a 15:40
+run, was ranked) — fixed to rank only dates with a settled run (`9f7cc30`, TD-S92-NEW-5); check 4c
+compared nothing live (`gex_pin_maxpain_history` ends 09-18) and was replaced by an ENH-123
+comparison, and the fixture-only "28/28" claim corrected in ENH-139 (`e9f65fd`); a guard hash was
+stated before it was computed and corrected in chat (actual `09979feaf0f5145a`).
 
 **Registers touched:** ADR-025 (Amendments C and D), Decision Index, `rulings_s92.md` (S92-A…J),
 roadmap §2.1 and R2.4, Enhancement Register (clause-3 rows; **ENH-139** filed for S92-J),
 `tech_debt.md` (TD-S92-NEW-1…4; S92 status on TD-S91-NEW-2, -6, -13, -14, -15),
 `merdian_reference.json` **v71**, `CLAUDE.md` **v1.65**, `CURRENT_history.md` (S90 moved),
-`session_log.md`, **S93 starter**.
+`session_log.md`, **S93 starter**. **Post-close delta:** CURRENT, session_log, `tech_debt.md`
+(TD-S92-NEW-2 → Resolved; TD-S92-NEW-5, -6), ENH-139 → LIVE, `rulings_s92.md` S92-J, reference
+`_s92_addendum.post_close_delta`, `CLAUDE.md` footer, S93 starter §2, `lovable_prompts/s92/README.md`.
 
 ## NEXT SESSION PICKS UP
 
@@ -71,9 +85,8 @@ roadmap §2.1 and R2.4, Enhancement Register (clause-3 rows; **ENH-139** filed f
 1. **P1, today after 15:40 IST** — Part 3 (`p1_part3_replay_check.sql`, expect zero rows), then
    Part 2 as one execution, export JSON → `p1_score.py` → result doc → **the S92-I decision point**
    (if the levels do not beat the null, P2–P8 are re-planned before more is built).
-2. **S92-J** — apply `sql/2026-10-09_s92_v_gex_strike_terrain.sql` §1–3, run §4a–4d each alone;
-   then ACL fingerprint, BASE, the Lovable prompt, `mv_lovable_guard_lab3d.sh`, a `/staging/` read
-   against the view, promote. Closes TD-S92-NEW-2.
+2. **S92-J — DONE** (live `417e966`; TD-S92-NEW-2 resolved). Residuals: TD-S92-NEW-6 (box install
+   path); delete `/var/www/marketview.bak-1deeb87` once live has run a full session.
 3. **Verifications owed — none is recorded as done:**
 
    | Check | PASS looks like | Closes |
@@ -90,7 +103,9 @@ roadmap §2.1 and R2.4, Enhancement Register (clause-3 rows; **ENH-139** filed f
    the DEX standing book P6 and the flow leg P7, design notes for P2 / P4) **wait on P1** — operator
    sequencing, 2026-10-09.
 6. **TD-S92-NEW-1** (*"contracts"* wording — a Lovable layout pass) · **-3** (cited probe missing from
-   git) · **-4** (`authenticated` privileges on the S92 views; S92-J's view already revokes them).
+   git) · **-4** (`authenticated` privileges on the S92 views; S92-J's view already revokes them) ·
+   **-5** (no `trading_calendar` row for 10-02 — one-row insert, operator's call) · **-6** (box has no
+   bun; guards' `npm ci --silent` hides install failures).
 7. **Dated:** ~Tue 2026-10-13 drop the S90-H backup tables (TD-S90-NEW-11).
 8. **Carried:** TD-S91-NEW-2 sites 1, 3, 4, 5, 6 → adopt `core.ts_parse` · TD-S91-NEW-3 08:40 IST
    Zerodha preflight (design agreed, not built) · TD-S80-NEW-1 NIFTY L9 stage-1 arm.

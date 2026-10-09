@@ -157,7 +157,7 @@ Sortable table of all 122 IDs. For full detail see Part 4.
 | ENH-136 | `sql_guard.sh` - pre-flight for ad-hoc SQL: write-verb scan, quote-pair balance, wall-clock-function scan, day-bound check on correlated laterals | — | **PROPOSED (S88 — tier not assigned, operator to rule)** |
 | ENH-137 | `sql-reviewer` subagent, SHADOW ONLY per ADR-029 - review generated SQL for the sql_guard classes plus unbounded laterals and position-indexed column refs | — | **PROPOSED (S88 — tier not assigned, operator to rule)** |
 | ENH-138 | Move-forensics skill - package the S88 cohort/bucket/as-of/leave-one-out pipeline with both confound exclusions as defaults | — | **PROPOSED (S88 — tier not assigned, operator to rule)** |
-| ENH-139 | Optional 3D view read surface - `v_gex_strike_terrain`: settled run per session x strike for the 14 newest sessions, with ENH-123 writer pain, for Marketview `/board/3d` | display | **APPLIED + VERIFIED 2026-10-09 (S92, ruling S92-J)** - 14 sessions per symbol as anon; full pain curve equal to ENH-123 on the same run (NIFTY 54 / SENSEX 85 strikes, 0 mismatches). Consumer not yet built. `sql/2026-10-09_s92_v_gex_strike_terrain.sql`. Not a parity layer. Fixture: max pain 28/28 vs `gex_pin_maxpain_history`, ACL anon=r/merdian_ro=r, 90 ms. Consumer: `docs/lovable_prompts/s92/lovable_prompt_lab3d_optional.md` under `mv_lovable_guard_lab3d.sh`. Closes TD-S92-NEW-2 when live. |
+| ENH-139 | Optional 3D view read surface - `v_gex_strike_terrain`: settled run per session x strike for the 14 newest sessions, with ENH-123 writer pain, for Marketview `/board/3d` | display | **LIVE 2026-10-09 (S92, ruling S92-J)** - consumer Marketview `/board/3d`, `meridian-connect` `417e966`. 14 sessions per symbol as anon; full pain curve equal to ENH-123 on the same run (NIFTY 54 / SENSEX 85 strikes, 0 mismatches). `sql/2026-10-09_s92_v_gex_strike_terrain.sql`. Not a parity layer. Fixture: max pain 28/28 vs `gex_pin_maxpain_history`, ACL anon=r/merdian_ro=r, 90 ms. Consumer: `docs/lovable_prompts/s92/lovable_prompt_lab3d_optional.md` under `mv_lovable_guard_lab3d.sh`. Closed TD-S92-NEW-2. |
 | ENH-SDM | Structural Divergence Monitor (ADR-018 D4) | context | **PROPOSED** |
 
 ## Part 2 -- Active Work (not yet delivered or under monitoring)
@@ -4514,7 +4514,7 @@ TD-S80-NEW-7, TD-S80-NEW-8 · commit `85dfad2`.
 **Stated plainly: it packages a method that returned a NEGATIVE result** (§5.6). Its value is making the next question cheap, not the answer it produced. **Any version must carry the two confound exclusions as defaults** — price levels are not comparable across days at different index levels, and a window re-anchored to spot cannot be differenced across time — or it will reproduce the first pass's errors.
 
 
-### ENH-139 — `v_gex_strike_terrain`, the read surface for the optional 3D view (AUTHORED 2026-10-09, S92)
+### ENH-139 — `v_gex_strike_terrain`, the read surface for the optional 3D view (LIVE 2026-10-09, S92)
 
 **Why.** The operator's 3D experiment (`meridian-connect` branch `lab-3d`, `78fb26e`) drew its γ terrain
 and pain bowl from **~29 raw reads per load** — `trading_calendar` plus two `gex_strike_snapshots`
@@ -4537,8 +4537,11 @@ strike), checked against `gex_pin_maxpain_history`, an independently written sto
 — it does **not** repeat TD-S92-NEW-4.
 
 **Not a parity layer** (ADR-025 D5) and display-only (S37). **Status: APPLIED and VERIFIED 2026-10-09** (14 sessions per symbol; pain curve equal to ENH-123 strike for strike on the same run; a first cut ranked a holiday date with only a 15:40 run and showed 13 — fixed the same morning, TD-S92-NEW-5). **Earlier fixture claim corrected:** the "28 / 28 against `gex_pin_maxpain_history`" was true only on the synthetic fixture; live, that table is an S80 one-time backfill ending 2026-09-18 and matches none of the 14 sessions, so the live check is against ENH-123 instead. Applied
-and verified by Section 4 of its own file; live when the Lovable round passes `mv_lovable_guard_lab3d.sh`
-and `/staging/` is read against the view.
+and verified by Section 4 of its own file. **LIVE 2026-10-09 ~11:20 IST** at Marketview `/board/3d`
+(`meridian-connect` `417e966`): `mv_lovable_guard_lab3d.sh 1deeb87` PASS, three.js absent from the
+2D entry chunk, ACL fingerprint identical before and after, and `/staging/` read against this view —
+sessions, peak |γ| (5,802,384 / 6,344,113), expiry days, NULL holes (28 / 75), max pain (22500 /
+72400 on the 10:55 run) — all equal.
 
 *Part 4 (Session 80) — 2026-09-22. Two enhancements shipped, both L19 extensions rather than parity
 layers, both unrendered. **Enhancement Register TRIGGERED** for a second consecutive session after
@@ -4554,4 +4557,4 @@ nine non-triggers ending at S79.*
 
 *Part 6 (Session 90 / AM-1) — 2026-10-05, closed 2026-10-06. **No new ENH id minted.** ENH-133 moved from "DDL applies Monday" to **LIVE** (applied, writer wired, reconciler scheduled, front leg only by ruling S90-B); its tier is **still operator-to-assign**. The session's other work is the agentic layer's Stage 0, tracked under roadmap-local IDs (R0.1…R2.1) in `docs/research/s90_agentic/agentic_layer_roadmap_S90.md` — the roadmap's own rule is that an item becomes an ENH or TD entry only when it is ruled in, and none of the S90 items needed an ENH id to be built. Part 1's count is unchanged and not re-derived this session.*
 
-*Part 7 (Session 92) — 2026-10-08 → 10-09. **One new ENH id minted: ENH-139** (S92-J, the optional 3D view's read surface), checked free — highest prior ENH-138. The session's other register work is the **ADR-025 clause-3 text** on ENH-98/120/121/122/125/126/127/130/131/132/133 (`8853539`). **Parity closed** (ADR-025 Amendment D). The post-parity track (S92-I) mints **no** ENH ids yet: the DEX standing book (P6) and the flow leg (P7) are filed when P1 returns, by operator sequencing.*
+*Part 7 (Session 92) — 2026-10-08 → 10-09. **One new ENH id minted: ENH-139** (S92-J, the optional 3D view's read surface), checked free — highest prior ENH-138. The session's other register work is the **ADR-025 clause-3 text** on ENH-98/120/121/122/125/126/127/130/131/132/133 (`8853539`). **Parity closed** (ADR-025 Amendment D). The post-parity track (S92-I) mints **no** ENH ids yet: the DEX standing book (P6) and the flow leg (P7) are filed when P1 returns, by operator sequencing. **Post-close:** ENH-139 moved APPLIED → **LIVE** (`417e966`).*

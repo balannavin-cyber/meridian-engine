@@ -1,8 +1,20 @@
--- P1 level test — Part 2: per-session extract. READ-ONLY. THIS QUERY RETURNS OUTCOMES (hi, lo).
--- Run only after Part 3 (the replay check) has returned zero rows, and only once this file and
--- p1_score.py are committed. Pre-registration: docs/research/s92_priority/P1_level_test_prereg_2026-10-09.md
--- (git hash-object 7a708a64c4bb73f0712a6d6e78f92a5d411a8ece). Eligibility CTEs are Part 1b verbatim
--- (plus run_id carried in cls). Output: one row per (symbol, session, anchor); export as JSON.
+-- P1 level test — Part 2: per-session extract. THIS SCRIPT RETURNS OUTCOMES (hi, lo).
+-- Run only after Part 3 (the replay check) has returned zero rows. Pre-registration:
+-- docs/research/s92_priority/P1_level_test_prereg_2026-10-09.md (git hash-object 7a708a64c4bb73f0…).
+--
+-- Run the WHOLE file as ONE execution: it builds three TEMP tables (session-scoped; nothing persistent
+-- is written), ANALYZEs them, and the editor shows the last statement — the extract. Export it as JSON.
+--
+-- Revised 2026-10-09 BEFORE any run against the database, for cost only: the committed single-statement
+-- form took ~49 s on a synthetic fixture (correlated front-expiry subqueries, and CTE row estimates of 1
+-- driving 380 x 45,980 nested loops). Temp tables give the planner real counts. Same rules, same
+-- columns; equality with the committed form was asserted on the fixture (identical JSON).
+-- Eligibility = Part 1b's rule (front expiry by join, not correlated subquery); p1_score.py asserts
+-- N and n_cal against Part 1b's recorded result before scoring.
+
+DROP TABLE IF EXISTS p1_el, p1_anchors, p1_arows;
+
+CREATE TEMP TABLE p1_el AS
 WITH cal AS (
     SELECT tc.trade_date AS session_date
       FROM trading_calendar tc
@@ -33,14 +45,16 @@ WITH cal AS (
            count(DISTINCT spot)        AS n_spot,      -- §6.4
            count(DISTINCT expiry_date) AS n_expiry     -- §6.5
       FROM runrows GROUP BY 1, 2
-), stp AS (                      -- §6.3 grid step, front expiry
+), fexp AS (                    -- front expiry per t0 run: nearest expiry_date >= session date
+    SELECT symbol, session_date, min(expiry_date) AS front_expiry
+      FROM runrows WHERE expiry_date >= session_date GROUP BY 1, 2
+), stp AS (                      -- §6.3 grid step, front expiry (Part 1b rule; join instead of correlated subquery)
     SELECT symbol, session_date, min(d) AS step
       FROM (SELECT r.symbol, r.session_date,
                    r.strike - lag(r.strike) OVER (PARTITION BY r.symbol, r.session_date ORDER BY r.strike) AS d
               FROM runrows r
-             WHERE r.expiry_date = (SELECT min(r2.expiry_date) FROM runrows r2
-                                     WHERE r2.symbol = r.symbol AND r2.session_date = r.session_date
-                                       AND r2.expiry_date >= r.session_date)) q
+              JOIN fexp e ON e.symbol = r.symbol AND e.session_date = r.session_date
+             WHERE r.expiry_date = e.front_expiry) q
      WHERE d > 0 GROUP BY 1, 2
 ), iv AS (                       -- §4.3 latest atm_iv_avg <= t0
     SELECT t.symbol, t.session_date, v.ts AS iv_ts
@@ -78,40 +92,51 @@ WITH cal AS (
            floor(0.67 * count(*) FILTER (WHERE c.drop_reason IS NULL) OVER (PARTITION BY c.symbol))::int AS n_cal
       FROM cls c
 )
-, anchors AS (                   -- t0 (primary) and the 10:15 run (§5.9, descriptive)
-    SELECT e.symbol, e.session_date, e.sess_ix, e.n_cal, 't0'::text AS anchor, e.run_id, e.t0 AS ats
-      FROM el e WHERE e.drop_reason IS NULL
-    UNION ALL
-    SELECT e.symbol, e.session_date, e.sess_ix, e.n_cal, 't1015', r.run_id, r.ts
-      FROM el e
-      CROSS JOIN LATERAL (
-           SELECT x.run_id, x.ts FROM gex_strike_snapshots x
-            WHERE x.symbol = e.symbol
-              AND x.ts >= (e.session_date + TIME '10:15') AT TIME ZONE 'Asia/Kolkata'
-              AND x.ts <  (e.session_date + TIME '11:15') AT TIME ZONE 'Asia/Kolkata'
-            ORDER BY x.ts LIMIT 1) r
-     WHERE e.drop_reason IS NULL
-), arows AS (                    -- the anchor run's rows, front expiry
+SELECT * FROM el;
+
+CREATE TEMP TABLE p1_anchors AS   -- t0 (primary) and the 10:15 run (§5.9, descriptive)
+SELECT e.symbol, e.session_date, e.sess_ix, e.n_cal, 't0'::text AS anchor, e.run_id, e.t0 AS ats
+  FROM p1_el e WHERE e.drop_reason IS NULL
+UNION ALL
+SELECT e.symbol, e.session_date, e.sess_ix, e.n_cal, 't1015', r.run_id, r.ts
+  FROM p1_el e
+  CROSS JOIN LATERAL (
+       SELECT x.run_id, x.ts FROM gex_strike_snapshots x
+        WHERE x.symbol = e.symbol
+          AND x.ts >= (e.session_date + TIME '10:15') AT TIME ZONE 'Asia/Kolkata'
+          AND x.ts <  (e.session_date + TIME '11:15') AT TIME ZONE 'Asia/Kolkata'
+        ORDER BY x.ts LIMIT 1) r
+ WHERE e.drop_reason IS NULL;
+
+CREATE TEMP TABLE p1_arows AS     -- the anchor run's rows, front expiry
+WITH allrows AS (
     SELECT a.symbol, a.session_date, a.anchor, x.expiry_date, x.dte, x.strike, x.spot,
            x.oi_call, x.oi_put, x.gex_cr
-      FROM anchors a
+      FROM p1_anchors a
       JOIN gex_strike_snapshots x
         ON x.symbol = a.symbol AND x.run_id = a.run_id
        AND x.ts >= a.ats AND x.ts < a.ats + interval '5 minutes'
-     WHERE x.expiry_date = (SELECT min(x2.expiry_date) FROM gex_strike_snapshots x2
-                             WHERE x2.symbol = a.symbol AND x2.run_id = a.run_id
-                               AND x2.ts >= a.ats AND x2.ts < a.ats + interval '5 minutes'
-                               AND x2.expiry_date >= a.session_date)
-), ahdr AS (
+), fx AS (
+    SELECT symbol, session_date, anchor, min(expiry_date) AS front_expiry
+      FROM allrows WHERE expiry_date >= session_date GROUP BY 1, 2, 3
+)
+SELECT r.* FROM allrows r
+  JOIN fx USING (symbol, session_date, anchor)
+ WHERE r.expiry_date = fx.front_expiry;
+
+ANALYZE p1_anchors;
+ANALYZE p1_arows;
+
+WITH ahdr AS (
     SELECT a.symbol, a.session_date, a.anchor, a.sess_ix, a.n_cal, a.ats,
            max(r.spot) AS s0, max(r.dte) AS dte, max(r.expiry_date) AS expiry_date
-      FROM anchors a JOIN arows r USING (symbol, session_date, anchor)
+      FROM p1_anchors a JOIN p1_arows r USING (symbol, session_date, anchor)
      GROUP BY 1, 2, 3, 4, 5, 6
 ), astep AS (
     SELECT symbol, session_date, anchor, min(d) AS step
       FROM (SELECT symbol, session_date, anchor,
                    strike - lag(strike) OVER (PARTITION BY symbol, session_date, anchor ORDER BY strike) AS d
-              FROM arows) q
+              FROM p1_arows) q
      WHERE d > 0 GROUP BY 1, 2, 3
 ), asig AS (                     -- §3 walls rule as of the anchor; §5.3 one-day sigma
     SELECT h.*, st.step, v.atm_iv_avg AS iv0,
@@ -129,7 +154,7 @@ WITH cal AS (
     SELECT g.symbol, g.session_date, g.anchor,
            (array_agg(r.strike ORDER BY r.oi_call DESC, r.strike) FILTER (WHERE r.oi_call > 0))[1] AS cw,
            (array_agg(r.strike ORDER BY r.oi_put  DESC, r.strike) FILTER (WHERE r.oi_put  > 0))[1] AS pw
-      FROM asig g JOIN arows r USING (symbol, session_date, anchor)
+      FROM asig g JOIN p1_arows r USING (symbol, session_date, anchor)
      WHERE g.sigma_w > 0 AND abs(r.strike - g.s0) <= g.band * g.sigma_w
      GROUP BY 1, 2, 3
 ), ldr AS (                     -- top 3 by |gex_cr|; ties: nearer spot, then lower strike (§3)
@@ -141,7 +166,7 @@ WITH cal AS (
       FROM (SELECT r.symbol, r.session_date, r.anchor, r.strike,
                    row_number() OVER w AS rk,
                    (abs(r.gex_cr) = lead(abs(r.gex_cr)) OVER w AND row_number() OVER w = 3) AS tie_at_3
-              FROM arows r JOIN asig g USING (symbol, session_date, anchor)
+              FROM p1_arows r JOIN asig g USING (symbol, session_date, anchor)
              WHERE r.gex_cr <> 0
             WINDOW w AS (PARTITION BY r.symbol, r.session_date, r.anchor
                          ORDER BY abs(r.gex_cr) DESC, abs(r.strike - g.s0), r.strike)) q
@@ -154,7 +179,7 @@ WITH cal AS (
                ORDER BY CASE m.source_table WHEN 'dhan_charts_intraday' THEN 0
                                             WHEN 'dhan_idx_i'           THEN 1 ELSE 2 END,
                         m.ts DESC) AS rk
-      FROM anchors a
+      FROM p1_anchors a
       JOIN market_spot_snapshots m
         ON m.symbol = a.symbol AND m.spot IS NOT NULL
        AND m.ts > a.ats

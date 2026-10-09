@@ -4,10 +4,10 @@ Pre-registration: `../P1_level_test_prereg_2026-10-09.md` (git hash-object `7a70
 
 | step | file | reveals outcome? | state |
 |---|---|---|---|
-| 1a Rule 13 | `p1_part1_eligibility.sql` (1a) | no | result owed |
+| 1a Rule 13 | `p1_part1_eligibility.sql` (1a) | no | **run 2026-10-09 09:32 IST: no rows** — no contamination range overlaps the study window |
 | 1b eligibility, grid, one spot, front expiry, split | `p1_part1_eligibility.sql` (1b) | no | **run 2026-10-09 09:23 IST** → `part1b_result_2026-10-09_0923.json`: NIFTY N 85 (cal 56 to 08-26), SENSEX N 84 (cal 56 to 08-27); grid failures none; multi-spot 0; multi-expiry 0 |
 | 3 replay check (§6.6) | `p1_part3_replay_check.sql` | no | run after 15:40 IST; expect zero rows |
-| 2 extract | `p1_part2_extract.sql` | **yes** (hi, lo) | run only after 1a and 3 pass; export JSON |
+| 2 extract | `p1_part2_extract.sql` | **yes** (hi, lo) | run only after 1a and 3 pass; **run the whole file as one execution** (temp tables); export JSON |
 | score | `p1_score.py <extract.json>` | — | stdlib; asserts N and n_cal against 1b before scoring |
 
 This folder (SQL and scorer) is committed **before** Part 2 is run, so the code that reads the outcome is
@@ -19,3 +19,11 @@ Implementation notes, stated against the pre-registration:
   |gex_cr| desc, lower strike. Both differ from the views **only on exact ties**; Part 2 reports
   `ties_at_rank3`, and Part 3 would show any difference on the latest run.
 - t1015 (§5.9, descriptive) = first run in [10:15, 11:15) IST; its path starts after that run.
+
+**Part 2 revised 2026-10-09, before any run against the database (cost only).** The committed single-statement
+form took ~49 s on a synthetic fixture (97 sessions, 330k strike rows): correlated front-expiry subqueries and
+CTE row estimates of 1 driving 380 x 45,980 nested loops. It is now three TEMP tables (session-scoped, nothing
+persistent) plus the final SELECT: ~3 s on the same fixture, and its JSON output was asserted **identical** to the
+committed form's. Rules and columns unchanged. Fixture checks also run: Part 1 and Part 3 execute; Part 3 **fails
+when it should** (a band parameter changed after the run produces a `walls` row) and returns zero rows otherwise;
+the scorer's N / n_cal assertion fires on a fixture whose N differs from Part 1b.

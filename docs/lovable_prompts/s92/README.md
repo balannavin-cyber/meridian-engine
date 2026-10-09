@@ -13,6 +13,8 @@ to the public repo, TD-S39-NEW-3; S40: guessed column names). Recorded in ADR-02
 | `baseline_pin_flows_2026-10-09.json` | 32 exact strings captured from live before the pass; staging was read against them. | Data frozen until 09:15 IST. |
 | `l13_measure.sql` | M1 anon EXPLAIN · M2 per-symbol summary · M3 top-5 \|Δ\| per side. **Run each block on its own** — the editor shows only the last statement's result. | Before the L13 prompt. |
 | `lovable_prompt_l13_rotation.md` | L13 bind of `v_oi_rotation_since_open` (S92-G), SENSEX withheld (S92-H). | Base `5563bb7` → live `1deeb87`. |
+| `lovable_prompt_lab3d_optional.md` | Optional 3D view at `/board/3d` reading `v_gex_strike_terrain` (S92-J). | After the view passes Section 4 live. |
+| `mv_lovable_guard_lab3d.sh` | **One-time** guard for S92-J: allows exactly `three`, `@react-three/fiber`, `@react-three/drei`, `@types/three`, the lazy `/board/3d` route, `Lab3D.tsx`, `terrain.ts`; one read of `v_gex_strike_terrain`; no raw-table reads; **fails if three.js lands in the entry chunk**. | `bash ~/mv_lovable_guard_lab3d.sh <BASE>` |
 
 **Guard checks (any one fails the build):** a path outside the allowlist (`src/pages/Board.tsx`,
 `src/components/board/**`, `roadmap.md`, plus `src/lib/board.ts` only when a view is named); a

@@ -89,7 +89,7 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Component** | `meridian-connect` branch **`lab-3d`** (tip `78fb26e`): `src/pages/Lab3D.tsx`, `src/lib/terrain.ts`, the `/board/3d` route in `src/App.tsx`, packages `three`, `@react-three/fiber`, `@react-three/drei`, `@types/three` |
 | **Measured** | The S92 guard (`mv_lovable_guard.sh e3fc3d3`) failed on: paths outside the allowlist (`package.json`, `bun.lock`, `src/App.tsx`, `src/lib/terrain.ts`, `src/pages/Lab3D.tsx`) and three added reads — `supabase.from("trading_calendar")`, and two `supabase.from("gex_strike_snapshots")` — made from `src/lib/terrain.ts`. ACL fingerprint before and after: **identical**, so the database was not changed. |
 | **Proper fix** | Before any merge: route the reads through a view in the `v_pin_board` pattern (S92-D) with its DDL under `sql/`; measure it as `anon` inside the 3 s `statement_timeout`; review the four packages; build on `/staging/` under the guard. It is **outside parity** (ADR-025 D5) and is not a parity condition. |
-| **Status** | **OPEN — parked by operator choice.** |
+| **Status** | **OPEN — fix authored (S92-J, 2026-10-09).** Ruling S92-J publishes the view as optional at `/board/3d` on exactly the proper-fix terms: one view `v_gex_strike_terrain` (`sql/2026-10-09_s92_v_gex_strike_terrain.sql`, replaces both raw reads and the client max-pain recompute), lazy route, one-time guard `docs/lovable_prompts/s92/mv_lovable_guard_lab3d.sh`. **Closes** when the view passes Section 4 live, the guard passes, and `/staging/` is read against the view. |
 
 ### TD-S92-NEW-3 (S3 priority) — `sql/2026-10-03_s89_v_gex_greeks_l2.sql` says its V2 probe is "committed with this file", and it is not in git
 

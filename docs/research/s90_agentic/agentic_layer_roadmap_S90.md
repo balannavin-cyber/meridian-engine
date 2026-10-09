@@ -92,7 +92,7 @@ says otherwise. Risk classes and the §11.3 controls apply as for any other item
 
 | ID | Item | Risk | Builds on / absorbs | Exit evidence | Status | Session |
 |---|---|---|---|---|---|---|
-| **P1** | **Level test** — how often the day's high / low lands within X pts (or Yσ) of a top-3 positive-γ strike, the pin, or a wall, against a null of random strikes at the same distance | RO | `gex_strike_snapshots` (from 2026-05-25), ADR-009 | Pre-registration committed **before** the first query; result table with the null | **IN PROGRESS** — pre-registered `docs/research/s92_priority/P1_level_test_prereg_2026-10-09.md` (accepted 09:16 IST); not run | S92 |
+| **P1** | **Level test** — how often the day's high / low lands within X pts (or Yσ) of a top-3 positive-γ strike, the pin, or a wall, against a null of random strikes at the same distance | RO | `gex_strike_snapshots` (from 2026-05-25), ADR-009 | Pre-registration committed **before** the first query; result table with the null | **DONE — A-NIFTY NO, B-NIFTY NO (levels do not beat the null); result doc `docs/research/s92_priority/P1_level_test_result_2026-10-09.md`** (pre-registration `docs/research/s92_priority/P1_level_test_prereg_2026-10-09.md`, hash `7a708a64c4bb73f0712a6d6e78f92a5d411a8ece`, accepted 09:16 IST) | S93 |
 | **P2** | **Dealer-side check** — the dealer-short assumption behind every exposure sign, tested daily against NSE participant-wise OI (client / pro / FII / DII) | RO | ENH-115 (`participant_oi_daily`), Assumption Register | Per-day agreement table; register row updated | NOT STARTED | |
 | **P3** | **Invariants and independent recompute** | SC | **= R2.2 + R2.3** (§3 Stage 2; their rows carry the status) | As R2.2 and R2.3 | NOT STARTED | |
 | **P4** | **Greeks evidence** — replay ∂Δ/∂σ and ∂Δ/∂t from 2026-05-25 (as R2.4 replayed γ), then a pre-registered test: does the sign of ∂Δ/∂t at 10:15 on expiry days predict the 10:15 → close direction? | RO | ENH-98 views, ENH-131 repricer, R2.4 replay method | Pre-registration; replay table; result. n ≈ 19 expiries per symbol, so **indicative** | NOT STARTED | |
@@ -104,6 +104,9 @@ says otherwise. Risk classes and the §11.3 controls apply as for any other item
 **Decision points.** After **P1**: if the levels do not beat the null, the operator re-plans everything
 below before more is built. After **P4**: if ∂Δ/∂t does not predict, **P8 is DECLINED-ON-EVIDENCE**
 and ∂Δ/∂σ / ∂Δ/∂t stay display-only.
+
+**2026-10-09: P1 returned NO on both arms; P2–P8 re-plan with operator pending. Nothing
+further built, including the P6 view apply, until that ruling.**
 
 **Order.** P1 → P2 → P3 → P4 → P5 → P6 → P7 → P8. P5 and P6 are independent of P1–P4 and may run
 alongside them. Estimated 10–15 sessions in total.

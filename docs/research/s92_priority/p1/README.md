@@ -6,9 +6,9 @@ Pre-registration: `../P1_level_test_prereg_2026-10-09.md` (git hash-object `7a70
 |---|---|---|---|
 | 1a Rule 13 | `p1_part1_eligibility.sql` (1a) | no | **run 2026-10-09 09:32 IST: no rows** — no contamination range overlaps the study window |
 | 1b eligibility, grid, one spot, front expiry, split | `p1_part1_eligibility.sql` (1b) | no | **run 2026-10-09 09:23 IST** → `part1b_result_2026-10-09_0923.json`: NIFTY N 85 (cal 56 to 08-26), SENSEX N 84 (cal 56 to 08-27); grid failures none; multi-spot 0; multi-expiry 0 |
-| 3 replay check (§6.6) | `p1_part3_replay_check.sql` | no | run after 15:40 IST; expect zero rows |
-| 2 extract | `p1_part2_extract.sql` | **yes** (hi, lo) | run only after 1a and 3 pass; **run the whole file as one execution** (temp tables); export JSON |
-| score | `p1_score.py <extract.json>` | — | stdlib; asserts N and n_cal against 1b before scoring |
+| 3 replay check (§6.6) | `p1_part3_replay_check.sql` | no | **PASS — operator-reported 2026-10-09 after 15:40 IST: Supabase SQL editor returned "Success. No rows returned"**, i.e. the zero-row symmetric difference §6.6 requires. The editor message is the whole of the evidence; no result file was exported |
+| 2 extract | `p1_part2_extract.sql` | **yes** (hi, lo) | **run 2026-10-09, after 1a and 3 passed**, whole file as one execution → `part2_extract_2026-10-09.json`, md5 `70be3c5218e497b8e1e583beba055de8`, 137,375 bytes, **338 rows**, **committed**. Provenance: the editor's JSON export, **re-serialised compact** (`json.dumps`, `separators=(',',':')`) for transfer to the box; same 338 rows and values — **the md5 is of this committed file, not of the editor download** |
+| score | `p1_score.py <extract.json>` | — | **run 2026-10-09 ~19:50 IST, exit 0** → result doc `../P1_level_test_result_2026-10-09.md`. **Verdict (§5.8): A-NIFTY NO, B-NIFTY NO — the levels do not beat the null.** The N / n_cal assertion against 1b passed (NIFTY 85 / 56, SENSEX 84 / 56) |
 
 This folder (SQL and scorer) is committed **before** Part 2 is run, so the code that reads the outcome is
 fixed before the outcome exists. The scorer was exercised only on synthetic data (`synth/` is not committed).

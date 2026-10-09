@@ -35,7 +35,7 @@
  Stage 0  SPINE: contracts · status · provenance · ledger · as_of      ▼ foundation
 ```
 
-Stages 0–2 serve parity directly (admission by ruling A-5). Stages 3+ are post-parity. **Amended S92-A (2026-10-08):** parity now closes on ADR-025 D1 + the P6 render pass, not at the Stage 2 exit; of Stage 2 only R2.4 stays inside parity (`docs/research/s92_parity/rulings_s92.md`). Stage 3 and Stage 4 can run in parallel. Stage 3b (global context: SPX, crude, US 10Y, US 30Y) starts after R0.8, R1.8 and R1.9, and its admission into the state vector waits for the Stage 4 event study (R3.12).
+Stages 0–2 serve parity directly (admission by ruling A-5). Stages 3+ are post-parity. **Amended S92-A (2026-10-08):** parity now closes on ADR-025 D1 + the P6 render pass, not at the Stage 2 exit; of Stage 2 only R2.4 stays inside parity (`docs/research/s92_parity/rulings_s92.md`). **Parity CLOSED 2026-10-09** (ADR-025 Amendment D); the S92-A pause on harness work ends, and R2.2/R2.3/R2.5/R2.6 and Stages 3+ proceed as post-parity work. Stage 3 and Stage 4 can run in parallel. Stage 3b (global context: SPX, crude, US 10Y, US 30Y) starts after R0.8, R1.8 and R1.9, and its admission into the state vector waits for the Stage 4 event study (R3.12).
 
 ### 1.2 The four goals and what delivers each
 

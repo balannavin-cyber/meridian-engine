@@ -2,13 +2,13 @@
 
 | Field | Value |
 |---|---|
-| Status | **Accepted** |
+| Status | **Accepted** · **parity CLOSED 2026-10-09** (Amendment D) |
 | Date decided | 2026-09-21 |
 | Date documented | 2026-09-21 (Session 80) |
 | Session | Session 80 |
 | Supersedes | Nothing. First acceptance ruling for the Hedgewall parity programme. |
 | Related | **TD-S79-NEW-22 (D0)** — the entry that filed this decision · `MERDIAN_Hedgewall_Parity_Spec.md` (S78) · ENH-120 / ENH-121 / ENH-122 (S79) · ENH-123 / ENH-124 (S80, off-spec) · TD-S79-NEW-15…-21 (L3 measured and declined) · ADR-021 (latest-run scoping) · ADR-017 (console design) · ADR-009 (pre-registration) · ADR-016 (parameter calibration) · TD-S79-NEW-3 (`sql/` as a superseded rebuild source) · TD-080 (Dhan 429, S1-recurring) |
-| Amended | **Amendment A**, 2026-09-22 (Session 80) — what shipped against what was ruled; session self-corrections; D2 clause 4 registration status. Body text above is unchanged. · **Amendment B**, 2026-09-23 (Session 81) — **REVERSES part of Consequences**: rendering is deferred until every layer carries a disposition, so D2 clause 3 is suspended and BUILT stays 2 of 14 **by decision**. Also rules the deferral's scope (it does not block repairs to shipped surfaces), corrects the effort figure to **days, not weeks**, records the S81 dispositions, and corrects two A1 statements. D1–D5 are otherwise unchanged. · **Amendment C**, 2026-10-08 (Session 92) — **parity closes on D1 plus the P6 render pass** (ruling S92-A, amending S90-D); B1's suspension **spent** on its own trigger; clause-3 evidence measured from the live board (`meridian-connect` `255cca0`); **BUILT 9 of 14**, PENDING L7/L8/L12/L13, L11 DECLINED. **C6** (same session) records rulings S92-C…F. **C7–C8**, 2026-10-09 (Session 92, continued) — clause-3 evidence for L7/L8/L12/L13 read from the live board (`5563bb7`, `1deeb87`); L13 binds ENH-127 (S92-G), SENSEX L13 withheld as a D3 deviation (S92-H); **BUILT 13 of 14, PENDING 0, L11 DECLINED — D1 met**; only R2.4 and the P6 closing amendment remain. |
+| Amended | **Amendment A**, 2026-09-22 (Session 80) — what shipped against what was ruled; session self-corrections; D2 clause 4 registration status. Body text above is unchanged. · **Amendment B**, 2026-09-23 (Session 81) — **REVERSES part of Consequences**: rendering is deferred until every layer carries a disposition, so D2 clause 3 is suspended and BUILT stays 2 of 14 **by decision**. Also rules the deferral's scope (it does not block repairs to shipped surfaces), corrects the effort figure to **days, not weeks**, records the S81 dispositions, and corrects two A1 statements. D1–D5 are otherwise unchanged. · **Amendment C**, 2026-10-08 (Session 92) — **parity closes on D1 plus the P6 render pass** (ruling S92-A, amending S90-D); B1's suspension **spent** on its own trigger; clause-3 evidence measured from the live board (`meridian-connect` `255cca0`); **BUILT 9 of 14**, PENDING L7/L8/L12/L13, L11 DECLINED. **C6** (same session) records rulings S92-C…F. **C7–C8**, 2026-10-09 (Session 92, continued) — clause-3 evidence for L7/L8/L12/L13 read from the live board (`5563bb7`, `1deeb87`); L13 binds ENH-127 (S92-G), SENSEX L13 withheld as a D3 deviation (S92-H); **BUILT 13 of 14, PENDING 0, L11 DECLINED — D1 met**; only R2.4 and the P6 closing amendment remain. · **Amendment D**, 2026-10-09 (Session 92) — **closing amendment (P6): parity CLOSED**; R2.4 REPORTED (`e85cf7a`); D3 deviations at close (L7/L8 D-4, L12 pressure leg, SENSEX L13); the S92-A pause on harness work ends. |
 | Rule 10 class | **Programme scope and acceptance.** Governs a multi-session build. Mandatory ADR per Doc Protocol v4 Rule 10 and per TD-S79-NEW-22's own *Proper fix* clause. |
 
 ---
@@ -603,6 +603,71 @@ not gating). Nothing else in C5 is open. Follow-ups that are not parity conditio
 (*"contracts"* in the OI explanations), TD-S92-NEW-2 (`lab-3d` review), TD-S92-NEW-3 (a cited probe
 missing from git), TD-S92-NEW-4 (`authenticated` privileges on the S92 views).
 
+
+## Amendment D — 2026-10-09 (Session 92) — closing amendment (P6)
+
+*Appended without editing anything above. It records that parity is closed under the criterion C1
+set, the R2.4 report that C1 kept inside parity, and the D3 deviations standing at close. It rules
+nothing new. C8 remains the current disposition table.*
+
+### D1 — Parity is closed
+
+Ruling **S92-A** (C1) set three conditions. All three now hold:
+
+| condition (C1) | evidence |
+|---|---|
+| every one of the fourteen layers carries a final disposition | **C8**: BUILT 13 of 14, L11 DECLINED-ON-EVIDENCE, PENDING 0 |
+| the board renders every BUILT layer | **C3** (L1–L6, L9, L10, L14 at `255cca0`) and **C7** (L7, L8, L12, L13 at `5563bb7` / `1deeb87`), each read from the served bundle on the live board; live = `meridian-connect` **`1deeb87`** at close |
+| this ADR receives its closing amendment | this amendment |
+
+R2.4, which C1 kept inside parity as the D3 reference check, is **REPORTED** (D2 below).
+
+**Hedgewall parity is closed as at 2026-10-09.**
+
+### D2 — R2.4, reported (not gating)
+
+`docs/research/s92_parity/r24/README.md` (`meridian-engine` `e85cf7a`). **40 fixtures** from the
+reference dashboard's own screenshots (NIFTY 36, SENSEX 4), **199 field scores**, reference values
+read twice blind (186 of 199 identical, the rest formatting or column choice), MERIDIAN's side
+replayed by its own rules as of each anchor.
+
+| field | result |
+|---|---|
+| DTE | 19 of 19 |
+| Spot | 23 of 26 within 0.1 % |
+| Pin vs MERIDIAN leader | 11 exact, 9 more inside MERIDIAN's top 5 (20 of 26), 6 outside |
+| Net GEX sign | 17 of 21 (the four misses sit near the flip) |
+| Walls | 8 of 17 exact |
+| HHI | reference / MERIDIAN median **2.09** — the reference divides by a stated strike window, MERIDIAN by every strike in the run |
+| Flip | comparable only to the legacy `flip_level` (reference always lower, median 407 pts); the board's L3 flip has no fixture yet |
+| ± gamma peaks | unresolved, n = 8 |
+
+**No score is a BUILT condition and none reopens a disposition** (C1; D2 of this ADR). Turning any
+score into a gate still needs its own ruling.
+
+### D3 — D3 deviations standing at close
+
+Each is a place where MERIDIAN does not do what the reference does, with the stated reason ADR-025 D3
+requires:
+
+| layer | deviation | reason on record |
+|---|---|---|
+| L7, L8 | flow-vs-book split (D-4) not built; views badged *"PROVISIONAL — flow-vs-book (D-4) not built"* | its previous-close ΔOI input is PPC-1, parked post-parity (**S92-C, S92-E**) |
+| L12 | pin ranked on \|gamma\|, not on the reference's pressure key | ranked-pressure leg DECLINED-ON-EVIDENCE (D-5a, **S92-F**); R2.4 finding 1 shows it in the scores (the 6 pin misses) |
+| L13 | SENSEX withheld (*"n/a"*) | its 09:15 anchor can come from a stale vendor row, TD-S84-NEW-4 (**S92-H**) |
+
+L11 is DECLINED-ON-EVIDENCE (S89, `d9a804a`), not a deviation on a BUILT layer.
+
+### D4 — What closing changes, and what it does not
+
+- **The S92-A pause ends.** Harness / agentic work paused "until parity closes" may resume: R2.2,
+  R2.3, R2.5, R2.6 and Stages 3+ of `agentic_layer_roadmap_S90.md`, all post-parity.
+- **Nothing is authorised in production.** Every layer stays display-only; the closing paragraph of
+  *Governance language* is unchanged.
+- **Open items stay on their own registers** and are not parity conditions: E-D1 (unit of `gex_cr`),
+  MV-8, TD-S84-NEW-3, TD-S84-NEW-4, TD-S80-NEW-1, PPC-1, ENH-134 (as-of functions),
+  TD-S92-NEW-1…4, and R2.4's open findings (± peaks; L3 flip awaiting post-2026-10-05 screenshots).
+
 ---
 
 ## Governance language
@@ -628,8 +693,10 @@ plus the P6 render pass, with R2.4 fixture scores reported but not gating (**Ame
 **S92-A**).
 
 **As at 2026-10-09 (Amendment C8):** BUILT **13 of 14**, L11 DECLINED-ON-EVIDENCE, PENDING **0** — D1 is
-met and the board renders every BUILT layer. Parity closes when R2.4 scores are reported and the P6
-closing amendment is written.
+met and the board renders every BUILT layer.
+
+**As closed, 2026-10-09 (Amendment D):** R2.4 scores are reported and this ADR carries its closing
+amendment — **Hedgewall parity is closed.** Scores remain reported, not gating.
 
 **This ADR authorises nothing in production.** Every layer it governs is display-only. Any gate
 built on one would additionally require N ≥ 30 live-runtime-cohort validation per ADR-009 and
@@ -643,3 +710,5 @@ B5 and B6 correct Amendment A without reversing its ruling.*
 *Amendment C — Session 92, 2026-10-08. **C1 records ruling S92-A** (where parity closes). **C2 ends
 B1's suspension on its own stated trigger** and narrows nothing else in B. C4 supersedes B4 as the
 current state and leaves it standing as the S81 record. D1–D5 are unchanged. C7–C8, 2026-10-09: L7/L8/L12/L13 BUILT on live-board evidence; C8 supersedes C4 as the current state and leaves C4 standing as the 2026-10-08 record.*
+
+*Amendment D — Session 92, 2026-10-09. **Closing amendment (P6).** Records that the three C1 conditions hold and parity is closed, R2.4 reported, and the D3 deviations at close. Rules nothing new; C8 stays the current disposition table. D1–D5 are unchanged.*

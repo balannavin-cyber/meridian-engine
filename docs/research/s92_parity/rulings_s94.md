@@ -34,4 +34,7 @@ rulings stay together.
 - **Later the same day, S94-G and S94-I supersede the P6 line above:** the P6 view **may now be
   applied** (Sections 1→3, then Section 4 including 4i), and ENH-140 is filed when it is live.
   S\* (S94-H) is a separate item after the book. The dev documents allowed now also include P5's.
+- **Applied under S94-G, 2026-10-10 ~10:30–10:54 IST:** `v_dex_standing_book` is LIVE and its
+  Section 4 passed (4a–4d, 4f–4i; 4e withdrawn); **ENH-140 is filed** (Enhancement Register
+  Part 9). The board read is still owed. This line records an outcome; it is not a ruling.
 - **No ADR filed or amended. No `CLAUDE.md` rule added.** Rules 0–24 stand unchanged.

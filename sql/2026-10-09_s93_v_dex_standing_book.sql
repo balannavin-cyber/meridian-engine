@@ -15,6 +15,15 @@
 -- S94-G (P2 regime-dependent), S94-H (S* its own view) and S94-I (vendor
 -- delta) BEFORE the first apply. The view body is unchanged.
 --
+-- APPLIED 2026-10-10 (S94), Sections 1-3, in TWO executions. The first
+-- landed Section 1 only (COMMENT NULL; ACL at the defaults anon=rm,
+-- authenticated=rm; no merdian_ro) while the editor said Success and 4a
+-- passed; 4b found it when merdian_ro was refused. Sections 2-3 were
+-- re-run with a trailing verification SELECT (TD-S94-NEW-3). Section 4
+-- then PASSED: 4a-4d, 4f-4i (4e withdrawn); 4i on 862 strikes, max abs
+-- diff 3.638e-12 Cr. ENH-140 is LIVE. The AUTHORED paragraph above is
+-- the record as written before the apply and is left as it was.
+--
 -- Design note: docs/research/s93_priority/p6/P6_dex_design_note.md.
 -- Every measurement cited here is recorded there with its probe SQL.
 -- NOT A PARITY LAYER. ADR-025 is closed (Amendment D); this adds no
@@ -440,7 +449,9 @@ GRANT SELECT ON public.v_dex_standing_book TO merdian_ro;
 --     or n_offday > 0, which would mean the settled-ts range admitted a
 --     neighbouring day.
 --     EXPECTED: role_now = anon, 2 symbols, n_sessions = 1,
---     n_legs = 2, n_dupes = 0, n_offday = 0, n_rows ~ 400-480 per leg.
+--     n_legs = 2, n_dupes = 0, n_offday = 0, n_rows per SYMBOL, both legs (S94 measured
+--     NIFTY 474, SENSEX 388; this read "~ 400-480 per leg" until S94 --
+--     mislabelled, the query groups by symbol).
 -- BEGIN;
 --   SET LOCAL ROLE anon;
 --   SELECT current_user                                   AS role_now,
@@ -732,7 +743,7 @@ GRANT SELECT ON public.v_dex_standing_book TO merdian_ro;
 --     readings differ in sign and size and P2 rules. A column named
 --     dealer_* would settle by construction what is not settled.
 --   * NO zero-delta column. Both briefed candidates measured
---     degenerate; S* is specified and pending ruling.
+--     degenerate; S* ships as its own view after this one (ruling S94-H).
 --   * NO history. One session, like every sibling read surface. A
 --     DEX time series needs its own ruling on a read surface.
 --   * NO second-order terms, and no column named vanna or charm

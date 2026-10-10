@@ -4187,3 +4187,121 @@ table points and does not restate.
 | **S91-D** | Monitor flapping: implement **both** one-key **and** a hold-down of **10 consecutive clear ticks** — two cycles, because one *successful* cycle spans 5 ticks of the look-back |
 | **S91-E** | A probe failure is **UNKNOWN**, not a clear tick: skip both the send and the hold-down that minute |
 | **Owed** | `SKIPPED_NO_INPUT` → exit 0 · Doc Protocol v5 |
+
+## Previous session S92
+
+**S92 — 2026-10-08 → 2026-10-09 (Thursday–Friday, live sessions).** The parity programme driven
+to closure, a post-parity priority track ruled, its first item pre-registered and part-run, and
+the operator's 3D experiment authored as an optional view. This block points; the detail lives
+in the files named. Rulings: `docs/research/s92_parity/rulings_s92.md` (S92-A…J, the single source).
+
+**meridian-engine — all pushed.** `9b7d03b` S92-A + ADR-025 Amendment C · `e0b9d03` / `0965755` /
+`0c36c7e` TD-S91-NEW-15, -13, -14 · `f60708d` / `0eceee1` / `bd91d27` / `146a324` `core/ts_parse.py`
+and TD-S91-NEW-2 site 7 / TD-S91-NEW-6 · `5f51231` S92-C…F + `v_pin_board` · `8853539` ADR-025 C7/C8 ·
+`e85cf7a` R2.4 · **`579d273` ADR-025 Amendment D — parity CLOSED** · `1606305` S92-I · `b70a025` /
+`698dc93` P1 pre-registration, SQL and scorer · `a34a312` S92-J · `eb69ac4` close · **post-close
+delta:** `9f7cc30` / `e9f65fd` view fixes and live verification · this delta (S92-J live).
+**meridian-connect:** `5563bb7` Pin/Flows design pass · `1deeb87` L13 bind · **`417e966` optional 3D view —
+live 2026-10-09 ~11:20 IST** (S92-J; base `1deeb87`; rollback copy `/var/www/marketview.bak-1deeb87`).
+
+**What was established**
+
+1. **Hedgewall parity is CLOSED** (ADR-025 **Amendment D**, `579d273`). BUILT **13 of 14**, L11
+   DECLINED-ON-EVIDENCE, PENDING 0 (C8); the live board renders every BUILT layer (C3 at `255cca0`,
+   C7 at `5563bb7` / `1deeb87`); R2.4 reported. D3 deviations standing at close: L7/L8 flow-vs-book
+   (D-4, PPC-1), L12 pressure leg (D-5a), SENSEX L13 (TD-S84-NEW-4). The S92-A pause on harness
+   work ended with it.
+2. **R2.4 reported, not gating** (`docs/research/s92_parity/r24/`): 40 fixtures from the reference's
+   own screenshots, 199 field scores, read twice blind. Pin = MERIDIAN's leader or in its top 5 in
+   **20 of 26**; net GEX sign **17 of 21**; walls **8 of 17**; HHI runs **~2×** in the reference
+   (a narrower strike window, not a different ranking); flip comparable only to the legacy
+   `flip_level`; ± peaks unresolved (n = 8).
+3. **Presentation through Lovable without trusting it.** Guard v2 (path allowlist, one named read,
+   credential and L78-1 scans, tsc + build) and a read-only ACL fingerprint, identical across all
+   three rounds. The guard **stopped one build** — the operator's 3D experiment, kept on `lab-3d`.
+4. **The S91 defects moved from diagnosed to fixed — none yet verified by a live cycle.**
+   `core/ts_parse.py` is the shared PostgREST timestamp parser (41 asserted cells, run_offline step
+   10/10); **TD-S91-NEW-6's mechanism is settled** — a trimmed fraction, NULL is impossible
+   (`is_nullable = NO`) — and fixed at site 7; **TD-S91-NEW-15** basis skip exits 0 (S92-B, that call
+   site only); **TD-S91-NEW-13/14** validator trading-day gate + per-key dedupe.
+5. **Post-parity priority track, ruling S92-I** — roadmap §2.1, P1–P8, each followed to DONE or
+   DECLINED-ON-EVIDENCE. **P1 (level test) is pre-registered** (`P1_level_test_prereg_2026-10-09.md`,
+   `git hash-object 7a708a64…`) with SQL and scorer committed before any outcome query. Part 1
+   passed: **N = 85 NIFTY / 84 SENSEX**, split fixed at 2026-08-26 / 08-27, no grid, spot or expiry
+   failures, no contamination range. **Part 3 and Part 2 are owed after 15:40 IST.**
+6. **S92-J — the 3D view, optional, LIVE** (`meridian-connect` `417e966`, ~11:20 IST 10-09).
+   `v_gex_strike_terrain` applied and verified live: 14 sessions per symbol as anon; pain curve
+   equal to ENH-123 `v_gex_max_pain` strike for strike (NIFTY 54 / SENSEX 85, 0 mismatches); ACL
+   anon=r / merdian_ro=r. Lovable round under `mv_lovable_guard_lab3d.sh 1deeb87`: guard PASS (one
+   read of the view, no raw-table reads, three.js absent from the 672 KB entry chunk); **ACL
+   fingerprint identical before and after** (relations 344, anon_public_privs 250,
+   anon_writable_objs 0); `/staging/` read against SQL — 14 sessions 09-21 → 10-09, peak |γ|
+   5,802,384 / 6,344,113, expiry days, NULL holes (28 / 75 cells), max pain 22500 / 72400 on the
+   10:55 run — all equal; 375 px no sideways scroll; legend "optional view". Promoted from the
+   checked commit with no pull. **Closes TD-S92-NEW-2.** Install snag filed as TD-S92-NEW-6.
+
+**Corrections to my own work.** The P1 Part 2 extract was committed as one statement that took
+**49 s** on a fixture; it was rebuilt on temp tables (**3 s, identical output**) **before** it was run
+against the database. A side-chat candidate list carried L7/L8 as "not started" the morning they
+went live; corrected against ADR-025 C7 before it reached the tracker. The P1 pre-registration's
+leader tie-break differs from `v_gex_strike_rank`'s **on exact ties only**; recorded in
+`p1/README.md`, and Part 2 reports `ties_at_rank3`. **Post-close:** the first live apply of
+`v_gex_strike_terrain` showed **13** sessions (10-02, a holiday with no calendar row and only a 15:40
+run, was ranked) — fixed to rank only dates with a settled run (`9f7cc30`, TD-S92-NEW-5); check 4c
+compared nothing live (`gex_pin_maxpain_history` ends 09-18) and was replaced by an ENH-123
+comparison, and the fixture-only "28/28" claim corrected in ENH-139 (`e9f65fd`); a guard hash was
+stated before it was computed and corrected in chat (actual `09979feaf0f5145a`).
+
+**Registers touched:** ADR-025 (Amendments C and D), Decision Index, `rulings_s92.md` (S92-A…J),
+roadmap §2.1 and R2.4, Enhancement Register (clause-3 rows; **ENH-139** filed for S92-J),
+`tech_debt.md` (TD-S92-NEW-1…4; S92 status on TD-S91-NEW-2, -6, -13, -14, -15),
+`merdian_reference.json` **v71**, `CLAUDE.md` **v1.65**, `CURRENT_history.md` (S90 moved),
+`session_log.md`, **S93 starter**. **Post-close delta:** CURRENT, session_log, `tech_debt.md`
+(TD-S92-NEW-2 → Resolved; TD-S92-NEW-5, -6), ENH-139 → LIVE, `rulings_s92.md` S92-J, reference
+`_s92_addendum.post_close_delta`, `CLAUDE.md` footer, S93 starter §2, `lovable_prompts/s92/README.md`.
+
+## NEXT SESSION PICKS UP — as S92 left it (SUPERSEDED by the S93 list above)
+
+**S93 starter: `docs/session_notes/S93_dev_starter.md`.**
+
+1. **P1, today after 15:40 IST** — Part 3 (`p1_part3_replay_check.sql`, expect zero rows), then
+   Part 2 as one execution, export JSON → `p1_score.py` → result doc → **the S92-I decision point**
+   (if the levels do not beat the null, P2–P8 are re-planned before more is built).
+2. **S92-J — DONE** (live `417e966`; TD-S92-NEW-2 resolved). Residuals: TD-S92-NEW-6 (box install
+   path); delete `/var/www/marketview.bak-1deeb87` once live has run a full session.
+3. **Verifications owed — none is recorded as done:**
+
+   | Check | PASS looks like | Closes |
+   |---|---|---|
+   | basis step on 10-09, the first full day of `bd91d27` | **0 DATA_ERROR** runs | TD-S91-NEW-6 |
+   | basis step 08:31–09:26 IST on 10-09 | the 12 no-input cycles **exit 0**, `exit_reason` still `SKIPPED_NO_INPUT` | TD-S91-NEW-15 (basis site) |
+   | `gex_cycle_history` front leg vs `gamma_metrics` | **77 of 77** | TD-S91-NEW-1 |
+   | Telegram, chat **unmuted** | ≈ 14 in-session sends, none overnight | TD-S91-NEW-12 |
+   | **Tue 2026-10-20** (weekday holiday) | validator silent; no chain rows; `cycle_health` CLOSED | TD-S91-NEW-13, TD-S89-NEW-1 / R0.8 |
+
+4. **Rulings owed:** whether a BUILT layer that later breaks **reopens parity** or is an ordinary
+   defect on its register (left open by Amendment D) · **Doc Protocol v5** (drafted S90).
+5. **P2–P8** per roadmap §2.1, after P1's decision point. Dev documents for them (ENH entries for
+   the DEX standing book P6 and the flow leg P7, design notes for P2 / P4) **wait on P1** — operator
+   sequencing, 2026-10-09.
+6. **TD-S92-NEW-1** (*"contracts"* wording — a Lovable layout pass) · **-3** (cited probe missing from
+   git) · **-4** (`authenticated` privileges on the S92 views; S92-J's view already revokes them) ·
+   **-5** (no `trading_calendar` row for 10-02 — one-row insert, operator's call) · **-6** (box has no
+   bun; guards' `npm ci --silent` hides install failures).
+7. **Dated:** ~Tue 2026-10-13 drop the S90-H backup tables (TD-S90-NEW-11).
+8. **Carried:** TD-S91-NEW-2 sites 1, 3, 4, 5, 6 → adopt `core.ts_parse` · TD-S91-NEW-3 08:40 IST
+   Zerodha preflight (design agreed, not built) · TD-S80-NEW-1 NIFTY L9 stage-1 arm.
+
+## OPERATOR RULINGS, S92
+
+**All rulings live in `docs/research/s92_parity/rulings_s92.md`**, the single source.
+
+| # | Topic |
+|---|---|
+| **S92-A** | Parity closes on ADR-025 D1 + the P6 render pass; R2.4 inside parity, reported not gating (amends S90-D) |
+| **S92-B** | `SKIPPED_NO_INPUT` → exit 0 at the basis call site only |
+| **S92-C…F** | L7/L8 badge and D-4 as a D3 deviation; the Pin tab reads `v_pin_board`; L12 disposition |
+| **S92-G / -H** | L13 binds `v_oi_rotation_since_open`; SENSEX L13 withheld |
+| **S92-I** | Post-parity priority track P1–P8, followed to conclusion |
+| **S92-J** | The 3D view, optional at `/board/3d`, reading one view |
+

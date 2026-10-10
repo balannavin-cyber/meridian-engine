@@ -69,6 +69,52 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 **NOTE — 2026-10-03.** `v_gex_concentration.hhi_net` is the **top-1 gamma share, NOT a Herfindahl** — byte-identical to `v_gex_strike_rank` rank-1 `share_of_abs` and to `gamma_metrics.gamma_concentration` (0.0942 on 10-01); true HHI Σshare² ≈ 0.0464. The live board's 'HHI' label and D-6's ~0.10 / ~0.25 bands are therefore on **top-1 share**. `hhi_call` / `hhi_put` semantics **unverified**. Verify call/put and correct the board label before any Herfindahl claim.
 **FIX (phase-2 Pin tab):** the board's 'HHI' label should display the true `conc_hhi` (Σs²); keep top-1 share as a separate **'lead-strike share'** line. **ENH-133 now stores both.**
 
+### TD-S94-NEW-1 (S2 priority) — `merdian_ro` read zero rows from `participant_oi_daily` and `data_contamination_ranges`, so Rule 13 checks run through `bin/roq.sh` could not fail
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** The two tables are fixed. S2 because the class — RLS on, a policy for `anon` only, and `merdian_ro` silently reading zero — has now been met three times (Rule 17's `market_spot_session_markers`, and these two), and nothing lists where else it applies. |
+| **Filed** | 2026-10-10 (Session 94) |
+| **Component** | `public.participant_oi_daily`, `public.data_contamination_ranges` · `sql/2026-10-10_s94_merdian_ro_read_policies.sql` |
+| **Measured** | Before P2's Part 1, both tables returned **zero rows** to `merdian_ro` with no error. A Rule 13 contamination check run through `roq.sh` therefore always found "no overlapping range", whatever the table held — a check that could not fail (rule 0). Fixed ~08:32 IST 2026-10-10 by a `DO` block creating a `merdian_ro_select` policy on each table (operator-applied DDL); P2 read `participant_oi_daily` afterwards. |
+| **Proper fix** | One catalog query listing every table with RLS enabled and **no** policy whose roles include `merdian_ro` (`pg_class.relrowsecurity` joined to `pg_policies`), recorded in the reference; then decide table by table. Until then, a zero from `roq.sh` on an RLS table is the reader, not the data. |
+| **Status** | **OPEN (audit residual).** Rule 13 checks made through `roq.sh` **before 2026-10-10** could not have found a range; those made in the SQL editor are unaffected. |
+
+### TD-S94-NEW-2 (S3 priority) — `bin/roq.sh`'s write-verb guard refuses `COPY (SELECT …) TO STDOUT`, which is a read
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Nothing was written and nothing was read before the refusal. The cost is a workaround everyone has to know. |
+| **Filed** | 2026-10-10 (Session 94) |
+| **Component** | `bin/roq.sh` (the verb guard) · `docs/research/s94_priority/p2/part1_extract.sql` (refused) vs `part1_extract_v2.sql` (works) |
+| **Measured** | P2's first extract used `COPY (…) TO STDOUT WITH CSV HEADER` and was refused by the guard. The working form is psql's own CSV mode: `\set QUIET on` then `\pset format csv` before the `SELECT`. **Without `\set QUIET on`, psql writes `Output format is csv.` into the output file.** Used for P2, P1c and the P6 4i exports. |
+| **Proper fix** | Either allow the exact form `COPY ( … ) TO STDOUT` in the guard (it cannot write to the database or the server's disk), or document the `\set QUIET on` / `\pset format csv` idiom in `roq.sh`'s usage text. The second is cheaper and does not widen a guard. |
+| **Status** | **OPEN.** |
+
+### TD-S94-NEW-3 (S2 priority) — an apply copied out of the terminal landed only Section 1 of the DEX view, the editor said Success, and the file's own anon check passed over it
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Caught the same morning, before any consumer read the view, and fixed. S2 because the failure was silent at every step a person would look at — the editor said `Success. No rows returned` and check 4a passed — and because it is the S79 part-run shape (TD-S81-NEW-5) arriving by a new route. |
+| **Filed** | 2026-10-10 (Session 94) |
+| **Component** | the apply procedure for `sql/` view files run in the Supabase SQL editor; `sql/2026-10-09_s93_v_dex_standing_book.sql` Sections 1–3 |
+| **Measured** | The operator copied lines 1–428 from terminal output (`sed -n '1,428p'`) into the editor and ran them once. Afterwards: `CREATE VIEW` present; `obj_description` **NULL**; `relacl` `{postgres=arwdDxtm, anon=rm, authenticated=rm, service_role=arwdDxtm}` — Supabase's defaults, so **neither the REVOKE nor either GRANT ran**. Check **4a passed** on that state (anon SELECT came from the default grant). It surfaced at **4b**, when `bin/roq.sh` (`merdian_ro`) was refused the view. Sections 2–3 were then printed as five lines with their lengths (45 / **7,812** / 66 / 51 / 57 chars), re-run with a trailing verification `SELECT` in the same execution, and landed: 7807 / `a560c0db…`, `anon=r`, `merdian_ro=r`. |
+| **Root cause** | **Not established.** The leading hypothesis is that the COMMENT, a single **7,812-character line**, truncated or broke the terminal copy, so the paste ended at or before it — but the first paste was not captured, so this is not measured. What **is** measured: the editor reports success for whatever it was given, and 4a cannot tell a full apply from a partial one when the default grant already gives anon SELECT. |
+| **Workaround** | Run the remaining sections again with a verification `SELECT` (COMMENT length/md5 and `relacl`) at the **end of the same batch**, so the result grid shows what that execution did. Repeating Sections 2–3 is harmless. |
+| **Proper fix** | (1) Every `sql/` view file ends Section 3 with that verification `SELECT`, so the apply execution itself reports COMMENT and ACL. (2) Write long COMMENT literals as adjacent string constants split across lines (PostgreSQL concatenates constants separated by whitespace that contains a newline), so no line is thousands of characters long. (3) The anon-path check (4a's shape) also asserts `has_table_privilege('authenticated', …) = false` or reads `relacl`, so it fails on the default grant. |
+| **Status** | **OPEN** — the instance is fixed (ENH-140 LIVE); the procedure is not. |
+
+### TD-S94-NEW-4 (S2 priority) — P4's forward accrual depends on chain rows still existing at scoring time, and their retention was not checked
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Nothing has failed. The risk is that a ~13-week accrual reaches its scoring date and cannot be replayed. |
+| **Filed** | 2026-10-10 (Session 94) |
+| **Component** | `docs/research/s94_priority/P4_charm_sign_prereg_2026-10-10.md` (`0a8af475…`, `cde0e0b`) · `option_chain_snapshots` retention |
+| **Measured** | P4 replays the view body against historical chain runs (dte-1 sessions from 2026-08-24, first chain run at or after 10:15 IST, outcome sign(close before 15:15 − S at 10:15)), pooled to n = 40, about 13 weeks. **The retention of `option_chain_snapshots` was not measured this session.** |
+| **Proper fix** | Before the first P4 scoring run, read the retention job(s) that touch `option_chain_snapshots` (`cron.job`) and the table's oldest `ts`. If rows older than the accrual window are pruned, persist the per-session P4 inputs (the 10:15 chain run's replay output and the two spot values) as each session lands, under `docs/research/s94_priority/p4/`. |
+| **Status** | **OPEN.** |
+
 ### TD-S93-NEW-1 (S2 priority) — `run_offline.sh`'s `PIPESTATUS` idiom is positional, so inserting any command between a pipeline and its test silently disables that step's check
 
 | Field | Value |
@@ -111,17 +157,6 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 | **Component** | box `~/meridian-connect`; install line of `docs/lovable_prompts/s92/mv_lovable_guard.sh` (v2) and `mv_lovable_guard_lab3d.sh`: `if [ -f bun.lock ] && command -v bun …; else npm ci --silent; fi` |
 | **Measured** | First S92-J guard run (`origin/main` `f732233`) printed `guard passed` and then **nothing** — no FAIL line, no build. `command -v bun` → none. `npm ci` without `--silent` failed: `package.json` named the four 3D packages, `package-lock.json` did not. That lock file was an **untracked** local file dated 2026-10-05, never in git; Lovable had updated `package.json` + `bun.lock` only. Unblocked by asking Lovable to commit `package-lock.json` (`b6ffec1`) and moving the untracked copy to `~/package-lock.json.oct05.bak`; the re-run passed. |
 | **Proper fix** | (1) Drop `--silent` from both guards' install and print `FAIL: install` on a non-zero exit — a check that stops must say why (CLAUDE.md rule 0). (2) Every Lovable prompt that adds a package says "update package-lock.json too". (3) Decide once whether the box builds with bun or npm. |
-| **Status** | **OPEN.** |
-
-### TD-S92-NEW-1 (S3 priority) — the OI tab still calls open interest "contracts" in three explanations, and the unit is quantity
-
-| Field | Value |
-|---|---|
-| **Priority** | **S3.** Wording only; no number on the board is wrong. S3 because the word asserts a unit conversion the data does not support. |
-| **Filed** | 2026-10-09 (Session 92) |
-| **Component** | `meridian-connect` `src/components/board/LadderPanel.tsx` `DETAIL` entries for Total OI and the call / put OI walls (live `1deeb87`) |
-| **Measured** | ENH-127's S81 measurement: NIFTY `oi` divides by 65 on 13,090/13,090 rows and by 75 on only 729; SENSEX by 20 on 18,037/18,037 — `oi` is **shares-equivalent at the current lot size**, not contracts. The L13 bind (S92-G) removed "contracts" from the ΔOI item; Lovable reported the three remaining uses and left them because the L13 brief was scoped to ΔOI. |
-| **Proper fix** | One Lovable pass under the S92 guard (`docs/lovable_prompts/s92/`, layout-only mode): replace "contracts" with "quantity" in those explanations. Do not divide by a lot size — that needs an instrument master with effective dates (deferred in ENH-127). |
 | **Status** | **OPEN.** |
 
 ### TD-S92-NEW-3 (S3 priority) — `sql/2026-10-03_s89_v_gex_greeks_l2.sql` says its V2 probe is "committed with this file", and it is not in git
@@ -6342,6 +6377,17 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 ---
 
 ## Resolved (audit trail)
+
+### TD-S92-NEW-1 (S3 priority — **RESOLVED S94 2026-10-10, live `13b1410`**) — the OI tab still calls open interest "contracts" in three explanations, and the unit is quantity
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Wording only; no number on the board is wrong. S3 because the word asserts a unit conversion the data does not support. |
+| **Filed** | 2026-10-09 (Session 92) |
+| **Component** | `meridian-connect` `src/components/board/LadderPanel.tsx` `DETAIL` entries for Total OI and the call / put OI walls (live `1deeb87`) |
+| **Measured** | ENH-127's S81 measurement: NIFTY `oi` divides by 65 on 13,090/13,090 rows and by 75 on only 729; SENSEX by 20 on 18,037/18,037 — `oi` is **shares-equivalent at the current lot size**, not contracts. The L13 bind (S92-G) removed "contracts" from the ΔOI item; Lovable reported the three remaining uses and left them because the L13 brief was scoped to ΔOI. |
+| **Proper fix** | One Lovable pass under the S92 guard (`docs/lovable_prompts/s92/`, layout-only mode): replace "contracts" with "quantity" in those explanations. Do not divide by a lot size — that needs an instrument master with effective dates (deferred in ENH-127). |
+| **Status** | **RESOLVED 2026-10-10 (Session 94), live `meridian-connect` `13b1410`.** The S94 Lovable wording pass (`5b84c16`, under `docs/lovable_prompts/s94/mv_lovable_guard_s94_wording.sh`) replaced "contracts" with "quantity" in the three explanations; the label restore that followed (`13b1410`, ruling S94-F) kept "quantity". Heading and Status row moved together. |
 
 ### TD-S92-NEW-2 (S2 priority — **RESOLVED S92 2026-10-09, live `417e966`**) — a 3D view on branch `lab-3d` reads two tables directly as `anon`, outside the view boundary
 

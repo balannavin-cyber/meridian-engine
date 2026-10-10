@@ -138,13 +138,23 @@ def mutants(data):
             g["gamma_concentration"] = str(float(g["gamma_concentration"]) + 0.01)
     cases.append(("I4 concentration +0.01", m, ("I4",)))
     m = copy.deepcopy(data)
-    k = m["gex_strike"][i]["strike"]
+    # S95: the PE-sign mutant needs a strike whose PE leg has gamma and OI -- the largest strike's PE can be a
+    # vendor greek gap (2026-08-27 NIFTY 24400: PE gamma 0), and negating a zero changes nothing.
+    pe_live = {(l["run_id"], l["expiry_date"], float(l["strike"])) for l in data["ocs"]
+               if l["option_type"].upper() == "PE" and fnum(l["gamma"]) and (fnum(l["oi"]) or 0) > 0}
+    cand = [j for j in range(len(rows)) if (rows[j]["run_id"], rows[j]["expiry_date"], float(rows[j]["strike"])) in pe_live]
+    j = max(cand, key=lambda j: abs(float(rows[j]["gex_cr"]))) if cand else i
+    run, exp = m["gex_strike"][j]["run_id"], m["gex_strike"][j]["expiry_date"]
+    k = float(m["gex_strike"][j]["strike"])   # S95: compare as numbers -- gex_strike has '72000.0', ocs has '72000'
     for l in m["ocs"]:
-        if l["run_id"] == run and l["expiry_date"] == exp and l["strike"] == k and l["option_type"].upper() == "PE" and fnum(l["gamma"]):
+        if l["run_id"] == run and l["expiry_date"] == exp and float(l["strike"]) == k and l["option_type"].upper() == "PE" and fnum(l["gamma"]):
             l["option_type"] = "CE_FLIP"   # the PE leg's sign is lost: recompute treats it as positive
             break
     cases.append(("I2 PE sign lost", m, ("I2",)))
     for name, m, must in cases:
+        if m == data:   # S95: a mutant that changed nothing cannot fail, so it proves nothing (Rule 0)
+            out.append(f"MUTANT NOT APPLIED: {name}")
+            continue
         f, _ = check_day(m)
         if not any(x.split(" ")[0] in must for x in f):
             out.append(f"MUTANT NOT CAUGHT: {name}")

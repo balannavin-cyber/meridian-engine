@@ -5,7 +5,6 @@ Usage: python3 -I p1c_score.py <P1 part2_extract json> <p1c_regime csv>
 Standard library only. Exits non-zero on any failed assertion.
 """
 import csv, json, math, random, sys
-from datetime import datetime
 
 SEED, B = 20261010, 10_000
 N_EXPECT = {"NIFTY": 85, "SENSEX": 84}          # P1 Part 1b, asserted by P1's own scorer
@@ -15,8 +14,11 @@ SIG_TOL = 1e-3   # §3: P1 exports sigma_d round(,2) (~3e-5 rel) and iv0 to 0.01
 PRIMARY = "NIFTY"
 
 
-def ts19(s):
-    return datetime.fromisoformat(str(s).replace("T", " ")[:19])
+def hms(s):
+    """HH:MM:SS of a timestamp or a bare time. P1 exports ats_ist time-only ('09:15:35');
+    the session date is matched by the (symbol, session_date) join key, so the time is what is compared."""
+    t = str(s).replace("T", " ").split(" ")[-1]
+    return t.split(".")[0][:8]
 
 
 def boot_ci(a, b, rng, lo=2.5, hi=97.5):
@@ -49,7 +51,7 @@ def main(p1_json, regime_csv):
             k = (sym, r["session_date"])
             assert k in reg, f"{k}: no predictor row"
             g = reg[k]
-            assert ts19(g["t0_ist"]) == ts19(r["ats_ist"]), f"{k}: t0 {g['t0_ist']} != P1 {r['ats_ist']}"
+            assert len(hms(r["ats_ist"])) == 8 and hms(g["t0_ist"]) == hms(r["ats_ist"]), f"{k}: t0 {g['t0_ist']} != P1 {r['ats_ist']}"
             assert r["sigma_d"] is not None and r["hi"] is not None and r["lo"] is not None, f"{k}: missing sigma_d/hi/lo"
             s0, iv0, sd = float(r["s0"]), float(r["iv0"]), float(r["sigma_d"])
             exp_sd = s0 * iv0 / 100 * math.sqrt(1 / 252)

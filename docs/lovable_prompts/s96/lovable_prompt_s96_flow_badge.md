@@ -115,4 +115,44 @@ the join guard returns no rows: then `no flow before 09:15` and no badge is the 
 
 ## Round record
 
-*(filled in as the round runs)*
+**Wording** approved by the operator 2026-10-12 03:59 IST (strings 1–8; PRE_OPEN string dropped before approval —
+bricks are never drawn before 09:15, so the code cannot reach a visible slot). **Base `62f5c55` → live `c81b700`.**
+
+**Fingerprint** pre-round 04:07 and after-round 04:46 IST identical on all nine rows, and identical to the S96 round
+baseline: `relations 348 c56612ad…`, `anon_public_privs 254 e93833fd…`, `anon_writable_objs 0`, `public_functions 40
+5d8cd7f8…`, `rls_policies 28 d16e21d6…`, `default_privileges 27 9db86164…`, `schemas 10 2a889318…`, `public_triggers 0`,
+`anon_role 1 c506ff14…` (S96-D / S96-E replaced a view body only; no ACL or relation change).
+
+**Lovable's first reply** applied §1–§4: the one read rewritten as one line with the two columns appended, `badge` /
+`abstainCode` in the mapping, the chip / reason line on the Net tile only and only with the bricks, 4.4 appended to
+`f_dex_net` `how`, 4.6 loading line. It again predicted no bricks "on Sunday night" — wrong: the views carried the 10-09
+SESSION run. It asked whether the four sensitivity-tile explanations (∂Δ/∂t, ∂Δ/∂σ, ∂Γ/∂t, ∂Γ/∂σ), which begin with the
+same `PROVISIONAL — flow-vs-book (D-4) not built`, should change too, and left them alone.
+
+**§4.5 was a drafting error and was reverted in the round.** That badge is the L7/L8 flow-vs-book deviation (D-4). What
+P7a puts on the board is DEX flow; flow-vs-book for ∂Δ/∂σ and ∂Δ/∂t is **P7b, not built**, so the amended text would have
+claimed it. Operator agreed; follow-up (pasted verbatim):
+> One revert, nothing else: put the bordered badge on the Flows tab back to its exact previous text `PROVISIONAL —
+> flow-vs-book (D-4) not built` (same element, same styling). Leave the four sensitivity-tile explanations unchanged,
+> as you did. Change no other file, string or behaviour. Reply with the file changed.
+
+The S96-A D3 amended badge text is **owed to the P7b round**, with the four explanation boxes.
+
+**Guard** `mv_lovable_guard.sh 62f5c55 v_dex_flow_vs_book`: PASS at `c81b700` — four paths, all M (`LadderPanel.tsx`,
+`PinFlowsBody.tsx`, `board.ts`, `Board.tsx`), exactly one added read of the view (the one-line rewrite), no other reads,
+no credentials, no vanna/charm, tsc + build clean; 4 files, 24 insertions, 9 deletions.
+
+**Staging read** (Claude, operator's Chrome, `/staging/` at `c81b700`): NIFTY Net chip `flow since 08:30 · same sign as
+book`, SENSEX `flow since 08:35 · same sign as book` — each with its own tile sub-line's time; no reason line; no chip on
+Call / Put / ladder; L7/L8 badge unchanged; 4.4 sentence in the Net `how` after the bricks sentence; bricks values
+unchanged from the S96-C read (NIFTY −8,289 / +79,275 / −87,565; SENSEX −3,200 / +5,324 / −8,524; ΔOI gaps 21,710 / 140).
+**Loading state:** a fresh load in a hidden frame sampled every 25 ms until the chip appeared (2.6 s) never showed
+`no flow before 09:15` (the defect) and also never showed `flow · loading` (the data arrived before the tab rendered), so
+the screen could not prove the new branch; the code does — `Board.tsx:450` tests `dflQ.isLoading || dexQ.isLoading`
+before the `!dfSession` branch.
+
+**Promoted** 04:49 IST from the checked commit, no pull, in a refusing subshell (HEAD = `c81b700`, no tracked changes,
+backup path absent, tsc, build rooted at `/assets/`): backup `/var/www/marketview.bak-62f5c55`; `/tmp/mv-live-build` →
+`/var/www/marketview/`, `diff -rq` clean, bundle `assets/index-BgpGiutv.js`. **Live read** in Chrome: bundle
+`index-BgpGiutv.js`; both symbols show the SAME chip with 08:30 / 08:35, the three sub-lines equal to staging, L7/L8 badge
+unchanged, no `no flow before 09:15`, no reason line.

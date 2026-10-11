@@ -199,3 +199,9 @@ NIFTY tiles and ladder identical to staging.
 **Noted, not fixed (follow-up candidate):** while the data queries are still loading, the tiles show the absent line
 "no flow before 09:15" — a loading state worded as a data state. Read once on the live board at 20:32 before the
 queries returned. Wording for a loading state needs the operator's yes.
+
+**20:33 IST — rollback run by mistake, then re-promoted.** The rollback line printed for reference in the promote
+message (`rsync … marketview.bak-858cb46/ → marketview/`) was run, putting live back on `858cb46`; re-promoted 20:34
+from the checked build still in `/tmp/mv-live-build` (bundle `assets/index-CBde1ur8.js` asserted before the rsync),
+`diff -rq` clean. Live is `62f5c55`. Correction recorded: a rollback command is printed only inside a block that
+refuses to run without an explicit argument, never as a bare line beside the steps to run.

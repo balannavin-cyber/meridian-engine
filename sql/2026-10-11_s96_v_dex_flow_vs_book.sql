@@ -50,6 +50,18 @@
 -- non-zero flow is then a vendor OI revision before any trade, not flow);
 -- SESSION otherwise. Consumers draw flow only in SESSION (design note 5.1).
 --
+-- S96-E APPLIED 2026-10-11 ~21:17 IST, Sections 1-3 in ONE execution from d252cd5 via Notepad.
+-- End-of-batch row: has_view t | comment_len 5548 | anon_r t | anon_write f | merdian_ro_r t |
+-- authenticated_r f. Pre-apply cost through roq 243.2 / 228.9 ms, no Seq Scan on the chain.
+-- On the 2026-10-09 settled session (15:10:07): 4h d_bp 0, d_fp 0, code_ok t, state_ok t; badge
+-- SAME on both symbols, code NULL; parity nets NIFTY flow -93,544.3308787425690 / book
+-- -26,436.4805474747320, SENSEX flow -10,567.7510409955858 / book -5,896.1760831907884 Cr.
+-- 4i: the M-P7 scorer's own state() on the replay row of the same cycle (~/mp7_out, SHA256SUMS
+-- 32a091fd) gives SAME on both symbols with all four nets equal to every digit -- third
+-- implementation. 4a 239 / 198 rows, one badge value per symbol, anon reads it; 4b n_view = n_book;
+-- 4c, 4d, 4f, 4g identical to S96-D. 4e anon 248.8 / 245.1 ms; shared buffers 15,988, the same as
+-- S96-D -- the badge reads no chain rows of its own. Not on the board: wording B3 not yet ruled.
+--
 -- S96-E AMENDMENT (authored 2026-10-11 ~21:15 IST, NOT YET APPLIED when written): the M-P7
 -- SAME / OPPOSITE badge, ruling S96-E (B1, B2). u also reads the CE delta gap by the iv form; f adds
 -- the parity-set PE book and flow (mp7_cycles.sql b_put_p / f_put_p verbatim); the old final SELECT

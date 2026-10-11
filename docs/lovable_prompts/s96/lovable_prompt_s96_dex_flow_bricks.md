@@ -143,3 +143,59 @@ the staging read can be done against these SQL figures (4d / 4f, S96):
 
 NIFTY gap ΔOI 21,710 qty; SENSEX 140 qty; no-anchor 0 on both. NIFTY net and SENSEX net must both
 show a **zero crossing** (held empty, added on the negative side, removed outline on the positive side).
+
+---
+
+## Round record (S96, 2026-10-11)
+
+**Wording** approved by the operator 20:01 IST as drafted (§4a–4g). **Base `858cb46` → live `62f5c55`.**
+
+**Fingerprint** (pre-round 20:03, after-round 20:21, final 20:31) identical on all nine rows:
+`relations 348 c56612ad…`, `anon_public_privs 254 e93833fd…`, `anon_writable_objs 0`, `public_functions 40
+5d8cd7f8…`, `rls_policies 28 d16e21d6…`, `default_privileges 27 9db86164…`, `schemas 10 2a889318…`,
+`public_triggers 0`, `anon_role 1 c506ff14…`. (Versus the 17:55 S96 baseline only `relations` / `anon_public_privs`
+moved: +1 each, the `v_dex_flow_vs_book` apply.)
+
+**Lovable's first reply** added `useDexFlow` verbatim, bricks on the three tiles and the ladder, a new
+`src/components/board/Brick.tsx`, and the §4 appends. It predicted the absent line for a Sunday; wrong — both views
+carried the 10-09 SESSION run, and staging drew bricks. Two choices of its own were reported:
+- null `leg_gap_d_oi_qty` shown as "—" → **corrected**: omit the sentence;
+- a ladder strike with no flow row left blank → **corrected**: draw `·` (follow-up 1, verbatim below).
+
+Follow-up 1 (operator pasted):
+> Two fixes, nothing else: 1. In StrikeLadder.tsx (bricks mode): when a ladder strike has no flow row, or its now or
+> pre-open value is null, draw the existing "·" gap marker in that row — never an empty row and never a zero-length
+> brick. 2. In the 4c caption append: if leg_gap_d_oi_qty is null, omit that sentence entirely (do not show "—").
+> Change no other file, string or behaviour. Reply with the files changed.
+
+Lovable then drew `·` also for a strike whose now and pre-open are both 0 — **a measured zero shown as a gap**;
+corrected by follow-up 2:
+> One correction, nothing else: a strike whose now and pre-open are both exactly 0 is a measured zero (no open
+> interest at either time), not a gap. Draw no brick and no "·" for it — just the empty bar track, as the existing
+> book bars do for 0. Keep "·" ONLY for: no flow row for that strike, or now or pre-open is null. …
+
+Counts after it, NIFTY Full chain: 83 bricks · 25 `·` · 0 empty; SQL over the view's 239 strikes: 83 brick / 25 gap /
+131 measured zero (all 131 outside the ladder's strike range).
+
+**Guard** `mv_lovable_guard.sh 858cb46 v_dex_flow_vs_book`: PASS at `1f3cc63` and again at `62f5c55` — six paths
+(`Brick.tsx` A; `LadderPanel.tsx`, `PinFlowsBody.tsx`, `StrikeLadder.tsx`, `board.ts`, `Board.tsx` M), exactly one read
+of the view, no other reads, no credentials, no vanna/charm, tsc + build clean.
+
+**Staging read** (Claude, operator's Chrome, `marketview.meridianalpha.in/staging/`) against the table above: all 12
+values and both ΔOI gaps equal on NIFTY and SENSEX; every §4 string exact; bricks drawn; zero crossings on both nets
+and on the ladder (NIFTY 22,400, SENSEX 72,000); brick proportions measured against value. **One defect found:** the
+Net tile's track was twice the Call/Put width, so the three tiles shared a scale as a fraction of width but not in
+pixels (NIFTY Net's 79,275 outline drawn longer than Call's 119,321). Follow-up 3:
+> One fix, nothing else: the three DEX tile bricks must share ONE scale in pixels, not as a fraction of each bar's own
+> width. … Use the same pixel half-width for all three … so equal crore = equal pixels across the three tiles. Ladder
+> unchanged. …
+
+Re-read at `62f5c55`: ~1,590 Cr/px NIFTY and ~300 Cr/px SENSEX across all three tiles.
+
+**Promoted** 20:32 IST from the checked commit with no pull: backup `/var/www/marketview.bak-858cb46`; live build
+`/tmp/mv-live-build` → `/var/www/marketview/`, `diff -rq` clean, bundle `assets/index-CBde1ur8.js`. Live read in Chrome:
+NIFTY tiles and ladder identical to staging.
+
+**Noted, not fixed (follow-up candidate):** while the data queries are still loading, the tiles show the absent line
+"no flow before 09:15" — a loading state worded as a data state. Read once on the live board at 20:32 before the
+queries returned. Wording for a loading state needs the operator's yes.

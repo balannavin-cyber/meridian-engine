@@ -1,5 +1,6 @@
 -- p7a_body_cost.sql -- the v_dex_flow_vs_book body (sql/2026-10-11_s96_v_dex_flow_vs_book.sql
--- Section 1) run as a plain query, for costing through bin/roq.sh BEFORE the view exists.
+-- Section 1) run as a plain query, for costing through bin/roq.sh BEFORE an apply. S96-C: body
+-- regenerated with the seven pre-open columns.
 -- Read-only; creates nothing. Run TWICE (one timing on a shared instance is a sample):
 --   { printf 'EXPLAIN (ANALYZE, BUFFERS)\n'; cat p7a_body_cost.sql; } | bin/roq.sh | grep -E 'Execution Time|Planning Time'
 -- PASS: Execution Time < 3000 ms on both runs (anon ceiling, MV-6). Note: roq runs as merdian_ro,
@@ -51,7 +52,22 @@ WITH b AS (
                CASE WHEN d_oi_put IS NOT NULL AND d_oi_put <> 0 AND put_gap
                     THEN abs(d_oi_put) ELSE 0 END                AS d_oi_put_no_delta,
                CASE WHEN d_oi_call IS NULL THEN COALESCE(oi_call, 0) ELSE 0 END
-             + CASE WHEN d_oi_put  IS NULL THEN COALESCE(oi_put,  0) ELSE 0 END AS no_anchor_oi_qty
+             + CASE WHEN d_oi_put  IS NULL THEN COALESCE(oi_put,  0) ELSE 0 END AS no_anchor_oi_qty,
+               -- S96-C: the pre-open OI valued at the SETTLED delta (not the 08:30 book).
+               CASE WHEN ce_oi_anchor_qty IS NULL THEN NULL
+                    WHEN ce_oi_anchor_qty = 0     THEN 0
+                    WHEN call_gap                 THEN NULL
+                    ELSE delta_call * ce_oi_anchor_qty * spot / 1e7 END AS call_preopen_dex_cr,
+               CASE WHEN pe_oi_anchor_qty IS NULL THEN NULL
+                    WHEN pe_oi_anchor_qty = 0     THEN 0
+                    WHEN put_gap                  THEN NULL
+                    ELSE delta_put * pe_oi_anchor_qty * spot / 1e7 END  AS put_preopen_dex_cr,
+               -- book OI on a side with NO anchor OI, valued as the book values it: the one
+               -- term outside preopen + flow, so the leg identity can be stated exactly.
+               CASE WHEN ce_oi_anchor_qty IS NULL AND COALESCE(oi_call, 0) > 0 AND NOT call_gap
+                    THEN delta_call * oi_call * spot / 1e7 ELSE 0 END
+             + CASE WHEN pe_oi_anchor_qty IS NULL AND COALESCE(oi_put, 0) > 0 AND NOT put_gap
+                    THEN delta_put * oi_put * spot / 1e7 ELSE 0 END    AS no_anchor_dex_cr
           FROM j
      )
 SELECT f.symbol,
@@ -95,6 +111,15 @@ SELECT f.symbol,
        f.leg_put_dex_cr,
        f.leg_net_dex_cr,
        f.leg_oi_qty,
-       f.leg_gap_oi_qty
+       f.leg_gap_oi_qty,
+       -- S96-C (appended, so CREATE OR REPLACE keeps the existing columns in place)
+       f.call_preopen_dex_cr,
+       f.put_preopen_dex_cr,
+       CASE WHEN f.call_preopen_dex_cr IS NULL OR f.put_preopen_dex_cr IS NULL THEN NULL
+            ELSE f.call_preopen_dex_cr + f.put_preopen_dex_cr END             AS net_preopen_dex_cr,
+       sum(COALESCE(f.call_preopen_dex_cr, 0)) OVER wleg                       AS leg_call_preopen_dex_cr,
+       sum(COALESCE(f.put_preopen_dex_cr , 0)) OVER wleg                       AS leg_put_preopen_dex_cr,
+       sum(COALESCE(f.call_preopen_dex_cr, 0) + COALESCE(f.put_preopen_dex_cr, 0)) OVER wleg AS leg_net_preopen_dex_cr,
+       sum(f.no_anchor_dex_cr) OVER wleg                                       AS leg_no_anchor_dex_cr
   FROM f
 WINDOW wleg AS (PARTITION BY f.symbol, f.expiry_date);

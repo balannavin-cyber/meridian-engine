@@ -50,6 +50,17 @@
 -- non-zero flow is then a vendor OI revision before any trade, not flow);
 -- SESSION otherwise. Consumers draw flow only in SESSION (design note 5.1).
 --
+-- S96-C AMENDMENT (authored 2026-10-11 ~19:50 IST, NOT YET APPLIED when written): appends
+-- seven pre-open columns (per strike call/put/net_preopen_dex_cr; leg totals; leg_no_anchor_dex_cr)
+-- so a board drawing held / added / removed since the pre-open reads the remembered value from
+-- the database (ruling S96-C). Columns are APPENDED, so CREATE OR REPLACE keeps the existing ones;
+-- COMMENT and GRANTs are re-run in the same batch. New check 4f. Fixture (S96): applied over
+-- the first version as CREATE OR REPLACE, comment_len 3959, 4a-4d unchanged, 4f n 44 per symbol,
+-- strike diff 0, leg diff 0 with the no-anchor term exercised (fixture strike absent at the
+-- anchor, +4.68 Cr NIFTY); mutants: pre-open valued on settled OI -> 4f strike diff 61.6;
+-- no-anchor term dropped -> 4f leg diff 4.68 / 25.51. Everything above this paragraph
+-- describes the first apply and is left as written.
+--
 -- APPLIED 2026-10-11 ~19:00 IST (S96), Sections 1-3 in ONE execution from the committed
 -- file (36af1e9), copied via Notepad, not the terminal. End-of-batch row: has_view t |
 -- comment_len 3284 | anon_r t | anon_write f | merdian_ro_r t | authenticated_r f.
@@ -134,7 +145,22 @@ WITH b AS (
                CASE WHEN d_oi_put IS NOT NULL AND d_oi_put <> 0 AND put_gap
                     THEN abs(d_oi_put) ELSE 0 END                AS d_oi_put_no_delta,
                CASE WHEN d_oi_call IS NULL THEN COALESCE(oi_call, 0) ELSE 0 END
-             + CASE WHEN d_oi_put  IS NULL THEN COALESCE(oi_put,  0) ELSE 0 END AS no_anchor_oi_qty
+             + CASE WHEN d_oi_put  IS NULL THEN COALESCE(oi_put,  0) ELSE 0 END AS no_anchor_oi_qty,
+               -- S96-C: the pre-open OI valued at the SETTLED delta (not the 08:30 book).
+               CASE WHEN ce_oi_anchor_qty IS NULL THEN NULL
+                    WHEN ce_oi_anchor_qty = 0     THEN 0
+                    WHEN call_gap                 THEN NULL
+                    ELSE delta_call * ce_oi_anchor_qty * spot / 1e7 END AS call_preopen_dex_cr,
+               CASE WHEN pe_oi_anchor_qty IS NULL THEN NULL
+                    WHEN pe_oi_anchor_qty = 0     THEN 0
+                    WHEN put_gap                  THEN NULL
+                    ELSE delta_put * pe_oi_anchor_qty * spot / 1e7 END  AS put_preopen_dex_cr,
+               -- book OI on a side with NO anchor OI, valued as the book values it: the one
+               -- term outside preopen + flow, so the leg identity can be stated exactly.
+               CASE WHEN ce_oi_anchor_qty IS NULL AND COALESCE(oi_call, 0) > 0 AND NOT call_gap
+                    THEN delta_call * oi_call * spot / 1e7 ELSE 0 END
+             + CASE WHEN pe_oi_anchor_qty IS NULL AND COALESCE(oi_put, 0) > 0 AND NOT put_gap
+                    THEN delta_put * oi_put * spot / 1e7 ELSE 0 END    AS no_anchor_dex_cr
           FROM j
      )
 SELECT f.symbol,
@@ -178,7 +204,16 @@ SELECT f.symbol,
        f.leg_put_dex_cr,
        f.leg_net_dex_cr,
        f.leg_oi_qty,
-       f.leg_gap_oi_qty
+       f.leg_gap_oi_qty,
+       -- S96-C (appended, so CREATE OR REPLACE keeps the existing columns in place)
+       f.call_preopen_dex_cr,
+       f.put_preopen_dex_cr,
+       CASE WHEN f.call_preopen_dex_cr IS NULL OR f.put_preopen_dex_cr IS NULL THEN NULL
+            ELSE f.call_preopen_dex_cr + f.put_preopen_dex_cr END             AS net_preopen_dex_cr,
+       sum(COALESCE(f.call_preopen_dex_cr, 0)) OVER wleg                       AS leg_call_preopen_dex_cr,
+       sum(COALESCE(f.put_preopen_dex_cr , 0)) OVER wleg                       AS leg_put_preopen_dex_cr,
+       sum(COALESCE(f.call_preopen_dex_cr, 0) + COALESCE(f.put_preopen_dex_cr, 0)) OVER wleg AS leg_net_preopen_dex_cr,
+       sum(f.no_anchor_dex_cr) OVER wleg                                       AS leg_no_anchor_dex_cr
   FROM f
 WINDOW wleg AS (PARTITION BY f.symbol, f.expiry_date);
 
@@ -188,7 +223,7 @@ WINDOW wleg AS (PARTITION BY f.symbol, f.expiry_date);
 -- =====================================================================
 
 COMMENT ON VIEW public.v_dex_flow_vs_book IS
-  'S96 / roadmap P7a / ruling S96-A -- DEX FLOW since the pre-open row beside the DEX standing BOOK, per front-expiry strike, in Rs crore. NOT a parity layer; display-only (S37); routes nothing; makes NO PREDICTIVE CLAIM. Grain (symbol, expiry_date, strike), front leg only; consumers MUST ORDER BY symbol, strike. NO BADGE COLUMN: M-P7 (docs/research/s96_priority/p7/MP7_flow_badge_result_2026-10-11.md) scored a SAME/OPPOSITE badge BUILD on condition of an untraded-leg guard (TD-S95-NEW-1 c), not yet ruled, so only the numbers are published. JOINS TWO LIVE VIEWS AND RE-IMPLEMENTS NO RULE: v_dex_standing_book (ENH-140) gives the session, the front leg, the settled run (last run at or before 15:15 IST), OI, vendor delta and spot at it, the gap rule and the book; v_oi_since_preopen (ENH-142, S95-B) gives the anchor, the session first front-expiry row stamped before 09:15 IST, and the anchor OI. flow = delta(settled) x (oi(settled) - oi(anchor)) x spot / 1e7, no PE flip (delta carries its sign), oi a quantity with the lot inside it. ONE CLOCK: everything is valued at the book settled run; P5 own latest snapshot and delta columns are not used, because after 15:15 P5 latest moves to 15:40 while the book holds. book minus flow equals delta x oi(anchor) x spot / 1e7 wherever both sides are measured. JOIN GUARD: rows appear for a symbol only when the book session date and front expiry equal P5 (P5 session = IST date of anchor_ts); otherwise NO ROWS for that symbol, never a fallback (ADR-023 D1) -- expected from the pre-open rows (~08:30) until the tape moves after 09:15, and on a frozen closed day that wrote chain rows. NULL IS A GAP, NEVER A ZERO: a side whose delta is a gap publishes NULL flow and its |dOI| in d_oi_call_no_delta / d_oi_put_no_delta; a side with no anchor OI has NULL dOI and NULL flow, its settled OI in leg_no_anchor_oi_qty; net_flow_cr is NULL when either side is NULL. Gap detection: where settled OI is above 0, the book own NULL call_dex_cr / put_dex_cr; where it is 0, delta IS NULL OR delta = 0 (ENH-140 marker differs only on a zero delta beside a live iv, measured at zero rows; Section 4d recomputes with the iv form). LEG TOTALS are window sums of each side MEASURED contribution, read with leg_gap_d_oi_qty and leg_no_anchor_oi_qty or not at all; the book leg totals ride beside them unchanged. flow_window is PRE_OPEN when the settled run is stamped before 09:15 IST -- a non-zero flow then is a vendor OI revision before any trade -- and SESSION otherwise; consumers draw flow only in SESSION. AN OI DELTA CANNOT DISTINGUISH WRITING FROM BUYING; NO DEALER CLAIM (P2: dealer side regime-dependent). Flow is unclassified (no long/short build-up, covering or unwinding) and is valued at the settled run delta, not at the delta when each contract was added. FLOW NET IS ITSELF A PARTIAL CANCELLATION: M-P7 measured flow |net|/gross median 0.27 NIFTY, 0.19 SENSEX over 31 and 28 sessions. VENDOR OI ON UNTRADED LEGS (TD-S95-NEW-1) does not move flow after 09:15 on any of 22 symbol-sessions measured, but it inflates the BOOK beside it on days like SENSEX 2026-09-25 / 09-28 / 09-29. Runs with the owner privileges (security_invoker = false); adding a column here publishes it to anon. Never label second-order terms vanna or charm (L78-1).';
+  'S96 / roadmap P7a / ruling S96-A -- DEX FLOW since the pre-open row beside the DEX standing BOOK, per front-expiry strike, in Rs crore. NOT a parity layer; display-only (S37); routes nothing; makes NO PREDICTIVE CLAIM. Grain (symbol, expiry_date, strike), front leg only; consumers MUST ORDER BY symbol, strike. NO BADGE COLUMN: M-P7 (docs/research/s96_priority/p7/MP7_flow_badge_result_2026-10-11.md) scored a SAME/OPPOSITE badge BUILD on condition of an untraded-leg guard (TD-S95-NEW-1 c), not yet ruled, so only the numbers are published. JOINS TWO LIVE VIEWS AND RE-IMPLEMENTS NO RULE: v_dex_standing_book (ENH-140) gives the session, the front leg, the settled run (last run at or before 15:15 IST), OI, vendor delta and spot at it, the gap rule and the book; v_oi_since_preopen (ENH-142, S95-B) gives the anchor, the session first front-expiry row stamped before 09:15 IST, and the anchor OI. flow = delta(settled) x (oi(settled) - oi(anchor)) x spot / 1e7, no PE flip (delta carries its sign), oi a quantity with the lot inside it. ONE CLOCK: everything is valued at the book settled run; P5 own latest snapshot and delta columns are not used, because after 15:15 P5 latest moves to 15:40 while the book holds. book minus flow equals delta x oi(anchor) x spot / 1e7 wherever both sides are measured. JOIN GUARD: rows appear for a symbol only when the book session date and front expiry equal P5 (P5 session = IST date of anchor_ts); otherwise NO ROWS for that symbol, never a fallback (ADR-023 D1) -- expected from the pre-open rows (~08:30) until the tape moves after 09:15, and on a frozen closed day that wrote chain rows. NULL IS A GAP, NEVER A ZERO: a side whose delta is a gap publishes NULL flow and its |dOI| in d_oi_call_no_delta / d_oi_put_no_delta; a side with no anchor OI has NULL dOI and NULL flow, its settled OI in leg_no_anchor_oi_qty; net_flow_cr is NULL when either side is NULL. Gap detection: where settled OI is above 0, the book own NULL call_dex_cr / put_dex_cr; where it is 0, delta IS NULL OR delta = 0 (ENH-140 marker differs only on a zero delta beside a live iv, measured at zero rows; Section 4d recomputes with the iv form). LEG TOTALS are window sums of each side MEASURED contribution, read with leg_gap_d_oi_qty and leg_no_anchor_oi_qty or not at all; the book leg totals ride beside them unchanged. flow_window is PRE_OPEN when the settled run is stamped before 09:15 IST -- a non-zero flow then is a vendor OI revision before any trade -- and SESSION otherwise; consumers draw flow only in SESSION. AN OI DELTA CANNOT DISTINGUISH WRITING FROM BUYING; NO DEALER CLAIM (P2: dealer side regime-dependent). Flow is unclassified (no long/short build-up, covering or unwinding) and is valued at the settled run delta, not at the delta when each contract was added. FLOW NET IS ITSELF A PARTIAL CANCELLATION: M-P7 measured flow |net|/gross median 0.27 NIFTY, 0.19 SENSEX over 31 and 28 sessions. VENDOR OI ON UNTRADED LEGS (TD-S95-NEW-1) does not move flow after 09:15 on any of 22 symbol-sessions measured, but it inflates the BOOK beside it on days like SENSEX 2026-09-25 / 09-28 / 09-29. Runs with the owner privileges (security_invoker = false); adding a column here publishes it to anon. PRE-OPEN COLUMNS (S96-C, appended): call_preopen_dex_cr / put_preopen_dex_cr / net_preopen_dex_cr and their leg totals are the PRE-OPEN OI VALUED AT THE SETTLED DELTA x spot / 1e7 -- not the book as it stood at 08:30 -- so book = pre-open + flow splits the change into OI change only, never repricing; a surface labels it from x at pre-open OI. Same gap rule as flow. leg_no_anchor_dex_cr is the book DEX on sides with no anchor OI, the one term outside the split: leg book = leg pre-open + leg flow + leg_no_anchor_dex_cr exactly. These exist so a surface that draws held / added / removed since the pre-open reads the remembered value from here, never from its own memory. Never label second-order terms vanna or charm (L78-1).';
 
 
 -- =====================================================================
@@ -199,7 +234,7 @@ REVOKE ALL ON public.v_dex_flow_vs_book FROM anon, authenticated;
 GRANT SELECT ON public.v_dex_flow_vs_book TO anon, merdian_ro;
 
 -- end-of-batch verification (TD-S94-NEW-3) -- must return ONE row:
---   has_view t | comment_len 3284 (computed from the literal in this file, '' unescaped) |
+--   has_view t | comment_len 3959 (computed from the literal in this file, '' unescaped; was 3284 before S96-C) |
 --   anon_r t | anon_write f | merdian_ro_r t | authenticated_r f
 SELECT to_regclass('public.v_dex_flow_vs_book') IS NOT NULL                         AS has_view,
        length(obj_description('public.v_dex_flow_vs_book'::regclass, 'pg_class'))    AS comment_len,
@@ -303,6 +338,20 @@ SELECT v.symbol,
        v.leg_no_anchor_oi_qty - r.noanc   AS d_noanc,
        r.call_f, r.put_f
   FROM v JOIN r USING (symbol) ORDER BY 1;
+
+-- 4f  S96-C split. Per strike where book, pre-open and flow are all non-NULL, per side:
+--     book = pre-open + flow. Per leg: book = pre-open + flow + no-anchor. Fails if the pre-open
+--     columns use a different clock, gap rule or anchor than flow and book.
+--     PASS: n_strike_sides > 0 | max_strike_diff <= 1e-9 | leg_diff <= 1e-9, per symbol.
+SELECT symbol,
+       count(*) FILTER (WHERE call_dex_cr IS NOT NULL AND call_preopen_dex_cr IS NOT NULL AND call_flow_cr IS NOT NULL)
+     + count(*) FILTER (WHERE put_dex_cr IS NOT NULL AND put_preopen_dex_cr IS NOT NULL AND put_flow_cr IS NOT NULL) AS n_strike_sides,
+       greatest(max(abs(call_dex_cr - call_preopen_dex_cr - call_flow_cr)),
+                max(abs(put_dex_cr  - put_preopen_dex_cr  - put_flow_cr)))                AS max_strike_diff,
+       max(abs(leg_net_dex_cr - leg_net_preopen_dex_cr - leg_net_flow_cr - leg_no_anchor_dex_cr)) AS leg_diff,
+       max(leg_net_preopen_dex_cr) AS leg_net_preopen, max(leg_net_dex_cr) AS leg_net_book,
+       max(leg_net_flow_cr) AS leg_net_flow
+  FROM public.v_dex_flow_vs_book GROUP BY symbol ORDER BY 1;
 
 -- 4e  cost, as anon, TWICE (one timing on a shared instance is a sample).
 --     Fails if either run exceeds anon's 3 s ceiling (MV-6).

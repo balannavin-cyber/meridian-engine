@@ -1,6 +1,6 @@
 -- p7a_body_cost.sql -- the v_dex_flow_vs_book body (sql/2026-10-11_s96_v_dex_flow_vs_book.sql
--- Section 1) run as a plain query, for costing through bin/roq.sh BEFORE an apply. S96-C: body
--- regenerated with the seven pre-open columns.
+-- Section 1) run as a plain query, for costing through bin/roq.sh BEFORE an apply. S96-D: body
+-- regenerated with the untraded-leg guard (CTE u and three appended columns).
 -- Read-only; creates nothing. Run TWICE (one timing on a shared instance is a sample):
 --   { printf 'EXPLAIN (ANALYZE, BUFFERS)\n'; cat p7a_body_cost.sql; } | bin/roq.sh | grep -E 'Execution Time|Planning Time'
 -- PASS: Execution Time < 3000 ms on both runs (anon ceiling, MV-6). Note: roq runs as merdian_ro,
@@ -20,6 +20,22 @@ WITH b AS (
             ON pp.symbol = bb.symbol
            AND pp.expiry_date = bb.expiry_date
            AND pp.p_session_date = bb.session_date
+     ), u AS (
+        -- S96-D: the untraded-leg signature S2 per strike side AT THE SETTLED RUN, read from the
+        -- chain by the same exact seek the book uses (ts, symbol, expiry_date). S2 = oi > 0, volume
+        -- 0 so far (or NULL), and oi_change = oi: all of today's OI is new yet nothing traded.
+        SELECT c.symbol, c.expiry_date, c.strike,
+               bool_or(c.option_type = 'CE' AND COALESCE(c.oi, 0) > 0
+                       AND COALESCE(c.volume, 0) = 0 AND c.oi_change = c.oi) AS call_s2,
+               bool_or(c.option_type = 'PE' AND COALESCE(c.oi, 0) > 0
+                       AND COALESCE(c.volume, 0) = 0 AND c.oi_change = c.oi) AS put_s2
+          FROM (SELECT DISTINCT bb.symbol, bb.expiry_date, bb.settled_ts
+                  FROM b bb JOIN agree g ON g.symbol = bb.symbol) st
+          JOIN public.option_chain_snapshots c
+            ON c.symbol = st.symbol
+           AND c.expiry_date = st.expiry_date
+           AND c.ts = st.settled_ts
+         GROUP BY c.symbol, c.expiry_date, c.strike
      ), j AS (
         SELECT bb.*,
                g.anchor_ts,
@@ -30,13 +46,19 @@ WITH b AS (
                CASE WHEN COALESCE(bb.oi_put, 0) > 0 THEN bb.put_dex_cr IS NULL
                     ELSE (bb.delta_put IS NULL OR bb.delta_put = 0) END AS put_gap,
                bb.oi_call - pp.ce_oi_anchor_qty AS d_oi_call,
-               bb.oi_put  - pp.pe_oi_anchor_qty AS d_oi_put
+               bb.oi_put  - pp.pe_oi_anchor_qty AS d_oi_put,
+               COALESCE(uu.call_s2, false) AS call_s2,
+               COALESCE(uu.put_s2,  false) AS put_s2
           FROM b bb
           JOIN agree g ON g.symbol = bb.symbol
           LEFT JOIN p pp
             ON pp.symbol = bb.symbol
            AND pp.expiry_date = bb.expiry_date
            AND pp.strike = bb.strike
+          LEFT JOIN u uu
+            ON uu.symbol = bb.symbol
+           AND uu.expiry_date = bb.expiry_date
+           AND uu.strike = bb.strike
      ), f AS (
         SELECT j.*,
                CASE WHEN d_oi_call IS NULL THEN NULL
@@ -67,7 +89,12 @@ WITH b AS (
                CASE WHEN ce_oi_anchor_qty IS NULL AND COALESCE(oi_call, 0) > 0 AND NOT call_gap
                     THEN delta_call * oi_call * spot / 1e7 ELSE 0 END
              + CASE WHEN pe_oi_anchor_qty IS NULL AND COALESCE(oi_put, 0) > 0 AND NOT put_gap
-                    THEN delta_put * oi_put * spot / 1e7 ELSE 0 END    AS no_anchor_dex_cr
+                    THEN delta_put * oi_put * spot / 1e7 ELSE 0 END    AS no_anchor_dex_cr,
+               -- S96-D: |book DEX| on S2 sides, and |book DEX| on all sides. A gap side has a NULL
+               -- book and counts 0 in both, as in the guard survey (guard_cycles.sql).
+               CASE WHEN call_s2 THEN abs(COALESCE(call_dex_cr, 0)) ELSE 0 END
+             + CASE WHEN put_s2  THEN abs(COALESCE(put_dex_cr,  0)) ELSE 0 END AS s2_gross_cr,
+               abs(COALESCE(call_dex_cr, 0)) + abs(COALESCE(put_dex_cr, 0))   AS book_gross_cr
           FROM j
      )
 SELECT f.symbol,
@@ -120,6 +147,11 @@ SELECT f.symbol,
        sum(COALESCE(f.call_preopen_dex_cr, 0)) OVER wleg                       AS leg_call_preopen_dex_cr,
        sum(COALESCE(f.put_preopen_dex_cr , 0)) OVER wleg                       AS leg_put_preopen_dex_cr,
        sum(COALESCE(f.call_preopen_dex_cr, 0) + COALESCE(f.put_preopen_dex_cr, 0)) OVER wleg AS leg_net_preopen_dex_cr,
-       sum(f.no_anchor_dex_cr) OVER wleg                                       AS leg_no_anchor_dex_cr
+       sum(f.no_anchor_dex_cr) OVER wleg                                       AS leg_no_anchor_dex_cr,
+       -- S96-D (appended): the untraded-leg guard at the settled run. Share NULL when the leg has
+       -- no measured book; untraded_guard is then NULL (unknown, never false).
+       sum(f.s2_gross_cr) OVER wleg                                            AS leg_s2_gross_cr,
+       sum(f.s2_gross_cr) OVER wleg / NULLIF(sum(f.book_gross_cr) OVER wleg, 0) AS leg_s2_gross_share,
+       sum(f.s2_gross_cr) OVER wleg / NULLIF(sum(f.book_gross_cr) OVER wleg, 0) >= 0.02 AS untraded_guard
   FROM f
 WINDOW wleg AS (PARTITION BY f.symbol, f.expiry_date);

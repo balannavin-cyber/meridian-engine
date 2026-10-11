@@ -50,6 +50,24 @@
 -- non-zero flow is then a vendor OI revision before any trade, not flow);
 -- SESSION otherwise. Consumers draw flow only in SESSION (design note 5.1).
 --
+-- S96-D AMENDMENT (authored 2026-10-11 ~21:00 IST, NOT YET APPLIED when written): the untraded-leg
+-- guard, ruling S96-D (TD-S95-NEW-1 c; survey docs/research/s96_priority/guard/
+-- guard_survey_result_2026-10-11.md). Appends leg_s2_gross_cr, leg_s2_gross_share, untraded_guard.
+-- New CTE u reads volume and oi_change at the settled run by the book's exact seek (ts, symbol,
+-- expiry_date): ~431 rows per symbol. S2 = oi > 0, volume 0 so far (or NULL), oi_change = oi.
+-- Share = S2 |book DEX| / leg |book DEX| (gap sides 0 in both, as in the survey); guard = share >= 0.02,
+-- NULL when the share is NULL. Columns APPENDED; COMMENT and GRANTs re-run in the same batch; new
+-- check 4g recomputes from the chain with the survey's definitions. No existing column changes:
+-- 4a-4f must give the same values as at the S96-C apply.
+-- Fixture (S96, local Postgres 16, synthetic chain with volume / oi_change and one planted S2 leg on
+-- SENSEX 2026-10-09): applied over S96-C as CREATE OR REPLACE, comment_len 4749; 4a-4f output
+-- byte-identical before and after; 4g PASS on both branches -- NIFTY n_s2 0, share 0, guard f;
+-- SENSEX n_s2 1, share 0.98914693713940523038, guard t; d_s2 0, d_share 0. Mutants, each caught
+-- by 4g: S2 relaxed to S1 (oi_change test dropped) -> d_s2 563.09 / 1,233.70; threshold written
+-- as 2 instead of 0.02 -> SENSEX guard_ok f; u joined one strike off -> d_s2 250,288.53.
+-- Not exercised on the fixture: a leg with no measured book (NULL share -> NULL guard).
+-- Body cost on the fixture 15.1 ms; real-volume cost through roq is measured BEFORE apply.
+--
 -- S96-C APPLIED 2026-10-11 ~19:52 IST, Sections 1-3 in ONE execution from a728052 via Notepad.
 -- End-of-batch row: has_view t | comment_len 3959 | anon_r t | anon_write f | merdian_ro_r t |
 -- authenticated_r f. Pre-apply cost through roq 253.7 / 261.1 ms, no Seq Scan. 4f on the
@@ -121,6 +139,22 @@ WITH b AS (
             ON pp.symbol = bb.symbol
            AND pp.expiry_date = bb.expiry_date
            AND pp.p_session_date = bb.session_date
+     ), u AS (
+        -- S96-D: the untraded-leg signature S2 per strike side AT THE SETTLED RUN, read from the
+        -- chain by the same exact seek the book uses (ts, symbol, expiry_date). S2 = oi > 0, volume
+        -- 0 so far (or NULL), and oi_change = oi: all of today's OI is new yet nothing traded.
+        SELECT c.symbol, c.expiry_date, c.strike,
+               bool_or(c.option_type = 'CE' AND COALESCE(c.oi, 0) > 0
+                       AND COALESCE(c.volume, 0) = 0 AND c.oi_change = c.oi) AS call_s2,
+               bool_or(c.option_type = 'PE' AND COALESCE(c.oi, 0) > 0
+                       AND COALESCE(c.volume, 0) = 0 AND c.oi_change = c.oi) AS put_s2
+          FROM (SELECT DISTINCT bb.symbol, bb.expiry_date, bb.settled_ts
+                  FROM b bb JOIN agree g ON g.symbol = bb.symbol) st
+          JOIN public.option_chain_snapshots c
+            ON c.symbol = st.symbol
+           AND c.expiry_date = st.expiry_date
+           AND c.ts = st.settled_ts
+         GROUP BY c.symbol, c.expiry_date, c.strike
      ), j AS (
         SELECT bb.*,
                g.anchor_ts,
@@ -131,13 +165,19 @@ WITH b AS (
                CASE WHEN COALESCE(bb.oi_put, 0) > 0 THEN bb.put_dex_cr IS NULL
                     ELSE (bb.delta_put IS NULL OR bb.delta_put = 0) END AS put_gap,
                bb.oi_call - pp.ce_oi_anchor_qty AS d_oi_call,
-               bb.oi_put  - pp.pe_oi_anchor_qty AS d_oi_put
+               bb.oi_put  - pp.pe_oi_anchor_qty AS d_oi_put,
+               COALESCE(uu.call_s2, false) AS call_s2,
+               COALESCE(uu.put_s2,  false) AS put_s2
           FROM b bb
           JOIN agree g ON g.symbol = bb.symbol
           LEFT JOIN p pp
             ON pp.symbol = bb.symbol
            AND pp.expiry_date = bb.expiry_date
            AND pp.strike = bb.strike
+          LEFT JOIN u uu
+            ON uu.symbol = bb.symbol
+           AND uu.expiry_date = bb.expiry_date
+           AND uu.strike = bb.strike
      ), f AS (
         SELECT j.*,
                CASE WHEN d_oi_call IS NULL THEN NULL
@@ -168,7 +208,12 @@ WITH b AS (
                CASE WHEN ce_oi_anchor_qty IS NULL AND COALESCE(oi_call, 0) > 0 AND NOT call_gap
                     THEN delta_call * oi_call * spot / 1e7 ELSE 0 END
              + CASE WHEN pe_oi_anchor_qty IS NULL AND COALESCE(oi_put, 0) > 0 AND NOT put_gap
-                    THEN delta_put * oi_put * spot / 1e7 ELSE 0 END    AS no_anchor_dex_cr
+                    THEN delta_put * oi_put * spot / 1e7 ELSE 0 END    AS no_anchor_dex_cr,
+               -- S96-D: |book DEX| on S2 sides, and |book DEX| on all sides. A gap side has a NULL
+               -- book and counts 0 in both, as in the guard survey (guard_cycles.sql).
+               CASE WHEN call_s2 THEN abs(COALESCE(call_dex_cr, 0)) ELSE 0 END
+             + CASE WHEN put_s2  THEN abs(COALESCE(put_dex_cr,  0)) ELSE 0 END AS s2_gross_cr,
+               abs(COALESCE(call_dex_cr, 0)) + abs(COALESCE(put_dex_cr, 0))   AS book_gross_cr
           FROM j
      )
 SELECT f.symbol,
@@ -221,7 +266,12 @@ SELECT f.symbol,
        sum(COALESCE(f.call_preopen_dex_cr, 0)) OVER wleg                       AS leg_call_preopen_dex_cr,
        sum(COALESCE(f.put_preopen_dex_cr , 0)) OVER wleg                       AS leg_put_preopen_dex_cr,
        sum(COALESCE(f.call_preopen_dex_cr, 0) + COALESCE(f.put_preopen_dex_cr, 0)) OVER wleg AS leg_net_preopen_dex_cr,
-       sum(f.no_anchor_dex_cr) OVER wleg                                       AS leg_no_anchor_dex_cr
+       sum(f.no_anchor_dex_cr) OVER wleg                                       AS leg_no_anchor_dex_cr,
+       -- S96-D (appended): the untraded-leg guard at the settled run. Share NULL when the leg has
+       -- no measured book; untraded_guard is then NULL (unknown, never false).
+       sum(f.s2_gross_cr) OVER wleg                                            AS leg_s2_gross_cr,
+       sum(f.s2_gross_cr) OVER wleg / NULLIF(sum(f.book_gross_cr) OVER wleg, 0) AS leg_s2_gross_share,
+       sum(f.s2_gross_cr) OVER wleg / NULLIF(sum(f.book_gross_cr) OVER wleg, 0) >= 0.02 AS untraded_guard
   FROM f
 WINDOW wleg AS (PARTITION BY f.symbol, f.expiry_date);
 
@@ -231,7 +281,7 @@ WINDOW wleg AS (PARTITION BY f.symbol, f.expiry_date);
 -- =====================================================================
 
 COMMENT ON VIEW public.v_dex_flow_vs_book IS
-  'S96 / roadmap P7a / ruling S96-A -- DEX FLOW since the pre-open row beside the DEX standing BOOK, per front-expiry strike, in Rs crore. NOT a parity layer; display-only (S37); routes nothing; makes NO PREDICTIVE CLAIM. Grain (symbol, expiry_date, strike), front leg only; consumers MUST ORDER BY symbol, strike. NO BADGE COLUMN: M-P7 (docs/research/s96_priority/p7/MP7_flow_badge_result_2026-10-11.md) scored a SAME/OPPOSITE badge BUILD on condition of an untraded-leg guard (TD-S95-NEW-1 c), not yet ruled, so only the numbers are published. JOINS TWO LIVE VIEWS AND RE-IMPLEMENTS NO RULE: v_dex_standing_book (ENH-140) gives the session, the front leg, the settled run (last run at or before 15:15 IST), OI, vendor delta and spot at it, the gap rule and the book; v_oi_since_preopen (ENH-142, S95-B) gives the anchor, the session first front-expiry row stamped before 09:15 IST, and the anchor OI. flow = delta(settled) x (oi(settled) - oi(anchor)) x spot / 1e7, no PE flip (delta carries its sign), oi a quantity with the lot inside it. ONE CLOCK: everything is valued at the book settled run; P5 own latest snapshot and delta columns are not used, because after 15:15 P5 latest moves to 15:40 while the book holds. book minus flow equals delta x oi(anchor) x spot / 1e7 wherever both sides are measured. JOIN GUARD: rows appear for a symbol only when the book session date and front expiry equal P5 (P5 session = IST date of anchor_ts); otherwise NO ROWS for that symbol, never a fallback (ADR-023 D1) -- expected from the pre-open rows (~08:30) until the tape moves after 09:15, and on a frozen closed day that wrote chain rows. NULL IS A GAP, NEVER A ZERO: a side whose delta is a gap publishes NULL flow and its |dOI| in d_oi_call_no_delta / d_oi_put_no_delta; a side with no anchor OI has NULL dOI and NULL flow, its settled OI in leg_no_anchor_oi_qty; net_flow_cr is NULL when either side is NULL. Gap detection: where settled OI is above 0, the book own NULL call_dex_cr / put_dex_cr; where it is 0, delta IS NULL OR delta = 0 (ENH-140 marker differs only on a zero delta beside a live iv, measured at zero rows; Section 4d recomputes with the iv form). LEG TOTALS are window sums of each side MEASURED contribution, read with leg_gap_d_oi_qty and leg_no_anchor_oi_qty or not at all; the book leg totals ride beside them unchanged. flow_window is PRE_OPEN when the settled run is stamped before 09:15 IST -- a non-zero flow then is a vendor OI revision before any trade -- and SESSION otherwise; consumers draw flow only in SESSION. AN OI DELTA CANNOT DISTINGUISH WRITING FROM BUYING; NO DEALER CLAIM (P2: dealer side regime-dependent). Flow is unclassified (no long/short build-up, covering or unwinding) and is valued at the settled run delta, not at the delta when each contract was added. FLOW NET IS ITSELF A PARTIAL CANCELLATION: M-P7 measured flow |net|/gross median 0.27 NIFTY, 0.19 SENSEX over 31 and 28 sessions. VENDOR OI ON UNTRADED LEGS (TD-S95-NEW-1) does not move flow after 09:15 on any of 22 symbol-sessions measured, but it inflates the BOOK beside it on days like SENSEX 2026-09-25 / 09-28 / 09-29. Runs with the owner privileges (security_invoker = false); adding a column here publishes it to anon. PRE-OPEN COLUMNS (S96-C, appended): call_preopen_dex_cr / put_preopen_dex_cr / net_preopen_dex_cr and their leg totals are the PRE-OPEN OI VALUED AT THE SETTLED DELTA x spot / 1e7 -- not the book as it stood at 08:30 -- so book = pre-open + flow splits the change into OI change only, never repricing; a surface labels it from x at pre-open OI. Same gap rule as flow. leg_no_anchor_dex_cr is the book DEX on sides with no anchor OI, the one term outside the split: leg book = leg pre-open + leg flow + leg_no_anchor_dex_cr exactly. These exist so a surface that draws held / added / removed since the pre-open reads the remembered value from here, never from its own memory. Never label second-order terms vanna or charm (L78-1).';
+  'S96 / roadmap P7a / ruling S96-A -- DEX FLOW since the pre-open row beside the DEX standing BOOK, per front-expiry strike, in Rs crore. NOT a parity layer; display-only (S37); routes nothing; makes NO PREDICTIVE CLAIM. Grain (symbol, expiry_date, strike), front leg only; consumers MUST ORDER BY symbol, strike. NO BADGE COLUMN: M-P7 (docs/research/s96_priority/p7/MP7_flow_badge_result_2026-10-11.md) scored a SAME/OPPOSITE badge BUILD on condition of an untraded-leg guard (TD-S95-NEW-1 c), ruled S96-D; the guard columns are published here, the badge itself is not a column of this view. JOINS TWO LIVE VIEWS AND RE-IMPLEMENTS NO RULE: v_dex_standing_book (ENH-140) gives the session, the front leg, the settled run (last run at or before 15:15 IST), OI, vendor delta and spot at it, the gap rule and the book; v_oi_since_preopen (ENH-142, S95-B) gives the anchor, the session first front-expiry row stamped before 09:15 IST, and the anchor OI. flow = delta(settled) x (oi(settled) - oi(anchor)) x spot / 1e7, no PE flip (delta carries its sign), oi a quantity with the lot inside it. ONE CLOCK: everything is valued at the book settled run; P5 own latest snapshot and delta columns are not used, because after 15:15 P5 latest moves to 15:40 while the book holds. book minus flow equals delta x oi(anchor) x spot / 1e7 wherever both sides are measured. JOIN GUARD: rows appear for a symbol only when the book session date and front expiry equal P5 (P5 session = IST date of anchor_ts); otherwise NO ROWS for that symbol, never a fallback (ADR-023 D1) -- expected from the pre-open rows (~08:30) until the tape moves after 09:15, and on a frozen closed day that wrote chain rows. NULL IS A GAP, NEVER A ZERO: a side whose delta is a gap publishes NULL flow and its |dOI| in d_oi_call_no_delta / d_oi_put_no_delta; a side with no anchor OI has NULL dOI and NULL flow, its settled OI in leg_no_anchor_oi_qty; net_flow_cr is NULL when either side is NULL. Gap detection: where settled OI is above 0, the book own NULL call_dex_cr / put_dex_cr; where it is 0, delta IS NULL OR delta = 0 (ENH-140 marker differs only on a zero delta beside a live iv, measured at zero rows; Section 4d recomputes with the iv form). LEG TOTALS are window sums of each side MEASURED contribution, read with leg_gap_d_oi_qty and leg_no_anchor_oi_qty or not at all; the book leg totals ride beside them unchanged. flow_window is PRE_OPEN when the settled run is stamped before 09:15 IST -- a non-zero flow then is a vendor OI revision before any trade -- and SESSION otherwise; consumers draw flow only in SESSION. AN OI DELTA CANNOT DISTINGUISH WRITING FROM BUYING; NO DEALER CLAIM (P2: dealer side regime-dependent). Flow is unclassified (no long/short build-up, covering or unwinding) and is valued at the settled run delta, not at the delta when each contract was added. FLOW NET IS ITSELF A PARTIAL CANCELLATION: M-P7 measured flow |net|/gross median 0.27 NIFTY, 0.19 SENSEX over 31 and 28 sessions. VENDOR OI ON UNTRADED LEGS (TD-S95-NEW-1) does not move flow after 09:15 on any of 22 symbol-sessions measured, but it inflates the BOOK beside it on days like SENSEX 2026-09-25 / 09-28 / 09-29. Runs with the owner privileges (security_invoker = false); adding a column here publishes it to anon. PRE-OPEN COLUMNS (S96-C, appended): call_preopen_dex_cr / put_preopen_dex_cr / net_preopen_dex_cr and their leg totals are the PRE-OPEN OI VALUED AT THE SETTLED DELTA x spot / 1e7 -- not the book as it stood at 08:30 -- so book = pre-open + flow splits the change into OI change only, never repricing; a surface labels it from x at pre-open OI. Same gap rule as flow. leg_no_anchor_dex_cr is the book DEX on sides with no anchor OI, the one term outside the split: leg book = leg pre-open + leg flow + leg_no_anchor_dex_cr exactly. These exist so a surface that draws held / added / removed since the pre-open reads the remembered value from here, never from its own memory. UNTRADED-LEG GUARD (S96-D, appended): leg_s2_gross_cr is the |book DEX| on strike sides that at the settled run have oi above 0, volume 0 so far and oi_change equal to oi (OI that appeared with no trade, signature S2); leg_s2_gross_share is that over the leg |book DEX| (gap sides count 0 in both; NULL when the leg has no measured book); untraded_guard is leg_s2_gross_share >= 0.02, NULL when the share is NULL. 2 percent is the geometric mean of the survey edges (unmarked max 0.06 percent, marked min 69.01 percent; docs/research/s96_priority/guard/guard_survey_result_2026-10-11.md). It gates the M-P7 SAME/OPPOSITE badge only: a badge draws only where untraded_guard is false. It does not change the book, the flow or any other column. Never label second-order terms vanna or charm (L78-1).';
 
 
 -- =====================================================================
@@ -242,7 +292,8 @@ REVOKE ALL ON public.v_dex_flow_vs_book FROM anon, authenticated;
 GRANT SELECT ON public.v_dex_flow_vs_book TO anon, merdian_ro;
 
 -- end-of-batch verification (TD-S94-NEW-3) -- must return ONE row:
---   has_view t | comment_len 3959 (computed from the literal in this file, '' unescaped; was 3284 before S96-C) |
+--   has_view t | comment_len 4749 (computed from the literal in this file, '' unescaped; 3959 after S96-C,
+--   3284 before it) |
 --   anon_r t | anon_write f | merdian_ro_r t | authenticated_r f
 SELECT to_regclass('public.v_dex_flow_vs_book') IS NOT NULL                         AS has_view,
        length(obj_description('public.v_dex_flow_vs_book'::regclass, 'pg_class'))    AS comment_len,
@@ -360,6 +411,30 @@ SELECT symbol,
        max(leg_net_preopen_dex_cr) AS leg_net_preopen, max(leg_net_dex_cr) AS leg_net_book,
        max(leg_net_flow_cr) AS leg_net_flow
   FROM public.v_dex_flow_vs_book GROUP BY symbol ORDER BY 1;
+
+-- 4g  S96-D guard, INDEPENDENT RECOMPUTE from option_chain_snapshots at the settled run with the
+--     survey's definitions (guard_cycles.sql): gap by the ENH-140 iv form, S2 per chain row, gross
+--     |delta x oi x spot / 1e7|. Fails if u joins the wrong strike or side, if S2 drifts to S1, if the
+--     share's denominator differs from the survey's, or if the threshold / NULL rule is wrong.
+--     PASS per symbol: d_s2 <= 1e-9 | d_share <= 1e-12 (or both shares NULL) | guard_ok t.
+WITH v AS (SELECT DISTINCT symbol, expiry_date, settled_ts,
+                  leg_s2_gross_cr, leg_s2_gross_share, untraded_guard
+             FROM public.v_dex_flow_vs_book),
+     q AS (SELECT v.symbol,
+                  CASE WHEN c.delta IS NULL OR (c.delta = 0 AND COALESCE(c.iv, 0) = 0) OR COALESCE(c.oi, 0) = 0
+                       THEN 0 ELSE abs(c.delta * c.oi * c.spot / 1e7) END AS g,
+                  (COALESCE(c.oi, 0) > 0 AND COALESCE(c.volume, 0) = 0 AND c.oi_change = c.oi) AS s2
+             FROM v JOIN public.option_chain_snapshots c
+               ON c.ts = v.settled_ts AND c.symbol = v.symbol AND c.expiry_date = v.expiry_date),
+     r AS (SELECT symbol, count(*) FILTER (WHERE s2) AS n_s2,
+                  COALESCE(sum(g) FILTER (WHERE s2), 0) AS s2_g, sum(g) AS all_g
+             FROM q GROUP BY symbol)
+SELECT v.symbol, r.n_s2,
+       abs(v.leg_s2_gross_cr - r.s2_g)                             AS d_s2,
+       abs(v.leg_s2_gross_share - r.s2_g / NULLIF(r.all_g, 0))     AS d_share,
+       v.untraded_guard IS NOT DISTINCT FROM (r.s2_g / NULLIF(r.all_g, 0) >= 0.02) AS guard_ok,
+       v.leg_s2_gross_cr, v.leg_s2_gross_share, v.untraded_guard, r.all_g
+  FROM v JOIN r USING (symbol) ORDER BY 1;
 
 -- 4e  cost, as anon, TWICE (one timing on a shared instance is a sample).
 --     Fails if either run exceeds anon's 3 s ceiling (MV-6).

@@ -50,6 +50,14 @@
 -- non-zero flow is then a vendor OI revision before any trade, not flow);
 -- SESSION otherwise. Consumers draw flow only in SESSION (design note 5.1).
 --
+-- S96-C APPLIED 2026-10-11 ~19:52 IST, Sections 1-3 in ONE execution from a728052 via Notepad.
+-- End-of-batch row: has_view t | comment_len 3959 | anon_r t | anon_write f | merdian_ro_r t |
+-- authenticated_r f. Pre-apply cost through roq 253.7 / 261.1 ms, no Seq Scan. 4f on the
+-- 2026-10-09 settled session: n 453 NIFTY / 387 SENSEX strike-sides, strike diff 0, leg diff 0;
+-- leg pre-open net NIFTY +79,275.2739515727 / SENSEX +5,323.5008406174 Cr, equal to the values
+-- computed beforehand from the afternoon's book and flow (no-anchor 0); leg flow unchanged to
+-- every digit. 4e anon 252.0 / 253.4 ms.
+--
 -- S96-C AMENDMENT (authored 2026-10-11 ~19:50 IST, NOT YET APPLIED when written): appends
 -- seven pre-open columns (per strike call/put/net_preopen_dex_cr; leg totals; leg_no_anchor_dex_cr)
 -- so a board drawing held / added / removed since the pre-open reads the remembered value from

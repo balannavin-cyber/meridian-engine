@@ -50,6 +50,24 @@
 -- non-zero flow is then a vendor OI revision before any trade, not flow);
 -- SESSION otherwise. Consumers draw flow only in SESSION (design note 5.1).
 --
+-- S96-E AMENDMENT (authored 2026-10-11 ~21:15 IST, NOT YET APPLIED when written): the M-P7
+-- SAME / OPPOSITE badge, ruling S96-E (B1, B2). u also reads the CE delta gap by the iv form; f adds
+-- the parity-set PE book and flow (mp7_cycles.sql b_put_p / f_put_p verbatim); the old final SELECT
+-- becomes CTE o (column order unchanged) and the outer SELECT appends leg_book_net_p_cr,
+-- leg_flow_net_p_cr, flow_book_badge, flow_book_abstain_code. Rule: M-P7 pre-registration 4, with
+-- PRE_OPEN and UNTRADED in front. New checks 4h (independent recompute from the chain) and 4i (the
+-- M-P7 scorer's state for the same cycle). 4a-4g unchanged.
+-- Fixture (S96, same base as S96-D): comment_len 5548; 4a-4f byte-identical to S96-D; 4g unchanged;
+-- 4h PASS -- NIFTY OPPOSITE (flow v +77.02, p +575.91; book v -74.74, p -486.43), SENSEX ABSTAIN
+-- UNTRADED (planted S2 leg; with it un-planted in a rolled-back transaction, ABSTAIN DELTA_SET,
+-- flow v +10.22 / p -95.59). 4i on a fresh replay of the fixture (mp7_cycles.sql, 15:15:00):
+-- NIFTY state OPPOSITE, all four nets equal to every digit; SENSEX scorer ABSTAIN, nets equal.
+-- (The 12:31 fixture replay predates zero_oi.sql and differs; it was re-run, not reused.) Mutants,
+-- each in a rolled-back transaction, each caught by 4h: parity PE on the vendor delta -> d_bp 423.31 /
+-- 794.97; UNTRADED dropped -> SENSEX code_ok f; DELTA_SET dropped (S2 leg un-planted) -> SENSEX
+-- code_ok f, state_ok f (SAME); CE gap ignored in call_ok (a CE delta 0 / iv 0 planted at NIFTY
+-- 24900) -> d_bp 177.25, d_fp 14.93, while the true view gives 0 on the same plant. Body 13.3 ms.
+--
 -- S96-D APPLIED 2026-10-11 ~20:59 IST, Sections 1-3 in ONE execution from c1b7a3c via Notepad.
 -- End-of-batch row: has_view t | comment_len 4749 | anon_r t | anon_write f | merdian_ro_r t |
 -- authenticated_r f. Pre-apply cost through roq 239.2 / 221.0 ms, no Seq Scan on the chain.
@@ -162,7 +180,10 @@ WITH b AS (
                bool_or(c.option_type = 'CE' AND COALESCE(c.oi, 0) > 0
                        AND COALESCE(c.volume, 0) = 0 AND c.oi_change = c.oi) AS call_s2,
                bool_or(c.option_type = 'PE' AND COALESCE(c.oi, 0) > 0
-                       AND COALESCE(c.volume, 0) = 0 AND c.oi_change = c.oi) AS put_s2
+                       AND COALESCE(c.volume, 0) = 0 AND c.oi_change = c.oi) AS put_s2,
+               -- S96-E: the CE delta gap by the ENH-140 iv form, for the parity delta set (M-P7 4).
+               bool_or(c.option_type = 'CE'
+                       AND (c.delta IS NULL OR (c.delta = 0 AND COALESCE(c.iv, 0) = 0))) AS call_gap_iv
           FROM (SELECT DISTINCT bb.symbol, bb.expiry_date, bb.settled_ts
                   FROM b bb JOIN agree g ON g.symbol = bb.symbol) st
           JOIN public.option_chain_snapshots c
@@ -182,7 +203,10 @@ WITH b AS (
                bb.oi_call - pp.ce_oi_anchor_qty AS d_oi_call,
                bb.oi_put  - pp.pe_oi_anchor_qty AS d_oi_put,
                COALESCE(uu.call_s2, false) AS call_s2,
-               COALESCE(uu.put_s2,  false) AS put_s2
+               COALESCE(uu.put_s2,  false) AS put_s2,
+               -- S96-E: a CE delta usable for the parity set -- present and not a gap; a strike the
+               -- chain row is missing for counts as unusable.
+               (bb.delta_call IS NOT NULL AND uu.call_gap_iv IS NOT NULL AND NOT uu.call_gap_iv) AS call_ok
           FROM b bb
           JOIN agree g ON g.symbol = bb.symbol
           LEFT JOIN p pp
@@ -228,9 +252,19 @@ WITH b AS (
                -- book and counts 0 in both, as in the guard survey (guard_cycles.sql).
                CASE WHEN call_s2 THEN abs(COALESCE(call_dex_cr, 0)) ELSE 0 END
              + CASE WHEN put_s2  THEN abs(COALESCE(put_dex_cr,  0)) ELSE 0 END AS s2_gross_cr,
-               abs(COALESCE(call_dex_cr, 0)) + abs(COALESCE(put_dex_cr, 0))   AS book_gross_cr
+               abs(COALESCE(call_dex_cr, 0)) + abs(COALESCE(put_dex_cr, 0))   AS book_gross_cr,
+               -- S96-E: the parity delta set (M-P7 pre-registration 4, mp7_cycles.sql b_put_p /
+               -- f_put_p verbatim): PE delta replaced by delta_call - 1, CE unchanged; a PE value is a
+               -- gap under it when its strike's CE delta is a gap or absent.
+               CASE WHEN COALESCE(oi_put, 0) = 0 THEN 0
+                    WHEN NOT call_ok THEN NULL
+                    ELSE (delta_call - 1) * oi_put * spot / 1e7 END            AS put_dex_p_cr,
+               CASE WHEN d_oi_put IS NULL THEN NULL
+                    WHEN d_oi_put = 0     THEN 0
+                    WHEN NOT call_ok      THEN NULL
+                    ELSE (delta_call - 1) * d_oi_put * spot / 1e7 END          AS put_flow_p_cr
           FROM j
-     )
+     ), o AS (
 SELECT f.symbol,
        f.session_date,
        f.expiry_date,
@@ -286,9 +320,35 @@ SELECT f.symbol,
        -- no measured book; untraded_guard is then NULL (unknown, never false).
        sum(f.s2_gross_cr) OVER wleg                                            AS leg_s2_gross_cr,
        sum(f.s2_gross_cr) OVER wleg / NULLIF(sum(f.book_gross_cr) OVER wleg, 0) AS leg_s2_gross_share,
-       sum(f.s2_gross_cr) OVER wleg / NULLIF(sum(f.book_gross_cr) OVER wleg, 0) >= 0.02 AS untraded_guard
+       sum(f.s2_gross_cr) OVER wleg / NULLIF(sum(f.book_gross_cr) OVER wleg, 0) >= 0.02 AS untraded_guard,
+       -- S96-E (appended): the parity-set nets, measured part (COALESCE 0), as M-P7 summed them.
+       sum(COALESCE(f.call_dex_cr, 0) + COALESCE(f.put_dex_p_cr, 0)) OVER wleg   AS leg_book_net_p_cr,
+       sum(COALESCE(f.call_flow_cr, 0) + COALESCE(f.put_flow_p_cr, 0)) OVER wleg AS leg_flow_net_p_cr
   FROM f
-WINDOW wleg AS (PARTITION BY f.symbol, f.expiry_date);
+WINDOW wleg AS (PARTITION BY f.symbol, f.expiry_date)
+     )
+-- S96-E: the M-P7 badge (pre-registration 4) with the two ruled conditions in front of it. One
+-- abstain code per row, first match wins: PRE_OPEN (S96-A D7), UNTRADED (S96-D: guard not false,
+-- NULL included), ZERO_NET (any of the four nets exactly 0; a NULL net cannot occur -- leg totals
+-- are COALESCE sums -- and is folded in so it can never speak), DELTA_SET (vendor and parity
+-- signs differ on flow or on book).
+SELECT o.*,
+       CASE WHEN z.code IS NOT NULL THEN 'ABSTAIN'
+            WHEN sign(o.leg_net_flow_cr) = sign(o.leg_net_dex_cr) THEN 'SAME'
+            ELSE 'OPPOSITE' END                                               AS flow_book_badge,
+       z.code                                                                 AS flow_book_abstain_code
+  FROM o
+  CROSS JOIN LATERAL (
+       SELECT CASE WHEN o.flow_window <> 'SESSION' THEN 'PRE_OPEN'
+                   WHEN o.untraded_guard IS DISTINCT FROM false THEN 'UNTRADED'
+                   WHEN o.leg_net_flow_cr IS NULL OR o.leg_flow_net_p_cr IS NULL
+                     OR o.leg_net_dex_cr  IS NULL OR o.leg_book_net_p_cr IS NULL
+                     OR o.leg_net_flow_cr = 0 OR o.leg_flow_net_p_cr = 0
+                     OR o.leg_net_dex_cr  = 0 OR o.leg_book_net_p_cr = 0 THEN 'ZERO_NET'
+                   WHEN sign(o.leg_net_flow_cr) <> sign(o.leg_flow_net_p_cr)
+                     OR sign(o.leg_net_dex_cr)  <> sign(o.leg_book_net_p_cr) THEN 'DELTA_SET'
+                   END AS code
+  ) z;
 
 
 -- =====================================================================
@@ -296,7 +356,7 @@ WINDOW wleg AS (PARTITION BY f.symbol, f.expiry_date);
 -- =====================================================================
 
 COMMENT ON VIEW public.v_dex_flow_vs_book IS
-  'S96 / roadmap P7a / ruling S96-A -- DEX FLOW since the pre-open row beside the DEX standing BOOK, per front-expiry strike, in Rs crore. NOT a parity layer; display-only (S37); routes nothing; makes NO PREDICTIVE CLAIM. Grain (symbol, expiry_date, strike), front leg only; consumers MUST ORDER BY symbol, strike. NO BADGE COLUMN: M-P7 (docs/research/s96_priority/p7/MP7_flow_badge_result_2026-10-11.md) scored a SAME/OPPOSITE badge BUILD on condition of an untraded-leg guard (TD-S95-NEW-1 c), ruled S96-D; the guard columns are published here, the badge itself is not a column of this view. JOINS TWO LIVE VIEWS AND RE-IMPLEMENTS NO RULE: v_dex_standing_book (ENH-140) gives the session, the front leg, the settled run (last run at or before 15:15 IST), OI, vendor delta and spot at it, the gap rule and the book; v_oi_since_preopen (ENH-142, S95-B) gives the anchor, the session first front-expiry row stamped before 09:15 IST, and the anchor OI. flow = delta(settled) x (oi(settled) - oi(anchor)) x spot / 1e7, no PE flip (delta carries its sign), oi a quantity with the lot inside it. ONE CLOCK: everything is valued at the book settled run; P5 own latest snapshot and delta columns are not used, because after 15:15 P5 latest moves to 15:40 while the book holds. book minus flow equals delta x oi(anchor) x spot / 1e7 wherever both sides are measured. JOIN GUARD: rows appear for a symbol only when the book session date and front expiry equal P5 (P5 session = IST date of anchor_ts); otherwise NO ROWS for that symbol, never a fallback (ADR-023 D1) -- expected from the pre-open rows (~08:30) until the tape moves after 09:15, and on a frozen closed day that wrote chain rows. NULL IS A GAP, NEVER A ZERO: a side whose delta is a gap publishes NULL flow and its |dOI| in d_oi_call_no_delta / d_oi_put_no_delta; a side with no anchor OI has NULL dOI and NULL flow, its settled OI in leg_no_anchor_oi_qty; net_flow_cr is NULL when either side is NULL. Gap detection: where settled OI is above 0, the book own NULL call_dex_cr / put_dex_cr; where it is 0, delta IS NULL OR delta = 0 (ENH-140 marker differs only on a zero delta beside a live iv, measured at zero rows; Section 4d recomputes with the iv form). LEG TOTALS are window sums of each side MEASURED contribution, read with leg_gap_d_oi_qty and leg_no_anchor_oi_qty or not at all; the book leg totals ride beside them unchanged. flow_window is PRE_OPEN when the settled run is stamped before 09:15 IST -- a non-zero flow then is a vendor OI revision before any trade -- and SESSION otherwise; consumers draw flow only in SESSION. AN OI DELTA CANNOT DISTINGUISH WRITING FROM BUYING; NO DEALER CLAIM (P2: dealer side regime-dependent). Flow is unclassified (no long/short build-up, covering or unwinding) and is valued at the settled run delta, not at the delta when each contract was added. FLOW NET IS ITSELF A PARTIAL CANCELLATION: M-P7 measured flow |net|/gross median 0.27 NIFTY, 0.19 SENSEX over 31 and 28 sessions. VENDOR OI ON UNTRADED LEGS (TD-S95-NEW-1) does not move flow after 09:15 on any of 22 symbol-sessions measured, but it inflates the BOOK beside it on days like SENSEX 2026-09-25 / 09-28 / 09-29. Runs with the owner privileges (security_invoker = false); adding a column here publishes it to anon. PRE-OPEN COLUMNS (S96-C, appended): call_preopen_dex_cr / put_preopen_dex_cr / net_preopen_dex_cr and their leg totals are the PRE-OPEN OI VALUED AT THE SETTLED DELTA x spot / 1e7 -- not the book as it stood at 08:30 -- so book = pre-open + flow splits the change into OI change only, never repricing; a surface labels it from x at pre-open OI. Same gap rule as flow. leg_no_anchor_dex_cr is the book DEX on sides with no anchor OI, the one term outside the split: leg book = leg pre-open + leg flow + leg_no_anchor_dex_cr exactly. These exist so a surface that draws held / added / removed since the pre-open reads the remembered value from here, never from its own memory. UNTRADED-LEG GUARD (S96-D, appended): leg_s2_gross_cr is the |book DEX| on strike sides that at the settled run have oi above 0, volume 0 so far and oi_change equal to oi (OI that appeared with no trade, signature S2); leg_s2_gross_share is that over the leg |book DEX| (gap sides count 0 in both; NULL when the leg has no measured book); untraded_guard is leg_s2_gross_share >= 0.02, NULL when the share is NULL. 2 percent is the geometric mean of the survey edges (unmarked max 0.06 percent, marked min 69.01 percent; docs/research/s96_priority/guard/guard_survey_result_2026-10-11.md). It gates the M-P7 SAME/OPPOSITE badge only: a badge draws only where untraded_guard is false. It does not change the book, the flow or any other column. Never label second-order terms vanna or charm (L78-1).';
+  'S96 / roadmap P7a / ruling S96-A -- DEX FLOW since the pre-open row beside the DEX standing BOOK, per front-expiry strike, in Rs crore. NOT a parity layer; display-only (S37); routes nothing; makes NO PREDICTIVE CLAIM. Grain (symbol, expiry_date, strike), front leg only; consumers MUST ORDER BY symbol, strike. BADGE (S96-E): M-P7 (docs/research/s96_priority/p7/MP7_flow_badge_result_2026-10-11.md) scored a SAME/OPPOSITE badge BUILD on condition of an untraded-leg guard (TD-S95-NEW-1 c, ruled S96-D); flow_book_badge and flow_book_abstain_code are appended below. JOINS TWO LIVE VIEWS AND RE-IMPLEMENTS NO RULE: v_dex_standing_book (ENH-140) gives the session, the front leg, the settled run (last run at or before 15:15 IST), OI, vendor delta and spot at it, the gap rule and the book; v_oi_since_preopen (ENH-142, S95-B) gives the anchor, the session first front-expiry row stamped before 09:15 IST, and the anchor OI. flow = delta(settled) x (oi(settled) - oi(anchor)) x spot / 1e7, no PE flip (delta carries its sign), oi a quantity with the lot inside it. ONE CLOCK: everything is valued at the book settled run; P5 own latest snapshot and delta columns are not used, because after 15:15 P5 latest moves to 15:40 while the book holds. book minus flow equals delta x oi(anchor) x spot / 1e7 wherever both sides are measured. JOIN GUARD: rows appear for a symbol only when the book session date and front expiry equal P5 (P5 session = IST date of anchor_ts); otherwise NO ROWS for that symbol, never a fallback (ADR-023 D1) -- expected from the pre-open rows (~08:30) until the tape moves after 09:15, and on a frozen closed day that wrote chain rows. NULL IS A GAP, NEVER A ZERO: a side whose delta is a gap publishes NULL flow and its |dOI| in d_oi_call_no_delta / d_oi_put_no_delta; a side with no anchor OI has NULL dOI and NULL flow, its settled OI in leg_no_anchor_oi_qty; net_flow_cr is NULL when either side is NULL. Gap detection: where settled OI is above 0, the book own NULL call_dex_cr / put_dex_cr; where it is 0, delta IS NULL OR delta = 0 (ENH-140 marker differs only on a zero delta beside a live iv, measured at zero rows; Section 4d recomputes with the iv form). LEG TOTALS are window sums of each side MEASURED contribution, read with leg_gap_d_oi_qty and leg_no_anchor_oi_qty or not at all; the book leg totals ride beside them unchanged. flow_window is PRE_OPEN when the settled run is stamped before 09:15 IST -- a non-zero flow then is a vendor OI revision before any trade -- and SESSION otherwise; consumers draw flow only in SESSION. AN OI DELTA CANNOT DISTINGUISH WRITING FROM BUYING; NO DEALER CLAIM (P2: dealer side regime-dependent). Flow is unclassified (no long/short build-up, covering or unwinding) and is valued at the settled run delta, not at the delta when each contract was added. FLOW NET IS ITSELF A PARTIAL CANCELLATION: M-P7 measured flow |net|/gross median 0.27 NIFTY, 0.19 SENSEX over 31 and 28 sessions. VENDOR OI ON UNTRADED LEGS (TD-S95-NEW-1) does not move flow after 09:15 on any of 22 symbol-sessions measured, but it inflates the BOOK beside it on days like SENSEX 2026-09-25 / 09-28 / 09-29. Runs with the owner privileges (security_invoker = false); adding a column here publishes it to anon. PRE-OPEN COLUMNS (S96-C, appended): call_preopen_dex_cr / put_preopen_dex_cr / net_preopen_dex_cr and their leg totals are the PRE-OPEN OI VALUED AT THE SETTLED DELTA x spot / 1e7 -- not the book as it stood at 08:30 -- so book = pre-open + flow splits the change into OI change only, never repricing; a surface labels it from x at pre-open OI. Same gap rule as flow. leg_no_anchor_dex_cr is the book DEX on sides with no anchor OI, the one term outside the split: leg book = leg pre-open + leg flow + leg_no_anchor_dex_cr exactly. These exist so a surface that draws held / added / removed since the pre-open reads the remembered value from here, never from its own memory. UNTRADED-LEG GUARD (S96-D, appended): leg_s2_gross_cr is the |book DEX| on strike sides that at the settled run have oi above 0, volume 0 so far and oi_change equal to oi (OI that appeared with no trade, signature S2); leg_s2_gross_share is that over the leg |book DEX| (gap sides count 0 in both; NULL when the leg has no measured book); untraded_guard is leg_s2_gross_share >= 0.02, NULL when the share is NULL. 2 percent is the geometric mean of the survey edges (unmarked max 0.06 percent, marked min 69.01 percent; docs/research/s96_priority/guard/guard_survey_result_2026-10-11.md). It gates the M-P7 SAME/OPPOSITE badge only: a badge draws only where untraded_guard is false. It does not change the book, the flow or any other column. FLOW-VS-BOOK BADGE (S96-E, appended, identical on every row of a symbol): leg_book_net_p_cr and leg_flow_net_p_cr are the book and flow nets under the parity delta set -- PE delta replaced by delta_call - 1, CE unchanged, a PE value a gap when its strike CE delta is a gap (ENH-140 iv form) or absent -- measured part, as M-P7 summed them. flow_book_badge is ABSTAIN when flow_book_abstain_code is not NULL, else SAME when sign(leg_net_flow_cr) = sign(leg_net_dex_cr), else OPPOSITE. flow_book_abstain_code, first match wins: PRE_OPEN (flow_window not SESSION), UNTRADED (untraded_guard not false, NULL included), ZERO_NET (any of the four nets exactly 0), DELTA_SET (vendor and parity signs differ on flow or on book). It says only whether flow and book agree in sign; M-P7 tested that it can speak, not that it predicts. Never label second-order terms vanna or charm (L78-1).';
 
 
 -- =====================================================================
@@ -307,8 +367,8 @@ REVOKE ALL ON public.v_dex_flow_vs_book FROM anon, authenticated;
 GRANT SELECT ON public.v_dex_flow_vs_book TO anon, merdian_ro;
 
 -- end-of-batch verification (TD-S94-NEW-3) -- must return ONE row:
---   has_view t | comment_len 4749 (computed from the literal in this file, '' unescaped; 3959 after S96-C,
---   3284 before it) |
+--   has_view t | comment_len 5548 (computed from the literal in this file, '' unescaped; 4749 after S96-D,
+--   3959 after S96-C, 3284 before it) |
 --   anon_r t | anon_write f | merdian_ro_r t | authenticated_r f
 SELECT to_regclass('public.v_dex_flow_vs_book') IS NOT NULL                         AS has_view,
        length(obj_description('public.v_dex_flow_vs_book'::regclass, 'pg_class'))    AS comment_len,
@@ -450,6 +510,67 @@ SELECT v.symbol, r.n_s2,
        v.untraded_guard IS NOT DISTINCT FROM (r.s2_g / NULLIF(r.all_g, 0) >= 0.02) AS guard_ok,
        v.leg_s2_gross_cr, v.leg_s2_gross_share, v.untraded_guard, r.all_g
   FROM v JOIN r USING (symbol) ORDER BY 1;
+
+-- 4h  S96-E badge, INDEPENDENT RECOMPUTE from option_chain_snapshots (anchor and settled rows by ts
+--     equality, both delta sets with the iv-form gap, M-P7 arithmetic) and the state rule re-derived
+--     without the view's CTEs. Fails if the parity PE uses the vendor delta or the wrong gap, if a
+--     sign test is dropped, or if PRE_OPEN / UNTRADED are not in front.
+--     PASS per symbol: d_bp, d_fp <= 1e-9 | state_ok t | code_ok t.
+WITH v AS (SELECT DISTINCT symbol, expiry_date, anchor_ts, settled_ts, flow_window, untraded_guard,
+                  leg_net_dex_cr, leg_net_flow_cr, leg_book_net_p_cr, leg_flow_net_p_cr,
+                  flow_book_badge, flow_book_abstain_code
+             FROM public.v_dex_flow_vs_book),
+     a AS (SELECT v.symbol, c.strike,
+                  max(c.oi) FILTER (WHERE c.option_type = 'CE') AS a_c,
+                  max(c.oi) FILTER (WHERE c.option_type = 'PE') AS a_p
+             FROM v JOIN public.option_chain_snapshots c
+               ON c.ts = v.anchor_ts AND c.symbol = v.symbol AND c.expiry_date = v.expiry_date
+            GROUP BY v.symbol, c.strike),
+     s AS (SELECT v.symbol, c.strike, max(c.spot) AS spot,
+                  max(c.oi)    FILTER (WHERE c.option_type = 'CE') AS oi_c,
+                  max(c.oi)    FILTER (WHERE c.option_type = 'PE') AS oi_p,
+                  max(c.delta) FILTER (WHERE c.option_type = 'CE') AS dl_c,
+                  min(c.delta) FILTER (WHERE c.option_type = 'PE') AS dl_p,
+                  bool_or(c.option_type = 'CE' AND (c.delta IS NULL OR (c.delta = 0 AND COALESCE(c.iv, 0) = 0))) AS g_c,
+                  bool_or(c.option_type = 'PE' AND (c.delta IS NULL OR (c.delta = 0 AND COALESCE(c.iv, 0) = 0))) AS g_p
+             FROM v JOIN public.option_chain_snapshots c
+               ON c.ts = v.settled_ts AND c.symbol = v.symbol AND c.expiry_date = v.expiry_date
+            GROUP BY v.symbol, c.strike),
+     k AS (SELECT s.*, s.oi_c - a.a_c AS d_c, s.oi_p - a.a_p AS d_p,
+                  (s.dl_c IS NOT NULL AND NOT COALESCE(s.g_c, false)) AS ok_c
+             FROM s LEFT JOIN a ON a.symbol = s.symbol AND a.strike = s.strike),
+     r AS (SELECT symbol,
+                  sum(CASE WHEN COALESCE(oi_c, 0) = 0 OR g_c THEN 0 ELSE dl_c * oi_c * spot / 1e7 END)
+                + sum(CASE WHEN COALESCE(oi_p, 0) = 0 OR NOT ok_c THEN 0 ELSE (dl_c - 1) * oi_p * spot / 1e7 END) AS bp,
+                  sum(CASE WHEN d_c IS NULL OR d_c = 0 OR g_c THEN 0 ELSE dl_c * d_c * spot / 1e7 END)
+                + sum(CASE WHEN d_p IS NULL OR d_p = 0 OR NOT ok_c THEN 0 ELSE (dl_c - 1) * d_p * spot / 1e7 END) AS fp
+             FROM k GROUP BY symbol),
+     e AS (SELECT v.*, r.bp, r.fp,
+                  CASE WHEN v.flow_window <> 'SESSION' THEN 'PRE_OPEN'
+                       WHEN v.untraded_guard IS DISTINCT FROM false THEN 'UNTRADED'
+                       WHEN v.leg_net_flow_cr = 0 OR r.fp = 0 OR v.leg_net_dex_cr = 0 OR r.bp = 0 THEN 'ZERO_NET'
+                       WHEN sign(v.leg_net_flow_cr) <> sign(r.fp) OR sign(v.leg_net_dex_cr) <> sign(r.bp) THEN 'DELTA_SET'
+                  END AS x_code
+             FROM v JOIN r USING (symbol))
+SELECT symbol,
+       abs(leg_book_net_p_cr - bp) AS d_bp,
+       abs(leg_flow_net_p_cr - fp) AS d_fp,
+       flow_book_abstain_code IS NOT DISTINCT FROM x_code AS code_ok,
+       flow_book_badge = CASE WHEN x_code IS NOT NULL THEN 'ABSTAIN'
+                              WHEN sign(leg_net_flow_cr) = sign(leg_net_dex_cr) THEN 'SAME'
+                              ELSE 'OPPOSITE' END AS state_ok,
+       flow_book_badge, flow_book_abstain_code,
+       leg_net_flow_cr, fp AS flow_net_p, leg_net_dex_cr, bp AS book_net_p
+  FROM e ORDER BY 1;
+
+-- 4i  third implementation, OFF the database: the M-P7 scorer's own state() and sgn() (lifted from
+--     mp7_score.py by its syntax tree, not re-typed) applied to the replay row of the same cycle in
+--     ~/mp7_out (SHA256SUMS 32a091fd). On EC2, from ~/meridian-cc:
+--       python3 -I docs/research/s96_priority/p7/mp7/mp7_state_at.py NIFTY  2026-10-09 15:10:07
+--       python3 -I docs/research/s96_priority/p7/mp7/mp7_state_at.py SENSEX 2026-10-09 15:10:07
+--     PASS: state = flow_book_badge from 4h, and the four nets equal 4h's leg_net_flow_cr, flow_net_p,
+--     leg_net_dex_cr, book_net_p to every printed digit. The scorer has no PRE_OPEN / UNTRADED, so on
+--     a symbol where either code applies, the state comparison is skipped (the nets still compare).
 
 -- 4e  cost, as anon, TWICE (one timing on a shared instance is a sample).
 --     Fails if either run exceeds anon's 3 s ceiling (MV-6).

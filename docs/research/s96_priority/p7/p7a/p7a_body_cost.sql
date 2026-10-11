@@ -1,6 +1,6 @@
 -- p7a_body_cost.sql -- the v_dex_flow_vs_book body (sql/2026-10-11_s96_v_dex_flow_vs_book.sql
--- Section 1) run as a plain query, for costing through bin/roq.sh BEFORE an apply. S96-D: body
--- regenerated with the untraded-leg guard (CTE u and three appended columns).
+-- Section 1) run as a plain query, for costing through bin/roq.sh BEFORE an apply. S96-E: body
+-- regenerated with the M-P7 badge (parity set, CTE o, four appended columns).
 -- Read-only; creates nothing. Run TWICE (one timing on a shared instance is a sample):
 --   { printf 'EXPLAIN (ANALYZE, BUFFERS)\n'; cat p7a_body_cost.sql; } | bin/roq.sh | grep -E 'Execution Time|Planning Time'
 -- PASS: Execution Time < 3000 ms on both runs (anon ceiling, MV-6). Note: roq runs as merdian_ro,
@@ -28,7 +28,10 @@ WITH b AS (
                bool_or(c.option_type = 'CE' AND COALESCE(c.oi, 0) > 0
                        AND COALESCE(c.volume, 0) = 0 AND c.oi_change = c.oi) AS call_s2,
                bool_or(c.option_type = 'PE' AND COALESCE(c.oi, 0) > 0
-                       AND COALESCE(c.volume, 0) = 0 AND c.oi_change = c.oi) AS put_s2
+                       AND COALESCE(c.volume, 0) = 0 AND c.oi_change = c.oi) AS put_s2,
+               -- S96-E: the CE delta gap by the ENH-140 iv form, for the parity delta set (M-P7 4).
+               bool_or(c.option_type = 'CE'
+                       AND (c.delta IS NULL OR (c.delta = 0 AND COALESCE(c.iv, 0) = 0))) AS call_gap_iv
           FROM (SELECT DISTINCT bb.symbol, bb.expiry_date, bb.settled_ts
                   FROM b bb JOIN agree g ON g.symbol = bb.symbol) st
           JOIN public.option_chain_snapshots c
@@ -48,7 +51,10 @@ WITH b AS (
                bb.oi_call - pp.ce_oi_anchor_qty AS d_oi_call,
                bb.oi_put  - pp.pe_oi_anchor_qty AS d_oi_put,
                COALESCE(uu.call_s2, false) AS call_s2,
-               COALESCE(uu.put_s2,  false) AS put_s2
+               COALESCE(uu.put_s2,  false) AS put_s2,
+               -- S96-E: a CE delta usable for the parity set -- present and not a gap; a strike the
+               -- chain row is missing for counts as unusable.
+               (bb.delta_call IS NOT NULL AND uu.call_gap_iv IS NOT NULL AND NOT uu.call_gap_iv) AS call_ok
           FROM b bb
           JOIN agree g ON g.symbol = bb.symbol
           LEFT JOIN p pp
@@ -94,9 +100,19 @@ WITH b AS (
                -- book and counts 0 in both, as in the guard survey (guard_cycles.sql).
                CASE WHEN call_s2 THEN abs(COALESCE(call_dex_cr, 0)) ELSE 0 END
              + CASE WHEN put_s2  THEN abs(COALESCE(put_dex_cr,  0)) ELSE 0 END AS s2_gross_cr,
-               abs(COALESCE(call_dex_cr, 0)) + abs(COALESCE(put_dex_cr, 0))   AS book_gross_cr
+               abs(COALESCE(call_dex_cr, 0)) + abs(COALESCE(put_dex_cr, 0))   AS book_gross_cr,
+               -- S96-E: the parity delta set (M-P7 pre-registration 4, mp7_cycles.sql b_put_p /
+               -- f_put_p verbatim): PE delta replaced by delta_call - 1, CE unchanged; a PE value is a
+               -- gap under it when its strike's CE delta is a gap or absent.
+               CASE WHEN COALESCE(oi_put, 0) = 0 THEN 0
+                    WHEN NOT call_ok THEN NULL
+                    ELSE (delta_call - 1) * oi_put * spot / 1e7 END            AS put_dex_p_cr,
+               CASE WHEN d_oi_put IS NULL THEN NULL
+                    WHEN d_oi_put = 0     THEN 0
+                    WHEN NOT call_ok      THEN NULL
+                    ELSE (delta_call - 1) * d_oi_put * spot / 1e7 END          AS put_flow_p_cr
           FROM j
-     )
+     ), o AS (
 SELECT f.symbol,
        f.session_date,
        f.expiry_date,
@@ -152,6 +168,32 @@ SELECT f.symbol,
        -- no measured book; untraded_guard is then NULL (unknown, never false).
        sum(f.s2_gross_cr) OVER wleg                                            AS leg_s2_gross_cr,
        sum(f.s2_gross_cr) OVER wleg / NULLIF(sum(f.book_gross_cr) OVER wleg, 0) AS leg_s2_gross_share,
-       sum(f.s2_gross_cr) OVER wleg / NULLIF(sum(f.book_gross_cr) OVER wleg, 0) >= 0.02 AS untraded_guard
+       sum(f.s2_gross_cr) OVER wleg / NULLIF(sum(f.book_gross_cr) OVER wleg, 0) >= 0.02 AS untraded_guard,
+       -- S96-E (appended): the parity-set nets, measured part (COALESCE 0), as M-P7 summed them.
+       sum(COALESCE(f.call_dex_cr, 0) + COALESCE(f.put_dex_p_cr, 0)) OVER wleg   AS leg_book_net_p_cr,
+       sum(COALESCE(f.call_flow_cr, 0) + COALESCE(f.put_flow_p_cr, 0)) OVER wleg AS leg_flow_net_p_cr
   FROM f
-WINDOW wleg AS (PARTITION BY f.symbol, f.expiry_date);
+WINDOW wleg AS (PARTITION BY f.symbol, f.expiry_date)
+     )
+-- S96-E: the M-P7 badge (pre-registration 4) with the two ruled conditions in front of it. One
+-- abstain code per row, first match wins: PRE_OPEN (S96-A D7), UNTRADED (S96-D: guard not false,
+-- NULL included), ZERO_NET (any of the four nets exactly 0; a NULL net cannot occur -- leg totals
+-- are COALESCE sums -- and is folded in so it can never speak), DELTA_SET (vendor and parity
+-- signs differ on flow or on book).
+SELECT o.*,
+       CASE WHEN z.code IS NOT NULL THEN 'ABSTAIN'
+            WHEN sign(o.leg_net_flow_cr) = sign(o.leg_net_dex_cr) THEN 'SAME'
+            ELSE 'OPPOSITE' END                                               AS flow_book_badge,
+       z.code                                                                 AS flow_book_abstain_code
+  FROM o
+  CROSS JOIN LATERAL (
+       SELECT CASE WHEN o.flow_window <> 'SESSION' THEN 'PRE_OPEN'
+                   WHEN o.untraded_guard IS DISTINCT FROM false THEN 'UNTRADED'
+                   WHEN o.leg_net_flow_cr IS NULL OR o.leg_flow_net_p_cr IS NULL
+                     OR o.leg_net_dex_cr  IS NULL OR o.leg_book_net_p_cr IS NULL
+                     OR o.leg_net_flow_cr = 0 OR o.leg_flow_net_p_cr = 0
+                     OR o.leg_net_dex_cr  = 0 OR o.leg_book_net_p_cr = 0 THEN 'ZERO_NET'
+                   WHEN sign(o.leg_net_flow_cr) <> sign(o.leg_flow_net_p_cr)
+                     OR sign(o.leg_net_dex_cr)  <> sign(o.leg_book_net_p_cr) THEN 'DELTA_SET'
+                   END AS code
+  ) z;

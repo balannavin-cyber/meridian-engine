@@ -104,18 +104,25 @@ WITH RECURSIVE symbols AS (
                percentile_cont(0.50) WITHIN GROUP (ORDER BY r_fut) AS r_sess
           FROM rrows
          GROUP BY symbol, ts
-     ), leg AS (
-        -- S96-F: EVERY chain row at the latest ts, both legs, with the header
-        -- columns and three flags. in_leg_set is ENH-131's leg set
-        -- byte-for-byte (the predicates the strike view sums over);
-        -- priceable is the same predicates WITHOUT oi > 0 (ruling S96-F E2:
-        -- a leg whose OI went to zero can still be valued for flow);
-        -- evaluable is the old evalleg filter. COALESCE(.., false) because a
-        -- WHERE treats NULL as false and these flags must say the same.
-        SELECT s.symbol, s.ts, s.expiry_date, s.strike, s.option_type,
-               h.spot, h.dte, h.t_years,
+     ), hx AS MATERIALIZED (
+        -- S96-F: the header joined ONCE to its rate and session gate (4 rows), as the S89 final
+        -- SELECT does. MATERIALIZED so rstats (referenced only here) is computed once, not once per
+        -- chain row -- measured S96: joining rstats and gate per chain row ran 2,261 ms with the gate
+        -- scanned 1,724 times (the S83 inlining shape, sql-views rule).
+        SELECT h.symbol, h.ts, h.expiry_date, h.spot, h.dte, h.t_years,
                r.r_sess, COALESCE(r.n_r_rows, 0) AS n_r_rows,
-               g.is_trading_session,
+               g.is_trading_session
+          FROM hdr h
+          LEFT JOIN rstats r ON r.symbol = h.symbol AND r.ts = h.ts
+          LEFT JOIN gate   g ON g.symbol = h.symbol AND g.ts = h.ts
+     ), leg AS (
+        -- S96-F: EVERY chain row at the latest ts, both legs, with three flags. in_leg_set is
+        -- ENH-131's leg set byte-for-byte (the predicates the strike view sums over); priceable is
+        -- the same predicates WITHOUT oi > 0 (S96-F E2: a leg whose OI went to zero can still be
+        -- valued for flow); evaluable is the S89 evalleg filter. COALESCE(.., false) because a WHERE
+        -- treats NULL as false and these flags must say the same.
+        SELECT s.symbol, s.ts, s.expiry_date, s.strike, s.option_type,
+               x.spot, x.dte, x.t_years, x.r_sess, x.n_r_rows, x.is_trading_session,
                s.oi AS oi_qty, s.iv, s.gamma,
                s.strike::double precision       AS k,
                (CASE WHEN s.option_type = 'PE' THEN -1.0 ELSE 1.0 END)
@@ -125,62 +132,52 @@ WITH RECURSIVE symbols AS (
                COALESCE(s.oi > 0
                     AND s.gamma IS NOT NULL AND s.gamma <> 0
                     AND s.iv > 0
-                    AND NOT (abs(s.strike - h.spot) / h.spot > 0.05
+                    AND NOT (abs(s.strike - x.spot) / x.spot > 0.05
                              AND abs(s.gamma) > 5e-5), false) AS in_leg_set,
                COALESCE(s.gamma IS NOT NULL AND s.gamma <> 0
                     AND s.iv > 0
-                    AND NOT (abs(s.strike - h.spot) / h.spot > 0.05
+                    AND NOT (abs(s.strike - x.spot) / x.spot > 0.05
                              AND abs(s.gamma) > 5e-5), false) AS priceable,
-               COALESCE(h.dte > 0 AND h.t_years > 0
-                    AND COALESCE(r.n_r_rows, 0) >= 6
-                    AND r.r_sess IS NOT NULL, false)          AS evaluable
+               COALESCE(x.dte > 0 AND x.t_years > 0
+                    AND x.n_r_rows >= 6
+                    AND x.r_sess IS NOT NULL, false)          AS evaluable
           FROM scoped s
-          JOIN hdr h
-            ON h.symbol = s.symbol AND h.ts = s.ts
-           AND h.expiry_date = s.expiry_date
-          LEFT JOIN rstats r ON r.symbol = s.symbol AND r.ts = s.ts
-          LEFT JOIN gate   g ON g.symbol = s.symbol AND g.ts = s.ts
+          JOIN hx x
+            ON x.symbol = s.symbol AND x.ts = s.ts
+           AND x.expiry_date = s.expiry_date
      ), bs AS (
-        -- The Black-Scholes chain of the S89 body, verbatim, on priceable and
-        -- evaluable legs only.
-        SELECT e.*,
-               ( ln(e.spot / e.k)
-                 + (e.r_sess + 0.5 * power(e.sigma, 2)) * e.t_years )
-               / (e.sigma * sqrt(e.t_years))                   AS d1
-          FROM leg e
-         WHERE e.priceable AND e.evaluable
+        -- The S89 Black-Scholes chain, each expression verbatim inside CASE WHEN priceable AND
+        -- evaluable (a CASE is evaluated lazily, so sqrt / ln never see a row that would raise).
+        SELECT b.*,
+               CASE WHEN b.priceable AND b.evaluable THEN
+               ( ln(b.spot / b.k)
+                 + (b.r_sess + 0.5 * power(b.sigma, 2)) * b.t_years )
+               / (b.sigma * sqrt(b.t_years)) END               AS d1
+          FROM leg b
      ), bs2 AS (
         SELECT b.*,
-               b.d1 - b.sigma * sqrt(b.t_years)                AS d2,
-               exp(-0.5 * power(b.d1, 2)) / sqrt(2.0 * pi())   AS nd1,
+               CASE WHEN b.priceable AND b.evaluable THEN b.d1 - b.sigma * sqrt(b.t_years) END   AS d2,
+               CASE WHEN b.priceable AND b.evaluable THEN exp(-0.5 * power(b.d1, 2)) / sqrt(2.0 * pi()) END AS nd1,
+               CASE WHEN b.priceable AND b.evaluable THEN
                (b.r_sess + 0.5 * power(b.sigma, 2))
                  / (b.sigma * sqrt(b.t_years))
-                 - b.d1 / (2.0 * b.t_years)                    AS dd1_dt
+                 - b.d1 / (2.0 * b.t_years) END                AS dd1_dt
           FROM bs b
      ), bs3 AS (
         SELECT b.*,
-               b.nd1 / (b.spot * b.sigma * sqrt(b.t_years))    AS bs_gamma
+               CASE WHEN b.priceable AND b.evaluable THEN b.nd1 / (b.spot * b.sigma * sqrt(b.t_years)) END AS bs_gamma
           FROM bs2 b
-     ), unit AS (
-        -- The four per-CONTRACT derivatives, unsigned and unscaled: exactly
-        -- the sub-expressions the S89 perleg CTE multiplied by sgn, oi and
-        -- spot. /100 = per IV point, /365 = per calendar day.
-        SELECT b.symbol, b.ts, b.expiry_date, b.strike, b.option_type,
-               b.d1, b.d2,
-               ((-b.nd1 * b.d2 / b.sigma) / 100.0)                          AS u_delta_drift_iv,
-               ((-b.nd1 * b.dd1_dt) / 365.0)                                AS u_delta_drift_time,
-               ((b.bs_gamma * (b.d1 * b.d2 - 1.0) / b.sigma) / 100.0)       AS u_gex_drift_iv,
-               ((b.bs_gamma * (b.d1 * b.dd1_dt
-                               + 1.0 / (2.0 * b.t_years))) / 365.0)         AS u_gex_drift_time
-          FROM bs3 b
      )
-SELECT l.symbol, l.ts, l.expiry_date, l.strike, l.option_type,
-       l.spot, l.dte, l.t_years, l.r_sess, l.n_r_rows, l.is_trading_session,
-       l.oi_qty, l.iv, l.gamma, l.k, l.sgn, l.sigma, l.oi,
-       l.in_leg_set, l.priceable, l.evaluable,
-       u.d1, u.d2,
-       u.u_delta_drift_iv, u.u_delta_drift_time, u.u_gex_drift_iv, u.u_gex_drift_time
-  FROM leg l
-  LEFT JOIN unit u
-    ON u.symbol = l.symbol AND u.ts = l.ts AND u.expiry_date = l.expiry_date
-   AND u.strike = l.strike AND u.option_type = l.option_type;
+-- The four per-CONTRACT derivatives, unsigned and unscaled: exactly the sub-expressions the S89
+-- perleg CTE multiplied by sgn, oi and spot. /100 = per IV point, /365 = per calendar day.
+SELECT b.symbol, b.ts, b.expiry_date, b.strike, b.option_type,
+       b.spot, b.dte, b.t_years, b.r_sess, b.n_r_rows, b.is_trading_session,
+       b.oi_qty, b.iv, b.gamma, b.k, b.sgn, b.sigma, b.oi,
+       b.in_leg_set, b.priceable, b.evaluable,
+       b.d1, b.d2,
+       CASE WHEN b.priceable AND b.evaluable THEN ((-b.nd1 * b.d2 / b.sigma) / 100.0) END                    AS u_delta_drift_iv,
+       CASE WHEN b.priceable AND b.evaluable THEN ((-b.nd1 * b.dd1_dt) / 365.0) END                          AS u_delta_drift_time,
+       CASE WHEN b.priceable AND b.evaluable THEN ((b.bs_gamma * (b.d1 * b.d2 - 1.0) / b.sigma) / 100.0) END AS u_gex_drift_iv,
+       CASE WHEN b.priceable AND b.evaluable THEN ((b.bs_gamma * (b.d1 * b.dd1_dt
+                                    + 1.0 / (2.0 * b.t_years))) / 365.0) END        AS u_gex_drift_time
+  FROM bs3 b;

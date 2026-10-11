@@ -1,0 +1,17 @@
+# Operator rulings — Session 96
+
+This is the single source for the S96 rulings. Other documents point here and do not restate
+them. It sits beside `rulings_s92.md` … `rulings_s95.md` in this directory.
+
+| # | Ruled | Topic | Ruling | Basis |
+|---|---|---|---|---|
+| **S96-A** | 2026-10-11 | P7 design (roadmap §2.1) | **The seven decisions of the P7 design note §7, as recommended.** D1 split into **P7a** (DEX flow, reads two live views, changes neither) and **P7b** (∂Δ/∂σ and ∂Δ/∂t flow). D2 P7b by a **per-leg base view** under L7/L8, gated by a before/after equality test (maintenance on a BUILT layer, S95-D). D3 unclassified flow **does not discharge D-4**: the L7/L8 badge is **amended, not retired**, to *"flow-vs-book shown on unclassified ΔOI; classification (D-4) not built"* — the exact board wording still needs the operator's yes before it goes live. D4 P5 stays front-expiry only. D5 the after-15:15 clock split between the DEX pair and the Δ-pair is recorded, not fixed in P7. D6 flagging ΔOI on volume-0 legs is folded into the TD-S95-NEW-1 call. D7 the SAME / OPPOSITE badge ships **only after M-P7**, under the defect-derived abstain rule; flow numbers may ship before it. | `docs/research/s96_priority/p7/P7_flow_vs_book_design_note_2026-10-11.md`. Operator: "D1-D7 as recco'ed, proposed" (2026-10-11 17:55 IST). |
+
+| **S96-B** | 2026-10-11 | M-P7 verdict cut | **As drafted in the M-P7 pre-registration §7:** per symbol INCONCLUSIVE below **20** ANCHORED sessions; otherwise SPEAKS if the overall abstain share is **≤ 1/2**, else SILENT. BUILD the badge only if both symbols speak; DECLINED-ON-EVIDENCE if either is silent. Flow numbers ship regardless (S96-A D7). | Operator: "1 - 20 sessions" (2026-10-11 18:12 IST), before commit and before any flow was computed on real data. |
+
+## Consequences recorded at ruling time
+
+- **Next:** the M-P7 pre-registration (`docs/research/s96_priority/p7/MP7_flow_badge_prereg_2026-10-11.md`),
+  committed before its first query.
+- **Owed at doc-close:** roadmap §2.1 P7 row (IN PROGRESS; P7a / P7b); this file's pointer in `CURRENT.md`.
+- **Nothing is applied by this ruling.**

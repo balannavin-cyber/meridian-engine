@@ -134,3 +134,5 @@ cron.log*
 !tests/golden/**/*.txt
 # S90 replay harness: pinned expected statuses are tracked
 !tests/replay/expected/*.csv
+# S95 S*: the pre-registered arm list is a tracked input (exports stay outside the repo)
+!docs/research/s95_priority/sstar/arms.csv

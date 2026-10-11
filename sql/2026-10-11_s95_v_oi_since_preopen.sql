@@ -198,14 +198,17 @@ SELECT to_regclass('public.v_oi_since_preopen') IS NOT NULL                     
 EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM public.v_oi_since_preopen;
 
 -- 4b -- independent recompute, every leg. Written without the view's CTEs: latest by
---       max(ts) over 10 days, anchor by min(ts) over the session date, presence and delta
+--       max(ts) per symbol, anchor by min(ts) over the session date, presence and delta
 --       recomputed. It fails if any anchor, latest, OI, delta or presence differs.
 --       PASS: view_minus_ind 0 | ind_minus_view 0 | n_view = n_ind, per symbol.
+--       S95 correction: the first form (max(ts) GROUP BY over 10 days; anchor by an
+--       IST-date equality; legs by ts IN (..)) hit roq's 30 s statement timeout on the
+--       live table. Every lookup is now a ts equality or a ts range; the logic compared
+--       is unchanged.
 WITH lt AS (
-  SELECT o.symbol, max(o.ts) AS latest_ts
-    FROM option_chain_snapshots o
-   WHERE o.ts > now() - interval '10 days'
-   GROUP BY o.symbol
+  SELECT s.symbol,
+         (SELECT max(o.ts) FROM option_chain_snapshots o WHERE o.symbol = s.symbol) AS latest_ts
+    FROM (VALUES ('NIFTY'::text), ('SENSEX'::text)) s(symbol)
 ), fe AS (
   SELECT lt.symbol, lt.latest_ts, (lt.latest_ts AT TIME ZONE 'Asia/Kolkata')::date AS d,
          (SELECT min(o.expiry_date) FROM option_chain_snapshots o
@@ -216,52 +219,56 @@ WITH lt AS (
   SELECT fe.*,
          (SELECT min(o.ts) FROM option_chain_snapshots o
            WHERE o.symbol = fe.symbol AND o.expiry_date = fe.e
-             AND (o.ts AT TIME ZONE 'Asia/Kolkata')::date = fe.d) AS a
+             AND o.ts >= ((fe.d + time '00:00') AT TIME ZONE 'Asia/Kolkata')
+             AND o.ts <  (((fe.d + 1) + time '00:00') AT TIME ZONE 'Asia/Kolkata')) AS a
     FROM fe
-), ok AS (
+), ok AS MATERIALIZED (
   SELECT * FROM an WHERE (a AT TIME ZONE 'Asia/Kolkata')::time < time '09:15'
-), legs AS (
-  SELECT ok.symbol, ok.e, o.strike, o.option_type,
-         max(o.oi) FILTER (WHERE o.ts = ok.a)         AS oi_a,
-         max(o.oi) FILTER (WHERE o.ts = ok.latest_ts) AS oi_l,
-         bool_or(o.ts = ok.a)                         AS on_a,
-         bool_or(o.ts = ok.latest_ts)                 AS on_l
+), u AS (
+  SELECT ok.symbol, ok.e, o.strike, o.option_type, o.oi AS oi_a, NULL::numeric AS oi_l,
+         (o.oi IS NOT NULL) AS a_has, false AS l_has
     FROM ok JOIN option_chain_snapshots o
-      ON o.symbol = ok.symbol AND o.expiry_date = ok.e AND o.ts IN (ok.a, ok.latest_ts)
-   GROUP BY ok.symbol, ok.e, o.strike, o.option_type
+      ON o.ts = ok.a AND o.symbol = ok.symbol AND o.expiry_date = ok.e
+  UNION ALL
+  SELECT ok.symbol, ok.e, o.strike, o.option_type, NULL::numeric, o.oi,
+         false, (o.oi IS NOT NULL)
+    FROM ok JOIN option_chain_snapshots o
+      ON o.ts = ok.latest_ts AND o.symbol = ok.symbol AND o.expiry_date = ok.e
+), legs AS (
+  SELECT symbol, e, strike, option_type,
+         max(oi_a) AS oi_a, max(oi_l) AS oi_l, bool_or(a_has) AS a_has, bool_or(l_has) AS l_has
+    FROM u GROUP BY symbol, e, strike, option_type
 ), ind AS (
   SELECT symbol, e AS expiry_date, strike,
          max(oi_a) FILTER (WHERE option_type = 'CE') AS ce_a,
          max(oi_l) FILTER (WHERE option_type = 'CE') AS ce_l,
          max(oi_l) FILTER (WHERE option_type = 'CE') - max(oi_a) FILTER (WHERE option_type = 'CE') AS ce_d,
          CASE WHEN NOT bool_or(option_type = 'CE') THEN NULL
-              WHEN bool_or(option_type = 'CE' AND on_a AND oi_a IS NOT NULL)
-               AND bool_or(option_type = 'CE' AND on_l AND oi_l IS NOT NULL) THEN 'BOTH'
-              WHEN bool_or(option_type = 'CE' AND on_l AND oi_l IS NOT NULL) THEN 'LATEST_ONLY'
-              WHEN bool_or(option_type = 'CE' AND on_a AND oi_a IS NOT NULL) THEN 'ANCHOR_ONLY' END AS ce_p,
+              WHEN bool_or(option_type = 'CE' AND a_has) AND bool_or(option_type = 'CE' AND l_has) THEN 'BOTH'
+              WHEN bool_or(option_type = 'CE' AND l_has) THEN 'LATEST_ONLY'
+              WHEN bool_or(option_type = 'CE' AND a_has) THEN 'ANCHOR_ONLY' END AS ce_p,
          max(oi_a) FILTER (WHERE option_type = 'PE') AS pe_a,
          max(oi_l) FILTER (WHERE option_type = 'PE') AS pe_l,
          max(oi_l) FILTER (WHERE option_type = 'PE') - max(oi_a) FILTER (WHERE option_type = 'PE') AS pe_d,
          CASE WHEN NOT bool_or(option_type = 'PE') THEN NULL
-              WHEN bool_or(option_type = 'PE' AND on_a AND oi_a IS NOT NULL)
-               AND bool_or(option_type = 'PE' AND on_l AND oi_l IS NOT NULL) THEN 'BOTH'
-              WHEN bool_or(option_type = 'PE' AND on_l AND oi_l IS NOT NULL) THEN 'LATEST_ONLY'
-              WHEN bool_or(option_type = 'PE' AND on_a AND oi_a IS NOT NULL) THEN 'ANCHOR_ONLY' END AS pe_p
+              WHEN bool_or(option_type = 'PE' AND a_has) AND bool_or(option_type = 'PE' AND l_has) THEN 'BOTH'
+              WHEN bool_or(option_type = 'PE' AND l_has) THEN 'LATEST_ONLY'
+              WHEN bool_or(option_type = 'PE' AND a_has) THEN 'ANCHOR_ONLY' END AS pe_p
     FROM legs GROUP BY symbol, e, strike
 ), v AS (
   SELECT symbol, expiry_date, strike,
          ce_oi_anchor_qty, ce_oi_latest_qty, ce_oi_delta_qty, ce_presence,
          pe_oi_anchor_qty, pe_oi_latest_qty, pe_oi_delta_qty, pe_presence
     FROM public.v_oi_since_preopen
-), s AS (SELECT DISTINCT symbol FROM lt)
-SELECT s.symbol,
-       (SELECT count(*) FROM (SELECT * FROM v WHERE symbol = s.symbol
-                              EXCEPT SELECT * FROM ind WHERE symbol = s.symbol) x) AS view_minus_ind,
-       (SELECT count(*) FROM (SELECT * FROM ind WHERE symbol = s.symbol
-                              EXCEPT SELECT * FROM v WHERE symbol = s.symbol) x) AS ind_minus_view,
-       (SELECT count(*) FROM v   WHERE symbol = s.symbol) AS n_view,
-       (SELECT count(*) FROM ind WHERE symbol = s.symbol) AS n_ind
-  FROM s ORDER BY 1;
+)
+SELECT lt.symbol,
+       (SELECT count(*) FROM (SELECT * FROM v WHERE symbol = lt.symbol
+                              EXCEPT SELECT * FROM ind WHERE symbol = lt.symbol) x) AS view_minus_ind,
+       (SELECT count(*) FROM (SELECT * FROM ind WHERE symbol = lt.symbol
+                              EXCEPT SELECT * FROM v WHERE symbol = lt.symbol) x) AS ind_minus_view,
+       (SELECT count(*) FROM v   WHERE symbol = lt.symbol) AS n_view,
+       (SELECT count(*) FROM ind WHERE symbol = lt.symbol) AS n_ind
+  FROM lt ORDER BY 1;
 
 -- 4c -- invariants, one statement. Every count MUST be 0.
 SELECT 'zero_delta_without_both_ce' AS chk, count(*) FROM public.v_oi_since_preopen

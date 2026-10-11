@@ -50,6 +50,21 @@
 -- non-zero flow is then a vendor OI revision before any trade, not flow);
 -- SESSION otherwise. Consumers draw flow only in SESSION (design note 5.1).
 --
+-- S96-D APPLIED 2026-10-11 ~20:59 IST, Sections 1-3 in ONE execution from c1b7a3c via Notepad.
+-- End-of-batch row: has_view t | comment_len 4749 | anon_r t | anon_write f | merdian_ro_r t |
+-- authenticated_r f. Pre-apply cost through roq 239.2 / 221.0 ms, no Seq Scan on the chain.
+-- On the 2026-10-09 settled session (15:10:07): 4g n_s2 0 both symbols, d_s2 0, d_share 0,
+-- guard_ok t, untraded_guard f; leg gross NIFTY 184049.95689202586150 / SENSEX
+-- 41476.1147942009282 Cr, equal to every digit to the guard survey's 15:10:07 row
+-- (~/guard_out/2026-10-09.csv, SHA256SUMS fdf0bece) -- third implementation of the denominator.
+-- The live day has no S2 leg, so the tripped branch is exercised only on the fixture and on the
+-- survey's marked days. 4a 239 / 198 rows; 4b agrees t, n_view = n_book (u adds no rows); 4c max
+-- diff 0 on 78 / 88 / 93 / 113; 4d all diffs 0, flow -31,440.47 / -56,124.13 and +6,478.92 /
+-- -15,002.91 Cr; 4f n 453 / 387, diffs 0, pre-open net +79,275.2739515727 / +5,323.5008406174 --
+-- all equal to the S96-C apply. 4e anon 270.1 / 244.7 ms. Cost shape: u attaches as a nested-loop
+-- left join removing 95,266 rows by join filter (~35-38 ms), the same pattern as agree; cheap at
+-- this size, collapsing it changes no result.
+--
 -- S96-D AMENDMENT (authored 2026-10-11 ~21:00 IST, NOT YET APPLIED when written): the untraded-leg
 -- guard, ruling S96-D (TD-S95-NEW-1 c; survey docs/research/s96_priority/guard/
 -- guard_survey_result_2026-10-11.md). Appends leg_s2_gross_cr, leg_s2_gross_share, untraded_guard.

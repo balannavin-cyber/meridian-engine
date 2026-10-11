@@ -29,11 +29,17 @@ WITH RECURSIVE syms AS (
                    AND m.ts <= (((:'d')::date + TIME '15:15') AT TIME ZONE 'Asia/Kolkata')) > 1
      ), fr AS MATERIALIZED (
         SELECT x.symbol, x.session_date,
-               (SELECT min(c.expiry_date) FROM public.option_chain_snapshots c
-                 WHERE c.symbol = x.symbol
-                   AND c.ts >= (x.session_date::timestamp AT TIME ZONE 'Asia/Kolkata')
-                   AND c.ts <= ((x.session_date + TIME '15:15') AT TIME ZONE 'Asia/Kolkata')
-                   AND c.expiry_date >= x.session_date) AS expiry_date
+               -- A1 (2026-10-11): min over a DISTINCT of the SAME predicates. The bare min()
+               -- let the planner walk idx_ocs_symbol_expiry_strike_type with ts as a filter
+               -- (EXPLAIN 2026-08-24: cost 294,617, 30 s timeout). DISTINCT needs every matching
+               -- row, so the ts range on idx_ocs_ts_symbol_expiry is the cheap path -- the
+               -- v_dex_standing_book legs CTE shape (measured 61 ms). Same value by definition.
+               (SELECT min(e.expiry_date)
+                  FROM (SELECT DISTINCT c.expiry_date FROM public.option_chain_snapshots c
+                         WHERE c.symbol = x.symbol
+                           AND c.ts >= (x.session_date::timestamp AT TIME ZONE 'Asia/Kolkata')
+                           AND c.ts <= ((x.session_date + TIME '15:15') AT TIME ZONE 'Asia/Kolkata')
+                           AND c.expiry_date >= x.session_date) e) AS expiry_date
           FROM sess x
      ), anchored AS MATERIALIZED (
         SELECT f.symbol, f.session_date, f.expiry_date, a.anchor_ts

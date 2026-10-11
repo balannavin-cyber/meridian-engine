@@ -15,6 +15,7 @@ Recorded 2026-10-11 (S96), PostgreSQL 16.15 local, views loaded from the committ
 | mut3 anchor moved to the first ≥ 09:15 row | 798 mismatches |
 | scorer, live control perturbed by 1e-6 Cr / anchor by 5 min | STOP, exit 3 |
 | scorer, Rule 13 visible rows 0 | STOP, exit 3 |
+| A1 (query shape): v1 vs A1 output on 6 dates | byte-identical, row counts printed |
 | status: frozen 10-02 / closed 10-03 / 09:20 first row 10-07 / normal 10-09 | NOT_SESSION / NOT_SESSION / NO_PREOPEN / ANCHORED |
 
 The fixture's flow and badge numbers are synthetic and mean nothing about the market.

@@ -50,6 +50,22 @@
 -- non-zero flow is then a vendor OI revision before any trade, not flow);
 -- SESSION otherwise. Consumers draw flow only in SESSION (design note 5.1).
 --
+-- APPLIED 2026-10-11 ~19:00 IST (S96), Sections 1-3 in ONE execution from the committed
+-- file (36af1e9), copied via Notepad, not the terminal. End-of-batch row: has_view t |
+-- comment_len 3284 | anon_r t | anon_write f | merdian_ro_r t | authenticated_r f.
+-- Section 4 PASSED on the 2026-10-09 settled session (15:10:07): 4a anon NIFTY 239 / SENSEX 198
+-- rows, one session / expiry / settled run, SESSION; 4b agrees t, n_view = n_book (239, 198);
+-- 4c max diff 0 on 78 / 88 / 93 / 113 strike-sides; 4d d_call = d_put = 0, d_gap = 0,
+-- d_noanc = 0 (NIFTY call -31,440.47 / put -56,124.13 Cr; SENSEX +6,478.92 / -15,002.91);
+-- 4e anon 252.1 / 255.1 ms. Third implementation: the M-P7 extract's 2026-10-09 15:10:07 row
+-- (~/mp7_out, SHA256SUMS 32a091fd) gives the identical flow to every printed digit.
+-- Pre-apply real-volume cost through roq (merdian_ro): 279.1 / 257.7 ms, no Seq Scan.
+-- Cost shape (4e plan): ~95 ms is ENH-140's legs CTE, ~6 ms ENH-142; the agree CTE is a
+-- 437 x 437 nested loop (~65 ms) -- cheap at this size; collapsing each side to one row per
+-- symbol first would remove it without changing any result. Proposed register id ENH-143
+-- (next free after ENH-142; filed at doc-close). NOT on the board. The AUTHORED paragraph
+-- above is the record as written before the apply and is left as it was.
+--
 -- FIXTURE TEST (S96, local Postgres 16.15, synthetic data, the committed ENH-140 and
 -- ENH-142 bodies; docs/research/s96_priority/p7/p7a/): Sections 1-3 then 4a-4e all PASS
 -- (comment_len 3284; 4c max diff 0; 4d d_call/d_put 0, d_gap 0, d_noanc 0; 19.5 ms), and

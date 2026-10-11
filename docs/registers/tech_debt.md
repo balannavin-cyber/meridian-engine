@@ -69,6 +69,42 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 **NOTE — 2026-10-03.** `v_gex_concentration.hhi_net` is the **top-1 gamma share, NOT a Herfindahl** — byte-identical to `v_gex_strike_rank` rank-1 `share_of_abs` and to `gamma_metrics.gamma_concentration` (0.0942 on 10-01); true HHI Σshare² ≈ 0.0464. The live board's 'HHI' label and D-6's ~0.10 / ~0.25 bands are therefore on **top-1 share**. `hhi_call` / `hhi_put` semantics **unverified**. Verify call/put and correct the board label before any Herfindahl claim.
 **FIX (phase-2 Pin tab):** the board's 'HHI' label should display the true `conc_hhi` (Σs²); keep top-1 share as a separate **'lead-strike share'** line. **ENH-133 now stores both.**
 
+### TD-S95-NEW-1 (S2 priority) — vendor OI on untraded legs is not a measurement, and every reader of OI levels takes it at face value
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** On three SENSEX sessions it dominated the front book: every OI-level reader (DEX book, GEX, max pain, the walls) read mostly vendor artefact for the whole day. Display-only consumers (S37), so no gate traded on it. |
+| **Filed** | 2026-10-11 (Session 95) |
+| **Component** | `option_chain_snapshots.oi` as delivered by the vendor · every reader of OI levels: `v_dex_standing_book` (ENH-140), `gex_strike_snapshots` / the GEX views, max pain, L13 levels |
+| **Measured** | Drill `docs/research/s95_priority/p5/p5_drill.sql`: deep in-the-money SENSEX calls (68,200–71,800, spot ~73,000) with **volume 0, a frozen LTP and `oi_change = oi` on every row**. 71,800 CE read **48,846,820** all of 2026-09-25 afternoon, **120** at the 09-28 pre-open and **20** at its first trade (09:55, volume 20). 68,200 / 69,300 / 69,400 CE read 0 on 09-25, ~1.84 million through 09-28 and 09-29, 0 on 09-30. Survey `p5_untraded.sql` over 22 symbol-sessions (2026-09-24 → 10-09): on **SENSEX 09-25 / 09-28 / 09-29** legs with no volume held **94.4 / 85.5 / 33.3 %** of front OI and **98.2 / 95.6 / 72.9 %** of DEX gross; every other symbol-session ≤ 0.16 % of OI and ≤ 0.50 % of DEX gross. **No untraded leg changed OI between 09:15 and the close on any of the 22.** OI cannot change without a trade, so on these legs the value is not OI. |
+| **Consequence** | Within-session deltas (L13, `v_oi_since_preopen`) are unaffected from 09:15 on; **levels** are inflated for the whole session. A DEX or GEX reading on those three days is not evidence of anything. The S\* out-of-sample SENSEX arms read 0.03 % (10-07) and 0.50 % (10-09); the L3 SENSEX arms (09-22, 09-23) predate the survey and were not measured. |
+| **Proper fix** | Operator call, not taken here: **(a)** measure over the whole retention window (from 2026-08-24) how often it occurs and on which strikes; **(b)** decide whether a `data_contamination_ranges` row (Rule 13) covers SENSEX OI levels on 09-25 / 09-28 / 09-29; **(c)** decide whether readers of OI levels flag or exclude legs with volume 0 at the latest snapshot. Any filter is a definition change to live views and needs its own ruling. |
+| **Status** | **OPEN.** Recorded in the `v_oi_since_preopen` COMMENT. |
+
+### TD-S95-NEW-2 (S3 priority) — `trading_calendar` holds no rows for past closed days, so a closed day before the S90 seeder change reads as "no row", not closed
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** No live gate is affected: the gate resolves a missing row through the rule engine (ADR-020), and the seeder has written closed days going forward since S90. The cost is to anything that reads the table for **past** dates. |
+| **Filed** | 2026-10-11 (Session 95) |
+| **Component** | `public.trading_calendar` for dates before 2026-10-05 |
+| **Measured** | **2026-10-02** (Gandhi Jayanti, a holiday that wrote a full day of chain rows) has **no row**, and the **September weekends** have none; October weekend rows are present (the S90 seeder writes closed days), and probe 3 read the 10-17 / 10-18 weekend and the 10-20 belt row. Two consequences this session: S\* could not compute T(c) (sessions/252) for the three NIFTY L3 arms, which were left unscored (ADR-020); and an `is_open = false` guard in P5 probe 1 **never fired**, so the naive "last row before the session" for Monday 10-05 was the 10-02 holiday's 15:40 row on both symbols. |
+| **Proper fix** | Backfill closed rows for the chain retention window (2026-08-24 → 2026-10-04) from `trading_calendar.json` through the seeder's closed-day path, verified against the NSE list (Rule 18). An operator data write. |
+| **Status** | **OPEN.** `v_oi_since_preopen` does not depend on it (it reads only the session's own rows, S95-B). |
+
+### S95 status changes to existing entries (v5 Rule 3: one paragraph, no body edits)
+
+**TD-S93-NEW-2 → RESOLVED by ruling S95-F** (2026-10-11): a CSV that is an input to, or the
+expected value of, a committed result is committed through its own negation line; bulk exports
+stay local, pinned by sha256. The DEX expected table's negation line is added at this close
+(`.gitignore`). **TD-S91-NEW-13** — the calendar half is done: `trading_calendar` holds
+2026-10-20 `is_open = false` (Dussehra, S90 belt; S95 probe 3); the live-day half (validator
+silent, no chain rows, `cycle_health` CLOSED) waits for 10-20. **TD-S94-NEW-4** — chain retention
+measured: the oldest `option_chain_snapshots` row is **2026-08-24 15:30 IST** on both symbols,
+and 08-24 / 08-25 hold one 15:30 row each (S\* availability probe; P5 probe 1). **TD-S94-NEW-3**
+— both S95 applies ended their batch with a verification SELECT and both passed in one
+execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
+
 ### TD-S94-NEW-1 (S2 priority) — `merdian_ro` read zero rows from `participant_oi_daily` and `data_contamination_ranges`, so Rule 13 checks run through `bin/roq.sh` could not fail
 
 | Field | Value |

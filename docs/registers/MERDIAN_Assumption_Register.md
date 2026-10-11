@@ -1167,3 +1167,30 @@ my own, 1 inherited, 1 S93 check text**). §D.2 rows *"LONG_GAMMA means dealers 
 *"CE gamma positive, PE gamma negative…"* annotated with P2 (`2dbf8a4`) and P1c (`c17e30d`);
 the first row's status reads **premise QUALIFIED**. Sources: `docs/research/s94_priority/`,
 `docs/research/s92_parity/rulings_s94.md`, ENH-140.
+
+## D.49 — Session 95: a tile placed nowhere, two mutants that could not fail, a spot from another clock, and a check that worked only on small data (2026-10-11)
+
+Eleven rows. **Nine are my own** (D.49.1–.8, .11). One is an **S81 observation** generalised
+by measurement (D.49.9) and one an **S37 scaffold** retired as a read path (D.49.10).
+
+| # | Assumption as held | Verdict on measurement |
+|---|---|---|
+| **D.49.1** | *(mine)* Adding the DEX items to `flowItems` renders their tiles. | **REFUTED** — `FlowsBody` places tiles by id, so round 1 (`d1912d2`) rendered nothing. `tsc` and the guard passed; the staging read in a browser found it. Fixed in round 2 (`392256a`). **Read the component that places items before adding items.** |
+| **D.49.2** | *(mine)* The P3a PE-sign mutant changed a leg. | **REFUTED — a silent no-op**: strikes compared as strings against floats, so no row matched and the mutant "passed" for the wrong reason. Fixed (float compare, a live-PE strike) with a `MUTANT NOT APPLIED` stop (`882df80`). |
+| **D.49.3** | *(mine)* G3 (structure) catches a copied L3 PE flip in S\*. | **REFUTED on the local test** — on a call-heavy book the flipped sum stays positive and increasing. M1 reassigned to G1 and M5 (d1 negated) added for G3, **before** the pre-registration commit. |
+| **D.49.4** | *(mine)* `git add` of the S\* pre-registration directory staged `arms.csv`. | **REFUTED** — `.gitignore:43 *.csv`; the first commit reported COMMIT NOT MADE. Fixed by a negation line. Second hit of TD-S93-NEW-2, ruled as S95-F. |
+| **D.49.5** | *(mine)* The S\* tile's "above spot" reads consistently with the header spot. | **REFUTED on staging** — the tile measures from the chain spot (NIFTY 22,520.5) while the header showed 22,535.7, so S\* read above on the tile and below on the header. Fixed to *"above chain spot …"* (`858cb46`) before promote. |
+| **D.49.6** | *(mine)* The P5 probe md5s I gave were of the text sent to the box. | **REFUTED** — I hashed local copies with longer header comments; the box files matched what was sent. Content identical below the header. |
+| **D.49.7** | *(mine)* P5 check 4b fits `roq.sh`'s 30 s timeout. | **REFUTED** — it timed out on the live table (`max(ts) GROUP BY` over 10 days, an IST-date equality, `ts IN (…)`); tested only on 101k local rows. Rewritten as ts equalities and ranges (`47989ed`), both mutants still caught. **A check is tested at real volume, not only on local fixtures.** |
+| **D.49.8** | *(mine)* The 48.8 M SENSEX outlier was a one-row spike that an anchor guard could catch. | **REFUTED by the drill** — vendor OI on untraded legs, constant through whole sessions (TD-S95-NEW-1). No anchor guard (S95-B). |
+| **D.49.9** | *(S81 observation)* SENSEX pre-open OI differs from the previous close on 134 of 392 legs (one day). | **VALIDATED and generalised** — 23–41 % of legs on 25 / 25 normal changeovers; the 09-22 figure reproduced exactly. NIFTY: 0 legs on 26 / 26. |
+| **D.49.10** | *(S37 scaffold, ADR-015 §F1)* `v_oi_prev_close_snapshots` is the previous-close baseline. | **RETIRED as a read path** — 25,117 ms (S89), and its "last row before today" lands on a holiday's rows (10-05 → 10-02). `v_oi_since_preopen` (ENH-142) serves the baseline; the old view is left in place. |
+| **D.49.11** | *(mine)* The untraded-leg survey's `max_oi_vol0` on SENSEX 09-25 is 48,846,820 (the 71,800 CE). | **REFUTED** — 48,868,660, a different untraded leg. The survey still found the defect; my predicted value named the wrong leg. |
+
+**The one to carry: D.49.7.** Every check in this session could fail for its reason on small
+data; one could not run at all on the real table. A check is not finished until it has run where
+it will be used.
+
+**Update log — Session 95 (2026-10-11):** §D.49 added (**11 rows: 9 mine, 1 validated, 1
+retired**). Sources: `docs/research/s95_priority/sstar/`, `docs/research/s95_priority/p5/`,
+`docs/research/s92_parity/rulings_s95.md`, ENH-141, ENH-142.

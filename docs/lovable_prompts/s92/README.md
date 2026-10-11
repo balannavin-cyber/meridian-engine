@@ -37,3 +37,17 @@ silently (TD-S92-NEW-6). Promoted from the checked commit with no pull; previous
 
 **Always:** verify `/staging/` in a browser against figures measured from SQL before promoting; a
 browser check also caught what the guard cannot (CSS `uppercase` turning ∂Δ/∂t into ∂Δ/∂T).
+
+**S95 record.** ACL fingerprint identical before and after each round: the 11:19 IST baseline for
+the DEX rounds, and the 13:18 snapshot (`relations 346 06c07d80…`, `anon_public_privs 252
+7f41638b…`, `anon_writable_objs 0`, taken after `v_dex_repriced_zero` was created) for the S\*
+rounds. It predates `v_oi_since_preopen`, so re-baseline before the next round. DEX book: `d1912d2` → `392256a`;
+S\* tile `103f663` / `1c5a047`; sub-line fix `719e85c` / `858cb46`. Guard PASS on each; promoted
+from the checked commit with a backup each time. Prompts and record: `docs/lovable_prompts/s95/`.
+
+**Two lessons, both found on `/staging/` in a browser, neither visible to `tsc` or the guard:**
+- **Read the component that places items before adding items.** Round 1 declared three DEX items
+  that `FlowsBody` never placed, so nothing rendered.
+- **A level tile names the spot it is measured from** when the header's spot comes from a
+  different clock. The S\* tile said "above spot" against the chain spot while the header showed
+  the γ run's spot, so on NIFTY the tile and the header disagreed on the side.

@@ -2106,3 +2106,15 @@ Architecture recorded in **ADR-031**; progress in `docs/research/s90_agentic/age
 | `tests/golden/` (6 days) | fixtures, 20 MB in git | — | replay / R1.6 / R2.1 | FROZEN; not yet in the deploy path |
 
 **Lineage now declared, not implied:** a product's status is the worst of its own and its required inputs', so the WCB case (fresh `ts`, stale inputs) reads STALE from the first cycle once a consumer reads `cycle_health`.
+
+## §S95 — Session 95: two views and a board group, no host or schedule change (2026-10-11)
+
+Doc Protocol v5: a table of what changed, no narrative. Detail: ENH-140 (Resolved mirror), ENH-141, ENH-142; `docs/research/s92_parity/rulings_s95.md`.
+
+| Component | Kind | Reads | Read by | State |
+|---|---|---|---|---|
+| `v_dex_repriced_zero` (ENH-141) | view, owner privileges | `option_chain_snapshots`, futures carry (as ENH-131) | Marketview Flows tab (S\* tile, dotted ladder rule); `anon`, `merdian_ro` | LIVE 2026-10-11 |
+| `v_oi_since_preopen` (ENH-142) | view, owner privileges | `option_chain_snapshots` | none yet (P7); `anon`, `merdian_ro` | LIVE 2026-10-11 |
+| Marketview Flows tab, DEX group | frontend (`meridian-connect` `392256a` → `858cb46`) | `v_dex_standing_book`, `v_dex_repriced_zero` | operator | LIVE; backups `/var/www/marketview.bak-13b1410`, `.bak-392256a` |
+| `tests/test_p3a_invariants.py` | offline test, `run_offline.sh` step 12/12 | golden days | out-of-hours suite (rule 23 / S95-A) | LIVE in the suite |
+| `v_oi_prev_close_snapshots` | view (S37 scaffold) | — | — | unchanged; **not** the previous-close read path (§D.49.10) |

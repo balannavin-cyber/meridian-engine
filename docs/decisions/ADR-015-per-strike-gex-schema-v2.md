@@ -1,6 +1,6 @@
 # ADR-015 — Per-Strike GEX Schema v2
 
-**Status:** ACCEPTED  
+**Status:** ACCEPTED · **Amendment A 2026-10-11 (S95, ruling S95-C): sign-convention gloss corrected, English only**  
 **Date:** 2026-05-25 (S37)  
 **Supersedes:** ADR-014  
 **Deciders:** Navin  
@@ -54,7 +54,7 @@ INDEXES: (symbol, ts), (symbol, expiry_date, ts), (run_id), (symbol, ts, strike)
 
 ### Sign convention (unchanged from ADR-014 §2.3)
 
-Positive `gex_cr` = dampening (positioning gamma long at this strike). Negative = amplifying. The CE-positive / PE-negative convention is **positioning gamma**, not **dealer gamma**. They coincide under the standard "dealers short calls and long puts" stylized fact, which breaks during heavy put-buying regimes. See §future-work.
+Positive `gex_cr` = dampening (positioning gamma long at this strike). Negative = amplifying. The CE-positive / PE-negative convention is **positioning gamma**, not **dealer gamma**. They coincide under the standard "dealers short calls and long puts" stylized fact, which breaks during heavy put-buying regimes. See §future-work. **[Corrected by Amendment A, 2026-10-11: this gloss inverts ADR-014 §2.3, which reads calls dealer-long and puts dealer-short; the sign is open-interest arithmetic, not a dealer claim (P2: dealer side regime-dependent). See Amendment A below.]**
 
 ### Falsification rule (unchanged from ADR-014 §2.5)
 
@@ -120,3 +120,27 @@ ADR-015 transitions PROPOSED → ACCEPTED on first clean live-fire cycle with §
 - ENH-81 — Positioning Landscape (downstream consumer)
 - ENH-82 — Pin Risk Score (downstream consumer)
 - S37 session log — live-fire verification results
+
+---
+
+## Amendment A — 2026-10-11 (Session 95, ruling S95-C) — the sign-convention gloss corrected
+
+**English only. No code, schema, view or board change.**
+
+The §"Sign convention" paragraph says the convention is *"unchanged from ADR-014 §2.3"*, then
+glosses it as coinciding with *"the standard 'dealers short calls and long puts' stylized fact"*.
+That gloss is **the exact inverse of ADR-014 §2.3 on both legs**. §2.3 reads the `oi_call ×
+gamma_call − oi_put × gamma_put` term as positive (**dealer-long**) when call writers dominate and
+negative (**dealer-short**) when put writers dominate — **calls dealer-long, puts dealer-short**.
+Found in the P6 design note §3.1 (S93, carry 7).
+
+**The code was never in doubt:** `signed_gamma_exposure` negates PE and nothing else, and the
+stored `gex_cr` reconstructs to 1.17e-9 Cr (P6 note §2(a)).
+
+**The convention, as it stands from this amendment:** positive `gex_cr` = dampening, negative =
+amplifying, computed as **CE positive, PE negative**. That sign is **open-interest arithmetic,
+not a dealer claim.** Who holds the other side was tested by P2 (S94,
+`docs/research/s94_priority/P2_dealer_side_result_2026-10-10.md`): **dealer side
+regime-dependent.** No document should restate either dealer reading as fact.
+
+The original sentence is left in place, annotated, so the record of what was written is kept.

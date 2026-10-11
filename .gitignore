@@ -136,3 +136,5 @@ cron.log*
 !tests/replay/expected/*.csv
 # S95 S*: the pre-registered arm list is a tracked input (exports stay outside the repo)
 !docs/research/s95_priority/sstar/arms.csv
+# S95-F: a CSV that is the expected value of a committed result is committed by its own negation line
+!docs/research/s93_priority/p6/expected/dex_standing_book_1001_SENSEX.csv

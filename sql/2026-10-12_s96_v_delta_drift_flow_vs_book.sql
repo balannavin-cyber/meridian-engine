@@ -5,6 +5,21 @@
 --   public.v_delta_drift_flow_vs_book   grain (symbol, expiry_date, strike)
 -- =====================================================================
 --
+-- APPLIED 2026-10-12 ~06:08 IST (S96), Sections 1-3 in ONE execution from 2fa5bab via Notepad, on the
+-- 2026-10-09 15:40 run. Pre-apply body cost through roq 309.2 / 274.7 ms, gate and hx at loops=1.
+--   End-of-batch row: has_view t | comment_len 2698 | anon_r t | anon_write f | merdian_ro_r t |
+--   authenticated_r f.
+--   K1 (roq): 426 / 364 strike-sides, max side diff 1.4e-13, leg diffs <= 2.5e-12.
+--   K2 (roq): leg book = v_gex_greeks_l2_net front-leg net to 3.6e-12 -- NIFTY iv +6,089.82 / t -9,796.95,
+--      SENSEX +1,086.93 / -1,259.07 Cr: the board's own L7/L8 sensitivity-tile figures (read 04:40).
+--   K3 (roq): 239 / 198 strikes, 0 mismatches, d_noanc 0, d_gap 0.
+--   First flow (front leg, 10-09): NIFTY iv +1,761.07 / t -1,919.44; SENSEX +729.56 / -795.65 Cr.
+--   K5 (anon): 239 / 198 rows, one ts / expiry / anchor each, SESSION, OK.
+--   K6 (anon): 295.0 / 327.2 ms, gate and hx loops=1. Cost shape: the strike join to P5 plans as a
+--      437 x 437 nested loop (190,532 rows removed by join filter, ~50 ms) -- the P7a `agree` shape;
+--      cheap at this size, changes no result. NOT on the board (P7b board round owed).
+-- The AUTHORED paragraph below is the record as written before the apply.
+--
 -- AUTHORED 2026-10-12 (S96). NOTHING IN THIS FILE HAS BEEN RUN AGAINST THE DATABASE.
 -- Read-only view; S90-J class "anything else". Proposed register id ENH-144 (filed at doc-close).
 -- Rulings S96-G: F1 the delta pair only; F2 the L7/L8 latest ts and OI, anchor from P5, join guard on

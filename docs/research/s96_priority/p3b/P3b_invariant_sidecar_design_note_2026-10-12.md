@@ -82,4 +82,13 @@ Rule 23: T1–T3 finish before 08:30 IST, under `ulimit -v`. T4 is a bounded rea
     the runs that have check rows.
 - **A cost defect found and fixed before any live use:** ts bounds written as subqueries over the temp candidate table took
   **55 s** for one day. Bounds as variables, plus `ANALYZE` on the temp table, gave **0.69 s**.
-- T4 (real volume, live, read-only): `p3b_t4_live_1009.sql`, run through `bin/roq.sh`.
+- **T4, first attempt (07:43 IST): the 10-09 body hit roq's 30 s statement timeout at real volume.** The cause was the per-run
+  correlated subqueries (sum and top-1 over `gs`, the I2/I3 lateral over `st2`, the no-chain count) and the `gamma_metrics` lateral.
+  Each scanned the whole day once per run, which is O(runs × rows). The fixture day was too small to show it. This is the
+  D.49.7 class: a check is tested at real volume, not only on local fixtures.
+- **Rev 2 (`p3b-v1.1`, 07:44 IST):**
+  - each of those is now one GROUP BY, joined by key;
+  - `gamma_metrics` is read once, bounded by ts (gm.ts = the run's ts on all 313 fixture runs).
+  - The fixture test was re-run from scratch at 07:44:06–07:44:27 IST: **P3B FIXTURE PASS** (0 mismatches, 24/24 mutants).
+  - The body over all six fixture days in one query (313 runs, 45,549 strikes, 216,270 chain rows): 1,008 ms.
+- T4 again (real volume, live, read-only): `p3b_t4_live_1009.sql`, run through `bin/roq.sh`.

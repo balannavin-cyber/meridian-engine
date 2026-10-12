@@ -35,7 +35,7 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $fn$
 DECLARE
-  v_ver  constant text := 'p3b-v1';
+  v_ver  constant text := 'p3b-v1.1';
   v_runs integer := 0;
   v_lo   timestamptz;
   v_hi   timestamptz;
@@ -86,16 +86,30 @@ BEGIN
            (oc <> trunc(oi_call) OR op <> trunc(oi_put)) AS f3
     FROM st WHERE n_legs > 0),
   -- per run aggregates for I1 / I4 / I5
+  -- (S96-H rev 2: the per-run correlated subqueries and the gamma_metrics lateral were O(runs x rows) and timed out
+  --  at real volume on 10-09; each is now one GROUP BY, joined by key. gamma_metrics.ts = the run's ts on all 313 fixture runs)
+  gagg AS (
+    SELECT symbol, expiry_date, run_id, sum(gex) AS tot, max(abs(gex)) / nullif(sum(abs(gex)), 0) AS top1
+    FROM gs GROUP BY symbol, expiry_date, run_id),
+  gm AS (
+    SELECT DISTINCT ON (x.symbol, x.expiry_date, x.run_id) x.symbol, x.expiry_date, x.run_id,
+           x.net_gex::float8 AS net_gex, x.gamma_concentration::float8 AS conc, x.flip_level::float8 AS fl
+    FROM gamma_metrics x JOIN p3b_cand c USING (symbol, expiry_date, run_id)
+    WHERE x.ts BETWEEN v_lo - interval '15 minutes' AND v_hi + interval '15 minutes'
+    ORDER BY x.symbol, x.expiry_date, x.run_id, x.ts DESC),
   run AS (
-    SELECT c.symbol, c.expiry_date, c.run_id, c.ts,
-           (SELECT sum(gex) FROM gs WHERE gs.symbol = c.symbol AND gs.expiry_date = c.expiry_date AND gs.run_id = c.run_id) AS tot,
-           (SELECT max(abs(gex)) / nullif(sum(abs(gex)), 0) FROM gs WHERE gs.symbol = c.symbol AND gs.expiry_date = c.expiry_date AND gs.run_id = c.run_id) AS top1,
-           m.net_gex::float8 AS net_gex, m.gamma_concentration::float8 AS conc, m.flip_level::float8 AS fl,
-           (m.run_id IS NOT NULL) AS has_gm
+    SELECT c.symbol, c.expiry_date, c.run_id, c.ts, a.tot, a.top1, m.net_gex, m.conc, m.fl, (m.run_id IS NOT NULL) AS has_gm
     FROM p3b_cand c
-    LEFT JOIN LATERAL (SELECT * FROM gamma_metrics x
-                       WHERE x.symbol = c.symbol AND x.expiry_date = c.expiry_date AND x.run_id = c.run_id
-                       ORDER BY x.ts DESC LIMIT 1) m ON true),
+    LEFT JOIN gagg a USING (symbol, expiry_date, run_id)
+    LEFT JOIN gm m USING (symbol, expiry_date, run_id)),
+  sagg AS (
+    SELECT symbol, expiry_date, run_id, count(*) AS n,
+           count(*) FILTER (WHERE f2) AS f2, count(*) FILTER (WHERE f3) AS f3, max(d2) AS d2, max(d3) AS d3,
+           to_jsonb((array_agg(jsonb_build_object('k', k, 'stored', gex, 'recompute', rc) ORDER BY d2 DESC) FILTER (WHERE f2))[1:5]) AS ff2,
+           to_jsonb((array_agg(jsonb_build_object('k', k, 'oi_call', oi_call, 'chain_ce', oc, 'oi_put', oi_put, 'chain_pe', op) ORDER BY d3 DESC) FILTER (WHERE f3))[1:5]) AS ff3
+    FROM st2 GROUP BY symbol, expiry_date, run_id),
+  nochain AS (
+    SELECT symbol, expiry_date, run_id, count(*) AS no_chain FROM st WHERE n_legs = 0 GROUP BY symbol, expiry_date, run_id),
   cum AS (
     SELECT symbol, expiry_date, run_id, k,
            sum(gex) OVER w_up AS up, sum(gex) OVER w_dn AS dn
@@ -157,18 +171,12 @@ BEGIN
            coalesce(CASE x.check_id WHEN 'I2' THEN a.f2 ELSE a.f3 END, 0),
            CASE x.check_id WHEN 'I2' THEN a.d2 ELSE a.d3 END,
            CASE WHEN coalesce(a.n, 0) = 0 THEN jsonb_build_object('reason', 'no chain rows at any strike')
-                ELSE jsonb_build_object('strikes_without_chain', a.no_chain,
+                ELSE jsonb_build_object('strikes_without_chain', coalesce(nc.no_chain, 0),
                        'first_fails', CASE x.check_id WHEN 'I2' THEN a.ff2 ELSE a.ff3 END) END
     FROM run r
     CROSS JOIN (VALUES ('I2'), ('I3')) x(check_id)
-    LEFT JOIN LATERAL (
-      SELECT count(*) AS n,
-             count(*) FILTER (WHERE f2) AS f2, count(*) FILTER (WHERE f3) AS f3,
-             max(d2) AS d2, max(d3) AS d3,
-             (SELECT count(*) FROM st s0 WHERE s0.symbol = r.symbol AND s0.expiry_date = r.expiry_date AND s0.run_id = r.run_id AND s0.n_legs = 0) AS no_chain,
-             to_jsonb((array_agg(jsonb_build_object('k', k, 'stored', gex, 'recompute', rc) ORDER BY d2 DESC) FILTER (WHERE f2))[1:5]) AS ff2,
-             to_jsonb((array_agg(jsonb_build_object('k', k, 'oi_call', oi_call, 'chain_ce', oc, 'oi_put', oi_put, 'chain_pe', op) ORDER BY d3 DESC) FILTER (WHERE f3))[1:5]) AS ff3
-      FROM st2 WHERE st2.symbol = r.symbol AND st2.expiry_date = r.expiry_date AND st2.run_id = r.run_id) a ON true
+    LEFT JOIN sagg a ON a.symbol = r.symbol AND a.expiry_date = r.expiry_date AND a.run_id = r.run_id
+    LEFT JOIN nochain nc ON nc.symbol = r.symbol AND nc.expiry_date = r.expiry_date AND nc.run_id = r.run_id
     UNION ALL
     -- I5 descriptive
     SELECT r.symbol, r.expiry_date, r.run_id, r.ts, 'I5',

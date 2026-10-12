@@ -91,4 +91,18 @@ Rule 23: T1–T3 finish before 08:30 IST, under `ulimit -v`. T4 is a bounded rea
   - `gamma_metrics` is read once, bounded by ts (gm.ts = the run's ts on all 313 fixture runs).
   - The fixture test was re-run from scratch at 07:44:06–07:44:27 IST: **P3B FIXTURE PASS** (0 mismatches, 24/24 mutants).
   - The body over all six fixture days in one query (313 runs, 45,549 strikes, 216,270 chain rows): 1,008 ms.
-- T4 again (real volume, live, read-only): `p3b_t4_live_1009.sql`, run through `bin/roq.sh`.
+- **T4, second attempt (07:48): timed out again.** The plan (07:49) showed why:
+  - the planner estimates **1 candidate run** (the actual number is 154);
+  - every CTE downstream inherits that estimate;
+  - so strikes × chain legs are joined as a **nested loop with a join filter**.
+- **Rev 3 (`p3b-v1.2`): `SET enable_nestloop = off` as the function's own SET clause**, scoped to `p3b_sweep` only.
+  - The whole 10-09 day under hash joins took **1,902 ms**, with no Seq Scan on the three tables. The candidate query alone took 38 ms.
+  - The fixture test was re-run at 07:55:19–07:57:02: **P3B FIXTURE PASS**. The fixture run is slower under the setting
+    (1 min 43 s), but stays inside the 08:30 rule.
+- **T4c, real volume, 10-09 (07:54), 154 runs:**
+  - I1–I4 have **n_fail 0** on both symbols, so the live writer met every invariant that day.
+  - I2/I3 strikes: NIFTY 8,316, SENSEX 10,882. Together that is 19,198, equal to the candidate scan's actual row count.
+  - I6 outside the summed half-spreads: NIFTY 5,128 of 7,917, SENSEX 3,982 of 12,361. This is descriptive only.
+- **DDL dry run** (`sql/2026-10-12_s96_p3b_invariant_checks.sql`, on a fixture copy with `run_id` as uuid, `cron` stubbed):
+  - Section A's verification SELECT returned exactly its stated PASS row.
+  - The uuid-typed sweep on 10-01 gave the same counts as T1.

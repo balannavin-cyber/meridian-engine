@@ -1,5 +1,6 @@
--- P3b T4 (S96-H, rev 2): the p3b_sweep read body (p3b-v1.1) as a plain query over every run of 2026-10-09 (both symbols),
+-- P3b T4 (S96-H, rev 2): the p3b_sweep read body (p3b-v1.2) as a plain query over every run of 2026-10-09 (both symbols),
 -- for costing and real-volume counts through bin/roq.sh. Read-only: no p3b table is read or written. Generated from p3b_core.sql.
+SET enable_nestloop = off;   -- as the function's own SET clause (rev 3)
 WITH p3b_cand AS MATERIALIZED (
     SELECT g.symbol, g.expiry_date, g.run_id, min(g.ts) AS ts
     FROM public.gex_strike_snapshots g

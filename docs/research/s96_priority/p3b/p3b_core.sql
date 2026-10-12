@@ -33,9 +33,12 @@ RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
+-- S96-H rev 3: the planner estimates 1 candidate run, then joins strikes x chain legs as a nested loop with a join
+-- filter (30 s timeout at real volume, 10-09). Hash joins measured 1,902 ms for a whole day. Scoped to this function.
+SET enable_nestloop = off
 AS $fn$
 DECLARE
-  v_ver  constant text := 'p3b-v1.1';
+  v_ver  constant text := 'p3b-v1.2';
   v_runs integer := 0;
   v_lo   timestamptz;
   v_hi   timestamptz;

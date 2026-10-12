@@ -7,6 +7,24 @@
 --   public.v_gex_greeks_l2_net      untouched (reads the strike view)
 -- =====================================================================
 --
+-- APPLIED 2026-10-12 (S96) from fa12709, each section in ONE execution via Notepad, on the
+-- 2026-10-09 15:40 run (398 strike rows, 1,724 chain rows):
+--   C5-0 (05:21, roq)   398 / 398, unmatched 0, mismatches 0, max_abs_diff 0, not-bitwise 0 -- the S89 file
+--                       IS the live body.
+--   cost (05:28, roq)   base body 217.4 / 203.5 ms, gate and hx at loops=1; live S89 strike view 186.3 ms.
+--   Section A (05:29)   has_view t | comment_len 1916 | anon_r f | anon_write f | merdian_ro_r t |
+--                       authenticated_r f.
+--   C5-pre (05:30, roq) 398 / 398, bit-for-bit.  C3: dup 0, bad_unit 0, bad_flag 0; n_legset = strike n_legs
+--                       139 / 132 / 185 / 90 (NIFTY 10-13, 10-19; SENSEX 10-15, 10-22); priced-not-in-book
+--                       0 / 1 / 95 / 148 (zero-OI legs with vendor gamma and iv -- the S96-F E2 extension).
+--   Section B (05:31)   comment_len 8642 | md5 3d96fcaf21b19318a8305a1b12f2d262 | anon_r t | anon_write f |
+--                       merdian_ro_r t | reads_leg t.
+--   C5-post (05:31, roq) 398 / 398, bit-for-bit; C3 identical to the pre-apply run.
+--   C1 (05:32)          role_now anon | n_strike 398 | n_net 4.
+--   C2 (05:33, anon)    strike 226.3 / 225.8 ms, net 276.1 / 224.8 ms; CTE Scan on gate and on hx loops=1;
+--                       shared hit 23,869 (strike).
+-- The AUTHORED paragraph below is the record as written before the apply.
+--
 -- AUTHORED 2026-10-12 (S96). NOTHING IN THIS FILE HAS BEEN RUN AGAINST THE DATABASE.
 -- Maintenance on a BUILT layer (S95-D: parity not reopened). Design: P7 design note section 4,
 -- option B1; ruling S96-F (E1 one base view with header columns and three flags; E2 price on

@@ -2118,3 +2118,16 @@ Doc Protocol v5: a table of what changed, no narrative. Detail: ENH-140 (Resolve
 | Marketview Flows tab, DEX group | frontend (`meridian-connect` `392256a` → `858cb46`) | `v_dex_standing_book`, `v_dex_repriced_zero` | operator | LIVE; backups `/var/www/marketview.bak-13b1410`, `.bak-392256a` |
 | `tests/test_p3a_invariants.py` | offline test, `run_offline.sh` step 12/12 | golden days | out-of-hours suite (rule 23 / S95-A) | LIVE in the suite |
 | `v_oi_prev_close_snapshots` | view (S37 scaffold) | — | — | unchanged; **not** the previous-close read path (§D.49.10) |
+
+## §S96 — Session 96: three views live, one view re-pointed, a sidecar authored, no host change (2026-10-12)
+
+Doc Protocol v5: a table of what changed, no narrative. Detail: ENH-143, ENH-144, ENH-145; `docs/research/s92_parity/rulings_s96.md`.
+
+| Component | Kind | Reads | Read by | State |
+|---|---|---|---|---|
+| `v_dex_flow_vs_book` (ENH-143) | view, owner privileges | `v_dex_standing_book`, `v_oi_since_preopen`, `option_chain_snapshots` (guard, badge) | Marketview Flows tab (DEX bricks, badge); `anon`, `merdian_ro` | LIVE 2026-10-11/12 |
+| `v_gex_greeks_l2_leg` | view (ENH-98 per-leg base) | as the S89 L7/L8 body | `v_gex_greeks_l2_strike`, `v_delta_drift_flow_vs_book`; `merdian_ro` (no anon) | LIVE 2026-10-12 |
+| `v_gex_greeks_l2_strike` | view, body re-pointed | `v_gex_greeks_l2_leg` | unchanged (`v_gex_greeks_l2_net`, board) | LIVE, output bit-for-bit (C5) |
+| `v_delta_drift_flow_vs_book` (ENH-144) | view, owner privileges | `v_gex_greeks_l2_leg`, `v_oi_since_preopen` | Marketview Flows tab (Δ tile bricks); `anon`, `merdian_ro` | LIVE 2026-10-12 |
+| `p3b_invariant_checks` + `p3b_sweep()` + `pg_cron` `p3b_invariants` (ENH-145) | table, function, schedule | `gex_strike_snapshots`, `option_chain_snapshots`, `gamma_metrics` | none (shadow); `merdian_ro` | **AUTHORED, apply owed** |
+| Marketview Flows tab | frontend (`meridian-connect` `858cb46` → `62f5c55` → `c81b700` → `804d684`) | + `v_dex_flow_vs_book`, `v_delta_drift_flow_vs_book` | operator | LIVE; backups `/var/www/marketview.bak-858cb46`, `.bak-62f5c55`, `.bak-c81b700` |

@@ -51,3 +51,14 @@ from the checked commit with a backup each time. Prompts and record: `docs/lovab
 - **A level tile names the spot it is measured from** when the header's spot comes from a
   different clock. The S\* tile said "above spot" against the chain spot while the header showed
   the γ run's spot, so on NIFTY the tile and the header disagreed on the side.
+
+**S96 record.** Three rounds, prompts and round records in `docs/lovable_prompts/s96/`: DEX flow bricks
+`858cb46` → `62f5c55`, the badge `62f5c55` → `c81b700`, the Δ-pair bricks `c81b700` → `804d684`. Guard PASS on each
+(one named read per round; an extended read must be rewritten as ONE line with `.select(`, because the guard counts
+added lines containing `supabase.from("<view>")`). Fingerprint identical before and after every round. **Baseline
+(06:15 / 06:30 IST 2026-10-12):** `relations 350 ccc3895d…`, `anon_public_privs 256 f19b614e…`, `anon_writable_objs 0`,
+`public_functions 40 5d8cd7f8…`, `rls_policies 28 d16e21d6…`, `default_privileges 27 9db86164…`, `schemas 10 2a889318…`,
+`public_triggers 0`, `anon_role 1 c506ff14…`. **Re-baseline after the P3b apply** (a table, a sequence, a function and a
+policy). Lovable predicted "no flow before 09:15" before the open three rounds running; each time the views carried the
+previous SESSION run (§D.50.12). A rollback command is printed only inside a block that refuses to run without an
+explicit argument.

@@ -69,6 +69,60 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 **NOTE — 2026-10-03.** `v_gex_concentration.hhi_net` is the **top-1 gamma share, NOT a Herfindahl** — byte-identical to `v_gex_strike_rank` rank-1 `share_of_abs` and to `gamma_metrics.gamma_concentration` (0.0942 on 10-01); true HHI Σshare² ≈ 0.0464. The live board's 'HHI' label and D-6's ~0.10 / ~0.25 bands are therefore on **top-1 share**. `hhi_call` / `hhi_put` semantics **unverified**. Verify call/put and correct the board label before any Herfindahl claim.
 **FIX (phase-2 Pin tab):** the board's 'HHI' label should display the true `conc_hhi` (Σs²); keep top-1 share as a separate **'lead-strike share'** line. **ENH-133 now stores both.**
 
+### TD-S96-NEW-1 (S3 priority) — the L7/L8 tile captions say "dealer", and the dealer side is regime-dependent
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Wording on a live surface; no number is wrong. |
+| **Filed** | 2026-10-12 (Session 96) |
+| **Component** | Marketview Flows tab, the ∂Δ/∂t and ∂Δ/∂σ tile captions (`meridian-connect` `804d684`) |
+| **Measured** | The captions read *"Dealer delta-notional drifts …"* and *"A +1 IV point moves dealer delta-notional …"*. "Dealer" there is the S89 PE-negation assumption (ADR-014 sign). P2 found the dealer side **regime-dependent** (`2dbf8a4`). The DEX tiles already carry *"dealer side regime-dependent (P2)"*; these two captions predate that and were not touched in the P7b round (`docs/lovable_prompts/s96/lovable_prompt_s96_delta_drift_bricks.md`, round record). |
+| **Proper fix** | The operator rules the wording (board wording needs an explicit yes), then one layout-only Lovable round under the S92 guard. |
+| **Status** | **OPEN.** |
+
+### TD-S96-NEW-2 (S3 priority) — the planner estimates 1 row for a day of `gex_strike_snapshots` selected by `ts` alone
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Worked around where it bit (P3b); other day-range readers are unmeasured. |
+| **Filed** | 2026-10-12 (Session 96) |
+| **Component** | `public.gex_strike_snapshots` — no index leads on `ts`; `ix_gex_strike_snap_sym_ts (symbol, ts DESC)` is used for a ts-only predicate |
+| **Measured** | `WHERE ts >= '2026-10-09 03:30+00' AND ts < '2026-10-09 10:30+00'`: estimated **rows=1**, actual **19,198** (154 runs after GROUP BY), 38 ms. Downstream, every CTE inherited the estimate, so P3b's sweep body joined strikes × chain legs as a nested loop with a join filter and hit `roq.sh`'s 30 s timeout twice. With nested loops off (function-scoped `SET enable_nestloop = off`, P3b rev 3) the whole day runs in 1,902 ms. `docs/research/s96_priority/p3b/P3b_invariant_sidecar_design_note_2026-10-12.md` §6. |
+| **Proper fix** | Measure first: `pg_stats` for `gex_strike_snapshots.ts`, then an `ANALYZE`, a ts-leading index, or extended statistics — an operator DDL decision. Then re-measure P3b without the SET clause and list the other views that select a day by `ts` alone. |
+| **Status** | **OPEN.** |
+
+### TD-S96-NEW-3 (S3 priority) — the P5 strike join in the S96 flow views plans as a 437 × 437 nested loop
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** About 50 ms today; changes no result. |
+| **Filed** | 2026-10-12 (Session 96) |
+| **Component** | `v_delta_drift_flow_vs_book` (ENH-144) and the `agree` CTE shape of `v_dex_flow_vs_book` (ENH-143) |
+| **Measured** | K6 (anon, 2026-10-12): 295.0 / 327.2 ms; the join to `v_oi_since_preopen` plans as a 437 × 437 nested loop, 190,532 rows removed by join filter, ~50 ms (`sql/2026-10-12_s96_v_delta_drift_flow_vs_book.sql` header). |
+| **Proper fix** | None needed at this size. Revisit if the strike count or the poll rate grows. |
+| **Status** | **OPEN (watch).** |
+
+### TD-S96-NEW-4 (S3 priority) — after 15:15 the DEX pair and the Δ pair read different clocks
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Recorded by ruling, not fixed (S96-A D5). |
+| **Filed** | 2026-10-12 (Session 96) |
+| **Component** | `v_dex_flow_vs_book` (settled run ≤ 15:15) vs `v_delta_drift_flow_vs_book` (the L7/L8 latest ts, 15:40 after the close) |
+| **Measured** | On 10-09 the DEX tiles show the 15:10:07 settled run while the Δ tiles show 15:40:05 (S96 live-read dry run, 08:04 IST 2026-10-12). Each flow is correct on its own clock; the two are not one snapshot. It predates P7 (L7/L8 semantics). |
+| **Proper fix** | Operator call: whether L7/L8 adopt the settled-run clock after 15:15. Touches a BUILT layer (S95-D: maintenance). |
+| **Status** | **OPEN.** |
+
+### S96 status changes to existing entries (v5 Rule 3: one paragraph, no body edits)
+
+**TD-S95-NEW-1** — part (c) is addressed for the badge only: `v_dex_flow_vs_book` carries `untraded_guard`, and the
+badge abstains when legs with volume 0, oi > 0 and `oi_change = oi` hold ≥ 2 % of front DEX gross (ruling S96-D,
+`docs/research/s96_priority/guard/guard_survey_result_2026-10-11.md`); readers of OI levels are unchanged, and (a) / (b)
+remain the operator's call. **TD-S95-NEW-2** — the backfill SQL is prepared (`sql/2026-10-12_s96_td_s95_new_2_calendar_backfill.sql`,
+`8de45b9`; 14 dates from the rule engine, `trading_calendar.json` and the NSE list; dry run 14 / 14 / 0) and is applied by
+the operator after a close (ruling S96-J). **TD-S94-NEW-3** — every S96 apply ended its batch with its own verification
+SELECT. **TD-S92-NEW-6 / Lovable** — no new instance.
+
 ### TD-S95-NEW-1 (S2 priority) — vendor OI on untraded legs is not a measurement, and every reader of OI levels takes it at face value
 
 | Field | Value |

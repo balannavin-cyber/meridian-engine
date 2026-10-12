@@ -2,11 +2,92 @@
 
 > **Living file.** Overwritten at the end of every session to reflect what just happened and what the next session is for.
 > Claude reads this immediately after `CLAUDE.md` at session start. It replaces the practice of manually pasting a "session resume block."
-> **History.** Every session block before S89 lives in [`docs/registers/CURRENT_history.md`](../registers/CURRENT_history.md) — committed to git, **not** uploaded to project knowledge. Split at the S78 doc-close per **TD-S73-NEW-8**; S78 demoted to history at the S80 doc-close and **S81 at the S83 doc-close**, S82 at the S84 doc-close, **S83 at the S85 doc-close**, **S84 at the S86 doc-close** **S85 at the S87 doc-close** **S86 at the S88 doc-close**, **S87 at the S89 doc-close** and **S88 at the S90 / AM-1 doc-close**, each moved verbatim rather than retyped — the S87 move asserted byte-identical at **19,184 B**, sha256 `52b9364b…` on both sides. **S89 moved at the S91 close**, asserted byte-identical at **8,079 B**, sha256 `e2bec976…` on both sides. **S90 (with the AM-1 post-close block) moved at the S92 close**, asserted byte-identical at **9,482 B**, sha256 `8466bfbb…` on both sides. **S91 / AM-2 moved at the S93 close**, asserted byte-identical at **9,208 B**, sha256 `d5dc4e19…` on both sides. **S92 moved at the S94 close**, asserted byte-identical at **9,049 B**, sha256 `6f45dd8b…` on both sides. **S93 moved at the S95 close**, asserted byte-identical at **8,092 B**, sha256 `c84882be…` on both sides. This file carries the current session and one predecessor, and nothing else.
+> **History.** Every session block before S89 lives in [`docs/registers/CURRENT_history.md`](../registers/CURRENT_history.md) — committed to git, **not** uploaded to project knowledge. Split at the S78 doc-close per **TD-S73-NEW-8**; S78 demoted to history at the S80 doc-close and **S81 at the S83 doc-close**, S82 at the S84 doc-close, **S83 at the S85 doc-close**, **S84 at the S86 doc-close** **S85 at the S87 doc-close** **S86 at the S88 doc-close**, **S87 at the S89 doc-close** and **S88 at the S90 / AM-1 doc-close**, each moved verbatim rather than retyped — the S87 move asserted byte-identical at **19,184 B**, sha256 `52b9364b…` on both sides. **S89 moved at the S91 close**, asserted byte-identical at **8,079 B**, sha256 `e2bec976…` on both sides. **S90 (with the AM-1 post-close block) moved at the S92 close**, asserted byte-identical at **9,482 B**, sha256 `8466bfbb…` on both sides. **S91 / AM-2 moved at the S93 close**, asserted byte-identical at **9,208 B**, sha256 `d5dc4e19…` on both sides. **S92 moved at the S94 close**, asserted byte-identical at **9,049 B**, sha256 `6f45dd8b…` on both sides. **S93 moved at the S95 close**, asserted byte-identical at **8,092 B**, sha256 `c84882be…` on both sides. **S94 moved at the S96 close**, asserted byte-identical at **8,326 B**, sha256 `0537ac73…` on both sides. This file carries the current session and one predecessor, and nothing else.
 
 ---
 
 ## Last session
+
+**S96 — 2026-10-11 → 10-12 (Sunday evening into Monday pre-open).** P7 built and put on the live
+board in full; P3b designed, built and tested; D-4 declined. This block points; the detail lives
+in the files named. Rulings: `docs/research/s92_parity/rulings_s96.md` (S96-A…J, the single
+source). **Progress lives in the tracker**, `docs/registers/agentic_layer_roadmap_S90.md` (v2.13).
+
+**`origin/main` — all pushed, last `8de45b9` before this close.** P7a `36af1e9` / `fb3efb0` /
+`eb8f1d6` · guard survey `345d1b2` / `4729893` · M-P7 result `7faa9fb` · S96-D `c1b7a3c` / `f044116`
+· S96-E `d252cd5` / `9321c57` · badge round `821f984` / `e3b4dd9` · S96-F `f684f10` / `fa12709` /
+`b3c5066` · S96-G `2fa5bab` / `334ba38` · P7b round `74baad5` / `d306bcf` · P3b `df84404` /
+`c549dfa` / `324f85c` · S96-H/I/J `5b425ea` · TD-S95-NEW-2 SQL `8de45b9` · this close. **Production
+tree `~/meridian-engine`: pull to this close owed** (S96 carries docs, tests and sql only).
+**meridian-connect LIVE `804d684`** (`858cb46` → `62f5c55` DEX bricks → `c81b700` badge →
+`804d684` Δ bricks); backups `/var/www/marketview.bak-858cb46`, `.bak-62f5c55`, `.bak-c81b700`.
+
+**What was established**
+
+1. **P7 BUILT AND LIVE; DONE on the first market-hours read** (S96-I). DEX flow since the
+   pre-open beside the book (`v_dex_flow_vs_book`, **ENH-143**) as bricks; the untraded-leg guard
+   (S96-D, TD-S95-NEW-1 (c)); the SAME / OPPOSITE badge after M-P7 scored BUILD (S96-E); the
+   L7/L8 per-leg base (`v_gex_greeks_l2_leg`, S96-F, bit-for-bit with S89); ∂Δ/∂σ and ∂Δ/∂t flow
+   (`v_delta_drift_flow_vs_book`, **ENH-144**, S96-G) as bricks on the two Δ tiles. First flow on
+   the 10-09 front leg: NIFTY iv +1,761.07 / t −1,919.44; SENSEX +729.56 / −795.65 Cr.
+2. **D-4 DECLINED-ON-EVIDENCE** (S96-I). The ΔOI × premium four-case stays off the track (10-09
+   triage); the badge reads *"flow-vs-book shown on unclassified ΔOI; classification (D-4) not
+   built"* as a permanent ADR-025 D3 deviation.
+3. **P3b BUILT and tested; apply owed** (S96-H, **ENH-145**). `public.p3b_sweep()` under
+   `pg_cron`, shadow only, P3a's checks. Fixture PASS against P3a on six golden days (0 mismatches,
+   24/24 mutants); real volume on 10-09 1,902 ms with I1–I4 n_fail 0 on 154 runs. It took three
+   revisions to run at real volume (§D.50.8).
+4. **TD-S95-NEW-2 SQL prepared** (S96-J): 14 closed days, three sources agreeing; apply after a close.
+
+**Corrections to my own work:** Assumption Register **§D.50**. The one to carry: a fixture day is
+too small to show a planner's estimate — T4 at real volume caught two failures the fixture could not.
+
+**DDL applied this session:** `v_dex_flow_vs_book` (and its S96-D / S96-E body replacements),
+`v_gex_greeks_l2_leg` + `v_gex_greeks_l2_strike` body re-point, `v_delta_drift_flow_vs_book` — each
+batch ending in its own verification SELECT. **No ADR filed or amended; rules 0–24 unchanged.**
+
+## NEXT SESSION PICKS UP
+
+1. **Pull the production tree** — `~/meridian-engine`, `git pull --ff-only` to this close.
+2. **P7 live read, in market hours (~09:30 IST)** — `docs/research/s96_priority/p7/live_read_pack_2026-10-12.md`:
+   L1–L4 through `roq.sh` while Claude reads the board in Chrome. PASS → roadmap P7 **DONE**.
+3. **After a close (≥ 15:40 IST), two operator applies in the SQL editor**, each ending in its own SELECT:
+   - **P3b** `sql/2026-10-12_s96_p3b_invariant_checks.sql` — Section A (A-V must equal its stated
+     row), then Section B (rolled back; must equal T4c's 12 rows). Then read the first cron sweep's
+     rows. **P3b → DONE** on all three.
+   - **TD-S95-NEW-2** `sql/2026-10-12_s96_td_s95_new_2_calendar_backfill.sql` — verification 14 / 14 / 0.
+4. **ACL fingerprint re-baseline after the P3b apply** — it adds a table, a sequence, a function and
+   a policy. Current baseline (S96, 06:15 / 06:30 IST): `relations 350 ccc3895d…`,
+   `anon_public_privs 256 f19b614e…`, `anon_writable_objs 0`, `public_functions 40 5d8cd7f8…`,
+   `rls_policies 28 d16e21d6…` (`docs/lovable_prompts/s92/README.md`).
+5. **Checks owed:** Telegram with the chat unmuted (TD-S91-NEW-12) · the 3D view after a full
+   session, then delete `/var/www/marketview.bak-1deeb87` · **Tue 10-13** drop the S90-H backups
+   (TD-S90-NEW-11) · **Tue 10-20** live-day half of TD-S91-NEW-13.
+6. **Open for the operator:** TD-S96-NEW-1 (the "Dealer" wording on the L7/L8 captions — a
+   wording yes is needed) · TD-S95-NEW-1 (a)/(b).
+7. **Filed this session:** TD-S96-NEW-1…4.
+8. **Carried:** TD-S94-NEW-1…4 · TD-S93-NEW-1 / -3 · TD-S91-NEW-2 sites 1, 3, 4, 5, 6 ·
+   TD-S91-NEW-3 · TD-S80-NEW-1 · TD-S92-NEW-3…6 · P4 accruing (n = 20 per symbol, about
+   mid-January 2027) · P8 gated on P4.
+
+## OPERATOR RULINGS, S96
+
+**All rulings live in `docs/research/s92_parity/rulings_s96.md`**, the single source.
+
+| # | Topic |
+|---|---|
+| **S96-A** | P7 design D1–D7 (split P7a / P7b; badge amended, not retired) |
+| **S96-B** | M-P7 verdict cut (20 sessions; abstain share ≤ 1/2) |
+| **S96-C** | P7a board form: bricks; the pre-open value from the database |
+| **S96-D** | Untraded-leg guard G1–G3 (S2 share ≥ 2 %) |
+| **S96-E** | M-P7 badge columns B1–B3 |
+| **S96-F** | P7b per-leg base of L7/L8, gate C5 |
+| **S96-G** | P7b flow view `v_delta_drift_flow_vs_book` |
+| **S96-H** | P3b sidecar H1–H8 |
+| **S96-I** | D-4 DECLINED-ON-EVIDENCE; P7 closes on the live read |
+| **S96-J** | TD-S95-NEW-2 backfill: SQL now, apply after a close |
+
+## Previous session S95
 
 **S95 — 2026-10-11 (Sunday, out of hours).** DEX and S\* on the live board; P3a run and wired
 in; S\* pre-registered, gated, applied; P5 measured, ruled and applied; five owed rulings made.
@@ -46,7 +127,7 @@ carry: a check is tested at real volume, not only on local fixtures (D.49.7).
 **DDL applied:** `v_dex_repriced_zero`, `v_oi_since_preopen` (each batch ending in its own
 verification SELECT). **ADR-015 amended; rules 0–24 stand, rule 23's text carries S95-A.**
 
-## NEXT SESSION PICKS UP
+## NEXT SESSION PICKS UP — as S95 left it (SUPERSEDED by the S96 list above)
 
 1. **Pull the production tree** — `~/meridian-engine`, `git pull --ff-only`, before Monday's preflight.
 2. **First live session with DEX and S\* on the board:** read both tiles against SQL during
@@ -77,138 +158,3 @@ verification SELECT). **ADR-015 amended; rules 0–24 stand, rule 23's text carr
 | **S95-E** | Doc Protocol v5 adopted |
 | **S95-F** | Generated CSVs: committed result inputs by negation line; bulk exports local by sha256 |
 | **S95-G** | P8 re-scoped to dte 1; P4 gate unchanged |
-
-## Previous session S94
-
-**S94 — 2026-10-10 (Saturday, out of hours).** The P2–P8 re-plan ruled; P2 and P1c answered
-to their pre-registrations; P4 pre-registered and accruing; the DEX standing book applied,
-verified and live; the board's wording settled. This block points; the detail lives in the
-files named. Rulings: `docs/research/s92_parity/rulings_s94.md` (S94-A…I, the single source).
-
-**`origin/main` — all pushed. Production tree `~/meridian-engine` is at `0f1e5bc`; pull owed**
-(operator, `git pull --ff-only`, before Monday's preflight — S94 carries no runtime code, but
-rule 2 compares hashes). `0f1e5bc` PK-only docs archived · `f1db3f1` S94-A…E · `dcf567a` /
-`c920832` / `2dbf8a4` **P2** · `cde0e0b` **P4** · `ed4979b` / `4a74885` / `c17e30d` **P1c** ·
-`6c19553` Lovable kit · `4a0733d` S94-F…I · `d843354` P6 COMMENT brought current · this close.
-**meridian-connect:** `5b84c16` (net ±γ relabel, not approved) → **`13b1410` live** (S94-F).
-Backups `/var/www/marketview.bak-417e966`, `.bak-5b84c16`, `.bak-1deeb87`.
-
-**What was established**
-
-1. **S93-B is discharged** by **S94-A** (P2 → P4 → P1c → P3; P5–P7 held; P8 gated), amended by
-   **S94-G**: P5 and P6 released, **P7 held until P6 is live**, **P8 NEEDS RE-SCOPE** (L8 skips
-   dte 0 by design, so "∂Δ/∂t every cycle on expiry day" cannot be built as worded).
-2. **P2 DONE — REGIME-DEPENDENT** (`2dbf8a4`; v2 `7342cacd…`). Of 340 dates (2025-05-28 →
-   2026-10-09) the position the board's CE+/PE− sign assumes for the dealer held for **Pro on
-   23, Pro+FII on 0** — and for **Client on 226** (descriptive). Aggregate, NSE only, dates not
-   independent, so no stronger statement is available. v1 (`f425f171…`) **stopped** on an
-   exact-equality gate that NSE's ±1 rounding broke on 457 of 1,360 cells; v2 was registered
-   before scoring.
-3. **P1c DONE — INCONCLUSIVE** (`c17e30d`; `abde07ca…`). NIFTY holdout pinned-positive n = 6,
-   below the pre-registered 8 (calibration e 0.136, holdout 0.023, untested). The dampening
-   claim is **still untested to standard** (Assumption Register §D.2, premise QUALIFIED).
-4. **P4 PRE-REGISTERED, ACCRUING** (`cde0e0b`; `0a8af475…`) — net ∂Δ/∂t sign at dte 1, forward,
-   pooled n = 40, about 13 weeks. Chain retention is unmeasured (TD-S94-NEW-4).
-5. **`merdian_ro` could not read two tables.** `participant_oi_daily` and
-   `data_contamination_ranges` returned zero rows with no error until a `merdian_ro_select`
-   policy each (operator DDL ~08:32 IST, `sql/2026-10-10_s94_merdian_ro_read_policies.sql`).
-   **Rule 13 checks made through `roq.sh` before today could not find a range** (TD-S94-NEW-1).
-6. **The board's γ labels stay dampening / amplifying** (S94-F). I put a net ±γ relabel live
-   (`5b84c16`) that the operator had not approved; restored as `13b1410` with "quantity"
-   (**TD-S92-NEW-1 resolved**), the P1 levels note (S94-D) and one P2 caveat sentence in the
-   Net Γ explanation only.
-7. **P6 `v_dex_standing_book` is LIVE; ENH-140 filed.** The first apply landed Section 1 only
-   (COMMENT NULL, default ACL) while the editor said Success and **4a passed**; 4b's
-   `merdian_ro` permission error found it, and Sections 2–3 were re-run with a trailing
-   verification SELECT (TD-S94-NEW-3). Section 4 then **PASSED** — 4i on **862 strikes, max
-   abs diff 3.638e-12 Cr**; 4f's 10-02 frozen-day control fired as it should. On 10-09 two legs
-   were **net positive** (NIFTY 10-19, SENSEX 10-22), so the two dealer readings disagree in
-   sign there — more reason for no dealer column. **The board read is owed.**
-8. **P3a** (`tests/test_p3a_invariants.py`, offline invariants I1–I6 on the golden days, mutants
-   built in) is **committed at this close, not run**, and not wired into `run_offline.sh`.
-
-**Corrections to my own work.** Recorded as Assumption Register **§D.48** (9 rows, 7 mine):
-- the unapproved relabel;
-- P2 v1's exact-equality gate;
-- the P1c scorer read P1's time-only `ats_ist` as a full timestamp, and its σ tolerance was set
-  too tight before commit;
-- the S94 guard died silently under `pipefail` on a zero-match `git grep`;
-- a `grep -F "a\|b"` check could not match anything;
-- I had the operator copy a 7,812-character line out of the terminal, then read 4a's pass as a
-  full apply.
-
-Also recorded there: the S93 4a expectation is labelled per leg when it is per symbol, and the
-`merdian_ro` access assumption. The P6 COMMENT would have gone live saying "unruled" and
-"pending ruling"; it was patched before the apply (`d843354`).
-
-**Registers touched:**
-- `rulings_s94.md` (S94-A…I, and the P6 outcome line)
-- roadmap **v2.9 → v2.11**
-- Enhancement Register (**ENH-140**, Part 9)
-- `tech_debt.md` (**TD-S94-NEW-1…4**; TD-S92-NEW-1 → Resolved)
-- Assumption Register (§D.2 ×2, **§D.48**)
-- `merdian_reference.json` **v73**
-- `CLAUDE.md` **v1.67**
-- `sql/2026-10-09_s93_v_dex_standing_book.sql` (comments only)
-- `CURRENT.md` (S92 → `CURRENT_history.md`)
-- `session_log.md` (S85 → history)
-
-**No ADR filed, none amended; rules 0–24 unchanged. DDL applied:** two RLS policies; the P6 view.
-
-## NEXT SESSION PICKS UP — as S94 left it (SUPERSEDED by the S95 list above)
-
-1. **Pull the production tree** — `~/meridian-engine`, `git pull --ff-only` to this close, before
-   Monday's preflight.
-2. **DEX on the board (P6).** Run one Lovable pass under the S92 guard, layout-only. It shows the
-   book with *"open-interest delta; dealer side regime-dependent (P2)"*, and every leg total sits
-   beside its `leg_gap_oi_qty`. On dte 0 the explanation says greek gaps can flip the total's
-   sign (S94-I). Verify on `/staging/` against the view before promoting. **The ACL fingerprint
-   needs a fresh baseline**: the S94 baseline (`rls_policies 28 d16e21d6…`, relations 344) was
-   taken before the view existed.
-3. **P3a** — run `tests/test_p3a_invariants.py` out of hours as `( ulimit -v 700000; … )`, then
-   decide whether it joins `run_offline.sh`. P3b (the SC sidecar) needs operator approval after
-   P3a reports.
-4. **S\*** — `v_dex_repriced_zero`, L3's gate record re-run for the delta curve (S94-H).
-   **P5** (PPC-1) is released.
-5. **Checks owed, none recorded as done:**
-   - Telegram with the chat unmuted (**TD-S91-NEW-12**).
-   - The 3D view after a full live session, then delete `/var/www/marketview.bak-1deeb87`.
-   - **~Tue 10-13:** drop the S90-H backup tables (**TD-S90-NEW-11**).
-   - **Tue 10-20** (weekday holiday): validator silent; no chain rows; `cycle_health` CLOSED
-     (**TD-S91-NEW-13**, **TD-S89-NEW-1 / R0.8**). NIFTY's W2 leg expires Mon 10-19, which fits
-     a 10-20 holiday; that is evidence from the expiry dates, not a `trading_calendar` read.
-6. **Rulings owed:**
-   - the **ADR-015 sign-convention gloss**;
-   - whether a BUILT layer that later breaks **reopens parity**;
-   - **Doc Protocol v5**;
-   - **TD-S93-NEW-2** (gitignore policy for generated CSVs);
-   - **P8 re-scope**.
-7. **Filed this session:**
-   - **TD-S94-NEW-1** — `merdian_ro` RLS blind spot; audit residual.
-   - **-2** — roq's COPY guard.
-   - **-3** — partial apply from a terminal copy.
-   - **-4** — P4 vs chain retention.
-8. **Carried:**
-   - TD-S93-NEW-1 / -3.
-   - TD-S91-NEW-2 sites 1, 3, 4, 5, 6.
-   - TD-S91-NEW-3.
-   - TD-S80-NEW-1.
-   - TD-S92-NEW-3 / -4 / -5 / -6.
-   - Delete the stale PK draft `claude/P2_dealer_side_design_2026-10-10_DRAFT.md` — needs the
-     operator's yes.
-   - The duplicate PK `CLAUDE_history.md` (10-08 copy) — the operator removes it in the UI.
-
-## OPERATOR RULINGS, S94
-
-**All rulings live in `docs/research/s92_parity/rulings_s94.md`**, the single source.
-
-| # | Topic |
-|---|---|
-| **S94-A** | The P2–P8 re-plan (discharges S93-B) |
-| **S94-B / -C** | P1c added; P1b deferred |
-| **S94-D** | The P1 evidence note on the board |
-| **S94-E** | PK cleanup to a parallel session |
-| **S94-F** | Board γ labels stay dampening / amplifying; P2 caveat in the Net Γ explanation only |
-| **S94-G** | Amends S94-A: P5/P6 released, P7 held until P6 live, P8 needs re-scope |
-| **S94-H** | S\* as its own view after the book |
-| **S94-I** | Vendor delta for the book |

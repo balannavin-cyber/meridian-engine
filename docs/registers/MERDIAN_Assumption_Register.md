@@ -1194,3 +1194,30 @@ it will be used.
 **Update log — Session 95 (2026-10-11):** §D.49 added (**11 rows: 9 mine, 1 validated, 1
 retired**). Sources: `docs/research/s95_priority/sstar/`, `docs/research/s95_priority/p5/`,
 `docs/research/s92_parity/rulings_s95.md`, ENH-141, ENH-142.
+
+## D.50 — Session 96: counts stated before they were computed, a string drafted ahead of its build, two mutants that were not, and a sidecar that only ran on small data (2026-10-12)
+
+Twelve rows. **Eleven are my own** (D.50.1–.11). One is a **Lovable** prediction pattern (D.50.12).
+
+| # | Assumption as held | Verdict on measurement |
+|---|---|---|
+| **D.50.1** | *(mine)* The counts I stated (diff insertions 49, 7 and 16; 31 columns in T4a; an 8-line `git status` for a new directory) were right. | **REFUTED, five times** — 48, 6, 15; 28 columns; git shows a new untracked directory as one line unless `-uall`. Each was stated from memory of the edit, not computed from the file or the command. **State a count only after computing it.** |
+| **D.50.2** | *(mine)* Badge string 4.5 belonged in the B3 round. | **REFUTED** — it claimed P7b flow-vs-book before P7b existed. Reverted by a Lovable follow-up; shipped in the P7b round (`804d684`). |
+| **D.50.3** | *(mine)* Changing the multiplication order in the S96-F strike view is a mutant C5 must catch. | **REFUTED** — it gives bit-for-bit equal output, so it is an equivalent change, not a mutant. Recorded in the DDL header. |
+| **D.50.4** | *(mine)* Pricing the book on `priceable` instead of the leg set is a mutant of the S96-G flow view. | **REFUTED** — identical output (the two sets agree wherever OI > 0). Equivalent, recorded as NOT a mutant. |
+| **D.50.5** | *(mine)* The first S96-F base view (`f684f10`) was fast enough. | **REFUTED** — 2.26 s live, `gate` scanned at loops = 1,724: `rstats` inlined per row and the unit columns joined back. Rebuilt with `hx AS MATERIALIZED` and the Black-Scholes chain in place: 217 / 204 ms (`fa12709`). |
+| **D.50.6** | *(mine)* The 12:31 fixture replay was current. | **REFUTED** — it predated `zero_oi.sql`; re-run, not reused. |
+| **D.50.7** | *(mine)* The P3b T3 holiday case: 10-02 → a sweep row with no checks. | **REFUTED before the run** — each 10-02 golden day holds one γ run, which P3a checks. The empty case moved to 10-03. |
+| **D.50.8** | *(mine)* The P3b sweep body, PASS on the fixture, would run at real volume. | **REFUTED twice.** T4 on the whole of 10-09 timed out: (1) per-run correlated subqueries, O(runs × rows); (2) after a linear rewrite, the planner's 1-row estimate for the day's candidate runs (actual 154) made strikes × chain legs a nested loop. Function-scoped `SET enable_nestloop = off`: 1,902 ms. **The D.49.7 class again:** a fixture day cannot show a planner's estimate. |
+| **D.50.9** | *(mine)* I6 on the 09:00 pre-open run would be INFO. | **REFUTED** — the run has 0 quoted legs, so NOT_COMPUTED is right. The test now derives the expectation from the run's own quotes. |
+| **D.50.10** | *(mine)* "Keep D-4 in P7" was a complete question. | **REFUTED** — it omitted that keeping D-4 re-admits the four-case triaged off on 10-09 (roadmap §2.1). Re-asked with the conflict stated; ruled S96-I (decline). |
+| **D.50.11** | *(mine)* Every multiple-choice question I put carried a recommended option. | **REFUTED** — the TD-S95-NEW-2 timing question carried none; my recommendation (apply after the close) was given only when asked, and the operator switched to it. |
+| **D.50.12** | *(Lovable)* Before the open, the views carry no flow, so the board shows "no flow before 09:15". | **REFUTED three rounds running** — the views carried the 10-09 SESSION run until today's pre-open rows landed (~08:30). Lovable's predictions are not evidence; the staging read against SQL is. |
+
+**The one to carry: D.50.8.** P3b passed every fixture check and then could not run on one real
+day, twice, for reasons a small fixture cannot show. A check runs where it will be used before it
+is called done.
+
+**Update log — Session 96 (2026-10-12):** §D.50 added (**12 rows: 11 mine, 1 Lovable**). Sources:
+`docs/research/s96_priority/p7/`, `docs/research/s96_priority/p3b/`, `docs/research/s92_parity/rulings_s96.md`,
+ENH-143, ENH-144, ENH-145.

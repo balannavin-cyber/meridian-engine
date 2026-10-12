@@ -140,4 +140,49 @@ Until the 2026-10-12 pre-open rows land (~08:30 IST) the views carry the 2026-10
 
 ## Round record
 
-*(filled in as the round runs)*
+**Wording** approved by the operator 2026-10-12 06:13 IST (W1 option 1; strings 1–9). Prompt committed `74baad5`.
+**Base `c81b700` → live `804d684`.**
+
+**Fingerprint** pre-round 06:15 and after-round 06:30 IST identical on all nine rows: `relations 350 ccc3895d…`,
+`anon_public_privs 256 f19b614e…`, `anon_writable_objs 0`, `public_functions 40 5d8cd7f8…`, `rls_policies 28 d16e21d6…`,
+`default_privileges 27 9db86164…`, `schemas 10 2a889318…`, `public_triggers 0`, `anon_role 1 c506ff14…`. Versus the 04:07
+round baseline only `relations` and `anon_public_privs` moved, +2 each: `v_gex_greeks_l2_leg` (S96-F) and
+`v_delta_drift_flow_vs_book` (S96-G), both created this morning. This is the new baseline.
+
+**Lovable's first reply** applied §1–§4: `useDeltaDriftFlow` verbatim (one read, one line with `.select(`, no other read
+touched), bricks on the two Δ tiles under the three conditions with each tile on its own scale, 4.1–4.3, the badge,
+the four explanation replacements and the Δ-only appends. It predicted "no flow before 09:15" for a Monday before the
+open — wrong for the third round running: the views carried the 10-09 15:40 SESSION run. It noted that the D-4 text
+starts each entry's CAVEAT line, not the entry, and replaced only that phrase — as 4.5 intends.
+
+**Guard** `mv_lovable_guard.sh c81b700 v_delta_drift_flow_vs_book`: PASS at `d1e8f4b` and at `804d684` — four paths, all M
+(`LadderPanel.tsx`, `PinFlowsBody.tsx`, `board.ts`, `Board.tsx`), exactly one added read of the view, no other reads, no
+credentials, no vanna/charm, tsc + build clean; 4 files, 39 insertions, 8 deletions.
+
+**Staging read** (Claude, operator's Chrome) at `d1e8f4b`: sub-lines NIFTY ∂Δ/∂σ "from +4,329 Cr at pre-open OI · +1,761 Cr
+since 08:30", ∂Δ/∂t "from −7,878 … · −1,919 …"; SENSEX "+357 … · +730 … since 08:35", "−463 … · −796 …"; pre-open + flow =
+the tile's big number on all four (6,090; −9,797; 1,087; −1,259); flow equal to S96-G K1. Bricks on each tile's own scale,
+measured on SENSEX: ∂Δ/∂t held:added 29:47 px against 463:796 Cr (0.38 / 0.37), ∂Δ/∂σ 25:50 against 357:730 (0.33 / 0.33).
+γ tiles no bricks; badge amended; Δ explanation caveats amended and `how` / `computed` appended once each; γ caveats
+carry the γ string; DEX chip unchanged. **One defect: the 4.3 gap sentence rendered nowhere** — Lovable had joined it only
+to a "No ∂Δ/∂t for this leg." fallback. Follow-up (pasted verbatim):
+> One fix, nothing else: the §4.3 gap sentence (…) does not render anywhere. Append it to the caption paragraph shown
+> under the ladder when the ∂Δ/∂t or ∂Δ/∂σ layer is selected (the line that currently reads "Dealer delta-notional drifts
+> … ; bars per strike."), the same place the DEX tiles' gap sentence is appended, only when that tile's bricks are drawn
+> and `gapDoi` is not null. Change no other file, string or behaviour. Reply with the file changed.
+
+Re-read at `804d684`: the caption under the ladder for both Δ layers ends "13,33,670 qty of ΔOI has no priced greek and is
+not counted; this does not say who bought or wrote." (NIFTY) / "6,59,900 qty …" (SENSEX); not on the γ layers. Read
+against SQL in one statement through roq: `leg_gap_d_oi_qty` 1,333,670 / 659,900 exactly; pre-open / flow 4,328.75 /
+1,761.07 / −7,877.51 / −1,919.44 and 357.37 / 729.56 / −463.42 / −795.65; no-anchor 0; ts the 15:40 IST run. Against
+`leg_abs_d_oi_qty` 145,107,950 / 13,126,700 the unpriced share is 0.92 % NIFTY and 5.03 % SENSEX (computed).
+
+**Promoted** 06:39 IST from the checked commit, no pull, in a refusing subshell (HEAD = `804d684`, no tracked changes,
+backup path absent, tsc, build rooted at `/assets/`): backup `/var/www/marketview.bak-c81b700`; `/tmp/mv-live-build` →
+`/var/www/marketview/`, `diff -rq` clean, bundle `assets/index-CadQe4qO.js`. **Live read** in Chrome: bundle
+`index-CadQe4qO.js`; both symbols' Δ sub-lines, DEX sub-lines and SAME chips equal to staging; badge amended; gap caption
+present; no absent line.
+
+**Noted, not changed (pre-existing):** the L7/L8 tile captions read "Dealer delta-notional drifts …" and "A +1 IV point
+moves dealer delta-notional …". "Dealer" there is the S89 PE-negation assumption (ADR-014 sign), which P2 found
+regime-dependent; the wording predates this round and was not touched. Candidate for a wording review.

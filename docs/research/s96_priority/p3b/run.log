@@ -1,0 +1,78 @@
+2026-08-27_NIFTY: runs with check rows 78 (P3a runs 78; this sweep call took 156)
+    I1 n 78/78 fail 0/0
+    I2 n 8190/8190 fail 0/0
+    I3 n 8190/8190 fail 0/0
+    I4 n 78/78 fail 0/0
+    I5 n 78/78 fail 0/None
+    I6 n 7851/7851 fail 4544/4544
+    I5 asc 75/75 desc 0/0
+2026-08-27_SENSEX: runs with check rows 78 (P3a runs 78; this sweep call took 0)
+    I1 n 78/78 fail 0/0
+    I2 n 13728/13728 fail 0/0
+    I3 n 13728/13728 fail 0/0
+    I4 n 78/78 fail 0/0
+    I5 n 77/77 fail 0/None
+    I6 n 12014/12014 fail 3255/3255
+    I5 asc 57/57 desc 0/0
+2026-09-29_NIFTY: runs with check rows 78 (P3a runs 78; this sweep call took 78)
+    I1 n 78/78 fail 0/0
+    I2 n 11208/11208 fail 0/0
+    I3 n 11208/11208 fail 0/0
+    I4 n 78/78 fail 0/0
+    I5 n 77/77 fail 0/None
+    I6 n 10387/10387 fail 4269/4269
+    I5 asc 11/11 desc 0/0
+2026-10-01_SENSEX: runs with check rows 77 (P3a runs 77; this sweep call took 77)
+    I1 n 77/77 fail 0/0
+    I2 n 12195/12195 fail 0/0
+    I3 n 12195/12195 fail 0/0
+    I4 n 77/77 fail 0/0
+    I5 n 77/77 fail 0/None
+    I6 n 12021/12021 fail 3301/3301
+    I5 asc 43/43 desc 0/0
+2026-10-02_NIFTY: runs with check rows 1 (P3a runs 1; this sweep call took 2)
+    I1 n 1/1 fail 0/0
+    I2 n 116/116 fail 0/0
+    I3 n 116/116 fail 0/0
+    I4 n 1/1 fail 0/0
+    I5 n 1/1 fail 0/None
+    I6 n 101/101 fail 66/66
+    I5 asc 1/1 desc 0/0
+2026-10-02_SENSEX: runs with check rows 1 (P3a runs 1; this sweep call took 0)
+    I1 n 1/1 fail 0/0
+    I2 n 112/112 fail 0/0
+    I3 n 112/112 fail 0/0
+    I4 n 1/1 fail 0/0
+    I5 n 1/1 fail 0/None
+    I6 n 0/0 fail 0/0
+    I5 asc 1/1 desc 0/0
+  T2 2026-08-27_NIFTY gex +0.05              changed 1  caught (I1,I2)
+  T2 2026-08-27_NIFTY oi_call +1             changed 1  caught (I3)
+  T2 2026-08-27_NIFTY concentration +0.01    changed 1  caught (I4)
+  T2 2026-08-27_NIFTY PE sign lost           changed 1  caught (I2,I3)
+  T2 2026-08-27_SENSEX gex +0.05              changed 1  caught (I1,I2)
+  T2 2026-08-27_SENSEX oi_call +1             changed 1  caught (I3)
+  T2 2026-08-27_SENSEX concentration +0.01    changed 1  caught (I4)
+  T2 2026-08-27_SENSEX PE sign lost           changed 1  caught (I2,I3)
+  T2 2026-09-29_NIFTY gex +0.05              changed 1  caught (I1,I2)
+  T2 2026-09-29_NIFTY oi_call +1             changed 1  caught (I3)
+  T2 2026-09-29_NIFTY concentration +0.01    changed 1  caught (I4)
+  T2 2026-09-29_NIFTY PE sign lost           changed 1  caught (I2,I3)
+  T2 2026-10-01_SENSEX gex +0.05              changed 1  caught (I1,I2)
+  T2 2026-10-01_SENSEX oi_call +1             changed 1  caught (I3)
+  T2 2026-10-01_SENSEX concentration +0.01    changed 1  caught (I4)
+  T2 2026-10-01_SENSEX PE sign lost           changed 1  caught (I2,I3)
+  T2 2026-10-02_NIFTY gex +0.05              changed 1  caught (I1,I2)
+  T2 2026-10-02_NIFTY oi_call +1             changed 1  caught (I3)
+  T2 2026-10-02_NIFTY concentration +0.01    changed 1  caught (I4)
+  T2 2026-10-02_NIFTY PE sign lost           changed 1  caught (I2,I3)
+  T2 2026-10-02_SENSEX gex +0.05              changed 1  caught (I1,I2)
+  T2 2026-10-02_SENSEX oi_call +1             changed 1  caught (I3)
+  T2 2026-10-02_SENSEX concentration +0.01    changed 1  caught (I4)
+  T2 2026-10-02_SENSEX PE sign lost           changed 1  caught (I2,I3)
+  T3a no gm row: I1=NOT_COMPUTED,I2=OK,I3=OK,I4=NOT_COMPUTED,I5=NOT_COMPUTED,I6=NOT_COMPUTED
+  T3b min age: runs 77, swept 76 (expect runs - 1)
+  T3c idempotent: first 77 runs/463 rows, second 0 runs/464 rows
+  T3d empty window: returned 0, rows ['sweep/SWEEP_OK/0']
+  T3e error path: returned -1, rows ['sweep/SWEEP_ERROR']
+P3B FIXTURE PASS

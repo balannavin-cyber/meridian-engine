@@ -47,12 +47,18 @@ def send_alert(message: str, level: str = 'INFO', context: Optional[Dict[str, An
     payload = {
         'chat_id': TELEGRAM_CHAT_ID,
         'text': text,
-        'parse_mode': 'plain'
     }
     
     try:
         resp = requests.post(url, json=payload, timeout=5)
-        return resp.status_code == 200
+        if resp.status_code != 200:
+            try:
+                desc = resp.json().get('description', '')
+            except ValueError:
+                desc = resp.text[:200]
+            print(f"[WARN] Telegram send rejected: HTTP {resp.status_code} {desc}")
+            return False
+        return True
     except Exception as e:
         print(f"[WARN] Telegram send failed: {e}")
         return False

@@ -389,5 +389,40 @@ ctl = replay(IN, quiet(3) + ['OK'] * 12)
 check('control: the same 12 ticks as real OK readings -> 1 RECOVERED',
       len([x for x in ctl if x[1].startswith('RECOVERED')]), 1)
 
+print('\n--- scenario 12 (S97-J): an in-progress ledger row is not a failure ---')
+IN_PROGRESS = [{'exit_code': None, 'duration_ms': None, 'finished_at': None,
+                'created_at': '2026-10-07T05:00:01'}]
+DONE_BAD = [{'exit_code': 1, 'duration_ms': 157547, 'finished_at': '2026-10-07T05:02:39',
+             'created_at': '2026-10-07T05:00:01'}]
+ROWS['IN_PROGRESS'] = IN_PROGRESS
+ROWS['MIXED'] = IN_PROGRESS + OK_RUN
+ROWS['MIXED_BAD'] = IN_PROGRESS + DONE_BAD
+
+
+def conditions_for(rows):
+    tmp = tempfile.mkdtemp(prefix='s97j_monitor_state_')
+    mon = H.HealthMonitor(now_utc=IN, send=lambda *a: True, is_trading_day=lambda: True,
+                          window=WINDOW, state_path=Path(tmp) / 'monitor_alert_state.json',
+                          fetch_rows=lambda: rows)
+    conds, probe_ok = mon.check_orchestrator_failures()
+    return sorted(conds), probe_ok
+
+
+# control: the predicate this fix replaces DOES fire on the in-progress row, so the cells
+# below measure the fix and not a row that could never alarm.
+check('control: old predicate (exit_code != 0) fires on an in-progress row',
+      IN_PROGRESS[0].get('exit_code') != 0, True)
+check('in-progress row only -> no condition, probe ok',
+      conditions_for(ROWS['IN_PROGRESS']), ([], True))
+check('in-progress + finished OK -> no condition',
+      conditions_for(ROWS['MIXED']), ([], True))
+check('in-progress + finished exit_code 1 -> condition raised',
+      conditions_for(ROWS['MIXED_BAD']), ([KEY], True))
+check('15 in-session ticks all in progress -> 0 sends',
+      len(replay(IN, ['IN_PROGRESS'] * 15)), 0)
+# control: the same 15 ticks reading FAILED do send, so the 0 above is the fix.
+check('control: the same 15 ticks FAILED -> sends > 0',
+      len(replay(IN, ['FAILED'] * 15)) > 0, True)
+
 print(f"\nMONITOR GATE {'ALL PASS' if fails == 0 else f'{fails} FAIL'}")
 sys.exit(1 if fails else 0)

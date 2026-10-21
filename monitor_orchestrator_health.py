@@ -420,7 +420,14 @@ class HealthMonitor:
                 {'variant': 'not_firing', 'gap_minutes': LOOKBACK_MIN})
             return conditions, True
 
-        for row in rows:
+        # S97-J: a row the orchestrator inserted at start and has not finished yet
+        # (exit_code and finished_at both NULL) is IN PROGRESS, not failed. Measured
+        # 2026-10-21: rows are created within 1.5 s of start and finished >= 100.8 s later,
+        # so `None != 0` read ~44 % of in-band minutes as FAILED. A finished non-zero
+        # exit_code still alarms. A run that HANGS is not detected here (5-min look-back).
+        finished = [r for r in rows
+                    if not (r.get('exit_code') is None and r.get('finished_at') is None)]
+        for row in finished:
             if row.get('exit_code') != 0:
                 msg = (f"Orchestrator FAILED: exit_code={row.get('exit_code')}, "
                        f"duration={row.get('duration_ms')}ms")

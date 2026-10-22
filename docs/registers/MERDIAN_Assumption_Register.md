@@ -1221,3 +1221,31 @@ is called done.
 **Update log — Session 96 (2026-10-12):** §D.50 added (**12 rows: 11 mine, 1 Lovable**). Sources:
 `docs/research/s96_priority/p7/`, `docs/research/s96_priority/p3b/`, `docs/research/s92_parity/rulings_s96.md`,
 ENH-143, ENH-144, ENH-145.
+
+## D.51 — Session 97: expected values on the wrong window, a fingerprint read before its definition, a simulated query that saw the future, and a BOM (2026-10-12 → 10-23)
+
+Fifteen rows, **all my own**. Rulings: `docs/research/s92_parity/rulings_s97.md`.
+
+| # | Assumption as held | Verdict on measurement |
+|---|---|---|
+| **D.51.1** | *(mine)* P3b Section B's expected rows (S96 spec) were for its stated 8-hour sweep of 10-09. | **REFUTED** — They were T4c's **09:00–15:30 IST** read; the 8-hour window found 166 runs, not 154 (the extra six per symbol summed to SENSEX 761 strikes exactly). **An expected value carries the exact window it was computed on.** |
+| **D.51.2** | *(mine)* Section B as written would show its result. | **REFUTED** — The SQL editor shows only the last statement; `… ROLLBACK;` would have displayed nothing. **Reformulated as a `DO` block ending in `RAISE EXCEPTION` with the numbers.** |
+| **D.51.3** | *(mine)* `anon_public_privs` counts anon privileges, so it would not move after P3b. | **REFUTED** — It counts **public relations** (one row each, privilege letters possibly empty); 256 → 257 with the new table carrying `p3b_invariant_checks:` (no letters). **Read a fingerprint's definition before predicting it.** |
+| **D.51.4** | *(mine)* An accuracy bar was implied for the index step ("hundreds or thousands"). | **REFUTED** — 611 vs 19,198 met the letter and missed the intent. **State the bar numerically before the read.** |
+| **D.51.5** | *(mine)* `n_vol0_oi_moved` would be > 0 on the contaminated days. | **REFUTED** — 0 on all 68 rows; the contamination is an implausible **level**, flat all session. |
+| **D.51.6** | *(mine)* Five Marketview backups besides live/staging. | **REFUTED** — Twelve. **List before stating a count.** |
+| **D.51.7** | *(mine)* P3b would write no row on the 10-20 holiday. | **REFUTED** — `pg_cron` is calendar-blind: 96 heartbeat sweeps, 0 runs. |
+| **D.51.8** | *(mine)* `orchestrator.log.5.gz` held 10-14. | **REFUTED** — logrotate ran at 00:00 UTC (05:30 IST) between two commands; it held 10-15. **Rotated files shift at 00:00 UTC; read the line timestamps, not the file index.** |
+| **D.51.9** | *(mine)* `git status --porcelain` would print nothing on a clean tree. | **REFUTED** — Untracked files print too; needed `--untracked-files=no`. |
+| **D.51.10** | *(mine)* Telegram fix stat "about 7 insertions". | **REFUTED** — 8. |
+| **D.51.11** | *(mine)* 10-21 would need a whole-day Rule 13 entry (04:55 IST). | **REFUTED** — Market-data tables were a gap, WCB genuine; only the ledger was false (S97-M). **Measure what was written before registering contamination.** |
+| **D.51.12** | *(mine)* Scenario 13's `visible()` modelled the probe as `created_at > since` only. | **REFUTED** — It returned the 03:30:05.636 row at a 03:30:04.8 tick — a row not yet created; the control failed for a reason other than the one it names. Caught by the first run (2 FAIL), fixed to `since < c <= now` before commit. **A simulated query must bound by the moment it runs, not only by its filter.** |
+| **D.51.13** | *(mine)* The contract check's `first_seen: 2026-10-09` meant the spot condition had not cleared since 10-09. | **REFUTED** — `_send_deduped` has no clear path; `first_seen` is the key's creation, `sends` a lifetime count. **Read the state machine before reading its fields.** |
+| **D.51.14** | *(mine)* 15 cells in the S97-N test; a gap query using `lag()` covers all silences. | **REFUTED** — 14 cells; `lag()` measures only between rows, so the 15:15 → 15:30 silence after the last write was invisible until the stale checks were listed. **Count before stating; a gap query must include the tail to the window's end.** |
+| **D.51.15** | *(mine)* `ast.parse` on the decoded source checks the file as Python reads it. | **REFUTED** — `validate_compute_contracts.py` carries a UTF-8 BOM, which Python accepts and `ast.parse` on the decoded string rejects; caught by the patch's own guard, nothing written. **Strip a BOM for parsing, write it back unchanged.** |
+
+**The one to carry: D.51.12.** A control that models a query must bound it by the moment the query runs, not only by its
+filter; otherwise it sees rows that do not yet exist, and fails (or passes) for a reason other than the one it names.
+
+**Update log — Session 97 (2026-10-23):** §D.51 added (**15 rows, all mine**). Sources: `docs/research/s92_parity/rulings_s97.md`,
+`tests/test_monitor_orchestrator_gate.py` (scenarios 12–13), `tests/test_contract_check_s97.py`, TD-S97-NEW-1…21, ENH-145.

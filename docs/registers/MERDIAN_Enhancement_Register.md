@@ -163,7 +163,7 @@ Sortable table of all 122 IDs. For full detail see Part 4.
 | ENH-142 | Open interest since the pre-open row - `v_oi_since_preopen`: L13 with the anchor moved to the session's pre-open row (the previous-close baseline, PPC-1) | display | **LIVE 2026-10-11 (S95, ruling S95-B)** - `sql/2026-10-11_s95_v_oi_since_preopen.sql` (`21d3142`, 4b `47989ed`); Section 4 PASS, 4d = probe-1 values (NIFTY 472/0/0, SENSEX 390/102/8,420). No consumer yet (P7). |
 | ENH-143 | DEX flow since the pre-open beside the book - `v_dex_flow_vs_book`: delta x (OI settled - OI pre-open) x spot / 1e7 at the book's settled run, front leg, per strike and per leg; untraded-leg guard; SAME / OPPOSITE badge | display | **LIVE 2026-10-11/12 (S96, rulings S96-A / C / D / E)** - `sql/2026-10-11_s96_v_dex_flow_vs_book.sql` (P7a `36af1e9` / `fb3efb0` / `eb8f1d6`; guard applied `f044116`; badge applied `9321c57`). Board: bricks `62f5c55`, badge `c81b700`. |
 | ENH-144 | Δ-pair flow since the pre-open beside the L7/L8 book - `v_delta_drift_flow_vs_book`: ∂Δ/∂σ and ∂Δ/∂t per contract x ΔOI at the L7/L8 latest ts, front leg; reads `v_gex_greeks_l2_leg` (S96-F) | display | **LIVE 2026-10-12 (S96, rulings S96-F / S96-G)** - `sql/2026-10-12_s96_v_delta_drift_flow_vs_book.sql` (`2fa5bab`, applied `334ba38`); K1–K3 to 1e-12. Board: bricks on the two Δ tiles `804d684`. |
-| ENH-145 | P3b per-cycle invariant sidecar - `p3b_invariant_checks` + `p3b_sweep()` under `pg_cron`: P3a's I1–I6 on every γ run, shadow only | integrity | **BUILT, APPLY OWED (S96, ruling S96-H)** - `sql/2026-10-12_s96_p3b_invariant_checks.sql` (`324f85c`); fixture PASS vs P3a, real volume 10-09 1,902 ms, I1–I4 n_fail 0. |
+| ENH-145 | P3b per-cycle invariant sidecar - `p3b_invariant_checks` + `p3b_sweep()` under `pg_cron`: P3a's I1–I6 on every γ run, shadow only | integrity | **LIVE 2026-10-12 (applied S97; ruling S96-H)** - `sql/2026-10-12_s96_p3b_invariant_checks.sql` (`324f85c`); Section A exact, Section B exact on T4c's window, sweeps 10-13 → 10-19 0 `SWEEP_ERROR`, 0 check FAIL. Roadmap P3 DONE. |
 | ENH-SDM | Structural Divergence Monitor (ADR-018 D4) | context | **PROPOSED** |
 
 ## Part 2 -- Active Work (not yet delivered or under monitoring)
@@ -4730,6 +4730,17 @@ equal to P3a on every check and day, 24/24 mutants, five state cases; real volum
 `roq.sh`) 1,902 ms, I1–I4 n_fail 0; DDL dry-run on a uuid fixture copy. **Artefacts:**
 `sql/2026-10-12_s96_p3b_invariant_checks.sql`, `docs/research/s96_priority/p3b/`.
 
+### ENH-145 — RESOLVED mirror: applied and read (S97, 2026-10-12 → 10-19)
+
+Applied by the operator in the SQL editor after the 2026-10-12 close. **Section A:** the A-V verification row exact
+(17:36 IST). **Section B** (rolled back): exact on T4c's real window, 09:00–15:30 IST — 154 runs, 12 rows including I6;
+the stated 8-hour window found 166 runs, so the expected rows had carried the wrong window (§D.51.1); run as a `DO` block
+ending in `RAISE EXCEPTION` with the numbers, because the editor shows only the last statement (§D.51.2). **Cron:**
+`p3b_invariants` swept 96 times a day 2026-10-13 → 10-19, 0 `SWEEP_ERROR`, 162–166 runs checked a day, **0 check FAIL**;
+on 10-20 (holiday) and 10-21 (no data) only heartbeat rows, 0 runs — `pg_cron` is calendar-blind (§D.51.7). ACL
+fingerprint moved by the table, sequence, function and policy and was re-baselined (`docs/lovable_prompts/s92/README.md`,
+S97 record). Roadmap P3b → DONE, P3 → DONE. Rulings `docs/research/s92_parity/rulings_s97.md`.
+
 *Part 4 (Session 80) — 2026-09-22. Two enhancements shipped, both L19 extensions rather than parity
 layers, both unrendered. **Enhancement Register TRIGGERED** for a second consecutive session after
 nine non-triggers ending at S79.*
@@ -4753,3 +4764,5 @@ nine non-triggers ending at S79.*
 *Part 10 (Session 95) — 2026-10-11. **Two new ENH ids minted: ENH-141** (S\*, `v_dex_repriced_zero`) **and ENH-142** (P5, `v_oi_since_preopen`), checked free against highest ENH-140. **ENH-140 board read DONE** (Resolved mirror block). Both new views LIVE with Section 4 PASS. Rulings `docs/research/s92_parity/rulings_s95.md`.*
 
 *Part 11 (Session 96) — 2026-10-12. **Three new ENH ids minted: ENH-143** (P7a, `v_dex_flow_vs_book`), **ENH-144** (P7b, `v_delta_drift_flow_vs_book`) **and ENH-145** (P3b sidecar, apply owed), checked free against highest ENH-142. `v_gex_greeks_l2_leg` is ENH-98 maintenance (S95-D), not a new id. D-4 (ENH-98's flow-vs-book classification) is DECLINED-ON-EVIDENCE (S96-I). Rulings `docs/research/s92_parity/rulings_s96.md`.*
+
+*Part 12 (Session 97) — 2026-10-12 → 10-23. **No new ENH id minted.** **ENH-145 LIVE** (P3b applied and read; Resolved mirror block). ENH-143 / ENH-144 unchanged: P7's live read passed (roadmap P7 DONE). The session's code changes — `telegram_utils.py`, `monitor_orchestrator_health.py`, `validate_compute_contracts.py` — are fixes to existing components, filed as TD-S97-NEW-1 / -2 / -7 / -20, not enhancements. Rulings `docs/research/s92_parity/rulings_s97.md`.*

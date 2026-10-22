@@ -4549,3 +4549,75 @@ Also recorded there: the S93 4a expectation is labelled per leg when it is per s
 | **S94-G** | Amends S94-A: P5/P6 released, P7 held until P6 live, P8 needs re-scope |
 | **S94-H** | S\* as its own view after the book |
 | **S94-I** | Vendor delta for the book |
+
+## Previous session S95
+
+**S95 — 2026-10-11 (Sunday, out of hours).** DEX and S\* on the live board; P3a run and wired
+in; S\* pre-registered, gated, applied; P5 measured, ruled and applied; five owed rulings made.
+This block points; the detail lives in the files named. Rulings:
+`docs/research/s92_parity/rulings_s95.md` (S95-A…G, the single source). **First close on Doc
+Protocol v5** (S95-E). **Progress lives in the tracker**, now `docs/registers/agentic_layer_roadmap_S90.md`
+(v2.12; the old path is a pointer stub).
+
+**`origin/main` — all pushed.** `882df80` P3a · `90c8c50` / `7566e8c` S\* · `21d3142` / `47989ed`
+P5 · this close. **Production tree `~/meridian-engine` at `1390584`; pull owed** before Monday's
+preflight (S95 carries docs, tests and sql only). **meridian-connect LIVE `858cb46`** (DEX
+`d1912d2` → `392256a`; S\* `103f663` / `1c5a047`; sub-line `719e85c` / `858cb46`); backups
+`/var/www/marketview.bak-13b1410`, `.bak-392256a`.
+
+**What was established**
+
+1. **P6 DONE.** The DEX book is on the Flows tab with the P2 phrase, every leg total beside its
+   gap, and the dte-0 note (ENH-140 board read). **S\*** `v_dex_repriced_zero` (**ENH-141**) was
+   pre-registered (`7bfafb49`), scored **APPLY** (G1 on 11 arms; G3/G4/G5 on 7 of 10; the widest
+   G5 spread 0.239 σ₁d, 95 % of tolerance, on 1-dte SENSEX), applied, and shown as a tile plus a
+   dotted ladder rule. Staging review caught the tile measuring from the chain spot while the
+   header shows another clock's spot; fixed to *"above chain spot …"* before promote.
+2. **P3a DONE** — PASS on the six golden days under `ulimit -v 700000` (run of record on the
+   box, S95-A), wired as `run_offline.sh` step 12/12; its PE-sign mutant was a silent no-op until
+   fixed (`882df80`). P3b needs approval.
+3. **P5 DONE** — `v_oi_since_preopen` (**ENH-142**), ruling **S95-B**. On NIFTY the pre-open row
+   is the 15:40 close on every leg (26/26 changeovers); on SENSEX BSE revises 23–41 % of legs
+   overnight. Section 4 PASS; 4d reproduced probe 1 (472 / 0 / 0 and 390 / 102 / 8,420).
+4. **Vendor OI on untraded legs is not a measurement** (TD-S95-NEW-1): SENSEX 09-25 / 09-28 /
+   09-29, legs with volume 0 held 33–94 % of front OI and 73–98 % of DEX gross.
+5. **Rulings S95-C…G** applied at this close: ADR-015 Amendment A; parity is not reopened by a
+   break; Doc Protocol v5 adopted; generated-CSV policy (TD-S93-NEW-2 resolved); P8 → dte 1.
+
+**Corrections to my own work:** Assumption Register **§D.49** (11 rows, 9 mine). The one to
+carry: a check is tested at real volume, not only on local fixtures (D.49.7).
+
+**DDL applied:** `v_dex_repriced_zero`, `v_oi_since_preopen` (each batch ending in its own
+verification SELECT). **ADR-015 amended; rules 0–24 stand, rule 23's text carries S95-A.**
+
+## NEXT SESSION PICKS UP — as S95 left it (SUPERSEDED by the S96 list above)
+
+1. **Pull the production tree** — `~/meridian-engine`, `git pull --ff-only`, before Monday's preflight.
+2. **First live session with DEX and S\* on the board:** read both tiles against SQL during
+   market hours (the S95 reads were on a closed weekend).
+3. **ACL fingerprint re-baseline** before the next Lovable round — `v_oi_since_preopen` was
+   created after the 13:18 snapshot (`relations 346 06c07d80…`).
+4. **P7, the flow leg** — unblocked (P5 and P6 live); a design note first. **P3b** needs approval.
+5. **Checks owed:** Telegram with the chat unmuted (TD-S91-NEW-12) · the 3D view after a full
+   session, then delete `/var/www/marketview.bak-1deeb87` · **Tue 10-13** drop the S90-H backups
+   (TD-S90-NEW-11) · **Tue 10-20** live-day half of TD-S91-NEW-13 (the calendar half is done).
+6. **Filed this session:** TD-S95-NEW-1 (untraded-leg vendor OI), -2 (`trading_calendar` holds
+   no rows for past closed days).
+7. **Carried:** TD-S94-NEW-1…4 · TD-S93-NEW-1 / -3 · TD-S91-NEW-2 sites 1, 3, 4, 5, 6 ·
+   TD-S91-NEW-3 · TD-S80-NEW-1 · TD-S92-NEW-3…6 · the stale PK draft
+   `claude/P2_dealer_side_design_2026-10-10_DRAFT.md` and the duplicate PK `CLAUDE_history.md`
+   (operator's call).
+
+## OPERATOR RULINGS, S95
+
+**All rulings live in `docs/research/s92_parity/rulings_s95.md`**, the single source.
+
+| # | Topic |
+|---|---|
+| **S95-A** | Rule 23's hours bind trading days only; `ulimit -v` always |
+| **S95-B** | P5: the pre-open row is the baseline; a view; front expiry |
+| **S95-C** | ADR-015's gloss corrected by amendment, English only |
+| **S95-D** | A break in a BUILT layer is maintenance; parity is not reopened |
+| **S95-E** | Doc Protocol v5 adopted |
+| **S95-F** | Generated CSVs: committed result inputs by negation line; bulk exports local by sha256 |
+| **S95-G** | P8 re-scoped to dte 1; P4 gate unchanged |

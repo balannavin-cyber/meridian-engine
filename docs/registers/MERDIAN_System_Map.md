@@ -2131,3 +2131,19 @@ Doc Protocol v5: a table of what changed, no narrative. Detail: ENH-143, ENH-144
 | `v_delta_drift_flow_vs_book` (ENH-144) | view, owner privileges | `v_gex_greeks_l2_leg`, `v_oi_since_preopen` | Marketview Flows tab (Δ tile bricks); `anon`, `merdian_ro` | LIVE 2026-10-12 |
 | `p3b_invariant_checks` + `p3b_sweep()` + `pg_cron` `p3b_invariants` (ENH-145) | table, function, schedule | `gex_strike_snapshots`, `option_chain_snapshots`, `gamma_metrics` | none (shadow); `merdian_ro` | **AUTHORED, apply owed** |
 | Marketview Flows tab | frontend (`meridian-connect` `858cb46` → `62f5c55` → `c81b700` → `804d684`) | + `v_dex_flow_vs_book`, `v_delta_drift_flow_vs_book` | operator | LIVE; backups `/var/www/marketview.bak-858cb46`, `.bak-62f5c55`, `.bak-c81b700` |
+
+## §S97 — Session 97: a sidecar applied, an index, two alerting paths fixed, no host change (2026-10-12 → 10-23)
+
+Doc Protocol v5: a table of what changed, no narrative. Detail: TD-S97-NEW-1 / -2 / -7 / -20, ENH-145; `docs/research/s92_parity/rulings_s97.md`.
+
+| Component | Kind | Reads | Read by | State |
+|---|---|---|---|---|
+| `p3b_invariant_checks` + `p3b_sweep()` + `pg_cron` `p3b_invariants` (ENH-145) | table, function, schedule `*/5 3-10 * * 1-5` UTC | `gex_strike_snapshots`, `option_chain_snapshots`, `gamma_metrics` | none (shadow); `merdian_ro` | **LIVE 2026-10-12**; writes heartbeat rows on closed days too (calendar-blind) |
+| `idx_gss_ts` on `gex_strike_snapshots (ts)`; `ts` statistics target 1000 | index, column statistics | — | the planner (P3b, any day-range reader) | LIVE 2026-10-12 (S97-F / S97-G) |
+| `trading_calendar` | 13 closed-day rows 2026-08-24 → 10-04 | — | holiday gates | backfilled (S97-E) |
+| `data_contamination_ranges` | rows `SENSEX-CHAIN-OI-VOL0-2026-09-25`, `ORCH-LEDGER-FALSE-SUCCESS-2026-10-21` | — | Rule 13 checks | 3 rows (S97-H, S97-M) |
+| S90-H backup tables (two) | dropped | — | — | removed (S97-L) |
+| `telegram_utils.py` `send_telegram` | shared sender | — | the orchestrator monitor, the contract check, other `send_alert` callers | `44b8b96`: no `parse_mode`; a non-200 logs status and description |
+| `monitor_orchestrator_health.py` | cron monitor (schedule unchanged) | `script_execution_log` | Telegram | `d5167db` in-progress rows skipped; `754ffad` look-back 7 min |
+| `validate_compute_contracts.py` | cron check (schedule unchanged) | `market_spot_snapshots`, `option_chain_snapshots` | Telegram | `74b45ce` spot checked 09:15–15:15 IST at 3 min; episodes clear on pass |
+| Marketview | frontend (`meridian-connect` `804d684` → `04fcd05`, bundle `index-BrWRk1OP.js`) | + `public/help/manual.json` (static) | operator | LIVE; S97-A wording, `/manual` route; backup `/var/www/marketview.bak-804d684`; `.bak-1deeb87` deleted |

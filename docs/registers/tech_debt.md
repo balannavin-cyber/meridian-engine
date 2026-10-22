@@ -69,6 +69,239 @@ If an item doesn't fit those four buckets, it doesn't get tracked.
 **NOTE — 2026-10-03.** `v_gex_concentration.hhi_net` is the **top-1 gamma share, NOT a Herfindahl** — byte-identical to `v_gex_strike_rank` rank-1 `share_of_abs` and to `gamma_metrics.gamma_concentration` (0.0942 on 10-01); true HHI Σshare² ≈ 0.0464. The live board's 'HHI' label and D-6's ~0.10 / ~0.25 bands are therefore on **top-1 share**. `hhi_call` / `hhi_put` semantics **unverified**. Verify call/put and correct the board label before any Herfindahl claim.
 **FIX (phase-2 Pin tab):** the board's 'HHI' label should display the true `conc_hhi` (Σs²); keep top-1 share as a separate **'lead-strike share'** line. **ENH-133 now stores both.**
 
+### TD-S97-NEW-1 (S1 priority) — every `send_alert` sender was silently undelivered from 2026-10-08 to 2026-10-22
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** The orchestrator monitor and the compute-contract check had no working delivery for 8+ trading days, and nothing logged why. |
+| **Filed** | 2026-10-22 (Session 97) |
+| **Component** | `telegram_utils.py` (unchanged since `a8e970a`, 2026-06-12): line 50 `'parse_mode': 'plain'`; line 55 `return resp.status_code == 200` |
+| **Measured** | Monitor logs: `[SENT] … (delivered=False)` on every send since `[SENT]` lines began (10-08); 42 sends on 10-08 / 10-09 / 10-12 and 67 on 10-14 / 15 / 16 / 19 / 21 — **≥ 109, 0 delivered**. Contract check: `delivered=False` likewise. Senders on their own path (wsfeed preflight, `merdian-wsfeed-alert`, `eod_health_check` via `bin/eod_alert.sh`) delivered throughout. Probe 2026-10-22 04:23 IST: A (as production) **400 "Bad Request: unsupported parse_mode"**; B (no `parse_mode`) **200**. Telegram most likely began rejecting the value ~10-08 (inferred; not verifiable from the box). |
+| **Fix** | S97-I, commit **`44b8b96`**: `parse_mode` dropped; a non-200 now prints `[WARN] Telegram send rejected: HTTP <status> <description>` (resp only, never the URL). Local = GitHub = EC2 (blob `8a2fea6`). Live `send_alert` returned True and arrived; mocked 400 → `False` + the WARN line, payload keys `chat_id, text`, token absent from output. |
+| **Status** | **FIXED S97 (`44b8b96`); confirmed live 2026-10-22** — monitor and contract-check sends logged `delivered=True` in band and reached the operator's chat (alerts pasted 09:04 IST). |
+
+### TD-S97-NEW-2 (S2 priority) — the orchestrator monitor read every in-progress run as FAILED (~44 % of in-band minutes)
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** A false CRITICAL on ~13–14 sends every trading day; masked by TD-S97-NEW-1 until that was fixed. |
+| **Filed** | 2026-10-22 (Session 97) |
+| **Component** | `monitor_orchestrator_health.py` `check_orchestrator_failures()`: `if row.get('exit_code') != 0` — `None != 0` is True |
+| **Measured** | `script_execution_log`, 2026-10-21, 84 orchestrator rows: `created_at` within **1.5 s** of `started_at`, `finished_at` ≥ **100.8 s** later, mean run **132.7 s = 44.2 %** of the 5-min cycle — rows are inserted at start and updated at finish. Observed FAILED share 2026-10-12: **177 of 405** in-band verdicts = **43.7 %**. |
+| **Fix** | S97-J, commit **`d5167db`**: rows with `exit_code` and `finished_at` both NULL are skipped as in progress; a finished non-zero exit still alarms. `tests/test_monitor_orchestrator_gate.py` scenario 12 (six cells, two controls); MONITOR GATE ALL PASS on Local and on the box under `ulimit -v 700000`. |
+| **Status** | **FIXED S97 (`d5167db`).** Live 2026-10-22: in-band ticks read `Orchestrator OK`, apart from the look-back race filed as TD-S97-NEW-20 (fixed `754ffad`). |
+
+### TD-S97-NEW-3 (S2 priority) — the monitor cannot see a hung orchestrator run
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** A run that never finishes leaves a NULL row that ages out of the `created_at` look-back without ever alarming, before and after TD-S97-NEW-2's fix. |
+| **Filed** | 2026-10-22 (Session 97) |
+| **Component** | `monitor_orchestrator_health.py` `_fetch_rows_http()` (`created_at > now − LOOKBACK_MIN`; `LOOKBACK_MIN` 5, and 7 since `754ffad`) |
+| **Proper fix** | A second probe: any orchestrator row with `finished_at` NULL and `started_at` older than one cycle plus margin (e.g. 6 min, against a measured max run of 170.7 s on 10-21) → CRITICAL. Tested in the same suite, with a control. |
+| **Status** | **OPEN.** |
+
+### TD-S97-NEW-4 (S1 priority) — a total ingest outage reads as a healthy day: the orchestrator re-runs the last existing run and logs SUCCESS / contract met with zero writes
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** On 2026-10-21 no chain, spot, futures or γ was written all session and every orchestrator cycle reported success. |
+| **Filed** | 2026-10-22 (Session 97) |
+| **Component** | `run_merdian_shadow_runner_aws.py` (picks up the *latest existing* `run_ids`, does not check their age); the contract evaluation (`contract_met = true` with `actual_writes {}`) |
+| **Measured** | 2026-10-21: every cycle logged `Using run_ids: NIFTY 1bfd5d97…, SENSEX 4e81958a…` = **2026-10-19 15:40**'s runs; 83 ledger rows `status OK, exit_code 0, exit_reason SUCCESS, contract_met t, actual_writes {}` (+ one 11:00 IST `MISSING`, exit 1). `gex_strike_snapshots` / `gamma_metrics` 0 rows for 10-21 (164 / 164 on 10-19). Registered as Rule 13 row `ORCH-LEDGER-FALSE-SUCCESS-2026-10-21` (S97-M). |
+| **Also measured 2026-10-22 08:49 IST (healthy day)** | (i) **The first cycle of every session reuses the previous session's run:** the 08:30 cycle logged 10-19's `1bfd5d97` / `4e81958a` again, because it starts in the same minute as the first chain ingest; new run_ids from 08:35. (ii) **`actual_writes` is `{}` on healthy cycles too** (08:35–08:45 wrote γ: 3 runs per symbol), so the field is never populated and cannot detect zero writes as it stands. |
+| **Proper fix** | (a) the runner refuses run_ids not from today's session (or older than one cycle plus margin) and exits non-zero with a reason — this also fixes the daily first-cycle reuse; (b) the contract counts its own writes (the ledger's `actual_writes` is never filled) and cannot be met with zero. Both are capture-path changes: S90-J window, replay check, written rollback. |
+| **Status** | **OPEN.** |
+
+### TD-S97-NEW-5 (S2 priority) — a lapsed Dhan Data API subscription is visible only in `cron.log`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Cost one full session (10-21) of chain, spot, futures and γ, which cannot be recovered as snapshots. |
+| **Filed** | 2026-10-22 (Session 97) |
+| **Component** | Dhan account plan; `run_ingest.sh`, `capture_spot_1m_v2.py`, the futures quote and post-market capture (all log to `cron.log`; none pages) |
+| **Measured** | `cron.log` 2026-10-21: optionchain/expirylist and index-futures quote **HTTP 401 `{"806":"Data APIs not Subscribed"}`**; charts/intraday **401 `DH-902` "requires a PLUS subscription. Current plan: FREE"**; 16:00 `MARKET CLOSE CAPTURE FAILED`. 10-19 had full data; 10-20 was a holiday. Renewed 2026-10-22 ~05:06 IST; probes 05:07 IST: expirylist **200**, charts/intraday **200** (returned 10-21 candles), marketfeed/ltp **200**. The parity-target trial linked to the same Dhan account ended 10-19 — a coincidence of dates, **not shown to be related**. |
+| **Proper fix** | (a) a pre-open probe (e.g. 08:25 IST) of the three endpoints that pages through a delivering sender on any 401; (b) record the subscription's renewal date where the operator will see it before it lapses. |
+| **Status** | **OPEN** (subscription restored; the detection gap stands). |
+
+### TD-S97-NEW-6 (S2 priority) — the Zerodha feed was down on 3 of the last 6 trading days; the daily manual Kite refresh is a single point of failure
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Each miss costs a full session of `market_ticks`, intraday breadth and WCB. |
+| **Filed** | 2026-10-22 (Session 97) |
+| **Component** | `core/refresh_kite_token.py` on MALPHA (interactive browser login, operator ~06:00 IST) → 03:00 UTC sync → `merdian-wsfeed` preflight 09:10 IST |
+| **Measured** | Frozen ticks `~/merdian_fixtures/ticks/`: 10-13 **272 MB**, **10-14 388 KB**, **10-15 388 KB**, 10-16 247 MB, **10-19 388 KB**, 10-20 (holiday) 428 KB, 10-21 260 MB. Telegram preflight alerts received 10-15 and 10-19 ("Zerodha token invalid. Feed NOT started"). `eod_health_check` FAIL for 10-19: `market_breadth_intraday` 0 rows, `weighted_constituent_breadth_snapshots` 0, `market_ticks` SUSPECT (everything γ-side OK). WCB has no rows on 10-14 / 10-15 / 10-19. |
+| **Proper fix** | Operator decision: an earlier reminder, a second person, or an automated Kite login path (Kite's terms permitting). At minimum a 08:45 IST check that the synced token validates, paging if not. |
+| **Status** | **OPEN — operator decision.** |
+
+### TD-S97-NEW-7 (S3 priority) — the contract check's "no option_chain / spot data in last N minutes" fires all session; suspected boundary false positive
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** ~26 sends a day now that delivery works (S97-K). On 10-21 the condition was **true** (TD-S97-NEW-5), so the check is not simply wrong. |
+| **Filed** | 2026-10-22 (Session 97) |
+| **Component** | `validate_compute_contracts.py` (`4,9,…,59 03-09 * * 1-5`) |
+| **Measured** | 10-21: 13 × `contract_option_chain_stale` + 13 × `contract_violations_summary`; first check 03:04 UTC, before any 03:00 run could have written; 10-12 the stale key was `spot`. **Delivered alerts 2026-10-22 show the spot key open since `first_seen: 2026-10-09T03:04:03` with `sends: 88 → 89`** — it has never cleared across ten sessions, including healthy ones with 726 spot rows, so the condition (1-minute threshold on a ~1/min writer) cannot stay clear long enough to reset and its state persists across days. **2026-10-22 08:34 IST:** `contract_spot_stale` "no spot data in last 1 minute" sent (`delivered=True`) while spot cannot exist yet — on 10-19 the EOD check recorded spot rows only from 03:41 UTC (09:11 IST); **confirmed 09:20 IST: spot rows from 09:11:04 IST**, so the 08:34 and 09:04 sends were false. **Coverage:** 6 rows per symbol over 09:11–09:20 (10 minutes); 10-19 had 726 rows over ~430 minutes for two symbols (~84 % of minutes per symbol) — a 1-minute threshold on a writer that skips minutes this often re-trips within a few ticks, so the hold-down never completes (consistent with `first_seen 10-09`). Fix candidates: a threshold above the writer's real gap distribution, the check gated to start at 09:15 IST, and per-day state reset. |
+| **Correction (D.51.13)** | The "open since 10-09 / never cleared" reading above is wrong: `_send_deduped` has **no clear path at all** (no hold-down, no RECOVERED), so `first_seen` is just the key's creation and `sends` a lifetime total; neither says the condition was continuously true. The 30-min cadence shows only that it was true at least once per 30-min window. |
+| **Measured (S97-K, 2026-10-23 03:04 IST)** | 2026-10-22, the 84 spot checks at the cron's own times (03:04:04 + 5 min … 09:59:04 UTC) against `market_spot_snapshots`: **pre-open 9/9 stale** at 1 and 2 min (8/9 at 3); **session 12/72 stale at 1 min, 0/72 at 2 and 3 min**; **after 15:15 IST 3/3 stale** — spot's last write 09:45:05.244 UTC (15:15:05 IST). Writer gaps in session: p99 63.3 s, 182 of 360 > 60 s, one gap 298.9 s. Every spot alarm that day was the check's own artefact. |
+| **Fix** | **S97-N, commit `74b45ce`** (2026-10-23 03:19 IST): spot checked only 09:15–15:15 IST (outside: SKIPPED, not a violation), `SPOT_THRESHOLD_MIN = 3`, clear-on-pass for the spot and chain keys and the summary (last_sent kept, dedupe intact). New `tests/test_contract_check_s97.py`, 14 cells incl. three controls; ALL PASS on Local and the box; Local = GitHub = EC2 (blob `82cfbc7`). The option-chain threshold (5 min) is unchanged; it was true on 10-21. |
+| **Status** | **FIXED S97 (`74b45ce`).** Live confirmation owed 2026-10-23: no spot alarm at 08:34 / 15:19 IST; first passing check logs `[CLEAR] contract_spot_stale`. Follow-up: wire the new test into `tests/run_offline.sh`. |
+
+### TD-S97-NEW-8 (S3 priority) — a crontab line runs `build_wcb_snapshot_local.py` without its symbol argument every 5 minutes
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Writes nothing; WCB is written by the orchestrator's `build_wcb_snapshot NIFTY/SENSEX` stages. Noise in `cron.log` and a misleading schedule. |
+| **Filed** | 2026-10-22 (Session 97) |
+| **Measured** | `*/5 03,04,…,09 * * 1-5 … python3 build_wcb_snapshot_local.py >> cron.log`; `cron.log` 10-14/15 shows `Usage: python .\build_wcb_snapshot_local.py <NIFTY|SENSEX>` every 5 min. |
+| **Proper fix** | Remove the line (crontab change, S90-J window), after confirming nothing else depends on it. |
+| **Status** | **OPEN.** |
+
+### TD-S97-NEW-9 (S3 priority) — WCB reports "Writing … COMPLETED" on a no-tick day and no row appears
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A write that reports success and leaves no row is the TD-S97-NEW-4 shape in miniature. |
+| **Filed** | 2026-10-22 (Session 97) |
+| **Measured** | Orchestrator log 2026-10-15: 168 × `build_wcb_snapshot … OK`, each with `Writing WCB snapshot to Supabase… BUILD WCB SNAPSHOT COMPLETED`; `weighted_constituent_breadth_snapshots` has **no row on 10-15** (none on 10-14 / 10-19 either). Hypothesis (unverified): the row is keyed on the last tick's time and upserts onto an old row. |
+| **Proper fix** | Read the writer's key and upsert; make a no-tick cycle write nothing and say so. |
+| **Status** | **OPEN.** |
+
+### TD-S97-NEW-10 (S3 priority) — WCB wrote placeholder rows on the 2026-10-20 holiday
+
+| Field | Value |
+|---|---|
+| **Filed** | 2026-10-22 (Session 97) |
+| **Measured** | 10-20: one row per symbol, `constituent_count` 0, `active_weight_pct` 0.0. |
+| **Proper fix** | Gate the WCB path on the trading calendar (rule 18 gate, imported), or explain the row. |
+| **Status** | **OPEN.** |
+
+### TD-S97-NEW-11 (S3 priority) — `breadth_indicators_daily` is missing 2026-10-08 and 10-15 while `equity_eod` has both
+
+| Field | Value |
+|---|---|
+| **Filed** | 2026-10-22 (Session 97) |
+| **Measured** | Since 10-05: `equity_eod` 10 of 10 trading days to 10-16 (1,371–1,377 rows); `breadth_indicators_daily` 8 of 10 — **10-08 and 10-15 absent**. Both tables also lack 10-19 and 10-21 (TD-S97-NEW-12). |
+| **Cross-ref** | TD-S91-NEW-5; the S90-G note on the "late/partial EOD writer". |
+| **Status** | **OPEN.** |
+
+### TD-S97-NEW-12 (S3 priority) — EOD for 2026-10-19 and 10-21 not written; check the catch-up
+
+| Field | Value |
+|---|---|
+| **Filed** | 2026-10-22 (Session 97) |
+| **Measured** | No `equity_eod` / `breadth_indicators_daily` rows for 10-19 or 10-21 (read 05:10 IST 10-22). 10-20 holiday; 10-21 Dhan lapsed. |
+| **Read 2026-10-23 03:22 IST** | `equity_eod` / `breadth_indicators_daily`: 10-16 1,374 / 1,374; **10-19 1,374 / 1,374 (caught up by the 10-22 run, after the Dhan renewal)**; 10-20 0 / 0 (holiday); **10-21 0 / 0; 10-22 0 / 0**. Consistent with the settled Dhan EOD publish lag (S66/S67: the frontier fills on later runs; not a defect). |
+| **Proper fix** | Re-read after the 2026-10-23 16:10 IST run: 10-21 should then be filled. If 10-21 is still 0 after two further runs, a targeted backfill. |
+| **Status** | **OPEN — 10-19 resolved; 10-21 / 10-22 expected publish lag, re-read after the 10-23 EOD.** |
+
+### TD-S97-NEW-13 (S3 priority) — 2026-10-21 one-minute spot is recoverable; the chain snapshots are not
+
+| Field | Value |
+|---|---|
+| **Filed** | 2026-10-22 (Session 97) |
+| **Measured** | Dhan `charts/intraday` NIFTY 1-min for 2026-10-21 09:15–09:20 returned candles (05:07 IST 10-22). Option-chain snapshots have no historical endpoint. |
+| **Also measured** | Board 2026-10-22 10:03 IST, both symbols: OPEN · GAP tile reads **"prev close missing"** — the 10-21 16:00 close capture failed (`MARKET CLOSE CAPTURE FAILED`, Dhan 806), so today's gap has no reference. |
+| **Proper fix** | Operator decision: backfill `market_spot_snapshots` for 10-21 from 1-min candles, tagged as backfilled (source column), **and the 10-21 close** (from Dhan's daily candle) so the gap tile resolves; or leave the gap. |
+| **Status** | **OPEN — operator decision.** |
+
+### TD-S97-NEW-14 (S3 priority) — `trading_calendar` 2026-09-14 is closed but labelled a normal trading day
+
+| Field | Value |
+|---|---|
+| **Filed** | 2026-10-12 (Session 97; S97-E) |
+| **Measured** | `is_open f`, `open_time` NULL, `holiday_name` empty, `notes 'Normal trading day'`. The TD-S95-NEW-2 backfill skipped it (`ON CONFLICT DO NOTHING`). |
+| **Proper fix** | Trace which writer produced this row (a manual fix or another writer) before relabelling it `Ganesh Chaturthi`. |
+| **Status** | **OPEN.** |
+
+### TD-S97-NEW-15 (S3 priority) — `data_contamination_ranges` has no symbol column
+
+| Field | Value |
+|---|---|
+| **Filed** | 2026-10-12 (Session 97; S97-H) |
+| **Measured** | Rule 13 overlap checks match on time window, tables and fields only, so `SENSEX-CHAIN-OI-VOL0-2026-09-25` also matches NIFTY studies on those dates (NIFTY clean there: survey max 0.02 %). |
+| **Proper fix** | Add a nullable `symbols text[]` (NULL = all), backfill the three rows, update the Rule 13 check. Schema change: own ruling. |
+| **Status** | **OPEN.** |
+
+### TD-S97-NEW-16 (S3 priority) — twelve Marketview backups on the box, no retention rule
+
+| Field | Value |
+|---|---|
+| **Filed** | 2026-10-12 (Session 97) |
+| **Measured** | After deleting `.bak-1deeb87`: `PRE_S81`, `PRE_S89_20261003_1340`, `PRE_IV_20261004_0329`, `.bak-5b84c16`, `.bak-13b1410`, `.bak-392256a`, `.bak-417e966`, `.bak-858cb46`, `.bak-62f5c55`, `.bak-c81b700`, `.bak-804d684`, plus `marketview-staging`. |
+| **Proper fix** | Keep the last N (e.g. 3) plus any named pre-major; delete the rest in one refusing block; write the rule into the promote runbook. |
+| **Status** | **OPEN.** |
+
+### TD-S97-NEW-17 (S3 priority) — the Hedge-per-1 % tile and drawer still make a dealer claim
+
+| Field | Value |
+|---|---|
+| **Filed** | 2026-10-12 (Session 97; outside S97-A's scope) |
+| **Measured** | Live 2026-10-12 17:30 IST: caption "For a +1% move dealers would sell about ₹17,214 Cr; for −1%, buy …"; drawer WHAT IT IS "What dealers must trade to stay hedged if spot moves …". |
+| **Proper fix** | Same treatment as S97-A, wording for the operator's yes. |
+| **Status** | **OPEN — wording needs the operator's yes.** |
+
+### TD-S97-NEW-18 (S3 priority) — the flow's own gap (ΔOI on unpriced legs) is not on the board
+
+| Field | Value |
+|---|---|
+| **Filed** | 2026-10-12 (Session 97, P7 live read) |
+| **Measured** | Every "since 08:30" figure excludes ΔOI on unpriced legs; the tiles show only the **book** gap. `leg_gap_d_oi_qty`: DEX flow 09:55 NIFTY 17,095 / SENSEX 800; Δ flow 09:55 2,73,390 / 1,02,420, 10:00 40,560 / 1,62,880. |
+| **Proper fix** | Show it beside the flow figure (gaps-beside-totals rule); wording for the operator's yes. |
+| **Status** | **OPEN.** |
+
+### TD-S97-NEW-19 (S3 priority) — transient "different run — not drawn" / "no chain" while the views were on the same run
+
+| Field | Value |
+|---|---|
+| **Filed** | 2026-10-12 (Session 97, P7 live read) |
+| **Measured** | SENSEX 09:56 and 10:00 IST: the board withheld the flow although `v_delta_drift_flow_vs_book` `ts` equalled the book's; cleared by the next run. Errs safe (nothing wrong drawn). Mechanism (separate polling of two views) **unproven**. |
+| **Status** | **OPEN.** |
+
+### TD-S97-NEW-20 (S3 priority) — the monitor's 5-minute look-back races the orchestrator's row creation: a false "not firing"
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** One false WARNING plus a RECOVERED per occurrence, now delivered. |
+| **Filed** | 2026-10-22 (Session 97) |
+| **Component** | `monitor_orchestrator_health.py` `_fetch_rows_http()`: `created_at > now − LOOKBACK_MIN`, `LOOKBACK_MIN = 5`, against a 5-minute orchestrator cycle |
+| **Measured** | 2026-10-22: the 03:25 run's row created **03:25:04.554**; the monitor ticked at **03:30:04** (usually :02), so its window began 03:25:04.x and missed that row by under a second; the 03:30 row was created at **03:30:05.636**. Logged `No orchestrator runs in last 5 minutes` → `[SENT] WARNING: Orchestrator not firing (delivered=True)` at 09:00 IST; every run on both sides OK and on time; OK again from 03:31. |
+| **Also measured** | Delivered alerts 2026-10-22: "Orchestrator not firing" at 03:30, 04:30, 05:00, 06:10, 06:30, 07:00, 08:20, 09:00 UTC, each `first_seen` :04.8–:05.8 s past a cycle minute, each followed by RECOVERED ~10 min later (08:20's active 29 min). Same signature as 03:30; only the 03:30 episode was checked against the ledger row by row. |
+| **Fix** | **Commit `754ffad`** (2026-10-23 03:00 IST): `LOOKBACK_MIN` 5 → 7; hold-down derivation restated (10 > 7, margin 3); the two log messages print the constant; the S97-J comment updated. Test scenario 13 (seven cells) calls the real `_fetch_rows_http` with `requests.get` mocked: control at 5 min reproduces the 03:30:04.8 miss, 7 min sees the 03:25 row, a truly missed cycle still reads empty at 03:32:30. MONITOR GATE ALL PASS on Local and on the box under `ulimit -v 700000`; Local = GitHub = EC2 (blob `0494363`). |
+| **Status** | **FIXED S97 (`754ffad`).** Live confirmation owed: no "not firing" / RECOVERED pairs on healthy cycles on 2026-10-23. |
+
+### TD-S97-NEW-21 (S3 priority) — the Health page reads CRITICAL every day and labels a subscription lapse TOKEN_EXPIRED
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A status that is always red carries no information; the outage on 10-21 was visible here and paged no one. |
+| **Filed** | 2026-10-22 (Session 97) |
+| **Measured** | `/health` 2026-10-22 10:04 IST: OVERALL **CRITICAL**, writer fleet **14/15** — the stale one is `build_ict_htf_zones.py`, host `local`, last success **36 d** ago (cadence 24 h). Top errors last 24 h: `capture_spot_1m_v2.py` **TOKEN_EXPIRED 286**, `ingest_option_chain_local.py` **TOKEN_EXPIRED 126**, `compute_basis_context_local.py` SKIPPED_NO_INPUT 72 — the first two are the 10-21 Dhan **806 / DH-902 plan** errors, not token expiry. |
+| **Proper fix** | (a) retire or re-home `build_ict_htf_zones.py` (or mark it not-tracked) so OVERALL can be green; (b) classify Dhan 806 / DH-902 as a subscription error, distinct from TOKEN_EXPIRED; (c) decide whether OVERALL CRITICAL should page (cross-ref TD-S97-NEW-5). |
+| **Status** | **OPEN.** |
+
+### S97 status changes to existing entries (v5 Rule 3: one paragraph, no body edits)
+
+**TD-S96-NEW-1 → CLOSED** (S97-A): the "dealer" wording is gone from the ∂Δ/∂t and ∂Δ/∂σ captions and drawers, live in
+`04fcd05` (bundle `index-BrWRk1OP.js`), staging and live reads PASS (`docs/lovable_prompts/s97/lovable_prompt_s97_dealer_wording.md`).
+**TD-S96-NEW-2 → MITIGATED** (S97-F / S97-G): `idx_gss_ts` plus `ts` statistics target 1000 take the 10-09 day estimate
+from 1 to 17,381 against 19,198 actual; residual — windows past the latest ANALYZE (autoanalyze ~every 10 trading days),
+a per-table autoanalyze threshold is the candidate; P3b keeps `enable_nestloop = off`. **TD-S96-NEW-4 → RECORDED, no
+change** (S97-C). **TD-S95-NEW-1 → (a) and (b) DONE** (S97-D / S97-H): three affected sessions in 34, one Rule 13 row
+`SENSEX-CHAIN-OI-VOL0-2026-09-25`; (c) stands as S96-D; the table's missing symbol column is TD-S97-NEW-15.
+**TD-S95-NEW-2 → CLOSED** (S97-E): 13 rows inserted, verification 14 / 14 / 0; 2026-09-14's odd label → TD-S97-NEW-14.
+**TD-S90-NEW-11 → CLOSED** (S97-L): both S90-H backups dropped, `backups_left 0`, live tables unchanged, 46 MB freed.
+**TD-S91-NEW-12 → CLOSED**: the in-band gating held live (2026-10-12: 14 sends, all in band, 190 / 156 gated off-band;
+0 sends on the 10-20 holiday), and the unmute check, which could not pass while TD-S97-NEW-1 stood, passed once it was
+fixed — delivered monitor alerts reached the operator on 2026-10-22. **TD-S91-NEW-13 → CLOSED**: the live-day half read
+2026-10-22 05:39 IST — the 2026-10-20 (Dussehra) contract-check log (`logs/contract_check.log.2.gz` after the 10-22
+00:00 UTC rotation) holds 84 lines, all `[HOLIDAY GATE] Not a trading day -- no contract checks, no alerts.`, 0 `[SENT]`;
+84 = the cron's 12 checks an hour × 7 hours. **TD-S72-NEW-4 → re-observed 2026-10-12**: `idx_gss_symbol_ts` (24 MB) and
+`ix_gex_strike_snap_sym_ts` (18 MB) are still both `(symbol, ts DESC)`; `idx_gss_ts (ts)` was added by S97-F.
+**TD-S90-NEW-4** — the frozen-tick directories under `~/merdian_fixtures/ticks/` were the decisive evidence for
+TD-S97-NEW-6.
+
 ### TD-S96-NEW-1 (S3 priority) — the L7/L8 tile captions say "dealer", and the dealer side is regime-dependent
 
 | Field | Value |

@@ -5092,9 +5092,9 @@
       "truncated_each_run": false
     }
   },
-  "version": "v75",
-  "last_updated_session": "Session 96",
-  "last_updated_date": "2026-10-12",
+  "version": "v76",
+  "last_updated_session": "Session 97",
+  "last_updated_date": "2026-10-23",
   "change_log": [
     {
       "session": "S91 / AM-2",
@@ -5898,6 +5898,39 @@
       "after_close_applies": "P3b DDL Sections A and B, then the first cron sweep -> P3b DONE; TD-S95-NEW-2 backfill",
       "acl": "re-baseline after the P3b apply",
       "checks": "Telegram unmuted; 3D view after a full session then delete .bak-1deeb87; Tue 10-13 drop S90-H backups; Tue 10-20 live-day half of TD-S91-NEW-13"
+    }
+  },
+  "_s97_addendum": {
+    "session": "S97",
+    "date": "2026-10-12 -> 2026-10-13; resumed 2026-10-22 -> 2026-10-23",
+    "scope": "S96's owed list cleared (P7 live read -> DONE; P3b applied and read -> P3 DONE; TD-S95-NEW-2 backfill; ACL re-baselined); planner fix on gex_strike_snapshots; two Rule 13 rows; on resuming, Telegram delivery dark since 10-08 fixed, two monitor false alarms and the contract check's spot condition fixed, the 10-21 Dhan Data API lapse diagnosed. Rulings S97-A..N.",
+    "commits": {
+      "range": "5eef044 (S96 close) .. 74b45ce + this close, all pushed to origin/main; Local = GitHub = EC2 at 74b45ce before this close",
+      "..856d9d2": "parallel manual session: docs/marketview_manual/, docs/lovable_prompts/s97/mv_lovable_guard_help.sh",
+      "44b8b96": "S97-I telegram_utils.py: drop parse_mode 'plain'; log status and description on a non-200 (TD-S97-NEW-1)",
+      "d5167db": "S97-J monitor_orchestrator_health.py: in-progress ledger rows are not failures; test scenario 12 (TD-S97-NEW-2)",
+      "754ffad": "monitor look-back 5 -> 7 min; test scenario 13 (TD-S97-NEW-20)",
+      "74b45ce": "S97-N validate_compute_contracts.py: spot 09:15-15:15 IST, 3 min, clear-on-pass; tests/test_contract_check_s97.py (TD-S97-NEW-7)"
+    },
+    "meridian_connect": "804d684 -> 04fcd05 (S97-A wording + /manual help route), bundle index-BrWRk1OP.js, promoted 2026-10-12 17:26 IST; backup /var/www/marketview.bak-804d684; .bak-1deeb87 deleted",
+    "ddl_applied": {
+      "p3b_invariant_checks + p3b_sweep + cron p3b_invariants": "ENH-145 LIVE 2026-10-12; sql/2026-10-12_s96_p3b_invariant_checks.sql",
+      "trading_calendar closed-day backfill": "13 rows, sql/2026-10-12_s96_td_s95_new_2_calendar_backfill.sql (S97-E)",
+      "idx_gss_ts + ANALYZE + gex_strike_snapshots.ts SET STATISTICS 1000": "S97-F / S97-G; no sql/ file yet (owed)",
+      "data_contamination_ranges": "SENSEX-CHAIN-OI-VOL0-2026-09-25 (S97-H), ORCH-LEDGER-FALSE-SUCCESS-2026-10-21 (S97-M); no sql/ file yet (owed)",
+      "S90-H backup tables": "dropped (S97-L)"
+    },
+    "acl_fingerprint_baseline": "2026-10-22 05:42 IST: relations 350 b16ed426, anon_public_privs 255 4d7cc43f, anon_writable_objs 0, public_functions 41 ef1d66a1, rls_policies 29 4a1558d0, default_privileges 27 9db86164, schemas 10 2a889318, public_triggers 0, anon_role 1 c506ff14 (docs/lovable_prompts/s92/README.md)",
+    "rulings": "docs/research/s92_parity/rulings_s97.md - S97-A..N",
+    "tech_debt": "TD-S97-NEW-1..21 filed (1, 2, 7, 20 fixed in session); closed TD-S96-NEW-1, TD-S95-NEW-2, TD-S90-NEW-11, TD-S91-NEW-12, TD-S91-NEW-13",
+    "assumption_register": "D.51 (15 rows)",
+    "adr": "none filed or amended; rules 0-24 unchanged",
+    "tracker": "docs/registers/agentic_layer_roadmap_S90.md v2.14",
+    "open": {
+      "reconciliation": "S98 first concern: one ranked table across S97 TDs, the parity-target evaluation's MERIDIAN-side findings (project knowledge claude/parity_eval/) and the tracker's open items; ruled before anything enters a register",
+      "live_confirmations_2026-10-23": "no orchestrator 'not firing'/RECOVERED pairs on healthy cycles; no spot alarm 08:34 / 15:19 IST; [CLEAR] contract_spot_stale logged; equity_eod / breadth_indicators_daily for 10-21 after the 16:10 IST EOD",
+      "capture_path": "TD-S97-NEW-4 (S1) in the S90-J window",
+      "small": "wire tests/test_contract_check_s97.py into tests/run_offline.sh; commit the S97 applied SQL to sql/; manual v0.4 re-stamp; pull ~/meridian-engine to this close"
     }
   }
 }

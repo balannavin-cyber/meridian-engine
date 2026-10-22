@@ -62,3 +62,25 @@ added lines containing `supabase.from("<view>")`). Fingerprint identical before 
 policy). Lovable predicted "no flow before 09:15" before the open three rounds running; each time the views carried the
 previous SESSION run (§D.50.12). A rollback command is printed only inside a block that refuses to run without an
 explicit argument.
+
+**S97 record.** Two rounds, both base `804d684`: the S97-A wording (`docs/lovable_prompts/s97/lovable_prompt_s97_dealer_wording.md`)
+and the `/manual` help page (guard `docs/lovable_prompts/s97/mv_lovable_guard_help.sh`; record in project knowledge
+`claude/lovable_prompt_s97_help_route.md`), promoted together as **`04fcd05`** (bundle `index-BrWRk1OP.js`, 2026-10-12
+17:26 IST; backup `/var/www/marketview.bak-804d684`; `.bak-1deeb87` deleted). Fingerprint identical before and after both
+rounds. A help route named like its content folder (`/help` beside `public/help/`) is answered by nginx with 403 on a
+direct load, before the SPA fallback runs — renamed `/manual`. **What `anon_public_privs` counts:** one row per public
+relation of kind r / v / m / p, with anon's privilege letters (possibly none) — **relations, not privileges**; a new table
+anon cannot read still adds a row (§D.51.3). **Baseline (S97, measured 2026-10-22 05:42 IST, after the P3b apply and the
+S97-L drops):**
+
+| what | n | md5 |
+|---|---|---|
+| anon_public_privs | 255 | `4d7cc43fc2f433f6e8f988997cc92655` |
+| anon_role | 1 | `c506ff143129b1a369c90214c9489eaa` |
+| anon_writable_objs | 0 | — |
+| default_privileges | 27 | `9db86164a910289c334eb7691007cd58` |
+| public_functions | 41 | `ef1d66a16b1f17179f0f6fcbe2167d60` |
+| public_triggers | 0 | — |
+| relations | 350 | `b16ed4261f3bfbfa4de6a5088be2632d` |
+| rls_policies | 29 | `4a1558d0cac89bb81aa1bad51306c25e` |
+| schemas | 10 | `2a88931808ed74928a291a548c3678ed` |

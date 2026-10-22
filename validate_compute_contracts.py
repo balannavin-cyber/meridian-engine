@@ -130,6 +130,37 @@ def _send_deduped(state, key: str, sender, message: str, context: dict) -> bool:
     return ok
 
 
+# ---- S97-N: spot-check window, threshold and episode clearing (TD-S97-NEW-7) ---------------
+# Measured 2026-10-22 (84 spot checks): pre-open 9/9 stale -- spot starts ~09:11 IST; in session
+# 12/72 stale at a 1-min window (the writer runs every 60-63 s, so the check raced it) and 0/72 at
+# 2 or 3 min; after 15:15 IST 3/3 stale -- capture stopped at 15:15:05. Whether spot SHOULD run to
+# 15:30 is a separate question (parity evaluation D2-4), not this check's.
+from datetime import time as _time, timezone as _timezone  # noqa: E402
+
+SPOT_THRESHOLD_MIN = 3
+_IST = _timezone(timedelta(hours=5, minutes=30))
+_SPOT_WINDOW_IST = (_time(9, 15), _time(15, 15))   # half-open: 09:15 <= t < 15:15
+
+
+def _in_spot_window(now_utc_naive) -> bool:
+    """ContractValidator.ts is naive UTC (datetime.utcnow()). Inside 09:15-15:15 IST?"""
+    t = now_utc_naive.replace(tzinfo=_timezone.utc).astimezone(_IST).time()
+    return _SPOT_WINDOW_IST[0] <= t < _SPOT_WINDOW_IST[1]
+
+
+def _clear_key(state, key: str) -> None:
+    """A passing check closes the key's episode: first_seen / sends / clear_streak / variant are
+    dropped, so the next failure starts a NEW episode (fresh first_seen, no '(still failing)').
+    last_sent is KEPT, so the 30-min dedupe still holds across a pass -- a check that flaps
+    fail/pass/fail cannot send more often than before."""
+    if state is None:
+        return
+    rec = state.data.get(key)
+    if rec and 'first_seen' in rec:
+        state.data[key] = {'last_sent': rec.get('last_sent')}
+        print(f'[CLEAR] {key}: check passed, episode since {rec["first_seen"]} closed')
+
+
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SERVICE_ROLE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 
@@ -178,6 +209,7 @@ class ContractValidator:
             
             self.log('INFO', f'Contract OK: option_chain fresh ({rows[0]["symbol"]})')
             self.passed.append('option_chain_fresh')
+            _clear_key(self.state, 'contract_option_chain_stale')
             return True
         
         except Exception as e:
@@ -187,10 +219,15 @@ class ContractValidator:
             return False
     
     def check_spot_fresh(self) -> bool:
-        """Verify spot data exists and is <1 min old."""
-        one_min_ago = (self.ts - timedelta(minutes=1)).isoformat()
+        """Verify spot data exists and is < SPOT_THRESHOLD_MIN (3) min old; 09:15-15:15 IST only (S97-N)."""
+        # S97-N: spot is checked only 09:15-15:15 IST, against a SPOT_THRESHOLD_MIN window.
+        if not _in_spot_window(self.ts):
+            self.log('INFO', 'Contract SKIPPED: spot outside 09:15-15:15 IST (S97-N)')
+            self.passed.append('spot_fresh_skipped')
+            return True
+        since = (self.ts - timedelta(minutes=SPOT_THRESHOLD_MIN)).isoformat()
         
-        url = f"{SUPABASE_URL}/rest/v1/market_spot_snapshots?ts=gt.{one_min_ago}&limit=1&select=ts,spot"
+        url = f"{SUPABASE_URL}/rest/v1/market_spot_snapshots?ts=gt.{since}&limit=1&select=ts,spot"
         
         try:
             resp = requests.get(url, headers=headers, timeout=5)
@@ -202,15 +239,16 @@ class ContractValidator:
             
             rows = resp.json()
             if not rows:
-                msg = "Contract VIOLATED: no spot data in last 1 minute"
+                msg = f"Contract VIOLATED: no spot data in last {SPOT_THRESHOLD_MIN} minutes"
                 self.log('WARNING', msg)
                 self.violations.append(msg)
                 _send_deduped(self.state, 'contract_spot_stale', send_warning, msg,
-                              {'threshold_min': 1, 'table': 'market_spot_snapshots'})
+                              {'threshold_min': SPOT_THRESHOLD_MIN, 'table': 'market_spot_snapshots'})
                 return False
             
             self.log('INFO', f'Contract OK: spot fresh (â‚¹{rows[0]["spot"]})')
             self.passed.append('spot_fresh')
+            _clear_key(self.state, 'contract_spot_stale')
             return True
         
         except Exception as e:
@@ -298,6 +336,7 @@ class ContractValidator:
             return False
         
         self.log('INFO', '=== ALL CONTRACTS PASSED ===')
+        _clear_key(self.state, 'contract_violations_summary')
         return True
 
 if __name__ == '__main__':

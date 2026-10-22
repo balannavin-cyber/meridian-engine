@@ -424,5 +424,64 @@ check('15 in-session ticks all in progress -> 0 sends',
 check('control: the same 15 ticks FAILED -> sends > 0',
       len(replay(IN, ['FAILED'] * 15)) > 0, True)
 
+print('\n--- scenario 13 (S97, TD-S97-NEW-20): the look-back must not race the orchestrator row creation ---')
+import contextlib
+import re
+import unittest.mock as mock
+
+# 2026-10-22 ledger (script_execution_log.created_at) and monitor log, read 2026-10-22 09:06 IST.
+ROW_0325 = datetime(2026, 10, 22, 3, 25, 4, 554000, tzinfo=UTC)
+ROW_0330 = datetime(2026, 10, 22, 3, 30, 5, 636000, tzinfo=UTC)
+# The monitor logged "[03:30:04] No orchestrator runs"; its log truncates to the second and the
+# miss proves only that the tick fell after 03:30:04.554 (ROW_0325 + 5 min). 03:30:04.800 is inside.
+TICK_0330 = datetime(2026, 10, 22, 3, 30, 4, 800000, tzinfo=UTC)
+
+
+class _EmptyLedger:
+    status_code = 200
+
+    def json(self):
+        return []
+
+
+def since_built(now_utc, lookback=None):
+    """The `created_at=gt.` bound _fetch_rows_http itself puts in its query, as UTC."""
+    tmp = tempfile.mkdtemp(prefix='s97_lookback_')
+    mon = H.HealthMonitor(now_utc=now_utc, send=lambda *a: True, is_trading_day=lambda: True,
+                          window=WINDOW, state_path=Path(tmp) / 'monitor_alert_state.json')
+    pin = mock.patch.object(H, 'LOOKBACK_MIN', lookback) if lookback is not None else contextlib.nullcontext()
+    with pin, mock.patch.object(H.requests, 'get', return_value=_EmptyLedger()) as get:
+        mon._fetch_rows_http()
+    bound = re.search(r'created_at=gt\.([^&]+)', get.call_args.args[0]).group(1)
+    return datetime.fromisoformat(bound).replace(tzinfo=UTC)
+
+
+def visible(since, created, now):
+    """The rows the probe would have seen: created_at=gt.<since> (PostgREST), and only rows that
+    exist when the query runs -- a row created after the tick cannot be returned (S97 D.51.12)."""
+    return [c for c in created if since < c <= now]
+
+
+# control: the pre-S97 5-minute window reproduces the 2026-10-22 03:30:04 miss.
+check('control: 5-min window at the 03:30:04.8 tick sees no row (the false "not firing")',
+      visible(since_built(TICK_0330, lookback=5), [ROW_0325, ROW_0330], TICK_0330), [])
+check('fixed window at the same tick sees the 03:25 run',
+      visible(since_built(TICK_0330), [ROW_0325, ROW_0330], TICK_0330), [ROW_0325])
+check('LOOKBACK_MIN is one cycle plus 2 min', H.LOOKBACK_MIN, 7)
+check('hold-down still exceeds the look-back (one success cannot satisfy it)',
+      H.HOLDDOWN_TICKS > H.LOOKBACK_MIN, True)
+# a genuinely missed 03:30 cycle still reads "not firing", 2 min later than at 5.
+TICK_0332 = datetime(2026, 10, 22, 3, 32, 30, tzinfo=UTC)
+check('missed 03:30 cycle: at 03:32:30 the probe sees no row',
+      visible(since_built(TICK_0332), [ROW_0325], TICK_0332), [])
+tmp13 = tempfile.mkdtemp(prefix='s97_msg_')
+mon13 = H.HealthMonitor(now_utc=IN, send=lambda *a: True, is_trading_day=lambda: True,
+                        window=WINDOW, state_path=Path(tmp13) / 'monitor_alert_state.json',
+                        fetch_rows=lambda: [])
+conds13, _ = mon13.check_orchestrator_failures()
+check('not-firing log line names the actual look-back',
+      any(a['msg'] == 'No orchestrator runs in last 7 minutes' for a in mon13.alerts), True)
+check('not-firing context gap_minutes', conds13[KEY][2]['gap_minutes'], 7)
+
 print(f"\nMONITOR GATE {'ALL PASS' if fails == 0 else f'{fails} FAIL'}")
 sys.exit(1 if fails else 0)

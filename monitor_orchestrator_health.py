@@ -115,7 +115,11 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 
 # ---- schedule / gating constants --------------------------------------------------
 ORCHESTRATOR_SCRIPT = 'run_merdian_shadow_runner_aws.py'
-LOOKBACK_MIN = 5    # the "no runs in last N minutes" probe window (unchanged)
+LOOKBACK_MIN = 7    # the "no runs in last N minutes" probe window: one 5-min cycle + 2 min.
+                    # S97 (TD-S97-NEW-20): at 5 it raced the orchestrator's own row creation --
+                    # on 2026-10-22 the 03:25 row was created 03:25:04.554 and the 03:30:04 tick's
+                    # window began after it, so a healthy cycle read "not firing".
+                    # Cost: a genuinely missed cycle alerts ~2 min later.
 GRACE_MIN = 10      # no "not firing" alert for N min after the window opens: at 03:00
                     # UTC the first cycle has not yet written a row, so the condition is
                     # true for a reason that is not a defect
@@ -130,10 +134,11 @@ CONDITION_KEY = 'orchestrator_unhealthy'
 
 # Consecutive CLEAR ticks required before RECOVERED is sent and the state dropped.
 # Ten, by operator ruling, and the reason is the probe's own geometry: the monitor looks
-# back LOOKBACK_MIN=5 minutes every 1 minute, so a SINGLE SUCCESSFUL cycle sitting in that
-# look-back reads OK for up to 5 consecutive ticks. A 5-tick hold-down is therefore
-# satisfiable by one good cycle between two failing ones, and cannot tell recovery from a
-# single success; 10 ticks is two orchestrator cycles, which one success cannot span.
+# back LOOKBACK_MIN minutes every 1 minute (7 since S97; 5 before), so a SINGLE SUCCESSFUL
+# cycle sitting in that look-back reads OK for up to LOOKBACK_MIN consecutive ticks. A
+# hold-down at or below that is satisfiable by one good cycle between two failing ones, and
+# cannot tell recovery from a single success; 10 ticks exceeds 7 (margin 3; it was 5 at a
+# 5-min look-back), which one success cannot span.
 # (A MISSED cycle is not the hazard here -- it reads NOT_FIRING, which is unhealthy, not
 # clear.)
 HOLDDOWN_TICKS = 10
@@ -414,7 +419,7 @@ class HealthMonitor:
             return conditions, False
 
         if not rows:
-            self.log('WARNING', 'No orchestrator runs in last 5 minutes')
+            self.log('WARNING', f'No orchestrator runs in last {LOOKBACK_MIN} minutes')
             conditions[CONDITION_KEY] = (
                 'WARNING', 'Orchestrator not firing',
                 {'variant': 'not_firing', 'gap_minutes': LOOKBACK_MIN})
@@ -424,7 +429,7 @@ class HealthMonitor:
         # (exit_code and finished_at both NULL) is IN PROGRESS, not failed. Measured
         # 2026-10-21: rows are created within 1.5 s of start and finished >= 100.8 s later,
         # so `None != 0` read ~44 % of in-band minutes as FAILED. A finished non-zero
-        # exit_code still alarms. A run that HANGS is not detected here (5-min look-back).
+        # exit_code still alarms. A run that HANGS is not detected here (LOOKBACK_MIN look-back).
         finished = [r for r in rows
                     if not (r.get('exit_code') is None and r.get('finished_at') is None)]
         for row in finished:
@@ -440,7 +445,7 @@ class HealthMonitor:
                 })
                 return conditions, True
 
-        self.log('INFO', f'Orchestrator OK ({len(rows)} runs in 5min)')
+        self.log('INFO', f'Orchestrator OK ({len(rows)} runs in {LOOKBACK_MIN}min)')
         return conditions, True
 
     # ---- gating -------------------------------------------------------------------

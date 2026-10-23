@@ -32,8 +32,15 @@ Architecture:
 
 Deployment:
   - File: /home/ssm-user/meridian-engine/run_merdian_shadow_runner_aws.py
-  - Cron: 15,20,25,30,35,40,45,50,55 03,04,05,06,07,08,09,10 * * 1-5 \
-            timeout 90 python /home/ssm-user/meridian-engine/run_merdian_shadow_runner_aws.py
+  - Cron (AWS, UTC): TWO lines, the second APPENDED after the first (S98-E.1 D2).
+      Order is load-bearing: monitor_orchestrator_health.parse_orchestrator_window
+      returns on its FIRST matching line, so appending leaves the monitor's alert
+      window at 03:10-10:00 UTC and prepending would collapse it to 10:10-10:15.
+        */5 03-09 * * 1-5    -> 08:30-15:25 IST, the main session
+        0,5,10 10 * * 1-5    -> 15:30 / 15:35 / 15:40 IST, the three closing cycles
+      NO `timeout` wrapper: a cycle may now WAIT up to CYCLE_WAIT_S for its own
+      chain run (S98_CYCLE_WAIT), so a wrapper shorter than that wait would kill
+      the cycle it is meant to protect.
 
 Session: S46 (2026-06-06); TD-S54-NEW-1 fix S55 (2026-06-17)
 Version: Shadow Pipeline v2 (AWS Phase 2.c, per-symbol run_id)
@@ -45,6 +52,7 @@ import os
 import subprocess
 from core.trading_calendar_gate import is_trading_day_today
 import sys
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
@@ -72,6 +80,17 @@ SYMBOLS: List[str] = ["NIFTY", "SENSEX"]
 # S90_ENH133_WIRE (ruling S90-F, ADR-030): per-cycle layer history. OFF SWITCH: set False.
 # A code constant, not a parameter: a parameter read can fail open (roadmap risk 14).
 ENH133_WRITER_ENABLED: bool = True
+
+# S98_CYCLE_WAIT (ruling S98-E): the runner waits for ITS OWN cycle's chain run.
+# Code constants, not parameters -- a parameter read can fail open (roadmap risk 14),
+# and failing open here restores exactly the behaviour this patch removes.
+#
+# CYCLE_WAIT_S is bounded by what the monitor tolerates, not by patience: the
+# orchestrator's ledger row is written at cycle start, and
+# monitor_orchestrator_health.LOOKBACK_MIN is 7 min, so a wait must stay well inside
+# that or a waiting cycle reads as "not firing". 120 s = 2 min leaves 5 min of margin.
+CYCLE_WAIT_S = 120
+POLL_S = 5
 
 
 def log_message(msg: str, level: str = "INFO") -> None:
@@ -134,6 +153,153 @@ def fetch_latest_run_ids(sb: SupabaseClient) -> Dict[str, str]:
                     run_ids[symbol] = rid
         except Exception as e:
             log_message(f"Failed to fetch run_id for {symbol}: {e}", "ERROR")
+    return run_ids
+
+
+def _cycle_floor(now_utc: datetime) -> datetime:
+    """Floor `now_utc` to the 5-minute cycle boundary it belongs to.
+
+    ONE implementation, called by both fetch_cycle_run_ids and main(). A second
+    copy in the caller would be a parity claim asserted by a comment (rule 0).
+    """
+    return now_utc.replace(minute=(now_utc.minute // 5) * 5, second=0, microsecond=0)
+
+
+def _cycle_floor_z(now_utc: datetime) -> str:
+    """The cycle floor as a PostgREST-safe timestamp string.
+
+    Z form, NEVER isoformat(): a literal "+00:00" inside a filter decodes as a SPACE
+    in any layer that builds the query string by hand rather than letting requests
+    encode the params, and a mocked test cannot see that failure. astimezone first,
+    so the literal "Z" is true by construction and not an assumption about the caller.
+
+    ONE implementation, shared by fetch_cycle_run_ids and main(). Two copies would be
+    a parity claim asserted by a comment (rule 0).
+    """
+    return _cycle_floor(now_utc).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# S98_CYCLE_WAIT: newest ts per symbol with NO cycle filter, populated ONLY for
+# symbols that were missing when the wait ended. Read by main() for the ledger's
+# error_message. A module-level handoff in the same shape as LAST_FAILED_STEPS
+# (S90_RUNNER_LEDGER) -- the alternative is widening the function's return type,
+# which ruling S98-E fixes as "return the found map".
+LAST_NEWEST_TS: Dict[str, Optional[str]] = {}
+
+
+def _newest_ts(sb: SupabaseClient, symbol: str) -> Optional[str]:
+    """Newest `ts` for `symbol` with the cycle filter REMOVED. Diagnostics only.
+
+    This is the one read that deliberately ignores the cycle boundary, and it exists
+    so a stale-input log says WHAT it found instead of only what it wanted: "no chain
+    run at or after 10:00Z" and "newest is yesterday 15:40" are the same exit code and
+    different incidents. Same order and limit as the cycle read, so the row it names is
+    the row the cycle read would have taken had the filter not excluded it.
+
+    Never raises: a failed diagnostic must not change the exit path it is describing.
+    """
+    try:
+        rows = retry_call(
+            lambda: sb.select(
+                table="option_chain_snapshots",
+                filters={"symbol": f"eq.{symbol}"},
+                order="ts.desc,expiry_date.asc",
+                limit=1,
+            ),
+            attempts=2,
+            delay_seconds=1.0,
+            backoff_multiplier=1.5,
+            label=f"newest ts probe for {symbol}",
+        )
+        if rows:
+            return rows[0].get("ts")
+    except Exception as e:
+        log_message(f"newest-ts probe failed for {symbol}: {e}", "WARN")
+    return None
+
+
+def _newest_ts_phrase(symbols: List[str]) -> str:
+    """`newest ts NIFTY=<ts|none> SENSEX=<ts|none>` -- one wording, three call sites."""
+    return "newest ts " + " ".join(
+        f"{s}={LAST_NEWEST_TS.get(s) or 'none'}" for s in symbols
+    )
+
+
+def fetch_cycle_run_ids(
+    sb: SupabaseClient,
+    now_utc: datetime,
+    sleep=time.sleep,
+    clock=time.monotonic,
+) -> Dict[str, str]:
+    """
+    S98_CYCLE_WAIT (ruling S98-E): resolve the run_id of THIS CYCLE's chain run,
+    per symbol, waiting up to CYCLE_WAIT_S for the ingest to land.
+
+    The select is the one fetch_latest_run_ids uses -- same order, same limit, and
+    the same front-expiry reasoning (S81-FRONT-EXPIRY-RUNID) -- plus ONE added
+    filter: ts >= the cycle floor. That filter is the whole patch. Without it the
+    newest row of ANY age qualifies, so a stalled ingest silently recomputes the
+    previous cycle, or yesterday's close, and every step exits 0.
+
+    No fallback to the newest row. A cycle with no chain run of its own has no
+    input, and saying so is the point; computing something else is the defect.
+
+    `sleep` and `clock` are injected so the wait is testable without wall time.
+    """
+    floor_iso = _cycle_floor_z(now_utc)
+    run_ids: Dict[str, str] = {}
+    # Before the loop: a previous cycle's probe values must never be readable as this
+    # cycle's. clear(), not reassignment -- main() reads the module-level name.
+    LAST_NEWEST_TS.clear()
+    t0 = clock()
+    polls = 0
+    waited = 0.0
+
+    while True:
+        polls += 1
+        for symbol in SYMBOLS:
+            if symbol in run_ids:
+                continue
+            try:
+                rows = retry_call(
+                    lambda s=symbol: sb.select(
+                        table="option_chain_snapshots",
+                        filters={"symbol": f"eq.{s}", "ts": f"gte.{floor_iso}"},
+                        order="ts.desc,expiry_date.asc",
+                        limit=1,
+                    ),
+                    attempts=3,
+                    delay_seconds=2.0,
+                    backoff_multiplier=1.5,
+                    label=f"fetch cycle run_id for {symbol}",
+                )
+                if rows:
+                    rid = rows[0].get("run_id")
+                    if rid:
+                        run_ids[symbol] = rid
+            except Exception as e:
+                log_message(f"Failed to fetch cycle run_id for {symbol}: {e}", "ERROR")
+
+        waited = clock() - t0
+        if len(run_ids) == len(SYMBOLS):
+            break
+        if waited >= CYCLE_WAIT_S:
+            break
+        sleep(POLL_S)
+
+    missing = [s for s in SYMBOLS if s not in run_ids]
+    # One extra, unfiltered select per MISSING symbol only -- zero when the cycle is
+    # complete, which is every healthy cycle. This is what turns "nothing at or after
+    # 10:00Z" into a diagnosis.
+    for symbol in missing:
+        LAST_NEWEST_TS[symbol] = _newest_ts(sb, symbol)
+
+    line = (f"[CYCLE WAIT] cycle_floor={floor_iso} "
+            f"waited={waited:.1f}s/{CYCLE_WAIT_S}s polls={polls} "
+            f"found={sorted(run_ids.keys())} missing={missing}")
+    if missing:
+        line += "; " + _newest_ts_phrase(missing)
+    log_message(line, "WARN" if missing else "INFO")
     return run_ids
 
 
@@ -353,21 +519,31 @@ def main() -> int:
         log_message(f"Failed to initialize Supabase: {e}", "ERROR")
         return _ledger_close(led, 1, "DATA_ERROR", error=f"supabase init: {e}")
 
-    # Fetch latest run_id per symbol from upstream ingest
-    run_ids = fetch_latest_run_ids(sb)
+    # S98_CYCLE_WAIT: THIS cycle's run_id per symbol, waiting up to CYCLE_WAIT_S.
+    # fetch_latest_run_ids is deliberately no longer called -- it accepts the newest
+    # row of any age, which is the behaviour ruling S98-E removes. It is kept in the
+    # file, unused, so a rollback reader can see the previous contract.
+    _now = datetime.now(timezone.utc)
+    _floor_z = _cycle_floor_z(_now)
+    run_ids = fetch_cycle_run_ids(sb, _now)
     if not run_ids:
-        log_message(
-            "No run_id found for any symbol in option_chain_snapshots. "
-            "Ingest may not have fired yet.",
-            "WARN",
-        )
-        return _ledger_close(led, 1, "SKIPPED_NO_INPUT", error="no run_id for any symbol")
+        # Ruling S98-E.1 D3: SKIPPED_NO_INPUT, which is what this branch already
+        # passed pre-patch and is already in VALID_EXIT_REASONS. The exit reason is
+        # unchanged; what changed is that the input is now cycle-scoped, so this
+        # branch now fires on a STALE ingest as well as an absent one -- and the
+        # error text has to carry which of the two it was, because the reason cannot.
+        _err = (f"S98_CYCLE_WAIT no chain run at or after {_floor_z} within "
+                f"{CYCLE_WAIT_S}s; {_newest_ts_phrase(SYMBOLS)}")
+        log_message(_err, "ERROR")
+        return _ledger_close(led, 1, "SKIPPED_NO_INPUT", error=_err)
 
     missing = [s for s in SYMBOLS if s not in run_ids]
     if missing:
         log_message(
-            f"No latest run_id for {missing} this cycle "
-            f"(that symbol's ingest may not have fired); computing {list(run_ids.keys())} only.",
+            f"No chain run at or after {_floor_z} for {missing} this cycle "
+            f"(that symbol's ingest may not have fired); "
+            f"{_newest_ts_phrase(missing)}; "
+            f"computing {list(run_ids.keys())} only.",
             "WARN",
         )
 

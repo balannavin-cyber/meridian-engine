@@ -1249,3 +1249,46 @@ filter; otherwise it sees rows that do not yet exist, and fails (or passes) for 
 
 **Update log — Session 97 (2026-10-23):** §D.51 added (**15 rows, all mine**). Sources: `docs/research/s92_parity/rulings_s97.md`,
 `tests/test_monitor_orchestrator_gate.py` (scenarios 12–13), `tests/test_contract_check_s97.py`, TD-S97-NEW-1…21, ENH-145.
+
+## D.52 — Session 98: a register value used as a pre-check, a vocabulary the mock agreed with, and a live watch that went quiet (2026-10-23)
+
+Seven rows, **all my own**. Rulings: `docs/research/s92_parity/rulings_s98.md`. Recorded at the S98 + S99 doc-close (Session 100).
+
+| # | Assumption as held | Verdict on measurement |
+|---|---|---|
+| **D.52.1** | *(mine)* S98-C's pre-check would read `cal_rows_1002 = 0`, taken from TD-S92-NEW-5's 2026-10-09 measurement. | **REFUTED** — 1: the S96-J backfill had written the row on 10-12. **Read the current value before writing an expected one from a register.** |
+| **D.52.2** | *(mine)* Marketview is served at `.com`. | **REFUTED** — NXDOMAIN; the host is `marketview.meridianalpha.in`. |
+| **D.52.3** | *(mine)* A pre-open read of SENSEX 73,249 was reported as the level. | **REFUTED** — It was the previous close shown before the open, unlabelled. **Label the provenance of every figure in a live read.** |
+| **D.52.4** | *(mine)* The 15:40 γ row was a hypothesis about the orchestrator. | **VALIDATED, and widened** — 39 of 41 days, then live (A4); R41 then found the general one-run lag behind it. |
+| **D.52.5** | *(mine)* Live monitoring at a 5-minute cadence held all session. | **REFUTED** — A gap from 12:34 to 15:58 IST (a delayed notification). **A missed tick is reported when found, not smoothed over.** |
+| **D.52.6** | *(mine)* Design note D3: a new `STALE_INPUT` exit reason. | **REFUTED** — Not in `VALID_EXIT_REASONS`; it would have been coerced to `CRASH` → `UNKNOWN`. Caught by Claude Code's read of the ledger module, not by the stubbed test. **A mocked collaborator agrees with the code; check vocabulary against the real module** (now T9, and R47 against the live constraint). |
+| **D.52.7** | *(mine)* The S98-B test assertions, as reviewed. | **REFUTED** — The draft held two contradictory asserts (a blanket `+00:00` against the newest-`ts` echo) and a mutant anchor that an extraction refactor had moved; both caught in review before a run. **Re-derive every mutant anchor after an extraction refactor.** |
+
+**The one to carry: D.52.6.** A stub accepts whatever the code passes it; the vocabulary a value must belong to is
+checked against the module that enforces it, and that module against the database constraint behind it.
+
+**Update log — Session 100 (2026-10-24, the S98 + S99 doc-close):** §D.52 added (**7 rows, all mine**). Sources:
+`docs/research/s92_parity/rulings_s98.md`, `docs/research/s98/S98_close_inputs.md` §3, `tests/test_runner_cycle_wait.py`.
+
+## D.53 — Session 99: expected values recalled instead of computed, a count from a partial parse, and a mutant aimed at the wrong layer (2026-10-23 → 10-24)
+
+Seven rows, **all my own**. Rulings: `docs/research/s92_parity/rulings_s99.md`. Recorded at the S98 + S99 doc-close (Session 100).
+
+| # | Assumption as held | Verdict on measurement |
+|---|---|---|
+| **D.53.1** | *(mine)* A0's expected `git status` would list two untracked files. | **REFUTED** — The tree held many older scratch files; the expected value was recalled from a summary, not computed on the tree. |
+| **D.53.2** | *(mine)* A4's `_PRE_S99A4` backups would show as `??`. | **REFUTED** — `.gitignore:108 *_PRE_S*` ignores them. |
+| **D.53.3** | *(mine)* S98-E.1's monitor window "03:10–10:00 UTC". | **REFUTED** — `parse_orchestrator_window` returns 03:00–09:55 UTC, (180, 595, 5, {1..5}), before and after the crontab add (S99-B). |
+| **D.53.4** | *(mine)* Pass 2's first count, "247 open of 296". | **REFUTED** — It parsed only entries with a Status row; the Active section holds 441 entries, 364 read open. |
+| **D.53.5** | *(mine)* The repository owner `balannavin-cyber1`. | **REFUTED** — The clone failed; the repo is public at `balannavin-cyber/meridian-engine`. |
+| **D.53.6** | *(mine)* A read command sent as complete. | **REFUTED** — It lacked its `\| bin/roq.sh` pipe (the TD-S89-NEW-1 read). |
+| **D.53.7** | *(mine)* The WCB test's mutant M3 would fail T2. | **REFUTED** — T2 is caught by the second layer (0 constituents); the cell set was corrected to T3 / T6 / T8 after measuring. |
+
+**The one to carry: D.53.1 with D.53.3.** An expected value is computed on the tree or the parser it is about to be
+compared with; a value recalled from a summary or a design note is a guess wearing an expectation's authority.
+
+**Update log — Session 100 (2026-10-24, the S98 + S99 doc-close):** §D.53 added (**7 rows, all mine**). Sources:
+`docs/research/s92_parity/rulings_s99.md`, `docs/research/s99/S99_close_inputs.md` §4, `docs/research/s99/reconciliation_pass2.md`,
+`tests/test_wcb_no_input.py`. **Also found at this close and carried to S100's own section:** pass 2's open test also
+excluded four open entries whose heading or Status quoted a closing word (TD-S82-NEW-4, TD-S80-NEW-19, TD-S76-NEW-17,
+TD-S90-NEW-12; `tech_debt.md` S98 + S99 status paragraph).

@@ -2147,3 +2147,18 @@ Doc Protocol v5: a table of what changed, no narrative. Detail: TD-S97-NEW-1 / -
 | `monitor_orchestrator_health.py` | cron monitor (schedule unchanged) | `script_execution_log` | Telegram | `d5167db` in-progress rows skipped; `754ffad` look-back 7 min |
 | `validate_compute_contracts.py` | cron check (schedule unchanged) | `market_spot_snapshots`, `option_chain_snapshots` | Telegram | `74b45ce` spot checked 09:15–15:15 IST at 3 min; episodes clear on pass |
 | Marketview | frontend (`meridian-connect` `804d684` → `04fcd05`, bundle `index-BrWRk1OP.js`) | + `public/help/manual.json` (static) | operator | LIVE; S97-A wording, `/manual` route; backup `/var/www/marketview.bak-804d684`; `.bak-1deeb87` deleted |
+
+## §S98–S99 — Sessions 98–99: the γ runner waits for its cycle, three closing cycles, one cron line removed (2026-10-23 → 10-24)
+
+Doc Protocol v5: a table of what changed, no narrative. Detail: TD-S97-NEW-4, -8, -9, -10 (`tech_debt.md` S98 + S99
+paragraph); `docs/research/s92_parity/rulings_s98.md`, `rulings_s99.md`. Recorded at the S98 + S99 doc-close (Session 100).
+
+| Component | Kind | Reads | Read by | State |
+|---|---|---|---|---|
+| `run_merdian_shadow_runner_aws.py` | cron runner | `option_chain_snapshots` (rows with `ts ≥` the 5-min cycle floor, poll 5 s, ≤ 120 s) | the γ pipeline, `script_execution_log` | `2edd25f`: waits for its own cycle's chain run; none → exit 1 `SKIPPED_NO_INPUT` (S98-E / S98-E.1) |
+| crontab line 69 `0,5,10 10 * * 1-5` | **schedule added** (2026-10-23) | — | the runner | γ on the 15:30 / 15:35 / 15:40 IST chain runs; outside the monitor band (180, 595), unchanged (S99-B) |
+| `build_wcb_snapshot_local.py` | writer | breadth `ts`, constituent ticks | `weighted_constituent_breadth_snapshots` | `3706435`: stale `ts` (> 10 min), no live tick or 0 priced → no row, exit 0 `SKIPPED_NO_INPUT` (S99-H) |
+| crontab line 11 (WCB, no symbol) | **schedule removed** (2026-10-24) | — | — | removed; 69 lines; `docs/registers/aws_crontab.txt` refreshed |
+| `weighted_constituent_breadth_snapshots` | table | — | the board | 12 zero rows deleted (S99-I) |
+| `data_contamination_ranges` | row `HOLIDAY-FROZEN-CHAIN-2026-10-02` | — | Rule 13 checks | 4 rows (S98-C) |
+| `tests/run_offline.sh` | offline suite | — | operator | 15 steps: + 13 contract check (`6b5ca9f`), 14 runner cycle wait (`2edd25f`), 15 WCB no input (`3706435`) |

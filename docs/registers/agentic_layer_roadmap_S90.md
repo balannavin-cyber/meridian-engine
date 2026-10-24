@@ -1,6 +1,6 @@
 # MERIDIAN — roadmap to an intelligent, agentic MERIDIAN (v2, 2026-10-05)
 
-**Status: v2.15 — LIVE TRACKER, at `docs/registers/` from S95 (ruling S95-E) (S90 / Agentic MERIDIAN Session 1; the AM-1 post-close delta folded in at AM-2 / S91, 2026-10-07).** Stages 0–2 are ruled inside parity (S90-D) and ADR-031 is accepted (S90-C); this file is the single progress record. **S92-I (2026-10-09): parity closed; §2.1 holds the operator's post-parity priority track (P1–P8), followed to conclusion** for the agentic layer, and the Doc Protocol files point here rather than restating it. Items outside Stages 0–2 remain proposals; nothing here is a pre-registration. v1 (same path, earlier on 2026-10-05) answered the operator's seven-point sketch. v2 folds in the harness discussion that followed: ingest, compute and assumption harnesses; redundancy; the agent harness; staged build with exit tests; a tracker. The product is not named here, per the standing rule.
+**Status: v2.16 — LIVE TRACKER, at `docs/registers/` from S95 (ruling S95-E) (S90 / Agentic MERIDIAN Session 1; the AM-1 post-close delta folded in at AM-2 / S91, 2026-10-07).** Stages 0–2 are ruled inside parity (S90-D) and ADR-031 is accepted (S90-C); this file is the single progress record. **S92-I (2026-10-09): parity closed; §2.1 holds the operator's post-parity priority track (P1–P8), followed to conclusion** for the agentic layer, and the Doc Protocol files point here rather than restating it. Items outside Stages 0–2 remain proposals; nothing here is a pre-registration. v1 (same path, earlier on 2026-10-05) answered the operator's seven-point sketch. v2 folds in the harness discussion that followed: ingest, compute and assumption harnesses; redundancy; the agent harness; staged build with exit tests; a tracker. The product is not named here, per the standing rule.
 
 **Goal, in the operator's words:** an intelligent, agentic MERIDIAN that is self-learning, efficient, cost-effective and LLM-independent.
 
@@ -111,7 +111,7 @@ and ∂Δ/∂σ / ∂Δ/∂t stay display-only.
 (apply included), P7 HOLD** until P2 and P4 report; P8 gated on P4. P1c added (S94-B); a DTE-conditioned
 level test (P1b) deferred (S94-C). The board carries an evidence note on its levels (S94-D).** **Amended the same day by S94-G:** P5 and P6
 released from the P4 hold; P7 held until P6 is live; P8 needs re-scope. Results: P2 REGIME-DEPENDENT, P1c
-INCONCLUSIVE, P4 accruing. **S96 (2026-10-12):** P7 built and live, D-4 declined (S96-I), DONE on the first market-hours read; P3b built and tested (S96-H), apply owed. **S97 (2026-10-12 → 10-23):** P7 DONE on the live read; P3b applied and read on seven sessions of sweeps, so **P3 DONE**. P4 accruing; P8 gated on P4.
+INCONCLUSIVE, P4 accruing. **S96 (2026-10-12):** P7 built and live, D-4 declined (S96-I), DONE on the first market-hours read; P3b built and tested (S96-H), apply owed. **S97 (2026-10-12 → 10-23):** P7 DONE on the live read; P3b applied and read on seven sessions of sweeps, so **P3 DONE**. P4 accruing; P8 gated on P4. **S98–S99 (2026-10-23 → 24):** §2.1 unchanged, except that P4 lost the SENSEX dte-1 session of 2026-10-21 to the Dhan Data API lapse (not back-fillable under P4 §6; S98-D); P4 accruing.
 
 **Order.** ~~P1 → P2 → P3 → P4 → P5 → P6 → P7 → P8. P5 and P6 are independent of P1–P4 and may run
 alongside them.~~ **Superseded by S94-A:** P1 (DONE) → P2 → P4 → P1c → P3; P5 / P6 / P7 held; P8 gated on P4.
@@ -128,10 +128,11 @@ the agentic position layer; a regulatory check runs in parallel before anything 
 | Band | Item | What | TDs | Status |
 |---|---|---|---|---|
 | B1 | **R1 + R41 (S98-B)** | γ runner waits for its own cycle's chain run; closing cycles 15:30 / 15:35 / 15:40 | TD-S97-NEW-4, TD-S82-NEW-1, TD-S82-NEW-2; re-measure TD-S80-NEW-9, TD-S78-NEW-8 | DEPLOYED `2edd25f` 2026-10-23; live PASS read Mon 2026-10-26 after 15:45 IST |
-| B1 | **R2 + R21** | WCB writer: "COMPLETED" with no row; holiday placeholder rows; stray no-symbol cron line; 16:00 futures leg exits 1 on holidays; weight / threshold drift | TD-S97-NEW-9, -10, -8 (absorbs TD-S81-NEW-13), TD-S41-NEW-5 | OPEN — capture path, S90-J window |
+| B1 | **R2 + R21** | WCB writer: "COMPLETED" with no row; holiday placeholder rows; stray no-symbol cron line; 16:00 futures leg exits 1 on holidays; weight / threshold drift | TD-S97-NEW-9, -10, -8 (absorbs TD-S81-NEW-13), TD-S41-NEW-5 | **PART DONE `3706435`** (S99-H / S99-I): TD-S97-NEW-8, -9, -10 CLOSED, live check Mon 2026-10-26 08:31 and 15:40 IST; OPEN: the 16:00 futures leg on holidays, TD-S41-NEW-5 |
 | B1 | **R3** | monitor cannot see a hung orchestrator run | TD-S97-NEW-3 | OPEN |
 | B1 | **R4** | one 08:25 IST pre-open probe: Dhan subscription + Kite token; feed silence and heartbeat; preflight gives up after ~23 s (10-15, 10-19) | TD-S97-NEW-5, -6 (absorbs TD-S91-NEW-3, TD-S71-NEW-10, TD-S69-NEW-6, TD-NEW-7), TD-S86-NEW-2, -3, TD-S91-NEW-17, TD-NEW-C, TD-NEW-9, TD-S80-NEW-17 | OPEN; Kite automated login = operator ruling |
 | B1 | **R40, R42–R44** | breadth writer overlap and NULL status; monitor window takes the first cron line; SKIPPED_NO_INPUT labelled benign / crash | —  (pass 1 rows; S98 build read) | OPEN — read first |
+| B1 | **R48, R49** (S100-B) | `run_ingest.sh` `set -e` makes its `rc=$?` unreachable; the monitor alarms on `exit_code` alone, so any skip that exits 1 pages CRITICAL (behaviour, recorded so a "benign" skip is never given exit 1 unknowingly) | — (S98 build read) | OPEN |
 | B1 | **Ledger and capture trust** | off-box `equity_eod` cursor writer; Dhan 500 drops a cycle; basis context cron hour; token held from construction; hand-rolled ledger inserts; breadth guard only in the health check; ingest contract too permissive | TD-S90-NEW-14 (absorbs TD-S91-NEW-16), TD-S81-NEW-11, TD-S81-NEW-12, TD-S81-NEW-20, TD-S77-NEW-8 (absorbs TD-023), TD-S74-NEW-4, TD-082 | OPEN |
 | BS1 | **Credential rotations (S99-E)** | Dhan token anon-readable window: rotation decision and log review; `.env` printed to a transcript: rotate | TD-S81-NEW-1, TD-S71-NEW-11 | OPEN — operator actions |
 | B2 | **R5 + R38** | closing session: official close printed from the 15:40 chain spot; no "LIVE" on a held value; CLOSED state; basis from the displayed spot; SPOT label from the bar window | R5 (absorbs TD-S91-NEW-18, TD-S90-NEW-13, TD-S74-NEW-3, TD-S74-NEW-5), R38 (absorbs TD-S54-NEW-2) | OPEN — TD halves first; labels in B5 |
@@ -147,6 +148,7 @@ the agentic position layer; a regulatory check runs in parallel before anything 
 | B4 | **R22** | calendar repair: missing 01-15, 01-26, 03-03, 05-28; "Normal trading day" on closed 06-26 / 09-14 / 11-24; 03-31 name (read 2026-10-24) | TD-S97-NEW-14, TD-S81-NEW-7, TD-S41-NEW-1 | OPEN — operator SQL |
 | B4 | **R23** | symbol column on `data_contamination_ranges`; `merdian_ro` visibility | TD-S97-NEW-15, TD-S94-NEW-1 | OPEN — operator DDL |
 | B4 | **R24** | Marketview backup retention | TD-S97-NEW-16 | OPEN |
+| B4 | **Pass-2 misses** (S100) | open by their own Status, excluded by pass 2's keyword test: V18E engine weekend-before-special-session order; TD-S69-NEW-1 heading / Status contradiction (part b); ICT cohort row counts; CAS close capture fixed, not closed | TD-S82-NEW-4, TD-S80-NEW-19, TD-S76-NEW-17, TD-S90-NEW-12 | OPEN — disposition owed |
 | B4 | **R34 + R35** | legacy Context / Structure pages; two IV skews | — | OPEN — ruling: retire or align |
 | B4 | TD-S96-NEW-2 | the planner estimates 1 row for a day of `gex_strike_snapshots` selected by `ts` alone | — | OPEN |
 | B4 | TD-S94-NEW-2 | `bin/roq.sh`'s write-verb guard refuses `COPY (SELECT …) TO STDOUT`, which is a read | — | OPEN |
@@ -190,6 +192,7 @@ the agentic position layer; a regulatory check runs in parallel before anything 
 | B6 | **R13** | pin hysteresis and tie state, pre-registered | — | OPEN |
 | B6 | TD-S80-NEW-1 | the ingest discards the expiry ladder the vendor returns, so no multi-expiry IV exists at any timestamp and… | — | OPEN |
 | B6 | TD-S79-NEW-1 | `GREATEST(dte, 1)` overstates σ on expiry day, so the moneyness band is widest on the day it most needs to… | — | OPEN |
+| BS | **TD-S99-NEW-1** | an AWS access key ID is committed in the public repo (no secret key found); redact, then rotate or rewrite history | — | OPEN — operator's call |
 | BS | TD-S92-NEW-4 | the S92 views grant `authenticated` more than `SELECT`, through default privileges | — | OPEN · retail |
 | BS | TD-S90-NEW-8 | Marketview Settings is read-only since S90-E; the authenticated write route, `changed_by` and `config_versi… | — | OPEN · retail |
 | BS | TD-S90-NEW-10 | unused Breeze credentials remain in `.env` | — | OPEN · retail |
@@ -767,6 +770,7 @@ An item may start only when its class's controls are met. Each class includes th
 | Version | Date | Change |
 |---|---|---|
 | v1 | 2026-10-05 | Answer to the seven-point sketch: MCP, integrity loops, change engine, accuracy loops, commentary, paper trading, phases 0–4 |
+| v2.16 | 2026-10-24 | **S98 + S99 close (run in S100):** §2.2 R2 + R21 PART DONE (`3706435`); R48, R49 added to B1 (S100-B); TD-S99-NEW-1 added to BS; "Pass-2 misses" row in B4; §2.1 P4 lost-session note. Rulings `docs/research/s92_parity/rulings_s98.md`, `rulings_s99.md`, `rulings_s100.md` |
 | v2.15 | 2026-10-24 | **S99 one stream:** §2.2 single list (pass 1 S98-A + pass 2 S99-C, 154 open TDs homed, 46 closed), §2.3 retail scoping (S99-F); Stages 3–6 ON HOLD (S99-D); signal / ICT stream after agentic (S99-G). Rulings `docs/research/s92_parity/rulings_s99.md` |
 | v2.14 | 2026-10-23 | **S97 close:** P7 DONE (live read 2026-10-12); P3b applied and read → **P3 DONE** (ENH-145); R2.2 / R2.3 rows point to P3. Rulings `docs/research/s92_parity/rulings_s97.md` |
 | v2.13 | 2026-10-12 | **S96 close:** P7 BUILT AND LIVE (ENH-143, ENH-144; S96-A…G), D-4 DECLINED-ON-EVIDENCE (S96-I), DONE on the first market-hours read; P3 → P3b BUILT and tested (S96-H), apply owed. Rulings `docs/research/s92_parity/rulings_s96.md` |

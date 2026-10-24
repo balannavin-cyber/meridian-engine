@@ -5092,9 +5092,9 @@
       "truncated_each_run": false
     }
   },
-  "version": "v76",
-  "last_updated_session": "Session 97",
-  "last_updated_date": "2026-10-23",
+  "version": "v77",
+  "last_updated_session": "Sessions 98-99 (closed in Session 100)",
+  "last_updated_date": "2026-10-24",
   "change_log": [
     {
       "session": "S91 / AM-2",
@@ -5931,6 +5931,48 @@
       "live_confirmations_2026-10-23": "no orchestrator 'not firing'/RECOVERED pairs on healthy cycles; no spot alarm 08:34 / 15:19 IST; [CLEAR] contract_spot_stale logged; equity_eod / breadth_indicators_daily for 10-21 after the 16:10 IST EOD",
       "capture_path": "TD-S97-NEW-4 (S1) in the S90-J window",
       "small": "wire tests/test_contract_check_s97.py into tests/run_offline.sh; commit the S97 applied SQL to sql/; manual v0.4 re-stamp; pull ~/meridian-engine to this close"
+    }
+  },
+  "_s98_addendum": {
+    "session": "S98",
+    "date": "2026-10-23 (no close of its own; closed with S99 in S100)",
+    "scope": "S97 fixes confirmed live; three streams reconciled into one ranked table (S98-A, R1-R41); R1a and R41 measured; S98-B designed, built and tested (deployed in S99). Rulings S98-A..E, S98-E.1.",
+    "commits": {
+      "6b5ca9f": "tests/run_offline.sh step 13 (test_contract_check_s97.py)",
+      "3532c72": "sql/2026-10-12_s97_applied_reconstructed.sql",
+      "c3fc35c": "docs/lovable_prompts/s97/lovable_prompt_s97_help_route.md"
+    },
+    "data_writes": {
+      "data_contamination_ranges": "HOLIDAY-FROZEN-CHAIN-2026-10-02 (S98-C); registry 4 rows",
+      "trading_calendar 2026-10-02": "no-op: already closed by the S96-J backfill"
+    },
+    "rulings": "docs/research/s92_parity/rulings_s98.md - S98-A..E, S98-E.1",
+    "working_docs": "docs/research/s98/",
+    "assumption_register": "D.52 (7 rows)",
+    "adr": "none filed or amended"
+  },
+  "_s99_addendum": {
+    "session": "S99",
+    "date": "2026-10-23 -> 2026-10-24; doc-close (with S98) run in S100 on 2026-10-24",
+    "scope": "S98-B deployed; pass 2 over every open TD made tracker section 2.2 the single list (S99-C); agentic Stages 3-6 ON HOLD (S99-D); WCB no-input guard (S99-H) and 12 zero rows deleted (S99-I). Rulings S99-A..I.",
+    "commits": {
+      "range": "2edd25f..3706435 + this close, all pushed; Local = GitHub = ~/meridian-engine = ~/meridian-cc at 3706435 before the close (box route, S99-A)",
+      "2edd25f": "S98-B run_merdian_shadow_runner_aws.py: wait <= 120 s for the cycle's own chain run, else exit 1 SKIPPED_NO_INPUT; tests/test_runner_cycle_wait.py step 14",
+      "7d8f7d1": "tracker v2.15 section 2.2 single list + 2.3 retail; Stages 3-6 ON HOLD; tech_debt S99 paragraph; OpenItems v7 SUPERSEDED; docs/research/s99/reconciliation_pass2.md",
+      "3706435": "S99-H build_wcb_snapshot_local.py no-input guard (exit 0 SKIPPED_NO_INPUT); tests/test_wcb_no_input.py step 15; crontab WCB line removed; aws_crontab.txt refreshed"
+    },
+    "aws_cron": "69 lines: runner lines 13 (*/5 03-09) and 69 (0,5,10 10 = 15:30/15:35/15:40 IST, added 2026-10-23); no-symbol WCB line removed 2026-10-24; monitor window (180, 595, 5, {1..5}) unchanged",
+    "data_writes": {
+      "weighted_constituent_breadth_snapshots": "12 zero rows deleted (S99-I); zero_rows_left 0"
+    },
+    "rulings": "docs/research/s92_parity/rulings_s99.md - S99-A..I; this close: rulings_s100.md S100-A (tech_debt split), S100-B (R38-R49 homed in tracker 2.2)",
+    "tech_debt": "TD-S99-NEW-1 filed; TD-S97-NEW-8, -9, -10 closed; docs/registers/tech_debt.md now holds the open entries, docs/registers/tech_debt_history.md the rest (new file, S100-A)",
+    "assumption_register": "D.53 (7 rows)",
+    "adr": "none filed or amended; rules 0-24 unchanged",
+    "tracker": "docs/registers/agentic_layer_roadmap_S90.md v2.16",
+    "open": {
+      "live_read_2026-10-26": "after 15:45 IST: gamma created_at - ts median < 60 s; no next-day rows; 3 closing rows per symbol; 08:30 ledger on 10-26 runs; runner non-zero exits 0; WCB no row on Friday 15:24 ts at 08:31, real 15:40 row",
+      "next": "R4 08:25 IST pre-open probe before Mon 07:45 IST; then tracker 2.2 in order"
     }
   }
 }

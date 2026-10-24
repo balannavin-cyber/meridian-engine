@@ -239,35 +239,72 @@ def _expand_field(field: str, lo: int, hi: int) -> set[int]:
     return out
 
 
+def _parse_runner_line(line: str) -> Optional[tuple[Window, frozenset]]:
+    """One crontab line -> (its Window, its start minutes-of-day), or None if it is not a
+    schedule line. The Window is built exactly as the single-line parser always built it."""
+    fields = line.split(None, 5)
+    if len(fields) < 6:
+        return None
+    minute_f, hour_f, dom_f, mon_f, dow_f = fields[:5]
+    # A day-of-month or month restriction would make this window wrong on some days.
+    # Refuse rather than ignore the field: the fallback is visible, a silently
+    # dropped field is not.
+    if dom_f != '*' or mon_f != '*':
+        raise ValueError(f'unsupported dom/month fields {dom_f!r}/{mon_f!r}')
+    minutes = sorted(_expand_field(minute_f, 0, 59))
+    hours = sorted(_expand_field(hour_f, 0, 23))
+    # cron day-of-week: 0 and 7 are both Sunday; isoweekday has Sunday as 7.
+    dows = frozenset(7 if d == 0 else d for d in _expand_field(dow_f, 0, 7))
+    step = min((b - a for a, b in zip(minutes, minutes[1:])), default=60)
+    starts = frozenset(h * 60 + m for h in hours for m in minutes)
+    return Window(
+        first_start_min=hours[0] * 60 + minutes[0],
+        last_start_min=hours[-1] * 60 + minutes[-1],
+        step_min=step,
+        dows=dows,
+        source='crontab',
+    ), starts
+
+
 def parse_orchestrator_window(crontab_text: str,
                               script: str = ORCHESTRATOR_SCRIPT) -> Window:
-    """Derive the orchestrator's window from crontab text. Raises if it cannot."""
+    """Derive the orchestrator's window from crontab text. Raises if it cannot.
+
+    S100_R42_UNION (ruling S100-C, R42): EVERY enabled line naming the script is read. Until
+    S100 the first match was returned silently, so a second runner line inserted above the
+    first collapsed the band to that line alone (15:40-15:45 IST) with no warning, and the
+    S98-B closing cycles (a second line, 15:30/15:35/15:40 IST) were never in the band. With
+    more than one line the union of their start minutes must be ONE uniform-step run on ONE
+    set of weekdays; a gap or a mixed step would put "not firing" inside the gap, so it
+    raises and resolve_window falls back loudly. One line parses exactly as before."""
+    parsed: list[tuple[Window, frozenset]] = []
     for raw in crontab_text.splitlines():
         line = raw.strip()
         if not line or line.startswith('#') or script not in line:
             continue
-        fields = line.split(None, 5)
-        if len(fields) < 6:
-            continue
-        minute_f, hour_f, dom_f, mon_f, dow_f = fields[:5]
-        # A day-of-month or month restriction would make this window wrong on some days.
-        # Refuse rather than ignore the field: the fallback is visible, a silently
-        # dropped field is not.
-        if dom_f != '*' or mon_f != '*':
-            raise ValueError(f'unsupported dom/month fields {dom_f!r}/{mon_f!r}')
-        minutes = sorted(_expand_field(minute_f, 0, 59))
-        hours = sorted(_expand_field(hour_f, 0, 23))
-        # cron day-of-week: 0 and 7 are both Sunday; isoweekday has Sunday as 7.
-        dows = frozenset(7 if d == 0 else d for d in _expand_field(dow_f, 0, 7))
-        step = min((b - a for a, b in zip(minutes, minutes[1:])), default=60)
-        return Window(
-            first_start_min=hours[0] * 60 + minutes[0],
-            last_start_min=hours[-1] * 60 + minutes[-1],
-            step_min=step,
-            dows=dows,
-            source='crontab',
-        )
-    raise ValueError(f'no enabled crontab line mentioning {script}')
+        one = _parse_runner_line(line)
+        if one is not None:
+            parsed.append(one)
+    if not parsed:
+        raise ValueError(f'no enabled crontab line mentioning {script}')
+    if len(parsed) == 1:
+        return parsed[0][0]
+    dow_sets = {w.dows for w, _ in parsed}
+    if len(dow_sets) != 1:
+        raise ValueError(f'{len(parsed)} runner lines on different weekdays: '
+                         f'{sorted(sorted(d) for d in dow_sets)}')
+    starts = sorted(set().union(*(s for _, s in parsed)))
+    gaps = {b - a for a, b in zip(starts, starts[1:])}
+    if len(gaps) != 1:
+        raise ValueError(f'{len(parsed)} runner lines do not form one uniform run '
+                         f'(steps {sorted(gaps)}): a gap would read "not firing"')
+    return Window(
+        first_start_min=starts[0],
+        last_start_min=starts[-1],
+        step_min=gaps.pop(),
+        dows=next(iter(dow_sets)),
+        source=f'crontab:{len(parsed)} lines',
+    )
 
 
 def _read_crontab() -> str:

@@ -1,5 +1,5 @@
 	SHELL=/bin/bash
-5 3 * * 1-5 cd /home/ssm-user/meridian-engine && /usr/bin/python3 refresh_dhan_token.py >> cron.log 2>&1
+50 2 * * 1-5 cd /home/ssm-user/meridian-engine && /usr/bin/python3 refresh_dhan_token.py >> cron.log 2>&1
 41 3 * * 1-5 cd /home/ssm-user/meridian-engine && source .env && /usr/bin/python3 capture_market_spot_snapshot_local.py >> cron.log 2>&1
 */1 03,04,05,06,07,08,09 * * 1-5 cd /home/ssm-user/meridian-engine && source .env && /usr/bin/python3 capture_spot_1m_v2.py >> cron.log 2>&1
 0,5,10,15,20,25,30,35,40,45,50,55 03 * * 1-5 cd /home/ssm-user/meridian-engine && bash run_ingest.sh NIFTY FULL >> cron.log 2>&1
@@ -67,3 +67,4 @@
 # S90 / AM-1 tick freeze (TD-S90-NEW-4): copy market_ticks to ~/merdian_fixtures/ticks before pg_cron jobid 46 prunes rows older than 1 hour
 */5 3-10 * * 1-5 cd /home/ssm-user/meridian-engine && /usr/bin/timeout 120 /bin/bash scripts/freeze_market_ticks.sh >> logs/freeze_market_ticks.log 2>&1
 0,5,10 10 * * 1-5 cd /home/ssm-user/meridian-engine && source .env && python3 run_merdian_shadow_runner_aws.py >> logs/orchestrator.log 2>&1
+39 3 * * 1-5 cd /home/ssm-user/meridian-engine && source .env && python3 preopen_probe.py >> logs/preopen_probe.log 2>&1

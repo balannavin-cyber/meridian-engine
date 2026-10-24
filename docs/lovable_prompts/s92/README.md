@@ -84,3 +84,13 @@ S97-L drops):**
 | relations | 350 | `b16ed4261f3bfbfa4de6a5088be2632d` |
 | rls_policies | 29 | `4a1558d0cac89bb81aa1bad51306c25e` |
 | schemas | 10 | `2a88931808ed74928a291a548c3678ed` |
+
+**Promote step — backup retention (ruling S100-L, 2026-10-24).** Each promote moves the previous live tree to
+`/var/www/marketview.bak-<previous sha>`; then keep the **newest 3** `.bak-<sha>` by mtime plus **every** named `PRE_*`
+backup, and delete the rest in the same refusing block that does the promote (it prints what it would delete and runs
+only with an explicit argument). The reason is an unambiguous rollback target, not disk space. S100 record: six rounds
+(`docs/lovable_prompts/s100/`), live chain `1072593` → `142c3e6` → `2ee83e1` → `3366bf1` → `1aeb000` → `f964e40`; after
+`f964e40`: `.bak-1aeb000`, `.bak-3366bf1`, `.bak-2ee83e1` plus the three `PRE_*`. The guard for each round is a copy of
+`mv_lovable_guard.sh` with its allowlist line edited for the round.
+**Re-baseline before the next round:** S100-K added 51 `merdian_ro_select` policies after the S97 baseline above, so
+`rls_policies` no longer matches it.

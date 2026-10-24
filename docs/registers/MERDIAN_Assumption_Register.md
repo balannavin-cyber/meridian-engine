@@ -1292,3 +1292,39 @@ compared with; a value recalled from a summary or a design note is a guess weari
 `tests/test_wcb_no_input.py`. **Also found at this close and carried to S100's own section:** pass 2's open test also
 excluded four open entries whose heading or Status quoted a closing word (TD-S82-NEW-4, TD-S80-NEW-19, TD-S76-NEW-17,
 TD-S90-NEW-12; `tech_debt.md` S98 + S99 status paragraph).
+
+## D.54 — Session 100: figures stated before they were computed, paths and URLs assumed from documents, and anchors that matched more than once (2026-10-24 → 10-25)
+
+Twenty-three rows, **all my own**. Rulings: `docs/research/s92_parity/rulings_s100.md`. Recorded at the S100 doc-close.
+
+| # | Assumption as held | Verdict on measurement |
+|---|---|---|
+| **D.54.1** | *(mine)* A helper regex on the TD template, as first written. | **REFUTED** — It did not match as intended; corrected in session before any output used it. |
+| **D.54.2** | *(mine)* The project-knowledge extractor copied whole TD blocks. | **REFUTED** — It cut blocks off; S100-A made the extract a plain copy of the split file. |
+| **D.54.3** | *(mine)* `bin/roq.sh` takes its SQL as an argument. | **REFUTED** — It reads stdin or `< file`; the §D.53.6 class again. |
+| **D.54.4** | *(mine)* The R3 hung-run bound was 170.7 s. | **REFUTED** — Recalled; the measured bound was 184.4 s. |
+| **D.54.5** | *(mine)* Nine markers in the patched file. | **REFUTED** — Recalled; the count on the tree was 7. |
+| **D.54.6** | *(mine)* R4 mutant M2 kills the cells listed for it. | **REFUTED** — Its `must_fail` set was mis-listed; corrected after the mutant run. |
+| **D.54.7** | *(mine)* The wsfeed test's stamp guard, as first written. | **REFUTED** — It did not test what it named; corrected before the commit. |
+| **D.54.8** | *(mine)* The chain ingest anchor was unique. | **REFUTED** — It matched three sites; widened until count == 1. |
+| **D.54.9** | *(mine)* A tick query returning 0 rows meant a timezone error. | **REFUTED** — `market_ticks` is pruned after the close (TD-S90-NEW-4); the window was empty. |
+| **D.54.10** | *(mine)* The log-query redaction covered every secret header. | **REFUTED** — It missed `x-cron-secret`; a 15-character prefix reached the chat and is treated as disclosed. |
+| **D.54.11** | *(mine)* A label "S100-J" before the ruling existed. | **REFUTED** — A ruling ID is assigned when the operator rules, not when the question is drafted. |
+| **D.54.12** | *(mine)* The pre-open probe at 08:25 IST (from the session prompt). | **REFUTED** — The pre-open print lands 09:08–09:12 and the tokens reach the box at 08:30 / 08:35; S100-E set 09:09. |
+| **D.54.13** | *(mine)* S100-K's split "9 / 42". | **REFUTED** — Stated uncomputed; the catalog query gave 7 / 44. |
+| **D.54.14** | *(mine)* `merdian_ro_select` total after S100-K: 53 policies. | **REFUTED** — Predicted; the verification read 56. |
+| **D.54.15** | *(mine)* The Lovable guard script lives in `~/meridian-engine/bin/`. | **REFUTED** — It is `docs/lovable_prompts/s92/mv_lovable_guard.sh`. |
+| **D.54.16** | *(mine)* The board is at the bare IP the older documents cite. | **REFUTED** — The bare IP no longer serves it; the hostname is behind oauth2 (TD-S100-NEW-4). |
+| **D.54.17** | *(mine)* The first R7 query would finish inside the 30 s timeout. | **REFUTED** — A `DISTINCT ts` scan under CTEs timed out; rewritten as a direct range scan. |
+| **D.54.18** | *(mine)* SENSEX's front-future price would be "thinner" (more stale rows) than NIFTY's. | **REFUTED** — 15 stale rows vs 27; in bp the two are equal (R8). |
+| **D.54.19** | *(mine)* TD-S94-NEW-4 was misfiled. | **REFUTED** — The S99 status paragraph closed it. |
+| **D.54.20** | *(mine)* The S100-P diff would be about +16 / −10 lines. | **REFUTED** — Estimated; the computed diff was +13 / −9. |
+| **D.54.21** | *(mine)* `meridian-connect` is owned by `balannavin-cyber` (the engine's owner). | **REFUTED** — It is `balannavin-cyber1/meridian-connect`; the upload link 404'd and the operator uploaded as that account. |
+| **D.54.22** | *(mine)* The D6 / D7 dealer strings render on the board. | **REFUTED** — `NarrativeModal` and `AmbientTrajectory` are imported nowhere (TD-S100-NEW-3); the edits are source-only. |
+| **D.54.23** | *(mine)* A whole-heading word test finds closed-state TDs with an OPEN Status. | **REFUTED** — Two false positives (TD-S82-NEW-4, TD-S80-NEW-19 use the words descriptively); the marker test gave open 0 / history 1 (S100-O). |
+
+**The one to carry: D.54.4, .5, .13, .14, .20 together.** Five figures were stated from memory or estimate and each was
+wrong. A count, a bound or a diff size is said after it is computed, or is said as unknown.
+
+**Update log — Session 100 close (2026-10-25):** §D.54 added (**23 rows, all mine**). Sources:
+`docs/research/s92_parity/rulings_s100.md`, `docs/research/s100/S100_close_inputs.md`, `docs/research/s100/B3_reads_2026-10-24.md`.

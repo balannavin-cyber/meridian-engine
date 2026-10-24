@@ -105,7 +105,7 @@ def is_trading_day(trade_date_iso: str) -> bool:
             # ("absence == closed" doctrine), so allowing here made every unseeded
             # weekend / NSE holiday read as a trading day. Resolve absence against
             # the V18E rule engine (the seeder's own source of truth) instead of
-            # guessing. Weekend/holiday -> closed; Muhurat special session -> open.
+            # guessing. Weekend/holiday -> closed (a weekend Muhurat too: ADR-020 Amendment A).
             # Fail-open contract preserved: ONLY a computed is_open=False returns
             # False; any engine error falls through to the allow below.
             return _resolve_absent_day(trade_date_iso)
@@ -121,7 +121,9 @@ def _resolve_absent_day(trade_date_iso: str) -> bool:
 
     Defers to the V18E rule engine (trading_calendar.get_session_config_for_date),
     which encodes: weekend -> closed, NSE holiday (trading_calendar.json) -> closed,
-    special session (muhurat) -> OPEN, else open. This is the same authority
+    weekday special session -> OPEN, else open; a weekend special session (Muhurat)
+    reads CLOSED because the engine tests the weekend first -- not captured, by decision
+    (ADR-020 Amendment A, S100-O). This is the same authority
     seed_trading_calendar.py uses, so gate and seeder can no longer disagree.
 
     Import is lazy and every failure path returns True: the gate must never block a

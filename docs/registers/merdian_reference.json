@@ -5092,9 +5092,9 @@
       "truncated_each_run": false
     }
   },
-  "version": "v77",
-  "last_updated_session": "Sessions 98-99 (closed in Session 100)",
-  "last_updated_date": "2026-10-24",
+  "version": "v78",
+  "last_updated_session": "Session 100",
+  "last_updated_date": "2026-10-25",
   "change_log": [
     {
       "session": "S91 / AM-2",
@@ -5973,6 +5973,48 @@
     "open": {
       "live_read_2026-10-26": "after 15:45 IST: gamma created_at - ts median < 60 s; no next-day rows; 3 closing rows per symbol; 08:30 ledger on 10-26 runs; runner non-zero exits 0; WCB no row on Friday 15:24 ts at 08:31, real 15:40 row",
       "next": "R4 08:25 IST pre-open probe before Mon 07:45 IST; then tracker 2.2 in order"
+    }
+  },
+  "_s100_addendum": {
+    "session": "S100",
+    "date": "2026-10-24 -> 2026-10-25",
+    "scope": "Part A S98+S99 doc-close (3ad5c81); Part B weekend build: monitoring, pre-open probe, three writers, Rule 13 symbol scope, merdian_ro policies, the board's closing session; Part C live reads Mon 2026-10-26. Rulings S100-A..S, Q.1.",
+    "commits": {
+      "3ad5c81": "S98+S99 doc-close; tech_debt split (S100-A)",
+      "3070682": "R3 orchestrator monitor flags a hung run (TD-S97-NEW-3); offline step 16",
+      "b29f320": "R42 monitor window = union of runner crontab lines, (180, 610, 5, {1..5}) (S100-C); step 17",
+      "9e24792": "R4 preopen_probe.py 09:09 IST broker access (S100-E) + merdian-wsfeed-retry.timer, deduped alerts (S100-F); steps 18-19",
+      "4769565": "crontab: refresh_dhan_token.py 08:20 IST (S100-G), preopen_probe.py 09:09 IST; aws_crontab.txt 70 lines",
+      "d91295b": "deploy/systemd/merdian-wsfeed.service synced to the live unit",
+      "f213d22": "R40 ingest_breadth_from_ticks.py holiday gate / no ticks -> no row exit 0 / ledger (S100-I); chain Dhan 5xx retry (TD-S81-NEW-11); steps 20-21",
+      "9c5f50c": "R19 build_breadth_indicators_daily_local.py gap-fill (TD-S97-NEW-11); S100-H and R22 SQL records; step 22",
+      "418a75b": "S100-M (b) SUBSCRIPTION_LAPSED (chain, spot 1m, CAS close, probe, core.execution_log 11 -> 12, daemon); S100-J/K/M SQL records; step 23",
+      "08b25a8": "Marketview user manual v0.4; build_help_pack.py board_bundle; S100 Lovable round records; B3 reads"
+    },
+    "aws_cron": "70 lines: refresh_dhan_token.py 50 2 * * 1-5 (08:20 IST); preopen_probe.py 39 3 * * 1-5 (09:09 IST); systemd merdian-wsfeed-retry.timer every 5 min Mon-Fri",
+    "supabase": {
+      "pg_cron": "jobs 30, 31, 33-37, 40-44 inactive (S100-H); Edge Functions and x-cron-secret not deleted",
+      "data_contamination_ranges": "symbols text[] + CHECK (S100-J); 4 rows, SENSEX-CHAIN-OI-VOL0-2026-09-25 = {SENSEX}",
+      "merdian_ro_select": "on 51 RLS tables (S100-K); 56 such policies; audit 0",
+      "chk_exit_reason_valid": "+ SUBSCRIPTION_LAPSED (S100-M)",
+      "trading_calendar": "R22 repair"
+    },
+    "marketview": {
+      "live": "f964e40 (index-BFOk56iL.js)",
+      "chain": "1072593 -> 142c3e6 -> 2ee83e1 -> 3366bf1 -> 1aeb000 -> f964e40",
+      "staging": "27c0e17 help pack v0.4 (manual.json sha256 489a135e62ce...), promote not read back at close",
+      "backups": "newest 3 .bak-<sha> + PRE_* (S100-L)"
+    },
+    "offline_suite": "tests/run_offline.sh 23 steps",
+    "rulings": "docs/research/s92_parity/rulings_s100.md - S100-A..S, Q.1",
+    "working_docs": "docs/research/s100/",
+    "tech_debt": "TD-S100-NEW-1..6 filed (-6 closed at filing); 19 closed (S100 status paragraph)",
+    "assumption_register": "D.54 (23 rows)",
+    "adr": "ADR-020 Amendment A (Muhurat not captured, S100-O); ADR-004 section 15 dated note",
+    "tracker": "docs/registers/agentic_layer_roadmap_S90.md v2.17",
+    "open": {
+      "part_c_2026-10-26": "S98-B / S99-H live read after 15:45 IST; 08:20 refresh and 09:09 probe; wsfeed retry; docs/research/s100/S100_partC_additions.md",
+      "operator": "BS-1 Dhan TOTP + PIN, .env, check; read back the 27c0e17 promote"
     }
   }
 }

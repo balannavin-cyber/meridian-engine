@@ -2054,3 +2054,20 @@ Live `crontab -l` was compared with the mirror (identical, 17:50 IST) before eit
 **Marketview.** `/var/www/marketview` rebuilt from `~/meridian-connect` at `6cdc0a1` (16:01 IST) and `265ceb0` (16:06 IST), nginx reloaded. **Those commits are on the box only** — `git push` there fails 403 on the HTTPS PAT, so the served bundle has no remote source until a deploy key is installed (TD-S90-NEW-2).
 
 **Observed, not changed:** `market_ticks` is emptied after every close by a job not yet traced (TD-S90-NEW-4); `merdian-wsfeed` inactive after the close, timer-driven (expected). Box at the close: disk 7.3 G / 29 G, 1.46 G RAM available.
+
+## §S100 — Session 100 (2026-10-24 → 10-25): two schedules moved or added, a retry timer, twelve database schedules switched off, and two entries corrected
+
+**Corrected (S100-D).** `merdian_pipeline_alert_daemon.py` and `merdian_daily_audit.py` do **not** run on AWS: the daemon's
+last heartbeat is 2026-06-11 03:50 UTC, the audit's last row 2026-06-07, and no process exists on the box (read
+2026-10-24 08:20 IST). The rows above that show the daemon "currently running" and the audit as a Local scheduled task are
+historical; nothing cross-script alerts today. Revival is a tracker §2.2 BO row.
+
+**Changed on the box.** Crontab 70 lines (`docs/registers/aws_crontab.txt`, `4769565`): `refresh_dhan_token.py` 08:35 →
+**08:20 IST** (`50 2 * * 1-5`, S100-G); `preopen_probe.py` **09:09 IST** (`39 3 * * 1-5`, S100-E). systemd:
+`merdian-wsfeed-retry.timer` (every 5 min Mon–Fri) with `bin/wsfeed_retry.sh` (S100-F); `deploy/systemd/merdian-wsfeed.service`
+synced to the live unit (`d91295b`). Marketview `/var/www/marketview` live `f964e40` (bundle `index-BFOk56iL.js`); backups
+kept per S100-L (newest 3 `.bak-<sha>` plus every `PRE_*`). The board is reached at `https://marketview.meridianalpha.in`
+behind oauth2; the bare IP does not serve it (TD-S100-NEW-4).
+
+**Changed in Supabase.** `pg_cron` jobs 30, 31, 33, 34, 35, 36, 37, 40–44 inactive (S100-H; reversible); the three
+retired Edge Functions and the `x-cron-secret` remain. `merdian_ro_select` on 51 tables (S100-K).

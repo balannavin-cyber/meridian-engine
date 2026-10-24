@@ -184,7 +184,9 @@ def get_session_config_for_date(date_str: str) -> SessionConfig:
     Rules:
     1. Weekend → closed, default times
     2. NSE holiday → closed, default times
-    3. Special session → open, custom times from special_sessions list
+    3. Special session on a weekday → open, custom times from special_sessions list.
+       Rule 1 returns first, so a weekend special session (Muhurat) reads CLOSED —
+       not captured, by decision (ADR-020 Amendment A, S100-O, TD-S82-NEW-4).
     4. Everything else → open, default times
 
     No manual date insertion ever required.

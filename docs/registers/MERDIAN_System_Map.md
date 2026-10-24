@@ -2162,3 +2162,27 @@ paragraph); `docs/research/s92_parity/rulings_s98.md`, `rulings_s99.md`. Recorde
 | `weighted_constituent_breadth_snapshots` | table | — | the board | 12 zero rows deleted (S99-I) |
 | `data_contamination_ranges` | row `HOLIDAY-FROZEN-CHAIN-2026-10-02` | — | Rule 13 checks | 4 rows (S98-C) |
 | `tests/run_offline.sh` | offline suite | — | operator | 15 steps: + 13 contract check (`6b5ca9f`), 14 runner cycle wait (`2edd25f`), 15 WCB no input (`3706435`) |
+
+## §S100 — Session 100: monitoring widened, a pre-open probe, three writers taught to stop, a Rule 13 symbol scope, the board's closing session (2026-10-24 → 10-25)
+
+Doc Protocol v5: a table of what changed, no narrative. Detail: `tech_debt.md` S100 paragraph;
+`docs/research/s92_parity/rulings_s100.md`. Recorded at the S100 doc-close.
+
+| Component | Kind | Reads | Read by | State |
+|---|---|---|---|---|
+| `orchestrator_monitor` | monitor | `script_execution_log`, crontab | operator (Telegram) | `3070682`: an unfinished ledger row started > 6 min ago today → CRITICAL (TD-S97-NEW-3); `b29f320`: window = union of every runner line, (180, 610, 5, {1..5}) (S100-C) |
+| `preopen_probe.py` | probe, crontab `39 3 * * 1-5` (09:09 IST) | Dhan expiry list / LTP / intraday, Kite `profile()` | operator (Telegram) | `9e24792`: broker access pages on failure; pre-open print information only (S100-E); reason order TOKEN → SUBSCRIPTION → DATA_ERROR (`418a75b`) |
+| `merdian-wsfeed-retry.timer` + `bin/wsfeed_retry.sh` | systemd timer, every 5 min Mon–Fri | `merdian-wsfeed` state | — | `9e24792`: starts the feed 03:45–09:55 UTC when not active; alerts at most one per 30 min (S100-F) |
+| `refresh_dhan_token.py` | crontab `50 2 * * 1-5` (08:20 IST) | Dhan | every Dhan caller | `4769565`: was 08:35 (S100-G) |
+| `ingest_breadth_from_ticks.py` | writer | `market_ticks` | `market_breadth_intraday` | `f213d22`: holiday `HOLIDAY_GATE`, no ticks → no row, exit 0 `SKIPPED_NO_INPUT`, ledger via `core.execution_log` (S100-I; overlap lock deferred) |
+| `ingest_option_chain_local.py` | writer | Dhan chain | `option_chain_snapshots` | `f213d22`: a Dhan 5xx retried twice (TD-S81-NEW-11); `418a75b`: 806 / DH-902 → `SUBSCRIPTION_LAPSED` |
+| `capture_spot_1m_v2.py`, `capture_cas_close.py` | writers | Dhan | `dhan_charts_intraday`, CAS close | `418a75b`: a plan lapse exits `SUBSCRIPTION_LAPSED` before `TOKEN_EXPIRED` |
+| `core/execution_log.py` | ledger helper | — | every writer | `418a75b`: `VALID_EXIT_REASONS` 11 → 12 (`SUBSCRIPTION_LAPSED` → status MISSING); `chk_exit_reason_valid` widened (operator DDL) |
+| `build_breadth_indicators_daily_local.py` | writer | `equity_eod`, `dhan_scrip_map` | `breadth_indicators_daily` | `9c5f50c`: fills a complete (≥ 95 %) EOD date a later date overtook, `[S100_BREADTH_GAPFILL]` (R19) |
+| `pg_cron` jobs 30, 31, 33–37, 40–44 | schedules | — | retired Edge Functions | **deactivated** (S100-H); functions and `x-cron-secret` not yet deleted |
+| `data_contamination_ranges` | table | — | Rule 13 checks | `symbols text[]` + CHECK (S100-J); 4 rows, 1 scoped `{SENSEX}` |
+| `merdian_ro` | role | 51 RLS tables | `bin/roq.sh` | `merdian_ro_select` policy on each (S100-K); audit 0 |
+| `trading_calendar` | table | — | the gate | R22 repair (missing 01-15, 01-26, 03-03, 05-28; closed-day labels) |
+| Marketview (`meridian-connect`) | frontend | Supabase views | operator | `1072593` → `142c3e6` → `2ee83e1` → `3366bf1` → `1aeb000` → **`f964e40`** live (S100-M a, N, P, Q / Q.1, R, S); `27c0e17` (help pack v0.4) on `/staging/` |
+| `docs/marketview_manual/`, `build_help_pack.py` | docs / build | the manual | `/manual` | v0.4; `BOARD = "index-BFOk56iL.js"` for `board_bundle` (`08b25a8`) |
+| `tests/run_offline.sh` | offline suite | — | operator | 23 steps: + 16 hung run, 17 window union, 18–19 probe / wsfeed retry, 20–21 breadth ticks / chain retry, 22 breadth gap-fill, 23 subscription lapsed |

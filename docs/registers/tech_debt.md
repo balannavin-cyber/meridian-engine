@@ -89,6 +89,105 @@ the doc-close that closes it, with one line in that close's status paragraph.
 | **Home** | Tracker §2.2 band BS. |
 | **Status** | **OPEN.** |
 
+### TD-S100-NEW-1 (S3 priority) — the futures rows keep the 15:15 spot through the closing window, so the stored basis is wrong at 15:30–15:40
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The board's FUT · BASIS tile shows the stored basis; at 15:30–15:40 it is measured against a spot ~15 min old. |
+| **Filed** | 2026-10-24 (Session 100; exposed by the S100-S sub-line `vs spot X @ hh:mm`) |
+| **Component** | `index_futures_snapshots.spot_price` (the futures writer) · Marketview FUT · BASIS tile |
+| **Measured** | 2026-10-23 NIFTY: the 15:30–15:40 futures rows carry spot 22,516.4 (the held 15:15 print) while the chain rows of the same cycles carry the 22,600.0 close; stored basis +63.7…+72.6 against ≈ −20…−11 on the chain's spot. The index is held at source 15:15–15:29 and the close prints at 15:30. |
+| **Proper fix** | The futures writer takes the spot from the same cycle's chain run (or the 15:30 close once printed), not its own index fetch, in the closing window; an offline test with a held-spot fixture and a mutant. |
+| **Home** | Tracker §2.2 band B2 (with R5). |
+| **Status** | **OPEN.** |
+
+### TD-S100-NEW-2 (S3 priority) — Marketview renders loading states as values
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A reader cannot tell "not loaded yet" from "zero" or "nothing wrong". |
+| **Filed** | 2026-10-24 (Session 100; staging reads in Chrome) |
+| **Component** | `meridian-connect`: Health error panels; the legacy pages' header strip |
+| **Measured** | While its query is in flight the Health error panel shows "no errors"; the legacy strip shows `0 (0.00%)` and `iv not populated`. |
+| **Proper fix** | A loading state (`—` or a skeleton) distinct from an empty result, per panel; board wording needs the operator's yes. |
+| **Home** | Tracker §2.2 band B5. |
+| **Status** | **OPEN.** |
+
+### TD-S100-NEW-3 (S4 priority) — `NarrativeModal` and `AmbientTrajectory` are imported nowhere
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** Dead code that carries board wording; an edit there (S100-R D6 / D7) changes nothing a reader sees. |
+| **Filed** | 2026-10-24 (Session 100; found applying S100-R) |
+| **Component** | `meridian-connect` `NarrativeModal.tsx`, `AmbientTrajectory.tsx` |
+| **Measured** | Found applying S100-R (`1aeb000`): neither component is imported anywhere in `src/`; D6 / D7 corrected in source only. |
+| **Proper fix** | Delete both, or wire them in by an operator ruling; until then they are not cited as board text. |
+| **Home** | Tracker §2.2 band B5. |
+| **Status** | **OPEN.** |
+
+### TD-S100-NEW-4 (S4 priority) — documents still cite the bare-IP board URL, which no longer serves the board
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** A reader following an old document reaches nothing; the live board is `https://marketview.meridianalpha.in` behind oauth2. |
+| **Filed** | 2026-10-24 (Session 100) |
+| **Component** | `http://13.63.27.85/…` board URLs in `docs/registers/MERDIAN_Enhancement_Register.md` (ENH-110), `docs/research/s86_split/split_plan.md` and other older documents (Deployment Topology §S89 records the change) |
+| **Proper fix** | One doc pass replacing board URLs with the hostname (the IP stays where it means the host: Dhan whitelist, SSH). |
+| **Home** | Tracker §2.2 band BD. |
+| **Status** | **OPEN.** |
+
+### TD-S100-NEW-5 (S4 priority) — `backfill_cas_close_from_daily.py` logs a Dhan plan lapse as `DATA_ERROR`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** The same mislabel S100-M (b) fixed in the live writers, left in the 08:50 reconciler. |
+| **Filed** | 2026-10-24 (Session 100) |
+| **Component** | `backfill_cas_close_from_daily.py` (`exit_with_reason("DATA_ERROR", …)` sites) |
+| **Measured** | Code read on `08b25a8` (2026-10-25): four `exit_with_reason("DATA_ERROR", …)` sites and no 806 / DH-902 test; `capture_cas_close.py` maps the lapse to `SUBSCRIPTION_LAPSED` since `418a75b`. |
+| **Proper fix** | Reuse `_DHAN_SUBSCRIPTION_RE` before the `DATA_ERROR` exit; a cell and a mutant in `tests/test_subscription_lapsed.py`. |
+| **Home** | Tracker §2.2 band B4. |
+| **Status** | **OPEN.** |
+
+### S100 status changes to existing entries (v5 Rule 3: one paragraph, no body edits)
+
+Rulings S100-C…S, Q.1 (`docs/research/s92_parity/rulings_s100.md`). Ledger: `TDs_NEW=6` (TD-S100-NEW-1…6; -6 filed
+closed) · `TDs_CLOSED=19` (below; blocks moved to the end of `tech_debt_history.md`'s entries, unedited).
+**TD-S97-NEW-3 → CLOSED** `3070682`: an unfinished ledger row started > 6 min ago today → CRITICAL under its own key;
+offline step 16. **TD-S81-NEW-11 → CLOSED** `f213d22`: the chain ingest retries a Dhan 5xx twice; step 21.
+**TD-S90-NEW-14 → CLOSED** by S100-H: the 12 active `pg_cron` jobs calling the retired Edge Functions are inactive
+(`cron.alter_job(active := false)`; the `equity_eod` cursor writer was jobid 37); deleting the three functions and the
+`x-cron-secret` is a later ruling (tracker §2.2 BS1); a 15-character prefix of that secret reached the chat in a log read
+and is treated as disclosed. **TD-S97-NEW-14, TD-S81-NEW-7, TD-S41-NEW-1 → CLOSED** by the R22 operator SQL (verification
+15 / 15 / 0 / 12; record in `sql/`); 2026-11-08 stays closed (S100-O). **TD-S97-NEW-11 → CLOSED** `9c5f50c`: the daily
+breadth builder fills a complete EOD date a later date overtook; 10-08 1,377 and 10-15 1,373 rows backfilled; no October
+date short; step 22. **TD-S97-NEW-12 → CLOSED:** 10-21 written. **TD-S81-NEW-12 → CLOSED:** `compute_basis_context_local.py`
+exits 0 since S92-B. **TD-S97-NEW-15 → CLOSED** by S100-J: `data_contamination_ranges.symbols text[]` with its CHECK;
+`SENSEX-CHAIN-OI-VOL0-2026-09-25` = `{SENSEX}`, the other three NULL; the Rule 13 test is in `CLAUDE.md`.
+**TD-S94-NEW-1 and TD-S81-NEW-16 → CLOSED** by S100-K: `merdian_ro_select` on the 51 public RLS tables no SELECT / ALL
+policy reached (56 such policies after; the DO block's audit assert 0; probes 0 → 1000 rows) — the one catalog test both
+entries name; a guard for tables created later is not built. **TD-S97-NEW-16 → CLOSED** by S100-L: newest 3 `.bak-<sha>`
+plus every `PRE_*`; the rule is in the promote step of `docs/lovable_prompts/s92/README.md`. **TD-S97-NEW-21 → CLOSED:**
+(a) Health untracks `build_ict_htf_zones.py`, live `1072593` (TD-S77-NEW-14 / TD-017 stay in the ICT stream); (b)
+`SUBSCRIPTION_LAPSED`, `418a75b` (chain, spot 1m, CAS close, probe, `core.execution_log` 11 → 12, the daemon's alert
+set); (c) OVERALL CRITICAL display only. The 10-21 counts were 360 / 174 / 1 over the session (the entry's 286 / 126 was a
+24 h window); the reconciler's own mislabel is TD-S100-NEW-5. **TD-S82-NEW-4 → CLOSED as decided** (S100-O): Muhurat is
+not captured; ADR-020 amended; the engine and gate docstrings corrected in this close. **TD-S80-NEW-19 → CLOSED,
+superseded by v5 Rule 3** (S100-O); its one legacy instance, TD-S70-NEW-5 in the history file, recorded.
+**TD-S76-NEW-17 → CLOSED** (S100-O): ADR-004 §15 already carries the measured, dated counts (19,573 / 19,571, 2026-09-10)
+and not 19,432 (read on `08b25a8`); a dated note added. **TD-S90-NEW-12 → CLOSED** on the reconciliation read: capture
+SUCCESS every trading day 10-07 → 10-23 except the holiday 10-20 and the lapse 10-21; `corrected = 0` on every counted
+day; 10-21 filled 10-22 (S98-D). **TD-S97-NEW-17 → CLOSED** by S100-R B (D1–D7, live `1aeb000`; D6 / D7 are in unimported
+components, TD-S100-NEW-3). **Fix deployed, closes on the Monday 2026-10-26 read:** **TD-S97-NEW-5** (the 09:09 probe pages
+a lapse; `418a75b` labels it) · **TD-S80-NEW-17** (`merdian-wsfeed-retry.timer`, `9e24792`). **Part done:**
+**TD-S97-NEW-6** — the feed restarts on its own; the daily manual Kite refresh stays a single point (operator decision).
+**TD-S81-NEW-1** — (a) unanswerable: the log window is 7 days, so the old token is treated as disclosed; (b) stays with
+BS-1. **Tracker rows, not TDs:** R3, R4, R9, R19, R22, R23, R24, R34 / R35, R14 / R33 DONE; R40 DONE with the overlap
+deferred (S100-I); R42 DONE `b29f320`; **R43 / R44 OBSOLETE** (S100-D: the alert daemon's last heartbeat 2026-06-11, the
+daily audit's last row 2026-06-07; a BO row replaces them); R5 label part and R17 step 1 DONE; R7, R8, R10, R18 read
+(`docs/research/s100/B3_reads_2026-10-24.md`). **Notes:** R7 — on expiry eve the 15:40 snapshot is not the exchange's
+final EOD OI (10-13 pre-open differs by up to −7.36 % on the expiring legs; pre-open-anchored readers unaffected);
+10-12 has no `dhan_idx_i` pre-open row 09:00–09:15.
+
 ### S98 + S99 status changes to existing entries (doc-close run in Session 100; v5 Rule 3: one paragraph, no body edits)
 
 Rulings S98-A…E.1 and S99-A…I; this close's own S100-A (split) and S100-B (R38–R49 homed in §2.2). Ledger:
@@ -192,16 +291,6 @@ and 08-24 / 08-25 hold one 15:30 row each (S\* availability probe; P5 probe 1). 
 — both S95 applies ended their batch with a verification SELECT and both passed in one
 execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 
-### TD-S97-NEW-3 (S2 priority) — the monitor cannot see a hung orchestrator run
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** A run that never finishes leaves a NULL row that ages out of the `created_at` look-back without ever alarming, before and after TD-S97-NEW-2's fix. |
-| **Filed** | 2026-10-22 (Session 97) |
-| **Component** | `monitor_orchestrator_health.py` `_fetch_rows_http()` (`created_at > now − LOOKBACK_MIN`; `LOOKBACK_MIN` 5, and 7 since `754ffad`) |
-| **Proper fix** | A second probe: any orchestrator row with `finished_at` NULL and `started_at` older than one cycle plus margin (e.g. 6 min, against a measured max run of 170.7 s on 10-21) → CRITICAL. Tested in the same suite, with a control. |
-| **Status** | **OPEN.** |
-
 ### TD-S97-NEW-4 (S1 priority) — a total ingest outage reads as a healthy day: the orchestrator re-runs the last existing run and logs SUCCESS / contract met with zero writes
 
 | Field | Value |
@@ -236,25 +325,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **Proper fix** | Operator decision: an earlier reminder, a second person, or an automated Kite login path (Kite's terms permitting). At minimum a 08:45 IST check that the synced token validates, paging if not. |
 | **Status** | **OPEN — operator decision.** |
 
-### TD-S97-NEW-11 (S3 priority) — `breadth_indicators_daily` is missing 2026-10-08 and 10-15 while `equity_eod` has both
-
-| Field | Value |
-|---|---|
-| **Filed** | 2026-10-22 (Session 97) |
-| **Measured** | Since 10-05: `equity_eod` 10 of 10 trading days to 10-16 (1,371–1,377 rows); `breadth_indicators_daily` 8 of 10 — **10-08 and 10-15 absent**. Both tables also lack 10-19 and 10-21 (TD-S97-NEW-12). |
-| **Cross-ref** | TD-S91-NEW-5; the S90-G note on the "late/partial EOD writer". |
-| **Status** | **OPEN.** |
-
-### TD-S97-NEW-12 (S3 priority) — EOD for 2026-10-19 and 10-21 not written; check the catch-up
-
-| Field | Value |
-|---|---|
-| **Filed** | 2026-10-22 (Session 97) |
-| **Measured** | No `equity_eod` / `breadth_indicators_daily` rows for 10-19 or 10-21 (read 05:10 IST 10-22). 10-20 holiday; 10-21 Dhan lapsed. |
-| **Read 2026-10-23 03:22 IST** | `equity_eod` / `breadth_indicators_daily`: 10-16 1,374 / 1,374; **10-19 1,374 / 1,374 (caught up by the 10-22 run, after the Dhan renewal)**; 10-20 0 / 0 (holiday); **10-21 0 / 0; 10-22 0 / 0**. Consistent with the settled Dhan EOD publish lag (S66/S67: the frontier fills on later runs; not a defect). |
-| **Proper fix** | Re-read after the 2026-10-23 16:10 IST run: 10-21 should then be filled. If 10-21 is still 0 after two further runs, a targeted backfill. |
-| **Status** | **OPEN — 10-19 resolved; 10-21 / 10-22 expected publish lag, re-read after the 10-23 EOD.** |
-
 ### TD-S97-NEW-13 (S3 priority) — 2026-10-21 one-minute spot is recoverable; the chain snapshots are not
 
 | Field | Value |
@@ -264,42 +334,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **Also measured** | Board 2026-10-22 10:03 IST, both symbols: OPEN · GAP tile reads **"prev close missing"** — the 10-21 16:00 close capture failed (`MARKET CLOSE CAPTURE FAILED`, Dhan 806), so today's gap has no reference. |
 | **Proper fix** | Operator decision: backfill `market_spot_snapshots` for 10-21 from 1-min candles, tagged as backfilled (source column), **and the 10-21 close** (from Dhan's daily candle) so the gap tile resolves; or leave the gap. |
 | **Status** | **OPEN — operator decision.** |
-
-### TD-S97-NEW-14 (S3 priority) — `trading_calendar` 2026-09-14 is closed but labelled a normal trading day
-
-| Field | Value |
-|---|---|
-| **Filed** | 2026-10-12 (Session 97; S97-E) |
-| **Measured** | `is_open f`, `open_time` NULL, `holiday_name` empty, `notes 'Normal trading day'`. The TD-S95-NEW-2 backfill skipped it (`ON CONFLICT DO NOTHING`). |
-| **Proper fix** | Trace which writer produced this row (a manual fix or another writer) before relabelling it `Ganesh Chaturthi`. |
-| **Status** | **OPEN.** |
-
-### TD-S97-NEW-15 (S3 priority) — `data_contamination_ranges` has no symbol column
-
-| Field | Value |
-|---|---|
-| **Filed** | 2026-10-12 (Session 97; S97-H) |
-| **Measured** | Rule 13 overlap checks match on time window, tables and fields only, so `SENSEX-CHAIN-OI-VOL0-2026-09-25` also matches NIFTY studies on those dates (NIFTY clean there: survey max 0.02 %). |
-| **Proper fix** | Add a nullable `symbols text[]` (NULL = all), backfill the three rows, update the Rule 13 check. Schema change: own ruling. |
-| **Status** | **OPEN.** |
-
-### TD-S97-NEW-16 (S3 priority) — twelve Marketview backups on the box, no retention rule
-
-| Field | Value |
-|---|---|
-| **Filed** | 2026-10-12 (Session 97) |
-| **Measured** | After deleting `.bak-1deeb87`: `PRE_S81`, `PRE_S89_20261003_1340`, `PRE_IV_20261004_0329`, `.bak-5b84c16`, `.bak-13b1410`, `.bak-392256a`, `.bak-417e966`, `.bak-858cb46`, `.bak-62f5c55`, `.bak-c81b700`, `.bak-804d684`, plus `marketview-staging`. |
-| **Proper fix** | Keep the last N (e.g. 3) plus any named pre-major; delete the rest in one refusing block; write the rule into the promote runbook. |
-| **Status** | **OPEN.** |
-
-### TD-S97-NEW-17 (S3 priority) — the Hedge-per-1 % tile and drawer still make a dealer claim
-
-| Field | Value |
-|---|---|
-| **Filed** | 2026-10-12 (Session 97; outside S97-A's scope) |
-| **Measured** | Live 2026-10-12 17:30 IST: caption "For a +1% move dealers would sell about ₹17,214 Cr; for −1%, buy …"; drawer WHAT IT IS "What dealers must trade to stay hedged if spot moves …". |
-| **Proper fix** | Same treatment as S97-A, wording for the operator's yes. |
-| **Status** | **OPEN — wording needs the operator's yes.** |
 
 ### TD-S97-NEW-18 (S3 priority) — the flow's own gap (ΔOI on unpriced legs) is not on the board
 
@@ -316,16 +350,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 |---|---|
 | **Filed** | 2026-10-12 (Session 97, P7 live read) |
 | **Measured** | SENSEX 09:56 and 10:00 IST: the board withheld the flow although `v_delta_drift_flow_vs_book` `ts` equalled the book's; cleared by the next run. Errs safe (nothing wrong drawn). Mechanism (separate polling of two views) **unproven**. |
-| **Status** | **OPEN.** |
-
-### TD-S97-NEW-21 (S3 priority) — the Health page reads CRITICAL every day and labels a subscription lapse TOKEN_EXPIRED
-
-| Field | Value |
-|---|---|
-| **Priority** | **S3.** A status that is always red carries no information; the outage on 10-21 was visible here and paged no one. |
-| **Filed** | 2026-10-22 (Session 97) |
-| **Measured** | `/health` 2026-10-22 10:04 IST: OVERALL **CRITICAL**, writer fleet **14/15** — the stale one is `build_ict_htf_zones.py`, host `local`, last success **36 d** ago (cadence 24 h). Top errors last 24 h: `capture_spot_1m_v2.py` **TOKEN_EXPIRED 286**, `ingest_option_chain_local.py` **TOKEN_EXPIRED 126**, `compute_basis_context_local.py` SKIPPED_NO_INPUT 72 — the first two are the 10-21 Dhan **806 / DH-902 plan** errors, not token expiry. |
-| **Proper fix** | (a) retire or re-home `build_ict_htf_zones.py` (or mark it not-tracked) so OVERALL can be green; (b) classify Dhan 806 / DH-902 as a subscription error, distinct from TOKEN_EXPIRED; (c) decide whether OVERALL CRITICAL should page (cross-ref TD-S97-NEW-5). |
 | **Status** | **OPEN.** |
 
 ### TD-S96-NEW-2 (S3 priority) — the planner estimates 1 row for a day of `gex_strike_snapshots` selected by `ts` alone
@@ -350,17 +374,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **Consequence** | Within-session deltas (L13, `v_oi_since_preopen`) are unaffected from 09:15 on; **levels** are inflated for the whole session. A DEX or GEX reading on those three days is not evidence of anything. The S\* out-of-sample SENSEX arms read 0.03 % (10-07) and 0.50 % (10-09); the L3 SENSEX arms (09-22, 09-23) predate the survey and were not measured. |
 | **Proper fix** | Operator call, not taken here: **(a)** measure over the whole retention window (from 2026-08-24) how often it occurs and on which strikes; **(b)** decide whether a `data_contamination_ranges` row (Rule 13) covers SENSEX OI levels on 09-25 / 09-28 / 09-29; **(c)** decide whether readers of OI levels flag or exclude legs with volume 0 at the latest snapshot. Any filter is a definition change to live views and needs its own ruling. |
 | **Status** | **OPEN.** Recorded in the `v_oi_since_preopen` COMMENT. |
-
-### TD-S94-NEW-1 (S2 priority) — `merdian_ro` read zero rows from `participant_oi_daily` and `data_contamination_ranges`, so Rule 13 checks run through `bin/roq.sh` could not fail
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** The two tables are fixed. S2 because the class — RLS on, a policy for `anon` only, and `merdian_ro` silently reading zero — has now been met three times (Rule 17's `market_spot_session_markers`, and these two), and nothing lists where else it applies. |
-| **Filed** | 2026-10-10 (Session 94) |
-| **Component** | `public.participant_oi_daily`, `public.data_contamination_ranges` · `sql/2026-10-10_s94_merdian_ro_read_policies.sql` |
-| **Measured** | Before P2's Part 1, both tables returned **zero rows** to `merdian_ro` with no error. A Rule 13 contamination check run through `roq.sh` therefore always found "no overlapping range", whatever the table held — a check that could not fail (rule 0). Fixed ~08:32 IST 2026-10-10 by a `DO` block creating a `merdian_ro_select` policy on each table (operator-applied DDL); P2 read `participant_oi_daily` afterwards. |
-| **Proper fix** | One catalog query listing every table with RLS enabled and **no** policy whose roles include `merdian_ro` (`pg_class.relrowsecurity` joined to `pg_policies`), recorded in the reference; then decide table by table. Until then, a zero from `roq.sh` on an RLS table is the reader, not the data. |
-| **Status** | **OPEN (audit residual).** Rule 13 checks made through `roq.sh` **before 2026-10-10** could not have found a range; those made in the SQL editor are unaffected. |
 
 ### TD-S94-NEW-2 (S3 priority) — `bin/roq.sh`'s write-verb guard refuses `COPY (SELECT …) TO STDOUT`, which is a read
 
@@ -479,33 +492,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **This is a mis-specified gate and is recorded as one** | Per the settled rule — derive a gate's threshold from the quantity's scale **before** measuring, and a mis-specified gate is recorded as mis-specified and **never loosened in place**. The 2880 came from the S90 seed, not from the measured lag. **Do not widen the row to make today pass.** |
 | **Proper fix** | Re-derive `freshness_sla_min` from the **measured** distribution of the Dhan EOD lag, write the derivation beside the number, then change the contract. **Today's 16:10 EOD run is the evidence point** for that measurement. |
 | **Status** | **OPEN — gate stands failed, deliberately.** |
-
-### TD-S90-NEW-12 (S2 priority) — `capture_cas_close.py` took the last bar, so the settled close was rejected on every session from 2026-08-24 to 2026-10-06
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** Seven weeks of closing prints. `hist_spot_bars_1m` closed on the frozen 15:14 value, and every daily and weekly close computed off it changed when the real close was backfilled. |
-| **Filed** | 2026-10-07 (Session 91 / AM-2, from the AM-1 post-close delta) |
-| **Component** | `capture_cas_close.py` (AWS cron `50 10 * * 1-5` = 16:20 IST) · `hist_spot_bars_1m` · `backfill_cas_close_from_daily.py` |
-| **Evidence** | The job read `body[-1]`, and Dhan appends a bar at call time, so the bar-slot assertion always saw the call-time bar and the job **REJECTED every session** from 2026-08-24 to 2026-10-06. Repaired: **58 bars backfilled plus 2026-10-06 captured live**; **3 SENSEX bars hand-corrected** (08-24, 09-23, 10-05 — the last by −70.24). |
-| **Not affected** | **Gap prev-close.** `build_market_spot_session_markers.get_prev_close_spot` reads the first row at or after 16:00, which equalled the settled close on every day checked — so `gap_open_pct` never consumed the frozen value. |
-| **Owed, and NOT done here** | **`build_ict_htf_zones.py` must be re-run on the corrected closes** (it reads `hist_spot_bars_1m`). **Where it runs is unresolved.** `merdian_reference.json` → `files.build_ict_htf_zones.py` carries the S76 verdict *"the SCRIPT-level invoker is UNRESOLVED"* — absent from both crontabs, `/etc/crontab`, `/etc/cron.*`, every systemd unit, the orchestrator and `run_ingest.sh` — while its named Windows task `MERDIAN_ICT_HTF_Zones_0845` is **Disabled** (ADR-006 migration; `CLAUDE.md` still describes the path as Local). The only scheduled relation is `detect_ict_patterns_runner.py` (`docs/registers/aws_crontab.txt`, `20 10` / `22 10` UTC = 15:50 / 15:52 IST, NIFTY / SENSEX), which **imports two functions** from the module at `:56` (`detect_1h_zones`, `upsert_zones`) and rebuilds 1H zones only — it does not invoke the script. So the re-run has **no scheduled home** and has to be invoked deliberately. Recorded, not run. |
-| **Fixed by** | `6d9f4f7` — pick the close-slot bar instead of the last bar, with `tests/test_cas_close_slot_pick.py`; the docstring's cron time corrected **15:50 → 16:20 IST** in the same commit — and `1708a1c`, the two-source reconciliation at 08:50 IST. |
-| **Status** | **FIXED, NOT CLOSED** — close once the first scheduled reconciliation (08:50 IST 2026-10-07, `logs/cas_recon.log`) comes back clean. |
-
-### TD-S90-NEW-14 (S2 priority) — an unidentified off-box writer advances the shared `breadth_ingest_state` `equity_eod` cursor between our runs
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** It skips tickers silently: a shared cursor moved by another writer makes our next run start past where the last one ended, and nothing reports the hole. |
-| **Filed** | 2026-10-07 (Session 91 / AM-2, from the AM-1 post-close delta) |
-| **Component** | `breadth_ingest_state` (job row `equity_eod`) · `run_equity_eod_until_done.py` · `ingest_equity_eod_local.py` |
-| **Evidence** | 2026-10-06 **16:31–17:28 IST** the cursor advanced between our runs — from run 12 onward every run started 50 past where the previous one ended, **9 batches ≈ 450 tickers skipped**. The writer **created no `equity_eod` rows** and left the cursor at **750, `PARTIAL_OK`**. |
-| **Ruled out** | This box (`ps`, the `ssm-user` and `root` crontabs, systemd timers, shell history, syslog, `/home` logs), **MALPHA** (crontab, timers, code), the **Windows** scheduled tasks, and the cloud workspace. |
-| **Mitigated by** | `490b088` — the AWS sweep runs on **its own cursor row** (`JOB_NAME=equity_eod_aws`) and prints `[S90_CURSOR_GUARD] CURSOR MOVED BY ANOTHER WRITER` when a run does not start where the last one ended. That is **isolation, not identification**. |
-| **How to identify** | Supabase **Logs → API Gateway**, **11:00–12:00 UTC 2026-10-06**, POSTs to `breadth_ingest_state` from a source other than `13.63.27.85`. A new `updated_at` on the old row narrows it to one minute. |
-| **Bearing on an earlier disposition** | **TD-S66-NEW-5**, *Status* row, RESIDUAL clause: an unidentified AWS writer backfilled `equity_eod` 07-07 mid-session *"with no cron I could locate"*, carried to S68 and attributed there to the session's own sweep laps plus "an unattended writer". **I found no later entry that traced it.** An off-box writer of the same cursor row demonstrably still existed on 2026-10-06, so that attribution should not be treated as settled. |
-| **Status** | **OPEN — isolated, not identified.** |
 
 ### TD-S90-NEW-1 (S2 priority) — `dhan_scrip_map` is never re-synced against the scrip master, so every NSE series change leaves a dead security ID behind
 
@@ -882,24 +868,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **Cross-ref** | **TD-S82-NEW-1** — the cron-window tail; **same subsystem, different defect, DO NOT MERGE** (see the note there). · **`89ad2bb`** (S81) — the selector's current form `order="ts.desc,expiry_date.asc"`, correct for front-expiry resolution and **orthogonal to this**: it fixed *which expiry within a cycle*, not *which cycle*. · **TD-S81-NEW-14** (ENH-99 retry budget never exercised) and **TD-S81-NEW-20** (`DhanClient` reads the token at construction) — the 08:35 token-refresh family this entry is coincident with but does not explain. · **ADR-001** (stable lies) · **ADR-018 D2** (recency floors on readers) · **ADR-023 D1** (fail to absent, never to stale) · **CLAUDE.md Rule 0** · **TD-S82-NEW-3** (`eod_health_check` expected-set). |
 | **Status** | **OPEN — measured, no fix applied, no fix proposed.** |
 
-### TD-S82-NEW-4 (S3 priority) — the V18E rule engine returns on the weekend rule before it reaches the special-session rule, so every Muhurat reads CLOSED — contradicting its own docstring, the gate's docstring, and ADR-020 by name
-
-| Field | Value |
-|---|---|
-| **Priority** | **S3.** Real but latent, and **double-masked**. Measured S82: **0 of 7 distinct scheduled consumers run on a weekend** — every one is `dow=1-5` — so a Sunday Muhurat is skipped by the *schedule* regardless of the engine. Honouring Muhurat would require **both** the engine fix and a cron change. Not S2 because nothing in production reaches the defect today; not S4 because the contradicted decision is an accepted ADR and the next reader of either docstring will believe the opposite of what the code does. |
-| **Filed** | 2026-09-24 (Session 82) |
-| **Component** | `trading_calendar.py:180-246` (`get_session_config_for_date`) · `trading_calendar.json` (`special_sessions`) · `core/trading_calendar_gate.py` (`_resolve_absent_day`, `previous_trading_day`) · **ADR-020** · **TD-S81-NEW-7** |
-| **The defect, in the source** | `get_session_config_for_date` loads `specials = _get_special_sessions()` at **`:193`** and consults it at **`:231`**. Between them, **`:196-208` is `if not _is_weekday(date_str): return SessionConfig(..., is_open=False, special_session=False, notes="Weekend")`** — an unconditional return. Rule 2 (`:211`, holiday) likewise returns. **So for any weekend date control never reaches `:230`.** Muhurat only ever falls on a weekend, therefore the `special_sessions` block is **dead code for every date it can ever hold**. Measured: `get_session_config_for_date('2026-11-08')` → `is_open=False`, `notes='Weekend'`, while `trading_calendar.json` carries `{"date": "2026-11-08", "name": "Muhurat Trading 2026 (Diwali Laxmi Pujan)", "open_time": "18:15", "close_time": "18:30"}`. |
-| **What it contradicts — three documents, one of them an accepted ADR** | **(1)** The function's own docstring, `:187`: *"3. Special session → open, custom times from special_sessions list."* **(2)** `core/trading_calendar_gate.py` `_resolve_absent_day`'s docstring: *"weekend -> closed, NSE holiday -> closed, special session (muhurat) -> OPEN."* **(3)** **ADR-020 / CLAUDE.md verbatim: *"A `weekday>=5 ⇒ closed` short-circuit is REJECTED: it would block **Muhurat**, a real weekend session."*** The engine **is** that short-circuit, one layer below where the ADR rejected it. |
-| **Pre-existing, NOT a regression — and the dating is the finding** | `git log -S` shows **both** `'special_sessions'` and `'Rule 1: Weekend'` entering in the **same commit `2d8e05a`, 2026-04-06 17:38 IST** (*"[ARCH] Rewrite trading_calendar — rule-based"*), and **no commit has touched the ordering since**. ADR-020 shipped as **`f8e287b`, 2026-07-12 10:46 IST**; `git merge-base --is-ancestor 2d8e05a f8e287b` confirms the rewrite came first. **So ADR-020 rejected a short-circuit that was already present in the engine it chose to delegate to, and asserted the opposite behaviour without reading it** — the S71 diagnosis-decay shape occurring *at the moment of filing* rather than after it. |
-| **Blast radius, measured — and the first measurement was scoped to the wrong module** | The initial sweep grepped `trading_calendar_gate` and found 7 consumers. **That was the gate; the defect is in the engine.** Re-grepping `get_session_config_for_date` / `import trading_calendar` found **11 further files** (`gamma_engine_supervisor.py`, `merdian_live_dashboard.py`, `run_intraday_breadth_runner.py`, `run_market_tape_1m.py`, `run_option_snapshot_intraday_runner.py`, `run_ad_intraday_runner.py`, `ingest_ad_intraday_local.py`, `run_merdian_shadow_runner.py`, `stage2_db_contract.py`, `fix_enh68.py`, `fix_merdian_start_calendar.py`). Cross-referenced against `crontab -l` over **both** sets: **8 matches on 7 distinct lines (line 14 double-counts on a substring), ALL `dow=1-5`, WEEKEND-INCLUSIVE = 0.** `.sh` / `.service` / `.timer` checked: no references. **What this method cannot see:** dynamic imports and manual invocations. |
-| **Mitigated in the resolver, NOT in the engine (deliberate)** | `previous_trading_day` now **excludes any date the engine reports as a special session**, via the PUBLIC `SessionConfig.special_session` field rather than a private helper. **Reason it was needed even though the check already passed:** it passed *for the wrong reason* — the engine's weekend short-circuit skipped Muhurat by accident. Proven both ways at S82 against a simulated fixed engine: **WITHOUT** the guard `previous_trading_day('2026-11-10')` → **`2026-11-08`**; **WITH** it → **`2026-11-06`**. Had the engine been repaired first, `eod_health_check` would have audited a **15-minute** evening session against floors calibrated for a **~6-hour** one — a guaranteed FAIL that is not data loss. The two defects are now independently repairable. **No change was made to the engine.** |
-| **TD-S81-NEW-7 carries the same error in the register, from the opposite direction** | It says *"one of 16 2026 dates"* and prescribes *"diff all **16 JSON holidays** against the table."* **Measured: `holidays` holds 15 (all 2026, none on a weekend); `special_sessions` holds 1. 15 + 1 = 16 dated entries.** Its index is right — `holidays[8]` is Bakri Eid — but **the 16th entry is a special session, an OPEN day, the categorical opposite of a holiday.** Executed literally that diff either reports a spurious missing holiday row or **sweeps Muhurat into the holiday set, which is exactly what ADR-020 rejected.** CLAUDE.md Rule 18 independently corroborates 15: *"only 2 (one misdated) of the **15** NSE-2026 equity holidays."* **So the register miscounts Muhurat AS a holiday while the engine treats it AS a weekend — both erase the one session ADR-020 exists to protect.** |
-| **Proper fix (NOT done here)** | Reorder `get_session_config_for_date` so the special-session test precedes the weekend test, **or** make the weekend branch consult `specials` before returning; then re-verify every consumer, since the change makes a previously-closed day open. Separately correct TD-S81-NEW-7's count and its prescribed diff. **Both are ADR-020 territory and neither is a bug fix under Rule 10** — the engine change alters a decision the ADR recorded, so it needs an amendment, not a patch. |
-| **Blocked by** | nothing. |
-| **Cross-ref** | **ADR-020** (the rejected short-circuit) · **TD-S81-NEW-7** (the same error in the register) · **TD-S82-NEW-3** / **ENH-129** (the consumer that made this reachable) · **CLAUDE.md Rule 18** (calendar as trust-anchor) · **Rule 0** · `2d8e05a` · `f8e287b`. |
-| **Status** | **OPEN — engine unfixed by decision; resolver mitigated and regression-tested 8/8 at S82.** |
-
 ### TD-S81-NEW-1 (S1 priority) — the live Dhan broker token was readable by anyone holding the public anon key, for an unbounded period; rotation decision and log review are owed
 
 | Field | Value |
@@ -997,23 +965,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **Cross-ref** | ENH-123 (`v_gex_max_pain`, the correct ordering) · TD-S80-NEW-10 (closed this session) · `sql/2026-09-22_s81_v_max_pain_by_strike_CAPTURED_BASELINE.sql`. |
 | **Status** | **OPEN.** |
 
-### TD-S81-NEW-7 (S2 priority) — the `trading_calendar` TABLE is missing the 2026-05-28 Bakri Id closure row that `trading_calendar.json` carries
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** Rule 18: a gate over a wrong calendar is worse than no gate. The canonical gate survived this; a direct reader would not. |
-| **Filed** | 2026-09-23 (Session 81) |
-| **Component** | `public.trading_calendar` · `trading_calendar.json` · `seed_trading_calendar.py` |
-| **Measured** | **2026-05-28 (Thu) has no row**, while every other weekday 2026-05-20 → 06-05 carries one and weekends correctly carry none. The table **does** record closures as rows — 2026-09-14 is present with `is_open=false` — so an absent weekday is neither open nor closed, it is **undefined**. |
-| **Settled against the official source, per Rule 18** | **NSE circular NSE/CMTR/71775 (Ref 172/2025, 12 Dec 2025)** lists 28 May 2026 as **Bakri Id, a trading holiday.** `trading_calendar.json` **does carry it** — `holidays[8] = {"date": "2026-05-28", "name": "Bakri Eid"}`, one of **15** holiday entries. **Corrected S82:** `holidays` holds **15** (all 2026, none on a weekend) and `special_sessions` holds **1** (Muhurat, 2026-11-08) — **15 + 1 = 16 dated entries, not 16 holidays.** **So the JSON is right and the defect is in SEEDING.** The alternative reading — a whole-day pipeline blackout — is **ruled out**. |
-| **THE GATE HELD, and this validates ADR-020** | `core/trading_calendar_gate.py` resolves a missing row through the V18E rule engine rather than defaulting, so it read the JSON, found Bakri Eid, and returned closed. **markers=0 / signals=0 on 05-28 is the gate working, not an outage.** Recorded as a validation of ADR-020, not only as context. |
-| **Residual risk, which is the actual exposure** | Any consumer reading `trading_calendar` **directly** rather than through the gate still sees no row, and per the seeder's own convention would read that as closed — while the gate's documented contract reads no-row as allow. **The ADR-020 contract collision is contained in the canonical gate, not eliminated system-wide.** |
-| **Proper fix** | Find why the seeder skipped this row, and **diff all **15** JSON holidays against the table — **NOT 16**: the 16th dated entry is the Muhurat **special session**, an OPEN day, and sweeping it into the holiday set is what ADR-020 rejected (TD-S82-NEW-4)** — a one-query check that was **not run this session.** |
-| **Cost to fix** | ~1 h. |
-| **Blocked by** | nothing. |
-| **Cross-ref** | **ADR-020** (validated here) · **Rule 18** · TD-S60-NEW-2/-3 (the S60 calendar family) · `core/trading_calendar_gate.py`. |
-| **Status** | **OPEN.** |
-
 ### TD-S81-NEW-8 (S3 priority) — `~/redeploy_marketview.sh` builds from a stale May-27 clone, not the tree the live bundle comes from
 
 | Field | Value |
@@ -1031,39 +982,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **S84 update** | Live HEAD has moved **`7b60d01` → `a408fb4`**; the served bundle is now **`index-DLdbWkEE.js`**, md5 **`56ad2b21…`**, matching `/home/ssm-user/meridian-connect/dist`. The stale clone is **still at `14b63f3`**. **The finding stands; the hash evidence above is superseded.** (`parity_render_contract.md` §2.1.) |
 | **Status** | **OPEN.** |
 
-### TD-S81-NEW-11 (S2 priority) — a Dhan HTTP 500 on the W1 call silently drops an entire ingest cycle on both symbols
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** Real, lost capture data, with no alert. |
-| **Filed** | 2026-09-23 (Session 81) |
-| **Component** | `ingest_option_chain_local.py:432` · Dhan `/v2/optionchain` · `option_chain_snapshots` |
-| **Measured** | The **08:45 IST cycle** (`03:15:01Z START`) produced **no rows for either symbol**. `Selected expiry` printed, then `status=500 | {"800":"Internal Server Error"}` → `Predicate returned False -- failing fast`. `grep -c` = **2**, one per symbol, same cycle. The table confirms the hole: today's cycles are 08:35 (NIFTY only), 08:40, 08:50, 08:55 — **08:45 absent for both.** |
-| **NOT stage-1 related** | The failure is on the **W1** call, which exists identically at depth 1. The extra-expiry pass was never reached. |
-| **Proper fix** | Belongs with **TD-S81-NEW-14**: a 500 is transient and should retry; today it fails fast on attempt 1 of 6. |
-| **Cost to fix** | Folded into the retry-predicate work. |
-| **Blocked by** | nothing. |
-| **Cross-ref** | **TD-S81-NEW-14** (the same log line from the other side) · **TD-S81-NEW-12** — same 08:30–09:30 IST window, **entirely different failure; see the do-not-conflate note there** · TD-080 (S1-recurring) · D.16.4. |
-| **Status** | **OPEN.** |
-
-### TD-S81-NEW-12 (S2 priority) — the shadow runner invokes `compute_basis_context` for a full hour each morning before its only input exists: a cron-hour mismatch
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** No data is lost. It is here because it **pins the runner's contract signal to FAIL for an hour every trading day**, so a real failure in that window cannot be reported. |
-| **Filed** | 2026-09-23 (Session 81) |
-| **Component** | crontab line 14 (shadow runner) · crontab lines 9–10 (`capture_index_futures_snapshot_local.py`) · `compute_basis_context_local.py:273-277` |
-| **The mismatch, which is the whole finding** | shadow runner `*/5 **03**-09 * * 1-5` = **08:30**–15:29 IST. Futures capture `*/5 **04**,05,06,07,08,09 * * 1-5` = **09:30**–15:29 IST. **08:30–09:29 IST — twelve cycles every trading morning — invoke the script before `index_futures_snapshots` holds a single row.** Structural, daily, pre-existing. |
-| **Mechanism, exact** | The only input is `index_futures_snapshots` (`LOOKBACK_MIN = 30`). With no row in the lookback both symbols land `no_input` and `:273-277` returns **`SKIPPED_NO_INPUT` with `exit_code=1`**. **The script behaves exactly as written; nothing in it is broken.** |
-| **Confirmed by prediction, not inference** | Predicted at 09:21 IST, before observing, that it would recover unaided at the 04:00 UTC boundary. Observed at 09:36:30: cycles 03:46 / 03:51 / 03:56 **FAILED**, **04:01:23 OK**, 04:06 OK; `index_futures_snapshots` first row **09:30:07 IST** both symbols. **The transition lands on the cron-hour boundary and nowhere else.** No fix was applied and none was needed. |
-| **Consumer impact: NONE, and ADR-023 is why** | Sole consumer `build_trade_signal_local.py:503-529`; nothing in the frontend reads it. The **ADR-018 D2** floor (S61, `MERDIAN_BASIS_RECENCY_FLOOR_MIN`=15) blanks the context past the floor (`:524`) and writes `basis_context_stale` (`:911`), so the label goes **NULL rather than stale**. Basis context is display-only per S37/S61. **Recorded as a validation of ADR-023, not only as context.** |
-| **ONSET: not knowable** | `shadow_runner.log.1` starts `2026-09-22T04:50:04` and older runner logs are rotated away. **Do not state a start date.** |
-| **Two decisions, unresolved, options recorded without choosing** | **(1)** Should `SKIPPED_NO_INPUT` exit 1 at all? It turns a legitimate pre-market state into a contract breach — **the name and the exit code disagree about what happened.** **(2)** A signal that reads FAIL on healthy mornings is as uninformative as one that reads OK on broken ones — the **`merdian-wsfeed` shape (§S72.B, D.27) recurring at a second surface.** Options: **align the cron hours** (smallest, but 09:30 may be deliberate if early futures quotes are thin); **exit 0** (**hazard: this trades a false FAIL for a false OK and would silence a genuine mid-session futures outage — do not take it alone**); or **a third NOT-APPLICABLE contract state** (most work, only option that preserves both). |
-| **Cost to fix** | ~30 min for option 1; ~2 h for option 3. |
-| **Blocked by** | an operator decision between the three. |
-| **Cross-ref** | ENH-07 B (S57/S61) · **ADR-018 D2** · **ADR-023** · §S72.B / **D.27** · **TD-S81-NEW-11** — same window, different failure. **DO NOT CONFLATE:** different component, cause, input table, frequency and data loss; merging them yields an entry whose fix addresses neither. |
-| **Status** | **OPEN — diagnosed, no fix applied by decision.** |
-
 ### TD-S81-NEW-15 (S3 priority) — the register says `merdian_order_placer.py` runs from an `@reboot` cron line; neither the line nor the process exists
 
 | Field | Value |
@@ -1079,24 +997,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **Blocked by** | nothing. |
 | **Cross-ref** | CLAUDE.md S28 bullet · Deployment Topology §3 / §7.1 / §8.2 · TD-S69-NEW-1 · **D.37.8** · S53 crontab-reinstall shape · **TD-S81-NEW-20**. |
 | **Status** | **OPEN.** |
-
-### TD-S81-NEW-16 (S2 priority) — `merdian_ro` reads zero rows, silently, from 57 RLS-enabled tables, and a FAIL was reported to the operator because of it
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** It is the failure mode most likely to make a future session confidently wrong, and it has already produced one false FAIL against a rollback trigger. |
-| **Filed** | 2026-09-23 (Session 81) |
-| **Component** | `merdian_ro` role · `bin/roq.sh` · 57 RLS-enabled `public` tables |
-| **Mechanism** | `merdian_ro` has `rolbypassrls = false` and this project's RLS policies are written `TO anon`. **A role matching no policy gets an empty result set, not an error** — so the read is indistinguishable from a genuinely empty table. **The TD-S37-03 silent-empty-dataset shape, arriving inside the new verification path itself.** |
-| **It bit on its first real use** | The 08:53 IST stage-1 run returned `B gamma_on_FRONT_expiry → FAIL, gm=NULL` and **check C produced no row at all**. Both were artefacts — `compute_gamma_metrics … OK` stood in `shadow_runner.log` throughout. **A FAIL was reported to the operator that was a property of the reader, and the stage-1 rollback trigger was "if B or D reads FAIL."** |
-| **The commissioning suite could not have caught it** | Checks 1/2/5/6 touch no table, check 3 touches an RLS-off table and check 4 a view. **A suite that never reads an RLS-enabled relation cannot discover this.** Any extension of `roq.sh`'s verification **must include one known-nonempty RLS table as a control.** |
-| **Partially remediated** | Operator added `merdian_ro_select` policies to `gamma_metrics` and `gex_strike_snapshots` on 2026-09-23; both now read. **57 remain**, including `signal_snapshots`, `ict_primitives`, `ict_primitive_outcomes`, `script_execution_log`, `merdian_parameters`, `market_breadth_intraday` and `gex_pin_maxpain_history` — **most of what a verification query actually wants.** |
-| **S88 UPDATE - a subset has ZERO policies, so `anon` is blind too, not only `merdian_ro`** | This entry's Mechanism row assumes the policies exist and are written `TO anon`. Measured 2026-10-01: **`gex_pin_maxpain_history`, `participant_oi_daily` and `fii_dii_cash_daily` have RLS on and ZERO policies** (`pg_policy` count 0 each), while `reltuples` estimates **10,930 / 1,630 / 33** rows. With no policy at all, **no non-bypass role can read them - the `anon` front-end role included** - so the blanket-`merdian_ro`-policy fix below would not make them readable by Marketview. **Latent, not live:** a grep of `meridian-connect/src` finds **no reader** for any of the three, so nothing is silently empty today; the first consumer added would be. Evidence `scratch/s88_move/part5_depth.out:112-114,121-123`. |
-| **Proper fix** | Either a blanket `merdian_ro` SELECT policy across the RLS set, or `BYPASSRLS` on a role that provably cannot write (0 of 233 relations carry any write privilege — measured). Until then, **the full 57-name list and a one-lookup diagnostic are in the S81 notes; read a zero from any of them and check the list before believing it.** |
-| **Cost to fix** | ~30 min for the blanket policy; the `BYPASSRLS` route is a one-line operator decision. |
-| **Blocked by** | an operator decision on which route. |
-| **Cross-ref** | **TD-S37-03** · D.21.1 · `bin/roq.sh` · System Map §S81 · TD-S81-NEW-14 (the `dhan_token_probe_log` blindness that leaves the 401 mechanism unconfirmable). |
-| **Status** | **OPEN — 2 of 59 remediated.** |
 
 ### TD-S81-NEW-20 (S3 priority) — `DhanClient` reads the Dhan token at construction, so a rotation mid-cycle leaves a running process holding an invalidated token
 
@@ -1251,21 +1151,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **Blocked by** | TD-S80-NEW-16 in practice — changing an unversioned unit file repeats §S74.B. |
 | **Cross-ref** | Deployment Topology §S72.B (the property) · §S80.5 (the consequence) · Assumption Register **D.37.4** · §S69 (`reset-failed` + `kill -9` canon, which did not apply here). |
 | **Status** | **OPEN — decision owed.** |
-
-### TD-S80-NEW-19 (S2 priority) — TD-S69-NEW-1's heading says RESOLVED and its Status row says OPEN, and on 2026-09-22 two readers reached opposite conclusions from it
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** A register entry that supports contradictory readings is worse than a missing one, because both readers believe they checked. |
-| **Discovered** | Session 80 (2026-09-22), when an incident document and a doc-close pass disagreed about the same item on the same day. |
-| **Component** | `docs/registers/tech_debt.md` — TD-S69-NEW-1 |
-| **Symptom** | Heading: *"(S1 priority — **RESOLVED S71 by measurement; root-cause row was wrong**)"*. Status row, eighteen lines below: *"**OPEN — P0 into S70.** The cleanup bought headroom; it did not raise the ceiling."* **Both have stood unreconciled since S71.** The S80 incident document read the Status row and recorded *"open at P0 since 2026-08-12"*; the doc-close read the heading and recorded it as closed at S71. **The inherited claim propagated into Deployment Topology §S80 twice and the Assumption Register once before it was caught**, and required a correction pass. |
-| **Root cause** | S71 annotated the heading on a new measurement and **did not move the Status row**. This is the **TD-061 shape**, which this project codified against at **S29** — *"TD body-state must match footer-claim"*, recorded in Deployment Topology §7.2 as a Doc Protocol v4 candidate rule and **never made into one**. In violation for four sessions. |
-| **Proper fix** | Two parts. **(a)** The instance: TD-S69-NEW-1 moves to Resolved with a closure block stating both prior states — done in this doc-close, separately. **(b)** The rule: promote the S29 candidate to an actual Doc Protocol rule, or add a mechanical check that a heading containing RESOLVED/CLOSED cannot coexist with a Status row containing OPEN. **The check is trivial and the rule has been a candidate for fifty-one sessions.** |
-| **Cost to fix** | (a) done. (b) ~30 min for a grep-based check; the protocol amendment is an operator decision. |
-| **Blocked by** | nothing. |
-| **Cross-ref** | TD-S69-NEW-1 (the instance) · TD-061 / TD-063 (S29, the original shape) · Deployment Topology §7.2 *"TD body-state must match footer-claim"*, §S80.8 · Assumption Register **D.37.8** · TD-S80-NEW-14 (the same shape across files rather than within one entry) · TD-S76-NEW-12. |
-| **Status** | **OPEN — part (a) closed at this doc-close, part (b) is the item.** |
 
 ### TD-S79-NEW-1 (S2 priority) — `GREATEST(dte, 1)` overstates σ on expiry day, so the moneyness band is widest on the day it most needs to bind
 
@@ -1726,25 +1611,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **Proper fix** | A decision, then a patch. Decide which `change_log` and which counter are canonical; delete or explicitly mark the other as historical; and add a doc-close post-condition asserting that the stamp a session writes matches the session it ran in. The last part is cheap and is the piece that would have caught S75. |
 | **Cross-ref** | TD-S76-NEW-13 · TD-S76-NEW-14 · TD-S76-NEW-15 · TD-S71-NEW-1 · TD-S71-NEW-2 (the same file's stale freshness header) · TD-S73-NEW-10. |
 | **Status** | **OPEN — divergence widened at S76 and recorded as such.** |
-
-### TD-S76-NEW-17 (S2 priority) — four different row counts for the ICT cohort circulate across six governance files, and none of them is a measured live count of anything
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** The F-68 recompute's scope is a function of this number, and the ADR that governs the recompute carries the wrong one for the table it is describing. |
-| **Filed** | 2026-09-10 (Session 76) |
-| **Component** | `ict_primitives` · `ict_primitive_outcomes` · ADR-004 Amendment C · `CLAUDE.md` · `CURRENT.md` · `tech_debt.md` · `merdian_reference.json` · `docs/research/ict_structure_audit_2026-09-09.md` |
-| **The four numbers, and what each actually is** | **19,432** — the operator's S76-supplied count of **`ict_primitives`**. **19,662** — the operator's S76-supplied count of **`ict_primitive_outcomes`**. **19,399** — the S31-B backfill figure (2025-04-01 → 2026-05-19), historical. **19,571** — `CLAUDE.md`'s S35 full-recompute **insert** record, historical. |
-| **How two of them entered the governance files** | 19,432 and 19,662 are **both S76-supplied and refer to DIFFERENT TABLES**, and were then **used interchangeably across prompts** during this doc-close. That is the entire mechanism. ADR-004 Amendment C, the S76 audit document, `tech_debt.md`, `CURRENT.md` and `merdian_reference.json` each received whichever figure was in front of them at the time. |
-| **The correct statement** | **No file currently asserts a measured live row count for either table.** 19,399 and 19,571 are historical write records, not counts; 19,432 and 19,662 are counts of two different tables being quoted as though they were one. Four numbers circulate as though each were the answer to the same question. |
-| **Dispositive — one query, operator-run** | `SELECT (SELECT count(*) FROM ict_primitives) AS primitives, (SELECT count(*) FROM ict_primitive_outcomes) AS outcomes;` — this settles both tables in a single statement and is the only thing that can. |
-| **A defect in ADR-004 Amendment C, filed here and NOT fixed in this pass** | Amendment C states *"`ict_primitive_outcomes` holds **19,432 rows** built under the superseded behaviour"*. **19,432 is the `ict_primitives` count.** Amendment C is about **outcome anchoring**, so the cohort it is describing is the outcomes table and the figure should be the outcomes count. The governance language of the amendment is unaffected — `valid_from` is the confirming bar's close either way — but its extent claim names the wrong table's size. **To be corrected when ADR-004 is next opened**, deliberately not touched in this doc-close. |
-| **Consequence for `CLAUDE.md`** | The S76 settled-decisions line for Amendment C was written **without a row count** rather than inheriting the wrong one, so the defect is confined to ADR-004 and to this entry. |
-| **Same class as four items filed the same session** | **TD-S76-NEW-13**, **-14**, **-15**, **-16** — a value asserted in one place and contradicted in another with nothing connecting them. This one is the sharpest of the five, because the contradiction is not between an old record and a new one: **all four numbers were live in the same session**, and two of them were introduced by the same person in the same afternoon. |
-| **Proper fix** | Run the query; write the two measured counts, each labelled with its table and the date measured, into `merdian_reference.json`'s `tables` entries; correct Amendment C's figure at the next ADR-004 touch; and stop quoting either number anywhere else. A count belongs in the inventory that owns the table, not in prose in five documents. |
-| **MEASURED 2026-09-10 (S76), operator-run** | `ict_primitives` = **19,573**; `ict_primitive_outcomes` = **19,571**. None of the four circulating figures was a current count of the table it was attached to: 19,432 and 19,662 were wrong for both tables, 19,399 is historical, and 19,571 — `CLAUDE.md`'s S35 *insert* record — coincides with the live outcomes count without ever having been a count. **The 2-row gap this exposes is filed separately as TD-S76-NEW-18.** |
-| **Cross-ref** | ADR-004 Amendment C §15 · TD-S76-NEW-4 (the F-68 cohort this number scopes) · TD-S76-NEW-13 · TD-S76-NEW-14 · TD-S76-NEW-15 · TD-S76-NEW-16 · **TD-S76-NEW-18** · Assumption Register **§D.35.14**. |
-| **Status** | **PARTIALLY RESOLVED — counts measured; ADR-004 Amendment C's figure is still wrong for the table it describes.** |
 
 ### TD-S76-NEW-21 (S3 priority) — ADR-004's Amendments A and B are absent from the Decision Index entirely, and Amendment C's new marker makes the file read as though they never happened
 
@@ -2223,21 +2089,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **Blocked by** | Nothing |
 | **Related** | MERDIAN_AWS_S3_Deployment_Mechanism_S46.md (documentation); ADR-006 AWS migration scope (deployment layer); ENH-113 Phase 2.c AWS shadow runner |
 | **Owner check-in** | 2026-06-06 (S46 filed as convenience enhancement) |
-
----
-
-### TD-S41-NEW-1 — `trading_calendar` table lacks NSE holiday pre-population; Bakri Id 2026-05-28 had no row at all
-
-| Field | Value |
-|---|---|
-| **Severity** | S3 |
-| **Filed** | 2026-06-01 (Session 41) |
-| **Symptom** | `trading_calendar` table missing rows for NSE holidays. Specifically observed: 2026-05-28 (Bakri Id) had no row in `trading_calendar` — neither marked as holiday nor as trading day. This violates ENH-66 doctrine which expects every calendar date to have a row with `is_trading_day` flag set correctly. Downstream impact: any writer that branches on `trading_calendar.is_trading_day` defaults to unknown behavior; some writers may proceed as if it's a trading day and fail to fetch market data, generating spurious CRASH rows in `script_execution_log`. |
-| **Workaround** | Manually insert missing rows when discovered: `INSERT INTO trading_calendar (trade_date, is_trading_day, holiday_name) VALUES ('2026-05-28', FALSE, 'Bakri Id') ON CONFLICT (trade_date) DO UPDATE SET is_trading_day=FALSE, holiday_name='Bakri Id'`. Cumulative miss list across the year requires manual reconstruction. |
-| **Root cause** | `merdian_start.py.ensure_calendar_row()` ensures the CURRENT date's row exists at script start, but only after the writers have already attempted to run. Holidays are pre-known NSE/BSE-published lists but MERIDIAN doesn't ingest them. |
-| **Proper fix** | Two paths: (a) annual NSE holiday calendar pre-populate via NSE API / static config — `merdian_calendar_seed.py` runs once per year inserting full year of holiday rows; (b) amend `merdian_start.py.ensure_calendar_row()` to consult an NSE holiday API at row-create time and stamp `is_trading_day=FALSE` for holidays before any writer runs. Path (a) is cheaper and more predictable. |
-| **Impact** | Low — affects holiday days when most writers gracefully fail anyway. Cosmetic CRASH rows in `script_execution_log` on holiday boundaries. |
-| **Related** | TD-S41-NEW-2 (Dhan token refresh on holidays — related symptom of same calendar-blind-spot class), ENH-66 (calendar doctrine), `merdian_start.py.ensure_calendar_row()`. |
 
 ---
 

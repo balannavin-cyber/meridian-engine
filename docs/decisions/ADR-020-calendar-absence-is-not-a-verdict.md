@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Accepted |
+| Status | Accepted; **Amendment A** 2026-10-24 (S100-O): Muhurat is not captured — see the end of this file |
 | Date | 2026-07-12 |
 | Session | Session 68 |
 | Supersedes | Nothing. Refines the fail-open contract documented in `core/trading_calendar_gate.py` (S60, TD-S60-NEW-3) without reversing it. |
@@ -134,6 +134,24 @@ Row-present dates were always right. Row-absent dates were always wrong. The `tr
 ## Governance language (one-line compressed form for CLAUDE.md settled-decisions)
 
 **Absence is not a verdict.** A shared gate must resolve a missing `trading_calendar` row through the V18E rule engine (`trading_calendar.get_session_config_for_date`) — never default to allow, never hardcode dow. Fail-open is preserved for *genuine errors* only; a computed closure returns False. Two modules may not each author their own contract for what "no row" means. (ADR-020, S68, `f8e287b`.)
+
+---
+
+## Amendment A — Muhurat is not captured, by decision (2026-10-24, Session 100, ruling S100-O)
+
+**What the code does.** `trading_calendar.get_session_config_for_date()` tests the weekend (Rule 1) before the special
+session (Rule 3) and returns early, so a weekend special session — Muhurat — reads `is_open=False`; the gate's
+`_resolve_absent_day()` inherits that. Every scheduled consumer runs Mon–Fri, so nothing would run on a Sunday Muhurat
+even if the engine said open (TD-S82-NEW-4, measured S82: 0 of 7 distinct scheduled consumers run on a weekend).
+
+**Decision.** MERIDIAN does **not** capture Muhurat: it is a one-hour symbolic session, and honouring it would need both
+the engine reorder and weekend cron lines. The code stands; the documents now say what it does. The Evidence row "No
+row + Muhurat special session (a Sunday) → True (open)" and the Consequences line "Muhurat and all future special
+sessions are handled by construction" are superseded by this amendment: a weekend special session reads closed.
+`trading_calendar` 2026-11-08 stays closed. The `previous_trading_day` special-session exclusion (S82) stays, so a
+special session is never taken as the previous trading day. The engine's and the gate's docstrings were corrected to
+match in the same close. The rest of the ADR — absence is not a verdict; fail open only on genuine error — is unchanged.
+A weekday special session, if one is ever listed, still reads open.
 
 ---
 

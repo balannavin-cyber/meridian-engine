@@ -697,6 +697,11 @@ Those three are ADR text and they bind. The §4 field list was the only dissenti
 
 **These rows were not corrected by the amendment alone.** The writer is INSERT-only with skip-if-exists and `valid_from` is not part of the natural key, so re-running could not repair them. **S77 took the DELETE plus full recompute** (`--start 2025-03-31 --end 2026-06-04`), replacing the cohort entirely: 19,573/19,571 pre-fix rows → 20,042/20,042 rebuilt. The pre-fix cohort is preserved as `public.ict_primitives_pre_s77` / `public.ict_primitive_outcomes_pre_s77` and remains a measurement of the superseded behaviour — S31-B's holdout result and the S33 ENH-106 figures are drawn from it and are not repaired by the rebuild.
 
+**Dated note (2026-10-24, Session 100, ruling S100-O; TD-S76-NEW-17).** The counts in this section are the
+**2026-09-10 (S76) measurement** of the pre-fix cohort — `ict_primitives` 19,573, `ict_primitive_outcomes` 19,571 — and
+the 20,042 / 20,042 figures are the S77 rebuild. Neither is a current live count; a reader needing one runs the query in
+TD-S76-NEW-17. The figure 19,432 that TD-S76-NEW-17 found here earlier is no longer in this file (read on `08b25a8`).
+
 **The measurement anchor is not an entry anchor.**
 
 Amendment C specifies when a primitive is *confirmed*. It does not specify when a position can be *opened*, and for D and W these are not the same instant. A daily bar's close is 15:31 IST — after the session. The forward windows (5 m / 15 m / 30 m / 60 m) run into an empty session and the option tuple, enumerated at `_floor_5m(valid_from)`, resolves to a strike that does not trade at that moment.

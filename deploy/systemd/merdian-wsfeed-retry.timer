@@ -1,0 +1,10 @@
+[Unit]
+Description=MERDIAN wsfeed retry every 5 min, Mon-Fri 03:45-09:55 UTC (the script checks the band)
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 03..09:00/5:00 UTC
+Persistent=false
+Unit=merdian-wsfeed-retry.service
+
+[Install]
+WantedBy=timers.target

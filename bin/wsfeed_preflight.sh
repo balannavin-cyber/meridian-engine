@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Refuse to start the feed unless the Zerodha token validates LIVE. Anti-silent-failure guard.
 set -o pipefail
-cd /home/ssm-user/meridian-engine
+cd "${MERDIAN_ENGINE_DIR:-/home/ssm-user/meridian-engine}"   # S100_WSFEED_RETRY: overridable for tests only
 set +u
 set -a; . ./.env; set +a
 set -u
@@ -22,6 +22,7 @@ then
     exit 0
 else
     ts=$(date -u +%FT%TZ)
-    bash bin/wsfeed_alert.sh "wsfeed PREFLIGHT FAILED $ts - Zerodha token invalid. Feed NOT started. Fix: refresh_kite_token.py on MALPHA -> sync -> sudo systemctl restart merdian-wsfeed"
+    # S100_WSFEED_RETRY: the retry timer re-runs this every 5 min while the token is bad -> one page per 30 min.
+    WSFEED_DEDUPE_S=1800 bash bin/wsfeed_alert.sh "wsfeed PREFLIGHT FAILED $ts - Zerodha token invalid. Feed NOT started. Fix: refresh_kite_token.py on MALPHA -> sync; the feed retries every 5 min until 15:25 IST (no restart needed)"
     exit 1
 fi

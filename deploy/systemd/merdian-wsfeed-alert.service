@@ -3,6 +3,8 @@ Description=MERDIAN wsfeed failure alert (OnFailure handler)
 
 [Service]
 Type=oneshot
+# S100_WSFEED_RETRY: one page per 30 min while the retry timer keeps re-failing the unit.
+Environment=WSFEED_DEDUPE_S=1800
 User=ssm-user
 WorkingDirectory=/home/ssm-user/meridian-engine
 ExecStart=/home/ssm-user/meridian-engine/bin/wsfeed_alert.sh "merdian-wsfeed.service entered failed state (preflight or runtime). Feed DOWN."

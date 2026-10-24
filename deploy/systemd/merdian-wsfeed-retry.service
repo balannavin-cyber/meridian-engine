@@ -1,0 +1,6 @@
+[Unit]
+Description=MERDIAN wsfeed retry (S100-F): start the feed if it is not active, 03:45-09:55 UTC
+
+[Service]
+Type=oneshot
+ExecStart=/home/ssm-user/meridian-engine/bin/wsfeed_retry.sh

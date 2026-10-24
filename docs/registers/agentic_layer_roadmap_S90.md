@@ -1,6 +1,6 @@
 # MERIDIAN — roadmap to an intelligent, agentic MERIDIAN (v2, 2026-10-05)
 
-**Status: v2.14 — LIVE TRACKER, at `docs/registers/` from S95 (ruling S95-E) (S90 / Agentic MERIDIAN Session 1; the AM-1 post-close delta folded in at AM-2 / S91, 2026-10-07).** Stages 0–2 are ruled inside parity (S90-D) and ADR-031 is accepted (S90-C); this file is the single progress record. **S92-I (2026-10-09): parity closed; §2.1 holds the operator's post-parity priority track (P1–P8), followed to conclusion** for the agentic layer, and the Doc Protocol files point here rather than restating it. Items outside Stages 0–2 remain proposals; nothing here is a pre-registration. v1 (same path, earlier on 2026-10-05) answered the operator's seven-point sketch. v2 folds in the harness discussion that followed: ingest, compute and assumption harnesses; redundancy; the agent harness; staged build with exit tests; a tracker. The product is not named here, per the standing rule.
+**Status: v2.15 — LIVE TRACKER, at `docs/registers/` from S95 (ruling S95-E) (S90 / Agentic MERIDIAN Session 1; the AM-1 post-close delta folded in at AM-2 / S91, 2026-10-07).** Stages 0–2 are ruled inside parity (S90-D) and ADR-031 is accepted (S90-C); this file is the single progress record. **S92-I (2026-10-09): parity closed; §2.1 holds the operator's post-parity priority track (P1–P8), followed to conclusion** for the agentic layer, and the Doc Protocol files point here rather than restating it. Items outside Stages 0–2 remain proposals; nothing here is a pre-registration. v1 (same path, earlier on 2026-10-05) answered the operator's seven-point sketch. v2 folds in the harness discussion that followed: ingest, compute and assumption harnesses; redundancy; the agent harness; staged build with exit tests; a tracker. The product is not named here, per the standing rule.
 
 **Goal, in the operator's words:** an intelligent, agentic MERIDIAN that is self-learning, efficient, cost-effective and LLM-independent.
 
@@ -121,9 +121,165 @@ split by expiry, per-strike exposure through the session, price × time surfaces
 stock F&O. Longer-horizon, not on this track: R2.6 then a replay scrubber, 5-year 1-min history,
 the agentic position layer; a regulatory check runs in parallel before anything is shown to others.
 
+### 2.2 Open work — the single list (S99-C, 2026-10-24)
+
+**Every open item has one home, and this is it** for everything that is not parked. Built from pass 1 (S98-A, `claude/s98_reconciliation_table.md` → committed with the S98 doc-close) and pass 2 (S99-C, `docs/research/s99/reconciliation_pass2.md`, all 364 open `tech_debt.md` entries). A TD keeps its full text in `tech_debt.md`; this list says what is next. **Order (S98-A §3, S99-E):** B1 → BS-1 → B2 → B3 → B4 → B5 → B6, then BR and the rest of BS before any retail build; BO and BD one session each when the market is shut. **After the list:** retail (§2.3) → agentic (§3 Stages 3–6, ON HOLD, S99-D) → the signal / ICT stream (68 items parked, pass 2 §3.9; ranked after agentic, S99-G). §2.1 (P4 accruing, P8 gated) runs alongside.
+
+| Band | Item | What | TDs | Status |
+|---|---|---|---|---|
+| B1 | **R1 + R41 (S98-B)** | γ runner waits for its own cycle's chain run; closing cycles 15:30 / 15:35 / 15:40 | TD-S97-NEW-4, TD-S82-NEW-1, TD-S82-NEW-2; re-measure TD-S80-NEW-9, TD-S78-NEW-8 | DEPLOYED `2edd25f` 2026-10-23; live PASS read Mon 2026-10-26 after 15:45 IST |
+| B1 | **R2 + R21** | WCB writer: "COMPLETED" with no row; holiday placeholder rows; stray no-symbol cron line; 16:00 futures leg exits 1 on holidays; weight / threshold drift | TD-S97-NEW-9, -10, -8 (absorbs TD-S81-NEW-13), TD-S41-NEW-5 | OPEN — capture path, S90-J window |
+| B1 | **R3** | monitor cannot see a hung orchestrator run | TD-S97-NEW-3 | OPEN |
+| B1 | **R4** | one 08:25 IST pre-open probe: Dhan subscription + Kite token; feed silence and heartbeat; preflight gives up after ~23 s (10-15, 10-19) | TD-S97-NEW-5, -6 (absorbs TD-S91-NEW-3, TD-S71-NEW-10, TD-S69-NEW-6, TD-NEW-7), TD-S86-NEW-2, -3, TD-S91-NEW-17, TD-NEW-C, TD-NEW-9, TD-S80-NEW-17 | OPEN; Kite automated login = operator ruling |
+| B1 | **R40, R42–R44** | breadth writer overlap and NULL status; monitor window takes the first cron line; SKIPPED_NO_INPUT labelled benign / crash | —  (pass 1 rows; S98 build read) | OPEN — read first |
+| B1 | **Ledger and capture trust** | off-box `equity_eod` cursor writer; Dhan 500 drops a cycle; basis context cron hour; token held from construction; hand-rolled ledger inserts; breadth guard only in the health check; ingest contract too permissive | TD-S90-NEW-14 (absorbs TD-S91-NEW-16), TD-S81-NEW-11, TD-S81-NEW-12, TD-S81-NEW-20, TD-S77-NEW-8 (absorbs TD-023), TD-S74-NEW-4, TD-082 | OPEN |
+| BS1 | **Credential rotations (S99-E)** | Dhan token anon-readable window: rotation decision and log review; `.env` printed to a transcript: rotate | TD-S81-NEW-1, TD-S71-NEW-11 | OPEN — operator actions |
+| B2 | **R5 + R38** | closing session: official close printed from the 15:40 chain spot; no "LIVE" on a held value; CLOSED state; basis from the displayed spot; SPOT label from the bar window | R5 (absorbs TD-S91-NEW-18, TD-S90-NEW-13, TD-S74-NEW-3, TD-S74-NEW-5), R38 (absorbs TD-S54-NEW-2) | OPEN — TD halves first; labels in B5 |
+| B2 | **R20** | board prev-close read (10-22 "prev close missing" after the row existed) | TD-S97-NEW-13 | OPEN — re-scoped S98-D |
+| B3 | **R7 + OI readers** | same-minute OI read on our data; vendor OI on untraded legs; L13 anchor on stale vendor rows | TD-S95-NEW-1 (residual), TD-S84-NEW-4 | OPEN — read |
+| B3 | **R8** | front-future basis jumps | — | OPEN — read |
+| B3 | **R10 + flip family** | repriced root between same-sign strikes; flip gate degenerate; repriced vs landmark; cumulative vs `flip_level`; SENSEX 1.0 % vs 34.3 % | TD-S79-NEW-15, -16, -17, -18 | OPEN — read |
+| B3 | **R18** | prev close and spot per surface at the open (F-4 figures) | TD-S88-NEW-1 | OPEN — read |
+| B3 | **R16 + R36** | tab not re-polling γ views; Pin tab leader / reconciled state | TD-S97-NEW-19 | OPEN — evidence 2026-10-23 |
+| B3 | **Chain data correctness** | zero IV in `atm_iv_avg`; depth-2 single expiry; far-wing / ITM IV; SENSEX no γ on ~30 % of strikes; `gex_cr` filter split; deep-ITM γ constant; ltp below intrinsic | TD-S83-NEW-2, -3, -4, -5, TD-S79-NEW-8, TD-S75-NEW-1, -2, TD-S71-NEW-13 | OPEN — read |
+| B4 | **R9** | Health page CRITICAL; untrack the ICT writer; SUBSCRIPTION class | TD-S97-NEW-21 (absorbs TD-S77-NEW-14, TD-017) | OPEN |
+| B4 | **R19** | breadth daily gaps and gate | TD-S97-NEW-11, -12, TD-S91-NEW-5 | OPEN |
+| B4 | **R22** | calendar repair: missing 01-15, 01-26, 03-03, 05-28; "Normal trading day" on closed 06-26 / 09-14 / 11-24; 03-31 name (read 2026-10-24) | TD-S97-NEW-14, TD-S81-NEW-7, TD-S41-NEW-1 | OPEN — operator SQL |
+| B4 | **R23** | symbol column on `data_contamination_ranges`; `merdian_ro` visibility | TD-S97-NEW-15, TD-S94-NEW-1 | OPEN — operator DDL |
+| B4 | **R24** | Marketview backup retention | TD-S97-NEW-16 | OPEN |
+| B4 | **R34 + R35** | legacy Context / Structure pages; two IV skews | — | OPEN — ruling: retire or align |
+| B4 | TD-S96-NEW-2 | the planner estimates 1 row for a day of `gex_strike_snapshots` selected by `ts` alone | — | OPEN |
+| B4 | TD-S94-NEW-2 | `bin/roq.sh`'s write-verb guard refuses `COPY (SELECT …) TO STDOUT`, which is a read | — | OPEN |
+| B4 | TD-S93-NEW-1 | `run_offline.sh`'s `PIPESTATUS` idiom is positional, so inserting any command between a pipeline and its te… | — | OPEN |
+| B4 | TD-S91-NEW-2 | SEVEN more unpadded `fromisoformat` sites, one now fixed, and ~40 copies of the same padding with no shared… | — | OPEN |
+| B4 | TD-S91-NEW-4 | `ws_feed_zerodha.log` stamps UTC time under an "IST" label | — | OPEN |
+| B4 | TD-S90-NEW-1 | `dhan_scrip_map` is never re-synced against the scrip master, so every NSE series change leaves a dead secu… | — | OPEN |
+| B4 | TD-S90-NEW-3 | about 26 calendar gates are still inline copies, not `core/trading_calendar_gate.py` | — | OPEN |
+| B4 | TD-S90-NEW-5 | `v_gex_max_pain` fails intermittently at about anon's 3-second statement timeout | — | OPEN |
+| B4 | TD-S90-NEW-9 | every `roq.sh` connection warns of a collation version mismatch | — | OPEN |
+| B4 | TD-S83-NEW-6 | `.gitignore` covers `*.log` but not rotated logs or `status.json`, so the widened logrotate scope produces… | — | OPEN |
+| B4 | TD-S81-NEW-4 | `v_dealer_flow_sim` is the third ADR-021 sibling and was never scoped; it returns 57014 on any unfiltered read | — | OPEN |
+| B4 | TD-S81-NEW-6 | `v_max_pain_by_strike.max_pain` has a non-deterministic tie-break | — | OPEN |
+| B4 | TD-S79-NEW-6 | three untracked scratch files sit in the production tree | — | OPEN |
+| B4 | TD-S79-NEW-9 | `pin_risk_score`'s proximity component is ABSENT, not depressed, so the score silently changes basis betwee… | — | OPEN |
+| B4 | TD-S79-NEW-21 | `_FLIP_DOMINANCE_EPS_FRAC` is a hardcoded magic number on a live operator surface, and it is relative to th… | — | OPEN |
+| B4 | TD-S78-NEW-2 | 67 backup artefacts are tracked in git with no retention rule, and `.gitignore` cannot remove them because… | — | OPEN |
+| B4 | TD-S76-NEW-2 | `pg_cron jobid 19` disabled as a stop-gap: `gamma_metrics` now grows past its 90-day window, and the stated… | — | OPEN |
+| B4 | TD-S73-NEW-2 | a literal Windows path exists as a directory on the Linux host and something writes into it daily | — | OPEN |
+| B4 | TD-S72-NEW-4 | `gex_strike_snapshots` carries a duplicate index and a third that is redundant against the composite | — | OPEN |
+| B4 | TD-S71-NEW-3 | the VIX history read has no `ORDER BY`; its correctness depends on unspecified row ordering | — | OPEN |
+| B4 | TD-S71-NEW-5 | `run_ingest.sh` `set -eo pipefail` makes its own `END … rc=` line unreachable on failure | — | OPEN |
+| B4 | TD-S71-NEW-8 | `capture_premarket_0908.py` is an orphan whose filename encodes an instant that ceases to exist on 2026-09-07 | — | OPEN |
+| B4 | TD-S71-NEW-12 | `.gitignore` `*_PRE_S*` silently swallows the crontab backups it was never written for | — | OPEN |
+| B4 | TD-S70-NEW-4 | `india_vix_history` has no writer and has been frozen at 2026-03-11 for five months; `vix_percentile` is sc… | — | OPEN |
+| B4 | TD-S69-NEW-3 | `fetch_positioning_landscape` has no ADR-018 D2 recency floor; the ADR-021 speed fix converts a loud timeou… | — | OPEN |
+| B4 | TD-S60-NEW-5 | `core/config.py` hardcodes Windows `BASE_DIR = C:\GammaEnginePython`; loads `.env` from a path that doesn't… | — | OPEN |
+| B4 | TD-S38-NEW-2 | Dead `TIMEOUT_LIVE_DEFAULT` + `TIMEOUT_SHADOW_DEFAULT` constants in `run_option_snapshot_intraday_runner.py` | — | OPEN |
+| B4 | TD-005 | `option_execution_price_history` table marked DEPRECATED but not yet DROPPED | — | OPEN |
+| B4 | TD-007 | `is_pre_market` column in `hist_spot_bars_1m` is vestigial | — | OPEN |
+| B4 | TD-009 | `.bak` file debris in `docs/registers/` | — | OPEN |
+| B4 | TD-025 | `build_spot_bars_mtf.py` re-aggregates full history every run (compute waste) | — | OPEN |
+| B5 | **R14 + R33** | dealer claims on the Hedge tile, flows read, Home card 4, Net Γ drawer; upper-case Γ literals | TD-S97-NEW-17 (absorbs manual F-1, F-7) | OPEN — wording |
+| B5 | **R15** | draw the ∂Δ flow gap (G25) as G19 is drawn | TD-S97-NEW-18 | OPEN — wording |
+| B5 | **R17** | pocket word: keep it, add the net sign | — | OPEN — ruling |
+| B5 | **R11 + R39** | board consistency: degenerate corridor, SPOT ≡ FLIP, read text vs PIN wall, CLOCKS absent; "gap filled" when it is not | TD-S90-NEW-6, TD-S90-NEW-7, TD-S81-NEW-9 | OPEN |
+| B5 | TD-S84-NEW-7 | the UI labels `flip_distance_pct` as sigma, so a spot-to-flip distance is rendered as a volatility band | — | OPEN |
+| B5 | TD-S84-NEW-6 | two max pains over different substrates, agreeing on strike and disagreeing on everything else; which is ca… | — | OPEN |
+| B5 | TD-S39-NEW-5 | Marketview "stale {N}s" badge contradicts 300s threshold setting — needs live-day verification | — | OPEN |
+| B6 | **R12** | three-state regime (short / at the flip / long), pre-registered | — | OPEN |
+| B6 | **R13** | pin hysteresis and tie state, pre-registered | — | OPEN |
+| B6 | TD-S80-NEW-1 | the ingest discards the expiry ladder the vendor returns, so no multi-expiry IV exists at any timestamp and… | — | OPEN |
+| B6 | TD-S79-NEW-1 | `GREATEST(dte, 1)` overstates σ on expiry day, so the moneyness band is widest on the day it most needs to… | — | OPEN |
+| BS | TD-S92-NEW-4 | the S92 views grant `authenticated` more than `SELECT`, through default privileges | — | OPEN · retail |
+| BS | TD-S90-NEW-8 | Marketview Settings is read-only since S90-E; the authenticated write route, `changed_by` and `config_versi… | — | OPEN · retail |
+| BS | TD-S90-NEW-10 | unused Breeze credentials remain in `.env` | — | OPEN · retail |
+| BS | TD-S89-NEW-5 | the Marketview bundle reached internet scanners while `:80` served it un-gated, so every anon-readable rela… | — | OPEN · retail |
+| BS | TD-S89-NEW-4 | TCP 80 is still open to the world at the security group; the `:80` hardening makes the port answer only red… | — | OPEN · retail |
+| BS | TD-S84-NEW-5 | `anon` holds `MAINTAIN` beyond `SELECT` on three objects created before the S81 default-privileges fix | — | OPEN · retail |
+| BS | TD-S81-NEW-2 | anon SELECT is still far broader than the 23 relations the frontend consumes | — | OPEN · retail |
+| BS | TD-S81-NEW-3 | nothing asserts that the anon revoke is still in force; item 3 of the S81 fix is trusted rather than verified | — | OPEN · retail |
+| BS | TD-S81-NEW-16 | `merdian_ro` reads zero rows, silently, from 57 RLS-enabled tables, and a FAIL was reported to the operator… | — | OPEN · retail |
+| BS | TD-S39-NEW-3 | `.env` containing live MERIDIAN Supabase anon key committed to public GitHub repo `balannavin-cyber1/meridi… | — | OPEN · retail |
+| BS | TD-S39-NEW-4 | Orphan AWS Security Group `launch-wizard-2` not attached to any EC2 instance — cleanup pending | — | OPEN · retail |
+| BR | TD-S92-NEW-6 | the Marketview build box has no bun and Lovable updates only `bun.lock`, so a dependency change breaks the… | — | OPEN · retail |
+| BR | TD-S92-NEW-3 | `sql/2026-10-03_s89_v_gex_greeks_l2.sql` says its V2 probe is "committed with this file", and it is not in git | — | OPEN · retail |
+| BR | TD-S84-NEW-3 | three views ship a `COMMENT ON VIEW` in `sql/` that was never executed live, and one ships its `GRANT` comm… | — | OPEN · retail |
+| BR | TD-S84-NEW-2 | `gamma_metrics` has no `CREATE TABLE` anywhere in `sql/`, an ADR-025 D2 clause 4 gap on the most-read objec… | — | OPEN · retail |
+| BR | TD-S84-NEW-1 | the `sql/` file does not reproduce the live `merdian_ro` grant on two of the three S83 views, so a rebuild… | — | OPEN · retail |
+| BR | TD-S81-NEW-5 | `sql/` is not a true rebuild source, and the divergence runs in BOTH directions | — | OPEN · retail |
+| BR | TD-S81-NEW-8 | `~/redeploy_marketview.sh` builds from a stale May-27 clone, not the tree the live bundle comes from | — | OPEN · retail |
+| BR | TD-S80-NEW-16 | `/etc/logrotate.d/meridian` exists only on the box: third instance of on-box-only infrastructure after the… | — | OPEN · retail |
+| BO | TD-S80-NEW-15 | ~1.76 GB of the 2.5 GB that filled the root volume is unattributed, so the resize is a delay of known lengt… | — | OPEN |
+| BO | TD-S73-NEW-1 | `shadow_runner.log` is a 262 MB live log at repo root, outside logrotate's scope, while its cron line's vis… | — | OPEN |
+| BO | TD-S73-NEW-6 | `eod_health_check.py` has no scheduled invoker; the fourth instance of the class, and TD-S72-NEW-7's premis… | — | OPEN |
+| BO | TD-S71-NEW-14 | `dhan_scripmaster` has no scheduled reload, and futures contract resolution has no fallback: the table sile… | — | OPEN |
+| BO | TD-S69-NEW-2 | `scripts/eod_health_check.py` returned `[OK]` on 2026-08-12 while pin/accel, the M5 detector and the GEX re… | — | OPEN |
+| BO | TD-S53-NEW-5 | S52 observability monitors report false state (both directions) + watchdog shares the patient's failure chain | — | OPEN |
+| BO | TD-NEW-B | `pg_cron` job failures invisible by default — needs polling daemon or session-start gate | — | OPEN |
+| BO | TD-027 | `merdian_pipeline_alert_daemon` scope drifted from name | — | OPEN |
+| BO | TD-028 | `merdian_pm.py` silently fails on unknown process name | — | OPEN |
+| BD | TD-S94-NEW-3 | an apply copied out of the terminal landed only Section 1 of the DEX view, the editor said Success, and the… | — | OPEN |
+| BD | TD-S87-NEW-2 | `check_xrefs` cannot see `AC29-n` labels or `§5a`/`§5b` references, and its document map is hard-coded, so… | — | OPEN |
+| BD | TD-S87-NEW-5 | `session_log.md` carried 11 entries against a documented "newest 10", so an earlier doc-close skipped the r… | — | OPEN |
+| BD | TD-S86-NEW-1 | the S74 Doc Protocol v4 Rule 7 amendment never reached `MERDIAN_Documentation_Protocol_v4.md`, so two docum… | — | OPEN |
+| BD | TD-S83-NEW-7 | two register errata, one of which was itself misattributed in this session's own capture | — | OPEN |
+| BD | TD-S81-NEW-15 | the register says `merdian_order_placer.py` runs from an `@reboot` cron line; neither the line nor the proc… | — | OPEN |
+| BD | TD-S80-NEW-4 | the documented commit-message pattern emits a BOM, and one shipped inside a commit subject this session | — | OPEN |
+| BD | TD-S80-NEW-7 | `gex_pin_maxpain_history` is a Rule 10 schema-affecting table with no ADR of its own | — | OPEN |
+| BD | TD-S80-NEW-12 | the deploy-direction correction has been drafted and UNRATIFIED since S73, and S80 acted against the topolo… | — | OPEN |
+| BD | TD-S80-NEW-14 | `tech_debt.md` closed TD-S79-NEW-14 and left three references to it stale one file over | — | OPEN |
+| BD | TD-S79-NEW-5 | the deploy-direction inversion, third and fourth instances: two independent commits of identical content in… | — | OPEN |
+| BD | TD-S79-NEW-7 | the S74 Doc Protocol amendment cites a rule number belonging to a different rule, and amends a rule the nam… | — | OPEN |
+| BD | TD-S79-NEW-11 | ADR-017 Principle 6 is right about the bug and wrong about the cause: it is a DTE difference, not a symbol… | — | OPEN |
+| BD | TD-S79-NEW-24 | Doc Protocol v4 Rule 11.3's governance-footer obligation is unenforced, and compliance cannot be counted be… | — | OPEN |
+| BD | TD-S79-NEW-25 | there is no project-knowledge manifest, so Rule 12 compliance is undetectable by construction | — | OPEN |
+| BD | TD-S79-NEW-26 | Rule 12's re-upload list omits five of the documents the session-end checklist requires to be updated, so f… | — | OPEN |
+| BD | TD-S78-NEW-1 | the session-date convention is unspecified in Doc Protocol v4, and the only format v4 does specify cannot e… | — | OPEN |
+| BD | TD-S78-NEW-3 | project knowledge round-trips LF to CRLF, so the Rule 12 hash comparison cannot distinguish an identical fi… | — | OPEN |
+| BD | TD-S77-NEW-4 | `/patch_*.py` is gitignored, so not one patch script in MERIDIAN's history is in version control | — | OPEN |
+| BD | TD-S77-NEW-7 | `script_execution_log.host` is not evidence of which machine ran a script | — | OPEN |
+| BD | TD-S76-NEW-11 | F-82: nine of eighteen `ADR-004` line citations in the S76 audit were wrong, in four distinct ways, and eve… | — | OPEN |
+| BD | TD-S76-NEW-12 | Rule 7 splice-discipline defect in S75's own doc-close: the Topology splice anchored on the wrong footer an… | — | OPEN |
+| BD | TD-S76-NEW-15 | Doc Protocol v4 asserts `CURRENT.md` is mixed-EOL and must be edited in binary mode; measured, it is pure L… | — | OPEN |
+| BD | TD-S76-NEW-16 | `merdian_reference.json`'s own version control is unreliable: two `change_log` arrays ten sessions apart, a… | — | OPEN |
+| BD | TD-S76-NEW-21 | ADR-004's Amendments A and B are absent from the Decision Index entirely, and Amendment C's new marker make… | — | OPEN |
+| BD | TD-S76-NEW-22 | Session Management Rule 5 specifies a twelve-field session-log block; the log abandoned it ~2026-04-07 and… | — | OPEN |
+| BD | TD-S76-NEW-23 | the production checkout `~/meridian-engine` sat 22 commits behind `origin/main` at the S76 close, having ne… | — | OPEN |
+| BD | TD-S75-NEW-4 | ADR-002 v2's build sequence and the Enhancement Register use ENH-80..85 for different things; the register… | — | OPEN |
+| BD | TD-S73-NEW-10 | the System Map and Deployment Topology `## Update log` tables are frozen at Session 67 while both files rec… | — | OPEN |
+| BD | TD-S73-NEW-7 | the Claude Code permission model is verb-shaped, not effect-shaped, and the config itself is untracked | — | OPEN |
+| BD | TD-S73-NEW-9 | approved diffs are not hunk-independent, and a partial application produced a quieter failure than the defe… | — | OPEN |
+| BD | TD-S72-NEW-12 | byte-size comparison across storage tiers is invalid under `core.autocrlf=true`; Doc Protocol v4's four-tie… | — | OPEN |
+| BD | TD-S71-NEW-1 | `merdian_reference.json` does not cover the files and tables the register's own read-rule points at | — | OPEN |
+| BD | TD-S70-NEW-1 | `CURRENT.md` is 661 KB of which 98% is superseded session blocks, and it is read second at every session open | — | OPEN |
+| BD | TD-S57-NEW-3 | Enhancement Register has a dual structure with conflicting per-ENH status | — | OPEN |
+| BD | TD-S46-NEW-2 | S3 deployment automation wrapper scripts (reduce manual workflow) | — | OPEN |
+| BD | TD-015 | `run_preflight.py` 4-stage preflight system is undocumented; reinvented as one-off | — | OPEN |
+| BD | TD-021 | Two undocumented operational conventions surfaced during Session 8 | — | OPEN |
+| BD | TD-037 | Schema column-name inconsistency across timestamp-bearing tables | — | OPEN |
+| BD | TD-053 | CLAUDE.md Rule 16 needs era-aware addendum (post-04-07 era) | — | OPEN |
+
+**Parked from pass 1 (S98-A):** R25 hover-to-explain · R26 √τ-normalised GEX (absorbs TD-S75-NEW-3) · R27 γ ceiling / floor slot · R28 pin history write-once (a design constraint) · R29 new substrates (P8 gate) · R30 settlement probability (declined for now). **Done in pass 1:** R37 (S98-C, 2026-10-23), R45 (S98-B patch), R46 (ruled acceptable).
+
+### 2.3 Retail (broker-connect) — scoping, not started (S99-F, 2026-10-24)
+
+The end state: a user connects their own broker account; MERIDIAN computes on that user's data and shows it to that user only. MERIDIAN's own licensed feed is never shared. Not started; it follows §2.2.
+
+| Gate | Question | State |
+|---|---|---|
+| **G1** | Regulatory: does a descriptive, no-recommendation product need SEBI registration (RA Regulations as amended 2024)? | **OPEN** — with the operator's securities counsel (Claude Doc "MERIDIAN — Product brief for securities counsel"). Operator's position: permitted while no levels, entries or targets are given. Fallback if counsel says otherwise: RA registration |
+| **G2** | Data licensing: is a computation on a user's own broker data, served only to that user, redistribution? | **RULED** (S99-F): no. Each broker's API terms checked at build |
+| **G3** | MERIDIAN's own feed | **RULED** (S99-F): never shared |
+| **G4** | Architecture and capacity | **RULED** (S99-F): elastic; start small; build to grow, not a behemoth |
+
+**Prerequisites before any retail build:** R1–R5 and R11 (pass 1), every BS and BR row in §2.2. Pass 1 R32 lives here.
+
+
 ---
 
 ## 3. Stage plan and tracker
+
+**ON HOLD (S99-D, 2026-10-24): Stages 3, 3b, 4, 5 and 6** — agentic MERIDIAN waits until §2.2 is done. Stage 0–2 jobs already live keep running as maintenance (R0.3, R0.4, R1.2 in shadow, R1.5, R2.1, R2.7); a break in one is a §2.2 item; no new Stage 0–2 build. The signal / ICT stream ranks after agentic (S99-G).
 
 **Risk class** (controls for each in §11.3): **RO** read-only (reads the live database or docs, changes nothing) · **OFF** offline (works on copies or after the close, writes only its own artefacts) · **SC** sidecar (new tables or processes beside the live path; live path untouched) · **LIVE** touches the capture or write path, schema of live tables, token flow, or Home.
 
@@ -177,7 +333,7 @@ the agentic position layer; a regulatory check runs in parallel before anything 
 
 **Stage 2 exit:** golden days green on every deploy; parity fixture scores reported; one past day replays exactly. ~~**Parity closes here.**~~ **Amended S92-A (2026-10-08): parity no longer closes at this exit** — only R2.4 remains a parity item; the rest of Stage 2 is post-parity and paused with the harness work until parity closes.
 
-### Stage 3 — Redundancy and history hygiene (post-parity; parallel with Stage 4)
+### Stage 3 — Redundancy and history hygiene (post-parity; parallel with Stage 4) — **ON HOLD (S99-D, 2026-10-24)**
 
 | ID | Item | Risk | Builds on / absorbs | Exit evidence | Status | Session |
 |---|---|---|---|---|---|---|
@@ -191,7 +347,7 @@ the agentic position layer; a regulatory check runs in parallel before anything 
 
 **Stage 3 exit:** feeds agree within bands for N weeks; failover rehearsed; quarantine list stamped.
 
-### Stage 3b — Global context sources (post-parity; after R0.8, R1.8, R1.9)
+### Stage 3b — Global context sources (post-parity; after R0.8, R1.8, R1.9) — **ON HOLD (S99-D, 2026-10-24)**
 
 Scope as stated by the operator: SPX, crude, US 10Y and US 30Y, **as context to the Indian market**, not as traded instruments. Each goes through the onboarding checklist (§5.3).
 
@@ -203,7 +359,7 @@ Scope as stated by the operator: SPX, crude, US 10Y and US 30Y, **as context to 
 | R3.11 | Context features as-of each Indian cycle (e.g. SPX and crude change since the previous Indian close; yield change overnight; age of each print) | SC | §8.5 | Features in history with their print age | NOT STARTED | |
 | R3.12 | Event study: does the context change what core events mean (e.g. a pin or flip-crossing outcome after a large overnight SPX move)? | OFF | R4.6, §8.5 | Result with n; candidate dimension admitted or DECLINED-ON-EVIDENCE | NOT STARTED | |
 
-### Stage 4 — Assumption harness and facts layer
+### Stage 4 — Assumption harness and facts layer — **ON HOLD (S99-D, 2026-10-24)**
 
 | ID | Item | Risk | Builds on / absorbs | Exit evidence | Status | Session |
 |---|---|---|---|---|---|---|
@@ -217,7 +373,7 @@ Scope as stated by the operator: SPX, crude, US 10Y and US 30Y, **as context to 
 
 **Stage 4 exit:** base rates exist with n and intervals; assumption monitor has run one monthly cycle; payload schema stamped.
 
-### Stage 5 — Agent harness, then agents in order of risk
+### Stage 5 — Agent harness, then agents in order of risk — **ON HOLD (S99-D, 2026-10-24)**
 
 | ID | Item | Risk | Builds on / absorbs | Exit evidence | Status | Session |
 |---|---|---|---|---|---|---|
@@ -233,7 +389,7 @@ Scope as stated by the operator: SPX, crude, US 10Y and US 30Y, **as context to 
 
 **Stage 5 exit:** watcher matches operator triage over N incidents; commentary passes the checker for N sessions; swap test passed.
 
-### Stage 6 — Paper book, then the advisor
+### Stage 6 — Paper book, then the advisor — **ON HOLD (S99-D, 2026-10-24)**
 
 | ID | Item | Risk | Builds on / absorbs | Exit evidence | Status | Session |
 |---|---|---|---|---|---|---|
@@ -611,6 +767,7 @@ An item may start only when its class's controls are met. Each class includes th
 | Version | Date | Change |
 |---|---|---|
 | v1 | 2026-10-05 | Answer to the seven-point sketch: MCP, integrity loops, change engine, accuracy loops, commentary, paper trading, phases 0–4 |
+| v2.15 | 2026-10-24 | **S99 one stream:** §2.2 single list (pass 1 S98-A + pass 2 S99-C, 154 open TDs homed, 46 closed), §2.3 retail scoping (S99-F); Stages 3–6 ON HOLD (S99-D); signal / ICT stream after agentic (S99-G). Rulings `docs/research/s92_parity/rulings_s99.md` |
 | v2.14 | 2026-10-23 | **S97 close:** P7 DONE (live read 2026-10-12); P3b applied and read → **P3 DONE** (ENH-145); R2.2 / R2.3 rows point to P3. Rulings `docs/research/s92_parity/rulings_s97.md` |
 | v2.13 | 2026-10-12 | **S96 close:** P7 BUILT AND LIVE (ENH-143, ENH-144; S96-A…G), D-4 DECLINED-ON-EVIDENCE (S96-I), DONE on the first market-hours read; P3 → P3b BUILT and tested (S96-H), apply owed. Rulings `docs/research/s92_parity/rulings_s96.md` |
 | v2.12 | 2026-10-11 | **S95 close:** P3a DONE (P3b awaits approval); P5 DONE (ENH-142); P6 DONE incl. board and S\* (ENH-141); P7 unblocked; P8 re-scoped to dte 1 (S95-G). File moved to `docs/registers/` (S95-E) |

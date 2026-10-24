@@ -1,5 +1,7 @@
 # MERIDIAN — Master Open Items & Enhancement Status Register
 
+> **SUPERSEDED 2026-10-24 (S99-C).** Edition v7 (2026-04-13) is frozen. Open work lives in one place: `docs/registers/agentic_layer_roadmap_S90.md` §2.2, the single list. Do not add items here.
+
 **Market Structure Intelligence & Options Decision Engine**
 
 ---

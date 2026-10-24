@@ -45,6 +45,8 @@ System Map §S97; Deployment Topology unchanged (no host or boundary change).
 
 ## NEXT SESSION PICKS UP
 
+> **S99 (2026-10-24): the list below is superseded by tracker §2.2, the single list** (`docs/registers/agentic_layer_roadmap_S90.md`, v2.15). Item 1 done (S98-A + S99-C); item 3 deployed `2edd25f` (S98-B), live PASS read Mon 2026-10-26 after 15:45 IST. This block is rewritten at the S98 / S99 doc-close.
+
 1. **First concern — reconcile the three streams into one ranked table** (operator, 2026-10-23 03:27 IST): S97's open
    TDs; the parity-target evaluation's MERIDIAN-side findings (`claude/parity_eval/parity_target_final_report_2026-10-19.md`
    — named so far: the board never shows the official 15:30 close and labels frozen values "LIVE", likely one cause with

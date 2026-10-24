@@ -14,6 +14,39 @@ from gamma_engine_retry_utils import retry_call
 # day 1 -- TD-S41-NEW-4 (writer was producing data but invisible to
 # script_execution_log because no ExecutionLog wrapper existed).
 from core.execution_log import ExecutionLog
+from core.ts_parse import parse_pg_ts  # S99_WCB_NO_INPUT
+
+# S99_WCB_NO_INPUT (R2 / TD-S97-NEW-9, -10; rulings S99-H, S99-I). The snapshot is keyed on
+# latest_market_breadth_intraday.ts and upserted on (index_symbol, ts). When that ts has not
+# moved -- every pre-open first cycle (08:30 IST, ticks purged overnight) and every feed-down
+# day -- the upsert landed a zero row (constituent_count 0, every score NULL) on the PREVIOUS
+# session's last breadth ts and logged COMPLETED: measured 2026-10-24, 12 rows 10-12 -> 10-22,
+# all created at 03:01 UTC the next session. From S98-B's 15:40 closing cycle that ts carries a
+# real row, which the next morning would overwrite. So: write nothing unless the breadth ts is
+# fresh AND at least one constituent priced; exit 0 with SKIPPED_NO_INPUT (ruling S99-H).
+WCB_MAX_BREADTH_AGE_MIN = 10
+
+
+def _now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def wcb_input_skip_reason(latest_breadth_row: Optional[Dict[str, Any]],
+                          intraday_rows: List[Dict[str, Any]],
+                          now: datetime) -> Optional[str]:
+    """Return why this cycle must not write, or None when it may."""
+    if not latest_breadth_row or latest_breadth_row.get("ts") is None:
+        return "no latest_market_breadth_intraday row"
+    bts = parse_pg_ts(latest_breadth_row.get("ts"))
+    if bts is None:
+        return f"unparseable breadth ts {latest_breadth_row.get('ts')!r}"
+    age_s = (now - bts).total_seconds()
+    if age_s > WCB_MAX_BREADTH_AGE_MIN * 60:
+        return (f"breadth ts {bts.isoformat()} is {age_s / 60:.1f} min old "
+                f"(> {WCB_MAX_BREADTH_AGE_MIN} min)")
+    if not intraday_rows:
+        return f"no live EQ ticks in the last {LIVE_TICK_WINDOW_MIN} min"
+    return None
 
 
 def to_float(value: Any) -> Optional[float]:
@@ -501,6 +534,12 @@ def main() -> int:
         print(f"Intraday rows fetched: {len(intraday_rows)}")
         print(f"Daily breadth rows fetched: {len(daily_rows)}")
 
+        skip = wcb_input_skip_reason(latest_breadth_row, intraday_rows, _now_utc())  # S99_WCB_NO_INPUT
+        if skip:
+            print(f"[WCB] SKIPPED_NO_INPUT: {skip} -- nothing written")
+            return log.exit_with_reason("SKIPPED_NO_INPUT", exit_code=0,
+                                        error_message=f"WCB {index_symbol}: {skip}")
+
         snapshot_row = compute_wcb_snapshot(
             index_symbol=index_symbol,
             weights_rows=weights_rows,
@@ -509,6 +548,13 @@ def main() -> int:
             latest_breadth_row=latest_breadth_row,
             prev_close_map=prev_close_map,
         )
+
+        if not snapshot_row.get("constituent_count"):  # S99_WCB_NO_INPUT
+            skip = (f"0 constituents priced (missing_intraday={len(snapshot_row['raw']['missing_intraday'])}, "
+                    f"missing_daily={len(snapshot_row['raw']['missing_daily'])})")
+            print(f"[WCB] SKIPPED_NO_INPUT: {skip} -- nothing written")
+            return log.exit_with_reason("SKIPPED_NO_INPUT", exit_code=0,
+                                        error_message=f"WCB {index_symbol}: {skip}")
 
         print("-" * 72)
         print("Computed WCB snapshot:")

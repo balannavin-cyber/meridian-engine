@@ -37,6 +37,32 @@ def is_dhan_429(exc: Exception) -> bool:
     return "status=429" in msg or '"805"' in msg
 
 
+def is_dhan_5xx(exc: Exception) -> bool:
+    """S100_CHAIN_5XX (TD-S81-NEW-11): a Dhan server error -- HTTP 500/502/503/504, or Dhan's own
+    '"800"' internal-error code -- is transient and worth a short retry, unlike 401 / 404 / parse."""
+    msg = str(exc)
+    return any(f"status={c}" in msg for c in (500, 502, 503, 504)) or '"800"' in msg
+
+
+DHAN_5XX_RETRIES = 2   # S100_CHAIN_5XX: per call; 15 s + 22.5 s worst case, inside the runner's 120 s wait
+
+
+def dhan_retry_predicate(max_5xx: int = DHAN_5XX_RETRIES):
+    """S100_CHAIN_5XX: a FRESH predicate per retry_call. 429 / 805 always retry (ENH-99, unchanged); a 5xx
+    retries at most `max_5xx` times; everything else fails fast. Measured before S100: a 500 on the W1 call
+    failed fast and dropped the cycle for both symbols on 13 of 17 trading days since 2026-10-01."""
+    seen = {"5xx": 0}
+
+    def _pred(exc: Exception) -> bool:
+        if is_dhan_429(exc):
+            return True
+        if is_dhan_5xx(exc):
+            seen["5xx"] += 1
+            return seen["5xx"] <= max_5xx
+        return False
+    return _pred
+
+
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 
@@ -401,7 +427,7 @@ def ingest_symbol(symbol: str, mode: str, log: ExecutionLog) -> int:
             attempts=6,
             delay_seconds=15.0,
             backoff_multiplier=1.5,
-            retry_predicate=is_dhan_429,
+            retry_predicate=dhan_retry_predicate(),
             label=f"{symbol} get_expiry_list",
         )
     except Exception as e:
@@ -445,7 +471,7 @@ def ingest_symbol(symbol: str, mode: str, log: ExecutionLog) -> int:
             attempts=6,
             delay_seconds=15.0,
             backoff_multiplier=1.5,
-            retry_predicate=is_dhan_429,
+            retry_predicate=dhan_retry_predicate(),
             label=f"{symbol} get_option_chain",
         )
     except Exception as e:
@@ -560,7 +586,7 @@ def ingest_symbol(symbol: str, mode: str, log: ExecutionLog) -> int:
                     attempts=6,
                     delay_seconds=15.0,
                     backoff_multiplier=1.5,
-                    retry_predicate=is_dhan_429,
+                    retry_predicate=dhan_retry_predicate(),
                     label=f"{symbol} get_option_chain {_ed}",
                 )
                 _rid = str(uuid.uuid4())

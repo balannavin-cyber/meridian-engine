@@ -16,17 +16,22 @@ Algorithm:
 
 Run: called by run_option_snapshot_intraday_runner.py every 5 min cycle (non-blocking)
 
-Instrumentation (added Session 7, 2026-04-23):
-  Writes one row to script_execution_log per invocation.
+Instrumentation (added Session 7, 2026-04-23; S100_R40_BREADTH, ruling S100-I):
+  One script_execution_log row per invocation through core.execution_log.ExecutionLog (was a
+  hand-rolled insert with no status / kind and host hard-coded "local" while the job runs on AWS).
   contract_met = True iff coverage_pct >= MIN_COVERAGE_PCT AND market_breadth_intraday write succeeded.
-  Host tagged "local" (this is where the runner schedules this script).
+  S100: not a trading day -> HOLIDAY_GATE exit 0 (shared calendar gate, fail-open); no EQ ticks in the
+  window -> nothing written, SKIPPED_NO_INPUT exit 0 (S99-H precedent): until S100 every pre-feed minute
+  (08:30-09:10 IST), every feed-down day and every holiday wrote a zero-coverage history row and exit 1.
+  Cron starts this every minute and a run takes ~160-180 s, so ~3 runs overlap; that is LEFT AS IS here:
+  scripts/eod_health_check.py:119 floors market_breadth_intraday at 350 rows/day, which only the
+  overlapping runs reach. The fix is a faster run, not a lock (tracker 2.2 R40 residual).
 """
 from __future__ import annotations
 import os
 import sys
 from datetime import datetime, timedelta, timezone, date
 from pathlib import Path
-from uuid import uuid4
 
 from dotenv import load_dotenv
 from supabase import create_client
@@ -51,38 +56,27 @@ def log(msg: str) -> None:
     print(f"[{ts}] {msg}", flush=True)
 
 
-def _write_exec_log(sb, started_at, invocation_id, contract_met, actual_writes,
-                    exit_code, exit_reason, error_message=None, notes=None):
-    """Write one row to script_execution_log. Never raises - telemetry failure
-    must not crash the pipeline."""
+def _trading_day() -> bool:
+    """Shared gate (CLAUDE.md rule 18), fail-open as that module is: a calendar error never
+    silences a live session."""
     try:
-        finished_at = datetime.now(timezone.utc)
-        sb.table("script_execution_log").insert({
-            "id": str(uuid4()),
-            "script_name": "ingest_breadth_from_ticks.py",
-            "invocation_id": invocation_id,
-            "host": "local",
-            "symbol": None,
-            "trade_date": datetime.now(IST).date().isoformat(),
-            "started_at": started_at.isoformat(),
-            "finished_at": finished_at.isoformat(),
-            "duration_ms": int((finished_at - started_at).total_seconds() * 1000),
-            "exit_code": exit_code,
-            "exit_reason": exit_reason,
-            "contract_met": contract_met,
-            "expected_writes": {"market_breadth_intraday": 1, "breadth_intraday_history": 1},
-            "actual_writes": actual_writes,
-            "notes": notes or f"tick_window={TICK_WINDOW_MINUTES}m min_coverage={MIN_COVERAGE_PCT}%",
-            "error_message": error_message,
-            "git_sha": os.environ.get("GIT_SHA", ""),
-        }).execute()
-    except Exception as e:
-        log(f"  WARN: script_execution_log write failed: {e}")
+        from core.trading_calendar_gate import is_trading_day_today
+        return is_trading_day_today()
+    except Exception as e:  # noqa: BLE001
+        log(f"  WARN: calendar gate unavailable ({e}); proceeding")
+        return True
 
 
 def main() -> int:
-    started_at = datetime.now(timezone.utc)
-    invocation_id = str(uuid4())
+    from core.execution_log import ExecutionLog
+    xlog = ExecutionLog(
+        script_name="ingest_breadth_from_ticks.py",
+        expected_writes={"market_breadth_intraday": 1, "breadth_intraday_history": 1},
+        notes=f"tick_window={TICK_WINDOW_MINUTES}m min_coverage={MIN_COVERAGE_PCT}%",
+    )
+    if not _trading_day():
+        log("Not a trading day - nothing to compute")
+        return xlog.exit_with_reason("HOLIDAY_GATE", exit_code=0)
 
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
     now_utc = datetime.now(timezone.utc)
@@ -123,19 +117,11 @@ def main() -> int:
     log(f"  Total EQ ticks in window: {len(all_ticks)}")
 
     if not all_ticks:
-        log("  No EQ ticks found - WebSocket may not be running or market closed")
-        log("  Writing zero-coverage row to breadth_intraday_history")
-        _write_history(sb, now_utc, now_ist.date(), 0, 0, 0, 0, 0, 0.0)
-        wrote_history = 1
-        _write_exec_log(
-            sb, started_at, invocation_id,
-            contract_met=False,
-            actual_writes={"market_breadth_intraday": 0, "breadth_intraday_history": wrote_history},
-            exit_code=1,
-            exit_reason="SKIPPED_NO_INPUT",
-            notes="No EQ ticks in window - WebSocket down or market closed",
+        log("  No EQ ticks found - WebSocket not running yet, or down. Nothing written.")
+        return xlog.exit_with_reason(
+            "SKIPPED_NO_INPUT", exit_code=0,
+            notes=f"No EQ ticks in the last {TICK_WINDOW_MINUTES} min - feed not started or down; nothing written",
         )
-        return 1
 
     # Get latest tick per symbol (already ordered desc by ts)
     latest_ltp: dict[str, float] = {}
@@ -225,9 +211,10 @@ def main() -> int:
     log(f"  Score: {breadth_score} | Regime: {regime} | Coverage: {coverage_pct:.1f}%")
 
     # Step 4: Write to breadth_intraday_history (always)
-    _write_history(sb, now_utc, now_ist.date(),
-                   advances, declines, up_4pct, down_4pct, breadth_score, coverage_pct)
-    wrote_history = 1
+    if _write_history(sb, now_utc, now_ist.date(),
+                      advances, declines, up_4pct, down_4pct, breadth_score, coverage_pct):
+        wrote_history = 1
+        xlog.record_write("breadth_intraday_history", 1)
 
     # Step 5: Write to latest_market_breadth_intraday if coverage OK
     if coverage_pct >= MIN_COVERAGE_PCT and total > 0:
@@ -253,18 +240,13 @@ def main() -> int:
             ).execute()
             log(f"  Written to market_breadth_intraday: {regime} (view auto-reflects latest)")
             wrote_intraday = 1
+            xlog.record_write("market_breadth_intraday", 1)
         except Exception as e:
             log(f"  WARNING: market_breadth_intraday write failed: {e}")
-            _write_exec_log(
-                sb, started_at, invocation_id,
-                contract_met=False,
-                actual_writes={"market_breadth_intraday": 0, "breadth_intraday_history": wrote_history},
-                exit_code=2,
-                exit_reason="DATA_ERROR",
-                error_message=str(e),
+            return xlog.exit_with_reason(
+                "DATA_ERROR", exit_code=2, error_message=str(e)[:1000],
                 notes=f"adv={advances} dec={declines} cov={coverage_pct:.1f}%",
             )
-            return 2
     else:
         log(f"  Coverage {coverage_pct:.1f}% < {MIN_COVERAGE_PCT}% - skipping market_breadth_intraday upsert")
 
@@ -272,16 +254,10 @@ def main() -> int:
 
     # Telemetry: contract met only if BOTH coverage threshold met AND intraday write succeeded
     contract_met = (coverage_pct >= MIN_COVERAGE_PCT) and (wrote_intraday == 1)
-    exit_reason = "SUCCESS" if contract_met else "SKIPPED_NO_INPUT"
-    _write_exec_log(
-        sb, started_at, invocation_id,
-        contract_met=contract_met,
-        actual_writes={"market_breadth_intraday": wrote_intraday, "breadth_intraday_history": wrote_history},
-        exit_code=0,
-        exit_reason=exit_reason,
-        notes=f"adv={advances} dec={declines} unch={unchanged} cov={coverage_pct:.1f}% regime={regime}",
-    )
-    return 0
+    notes = f"adv={advances} dec={declines} unch={unchanged} cov={coverage_pct:.1f}% regime={regime}"
+    if contract_met:
+        return xlog.complete(notes=notes)
+    return xlog.exit_with_reason("SKIPPED_NO_INPUT", exit_code=0, notes=notes)
 
 
 def _write_history(sb, ts_utc, trade_date, advances, declines,
@@ -299,8 +275,10 @@ def _write_history(sb, ts_utc, trade_date, advances, declines,
             "coverage_pct": round(coverage_pct, 2),
         }).execute()
         log(f"  Appended to breadth_intraday_history")
+        return True
     except Exception as e:
         log(f"  WARNING: breadth_intraday_history write failed: {e}")
+        return False
 
 
 if __name__ == "__main__":

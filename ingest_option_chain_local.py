@@ -360,6 +360,16 @@ def _is_market_holiday() -> tuple[bool, str]:
     return (False, today_str)
 
 
+# S100_SUBSCRIPTION_LAPSED (ruling S100-M): Dhan 806 / DH-902 is a lapsed data plan, not a dead token. Checked
+# before the token test because the lapse arrives as HTTP 401 too (2026-10-21 ledger).
+import re as _re_s100m
+_DHAN_SUBSCRIPTION_RE = _re_s100m.compile(r"(?<![\d.])806(?![\d.])|DH-902|not subscribed", _re_s100m.IGNORECASE)
+
+
+def is_dhan_subscription_error(msg) -> bool:
+    return bool(_DHAN_SUBSCRIPTION_RE.search(str(msg or "")))
+
+
 def _classify_dhan_error(err: Exception) -> str:
     """
     Map a Dhan-side exception to an ExecutionLog reason.
@@ -369,6 +379,8 @@ def _classify_dhan_error(err: Exception) -> str:
     -> DATA_ERROR (generic upstream failure).
     """
     msg = str(err)
+    if is_dhan_subscription_error(msg):   # S100_SUBSCRIPTION_LAPSED
+        return "SUBSCRIPTION_LAPSED"
     auth_hint = (
         "401" in msg
         or "Unauthorized" in msg

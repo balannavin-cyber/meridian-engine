@@ -261,6 +261,16 @@ def fetch_cas_bar(symbol: str, trade_day: ddate) -> Dict | None:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+# S100_SUBSCRIPTION_LAPSED (ruling S100-M): Dhan 806 / DH-902 is a lapsed data plan, not a dead token. Checked
+# before the token test because the lapse arrives as HTTP 401 too (2026-10-21 ledger).
+import re as _re_s100m
+_DHAN_SUBSCRIPTION_RE = _re_s100m.compile(r"(?<![\d.])806(?![\d.])|DH-902|not subscribed", _re_s100m.IGNORECASE)
+
+
+def is_dhan_subscription_error(msg) -> bool:
+    return bool(_DHAN_SUBSCRIPTION_RE.search(str(msg or "")))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="CAS settled-close bar writer")
     ap.add_argument("--date", help="YYYY-MM-DD backfill target (default: today)")
@@ -317,6 +327,7 @@ def main() -> int:
     bars: Dict[str, Dict] = {}
     errors: List[str] = []
     auth_failed = False
+    sub_failed = False   # S100_SUBSCRIPTION_LAPSED
     rejects: List[str] = []
     provisional: List[str] = []   # S71: flat bars written pending daily recon
 
@@ -363,9 +374,15 @@ def main() -> int:
             err = str(e)
             print(f"  [ERROR] {symbol} fetch failed: {err}", file=sys.stderr)
             errors.append(f"{symbol}: {err[:200]}")
-            if "401" in err or "Authentication" in err or \
+            if is_dhan_subscription_error(err):   # S100_SUBSCRIPTION_LAPSED
+                sub_failed = True
+            elif "401" in err or "Authentication" in err or \
                "token invalid" in err.lower():
                 auth_failed = True
+
+    if sub_failed:   # S100_SUBSCRIPTION_LAPSED
+        return log.exit_with_reason("SUBSCRIPTION_LAPSED", exit_code=1,
+                                    error_message="; ".join(errors)[:2000])
 
     if auth_failed:
         return log.exit_with_reason("TOKEN_EXPIRED", exit_code=1,

@@ -93,6 +93,7 @@ VALID_EXIT_REASONS = frozenset({
     "HOLIDAY_GATE",
     "OFF_HOURS",
     "TOKEN_EXPIRED",
+    "SUBSCRIPTION_LAPSED",   # S100_SUBSCRIPTION_LAPSED (S100-M): Dhan 806 / DH-902
     "DATA_ERROR",
     "SKIPPED_NO_INPUT",
     "DEPENDENCY_MISSING",
@@ -124,7 +125,8 @@ def _ledger_status(exit_reason: str, contract_met: Optional[bool]) -> Optional[s
         return "OK" if contract_met else "DEGRADED"
     if exit_reason in ("HOLIDAY_GATE", "OFF_HOURS"):
         return "CLOSED"
-    if exit_reason in ("SKIPPED_NO_INPUT", "DATA_ERROR", "TOKEN_EXPIRED", "DEPENDENCY_MISSING", "TIMEOUT"):
+    if exit_reason in ("SKIPPED_NO_INPUT", "DATA_ERROR", "TOKEN_EXPIRED", "SUBSCRIPTION_LAPSED",
+                       "DEPENDENCY_MISSING", "TIMEOUT"):   # S100_SUBSCRIPTION_LAPSED
         return "MISSING"
     if exit_reason == "CRASH":
         return "UNKNOWN"

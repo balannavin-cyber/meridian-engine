@@ -298,6 +298,16 @@ def check_market_open(today_str: str) -> bool | None:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+# S100_SUBSCRIPTION_LAPSED (ruling S100-M): Dhan 806 / DH-902 is a lapsed data plan, not a dead token. Checked
+# before the token test because the lapse arrives as HTTP 401 too (2026-10-21 ledger).
+import re as _re_s100m
+_DHAN_SUBSCRIPTION_RE = _re_s100m.compile(r"(?<![\d.])806(?![\d.])|DH-902|not subscribed", _re_s100m.IGNORECASE)
+
+
+def is_dhan_subscription_error(msg) -> bool:
+    return bool(_DHAN_SUBSCRIPTION_RE.search(str(msg or "")))
+
+
 def main() -> int:
     log = ExecutionLog(
         script_name="capture_spot_1m_v2.py",
@@ -374,6 +384,7 @@ def main() -> int:
     # ── Fetch OHLC for both symbols ──────────────────────────────────────────
     bars_by_symbol: Dict[str, Dict] = {}
     auth_failed = False
+    sub_failed = False   # S100_SUBSCRIPTION_LAPSED
     fetch_errors: List[str] = []
 
     for symbol in INSTRUMENTS:
@@ -399,9 +410,18 @@ def main() -> int:
             err_msg = str(e)
             print(f"  [ERROR] {symbol} fetch failed: {err_msg}", file=sys.stderr)
             fetch_errors.append(f"{symbol}: {err_msg[:200]}")
-            if "401" in err_msg or "Authentication" in err_msg or \
+            if is_dhan_subscription_error(err_msg):   # S100_SUBSCRIPTION_LAPSED
+                sub_failed = True
+            elif "401" in err_msg or "Authentication" in err_msg or \
                "token invalid" in err_msg.lower():
                 auth_failed = True
+
+    if sub_failed:   # S100_SUBSCRIPTION_LAPSED
+        return log.exit_with_reason(
+            "SUBSCRIPTION_LAPSED",
+            exit_code=1,
+            error_message="; ".join(fetch_errors)[:2000],
+        )
 
     if auth_failed:
         return log.exit_with_reason(

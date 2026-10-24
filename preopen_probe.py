@@ -147,7 +147,9 @@ def run(now_utc: datetime, *, dhan_factory: Callable[[], Any], kite_factory: Cal
             "The 09:15 session will not capture from a failed broker.")
     delivered = send(head, {"checks": " | ".join(lines), "info": " | ".join(info) or "-"})
     print(f"[SENT] CRITICAL pre-open probe (delivered={bool(delivered)})")
-    reason = "TOKEN_EXPIRED" if "TOKEN" in classes else "DATA_ERROR"
+    reason = ("TOKEN_EXPIRED" if "TOKEN" in classes                 # S100_SUBSCRIPTION_LAPSED: token first --
+              else "SUBSCRIPTION_LAPSED" if "SUBSCRIPTION" in classes  # a dead Kite token is the actionable one
+              else "DATA_ERROR")
     return log.exit_with_reason(reason, exit_code=1, notes=summary[:1000],
                                 error_message=" | ".join(f"{k}: {v}" for k, v in failed.items())[:1000])
 

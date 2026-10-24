@@ -82,9 +82,9 @@ def cells(P) -> list[tuple[str, bool, str]]:
     rc, sent, fin, *_ = case(P, dhan=Dhan(ltp=22850.0))
     chk("P1 all access OK -> no page, SUCCESS exit 0", rc == 0 and sent == [] and fin[0] == "SUCCESS", "a healthy morning pages")
     rc, sent, fin, *_ = case(P, dhan=Dhan(fail={"expiry": [RuntimeError("Dhan HTTP error | status=400 | 806 DH-902 Data APIs not subscribed")]}))
-    chk("P2 Dhan 806 / DH-902 -> one page naming SUBSCRIPTION, DATA_ERROR exit 1",
+    chk("P2 Dhan 806 / DH-902 -> one page naming SUBSCRIPTION, SUBSCRIPTION_LAPSED exit 1",
         rc == 1 and len(sent) == 1 and "SUBSCRIPTION" in sent[0][1]["checks"] and "806" in sent[0][1]["checks"]
-        and fin[0] == "DATA_ERROR", "the 10-21 lapse unnamed or unpaged")
+        and fin[0] == "SUBSCRIPTION_LAPSED", "the 10-21 lapse unnamed, unpaged or logged as another reason")  # S100-M
     rc, sent, fin, *_ = case(P, dhan=Dhan(fail={"ltp": [RuntimeError("Dhan HTTP error | status=401 | Unauthorized DH-901")]}))
     chk("P3 Dhan 401 -> TOKEN in the page, TOKEN_EXPIRED exit 1",
         rc == 1 and len(sent) == 1 and "TOKEN" in sent[0][1]["checks"] and fin[0] == "TOKEN_EXPIRED", "token failure misclassified")
@@ -113,7 +113,7 @@ def cells(P) -> list[tuple[str, bool, str]]:
 
 MUTANTS = {
     "M1 806 not recognised": ('    if "806" in msg or "dh-902" in low:\n', '    if False:\n',
-                              {"P2 Dhan 806 / DH-902 -> one page naming SUBSCRIPTION, DATA_ERROR exit 1"}),
+                              {"P2 Dhan 806 / DH-902 -> one page naming SUBSCRIPTION, SUBSCRIPTION_LAPSED exit 1"}),
     "M2 info pages": ('    if not failed:\n', '    if not failed and not any("not yet" in i for i in info):\n',
                       {"P7 pre-open print not yet in (LTP == prev close) -> NOT paged"}),
     "M3 no retry": ('        sleep(RETRY_S)\n        try:\n            return True, fn(), ""\n',

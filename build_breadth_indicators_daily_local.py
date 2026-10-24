@@ -329,6 +329,22 @@ def upsert_breadth_rows(rows: List[Dict[str, Any]]) -> None:
         print(f"[OK] upsert chunk {idx}/{len(chunks)} | rows={len(chunk)}")
 
 
+def breadth_date_exists(trade_date: str) -> bool:
+    """S100_BREADTH_GAPFILL: does breadth_indicators_daily hold any row for this date (this universe)?"""
+    rows = get_json(table_url("breadth_indicators_daily"), params={
+        "select": "trade_date", "universe_id": f"eq.{UNIVERSE_ID}",
+        "trade_date": f"eq.{trade_date}", "limit": "1"})
+    return bool(rows)
+
+
+def gap_dates(coverage_map: Dict[str, int], universe_count: int, skip: str) -> List[str]:
+    """S100_BREADTH_GAPFILL (TD-S97-NEW-11): complete candidate dates other than `skip` with no breadth row,
+    oldest first. Only dates already inside the builder's own candidate window are considered."""
+    complete = sorted(d for d, n in coverage_map.items()
+                      if d != skip and universe_count and (n / universe_count) * 100.0 >= COMPLETE_EOD_THRESHOLD_PCT)
+    return [d for d in complete if not breadth_date_exists(d)]
+
+
 def main() -> None:
     print("=" * 72)
     print("Gamma Engine - Local Python build_breadth_indicators_daily")
@@ -372,6 +388,15 @@ def main() -> None:
     print(f"latest_available_trade_date : {latest_available_trade_date}")
     print(f"selected_rebuild_trade_date: {rebuild_trade_date}")
     print(f"rows upserted              : {len(daily_rows)}")
+
+    # S100_BREADTH_GAPFILL: a complete date that a later date overtook before it was built.
+    filled: List[str] = []
+    for gap in gap_dates(coverage_map, len(universe_tickers), rebuild_trade_date):
+        gap_rows = build_daily_rows(universe_tickers=universe_tickers, rebuild_trade_date=gap, eod_rows=eod_rows)
+        upsert_breadth_rows(gap_rows)
+        print(f"[S100_BREADTH_GAPFILL] built missing trade_date={gap} rows={len(gap_rows)}")
+        filled.append(gap)
+    print(f"gap dates filled           : {filled if filled else 'none'}")
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ MANUAL = HERE / "marketview_user_manual.md"
 # Section id -> screenshots shown beside it. Every entry is a real capture from the live board.
 # Fields: file, caption, symbol, date, time_ist (board/chain time as shown), bundle.
 B = "index-CadQe4qO.js"
+BOARD = "index-BFOk56iL.js"  # S100: the live board the manual text describes (v0.4); B stays the screenshots' capture bundle
 D = "2026-10-12"
 SHOTS = {
     "part-1-getting-around": [
@@ -165,7 +166,7 @@ def main(out_root: str) -> None:
     doc = {
         "title": "Marketview user manual",
         "manual_version": manual_version,
-        "board_bundle": B,
+        "board_bundle": BOARD,
         "source_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
         "preface_html": to_html(preface_md),
         "parts": parts,

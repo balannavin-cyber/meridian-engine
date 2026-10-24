@@ -4,9 +4,9 @@
 
 | | |
 |---|---|
-| Manual version | v0.3.1 (draft) |
-| Board | meridian-connect `804d684` per CURRENT.md; served bundle `index-CadQe4qO.js` |
-| Status | All parts drafted from pass 1 (09:00–09:12), pass 2 (09:40–09:41) and the capture pass (09:52–10:21), 2026-10-12. Pass 3 (after the close) and an expiry-day read are owed. |
+| Manual version | v0.4 (draft) |
+| Board | meridian-connect `f964e40`, served bundle `index-BFOk56iL.js` (2026-10-24 18:48 IST) |
+| Status | All parts drafted from pass 1 (09:00–09:12), pass 2 (09:40–09:41) and the capture pass (09:52–10:21), 2026-10-12. Pass 3 (after the close) and an expiry-day read are owed. v0.4 (2026-10-24): updated for the S97 and S100 board changes, read on staging and live that day (a non-trading day); the passages marked **UNVERIFIED (trading day)** describe states that only appear during a session and are checked on 2026-10-26. |
 
 > **Read this first.** Marketview is a measuring board, not a signal service. No tile here tells you to buy or sell. Several tiles carry the board's own warnings: "band not measured", "unit definition pending", "not built", "declined on evidence". This manual repeats those warnings wherever they apply. Where the board says something is unmeasured, the manual says so too, and does not fill the gap with a guess.
 
@@ -110,8 +110,8 @@ The **NIFTY / SENSEX** toggle sits at the top right. Keys **N** and **S** also s
 1. Overview: *What kind of day, and where are the edges?*
 2. Pin: *How settled is the centre?*
 3. Gamma: *Can I trust single strikes?*
-4. OI: *What is actually written?* (see finding F-7 on the word "written")
-5. Flows: *What must dealers trade if spot moves?* (see §0.4)
+4. OI: *What does open interest show?*
+5. Flows: *What would dealers trade if spot moves?* (see §0.4 — "dealers" is a model)
 6. IV: *What do time and cover cost?*
 
 ### 1.3 The strike ladder and zoom
@@ -130,7 +130,7 @@ Every sub-tab except IV draws a vertical **strike ladder**. Strikes run top to b
 
 Above the sub-tabs sit the **header strip** (Part 2) and the **read**, one sentence summarising the strip, for example:
 
-> *"Spot 73,181.3 sits in a dampening pocket, 1.1% under the call OI wall at 74,000. Flip carry is unmeasurable. Net gamma is -0.42 of gross."* (SENSEX, 2026-10-12, γ run 09:00 IST)
+> *"Spot 22,516.4 sits in an amplifying pocket (local γ), 0.1% above the put OI wall at 22,500. Flip is −0.28% away, inside the ±281 the straddle is pricing by expiry. Net gamma is long, 0.05 of gross."* (NIFTY, γ run 15:20 IST on 2026-10-23, read 2026-10-24)
 
 The read states what is there. It never predicts or recommends.
 
@@ -160,7 +160,21 @@ The board reads from two separate data runs, about 5 minutes apart:
 
 The DEX tiles use a third time: the **settled run**, the last run at or before 15:15 IST.
 
+**From 2026-10-26** the γ run also runs at 15:30, 15:35 and 15:40, and each run waits for its own cycle's chain snapshot, so the γ clock no longer trails the chain clock by a cycle (S98-B). **UNVERIFIED (trading day).**
+
 A tile never mixes clocks without showing both times. When the two clocks drift more than one cycle apart, a clock chip appears in the strip: *"γ hh:mm · chain hh:mm"*. After 15:15 the DEX tiles (settled run) and the ∂Δ tiles (latest run) are **not one snapshot** (TD-S96-NEW-4). Check their times before comparing them.
+
+### 1.6a The session strip
+
+A thin **grey** strip under the menu says which part of the day the board is showing. It is information, not a warning (stale data uses the red strip, §4.1):
+
+| When (IST) | Strip text |
+|---|---|
+| trading day, before 09:16 | *Pre-open · figures are from the pre-open chain until the first 1-min bar at 09:16* |
+| trading day, 15:15–15:45 | *Closing session · spot held since 15:15 · closing γ runs 15:30 / 15:35 / 15:40* |
+| from 15:45, and on any non-trading day | *Closed · showing the 23 Oct session · next open 26 Oct* (dates change) |
+
+Why the pre-open line matters: before 09:16 there is no 1-min price yet, so the headline spot and its change come from the pre-open option chain. A large "overnight change" at 09:05 is the pre-open auction, not a move you missed. The *Closed* line was read on 2026-10-24; the other two are **UNVERIFIED (trading day)**.
 
 ### 1.7 Keys
 
@@ -207,9 +221,11 @@ The strip has ten cells in two rows. It appears on every Board sub-tab and summa
 - **How to read it.** The big number is the **live tick**; the cell title says when, as in "SPOT · LIVE 09:41". The sub-line gives the change from the previous close, then **"board hh:mm @ x"**, which is the spot the γ run used. The ladder, the read sentence and the levels all use the *board* spot, not the live tick.
 - **Worked example.** NIFTY 09:41 showed `22,524.3 · ▲+3.8 · +0.02 % · board 09:35 @ 22,538.4`. The live tick and the board spot differed by 14 points.
 - **Not telling you.** The live tick and the board spot are not the same number, and the levels are measured from the board spot. In the Overview list, the "Spot · board hh:mm" row shows the change **at the board spot** (SENSEX 09:40: +130.3), while the strip shows the change **at the live tick** (−101.5). Both are correct for their own moment.
-- **Caveats.** Before the first live tick the cell reads plain "SPOT" with the board value only, as seen at 09:00. While data is loading the change line can be blank for a moment.
+- **The cell title through the day.** `Spot · live hh:mm` while 1-min prices arrive; `Spot · held since 15:15` once the last 1-min bar (15:15) is in; `Spot · close` once a γ run at or after 15:40 exists, when the value is the official close; plain `Spot` otherwise (before the first bar, and on non-trading days). **UNVERIFIED (trading day)** for the two closing titles.
+- **Why the price stops at 15:15.** On NSE the index itself stops updating at about 15:15 while the official closing price is computed; it is published at 15:30. On 2026-10-23 NIFTY read 22,516.4 from 15:15 to 15:29 on every source, and the close, 22,600.0, appeared at 15:30.
+- **Caveats.** The "live" value is the last **completed** 1-minute bar, so it is about a minute behind the market (R38). Before the first live tick the cell reads plain "SPOT" with the board value only, as seen at 09:00. While data is loading the change line can be blank for a moment.
 - **Read it with.** CLOCKS (§2.10).
-- **Source.** Live tick, plus `gamma_metrics.spot/ts` for the board spot.
+- **Source.** Live tick (`market_spot_snapshots`, 1-min bars), plus `gamma_metrics.spot/ts` for the board spot. The change is measured from the previous session's 16:00 settled close.
 
 ### 2.3 NET Γ
 
@@ -288,11 +304,15 @@ The strip has ten cells in two rows. It appears on every Board sub-tab and summa
 ### 2.8 FUT · BASIS
 
 - **What it is.** The front-month index future and its premium over spot.
-- **How to read it.** "22,570 · +56.3" is the futures price and its basis over spot. The sub-line gives the futures' change and its expiry ("27 OCT").
+- **How to read it.** "22,570 · +56.3" is the futures price and its basis over spot. The sub-line gives the futures' change, its expiry ("27 OCT") and **which spot the basis is measured against**: `vs spot 22,600.0 @ 16:00`.
 - **Worked example.**
   - Before 09:30 both symbols read **"futures from 09:30"**.
   - At 09:41, NIFTY showed `22,570 · +56.3 · ▼−18.3 · 27 OCT`.
-- **Caveats.** The futures are the monthly contract, not the weekly option expiry.
+  - After the 2026-10-23 close, NIFTY showed `22,589 · −11.0 · ▼−59.4 · 27 OCT · vs spot 22,600.0 @ 16:00`.
+- **Caveats.**
+  - The futures are the monthly contract, not the weekly option expiry.
+  - The futures price is the **last trade**, not a quote, so the basis bounces by 2–4 basis points (a few points) between readings on both indices (R8). A 40-point swing on SENSEX is the same size in % as a 12-point swing on NIFTY.
+  - Between 15:30 and 15:40 the futures row still carries the **held 15:15 spot**, not the official close, so the basis then reads too high (10-23: +72.6 at 15:40 against about −11 at the close). Check the `@` time in the sub-line (TD candidate, S100).
 - **Source.** `index_futures_snapshots`.
 
 ### 2.9 OPEN · GAP
@@ -318,9 +338,10 @@ The strip has ten cells in two rows. It appears on every Board sub-tab and summa
 
 ### 2.11 The read
 
-One sentence under the strip, for example *"Spot 22,538.4 sits in an amplifying pocket, 0.2% above the put OI wall at 22,500. Flip carry is unmeasurable. Net gamma is 0.10 of gross."* (NIFTY 09:41).
+One sentence under the strip, for example *"Spot 22,516.4 sits in an amplifying pocket (local γ), 0.1% above the put OI wall at 22,500. Flip is −0.28% away, inside the ±281 the straddle is pricing by expiry. Net gamma is long, 0.05 of gross."* (NIFTY, γ run 15:20 on 2026-10-23).
 
-- **"Pocket"** is the sign of the γ terrain at spot's own strike row. It can differ from the overall Net Γ sign: here the overall book was long γ while spot's row was amplifying.
+- **"Pocket (local γ)"** is the sign of the γ terrain at spot's own strike row: what hedging does for **small** moves around spot. **"Net gamma is long / short"** is the whole book: what matters for **larger** moves. They can differ, and the sentence now says both (S100-Q): in the example the book is long γ while spot's own row is amplifying.
+- Near zero (net gamma within a few hundredths of gross) the long / short word is close to noise. A measured "at the flip" state is planned (R12), not built.
 - The read uses the **board** spot, not the live tick.
 - It describes and never predicts.
 
@@ -399,9 +420,9 @@ The header line says which session the tiles describe: **"pin state · this sess
 - **Read the grey bar, not only the dot.** The daily value is one sample: a day can close positive inside a range that went far negative.
 - *Source:* `v_gex_net_gamma_river` (ENH-126).
 
-### 3.4 OI: *What is actually written?*
+### 3.4 OI: *What does open interest show?*
 
-The question on the Home card says "written", but OI cannot tell writing from buying (finding F-7). This tab shows **how much is open, where**, not who opened it.
+OI cannot tell writing from buying. This tab shows **how much is open, where**, not who opened it.
 
 | Tile | What it is | Worked example (NIFTY 09:41) | Not telling you / caveats |
 |---|---|---|---|
@@ -414,9 +435,9 @@ The question on the Home card says "written", but OI cannot tell writing from bu
 - **SENSEX** shows **"ΔOI · n/a (SENSEX · TD-S84-NEW-4)"** permanently. Its 09:15 baseline can come from a stale vendor row, so it is withheld (S92-H).
 - **The ladder ("butterfly").** Put OI extends left in mid grey and call OI right in light grey, with a total-OI readout. The max-pain ink rule and the faint **pain valley** curve sit behind. Small **ticks** under the bars show ΔOI: cool = rose, warm = fell (NIFTY only).
 
-### 3.5 Flows: *What must dealers trade if spot moves?*
+### 3.5 Flows: *What would dealers trade if spot moves?*
 
-Read §0.4 first. Everything here is OI arithmetic, and the dealer wording on this tab is under review.
+Read §0.4 first. Everything here is OI arithmetic under the **house sign** (dealers net long calls and short puts), which NSE's participant data shows only in some regimes (P2).
 
 **The bordered badge** at the top always reads *"flow-vs-book shown on unclassified ΔOI; classification (D-4) not built"*.
 
@@ -431,7 +452,7 @@ Read §0.4 first. Everything here is OI arithmetic, and the dealer wording on th
   - At 09:00, when NIFTY was short γ, the same tile read BUY 13,886 for +1 %.
 - *How to read it:* the six points lie **on one straight line by construction** (flow = −net γ × move), so they say no more than the one-percent figure.
 - *Not telling you:* what anyone will actually trade. It is a first-order model, and it ignores the second-order terms in the tiles below.
-- *Caveats:* the unit is pending (E-D1). "L3 flip not available." appears when the flip has no value; otherwise the flip is a dashed line on this chart. The read sentence and the drawer say "dealers would buy/sell", which is dealer wording beyond P2 (finding F-7).
+- *Caveats:* the unit is pending (E-D1). "L3 flip not available." appears when the flip has no value; otherwise the flip is a dashed line on this chart. The caption now begins *"Under the house sign, for a +1% move dealers would …"*, and the drawer says what dealers *would* trade *if they hold the house sign* (S100-R).
 - *Source:* `v_dealer_flow_sim`.
 
 **∂Δ/∂t · PER DAY** and **∂Δ/∂σ · PER VOL PT** (§0.7).
@@ -541,7 +562,7 @@ All examples on this page come from pass 1, 2026-10-12, roughly 09:05–09:12 IS
 
 **Masthead.** Shows the symbol, the front expiry, the sessions left, spot at the γ run, and the change since the previous close.
 
-- Example (NIFTY, 09:11): *"NIFTY · 13 OCT · 1 SESSION LEFT · 22,623.9 · γ run 09:05 · +103.5 · +0.46 %"*.
+- Example (NIFTY, 09:11): *"NIFTY · 13 OCT · 1 SESSION LEFT · 22,623.9 · γ run 09:05 · +103.5 · +0.46 %"*. At 09:11 there is no 1-min price yet, so this is the pre-open γ run (§1.6a).
 - The read sentence comes next. It is the same sentence that appears on the Board.
 
 **Six question cards.** Each card opens the Board sub-tab with the same number (keys 1–6). Each carries a one-line summary and a small picture.
@@ -555,7 +576,7 @@ All examples on this page come from pass 1, 2026-10-12, roughly 09:05–09:12 IS
 | 5 FLOWS | "−1 %: SELL 13,816 Cr · +1 %: BUY 13,816 Cr" | Read with §0.4: the "dealers" premise is a model. |
 | 6 IV | "front 16.8 · back 14.1 · straddle ±203" | |
 
-Two of the card titles use wording the drawers do not support: card 4 asks "What is actually written?" and card 5 asks "What must dealers trade…?" (finding F-7).
+Card 4 asks *"What does open interest show?"* and card 5 *"What would dealers trade if spot moves?"* (S100-R; previously "What is actually written?" and "What must dealers trade…?", finding F-7).
 
 **Context line.** Example: *"CONTEXT · DAILY · trend up · aligned · as of 09 Oct ›"*. This is the daily ambient summary, and it opens Context. It is dated to the last settled session, not to today.
 
@@ -572,14 +593,14 @@ This page still uses the **older header strip**:
 - VIX;
 - EXPIRY with a countdown.
 
-Its spot-change figure does not match the Board or Home. At 09:11 NIFTY showed **+392.1 (+1.76 %)** here, against +103.5 on Home and −10.7 on the Board (finding F-4). Use the Board's figure.
+Its SPOT tile now uses the same spot and previous close as the Board (S100-N, 2026-10-24): on 2026-10-24 both read NIFTY 22,516.4, −171.25 (−0.75 %). Before that fix it measured against the close **two sessions back** until about 16:10 (10-12 09:11: +392.1 here against +103.5 on Home; finding F-4). The other legacy cells (LIVE pill, PIN SCORE, MAX Γ) are unchanged. **UNVERIFIED (trading day)** for the in-session match.
 
 | Card | What it shows | Example | Caveat |
 |---|---|---|---|
 | **WCB** | weighted constituent breadth, /100, with coverage | "— /100 · coverage 0.0 % · as of 09/10 15:40" | A constituent with no tick in the last 10 minutes drops out and is never filled with a stale value (S90-G). Before the open, coverage is 0 % and the value shows as a gap. |
 | **MARKET BREADTH** | advancing vs declining share, and the A/D ratio | "61 % adv · A/D 1.56 · ↑772 / 494↓" | Not documented in the project docs (register K7). |
 | **INDIA VIX** | the VIX level | 14.38 | |
-| **IV SKEW** | ATM put IV ÷ ATM call IV − 1, computed in the browser | "−29.9 % CE · ATM 22,600 · CE 19.8 / PE 13.9"; it showed "iv not populated" while loading | Not the same measure as the IV tab's skew 98 (finding F-5). |
+| **IV SKEW** | the IV tab's **skew 98** for the front leg: IV at the K98 strike minus ATM IV, in vol points, from the database view (S100-P) | NIFTY "+2.5 vol pts · @ K98 22,150 · front leg · from view"; SENSEX "+1.6 vol pts · @ K98 71,600" (2026-10-24) | The same figure as the IV tab ("skew 98 +2.54 vol pts @ 22,150"). Until 2026-10-24 this card showed ATM put IV ÷ ATM call IV − 1, which is a put/call gap at one strike, not a skew (finding F-5). It can read "iv not populated" for a moment while loading. |
 
 This page is not yet the Context page described in the board design. It has no Ambient, Expiry memory or Signals sections (finding F-6).
 
@@ -595,7 +616,7 @@ The page uses the same older header strip as Context. It then has two panels.
 - the price range;
 - the distance from spot to the zone's **midpoint** in %. A zone that contains spot can therefore still read "+0.02 % above".
 
-These zones come from a writer that last succeeded **26 days ago** (Health, `build_ict_htf_zones.py`, as of 09:11). The list is a record of older structure, not today's.
+These zones come from `build_ict_htf_zones.py`, which has no scheduled run (it last succeeded 38 days before 2026-10-24) and is no longer tracked on Health (S100-M). The list is a record of older structure, not today's.
 
 **TODAY'S SIGNALS — STREAM** lists the engine's signal rows: time, strike, grade, action. Example (NIFTY): rows from 08:30 to 09:00, each "22,500 · D · BUY_PE".
 
@@ -607,11 +628,11 @@ These zones come from a writer that last succeeded **26 days ago** (Health, `bui
 
 | Tile | Meaning |
 |---|---|
-| **OVERALL** | System status. It read **CRITICAL** at 09:11. Health is not calendar-aware yet (MV-4), so it can read CRITICAL for reasons that are expected at that hour. |
-| **WRITER FLEET** | Healthy writers out of tracked writers, e.g. "9/15 · 6 stale". |
+| **OVERALL** | System status. It read **CRITICAL** at 09:11 on 10-12. Health is not calendar-aware yet (MV-4), so outside trading hours it reads CRITICAL because writers are idle. Since 2026-10-24 the never-scheduled ICT zone writer is no longer tracked, so during a session CRITICAL means a tracked writer really is late (**UNVERIFIED (trading day)**). Nothing pages from this tile. |
+| **WRITER FLEET** | Healthy writers out of tracked writers, e.g. "5/14 · 9 stale" (2026-10-24, a non-trading day). |
 | **TOKEN STATUS** | When the broker token last refreshed, and the last HTTP status. |
 | **WRITER FRESHNESS** | One row per script: last success, age, expected cadence, host, status. Check this table first when a Board tile looks stale. The note "outside trading hours — staleness expected" appears outside market hours. |
-| **ERROR RATE / TOP ERRORS** | Non-success exits in the last 24 hours. |
+| **ERROR RATE / TOP ERRORS** | Non-success exits in the last 24 hours, by reason. `SUBSCRIPTION_LAPSED` (new, 2026-10-24) means the broker data plan lapsed — on 2026-10-21 this showed as `TOKEN_EXPIRED`. Both panels can read "no errors" for a moment while loading. |
 
 ### 3b.5 Settings
 
@@ -651,7 +672,8 @@ See §1.8.
 | **Warm (orange)** | negative sign: amplifying, short γ, OI removed, negative DEX |
 | **Light grey / mid grey** | calls / puts on the OI butterfly and IV smile; grey carries side, never pressure |
 | **Pale gold** | your selection and the active zoom mode only |
-| **Dark red strip** | stale data, at the top of the page only, never inside a chart |
+| **Dark red strip** | stale data (a chain snapshot or γ run more than 10 minutes old during 09:25–15:45), at the top of the page only, never inside a chart |
+| **Grey strip** | the session state — pre-open, closing session, closed (§1.6a); information, not a warning |
 
 Size is shown by **length**, never by colour strength. Signs are always written out (`+` and `−`), so colour is never the only carrier.
 
@@ -743,6 +765,11 @@ It never shows **0**. A zero would state a fact that was never measured, for exa
 | **no pre-open print** / **prev close missing** / **futures from 09:30** | strip | The input does not exist yet at this time of day. "prev close missing" also appears for a few seconds while loading (finding F-8). |
 | **partial** | 3D, river (○) | The session is not finished. |
 | **OVERALL CRITICAL** / **outside trading hours — staleness expected** | Health | See Part 3b. Health is not yet calendar-aware (MV-4). |
+| **Spot · held since 15:15** / **Spot · close** | SPOT cell | The index stops updating at about 15:15; the official close is shown once the 15:40 γ run exists (§2.2). |
+| **Pre-open · …** / **Closing session · …** / **Closed · showing the … session · next open …** | grey strip | Which part of the day the board is showing (§1.6a). |
+| **(local γ)** / **Net gamma is long · short** | the read | Spot's own strike row vs the whole book (§2.11). |
+| **vs spot X @ hh:mm** | FUT · BASIS | The spot the basis is measured against (§2.8). |
+| **SUBSCRIPTION_LAPSED** | Health, top errors | The broker data plan lapsed (not a token problem). |
 
 ---
 
@@ -761,11 +788,13 @@ It never shows **0**. A zero would state a fact that was never measured, for exa
 | **Flow-vs-book** | whether flow and book have the same sign; see the Net DEX chip. |
 | **γ-conc / Pin** | the strike holding the largest share of gross \|γ\|. |
 | **Gross \|γ\|** | the sum of absolute γ exposure across strikes. |
+| **House sign** | the convention that dealers are net long calls and short puts. The board's dampening / amplifying words and the hedge figures assume it; NSE's participant data shows it only in some regimes (P2). |
 | **HHI** | the Herfindahl concentration index, Σ share². Only the Pin tab's "Concentration (HHI)" is a true HHI. The Gamma tab's "Top-strike share" is not, and is never called HHI. |
 | **Max pain** | the strike at which option holders' total payout would be lowest. A positional figure, not a forecast. |
 | **Net-long γ strike** | the strike with the largest positive net γ; not "near spot". |
 | **OI wall** | the eligible strike with the largest call (or put) OI. |
 | **Pin band** | the τ-weighted pin zone (ENH-81); a different measure from the pin point. |
+| **Pocket (local γ)** | the γ sign at spot's own strike row; can differ from the book's net sign. |
 | **Pre-open anchor** | the session's first front-expiry snapshot before 09:15 IST. |
 | **Priced move** | the ATM straddle, as ± points and % to expiry. |
 | **S\*** | the spot level at which the open options, repriced at their own IVs, would carry zero net delta. |
@@ -785,6 +814,7 @@ It never shows **0**. A zero would state a fact that was never measured, for exa
 | 2026-10-12 | same | v0.2 | Pass 2 (09:40–09:41). Parts 2, 3 and 3b written. F-16 added; F-3 and F-13 refined. Owed: worked examples for ∂Δ/∂σ, ∂Δ/∂t, ∂Γ and S\* once carry is measurable; pass 3 after the close; an expiry-day read (NIFTY 13 Oct is dte 0). |
 | 2026-10-12 | same | v0.3 | Capture pass (09:52–10:21): 23 real screenshots; worked examples for Flip, ∂Δ, ∂Γ and S\*; F-17 to F-20 added; F-16 partly resolved; S97-A wording transition noted. |
 | 2026-10-12 | same | v0.3.1 | §1.7: `?` removed (no handler on live or staging); key verification noted. Help pack: section titles rendered without Markdown marks; route moves to `/manual`. |
+| 2026-10-24 | `f964e40` (bundle `index-BFOk56iL.js`) | v0.4 | Updated for S97 (`04fcd05`) and S100 (`1072593`, `142c3e6`, `2ee83e1`, `3366bf1`, `1aeb000`, `f964e40`): tab / Home questions (§1.2, §3.4, §3.5, §3b.1); session strip §1.6a; closing SPOT titles and the 15:15 hold §2.2; basis reference, last-trade noise and the 15:30–15:40 futures-spot lag §2.8; read sentence local / net §2.11; Context SPOT and IV SKEW §3b.2; Health §3b.4; colours §4.1; status words; glossary (house sign, pocket); §7.3 finding status. Read on staging and live on a non-trading day; trading-day states marked UNVERIFIED. |
 
 ### 7.2 Findings where the board and the docs disagree
 
@@ -818,3 +848,17 @@ It never shows **0**. A zero would state a fact that was never measured, for exa
 - **F-16 resolved in part.** Flip, the ∂ tiles and S\* all had values by 09:52 (NIFTY, chain 09:50). They had read "unmeasurable" at 09:40–09:41. What remains is a gap of roughly 20–35 minutes after the open with no carry. Whether that is expected (the session-median futures carry needs some futures prints) is a question for the main session.
 - **F-3** applies **before the first cycle only.** At 09:41 the header read "pin state · this session".
 - **F-13**: at 09:41 the NIFTY pin (22,700) sat **inside** its band (22,600–22,800). The pre-open mismatch came from the previous session's data.
+
+### 7.3 Status of the findings at v0.4 (2026-10-24)
+
+| # | Status |
+|---|---|
+| F-1 | **Fixed** — the strip / Overview Net Γ drawer now carries the P2 sentence (S100-R). |
+| F-2 | **Closed by ruling, no change** — upper-case Γ names an **aggregate** exposure (Net Γ, Gross \|Γ\|, ∂Γ/∂t, ∂Γ/∂σ); lower-case γ is a single option's gamma (S100-R). |
+| F-4 | **Fixed** — Context / Structure use the Board's spot and previous close (S100-N). |
+| F-5 | **Fixed** — Context shows the IV tab's skew 98 (S100-P). |
+| F-7 | **Fixed** — Home cards, Flows caption and the hedge drawer reworded (S100-R). |
+| F-8 | Open — loading states still read as values for a moment; also seen on the legacy strip (`0 (0.00%)`, `iv not populated`) and the Health error panels. |
+| F-18 | Re-diagnosed — the board's views stop re-polling on an aged tab (R16); a reload clears it. Open. |
+| others | unchanged. |
+

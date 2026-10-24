@@ -70,6 +70,10 @@ WHAT WOULD MAKE THIS GATE FAIL (Rule 0, stated before the code)
     file lacked, which is why 40/40 passed over a design that still sent 148 times.
   * a hold-down fed by non-observations -> an UNKNOWN tick (probe unreadable) must not
     accrue, so 12 consecutive probe failures over an active alert assert 0 RECOVERED.
+  * a hung run nobody sees (S100 R3, TD-S97-NEW-3) -> a row inserted at start and never
+    finished is skipped as in progress by the look-back probe and ages out of it, so a
+    second probe reads unfinished rows started more than HUNG_MIN ago today, under its own
+    key; tests/test_monitor_hung_run.py carries its own mutants.
 
 RESIDUAL RISK, stated rather than designed away
 -----------------------------------------------
@@ -142,6 +146,16 @@ CONDITION_KEY = 'orchestrator_unhealthy'
 # (A MISSED cycle is not the hazard here -- it reads NOT_FIRING, which is unhealthy, not
 # clear.)
 HOLDDOWN_TICKS = 10
+
+# S100_R3_HUNG (TD-S97-NEW-3): a run whose ledger row has no finished_at HUNG_MIN minutes
+# after it started has hung (or was killed before it could finish its row). Bound: the
+# runner may wait up to CYCLE_WAIT_S = 120 s for its chain run (S98-B) and then compute;
+# the longest finished run measured 2026-10-06 -> 10-23 was 184.4 s (10-16; read S100), so a
+# healthy run ends by ~305 s. 6 min = 360 s clears that and still pages before a second cycle could
+# hang behind it. Its OWN key: a hang and a failed/missing cycle are different faults --
+# under one key a hang would be cleared by the healthy cycles cron keeps launching.
+HUNG_MIN = 6
+HUNG_CONDITION_KEY = 'orchestrator_hung'
 
 
 def _headers() -> dict[str, str]:
@@ -363,7 +377,8 @@ class HealthMonitor:
                  is_trading_day: Optional[Callable[[], bool]] = None,
                  window: Optional[Window] = None,
                  state_path: Optional[Path | str] = None,
-                 fetch_rows: Optional[Callable[[], list]] = None):
+                 fetch_rows: Optional[Callable[[], list]] = None,
+                 fetch_hung_rows: Optional[Callable[[], list]] = None):
         self.now = now_utc or datetime.now(timezone.utc)
         self.ts = self.now                                    # log() format, unchanged
         self._send = send if send is not None else _default_send
@@ -372,6 +387,14 @@ class HealthMonitor:
         self.state_path = Path(state_path) if state_path is not None else (
             Path(__file__).resolve().parent / 'logs' / STATE_FILENAME)
         self._fetch_rows = fetch_rows if fetch_rows is not None else self._fetch_rows_http
+        # S100_R3_HUNG: an injected look-back ledger is a test ledger, so the hung probe is
+        # off (no rows) unless it is injected too -- a test must never reach the network.
+        if fetch_hung_rows is not None:
+            self._fetch_hung_rows = fetch_hung_rows
+        elif fetch_rows is not None:
+            self._fetch_hung_rows = lambda: []
+        else:
+            self._fetch_hung_rows = self._fetch_hung_rows_http
         self.alerts: list[dict[str, str]] = []
         self.sent: list[tuple[str, str]] = []                 # (level, message) actually sent
 
@@ -391,6 +414,50 @@ class HealthMonitor:
         if resp.status_code != 200:
             raise QueryFailed(str(resp.status_code))
         return resp.json()
+
+    def _fetch_hung_rows_http(self) -> list:
+        # S100_R3_HUNG. Same naive-UTC shape as _fetch_rows_http. Bounded below by today's
+        # UTC midnight (the session is 03:00-10:15 UTC, one UTC date), so a row abandoned on
+        # an earlier day cannot page every session forever.
+        base = self.now.replace(tzinfo=None)
+        older = (base - timedelta(minutes=HUNG_MIN)).isoformat()
+        day0 = base.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        url = (f'{SUPABASE_URL}/rest/v1/script_execution_log'
+               f'?script_name=eq.{ORCHESTRATOR_SCRIPT}&finished_at=is.null'
+               f'&started_at=lt.{older}&started_at=gte.{day0}'
+               f'&order=started_at.asc&limit=10')
+        resp = requests.get(url, headers=_headers(), timeout=5)
+        if resp.status_code != 200:
+            raise QueryFailed(str(resp.status_code))
+        return resp.json()
+
+    def check_hung_runs(self) -> tuple[dict[str, tuple[str, str, dict]], bool]:
+        """S100_R3_HUNG. Observe, do not send. (conditions, probe_ok) as the look-back check."""
+        conditions: dict[str, tuple[str, str, dict]] = {}
+        try:
+            rows = self._fetch_hung_rows()
+        except Exception as e:                                # noqa: BLE001
+            self.log('ERROR', f'Hung-run query failed: {e}')
+            return conditions, False
+        if rows:
+            first = rows[0]
+            try:
+                started = datetime.fromisoformat(str(first.get('started_at')).replace('Z', '+00:00'))
+                if started.tzinfo is None:
+                    started = started.replace(tzinfo=timezone.utc)
+                age = int((self.now - started).total_seconds() // 60)
+            except Exception:                                 # noqa: BLE001
+                age = -1
+            msg = (f"Orchestrator run HUNG: started {first.get('started_at')}, no finish after "
+                   f"{age} min ({len(rows)} unfinished run(s) today older than {HUNG_MIN} min)")
+            self.log('CRITICAL', msg)
+            conditions[HUNG_CONDITION_KEY] = ('CRITICAL', msg, {
+                'variant': 'hung',
+                'started_at': first.get('started_at'),
+                'age_min': age,
+                'unfinished': len(rows),
+            })
+        return conditions, True
 
     def check_orchestrator_failures(self) -> tuple[dict[str, tuple[str, str, dict]], bool]:
         """Observe conditions; do not send. Returns (conditions, probe_ok).
@@ -429,7 +496,8 @@ class HealthMonitor:
         # (exit_code and finished_at both NULL) is IN PROGRESS, not failed. Measured
         # 2026-10-21: rows are created within 1.5 s of start and finished >= 100.8 s later,
         # so `None != 0` read ~44 % of in-band minutes as FAILED. A finished non-zero
-        # exit_code still alarms. A run that HANGS is not detected here (LOOKBACK_MIN look-back).
+        # exit_code still alarms. A run that HANGS ages out of this look-back unseen; it is
+        # caught by check_hung_runs (S100_R3_HUNG), under its own key.
         finished = [r for r in rows
                     if not (r.get('exit_code') is None and r.get('finished_at') is None)]
         for row in finished:
@@ -543,6 +611,11 @@ class HealthMonitor:
     def run(self) -> bool:
         self.log('INFO', '=== HEALTH CHECK START ===')
         conditions, probe_ok = self.check_orchestrator_failures()
+        hung, hung_ok = self.check_hung_runs()                # S100_R3_HUNG
+        conditions.update(hung)
+        unknown = set() if probe_ok else {CONDITION_KEY}
+        if not hung_ok:
+            unknown.add(HUNG_CONDITION_KEY)
         state = AlertState(self.state_path).load()
         gated, reason = self.gate()
 
@@ -553,17 +626,17 @@ class HealthMonitor:
                 self.log('INFO', f'[STATE_RESET] dropped {dropped} active alert(s) with no '
                                  'RECOVERED: out of band the condition carries no information')
                 state.save()
-        elif not probe_ok:
-            # UNKNOWN: the ledger could not be read, so this minute is evidence of
-            # nothing. No alert, and critically NO hold-down progress -- counting it as
-            # a clear tick would let a run of query failures emit a RECOVERED for a
-            # condition that was never observed clearing.
-            self.log('INFO', '[UNKNOWN] probe unreadable this tick: no send, and no '
-                             'hold-down progress')
         else:
+            # UNKNOWN, per key: a probe that could not be read is evidence of nothing for
+            # ITS key -- no alert from it, and critically NO hold-down progress (counting it
+            # as a clear tick would let a run of query failures emit a RECOVERED for a
+            # condition never observed clearing). The other probe's observation still counts.
+            for key in sorted(unknown):
+                self.log('INFO', f'[UNKNOWN] {key}: probe unreadable this tick: no send, and '
+                                 'no hold-down progress')
             for key, (level, message, context) in sorted(conditions.items()):
                 self._maybe_send(state, key, level, message, context)
-            for key in sorted(set(state.keys()) - set(conditions)):
+            for key in sorted(set(state.keys()) - set(conditions) - unknown):
                 self._tick_clear(state, key)
             state.save()
 

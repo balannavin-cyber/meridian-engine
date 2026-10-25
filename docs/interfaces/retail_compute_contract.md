@@ -1,146 +1,188 @@
 # Retail compute contract — `merdian_compute` (S101, retail scope §1.3)
 
-Status: **v1, S101 (2026-10-25)**. Owner: `meridian-engine`. Consumer: `retail-meridian` (scope §1.2,
+Status: **v2, S101 (2026-10-25)**. Owner: `meridian-engine`. Consumer: `retail-meridian` (scope §1.2,
 per-user compute). The engine keeps only this contract (ruling R-11); retail keeps its own docs.
+History: v1 (`11f2cbe`) the extracted parts · **v2: the composed gamma cycle (C2), the walls' ATM-IV
+input (C3), the pin path's pure cores (C4), the full view closure (§8) and the live-definition check.**
 
 ## 1. How retail takes it
 
 - Install pinned by commit SHA, never a branch:
   `pip install "git+https://github.com/balannavin-cyber/meridian-engine@<sha>#egg=merdian_compute"`.
-- Import only `merdian_compute.gamma` and `merdian_compute.cycle`. Stdlib only — no runtime dependency.
-- **Never import:** any writer (`compute_gamma_metrics_local`, `write_gex_cycle_history_local`,
-  `compute_volatility_metrics_local`, `ingest_*`, `run_*`), `core.*` (`core.supabase_client`,
-  `core.dhan_client`, `core.config`, `core.parameters`, `core.trading_calendar_gate`, `core.pin_state`),
-  `fetch_india_vix`, `gamma_engine_retry_utils`. Each of these reads the environment or opens a client.
-- Offline step **24** proves `import merdian_compute` reads no environment, imports no
-  supabase / requests / dotenv / core and opens no socket. Offline step **25** pins this contract
-  (signatures + outputs against production rows). Both run on every engine suite run.
+- Import only `merdian_compute.gamma`, `.volatility`, `.pin`, `.cycle`. Stdlib only — no runtime
+  dependency. Python **3.10 or 3.11** for bit-for-bit parity with production (§10).
+- **Never import:** any writer (`compute_gamma_metrics_local`, `compute_volatility_metrics_local`,
+  `write_gex_cycle_history_local`, `ingest_*`, `run_*`), any `core.*` (`supabase_client`, `dhan_client`,
+  `config`, `parameters`, `trading_calendar_gate`, **`pin_state`**), `fetch_india_vix`,
+  `gamma_engine_retry_utils`. Each reads the environment, opens a client, or rewrites `sys.argv` at
+  import (`compute_volatility_metrics_local`).
+- Offline step **24** proves `import merdian_compute` (all four modules) reads no environment, imports no
+  supabase / requests / dotenv / core and opens no socket. Offline step **25** pins this contract.
 
 ## 2. What the package is
 
-Every definition was moved **byte-identical** from the live writers at `7b91d1a`; the writers re-import
-each name, so production runs the same objects retail runs (S101 A3: `ast.dump` equal for all 39 moved
-definitions; golden replay of the gamma writer 486/486 runs identical before vs after on the same
-interpreter). Any edit to `merdian_compute/` is an edit to the live writer.
+Every definition is either **moved byte-identical** from a live writer, or **cut** from a writer's
+function body with its statements kept and only counted substitutions made; the writers import every
+name back, so production runs the same code retail runs. Proofs per commit are in the commit messages
+(AST equality, golden replays before vs after, error-path replays, mutants).
 
-**Interpreter.** Production runs Python 3.10. From 3.12, `sum()` over floats uses compensated
-summation, so `net_gex` and `gamma_concentration` differ from production in the last one or two bits
-(~1e-15 relative; measured S101 on 474 of 486 golden runs). Step 25 compares at 1e-9 and passes on
-both. Retail wanting bit-for-bit parity with production pins Python 3.10 or 3.11.
-
-| Module | From | Names |
+| Module | From | Public surface |
 |---|---|---|
-| `gamma` | `compute_gamma_metrics_local.py` | `to_float`, `as_iso_ts`, `signed_gamma_exposure`, `GammaMetricsResult`, `filter_usable_option_rows`, `infer_symbol`, `infer_spot`, `infer_expiry_date`, `infer_ts`, `infer_strike_step`, `compute_net_gex`, `build_strike_exposure_map`, `compute_gamma_concentration`, `_FLIP_DOMINANCE_EPS_FRAC`, `_flip_short_gamma_perstrike`, `compute_flip_level`, `find_atm_strike`, `compute_straddle_atm`, `compute_straddle_slope`, `compute_expansion_probability`, `determine_regime`, `determine_gamma_zone`, `compute_straddle_velocity`, `compute_otm_oi_velocity`, `compute_otm_oi_snapshot`, `compute_max_gamma_strike`, `compute_pin_risk_score`, `_dte_from_ts`, `build_gss_rows` |
-| `cycle` | `write_gex_cycle_history_local.py` | `IST`, `BOOST_COEFF`, `BOOST_CAP`, `T_FLOOR`, `_FRAC`, `_norm_frac`, `_ist_date`, `derive_rank_fields`, `boost`, `conviction_for` |
+| `gamma` | `compute_gamma_metrics_local.py` | `prepare_gamma_inputs`, **`compute_gamma_core`** (the composed cycle, C2); the parts: `signed_gamma_exposure`, `filter_usable_option_rows`, `infer_*`, `compute_net_gex`, `build_strike_exposure_map`, `compute_gamma_concentration`, `compute_flip_level`, `find_atm_strike`, `compute_straddle_atm`, `compute_straddle_slope`, `compute_expansion_probability`, `determine_regime`, `determine_gamma_zone`, `compute_straddle_velocity`, `compute_otm_oi_velocity`, `compute_otm_oi_snapshot`, `compute_max_gamma_strike`, `compute_pin_risk_score`, `build_gss_rows`, `GammaMetricsResult` |
+| `volatility` | `compute_volatility_metrics_local.py` | **`derive_atm_iv`** (C3), `ATM_IV_KEYS`; `parse_iso_date`, `parse_iso_dt`, `safe_float`, `get_expiry_type`, `get_strike_step`, `find_atm_strike`, `find_row` |
+| `pin` | `core/pin_state.py` | **`derive_core`** (C4), `NO_PIN`, `SHIFTING`, `LOCKED`, `STABLE`, `VALID_STATES`, `key_for` |
+| `cycle` | `write_gex_cycle_history_local.py` | **`trading_days_between`**, **`held_for_cycles_next`** (C4), `derive_rank_fields`, `boost`, `conviction_for`, `IST`, `BOOST_COEFF`, `BOOST_CAP`, `T_FLOOR` |
 
-Underscore names are importable but not part of the retail surface; step 25 pins the signatures of the
-26 public functions listed there.
+Underscore names are importable but not part of the surface. Step 25 pins 39 public signatures and the
+`GammaMetricsResult` field order.
 
 ## 3. Inputs — one option row
 
-A row is a `dict` shaped like an `option_chain_snapshots` row, **one symbol, one expiry, one cycle**
-(`infer_expiry_date` raises on a multi-expiry batch, TD-S79-NEW-12). Keys read (computed from the
-package's AST, S101):
+A `dict` shaped like an `option_chain_snapshots` row as PostgREST serves it, **one symbol, one expiry,
+one cycle** (a multi-expiry batch raises, TD-S79-NEW-12). Keys read, computed from the package's AST:
 
 | Key | Read by | Notes |
 |---|---|---|
-| `gamma` | exposure, filter, GSS rows | per-option γ, the broker greek as delivered |
-| `oi` | exposure, filter, OTM OI | contracts |
-| `option_type` | exposure, straddle, OTM OI | `"CE"` / `"PE"` (upper-cased on read) |
-| `strike` | exposure map, ATM, step, straddle | |
-| `spot` | `infer_spot` | the cycle's spot, same on every row |
+| `gamma`, `oi` | exposure, filter, GSS rows, OTM OI | per-option γ as delivered; OI in contracts |
+| `option_type` | everywhere | `"CE"` / `"PE"` |
+| `strike` | exposure map, ATM, step, straddle, ATM IV | |
+| `spot` | `infer_spot`, `derive_atm_iv` | the cycle's spot |
 | `ltp` | straddle ATM / slope | |
-| `symbol`, `expiry_date` | infer | |
-| `ts` (or `created_at`) | `infer_ts`, `build_gss_rows` | **always supply `ts`**: with none, `infer_ts` and `as_iso_ts` fall back to `datetime.now()` (the only clock read in the package; never reached at import) |
+| `iv` | `derive_atm_iv` | **percent** as delivered (e.g. `12.5`); not rescaled |
+| `symbol`, `expiry_date` | infer / ATM IV | ATM IV supports NIFTY (step 50) and SENSEX (step 100) only |
+| `ts`, `created_at` | `infer_ts`, `build_gss_rows`, `derive_atm_iv` | **ISO-8601 with `T` and a `±HH:MM` offset** (`2026-10-23T09:00:00.123456+00:00`). The psql form `2026-10-23 09:00:00.12+00` raises in `build_gss_rows` on Python 3.10 (measured S101). With no `ts` at all, `infer_ts` falls back to `datetime.now()` — the package's only clock read; always supply `ts`. |
 
-`filter_usable_option_rows` drops `gamma == 0` or `oi <= 0`. `signed_gamma_exposure` also returns 0 for a
-strike more than 5 % from spot carrying `|gamma| > 5e-5` (TD-NEW-2 Part A).
+`derive_atm_iv` takes the **first row** for symbol / expiry / ts / spot and searches the rows for the ATM
+CE and PE: pass the batch **in ascending strike order**, as the writer selects it.
 
 ## 4. Units and signs (CLAUDE.md settled decision, S100-R C)
 
 - **Γ = aggregate dealer exposure**; **γ = per-option gamma**. Never relabel one as the other.
-- Per row: `gex = gamma × oi × spot² / 1e7` (**₹ crore**), **CE positive, PE negative**. `net_gex` and
-  every strike value in the exposure map and `gex_cr` are in that unit and sign.
-- Positive strike exposure = dealers long γ (dampening). `compute_max_gamma_strike` = the strike with the
-  largest **positive** exposure (tie: lower strike); `None` when no strike is positive.
-- `gamma_concentration` = max |strike Γ| / Σ |strike Γ|, in [0, 1].
-- `regime`: `NO_FLIP` when no flip; else `LONG_GAMMA` if `net_gex >= 0`, `SHORT_GAMMA` otherwise.
-- `flip_distance_pct = |spot − flip| / spot × 100`; `gamma_zone`: `< 0.5` HIGH, `< 1.5` MID, else LOW,
-  `None` without a flip.
-- `pin_risk_score` 0–100, weights 0.30 concentration / 0.30 spot proximity / 0.20 sustained time /
+- Per row `gex = gamma × oi × spot² / 1e7` (**₹ crore**), **CE positive, PE negative**; `net_gex`, the
+  exposure map and `gex_cr` use that unit and sign. Positive = dealers long γ (dampening).
+- `max_gamma_strike` = strike with the largest **positive** exposure (tie: lower strike), `None` if none.
+- `gamma_concentration` = max |strike Γ| / Σ |strike Γ|.
+- `regime`: `NO_FLIP` without a flip; else `LONG_GAMMA` if `net_gex >= 0`, `SHORT_GAMMA` otherwise.
+  `flip_distance_pct = |spot − flip| / spot × 100`; `gamma_zone` `< 0.5` HIGH, `< 1.5` MID, else LOW.
+- `pin_risk_score` 0–100: 0.30 concentration, 0.30 spot proximity, 0.20 sustained time,
   0.20 (1 − expansion/100), renormalised when a factor is unavailable.
+- ATM IV: `atm_strike = round(spot / step) × step`; `atm_iv_avg = (call iv + put iv) / 2`;
+  `iv_skew = put iv − call iv` (percent points).
 
-## 5. The Board-core sequence
+## 5. The calls retail makes, per symbol per cycle
 
-Retail runs, per symbol per cycle, the same sequence the writer's `compute_gamma_metrics` runs between
-its fetches (step 25 runs exactly this and matches production on 313 rows × 11 fields):
+```python
+from merdian_compute import gamma, volatility, pin, cycle
 
-```
-spot   = infer_spot(rows);           use = filter_usable_option_rows(rows)
-smap   = build_strike_exposure_map(use, spot)
-net    = compute_net_gex(use, spot); conc = compute_gamma_concentration(smap)
-flip   = compute_flip_level(smap, spot)
-fdp    = None if flip is None else (abs(spot - flip) / spot * 100.0 if spot > 0 else None)
-zone   = determine_gamma_zone(fdp);  regime = determine_regime(net, flip)
-strad  = compute_straddle_atm(use, spot); slope = compute_straddle_slope(use, spot)
-expand = compute_expansion_probability(conc, fdp, net)
-maxg   = compute_max_gamma_strike(smap)
-pin    = compute_pin_risk_score(gamma_concentration=conc, expansion_probability=expand, spot=spot,
-                                max_gamma_strike=maxg, strike_step=infer_strike_step(use),
-                                recent_max_strikes=<§6>)
-gss    = build_gss_rows(rows, spot, symbol, ts, expiry_date, run_id)   # per-strike rows for the views
+inputs = gamma.prepare_gamma_inputs(rows, run_id, expected_symbol="NIFTY")   # raises like the writer
+res = gamma.compute_gamma_core(**inputs, run_type="FULL",
+                               prior_row=<§6>, spot_vs_range=None, vix=None,
+                               recent_max_strikes=<§6>)                     # -> GammaMetricsResult
+atm = volatility.derive_atm_iv(sorted(rows, key=lambda r: float(r["strike"])))
+if atm["error"] is None:
+    atm_iv_avg = atm["atm_iv_avg"]                                         # the walls' sigma input
+state, reason = pin.derive_core(held, runnerup_share_ratio, conc_top1_share,
+                                nopin_conc_floor=..., stable_held_for=...,
+                                locked_held_for=..., locked_ratio_max=...)  # §7
 ```
 
-**Open (ruling owed, S101):** this sequence lives in the writer's `compute_gamma_metrics`, interleaved
-with its fetches, so retail must re-state it. The recommended follow-up moves it into one pure
-`merdian_compute.gamma.compute_gamma_core(...)` the writer then calls, proven by the same golden replay.
-Until then, step 25 is what keeps retail's copy of the sequence honest.
+`compute_gamma_core` is exactly what the live writer runs: the writer's `compute_gamma_metrics` is now
+"fetch chain → `prepare_gamma_inputs` → the four history reads → `compute_gamma_core`". Step 25 runs the
+two calls above on every golden chain and matches production: 313 rows × 11 Board fields,
+`pin_risk_score` on 291 rows, `straddle_velocity` on 307, ATM IV 313 rows × 5 fields.
+`res.gss_rows` are the per-strike rows (`gex_strike_snapshots` shape) the views in §8 read.
 
 ## 6. History inputs — retail supplies them from its own per-user tables
 
 | Input | Production source | Retail rule |
 |---|---|---|
-| `recent_max_strikes` | `fetch_recent_max_gamma_strikes`: `gex_strike_snapshots` before `ts`, `gex_cr > 0`, argmax per cycle, last 5 — **no date bound, it crosses sessions** | the last 5 prior cycles' `max_gamma_strike` for the symbol, across session boundaries (step 25: 291/291 equal on full in-day windows) |
-| `prior_row` for `compute_straddle_velocity` | `gamma_metrics` latest row before `ts` | `{"straddle_atm": <prior>}` |
-| `prior_row` for `compute_otm_oi_velocity` | the same query, which selects only `straddle_atm,ts` | **production writes NULL in every row** (0 non-null across the six golden days) because the function reads `otm_oi_snapshot` / `raw`, which that query never returns. Retail matches production by passing the same shape. Filed S101; not fixed in a behaviour-neutral session. |
-| `vix`, `spot_vs_range` | live Dhan fetch / `intraday_ohlc` | not compute; stored only |
+| `recent_max_strikes` | `gex_strike_snapshots` before `ts`, `gex_cr > 0`, argmax per cycle, last 5 — **no date bound: it crosses sessions** | last 5 prior cycles' `max_gamma_strike`, across session boundaries |
+| `prior_row` | latest `gamma_metrics` row before `ts` (also crosses sessions) | `{"straddle_atm": <prior value>}` |
+| `otm_oi_velocity` | the same `prior_row`, which never carries `otm_oi_snapshot` / `raw` | **NULL in every production row** (0 / 313 golden rows) — a live defect, filed S101; retail matches production by passing the same shape |
+| `vix`, `spot_vs_range` | Dhan VIX / `intraday_ohlc` | stored only, not computed on |
 
-## 7. Views retail re-creates in its own schema
+## 7. The pin path (C4)
 
-Walls, pin and max pain are SQL, not Python. Retail re-creates them over its per-user tables (adding
-`user_id` and RLS, scope §1.2). Definition files below are the newest in `sql/` at `7b91d1a`; **the live
-definition must be confirmed with `pg_get_viewdef` before retail copies it** (three files define
-`v_max_pain_by_strike`). Dependencies were extracted from the files by script (S101).
+`gex_cycle_history` rows carry the pin state the board's Pin pane reads (`v_pin_board`). Per row:
 
-| View | File | Reads | Notes |
-|---|---|---|---|
-| `v_gex_strike_walls` | `sql/2026-09-15_s79_v_gex_strike_walls.sql` | `gex_strike_snapshots`, `volatility_snapshots` | σ band from `volatility_snapshots.atm_iv_avg` — **not packaged** (§8) |
-| `v_gex_max_pain` | `sql/2026-09-22_s80_v_gex_max_pain.sql` | `gex_strike_snapshots` | `now()` freshness and DB function `get_parameter_num('maxpain.stale_floor_min')` |
-| `v_gex_strike_pin_zone` | `sql/2026-08-13_s69_gex_pin_accel_latest_run_scope.sql` | `gex_strike_snapshots` | dependency of `v_gex_pin_maxpain` (three defining files) |
-| `v_gex_pin_maxpain` | `sql/2026-09-22_s80_v_gex_pin_maxpain.sql` | `v_gex_max_pain`, `v_gex_strike_pin_zone` | |
-| `v_max_pain_by_strike` | `sql/2026-09-22_s81_v_max_pain_by_strike_latest_ts_retrofit.sql` | `option_chain_snapshots` | header supersedes the other two files |
-| `v_pin_board` | `sql/2026-10-08_s92_v_pin_board.sql` | `gex_cycle_history` | `security_invoker = false`; reads the ENH-133 table — **not packaged** (§8) |
+1. **Rank fields** — `cycle.derive_rank_fields(rank_rows)` over the cycle's `v_gex_strike_rank` rows (§8).
+2. **Carry-forward** — `cycle.held_for_cycles_next(state, leader, prior_rows)`: `prior_rows` = the latest
+   EARLIER row of the same (symbol, expiry) with `session_gate_state = 'OPEN'`, as a list of ≤ 1 dict
+   (`pin_leader_strike`, `held_for_cycles`). `None` unless `state == "OPEN"` and a leader exists.
+3. **Ladder** — `pin.derive_core(held, ratio, conc, <four thresholds>)`. Production reads the thresholds
+   from `merdian_parameters` under `pin_state.<suffix>.<SYMBOL>` (`pin.key_for`); retail passes its own.
+   A NULL conc or held → `(None, reason)`; a NULL ratio can never be LOCKED.
+4. **Trading days / conviction** — `cycle.trading_days_between(run_date, expiry, is_open)` with the
+   caller's calendar predicate; production's `is_trading_day` **fails open** (a date with no calendar row
+   counts as open). Then `cycle.conviction_for(ratio, t_days, calendar_healthy)`.
 
-Create order: `v_gex_strike_walls`, `v_gex_max_pain`, `v_gex_strike_pin_zone`, `v_gex_pin_maxpain`,
-`v_max_pain_by_strike`, then `v_pin_board` once `gex_cycle_history` exists.
+Not packaged, and retail must build its own: the **session gate** (`session_gate` reads
+`market_spot_snapshots` ticks to classify a cycle OPEN / FROZEN / PRE_TICK) and the **reconciler**
+(`reconcile_gex_cycle_history_session_local.py`). No golden day holds `gex_cycle_history`, so C4 is proven
+before-vs-after (1,577 input combinations, mutants) and against the ruled S89 ladder, not against
+production rows.
 
-## 8. Not covered by v1 (stated, so retail does not assume it)
+## 8. Views retail re-creates in its own schema
 
-1. **ATM IV / volatility** (`compute_volatility_metrics_local.py`, 909 lines, imports
-   `core.supabase_client` at module top) — needed for the walls' σ band. Not purity-mapped yet.
-2. **Pin state** (`gex_cycle_history`) — `write_gex_cycle_history_local.py` needs
-   `core.pin_state.derive` (thresholds from `merdian_parameters` over HTTP), the trading calendar
-   (`trading_days_to_expiry`) and a carry-forward `held_for_cycles` chain. Only its pure helpers
-   (`cycle.*`) are packaged.
-3. **Parameters and calendar** — retail needs its own `merdian_parameters` rows (`pin_state.*`,
-   `maxpain.stale_floor_min`) and `trading_calendar`, plus a `get_parameter_num` SQL function.
-4. **Drift risk outside this package:** the gamma math is re-implemented in
-   `backfill_gamma_metrics_to_main.py` and `measure_rate_sensitivity.py` (and `replay/`) instead of
-   importing it. Out of S101 scope; recorded.
+Walls, pin, max pain, rank and the repriced flip are SQL, not Python. Retail re-creates them over its
+per-user tables (adding `user_id` and RLS, scope §1.2). The closure below was extracted from `sql/` by
+script (S101); files are the newest defining file at the S101 HEAD.
 
-## 9. Change control
+| View | File | Reads |
+|---|---|---|
+| `v_gex_strike_walls` | `sql/2026-09-15_s79_v_gex_strike_walls.sql` | `gex_strike_snapshots`, `volatility_snapshots` (`atm_iv_avg` ← `derive_atm_iv`) |
+| `v_gex_concentration` | `sql/2026-09-15_s79_v_gex_concentration.sql` | `gex_strike_snapshots` |
+| `v_gex_strike_rank` | `sql/2026-09-22_s81_v_gex_strike_rank.sql` | `gex_strike_snapshots`, `volatility_snapshots` |
+| `v_gex_max_pain` | `sql/2026-09-22_s80_v_gex_max_pain.sql` | `gex_strike_snapshots`; `now()`; DB function `get_parameter_num('maxpain.stale_floor_min')` |
+| `v_gex_strike_pin_zone` | `sql/2026-08-13_s69_gex_pin_accel_latest_run_scope.sql` (3 files define it) | `gex_strike_snapshots` |
+| `v_gex_pin_maxpain` | `sql/2026-09-22_s80_v_gex_pin_maxpain.sql` | `gex_strike_snapshots`, `v_gex_max_pain`, `v_gex_strike_pin_zone`, `v_gex_strike_walls` |
+| `v_max_pain_by_strike` | `sql/2026-09-22_s81_v_max_pain_by_strike_latest_ts_retrofit.sql` (3 files) | `option_chain_snapshots` |
+| `v_gex_repriced_flip` | `sql/2026-09-25_s83_v_gex_repriced_flip.sql` | `option_chain_snapshots`, **`index_futures_snapshots`** — retail needs a futures quote per symbol |
+| `v_pin_board` | `sql/2026-10-08_s92_v_pin_board.sql` | `gex_cycle_history` (§7); `security_invoker = false` |
 
-- A change to anything in `merdian_compute/` ships only with: S101 golden replay (before vs after), offline
-  suite green incl. steps 24–25, and a new retail pin.
+Create order: `v_gex_strike_walls`, `v_gex_concentration`, `v_gex_strike_rank`, `v_gex_max_pain`,
+`v_gex_strike_pin_zone`, `v_gex_pin_maxpain`, `v_max_pain_by_strike`, `v_gex_repriced_flip`, then
+`v_pin_board` once `gex_cycle_history` exists.
+
+**Live definition before copying.** Three files define `v_max_pain_by_strike`; their markers, computed
+from the files: the captured baseline has neither a `front_expiry` CTE nor `WITH RECURSIVE`; the expiry
+filter has `front_expiry` without `WITH RECURSIVE`; the latest-ts retrofit has `WITH RECURSIVE` (its
+`symbols` skip-scan), `front_expiry` and a `LATERAL` probe. Operator SELECT (read-only):
+
+```sql
+SELECT position('WITH RECURSIVE' IN d) > 0 AS has_recursive,
+       position('front_expiry' IN d) > 0   AS has_front_expiry,
+       position('LATERAL' IN d) > 0        AS has_lateral,
+       length(d) AS def_length, md5(d) AS def_md5
+  FROM (SELECT pg_get_viewdef('public.v_max_pain_by_strike'::regclass, true) AS d) v;
+```
+
+The retrofit is live iff the three booleans are `t, t, t`; `f, t, f` means the expiry-filter file is
+live, `f, f, f` the baseline. Record the result (and `def_md5`) here before retail copies the view; repeat
+the same query for any view whose file count above is > 1.
+
+## 9. Not covered (stated, so retail does not assume it)
+
+1. Session gate and reconciler (§7).
+2. The VIX fields of `volatility_snapshots` (regime, percentile, velocities): history-dependent, still
+   in the writer; only ATM IV is packaged. The writer's `dte` uses the wall clock (`datetime.now()`),
+   not the row's `ts` — the TD-NEW-4 class fixed in the gamma writer but not here; filed S101.
+3. `index_futures_snapshots` for the repriced flip; `merdian_parameters` rows and a `get_parameter_num`
+   SQL function; a `trading_calendar` for the calendar predicate.
+4. Drift outside the package: the gamma math is re-implemented in `backfill_gamma_metrics_to_main.py`,
+   `measure_rate_sensitivity.py` and `replay/replay_compute_gamma_metrics.py`; volatility in
+   `replay/replay_compute_volatility_metrics.py`. Recorded, not changed.
+
+## 10. Interpreter
+
+Production runs Python 3.10. From 3.12, `sum()` over floats is compensated, so `net_gex` and
+`gamma_concentration` differ from production in the last one or two bits (~1e-15 relative; 474 of 486
+golden runs). Step 25 compares at 1e-9 and passes on both. Retail wanting bit-for-bit parity pins 3.10 or
+3.11.
+
+## 11. Change control
+
+- A change to anything in `merdian_compute/` ships only with a before-vs-after replay of the writer it
+  came from, offline suite green incl. steps 24–25, and a new retail pin.
 - A signature or `GammaMetricsResult` field change fails step 25 by design: update `SIGNATURES` there and
   this document in the same commit, and tell retail before it re-pins.

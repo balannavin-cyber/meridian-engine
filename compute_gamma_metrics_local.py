@@ -51,6 +51,8 @@ from merdian_compute.gamma import (  # noqa: E402,F401
     compute_pin_risk_score,
     _dte_from_ts,
     build_gss_rows,
+    prepare_gamma_inputs,  # S101_C2_GAMMA_CORE
+    compute_gamma_core,
 )
 
 
@@ -351,86 +353,23 @@ def compute_gamma_metrics(
             )
         raise RuntimeError(f"No option_chain_snapshots rows found for run_id={run_id}")
 
-    symbol = infer_symbol(option_rows_raw, expected_symbol=expected_symbol)
-    spot = infer_spot(option_rows_raw)
-    expiry_date = infer_expiry_date(option_rows_raw)
-    ts = infer_ts(option_rows_raw)
+    inputs = prepare_gamma_inputs(option_rows_raw, run_id, expected_symbol=expected_symbol)
+    symbol, ts = inputs["symbol"], inputs["ts"]
 
-    option_rows = filter_usable_option_rows(option_rows_raw)
-    if not option_rows:
-        raise RuntimeError(
-            f"All option rows were filtered out as unusable for run_id={run_id}, symbol={symbol}"
-        )
-
-    strike_map = build_strike_exposure_map(option_rows, spot)
-    net_gex = compute_net_gex(option_rows, spot)
-    gamma_concentration = compute_gamma_concentration(strike_map)
-    flip_level = compute_flip_level(strike_map, spot)
-
-    if flip_level is None:
-        flip_distance = None
-        flip_distance_pct = None
-    else:
-        flip_distance = spot - flip_level
-        flip_distance_pct = abs(flip_distance) / spot * 100.0 if spot > 0 else None
-
-    gamma_zone = determine_gamma_zone(flip_distance_pct)
-    straddle_atm = compute_straddle_atm(option_rows, spot)
-    straddle_slope = compute_straddle_slope(option_rows, spot)
-    expansion_probability = compute_expansion_probability(gamma_concentration, flip_distance_pct, net_gex)
-    regime = determine_regime(net_gex, flip_level)
-
-    # ENH-80 (S37) v2 — per-strike GEX row build (ADR-015 schema v2).
-    gss_rows = build_gss_rows(option_rows_raw, spot, symbol, ts, expiry_date, run_id)
-
-    # V18B: velocity and range fields
+    # S101_C2_GAMMA_CORE: the history reads stay here, in their original order; the computation is
+    # merdian_compute.gamma.compute_gamma_core (pure), which retail calls with its own history.
     prior_row = fetch_prior_gamma_metrics(symbol, ts)
-    straddle_velocity = compute_straddle_velocity(straddle_atm, prior_row)
-    otm_oi_velocity = compute_otm_oi_velocity(option_rows, spot, prior_row)
     spot_vs_range = fetch_spot_vs_range(symbol, ts)
-
-    # S41 P0.a -- India VIX + max_gamma_strike + Pin Risk Score.
-    # VIX is live-fetched (Dhan); failure returns None silently.
-    # max_gamma_strike derived from in-memory strike_map (no Supabase round-trip).
-    # Pin Risk Score requires sustained-time factor: queries last 5 cycles of
-    # gex_strike_snapshots BEFORE current ts (current cycle not yet persisted).
     vix = fetch_india_vix()
-    max_gamma_strike = compute_max_gamma_strike(strike_map)
-    strike_step = infer_strike_step(option_rows)
     recent_max_strikes = fetch_recent_max_gamma_strikes(symbol, ts, n=5)
-    pin_risk_score = compute_pin_risk_score(
-        gamma_concentration=gamma_concentration,
-        expansion_probability=expansion_probability,
-        spot=spot,
-        max_gamma_strike=max_gamma_strike,
-        strike_step=strike_step,
-        recent_max_strikes=recent_max_strikes,
-    )
 
-    return GammaMetricsResult(
-        run_id=run_id,
-        symbol=symbol,
-        ts=ts,
-        expiry_date=expiry_date,
-        spot=spot,
-        net_gex=net_gex,
-        gamma_concentration=gamma_concentration,
-        flip_level=flip_level,
-        flip_distance=flip_distance,
-        flip_distance_pct=flip_distance_pct,
-        gamma_zone=gamma_zone,
-        straddle_atm=straddle_atm,
-        straddle_slope=straddle_slope,
-        regime=regime,
-        expansion_probability=expansion_probability,
-        straddle_velocity=straddle_velocity,
-        otm_oi_velocity=otm_oi_velocity,
-        spot_vs_range=spot_vs_range,
+    return compute_gamma_core(
+        **inputs,
         run_type=run_type,
-        vix=vix,                                 # S41 P0.a
-        max_gamma_strike=max_gamma_strike,       # S41 P0.a
-        pin_risk_score=pin_risk_score,           # S41 P0.a
-        gss_rows=gss_rows,  # ENH-80 (S37) v2
+        prior_row=prior_row,
+        spot_vs_range=spot_vs_range,
+        vix=vix,
+        recent_max_strikes=recent_max_strikes,
     )
 
 

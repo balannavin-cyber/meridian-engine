@@ -2,14 +2,18 @@
 """S101 A5 — offline step 25: the contract retail-meridian depends on (retail scope §1.3 item 3).
 
 Retail computes the Board core on each subscriber's own chain by calling merdian_compute
-directly -- never a writer. This test calls it exactly that way and pins two things:
+directly -- never a writer. Since S101 C2 that is ONE composed call, exactly what the live writer
+runs: compute_gamma_core(**prepare_gamma_inputs(rows, run_id, expected_symbol=SYM), run_type=...,
+prior_row=..., spot_vs_range=..., vix=..., recent_max_strikes=...). This test calls it that way
+and pins two things:
 
   1. SIGNATURES of the exported surface (str(inspect.signature)), plus the field order of
      GammaMetricsResult. A rename, a new required parameter, a changed default or a changed
      annotation fails here BEFORE retail finds it in production.
   2. OUTPUTS against PRODUCTION, not against itself. For every frozen gamma_metrics row of
-     every golden day whose chain run is frozen too, the Board core is recomputed from that
-     chain with merdian_compute alone and compared with the value production wrote:
+     every golden day whose chain run is frozen too, compute_gamma_core is run on that chain
+     (rows' ts / created_at in PostgREST ISO form, as the live writer receives them) and its
+     result compared with the value production wrote:
         net_gex, gamma_concentration, flip_level, flip_distance_pct, gamma_zone, regime,
         straddle_atm, straddle_slope, expansion_probability, max_gamma_strike, spot
      -- every row, equal within rel/abs 1e-9 (measured S101: 313/313 on all eleven).
@@ -19,11 +23,16 @@ directly -- never a writer. This test calls it exactly that way and pins two thi
      the session boundary; a row with fewer than 5 in-day priors would be compared against a
      window the fixture does not hold. Those rows are excluded BY RULE, and the test asserts
      the exclusion is exactly the first 5 cycles of each day -- it cannot silently grow.
+     straddle_velocity is pinned on every row but each day's first, with prior_row =
+     {"straddle_atm": the previous frozen row's value} (production's prior row is the latest
+     earlier gamma row, which for a day's first cycle is the previous session's; measured
+     307/307).
 
 WHAT MAKES IT FAIL (Rule 0, proved by the mutants below, each in its own interpreter on a
 copy of the package): M1 Crore divisor 1e7 -> 1.0000001e7 (net_gex); M2 flip dominance floor
 0.01 -> 0.5 (flip_level); M3 pin-risk concentration weight 0.30 -> 0.31 (pin_risk_score);
-M4 a parameter renamed (signature); M5 a GammaMetricsResult field reordered (fields).
+M4 a parameter renamed (signature); M5 a GammaMetricsResult field reordered (fields);
+M6 one statement inside compute_gamma_core (flip_distance_pct x100.0 -> x100.1).
 Loads all six golden days: same rule-23 class as step 12. Stdlib only, run under -I.
 """
 from __future__ import annotations
@@ -67,6 +76,8 @@ SIGNATURES = {
     "gamma.compute_max_gamma_strike": "(strike_map: 'dict[float, float]') -> 'float | None'",
     "gamma.compute_pin_risk_score": "(gamma_concentration: 'float | None', expansion_probability: 'float | None', spot: 'float', max_gamma_strike: 'float | None', strike_step: 'float | None', recent_max_strikes: 'list[float]') -> 'float | None'",
     "gamma.build_gss_rows": "(option_rows_raw: 'list[dict[str, Any]]', spot: 'float', symbol: 'str', ts: 'str', expiry_date: 'str | None', run_id: 'str') -> 'list[dict[str, Any]]'",
+    "gamma.prepare_gamma_inputs": "(option_rows_raw: 'list[dict[str, Any]]', run_id: 'str', expected_symbol: 'str | None' = None) -> 'dict[str, Any]'",
+    "gamma.compute_gamma_core": "(*, run_id: 'str', symbol: 'str', spot: 'float', expiry_date: 'str | None', ts: 'str', option_rows_raw: 'list[dict[str, Any]]', option_rows: 'list[dict[str, Any]]', run_type: 'str', prior_row: 'dict[str, Any] | None', spot_vs_range: 'float | None', vix: 'float | None', recent_max_strikes: 'list[float]') -> 'GammaMetricsResult'",
     "cycle.derive_rank_fields": "(rank_rows: 'list[dict[str, Any]]') -> 'dict[str, Any]'",
     "cycle.boost": "(t_days: 'float') -> 'float'",
     "cycle.conviction_for": "(runnerup_share_ratio: 'Optional[float]', t_days: 'Optional[int]', calendar_healthy: 'bool') -> 'tuple[Optional[float], Optional[str]]'",
@@ -117,7 +128,7 @@ def check(root: Path) -> list[str]:
     if list(G.GammaMetricsResult.__dataclass_fields__) != RESULT_FIELDS:
         errs.append(f"GammaMetricsResult fields {list(G.GammaMetricsResult.__dataclass_fields__)}")
 
-    rows_core = rows_pin = excluded = 0
+    rows_core = rows_pin = rows_vel = excluded = 0
     for day in sorted(p for p in GOLDEN.iterdir() if p.is_dir()):
         sym = day.name.split("_")[1]
         with gzip.open(day / "inputs" / "ocs.csv.gz", "rt", newline="") as g:
@@ -125,6 +136,8 @@ def check(root: Path) -> list[str]:
         by_run: dict[str, list] = {}
         for r in ocs:
             if r["symbol"] == sym:
+                for c in ("ts", "created_at"):          # psql CSV form -> the ISO form PostgREST serves
+                    r[c] = _ts(r[c]).isoformat() if r[c] else r[c]
                 by_run.setdefault(r["run_id"], []).append(r)
         with gzip.open(day / "inputs" / "gamma_metrics.csv.gz", "rt", newline="") as g:
             gm = sorted(csv.DictReader(io.StringIO(g.read())), key=lambda r: _ts(r["ts"]))
@@ -132,41 +145,36 @@ def check(root: Path) -> list[str]:
             chain = by_run.get(prod["run_id"])
             if not chain:
                 continue
-            # --- the retail path: chain -> merdian_compute, nothing else ------------
-            spot = G.infer_spot(chain)
-            use = G.filter_usable_option_rows(chain)
-            sm = G.build_strike_exposure_map(use, spot)
-            net = G.compute_net_gex(use, spot)
-            conc = G.compute_gamma_concentration(sm)
-            flip = G.compute_flip_level(sm, spot)
-            fdp = None if flip is None else (abs(spot - flip) / spot * 100.0 if spot > 0 else None)
-            ep = G.compute_expansion_probability(conc, fdp, net)
-            mgs = G.compute_max_gamma_strike(sm)
-            got = {"net_gex": net, "gamma_concentration": conc, "flip_level": flip,
-                   "flip_distance_pct": fdp, "gamma_zone": G.determine_gamma_zone(fdp),
-                   "regime": G.determine_regime(net, flip), "straddle_atm": G.compute_straddle_atm(use, spot),
-                   "straddle_slope": G.compute_straddle_slope(use, spot), "expansion_probability": ep,
-                   "max_gamma_strike": mgs, "spot": spot}
+            # --- the retail path: chain + its own history -> ONE composed call ------
+            recent = [float(r["max_gamma_strike"]) for r in gm[max(0, i - 5):i] if r["max_gamma_strike"]]
+            prior = ({"straddle_atm": float(gm[i - 1]["straddle_atm"]) if gm[i - 1]["straddle_atm"] else None}
+                     if i > 0 else None)
+            res = G.compute_gamma_core(**G.prepare_gamma_inputs(chain, prod["run_id"], expected_symbol=sym),
+                                       run_type="FULL", prior_row=prior, spot_vs_range=None, vix=None,
+                                       recent_max_strikes=recent)
             rows_core += 1
             for f in CORE:
-                if not _same(got[f], prod[f]):
-                    errs.append(f"{day.name} {prod['ts']} {f}: got {got[f]!r} production {prod[f]!r}")
-            recent = [float(r["max_gamma_strike"]) for r in gm[max(0, i - 5):i] if r["max_gamma_strike"]]
+                got = getattr(res, f)
+                if not _same(got, prod[f]):
+                    errs.append(f"{day.name} {prod['ts']} {f}: got {got!r} production {prod[f]!r}")
+            if i > 0:
+                rows_vel += 1
+                if not _same(res.straddle_velocity, prod["straddle_velocity"]):
+                    errs.append(f"{day.name} {prod['ts']} straddle_velocity: got {res.straddle_velocity!r} "
+                                f"production {prod['straddle_velocity']!r}")
             if i < 5:
                 excluded += 1
                 continue
             if len(recent) != 5:
                 errs.append(f"{day.name} row {i}: {len(recent)} priors with a non-empty max_gamma_strike, want 5")
-            prs = G.compute_pin_risk_score(gamma_concentration=conc, expansion_probability=ep, spot=spot,
-                                           max_gamma_strike=mgs, strike_step=G.infer_strike_step(use),
-                                           recent_max_strikes=recent)
             rows_pin += 1
-            if not _same(prs, prod["pin_risk_score"]):
-                errs.append(f"{day.name} {prod['ts']} pin_risk_score: got {prs!r} production {prod['pin_risk_score']!r}")
-    if rows_core == 0 or rows_pin == 0:
-        errs.append(f"nothing compared (core {rows_core}, pin {rows_pin})")
+            if not _same(res.pin_risk_score, prod["pin_risk_score"]):
+                errs.append(f"{day.name} {prod['ts']} pin_risk_score: got {res.pin_risk_score!r} "
+                            f"production {prod['pin_risk_score']!r}")
+    if rows_core == 0 or rows_pin == 0 or rows_vel == 0:
+        errs.append(f"nothing compared (core {rows_core}, pin {rows_pin}, velocity {rows_vel})")
     print(f"  signatures {len(SIGNATURES)} + result fields; core rows {rows_core} x {len(CORE)} fields; "
-          f"pin rows {rows_pin} (excluded by rule {excluded})")
+          f"pin rows {rows_pin} (excluded by rule {excluded}); straddle_velocity rows {rows_vel}")
     return errs
 
 
@@ -178,6 +186,8 @@ MUTANTS = [
     ("M4 parameter renamed", "cycle.py", "def boost(t_days: float) -> float:", "def boost(t: float) -> float:\n    t_days = t", "signature cycle.boost"),
     ("M5 result field order", "gamma.py", "    net_gex: float\n    gamma_concentration: float | None\n",
      "    gamma_concentration: float | None\n    net_gex: float\n", "GammaMetricsResult fields"),
+    ("M6 statement in the core", "gamma.py", "flip_distance_pct = abs(flip_distance) / spot * 100.0 if spot > 0 else None",
+     "flip_distance_pct = abs(flip_distance) / spot * 100.1 if spot > 0 else None", "flip_distance_pct"),
 ]
 
 

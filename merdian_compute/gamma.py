@@ -750,3 +750,131 @@ def build_gss_rows(
         })
 
     return rows
+
+
+# S101_C2_GAMMA_CORE: the writer's compute_gamma_metrics body, cut into two pure functions (S101 C2).
+# Statements are the writer's own lines; only the four history reads stayed behind, as parameters.
+def prepare_gamma_inputs(
+    option_rows_raw: list[dict[str, Any]],
+    run_id: str,
+    expected_symbol: str | None = None,
+) -> dict[str, Any]:
+    """Infer symbol / spot / expiry / ts from one chain batch and keep the usable rows.
+
+    Raises exactly what compute_gamma_metrics raised, in the same order (multi-expiry batch,
+    all rows filtered). `ts` is inferred ONCE here: callers fetch history with it and pass the
+    returned dict to compute_gamma_core(**inputs, ...), so the two can never disagree.
+    """
+
+    symbol = infer_symbol(option_rows_raw, expected_symbol=expected_symbol)
+    spot = infer_spot(option_rows_raw)
+    expiry_date = infer_expiry_date(option_rows_raw)
+    ts = infer_ts(option_rows_raw)
+
+    option_rows = filter_usable_option_rows(option_rows_raw)
+    if not option_rows:
+        raise RuntimeError(
+            f"All option rows were filtered out as unusable for run_id={run_id}, symbol={symbol}"
+        )
+
+    return {
+        "run_id": run_id,
+        "symbol": symbol,
+        "spot": spot,
+        "expiry_date": expiry_date,
+        "ts": ts,
+        "option_rows_raw": option_rows_raw,
+        "option_rows": option_rows,
+    }
+
+
+def compute_gamma_core(
+    *,
+    run_id: str,
+    symbol: str,
+    spot: float,
+    expiry_date: str | None,
+    ts: str,
+    option_rows_raw: list[dict[str, Any]],
+    option_rows: list[dict[str, Any]],
+    run_type: str,
+    prior_row: dict[str, Any] | None,
+    spot_vs_range: float | None,
+    vix: float | None,
+    recent_max_strikes: list[float],
+) -> GammaMetricsResult:
+    """One cycle's gamma metrics from a prepared batch plus its history inputs. Pure.
+
+    prior_row          latest earlier gamma row for the symbol ({'straddle_atm': ...}) or None
+    spot_vs_range      position of spot in the session range, or None (stored only)
+    vix                India VIX, or None (stored only)
+    recent_max_strikes max_gamma_strike of the last 5 earlier cycles, across sessions
+    Retail: compute_gamma_core(**prepare_gamma_inputs(rows, run_id), run_type=..., prior_row=...,
+            spot_vs_range=..., vix=..., recent_max_strikes=...).
+    """
+    strike_map = build_strike_exposure_map(option_rows, spot)
+    net_gex = compute_net_gex(option_rows, spot)
+    gamma_concentration = compute_gamma_concentration(strike_map)
+    flip_level = compute_flip_level(strike_map, spot)
+
+    if flip_level is None:
+        flip_distance = None
+        flip_distance_pct = None
+    else:
+        flip_distance = spot - flip_level
+        flip_distance_pct = abs(flip_distance) / spot * 100.0 if spot > 0 else None
+
+    gamma_zone = determine_gamma_zone(flip_distance_pct)
+    straddle_atm = compute_straddle_atm(option_rows, spot)
+    straddle_slope = compute_straddle_slope(option_rows, spot)
+    expansion_probability = compute_expansion_probability(gamma_concentration, flip_distance_pct, net_gex)
+    regime = determine_regime(net_gex, flip_level)
+
+    # ENH-80 (S37) v2 — per-strike GEX row build (ADR-015 schema v2).
+    gss_rows = build_gss_rows(option_rows_raw, spot, symbol, ts, expiry_date, run_id)
+
+    # V18B: velocity and range fields
+    straddle_velocity = compute_straddle_velocity(straddle_atm, prior_row)
+    otm_oi_velocity = compute_otm_oi_velocity(option_rows, spot, prior_row)
+
+    # S41 P0.a -- India VIX + max_gamma_strike + Pin Risk Score.
+    # VIX is live-fetched (Dhan); failure returns None silently.
+    # max_gamma_strike derived from in-memory strike_map (no Supabase round-trip).
+    # Pin Risk Score requires sustained-time factor: queries last 5 cycles of
+    # gex_strike_snapshots BEFORE current ts (current cycle not yet persisted).
+    max_gamma_strike = compute_max_gamma_strike(strike_map)
+    strike_step = infer_strike_step(option_rows)
+    pin_risk_score = compute_pin_risk_score(
+        gamma_concentration=gamma_concentration,
+        expansion_probability=expansion_probability,
+        spot=spot,
+        max_gamma_strike=max_gamma_strike,
+        strike_step=strike_step,
+        recent_max_strikes=recent_max_strikes,
+    )
+
+    return GammaMetricsResult(
+        run_id=run_id,
+        symbol=symbol,
+        ts=ts,
+        expiry_date=expiry_date,
+        spot=spot,
+        net_gex=net_gex,
+        gamma_concentration=gamma_concentration,
+        flip_level=flip_level,
+        flip_distance=flip_distance,
+        flip_distance_pct=flip_distance_pct,
+        gamma_zone=gamma_zone,
+        straddle_atm=straddle_atm,
+        straddle_slope=straddle_slope,
+        regime=regime,
+        expansion_probability=expansion_probability,
+        straddle_velocity=straddle_velocity,
+        otm_oi_velocity=otm_oi_velocity,
+        spot_vs_range=spot_vs_range,
+        run_type=run_type,
+        vix=vix,                                 # S41 P0.a
+        max_gamma_strike=max_gamma_strike,       # S41 P0.a
+        pin_risk_score=pin_risk_score,           # S41 P0.a
+        gss_rows=gss_rows,  # ENH-80 (S37) v2
+    )

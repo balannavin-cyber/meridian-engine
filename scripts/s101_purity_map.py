@@ -34,10 +34,13 @@ FILES = {
     "pin": "core/pin_state.py",
     "par": "core/parameters.py",
     "cal": "core/trading_calendar_gate.py",
+    "mcg": "merdian_compute/gamma.py",   # S101: after the extraction the pure code lives here
+    "mcc": "merdian_compute/cycle.py",
 }
 # module path -> file key, for cross-file edges
 MODULE_KEY = {"core.pin_state": "pin", "core.parameters": "par",
-              "core.trading_calendar_gate": "cal"}
+              "core.trading_calendar_gate": "cal",
+              "merdian_compute.gamma": "mcg", "merdian_compute.cycle": "mcc"}
 
 # Stdlib modules whose names are pure when used (clock attrs are caught separately).
 PURE_MODULES = {
@@ -64,7 +67,7 @@ TARGETS = [
 ] + [
     ("wgh", n) for n in ["trading_days_to_expiry", "boost", "conviction_for",
                          "derive_rank_fields", "_norm_frac", "_ist_date"]
-] + [("pin", "derive")]
+] + [("pin", "derive")] + [("mcg", "prepare_gamma_inputs"), ("mcg", "compute_gamma_core")]
 
 
 class Module:
@@ -100,14 +103,27 @@ class Module:
                             self.imports[a.asname or a.name] = f"{sub.module}.{a.name}"
 
 
-MODS = {k: Module(k, r) for k, r in FILES.items()}
+MODS = {k: Module(k, r) for k, r in FILES.items() if (ROOT / r).exists() or k not in ("mcg", "mcc")}
+
+
+def resolve(key: str, name: str) -> tuple[str, str]:
+    """Where key:name is DEFINED: in the file itself, or -- on a tree after the S101 extraction --
+    in the analysed module the file imports it from. Works on 7b91d1a and on later trees."""
+    mod = MODS[key]
+    if name in mod.defs:
+        return key, name
+    target = mod.imports.get(name, "")
+    for m, k in MODULE_KEY.items():
+        if target.startswith(m + ".") and k in MODS and target[len(m) + 1:] in MODS[k].defs:
+            return k, target[len(m) + 1:]
+    raise KeyError(f"{key}:{name}")
 
 
 def import_impure(target: str) -> tuple[bool, str | None]:
     """Is an imported binding impure? Returns (impure, cross_file_edge)."""
     root = target.split(".")[0]
     for mod, key in MODULE_KEY.items():
-        if target.startswith(mod + "."):
+        if target.startswith(mod + ".") and key in MODS:
             attr = target[len(mod) + 1:]
             if attr in MODS[key].defs:
                 return False, f"{key}:{attr}"      # judged by closure, not here
@@ -224,6 +240,7 @@ def direct(key: str, name: str) -> tuple[list[str], set[str]]:
 
 def closure(key: str, name: str) -> tuple[list[str], list[str]]:
     """(sorted closure 'key:name' excluding self, impurity reasons with provenance)."""
+    key, name = resolve(key, name)
     seen, stack, reasons = set(), [f"{key}:{name}"], []
     while stack:
         cur = stack.pop()
@@ -246,19 +263,20 @@ def _reset(mods: dict[str, Module]) -> None:
 
 
 def _inject(key: str, fname: str, stmt: str) -> dict[str, Module]:
-    """Copy of MODS with `stmt` inserted as the first statement of key:fname."""
+    """Copy of MODS with `stmt` inserted as the first statement of fname, wherever it is defined."""
+    key, fname = resolve(key, fname)
     base = Module(key, FILES[key])
     tree = ast.parse(base.src)
     fn = next(n for n in tree.body if getattr(n, "name", None) == fname)
     fn.body.insert(0, ast.parse(stmt).body[0])
-    mods = {k: Module(k, r) for k, r in FILES.items()}
+    mods = {k: Module(k, r) for k, r in FILES.items() if k in MODS}
     mods[key] = Module(key, FILES[key], src=ast.unparse(tree))
     return mods
 
 
 def selftest() -> int:
     """Controls on the real source + mutants that must flip a pure function to impure."""
-    real = {k: Module(k, r) for k, r in FILES.items()}
+    real = {k: Module(k, r) for k, r in FILES.items() if k in MODS}
     fails = 0
 
     def verdict(key, name):
@@ -287,6 +305,7 @@ def selftest() -> int:
         ("M8 two hops (wgh)",   "wgh", "boost", "_m = SUPABASE", "conviction_for"),
     ]
     for label, key, inj_fn, stmt, judged in mutants:
+        _reset(real)
         _reset(_inject(key, inj_fn, stmt))
         got = verdict(key, judged)
         ok = got == "IMPURE"
@@ -302,11 +321,15 @@ def main() -> int:
         return selftest()
     rows = []
     for key, name in TARGETS:
-        if name not in MODS[key].defs:
+        if key not in MODS:
+            continue                                  # package targets on a tree without the package
+        try:
+            k2, _ = resolve(key, name)
+        except KeyError:
             print(f"MISSING target {key}:{name}")
             return 1
         cl, rs = closure(key, name)
-        rows.append((key, name, cl, rs))
+        rows.append((k2, name, cl, rs))
     print(f"{'file':4} {'function':32} {'pure':4}  closure  /  impurity")
     for key, name, cl, rs in rows:
         print(f"{key:4} {name:32} {'YES' if not rs else 'NO':4}  "

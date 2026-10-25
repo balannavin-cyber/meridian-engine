@@ -39,6 +39,13 @@ M7 the ATM-IV average in derive_atm_iv (/ 2.0 -> / 2.001).
      strike order, as the writer selects them) vs production's frozen volatility_snapshots row of
      the same run (source_run_id): atm_strike, atm_call_iv, atm_put_iv, atm_iv_avg, iv_skew --
      every row equal (measured 313 rows x 5 fields).
+
+  4. PIN PATH (S101 C4): the golden days hold no gex_cycle_history, so nothing here is pinned
+     against production rows. Pinned instead: the signatures of derive_core,
+     trading_days_between and held_for_cycles_next, and the ruled S89 ladder at every threshold
+     boundary (equality is the side the rule text names), the NULL-input reasons, the NULL-ratio
+     degrade, the carry-forward cases, and a fail-open calendar count. M8 flips the NO PIN test
+     `<` -> `<=`; M9 the carry-forward increment.
 Loads all six golden days: same rule-23 class as step 12. Stdlib only, run under -I.
 """
 from __future__ import annotations
@@ -92,6 +99,9 @@ SIGNATURES = {
     "volatility.find_atm_strike": "(spot: 'float', symbol: 'str') -> 'int'",
     "volatility.find_row": "(rows: 'List[Dict[str, Any]]', strike: 'int', option_type: 'str') -> 'Optional[Dict[str, Any]]'",
     "volatility.derive_atm_iv": "(option_rows: 'List[Dict[str, Any]]', on_symbol: 'Optional[Callable[[str], Any]]' = None) -> 'dict[str, Any]'",
+    "pin.derive_core": "(held_for_cycles: 'Optional[int]', runnerup_share_ratio: 'Optional[float]', conc_top1_share: 'Optional[float]', *, nopin_conc_floor: 'float', stable_held_for: 'float', locked_held_for: 'float', locked_ratio_max: 'float') -> 'tuple[Optional[str], Optional[str]]'",
+    "cycle.trading_days_between": "(run_date: 'date', expiry: 'date', is_open: 'Callable[[str], bool]') -> 'int'",
+    "cycle.held_for_cycles_next": "(state: 'str', leader: 'Optional[float]', prior_rows: 'list[dict[str, Any]]') -> 'Optional[int]'",
     "cycle.derive_rank_fields": "(rank_rows: 'list[dict[str, Any]]') -> 'dict[str, Any]'",
     "cycle.boost": "(t_days: 'float') -> 'float'",
     "cycle.conviction_for": "(runnerup_share_ratio: 'Optional[float]', t_days: 'Optional[int]', calendar_healthy: 'bool') -> 'tuple[Optional[float], Optional[str]]'",
@@ -137,6 +147,11 @@ def check(root: Path) -> list[str]:
         mods["volatility"] = VOL
     except ImportError:
         VOL = None
+    try:                                                  # S101 C4
+        from merdian_compute import pin as PIN             # noqa: E402
+        mods["pin"] = PIN
+    except ImportError:
+        PIN = None
     errs: list[str] = []
 
     for key, want in SIGNATURES.items():
@@ -151,6 +166,34 @@ def check(root: Path) -> list[str]:
         errs.append(f"GammaMetricsResult fields {list(G.GammaMetricsResult.__dataclass_fields__)}")
 
     rows_core = rows_pin = rows_vel = rows_iv = excluded = 0
+    if PIN is not None:                                   # 4. the pin path, against the ruled rule
+        th = {"nopin_conc_floor": 0.10, "stable_held_for": 3, "locked_held_for": 6, "locked_ratio_max": 0.50}
+        ladder = [  # (held, ratio, conc) -> (state, reason); thresholds th
+            ((5, 0.2, 0.09), ("NO PIN", None)), ((5, 0.2, 0.10), ("STABLE", None)),   # conc == floor: not NO PIN; 5 >= 3; 5 < 6
+            ((2, 0.2, 0.30), ("SHIFTING", None)), ((3, 0.2, 0.30), ("STABLE", None)),
+            ((6, 0.50, 0.30), ("LOCKED", None)), ((6, 0.51, 0.30), ("STABLE", None)),
+            ((5, 0.10, 0.30), ("STABLE", None)), ((9, None, 0.30), ("STABLE", None)),
+            ((9, 0.1, None), (None, "null input: conc_top1_share")),
+            ((None, 0.1, 0.3), (None, "null input: held_for_cycles")),
+        ]
+        for (h, r, c), want in ladder:
+            got = PIN.derive_core(h, r, c, **th)
+            if tuple(got) != want:
+                errs.append(f"pin ladder {(h, r, c)}: got {got} want {want}")
+        Y2 = mods["cycle"]
+        carry = [("OPEN", 100.0, [], 1), ("OPEN", 100.0, [{"pin_leader_strike": 100, "held_for_cycles": 4}], 5),
+                 ("OPEN", 100.0, [{"pin_leader_strike": 150, "held_for_cycles": 4}], 1),
+                 ("OPEN", None, [], None), ("FROZEN", 100.0, [], None),
+                 ("OPEN", 100.0, [{"pin_leader_strike": "100.0", "held_for_cycles": None}], 1)]
+        for st, ld, rows, want in carry:
+            got = Y2.held_for_cycles_next(st, ld, rows)
+            if got != want:
+                errs.append(f"carry-forward {(st, ld, rows)}: got {got} want {want}")
+        from datetime import date as _d
+        cal = {"2026-10-26": True, "2026-10-27": False, "2026-10-29": True}   # 10-28 has no row
+        got = Y2.trading_days_between(_d(2026, 10, 25), _d(2026, 10, 29), lambda iso: cal.get(iso, True))
+        if got != 3:   # 10-26 open, 10-27 closed, 10-28 no row = open (fail-open), 10-29 open
+            errs.append(f"trading_days_between fail-open count: got {got} want 3")
     for day in sorted(p for p in GOLDEN.iterdir() if p.is_dir()):
         sym = day.name.split("_")[1]
         with gzip.open(day / "inputs" / "ocs.csv.gz", "rt", newline="") as g:
@@ -229,6 +272,10 @@ MUTANTS = [
      "flip_distance_pct = abs(flip_distance) / spot * 100.1 if spot > 0 else None", "flip_distance_pct"),
     ("M7 ATM IV average", "volatility.py", "atm_iv_avg = (atm_call_iv + atm_put_iv) / 2.0",
      "atm_iv_avg = (atm_call_iv + atm_put_iv) / 2.001", "atm_iv_avg"),
+    ("M8 pin NO PIN boundary", "pin.py", "    if conc_top1_share < nopin_conc_floor:",
+     "    if conc_top1_share <= nopin_conc_floor:", "pin ladder"),
+    ("M9 carry-forward step", "cycle.py", '        return int(prev.get("held_for_cycles") or 0) + 1',
+     '        return int(prev.get("held_for_cycles") or 0) + 2', "carry-forward"),
 ]
 
 

@@ -51,6 +51,8 @@ from merdian_compute.cycle import (  # noqa: E402,F401
     derive_rank_fields,
     boost,
     conviction_for,
+    trading_days_between,  # S101_C4_PIN_PATH
+    held_for_cycles_next,
 )
 
 WRITER = "write_gex_cycle_history_local.py"
@@ -200,13 +202,7 @@ def trading_days_to_expiry(run_date: date, expiry: date) -> int:
     direction, but inherited behaviour, not a guarantee. Calendar health is
     checked separately, once per run, in main().
     """
-    n = 0
-    d = run_date + timedelta(days=1)
-    while d <= expiry:
-        if is_trading_day(d.isoformat()):
-            n += 1
-        d += timedelta(days=1)
-    return n
+    return trading_days_between(run_date, expiry, is_trading_day)
 
 
 # ---------------------------------------------------------------- session gate
@@ -321,13 +317,7 @@ def held_for_cycles_provisional(symbol: str, expiry_date: str, ts_iso: str,
         .limit(1)
         .execute()
     )
-    rows = _rows(prior)
-    if not rows:
-        return 1
-    prev = rows[0]
-    if prev.get("pin_leader_strike") is not None and float(prev["pin_leader_strike"]) == float(leader):
-        return int(prev.get("held_for_cycles") or 0) + 1
-    return 1
+    return held_for_cycles_next(state, leader, _rows(prior))
 
 
 # ---------------------------------------------------------------- row assembly

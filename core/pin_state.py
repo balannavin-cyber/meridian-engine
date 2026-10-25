@@ -31,29 +31,19 @@ from typing import Optional
 
 from core.parameters import ParameterNotFoundError, get_parameter_num
 
-# The four states, in the order the ladder tests them. Mirrors the CHECK
-# constraint in sql/2026-10-03_s89_gex_cycle_history.sql.
-NO_PIN = "NO PIN"
-SHIFTING = "SHIFTING"
-LOCKED = "LOCKED"
-STABLE = "STABLE"
-
-VALID_STATES = frozenset({NO_PIN, SHIFTING, LOCKED, STABLE})
-
-# Dot-key suffixes, per symbol. Kept as a tuple so a caller can pre-flight the
-# whole set (see `missing_keys`) without duplicating the names.
-_KEY_SUFFIXES = (
-    "nopin_conc_floor",
-    "stable_held_for",
-    "locked_held_for",
-    "locked_ratio_max",
+# S101_C4_PIN_PATH: the ladder's ONE implementation is now merdian_compute.pin.derive_core (pure);
+# derive() below reads the thresholds and delegates to it -- still a single home, ruling S89
+# holds. The state names and key_for moved with it and are re-imported unchanged.
+from merdian_compute.pin import (  # noqa: E402,F401
+    NO_PIN,
+    SHIFTING,
+    LOCKED,
+    STABLE,
+    VALID_STATES,
+    _KEY_SUFFIXES,
+    key_for,
+    derive_core,
 )
-
-
-def key_for(suffix: str, symbol: str) -> str:
-    """The ADR-016 dot-key for one threshold, e.g. pin_state.stable_held_for.NIFTY."""
-    return f"pin_state.{suffix}.{symbol}"
-
 
 def missing_keys(symbol: str) -> list[str]:
     """Which of this symbol's four threshold keys cannot be resolved.
@@ -123,20 +113,12 @@ def derive(
         key = str(e).strip("'\"") or "<unknown>"
         return None, f"missing parameter key: {key}"
 
-    if conc_top1_share < nopin_conc_floor:
-        return NO_PIN, None
-
-    if held_for_cycles < stable_held_for:
-        return SHIFTING, None
-
-    # LOCKED needs BOTH a long streak and a clear lead. runnerup_share_ratio
-    # NULL cannot satisfy "<= max", so it falls through to STABLE rather than
-    # being treated as 0 — a NULL ratio is a gap, never a zero.
-    if (
-        held_for_cycles >= locked_held_for
-        and runnerup_share_ratio is not None
-        and runnerup_share_ratio <= locked_ratio_max
-    ):
-        return LOCKED, None
-
-    return STABLE, None
+    return derive_core(
+        held_for_cycles,
+        runnerup_share_ratio,
+        conc_top1_share,
+        nopin_conc_floor=nopin_conc_floor,
+        stable_held_for=stable_held_for,
+        locked_held_for=locked_held_for,
+        locked_ratio_max=locked_ratio_max,
+    )

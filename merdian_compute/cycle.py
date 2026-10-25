@@ -131,3 +131,39 @@ def conviction_for(runnerup_share_ratio: Optional[float], t_days: Optional[int],
     if t_days is None:
         return None, "null input: t_days"
     return (1.0 - float(runnerup_share_ratio)) * boost(t_days), None
+
+
+# S101_C4_PIN_PATH: the pin path's calendar count and carry-forward, cut from
+# write_gex_cycle_history_local.py (S101 C4); the writer keeps the reads and passes them in.
+from typing import Callable  # noqa: E402
+
+
+def trading_days_between(run_date: date, expiry: date, is_open: Callable[[str], bool]) -> int:
+    """Open days strictly after run_date, up to and including expiry. `is_open(iso_date)` is the
+    caller's calendar; production passes core.trading_calendar_gate.is_trading_day, which FAILS
+    OPEN (a date with no calendar row counts as open).
+    """
+    n = 0
+    d = run_date + timedelta(days=1)
+    while d <= expiry:
+        if is_open(d.isoformat()):
+            n += 1
+        d += timedelta(days=1)
+    return n
+
+
+def held_for_cycles_next(state: str, leader: Optional[float],
+                         prior_rows: list[dict[str, Any]]) -> Optional[int]:
+    """Carry-forward of held_for_cycles. prior_rows = the latest EARLIER row of the same
+    (symbol, expiry_date) with session_gate_state OPEN, as a list of at most one dict with
+    pin_leader_strike and held_for_cycles. None unless state is OPEN and a leader exists.
+    """
+    if state != "OPEN" or leader is None:
+        return None
+    rows = prior_rows
+    if not rows:
+        return 1
+    prev = rows[0]
+    if prev.get("pin_leader_strike") is not None and float(prev["pin_leader_strike"]) == float(leader):
+        return int(prev.get("held_for_cycles") or 0) + 1
+    return 1

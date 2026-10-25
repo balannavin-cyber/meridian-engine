@@ -1,0 +1,17 @@
+# S101 A7 -- packaging for merdian_compute ONLY (retail scope §1.3). The engine itself is not a
+# package: this file exposes nothing but the pure compute surface. Retail installs it pinned by SHA:
+#   pip install "git+https://github.com/balannavin-cyber/meridian-engine@<sha>#egg=merdian_compute"
+# Contract: docs/interfaces/retail_compute_contract.md. No runtime dependencies (stdlib only).
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "merdian_compute"
+version = "1.0.0"
+description = "MERIDIAN pure compute surface (gamma, cycle helpers) for retail-meridian"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools]
+packages = ["merdian_compute"]

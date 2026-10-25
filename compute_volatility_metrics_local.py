@@ -11,6 +11,19 @@ from core.execution_log import ExecutionLog
 from core.supabase_client import SupabaseClient
 from fetch_india_vix import fetch_india_vix
 from gamma_engine_retry_utils import retry_call
+# S101_C3_ATM_IV: pure helpers and the ATM-IV derivation live in merdian_compute/volatility.py (S101);
+# re-imported under the same names so every caller is unchanged.
+from merdian_compute.volatility import (  # noqa: E402,F401
+    parse_iso_date,
+    parse_iso_dt,
+    safe_float,
+    get_expiry_type,
+    get_strike_step,
+    find_atm_strike,
+    find_row,
+    ATM_IV_KEYS,
+    derive_atm_iv,
+)
 
 
 # TD-NEW-12 (S28): shadow-vs-live table separation.
@@ -26,79 +39,6 @@ TARGET_TABLE = "volatility_snapshots_shadow" if USE_SHADOW else "volatility_snap
 
 
 IST = timezone(timedelta(hours=5, minutes=30))
-
-
-def parse_iso_date(value: Any) -> Optional[date]:
-    if value is None:
-        return None
-    if isinstance(value, date):
-        return value
-    try:
-        return datetime.fromisoformat(str(value)).date()
-    except Exception:
-        return None
-
-
-def parse_iso_dt(value: Any) -> Optional[datetime]:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    try:
-        s = str(value).strip()
-        # Pad fractional seconds to 6 digits for Python 3.10 compatibility
-        import re
-        s = re.sub(r'(\.\d{1,5})([+-]|Z|$)', lambda m: m.group(1).ljust(7, '0') + m.group(2), s)
-        s = s.replace('Z', '+00:00')
-        dt = datetime.fromisoformat(s)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt
-    except Exception:
-        return None
-
-
-def safe_float(value: Any) -> Optional[float]:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except Exception:
-        return None
-
-
-def get_expiry_type(expiry_date: date, symbol: str) -> str:
-    if symbol.upper() == "NIFTY":
-        return "WEEKLY" if expiry_date.weekday() == 1 else "MONTHLY"
-    if symbol.upper() == "SENSEX":
-        return "WEEKLY" if expiry_date.weekday() == 3 else "MONTHLY"
-    return "UNKNOWN"
-
-
-def get_strike_step(symbol: str) -> int:
-    if symbol.upper() == "NIFTY":
-        return 50
-    if symbol.upper() == "SENSEX":
-        return 100
-    raise RuntimeError(f"Unsupported symbol: {symbol}")
-
-
-def find_atm_strike(spot: float, symbol: str) -> int:
-    step = get_strike_step(symbol)
-    return int(round(float(spot) / step) * step)
-
-
-def find_row(rows: List[Dict[str, Any]], strike: int, option_type: str) -> Optional[Dict[str, Any]]:
-    for row in rows:
-        try:
-            row_strike = int(float(row.get("strike")))
-        except Exception:
-            continue
-
-        row_option_type = str(row.get("option_type", "")).upper()
-        if row_strike == strike and row_option_type == option_type.upper():
-            return row
-    return None
 
 
 def classify_vix_level_regime(vix_value: Optional[float]) -> Optional[str]:
@@ -604,88 +544,15 @@ def main() -> int:
 
     print(f"Fetched option rows: {len(option_rows)}")
 
-    first = option_rows[0]
-
-    try:
-        symbol = str(first["symbol"]).upper()
-    except Exception as e:
-        return log.exit_with_reason(
-            "DATA_ERROR",
-            exit_code=1,
-            error_message=f"Could not extract symbol from chain: {e}",
-        )
-
-    # Backfill symbol onto the log row now that we know it. set_symbol() is a
-    # PATCH to script_execution_log's RUNNING row -- see core/execution_log.py
-    # (added Session 3 for run_id-contract scripts).
-    log.set_symbol(symbol)
-
-    expiry_date = parse_iso_date(first.get("expiry_date"))
-    ts_value = parse_iso_dt(first.get("ts") or first.get("created_at"))
-    spot = safe_float(first.get("spot"))
-
-    if expiry_date is None:
-        return log.exit_with_reason(
-            "DATA_ERROR",
-            exit_code=1,
-            error_message="expiry_date missing from option rows",
-        )
-    if ts_value is None:
-        return log.exit_with_reason(
-            "DATA_ERROR",
-            exit_code=1,
-            error_message="ts missing from option rows",
-        )
-    if spot is None:
-        return log.exit_with_reason(
-            "DATA_ERROR",
-            exit_code=1,
-            error_message="spot missing from option rows",
-        )
-
-    try:
-        atm_strike = find_atm_strike(spot, symbol)
-    except Exception as e:
-        return log.exit_with_reason(
-            "DATA_ERROR",
-            exit_code=1,
-            error_message=f"find_atm_strike failed: {e}",
-        )
-
-    ce_row = find_row(option_rows, atm_strike, "CE")
-    pe_row = find_row(option_rows, atm_strike, "PE")
-
-    if ce_row is None:
-        return log.exit_with_reason(
-            "DATA_ERROR",
-            exit_code=1,
-            error_message=f"ATM CE row not found for symbol={symbol}, strike={atm_strike}",
-        )
-    if pe_row is None:
-        return log.exit_with_reason(
-            "DATA_ERROR",
-            exit_code=1,
-            error_message=f"ATM PE row not found for symbol={symbol}, strike={atm_strike}",
-        )
-
-    atm_call_iv = safe_float(ce_row.get("iv"))
-    atm_put_iv = safe_float(pe_row.get("iv"))
-
-    if atm_call_iv is None:
-        return log.exit_with_reason(
-            "DATA_ERROR",
-            exit_code=1,
-            error_message="ATM call IV missing",
-        )
-    if atm_put_iv is None:
-        return log.exit_with_reason(
-            "DATA_ERROR",
-            exit_code=1,
-            error_message="ATM put IV missing",
-        )
-
-    atm_iv_avg = (atm_call_iv + atm_put_iv) / 2.0
-    iv_skew = atm_put_iv - atm_call_iv
+    # S101_C3_ATM_IV: ATM IV is merdian_compute.volatility.derive_atm_iv (pure, the same statements);
+    # the ledger calls stay here, in the same order: set_symbol when the symbol is known, and
+    # the identical exit_with_reason on the first failed check.
+    atm = derive_atm_iv(option_rows, on_symbol=log.set_symbol)
+    if atm["error"] is not None:
+        reason, exit_code, error_message = atm["error"]
+        return log.exit_with_reason(reason, exit_code=exit_code, error_message=error_message)
+    (first, symbol, expiry_date, ts_value, spot, atm_strike,
+     ce_row, pe_row, atm_call_iv, atm_put_iv, atm_iv_avg, iv_skew) = (atm[k] for k in ATM_IV_KEYS)
 
     today = datetime.now().date()
     dte = (expiry_date - today).days

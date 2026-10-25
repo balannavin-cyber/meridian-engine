@@ -36,11 +36,14 @@ FILES = {
     "cal": "core/trading_calendar_gate.py",
     "mcg": "merdian_compute/gamma.py",   # S101: after the extraction the pure code lives here
     "mcc": "merdian_compute/cycle.py",
+    "vol": "compute_volatility_metrics_local.py",   # S101 C3: the wall input (ATM IV)
+    "mcv": "merdian_compute/volatility.py",
 }
 # module path -> file key, for cross-file edges
 MODULE_KEY = {"core.pin_state": "pin", "core.parameters": "par",
               "core.trading_calendar_gate": "cal",
-              "merdian_compute.gamma": "mcg", "merdian_compute.cycle": "mcc"}
+              "merdian_compute.gamma": "mcg", "merdian_compute.cycle": "mcc",
+              "merdian_compute.volatility": "mcv"}
 
 # Stdlib modules whose names are pure when used (clock attrs are caught separately).
 PURE_MODULES = {
@@ -67,7 +70,10 @@ TARGETS = [
 ] + [
     ("wgh", n) for n in ["trading_days_to_expiry", "boost", "conviction_for",
                          "derive_rank_fields", "_norm_frac", "_ist_date"]
-] + [("pin", "derive")] + [("mcg", "prepare_gamma_inputs"), ("mcg", "compute_gamma_core")]
+] + [("pin", "derive")] + [("mcg", "prepare_gamma_inputs"), ("mcg", "compute_gamma_core")] + [
+    ("vol", n) for n in ["parse_iso_date", "parse_iso_dt", "safe_float", "get_expiry_type",
+                         "get_strike_step", "find_atm_strike", "find_row", "main"]
+] + [("mcv", "derive_atm_iv")]
 
 
 class Module:
@@ -103,7 +109,7 @@ class Module:
                             self.imports[a.asname or a.name] = f"{sub.module}.{a.name}"
 
 
-MODS = {k: Module(k, r) for k, r in FILES.items() if (ROOT / r).exists() or k not in ("mcg", "mcc")}
+MODS = {k: Module(k, r) for k, r in FILES.items() if (ROOT / r).exists() or k not in ("mcg", "mcc", "mcv")}
 
 
 def resolve(key: str, name: str) -> tuple[str, str]:

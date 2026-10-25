@@ -32,7 +32,13 @@ WHAT MAKES IT FAIL (Rule 0, proved by the mutants below, each in its own interpr
 copy of the package): M1 Crore divisor 1e7 -> 1.0000001e7 (net_gex); M2 flip dominance floor
 0.01 -> 0.5 (flip_level); M3 pin-risk concentration weight 0.30 -> 0.31 (pin_risk_score);
 M4 a parameter renamed (signature); M5 a GammaMetricsResult field reordered (fields);
-M6 one statement inside compute_gamma_core (flip_distance_pct x100.0 -> x100.1).
+M6 one statement inside compute_gamma_core (flip_distance_pct x100.0 -> x100.1);
+M7 the ATM-IV average in derive_atm_iv (/ 2.0 -> / 2.001).
+
+  3. WALL INPUT (S101 C3): merdian_compute.volatility.derive_atm_iv on each golden chain (rows in
+     strike order, as the writer selects them) vs production's frozen volatility_snapshots row of
+     the same run (source_run_id): atm_strike, atm_call_iv, atm_put_iv, atm_iv_avg, iv_skew --
+     every row equal (measured 313 rows x 5 fields).
 Loads all six golden days: same rule-23 class as step 12. Stdlib only, run under -I.
 """
 from __future__ import annotations
@@ -78,6 +84,14 @@ SIGNATURES = {
     "gamma.build_gss_rows": "(option_rows_raw: 'list[dict[str, Any]]', spot: 'float', symbol: 'str', ts: 'str', expiry_date: 'str | None', run_id: 'str') -> 'list[dict[str, Any]]'",
     "gamma.prepare_gamma_inputs": "(option_rows_raw: 'list[dict[str, Any]]', run_id: 'str', expected_symbol: 'str | None' = None) -> 'dict[str, Any]'",
     "gamma.compute_gamma_core": "(*, run_id: 'str', symbol: 'str', spot: 'float', expiry_date: 'str | None', ts: 'str', option_rows_raw: 'list[dict[str, Any]]', option_rows: 'list[dict[str, Any]]', run_type: 'str', prior_row: 'dict[str, Any] | None', spot_vs_range: 'float | None', vix: 'float | None', recent_max_strikes: 'list[float]') -> 'GammaMetricsResult'",
+    "volatility.parse_iso_date": "(value: 'Any') -> 'Optional[date]'",
+    "volatility.parse_iso_dt": "(value: 'Any') -> 'Optional[datetime]'",
+    "volatility.safe_float": "(value: 'Any') -> 'Optional[float]'",
+    "volatility.get_expiry_type": "(expiry_date: 'date', symbol: 'str') -> 'str'",
+    "volatility.get_strike_step": "(symbol: 'str') -> 'int'",
+    "volatility.find_atm_strike": "(spot: 'float', symbol: 'str') -> 'int'",
+    "volatility.find_row": "(rows: 'List[Dict[str, Any]]', strike: 'int', option_type: 'str') -> 'Optional[Dict[str, Any]]'",
+    "volatility.derive_atm_iv": "(option_rows: 'List[Dict[str, Any]]', on_symbol: 'Optional[Callable[[str], Any]]' = None) -> 'dict[str, Any]'",
     "cycle.derive_rank_fields": "(rank_rows: 'list[dict[str, Any]]') -> 'dict[str, Any]'",
     "cycle.boost": "(t_days: 'float') -> 'float'",
     "cycle.conviction_for": "(runnerup_share_ratio: 'Optional[float]', t_days: 'Optional[int]', calendar_healthy: 'bool') -> 'tuple[Optional[float], Optional[str]]'",
@@ -118,17 +132,25 @@ def check(root: Path) -> list[str]:
     sys.path.insert(0, str(root))
     from merdian_compute import cycle as Y, gamma as G   # noqa: E402
     mods = {"gamma": G, "cycle": Y}
+    try:                                                  # S101 C3; absent on a C2-only tree
+        from merdian_compute import volatility as VOL      # noqa: E402
+        mods["volatility"] = VOL
+    except ImportError:
+        VOL = None
     errs: list[str] = []
 
     for key, want in SIGNATURES.items():
         m, n = key.split(".")
+        if m not in mods:
+            errs.append(f"signature {key}: module merdian_compute.{m} missing")
+            continue
         got = str(inspect.signature(getattr(mods[m], n)))
         if got != want:
             errs.append(f"signature {key}: {got}")
     if list(G.GammaMetricsResult.__dataclass_fields__) != RESULT_FIELDS:
         errs.append(f"GammaMetricsResult fields {list(G.GammaMetricsResult.__dataclass_fields__)}")
 
-    rows_core = rows_pin = rows_vel = excluded = 0
+    rows_core = rows_pin = rows_vel = rows_iv = excluded = 0
     for day in sorted(p for p in GOLDEN.iterdir() if p.is_dir()):
         sym = day.name.split("_")[1]
         with gzip.open(day / "inputs" / "ocs.csv.gz", "rt", newline="") as g:
@@ -139,6 +161,22 @@ def check(root: Path) -> list[str]:
                 for c in ("ts", "created_at"):          # psql CSV form -> the ISO form PostgREST serves
                     r[c] = _ts(r[c]).isoformat() if r[c] else r[c]
                 by_run.setdefault(r["run_id"], []).append(r)
+        if VOL is not None:                               # 3. the wall input, per frozen volatility row
+            with gzip.open(day / "inputs" / "volatility.csv.gz", "rt", newline="") as g:
+                vol_rows = list(csv.DictReader(io.StringIO(g.read())))
+            by_all: dict[str, list] = {}
+            for r in ocs:
+                by_all.setdefault(r["run_id"], []).append(r)
+            for prod in vol_rows:
+                chain = by_all.get(prod["source_run_id"])
+                if not chain:
+                    continue
+                res = VOL.derive_atm_iv(sorted(chain, key=lambda r: float(r["strike"])))
+                rows_iv += 1
+                for f in ("atm_strike", "atm_call_iv", "atm_put_iv", "atm_iv_avg", "iv_skew"):
+                    got = res.get(f) if res["error"] is None else None
+                    if not _same(got, prod[f]):
+                        errs.append(f"{day.name} {prod['ts']} {f}: got {got!r} production {prod[f]!r}")
         with gzip.open(day / "inputs" / "gamma_metrics.csv.gz", "rt", newline="") as g:
             gm = sorted(csv.DictReader(io.StringIO(g.read())), key=lambda r: _ts(r["ts"]))
         for i, prod in enumerate(gm):
@@ -171,10 +209,11 @@ def check(root: Path) -> list[str]:
             if not _same(res.pin_risk_score, prod["pin_risk_score"]):
                 errs.append(f"{day.name} {prod['ts']} pin_risk_score: got {res.pin_risk_score!r} "
                             f"production {prod['pin_risk_score']!r}")
-    if rows_core == 0 or rows_pin == 0 or rows_vel == 0:
-        errs.append(f"nothing compared (core {rows_core}, pin {rows_pin}, velocity {rows_vel})")
+    if rows_core == 0 or rows_pin == 0 or rows_vel == 0 or rows_iv == 0:
+        errs.append(f"nothing compared (core {rows_core}, pin {rows_pin}, velocity {rows_vel}, iv {rows_iv})")
     print(f"  signatures {len(SIGNATURES)} + result fields; core rows {rows_core} x {len(CORE)} fields; "
-          f"pin rows {rows_pin} (excluded by rule {excluded}); straddle_velocity rows {rows_vel}")
+          f"pin rows {rows_pin} (excluded by rule {excluded}); straddle_velocity rows {rows_vel}; "
+          f"ATM IV rows {rows_iv} x 5 fields")
     return errs
 
 
@@ -188,6 +227,8 @@ MUTANTS = [
      "    gamma_concentration: float | None\n    net_gex: float\n", "GammaMetricsResult fields"),
     ("M6 statement in the core", "gamma.py", "flip_distance_pct = abs(flip_distance) / spot * 100.0 if spot > 0 else None",
      "flip_distance_pct = abs(flip_distance) / spot * 100.1 if spot > 0 else None", "flip_distance_pct"),
+    ("M7 ATM IV average", "volatility.py", "atm_iv_avg = (atm_call_iv + atm_put_iv) / 2.0",
+     "atm_iv_avg = (atm_call_iv + atm_put_iv) / 2.001", "atm_iv_avg"),
 ]
 
 

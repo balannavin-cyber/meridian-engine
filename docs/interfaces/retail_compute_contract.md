@@ -1,9 +1,11 @@
 # Retail compute contract — `merdian_compute` (S101, retail scope §1.3)
 
-Status: **v2, S101 (2026-10-25)**. Owner: `meridian-engine`. Consumer: `retail-meridian` (scope §1.2,
+Status: **v2.1, S101 (2026-10-26)**. Owner: `meridian-engine`. Consumer: `retail-meridian` (scope §1.2,
 per-user compute). The engine keeps only this contract (ruling R-11); retail keeps its own docs.
 History: v1 (`11f2cbe`) the extracted parts · **v2: the composed gamma cycle (C2), the walls' ATM-IV
 input (C3), the pin path's pure cores (C4), the full view closure (§8) and the live-definition check.**
+v2.1 (C6): every §8 view's live definition recorded by md5; `v_gex_strike_pin_zone`'s live definition differs
+from every older file and is now registered (TD at the S101 close).
 
 ## 1. How retail takes it
 
@@ -134,7 +136,7 @@ script (S101); files are the newest defining file at the S101 HEAD.
 | `v_gex_concentration` | `sql/2026-09-15_s79_v_gex_concentration.sql` | `gex_strike_snapshots` |
 | `v_gex_strike_rank` | `sql/2026-09-22_s81_v_gex_strike_rank.sql` | `gex_strike_snapshots`, `volatility_snapshots` |
 | `v_gex_max_pain` | `sql/2026-09-22_s80_v_gex_max_pain.sql` | `gex_strike_snapshots`; `now()`; DB function `get_parameter_num('maxpain.stale_floor_min')` |
-| `v_gex_strike_pin_zone` | `sql/2026-08-13_s69_gex_pin_accel_latest_run_scope.sql` (3 files define it) | `gex_strike_snapshots` |
+| `v_gex_strike_pin_zone` | **`sql/2026-10-26_s101_v_gex_strike_pin_zone_live_captured.sql`** (live; the 3 older files are not) | `gex_strike_snapshots`; `get_parameter_num('pin.tau.<SYMBOL>')` **with default 0.3**, which drives the walk |
 | `v_gex_pin_maxpain` | `sql/2026-09-22_s80_v_gex_pin_maxpain.sql` | `gex_strike_snapshots`, `v_gex_max_pain`, `v_gex_strike_pin_zone`, `v_gex_strike_walls` |
 | `v_max_pain_by_strike` | `sql/2026-09-22_s81_v_max_pain_by_strike_latest_ts_retrofit.sql` (3 files) | `option_chain_snapshots` |
 | `v_gex_repriced_flip` | `sql/2026-09-25_s83_v_gex_repriced_flip.sql` | `option_chain_snapshots`, **`index_futures_snapshots`** — retail needs a futures quote per symbol |
@@ -144,22 +146,39 @@ Create order: `v_gex_strike_walls`, `v_gex_concentration`, `v_gex_strike_rank`, 
 `v_gex_strike_pin_zone`, `v_gex_pin_maxpain`, `v_max_pain_by_strike`, `v_gex_repriced_flip`, then
 `v_pin_board` once `gex_cycle_history` exists.
 
-**Live definition before copying.** Three files define `v_max_pain_by_strike`; their markers, computed
-from the files: the captured baseline has neither a `front_expiry` CTE nor `WITH RECURSIVE`; the expiry
-filter has `front_expiry` without `WITH RECURSIVE`; the latest-ts retrofit has `WITH RECURSIVE` (its
-`symbols` skip-scan), `front_expiry` and a `LATERAL` probe. Operator SELECT (read-only):
+**Live definitions (recorded S101, 2026-10-26, operator `pg_get_viewdef(…, true)` on production).** Retail copies
+the LIVE definition, never "the newest file", and checks it by md5 — a marker check passed a file whose tau the
+live view uses differently (S101 §D.55).
+
+| View | Live = file | def_length | def_md5 |
+|---|---|---|---|
+| `v_gex_strike_walls` | `sql/2026-09-15_s79_v_gex_strike_walls.sql` | 4664 | `8135c42b4fe3613a676ec7e05af7ee9d` |
+| `v_gex_concentration` | `sql/2026-09-15_s79_v_gex_concentration.sql` | 2140 | `c4cf15aa43fdb932b56db77cefee7188` |
+| `v_gex_strike_rank` | `sql/2026-09-22_s81_v_gex_strike_rank.sql` | 4002 | `0ab189a40cd648e8cc0e8f77b55cc5f6` |
+| `v_gex_max_pain` | `sql/2026-09-22_s80_v_gex_max_pain.sql` | 3088 | `3d067c67ef36f9841af9eea81a4c0575` |
+| `v_gex_strike_pin_zone` | `sql/2026-10-26_s101_v_gex_strike_pin_zone_live_captured.sql` (byte-exact; length and md5 reproduced from the file) | 3523 | `89c9ac6aef9eb332ddd28f9062d0e21e` |
+| `v_gex_pin_maxpain` | `sql/2026-09-22_s80_v_gex_pin_maxpain.sql` | 2577 | `0d7d5258d6a1169ffe97a94aa82474e5` |
+| `v_max_pain_by_strike` | `sql/2026-09-22_s81_v_max_pain_by_strike_latest_ts_retrofit.sql` | 4028 | `3d0ed5cb979ab7ed6dbfcfa5e8f09f30` |
+| `v_gex_repriced_flip` | `sql/2026-09-25_s83_v_gex_repriced_flip.sql` | 10260 | `58ad6ba8f366c52a8e71b4ac1ea66864` |
+| `v_pin_board` | `sql/2026-10-08_s92_v_pin_board.sql` | 2922 | `9a827e8155e188db9ab9cd9b4fc429e0` |
+
+Only `v_gex_strike_pin_zone` and `v_max_pain_by_strike` were confirmed by full md5 against a file; the other
+seven rows match their file on structural markers (MR-S1 O1), and their md5 is the live value to compare against.
+
+`v_gex_strike_pin_zone`, live vs the older s69 file: the walk threshold is `tau × peak` with
+`tau = COALESCE(get_parameter_num('pin.tau.'||symbol), 0.3)` (the s69 file hard-codes `0.3` and only reports the
+parameter); `tau_used` is never NULL; `latest_run` is a LATERAL skip-scan over `VALUES ('NIFTY'), ('SENSEX')` —
+retail replaces that list with its own symbols. Same output as the s69 file only while `pin.tau` = 0.30.
+
+Re-check before each retail copy (read-only):
 
 ```sql
-SELECT position('WITH RECURSIVE' IN d) > 0 AS has_recursive,
-       position('front_expiry' IN d) > 0   AS has_front_expiry,
-       position('LATERAL' IN d) > 0        AS has_lateral,
-       length(d) AS def_length, md5(d) AS def_md5
-  FROM (SELECT pg_get_viewdef('public.v_max_pain_by_strike'::regclass, true) AS d) v;
+SELECT length(d) AS def_length, md5(d) AS def_md5
+  FROM (SELECT pg_get_viewdef('public.v_gex_strike_pin_zone'::regclass, true) AS d) v;
 ```
 
-The retrofit is live iff the three booleans are `t, t, t`; `f, t, f` means the expiry-filter file is
-live, `f, f, f` the baseline. Record the result (and `def_md5`) here before retail copies the view; repeat
-the same query for any view whose file count above is > 1.
+(one view per run; substitute the view name). A row whose md5 differs from the table means the live view changed
+again and its DDL is not registered.
 
 ## 9. Not covered (stated, so retail does not assume it)
 

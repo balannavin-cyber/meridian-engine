@@ -1,6 +1,6 @@
 # MERIDIAN — roadmap to an intelligent, agentic MERIDIAN (v2, 2026-10-05)
 
-**Status: v2.17 — LIVE TRACKER, at `docs/registers/` from S95 (ruling S95-E) (S90 / Agentic MERIDIAN Session 1; the AM-1 post-close delta folded in at AM-2 / S91, 2026-10-07).** Stages 0–2 are ruled inside parity (S90-D) and ADR-031 is accepted (S90-C); this file is the single progress record. **S92-I (2026-10-09): parity closed; §2.1 holds the operator's post-parity priority track (P1–P8), followed to conclusion** for the agentic layer, and the Doc Protocol files point here rather than restating it. Items outside Stages 0–2 remain proposals; nothing here is a pre-registration. v1 (same path, earlier on 2026-10-05) answered the operator's seven-point sketch. v2 folds in the harness discussion that followed: ingest, compute and assumption harnesses; redundancy; the agent harness; staged build with exit tests; a tracker. The product is not named here, per the standing rule.
+**Status: v2.18 — LIVE TRACKER, at `docs/registers/` from S95 (ruling S95-E) (S90 / Agentic MERIDIAN Session 1; the AM-1 post-close delta folded in at AM-2 / S91, 2026-10-07).** Stages 0–2 are ruled inside parity (S90-D) and ADR-031 is accepted (S90-C); this file is the single progress record. **S92-I (2026-10-09): parity closed; §2.1 holds the operator's post-parity priority track (P1–P8), followed to conclusion** for the agentic layer, and the Doc Protocol files point here rather than restating it. Items outside Stages 0–2 remain proposals; nothing here is a pre-registration. v1 (same path, earlier on 2026-10-05) answered the operator's seven-point sketch. v2 folds in the harness discussion that followed: ingest, compute and assumption harnesses; redundancy; the agent harness; staged build with exit tests; a tracker. The product is not named here, per the standing rule.
 
 **Goal, in the operator's words:** an intelligent, agentic MERIDIAN that is self-learning, efficient, cost-effective and LLM-independent.
 
@@ -127,16 +127,19 @@ the agentic position layer; a regulatory check runs in parallel before anything 
 
 | Band | Item | What | TDs | Status |
 |---|---|---|---|---|
-| B1 | **R1 + R41 (S98-B)** | γ runner waits for its own cycle's chain run; closing cycles 15:30 / 15:35 / 15:40 | TD-S97-NEW-4, TD-S82-NEW-1, TD-S82-NEW-2; re-measure TD-S80-NEW-9, TD-S78-NEW-8 | DEPLOYED `2edd25f` 2026-10-23; live PASS read Mon 2026-10-26 after 15:45 IST |
-| B1 | **R2 + R21** | WCB writer: "COMPLETED" with no row; holiday placeholder rows; stray no-symbol cron line; 16:00 futures leg exits 1 on holidays; weight / threshold drift | TD-S97-NEW-9, -10, -8 (absorbs TD-S81-NEW-13), TD-S41-NEW-5 | **PART DONE `3706435`** (S99-H / S99-I): TD-S97-NEW-8, -9, -10 CLOSED, live check Mon 2026-10-26 08:31 and 15:40 IST; OPEN: the 16:00 futures leg on holidays, TD-S41-NEW-5 |
+| B1 | **R1 + R41 (S98-B)** | γ runner waits for its own cycle's chain run; closing cycles 15:30 / 15:35 / 15:40 | TD-S97-NEW-4, TD-S82-NEW-1, TD-S82-NEW-2; re-measure TD-S80-NEW-9, TD-S78-NEW-8 | **DONE** — DEPLOYED `2edd25f` 2026-10-23; live PASS 2026-10-26 (S101 Part C (a)): TD-S97-NEW-4, TD-S82-NEW-1, -2 CLOSED (S101-F); the 14:00 ENH-133 `57014` exit → TD-S101-NEW-1 |
+| B1 | **R2 + R21** | WCB writer: "COMPLETED" with no row; holiday placeholder rows; stray no-symbol cron line; 16:00 futures leg exits 1 on holidays; weight / threshold drift | TD-S97-NEW-9, -10, -8 (absorbs TD-S81-NEW-13), TD-S41-NEW-5 | **PART DONE `3706435`** (S99-H / S99-I): TD-S97-NEW-8, -9, -10 CLOSED, live check PASS 2026-10-26 (S99-H PASS in full, S101); OPEN: the 16:00 futures leg on holidays, TD-S41-NEW-5 |
 | B1 | **R3** | monitor cannot see a hung orchestrator run | TD-S97-NEW-3 | **DONE `3070682`** — TD-S97-NEW-3 CLOSED |
-| B1 | **R4** | one 08:25 IST pre-open probe: Dhan subscription + Kite token; feed silence and heartbeat; preflight gives up after ~23 s (10-15, 10-19) | TD-S97-NEW-5, -6 (absorbs TD-S91-NEW-3, TD-S71-NEW-10, TD-S69-NEW-6, TD-NEW-7), TD-S86-NEW-2, -3, TD-S91-NEW-17, TD-NEW-C, TD-NEW-9, TD-S80-NEW-17 | **DONE `9e24792` / `4769565` / `d91295b`** (S100-E 09:09 IST, S100-F, S100-G 08:20 IST); TD-S97-NEW-5, TD-S80-NEW-17 close on the 10-26 run; TD-S97-NEW-6 Kite refresh part OPEN |
+| B1 | **R4** | one 08:25 IST pre-open probe: Dhan subscription + Kite token; feed silence and heartbeat; preflight gives up after ~23 s (10-15, 10-19) | TD-S97-NEW-5, -6 (absorbs TD-S91-NEW-3, TD-S71-NEW-10, TD-S69-NEW-6, TD-NEW-7), TD-S86-NEW-2, -3, TD-S91-NEW-17, TD-NEW-C, TD-NEW-9, TD-S80-NEW-17 | **DONE `9e24792` / `4769565` / `d91295b`** (S100-E 09:09 IST, S100-F, S100-G 08:20 IST); TD-S97-NEW-5, TD-S80-NEW-17 CLOSED on the 10-26 run (S101); TD-S97-NEW-6 Kite refresh part OPEN |
 | B1 | **R40, R42–R44** | breadth writer overlap and NULL status; monitor window takes the first cron line; SKIPPED_NO_INPUT labelled benign / crash | —  (pass 1 rows; S98 build read) | **R40 DONE `f213d22`** (S100-I; overlap deferred) · **R42 DONE `b29f320`** (S100-C) · **R43 / R44 OBSOLETE** (S100-D → BO row) |
 | B1 | **R48, R49** (S100-B) | `run_ingest.sh` `set -e` makes its `rc=$?` unreachable; the monitor alarms on `exit_code` alone, so any skip that exits 1 pages CRITICAL (behaviour, recorded so a "benign" skip is never given exit 1 unknowingly) | — (S98 build read) | OPEN |
-| B1 | **Ledger and capture trust** | off-box `equity_eod` cursor writer; Dhan 500 drops a cycle; basis context cron hour; token held from construction; hand-rolled ledger inserts; breadth guard only in the health check; ingest contract too permissive | TD-S90-NEW-14 (absorbs TD-S91-NEW-16), TD-S81-NEW-11, TD-S81-NEW-12, TD-S81-NEW-20, TD-S77-NEW-8 (absorbs TD-023), TD-S74-NEW-4, TD-082 | **PART DONE** — TD-S90-NEW-14 CLOSED (S100-H), TD-S81-NEW-11 CLOSED (`f213d22`), TD-S81-NEW-12 CLOSED; the rest OPEN |
+| B1 | **TD-S101-NEW-1** | the ENH-133 writer loses a cycle when a view read times out (`57014`) on all three attempts | — | OPEN |
+| B1 | **Ruling owed (S101): WCB from pre-open ticks** | the WCB writer's first row is 09:11, from pre-open ticks (2026-10-26): publish from pre-open, or from the first 1-min bar | — | OPEN — ruling |
+| B1 | **Ledger and capture trust** | off-box `equity_eod` cursor writer; Dhan 500 drops a cycle; basis context cron hour; token held from construction; hand-rolled ledger inserts; breadth guard only in the health check; ingest contract too permissive | TD-S90-NEW-14 (absorbs TD-S91-NEW-16), TD-S81-NEW-11, TD-S81-NEW-12, TD-S81-NEW-20, TD-S77-NEW-8 (absorbs TD-023), TD-S74-NEW-4, TD-082 | **PART DONE** — TD-S90-NEW-14 CLOSED (S100-H), TD-S81-NEW-11 CLOSED (`f213d22`), TD-S81-NEW-12 CLOSED; the rest OPEN, with TD-S97-NEW-4 part (b) `actual_writes {}` (S101) |
 | BS1 | **Credential rotations (S99-E)** | Dhan token anon-readable window: rotation decision and log review; `.env` printed to a transcript: rotate | TD-S81-NEW-1, TD-S71-NEW-11 | OPEN — operator actions: BS-1 (Dhan TOTP + PIN, `.env`, check); TD-S81-NEW-1 (a) unanswerable (7-day log window, old token treated as disclosed); then Telegram, Breeze, the AWS key, the Supabase service-role plan, Edge Function + `x-cron-secret` deletion (S100-H) |
 | B2 | **R5 + R38** | closing session: official close printed from the 15:40 chain spot; no "LIVE" on a held value; CLOSED state; basis from the displayed spot; SPOT label from the bar window | R5 (absorbs TD-S91-NEW-18, TD-S90-NEW-13, TD-S74-NEW-3, TD-S74-NEW-5), R38 (absorbs TD-S54-NEW-2) | **PART DONE** — Spot label `1aeb000` (S100-R A); session strip, stale window to 15:45, basis names its spot `f964e40` (S100-S); close print on the 15:40 cycle Mon 10-26; TD-S100-NEW-1 next |
-| B2 | **TD-S100-NEW-1** | futures rows keep the 15:15 spot through 15:30–15:40, so the stored basis is wrong in the closing window | — | OPEN |
+| B2 | **TD-S100-NEW-1** | futures rows keep the 15:15 spot through 15:30–15:40, so the stored basis is wrong in the closing window | — | OPEN — re-measured 2026-10-27: NIFTY Δ 11.05, SENSEX Δ 42.37 at 15:40 (S101) |
+| B2 | **Ruling owed (S101): NIFTY board after the expiry-day close** | the expired leg's T ≈ 0 gamma shown as the closing structure until the next pre-open: roll to the next leg, or label the expired-leg state | TD-S101-NEW-15 | OPEN — ruling |
 | B2 | **R20** | board prev-close read (10-22 "prev close missing" after the row existed) | TD-S97-NEW-13 | OPEN — re-scoped S98-D |
 | B3 | **R7 + OI readers** | same-minute OI read on our data; vendor OI on untraded legs; L13 anchor on stale vendor rows | TD-S95-NEW-1 (residual), TD-S84-NEW-4 | **R7 READ** 2026-10-24 — ours right (F7 compared 15:20 with 15:40); TD-S95-NEW-1 residual and TD-S84-NEW-4 OPEN |
 | B3 | **R8** | front-future basis jumps | — | **DONE — read** 2026-10-24: last-trade bounce 2–4 bp, no capture defect; a quote-based basis would be an ENH |
@@ -144,14 +147,20 @@ the agentic position layer; a regulatory check runs in parallel before anything 
 | B3 | **R18** | prev close and spot per surface at the open (F-4 figures) | TD-S88-NEW-1 | **DONE — read**; the legacy-page defect fixed by S100-N (TD-S100-NEW-6) |
 | B3 | **R16 + R36** | tab not re-polling γ views; Pin tab leader / reconciled state | TD-S97-NEW-19 | OPEN — evidence 2026-10-23 |
 | B3 | **Chain data correctness** | zero IV in `atm_iv_avg`; depth-2 single expiry; far-wing / ITM IV; SENSEX no γ on ~30 % of strikes; `gex_cr` filter split; deep-ITM γ constant; ltp below intrinsic | TD-S83-NEW-2, -3, -4, -5, TD-S79-NEW-8, TD-S75-NEW-1, -2, TD-S71-NEW-13 | OPEN — read |
+| B3 | **TD-S101-NEW-3** | `otm_oi_velocity` is NULL in every production row (the prior read selects no `raw`) | — | OPEN |
+| B3 | **TD-S101-NEW-4** | two prior-row reads with no date bound: by design or defect | — | OPEN — ruling |
 | B4 | **R9** | Health page CRITICAL; untrack the ICT writer; SUBSCRIPTION class | TD-S97-NEW-21 (absorbs TD-S77-NEW-14, TD-017) | **DONE** `1072593` / `418a75b` (S100-M); TD-S97-NEW-21 CLOSED |
-| B4 | **R19** | breadth daily gaps and gate | TD-S97-NEW-11, -12, TD-S91-NEW-5 | **DONE `9c5f50c`** — TD-S97-NEW-11, -12 CLOSED; TD-S91-NEW-5 OPEN |
+| B4 | **R19** | breadth daily gaps and gate | TD-S97-NEW-11, -12, TD-S91-NEW-5 | **DONE `9c5f50c`** — TD-S97-NEW-11, -12 CLOSED; TD-S91-NEW-5 OPEN; builder PASS on its input 2026-10-27 (S101), 10-26 / 10-27 breadth owed to the 10-28 run (Dhan publish lag) |
 | B4 | **R22** | calendar repair: missing 01-15, 01-26, 03-03, 05-28; "Normal trading day" on closed 06-26 / 09-14 / 11-24; 03-31 name (read 2026-10-24) | TD-S97-NEW-14, TD-S81-NEW-7, TD-S41-NEW-1 | **DONE** (operator SQL) — the three TDs CLOSED |
 | B4 | **R23** | symbol column on `data_contamination_ranges`; `merdian_ro` visibility | TD-S97-NEW-15, TD-S94-NEW-1 | **DONE** (S100-J, S100-K) — TD-S97-NEW-15, TD-S94-NEW-1 and TD-S81-NEW-16 CLOSED |
 | B4 | **R24** | Marketview backup retention | TD-S97-NEW-16 | **DONE** (S100-L) — TD-S97-NEW-16 CLOSED |
 | B4 | **Pass-2 misses** (S100) | open by their own Status, excluded by pass 2's keyword test: V18E engine weekend-before-special-session order; TD-S69-NEW-1 heading / Status contradiction (part b); ICT cohort row counts; CAS close capture fixed, not closed | TD-S82-NEW-4, TD-S80-NEW-19, TD-S76-NEW-17, TD-S90-NEW-12 | **DONE** (S100-O) — all four CLOSED |
 | B4 | **R34 + R35** | legacy Context / Structure pages; two IV skews | — | **DONE** `142c3e6` (S100-N), `2ee83e1` (S100-P) |
 | B4 | **TD-S100-NEW-5** | `backfill_cas_close_from_daily.py` logs a Dhan plan lapse as `DATA_ERROR` | — | OPEN |
+| B4 | **TD-S101-NEW-2** | a standing md5 check of every live view against the registered files (the two S80 views registered, C6 / C7) | — | OPEN |
+| B4 | **TD-S101-NEW-5** | gamma / volatility math re-implemented outside `merdian_compute` (backfill, rate sensitivity, two replays) | — | OPEN |
+| B4 | **TD-S101-NEW-16** | `eod.log` lines carry no timestamps | — | OPEN |
+| B4 | **TD-S101-NEW-17** | one ticker returns `DH-905` on the EOD historical call | — | OPEN |
 | B4 | TD-S96-NEW-2 | the planner estimates 1 row for a day of `gex_strike_snapshots` selected by `ts` alone | — | OPEN |
 | B4 | TD-S94-NEW-2 | `bin/roq.sh`'s write-verb guard refuses `COPY (SELECT …) TO STDOUT`, which is a read | — | OPEN |
 | B4 | TD-S93-NEW-1 | `run_offline.sh`'s `PIPESTATUS` idiom is positional, so inserting any command between a pipeline and its te… | — | OPEN |
@@ -187,15 +196,19 @@ the agentic position layer; a regulatory check runs in parallel before anything 
 | B5 | **R15** | draw the ∂Δ flow gap (G25) as G19 is drawn | TD-S97-NEW-18 | OPEN — wording |
 | B5 | **R17** | pocket word: keep it, add the net sign | — | **Step 1 DONE `3366bf1`** (S100-Q / Q.1); step 2 = R12 |
 | B5 | **TD-S100-NEW-2, -3** | loading states rendered as values; `NarrativeModal` / `AmbientTrajectory` imported nowhere | — | OPEN |
+| B5 | **Ruling owed (S101): Health OVERALL token threshold** | the token tile is green only under 30 min, so OVERALL is amber all day on a healthy fleet | TD-S101-NEW-13 | OPEN — ruling |
+| B5 | **Ruling owed (S101): Context IV skew on a 0-DTE front leg** | the card is blank for NIFTY on expiry day: fall back to the next leg, or label | TD-S101-NEW-14 | OPEN — ruling |
 | B5 | **R11 + R39** | board consistency: degenerate corridor, SPOT ≡ FLIP, read text vs PIN wall, CLOCKS absent; "gap filled" when it is not | TD-S90-NEW-6, TD-S90-NEW-7, TD-S81-NEW-9 | OPEN |
 | B5 | TD-S84-NEW-7 | the UI labels `flip_distance_pct` as sigma, so a spot-to-flip distance is rendered as a volatility band | — | OPEN |
 | B5 | TD-S84-NEW-6 | two max pains over different substrates, agreeing on strike and disagreeing on everything else; which is ca… | — | OPEN |
 | B5 | TD-S39-NEW-5 | Marketview "stale {N}s" badge contradicts 300s threshold setting — needs live-day verification | — | OPEN |
 | B6 | **R12** | three-state regime (short / at the flip / long), pre-registered | — | OPEN — includes S100-Q step 2 (net/gross threshold measured on ENH-133) |
 | B6 | **R13** | pin hysteresis and tie state, pre-registered | — | OPEN |
+| B6 | **Ruling owed (S101): `held_for_cycles` across an expiry roll on the same strike** | when the leader strike is the same on both contracts, does the count carry across the roll or reset | — | OPEN — ruling |
 | B6 | TD-S80-NEW-1 | the ingest discards the expiry ladder the vendor returns, so no multi-expiry IV exists at any timestamp and… | — | OPEN |
 | B6 | TD-S79-NEW-1 | `GREATEST(dte, 1)` overstates σ on expiry day, so the moneyness band is widest on the day it most needs to… | — | OPEN |
 | BS | **TD-S99-NEW-1** | an AWS access key ID is committed in the public repo (no secret key found); redact, then rotate or rewrite history | — | OPEN — operator's call |
+| BS | **TD-S101-NEW-10** | port 22 open to 0.0.0.0/0 on the box | — | OPEN — operator action |
 | BS | TD-S92-NEW-4 | the S92 views grant `authenticated` more than `SELECT`, through default privileges | — | OPEN · retail |
 | BS | TD-S90-NEW-8 | Marketview Settings is read-only since S90-E; the authenticated write route, `changed_by` and `config_versi… | — | OPEN · retail |
 | BS | TD-S90-NEW-10 | unused Breeze credentials remain in `.env` | — | OPEN · retail |
@@ -215,6 +228,8 @@ the agentic position layer; a regulatory check runs in parallel before anything 
 | BR | TD-S81-NEW-5 | `sql/` is not a true rebuild source, and the divergence runs in BOTH directions | — | OPEN · retail |
 | BR | TD-S81-NEW-8 | `~/redeploy_marketview.sh` builds from a stale May-27 clone, not the tree the live bundle comes from | — | OPEN · retail |
 | BR | TD-S80-NEW-16 | `/etc/logrotate.d/meridian` exists only on the box: third instance of on-box-only infrastructure after the… | — | OPEN · retail |
+| BR | **TD-S101-NEW-7** | from Python 3.12 `sum()` is compensated: `net_gex` / concentration move in the last bits (contract §10) | — | OPEN · retail |
+| BR | **TD-S101-NEW-8** | retail gaps: session gate and reconciler, VIX fields, futures / parameters / calendar (contract §9) | — | OPEN · retail |
 | BO | TD-S80-NEW-15 | ~1.76 GB of the 2.5 GB that filled the root volume is unattributed, so the resize is a delay of known lengt… | — | OPEN |
 | BO | TD-S73-NEW-1 | `shadow_runner.log` is a 262 MB live log at repo root, outside logrotate's scope, while its cron line's vis… | — | OPEN |
 | BO | TD-S73-NEW-6 | `eod_health_check.py` has no scheduled invoker; the fourth instance of the class, and TD-S72-NEW-7's premis… | — | OPEN |
@@ -266,6 +281,10 @@ the agentic position layer; a regulatory check runs in parallel before anything 
 | BD | TD-037 | Schema column-name inconsistency across timestamp-bearing tables | — | OPEN |
 | BD | TD-053 | CLAUDE.md Rule 16 needs era-aware addendum (post-04-07 era) | — | OPEN |
 | BD | **TD-S100-NEW-4** | documents still cite the bare-IP board URL | — | OPEN |
+| BD | **TD-S101-NEW-6** | `.gitignore:107` `_*.py` matches every `__init__.py` | — | OPEN |
+| BD | **TD-S101-NEW-9** | superseded view files beside the registered one in `sql/` | — | OPEN |
+| BD | **TD-S101-NEW-11** | the four-way check names Local HEAD as its own line | — | OPEN |
+| BD | **TD-S101-NEW-12** | alert-journal reads use `sudo journalctl` in every runbook and prompt | — | OPEN |
 
 **Parked from pass 1 (S98-A):** R25 hover-to-explain · R26 √τ-normalised GEX (absorbs TD-S75-NEW-3) · R27 γ ceiling / floor slot · R28 pin history write-once (a design constraint) · R29 new substrates (P8 gate) · R30 settlement probability (declined for now). **Done in pass 1:** R37 (S98-C, 2026-10-23), R45 (S98-B patch), R46 (ruled acceptable).
 
@@ -281,6 +300,8 @@ The end state: a user connects their own broker account; MERIDIAN computes on th
 | **G4** | Architecture and capacity | **RULED** (S99-F): elastic; start small; build to grow, not a behemoth |
 
 **Prerequisites before any retail build:** R1–R5 and R11 (pass 1), every BS and BR row in §2.2. Pass 1 R32 lives here.
+
+**Engine side (S101, deployed `4a1d8e1`):** `merdian_compute/` and `docs/interfaces/retail_compute_contract.md` v2.1 — the pure compute retail imports, pinned by SHA (retail scope §1.3). Its open gaps are TD-S101-NEW-7 and -8 (band BR).
 
 
 ---
@@ -775,6 +796,7 @@ An item may start only when its class's controls are met. Each class includes th
 | Version | Date | Change |
 |---|---|---|
 | v1 | 2026-10-05 | Answer to the seven-point sketch: MCP, integrity loops, change engine, accuracy loops, commentary, paper trading, phases 0–4 |
+| v2.18 | 2026-10-28 | **S101 close (run in S102):** §2.2 R1 + R41 DONE (TD-S97-NEW-4, TD-S82-NEW-1, -2 CLOSED, S101-F); R2 + R21 live check PASS; R4's TD-S97-NEW-5, TD-S80-NEW-17 CLOSED; R19 builder read; TD-S100-NEW-1 re-measured; TD-S101-NEW-1…17 rows added; five ruling rows (S101 §5); §2.3 engine side (`merdian_compute`, contract v2.1). Rulings `docs/research/s92_parity/rulings_s101.md` |
 | v2.17 | 2026-10-25 | **S100 close:** §2.2 R3, R4, R9, R19, R22, R23, R24, R34 + R35, R14 + R33, pass-2 misses DONE; R40, R42 DONE, R43 / R44 OBSOLETE → BO cross-script alerting row (S100-D); R5 and R17 part done; R7, R8, R10, R18 read; TD-S100-NEW-1…5 rows added; ledger row part done. Rulings `docs/research/s92_parity/rulings_s100.md` |
 | v2.16 | 2026-10-24 | **S98 + S99 close (run in S100):** §2.2 R2 + R21 PART DONE (`3706435`); R48, R49 added to B1 (S100-B); TD-S99-NEW-1 added to BS; "Pass-2 misses" row in B4; §2.1 P4 lost-session note. Rulings `docs/research/s92_parity/rulings_s98.md`, `rulings_s99.md`, `rulings_s100.md` |
 | v2.15 | 2026-10-24 | **S99 one stream:** §2.2 single list (pass 1 S98-A + pass 2 S99-C, 154 open TDs homed, 46 closed), §2.3 retail scoping (S99-F); Stages 3–6 ON HOLD (S99-D); signal / ICT stream after agentic (S99-G). Rulings `docs/research/s92_parity/rulings_s99.md` |

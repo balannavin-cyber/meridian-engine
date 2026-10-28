@@ -1328,3 +1328,42 @@ wrong. A count, a bound or a diff size is said after it is computed, or is said 
 
 **Update log — Session 100 close (2026-10-25):** §D.54 added (**23 rows, all mine**). Sources:
 `docs/research/s92_parity/rulings_s100.md`, `docs/research/s100/S100_close_inputs.md`, `docs/research/s100/B3_reads_2026-10-24.md`.
+
+## D.55 — Session 101: expected values written before the writer was read, a marker check that named a view live, and checks that could not fail (2026-10-25 → 10-28)
+
+Twenty-five rows, **all my own**. Rulings: `docs/research/s92_parity/rulings_s101.md`. Source:
+`docs/research/s101/S101_close_inputs.md` §6. Recorded at the S101 doc-close (run in Session 102).
+
+| # | Assumption as held | Verdict on measurement |
+|---|---|---|
+| **D.55.1** | *(mine)* The A1 script and the clone were in the same tree. | **REFUTED** — The script was written under `/home/claude` while the clone was under `/root`. |
+| **D.55.2** | *(mine)* The purity analyser's first pass classified every name correctly. | **REFUTED** — It mishandled `except … as` names, flagged local imports wholesale, and judged the calendar module by package name. |
+| **D.55.3** | *(mine)* The extractor's first dry-run moved definitions only. | **REFUTED** — It carried a `# ---` banner into the package. |
+| **D.55.4** | *(mine)* A replay sha256 measured on Python 3.13 is an absolute value. | **REFUTED** — It was written into doc / commit drafts as if absolute; it is interpreter-dependent (contract §10, TD-S101-NEW-7). |
+| **D.55.5** | *(mine)* Step 25's timestamp parser and its first pin-risk exclusion rule, as first written. | **REFUTED** — The parser read offset digits as a fraction; the exclusion rule assumed an in-day window. |
+| **D.55.6** | *(mine)* The rehearsal covered the commit. | **REFUTED** — It stopped before `git add`; the `_*.py` ignore rule was first met on the box (B6; TD-S101-NEW-6). |
+| **D.55.7** | *(mine)* B4's `grep -i fail` counted failures. | **REFUTED** — It matched a pass line. |
+| **D.55.8** | *(mine)* The purity map committed in `11f2cbe` runs on its own tree. | **REFUTED** — It could not; fixed in C2. |
+| **D.55.9** | *(mine)* Step 25's C4 expected value. | **REFUTED** — Written from intuition; M9 was first "caught" for the stale error; re-checked. |
+| **D.55.10** | *(mine)* The C3 test tree was built on C2. | **REFUTED** — It was first built on `11f2cbe`. |
+| **D.55.11** | *(mine)* Every C4 mutant parsed and was labelled by its edit. | **REFUTED** — One did not parse; one label misdescribed its edit. |
+| **D.55.12** | *(mine)* `rm -rf scratch` on my clone removed scratch files only. | **REFUTED** — It deleted tracked files; restored. Clone only. |
+| **D.55.13** | *(mine)* A multi-destination `cp` populated every bundle directory. | **REFUTED** — It left `s101_replace.py` out of the C3 bundle directory. |
+| **D.55.14** | *(mine)* The pin-zone marker check (04:53 IST) showed the s69 file is live. | **REFUTED** — The live view matched no file in `sql/` (registered by C6 / C7, TD-S101-NEW-2). **Rule taken:** identify a live view by full `pg_get_viewdef` md5 against a file that reproduces it, never by markers (`CLAUDE.md` rule 25). |
+| **D.55.15** | *(mine)* C6's first-rehearsal mutant anchor was unique. | **REFUTED** — It also matched the header comment; the NOT-APPLIED guard failed it, as designed. |
+| **D.55.16** | *(mine)* WCB's first row on 10-26 would be at or after 09:15. | **REFUTED** — Written from assumption, not from the writer's guard; the first row was 09:11, from pre-open ticks. |
+| **D.55.17** | *(mine)* The deploy check runs on the box as written. | **REFUTED** — Its first box run failed `ModuleNotFoundError` (the script's directory, not the cwd, is on `sys.path`); fixed by `PYTHONPATH=$PWD`; the crashed "mutant exit=1" was flagged as not a mutant result. |
+| **D.55.18** | *(mine)* Local's four-way leg run from `Downloads`. | **REFUTED** — The Topology names `C:\GammaEnginePython\`. |
+| **D.55.19** | *(mine)* The wsfeed alert read without `sudo` could show an alert. | **REFUTED** — Its `-- No entries --` could not fail; re-read with `sudo` (TD-S101-NEW-12). |
+| **D.55.20** | *(mine)* `dhan_token_probe_log` has a `created_at` column. | **REFUTED** — The column is `ts`. |
+| **D.55.21** | *(mine)* `head -6` showed the wsfeed start. | **REFUTED** — It showed only the 03:00 / 03:05 retry ticks. |
+| **D.55.22** | *(mine)* 10-27 pin read: `gate = OPEN` from the first cycle ≥ 09:15. | **REFUTED** — The 09:15 cycle is FROZEN on both symbols (book not yet moved — existing session-gate behaviour, untouched by S101); OPEN from 09:20. |
+| **D.55.23** | *(mine)* The board could be read in the built-in browser. | **REFUTED** — Its own profile has no sign-in; the operator's signed-in Chrome was the intended browser; switched to Chrome. |
+| **D.55.24** | *(mine)* R19 on 10-27 would show `selected_rebuild_trade_date: 2026-10-27`. | **REFUTED** — The ingest window is T−1 (`compute_date_window()`, S65 settled), so a same-day EOD date can never be built; the builder was read, the ingest's window was not. The grep also could not date its own lines (TD-S101-NEW-16). |
+| **D.55.25** | *(mine)* 10-28 pin SQL: `dte` = 4 trading sessions (10-28, 10-29, 10-30, 11-03). | **REFUTED** — The list was wrong (dropped 11-02, kept today), and the column is calendar days (6); the expected value was not computed from the writer before it was stated. |
+
+**The one to carry: D.55.14, with D.55.22, .24 and .25.** A live view is named by its md5, not by a marker; and an
+expected value is computed from the writer (and from every reader in its path) before it is written into a PASS line.
+
+**Update log — Session 101 close (run in Session 102, 2026-10-28):** §D.55 added (**25 rows, all mine**). Sources:
+`docs/research/s92_parity/rulings_s101.md`, `docs/research/s101/S101_close_inputs.md`.

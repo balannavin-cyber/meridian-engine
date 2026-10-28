@@ -2186,3 +2186,22 @@ Doc Protocol v5: a table of what changed, no narrative. Detail: `tech_debt.md` S
 | Marketview (`meridian-connect`) | frontend | Supabase views | operator | `1072593` → `142c3e6` → `2ee83e1` → `3366bf1` → `1aeb000` → **`f964e40`** live (S100-M a, N, P, Q / Q.1, R, S); `27c0e17` (help pack v0.4) on `/staging/` |
 | `docs/marketview_manual/`, `build_help_pack.py` | docs / build | the manual | `/manual` | v0.4; `BOARD = "index-BFOk56iL.js"` for `board_bundle` (`08b25a8`) |
 | `tests/run_offline.sh` | offline suite | — | operator | 23 steps: + 16 hung run, 17 window union, 18–19 probe / wsfeed retry, 20–21 breadth ticks / chain retry, 22 breadth gap-fill, 23 subscription lapsed |
+
+## §S101 — Session 101: the pure compute packaged as `merdian_compute`, the writers import it, two live views registered (2026-10-25 → 10-28)
+
+Doc Protocol v5: a table of what changed, no narrative. Detail: `tech_debt.md` S101 paragraph;
+`docs/research/s92_parity/rulings_s101.md`; `docs/interfaces/retail_compute_contract.md`. Recorded at the S101 doc-close
+(run in Session 102).
+
+| Component | Kind | Reads | Read by | State |
+|---|---|---|---|---|
+| `merdian_compute/` — `gamma`, `volatility`, `pin`, `cycle` | package, stdlib only | its arguments only (no environment, client, network or clock) | the three writers below; `retail-meridian`, pinned by SHA | `11f2cbe` (extract), `4ed5671` (`gamma.compute_gamma_core`), `50bef37` (`volatility.derive_atm_iv`), `a0b6115` (`pin.derive_core`, `cycle.held_for_cycles_next`, `cycle.trading_days_between`); moved byte-identical or cut with counted substitutions; deployed `4a1d8e1` 2026-10-26 |
+| `compute_gamma_metrics_local.py` | writer | option chain | `gamma_metrics`, `gex_strike_snapshots` | imports its math from `merdian_compute.gamma` (the composed cycle, C2); golden replay 486/486 before = after |
+| `compute_volatility_metrics_local.py` | writer | option chain, VIX | `volatility_snapshots` | ATM IV from `merdian_compute.volatility.derive_atm_iv` (C3); the VIX fields stay in the writer |
+| `write_gex_cycle_history_local.py`, `core/pin_state.py` | writer, helper | γ views | `gex_cycle_history` | the pin path from `merdian_compute.pin` / `.cycle` (C4); first production run 2026-10-27 |
+| `pyproject.toml` | packaging | — | `pip install "git+https://github.com/balannavin-cyber/meridian-engine@<sha>#egg=merdian_compute"` | exposes `merdian_compute` only; `dependencies = []`; `requires-python >= 3.10` |
+| `docs/interfaces/retail_compute_contract.md` | interface contract | — | `retail-meridian` | **v2.1** (`e0fb11d`, `02a06ec`): composed calls, ATM IV, pin path, the view closure (§8) with live md5s, not covered (§9), interpreter (§10) |
+| `v_gex_strike_pin_zone` | view | γ strike rows, `get_parameter_num` | board Pin | live definition registered: `sql/2026-10-26_s101_v_gex_strike_pin_zone_live_captured.sql` (C6; 3523 / `89c9ac6aef9eb332ddd28f9062d0e21e`) |
+| `v_gex_strike_accel_zone` | view | γ strike rows, `get_parameter_num` | board | live definition registered: `sql/2026-10-26_s101_v_gex_strike_accel_zone_live_captured.sql` (C7; 3547 / `87a0691ef33ef5e08cbf315fd6511064`) |
+| `scripts/s101_purity_map.py` | analysis script | engine source | operator | the transitive purity map (A1) |
+| `tests/run_offline.sh` | offline suite | — | operator | **25 steps**: + 24 `merdian_compute` import purity (`tests/test_merdian_compute_import_purity.py`), 25 the contract against production golden rows (`tests/test_merdian_compute_contract.py`) |

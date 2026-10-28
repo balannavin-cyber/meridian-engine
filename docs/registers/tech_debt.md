@@ -148,6 +148,231 @@ the doc-close that closes it, with one line in that close's status paragraph.
 | **Home** | Tracker §2.2 band B4. |
 | **Status** | **OPEN.** |
 
+### TD-S101-NEW-1 (S2 priority) — the ENH-133 writer loses a cycle when a view read times out (`57014`) on all three attempts
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** A lost `gex_cycle_history` row is unrecoverable (ADR-030 D2), and the pin path counts from it: `held_for_cycles` stays one low for as long as the leader holds. |
+| **Filed** | 2026-10-26 (Session 101; Part C (a) read; ruled a new TD, S101-F — a different class from TD-S97-NEW-4) |
+| **Component** | `write_gex_cycle_history_local.py` — the `S90_ENH133_WIRE` retry around `build_row` (3 attempts, 3 s apart, `57014` only; then `exit_with_reason("DATA_ERROR", …)`) and the view reads inside `build_row` |
+| **Measured** | 2026-10-26 14:00 IST, NIFTY: `build_row` hit `57014` on all three attempts and lost the cycle — the one non-zero exit in the Part C (a) read (runner 87/87); `held_for_cycles` one low from 14:05. Which view read timed out is not yet known. |
+| **Proper fix** | Identify the read (rank / concentration / max pain / pin-maxpain / walls / repriced flip) from the ledger error text or a timed replay of `build_row`, and apply ADR-021 A1 (scope the read) there; a check that the read finishes under the timeout, and a cell that a forced `57014` on every attempt still exits non-zero. |
+| **Home** | Tracker §2.2 band B1. |
+| **Status** | **OPEN.** |
+
+### TD-S101-NEW-2 (S2 priority) — two live views ran a definition no file in `sql/` reproduced, and nothing checks live views against the registered files
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** A rebuild from `sql/` would have silently reverted the live pin and accel zones (ADR-025 D2 class), and the next unregistered change would go unseen the same way. |
+| **Filed** | 2026-10-26 (Session 101; the MR-S1 O1 read; ruling S101-E) |
+| **Component** | `v_gex_strike_pin_zone`, `v_gex_strike_accel_zone`; `sql/`; contract §8 |
+| **Measured** | The live definitions walk on `COALESCE(<pin\|accel>.tau, 0.3)`, `tau_used` is never NULL, and `latest_run` is a LATERAL skip-scan over hard-coded `VALUES ('NIFTY'),('SENSEX')` — no file in `sql/` matched. Most likely S80, DDL never registered. Registered: C6 `02a06ec` (`sql/2026-10-26_s101_v_gex_strike_pin_zone_live_captured.sql`, 3523 / `89c9ac6aef9eb332ddd28f9062d0e21e`) and C7 `4a1d8e1` (`sql/2026-10-26_s101_v_gex_strike_accel_zone_live_captured.sql`, 3547 / `87a0691ef33ef5e08cbf315fd6511064`); each body reproduces the live length and md5, and a mutant differs. |
+| **Proper fix** | Done for these two (C6, C7). Open: a standing check — the md5 of every live view's `pg_get_viewdef` against a registered list (seed: the MR-S1 O1 table and contract §8), run read-only on a schedule or at each doc-close; a mismatch names the view. |
+| **Home** | Tracker §2.2 band B4. |
+| **Status** | **OPEN** — registration DONE (C6, C7); the standing check OPEN. |
+
+### TD-S101-NEW-3 (S2 priority) — `otm_oi_velocity` is NULL in every production `gamma_metrics` row
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** A published column that never carries a value; a reader cannot tell "no velocity" from "never computed". |
+| **Filed** | 2026-10-26 (Session 101; the step 25 contract read) |
+| **Component** | `merdian_compute/gamma.py` `compute_otm_oi_velocity`; `compute_gamma_metrics_local.py` `fetch_prior_gamma_metrics`, `upsert_gamma_metrics` |
+| **Measured** | 0 of 313 production golden rows carry a value. **Code read on `4a1d8e1` (mechanism, not yet confirmed on data):** `compute_otm_oi_velocity` takes the prior run's OTM OI from `prior_row["raw"]["otm_oi_snapshot"]`; `upsert_gamma_metrics` writes that snapshot into `raw`, but `fetch_prior_gamma_metrics` selects only `straddle_atm,ts`, so `prior_row` has no `raw` and the function returns None on every run. |
+| **Proper fix** | Confirm on data (`raw->>'otm_oi_snapshot'` non-NULL on stored rows); then select `raw` (or the snapshot alone) in the prior read, with a golden-day replay showing the column populated from the second cycle and a mutant. A behaviour change to a published column: replay before deploy. |
+| **Home** | Tracker §2.2 band B3. |
+| **Status** | **OPEN.** |
+
+### TD-S101-NEW-4 (S3 priority) — `fetch_recent_max_gamma_strikes` and `fetch_prior_gamma_metrics` have no date bound
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Whether the first cycle of a session should compare with the previous session is a design question no document answers. |
+| **Filed** | 2026-10-26 (Session 101; read while packaging C2) |
+| **Component** | `compute_gamma_metrics_local.py` — `fetch_prior_gamma_metrics` (straddle velocity), `fetch_recent_max_gamma_strikes` (the pin's sustained-time factor, last `n = 5` cycles) |
+| **Measured** | Code read on `4a1d8e1`: both read the newest rows with `ts < current_ts` and no lower bound, so the first cycles of a session compare with the previous session's last cycles. |
+| **Proper fix** | Rule: by design or defect. If defect, a session floor on both reads, with a golden-day replay of the first cycles before vs after. |
+| **Home** | Tracker §2.2 band B3. |
+| **Status** | **OPEN** — ruling owed. |
+
+### TD-S101-NEW-5 (S3 priority) — the gamma and volatility math is still re-implemented outside `merdian_compute`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Drift risk: a fix in the package does not reach these copies, and a study run through them can disagree with production. |
+| **Filed** | 2026-10-26 (Session 101; contract §9 item 4) |
+| **Component** | Gamma: `backfill_gamma_metrics_to_main.py`, `measure_rate_sensitivity.py`, `replay/replay_compute_gamma_metrics.py`. Volatility: `replay/replay_compute_volatility_metrics.py`. |
+| **Measured** | Recorded in S101, not changed; each re-implements math the writers now import from `merdian_compute`. |
+| **Proper fix** | Each imports from `merdian_compute`; per file, a replay before vs after (equal) and a mutant in the package that moves its output. |
+| **Home** | Tracker §2.2 band B4. |
+| **Status** | **OPEN.** |
+
+### TD-S101-NEW-6 (S3 priority) — `.gitignore:107` `_*.py` matches every `__init__.py`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A new package's `__init__.py` is silently left out of a commit; the S101 rehearsal stopped before `git add`, so the rule was first met on the box (§D.55.6). |
+| **Filed** | 2026-10-26 (Session 101) |
+| **Component** | `.gitignore` line 107 (`_*.py`, under `# S61 cleanup`) |
+| **Measured** | `git check-ignore --no-index -v merdian_compute/__init__.py` → `.gitignore:107:_*.py` (re-read at the S101 doc-close build on `4a1d8e1`). |
+| **Proper fix** | Narrow the pattern to what S61 meant (or add `!__init__.py`); `git check-ignore` on every tracked `__init__.py` returns nothing, and on one S61 target still returns the rule. |
+| **Home** | Tracker §2.2 band BD. |
+| **Status** | **OPEN.** |
+
+### TD-S101-NEW-7 (S4 priority) — from Python 3.12, `sum()` over floats is compensated, so `net_gex` and concentration move in the last bits
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** About 1e-15 relative; no board figure changes, but a bit-for-bit parity claim between production and retail fails on ≥ 3.12. |
+| **Filed** | 2026-10-26 (Session 101; contract §10) |
+| **Component** | `merdian_compute.gamma` (float sums in `net_gex`, `gamma_concentration`); production runs Python 3.10 |
+| **Measured** | 474 of 486 golden runs differ in the last one or two bits on ≥ 3.12; step 25 compares at 1e-9 and passes on both (contract §10). |
+| **Proper fix** | Retail pins 3.10 or 3.11 (contract §10), or both sides move to `math.fsum` — a behaviour change, replay first. |
+| **Home** | Tracker §2.2 band BR. |
+| **Status** | **OPEN.** |
+
+### TD-S101-NEW-8 (S3 priority) — retail cannot reproduce every board input from `merdian_compute` alone (contract §9)
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Stated in the contract so retail does not assume it; each gap is a retail build item or a scope ruling. |
+| **Filed** | 2026-10-26 (Session 101; contract §9) |
+| **Component** | `docs/interfaces/retail_compute_contract.md` §9 items 1–3 |
+| **Measured** | Not packaged: the session gate and reconciler; the VIX fields of `volatility_snapshots` (history-dependent, still in the writer); `index_futures_snapshots` for the repriced flip, the `merdian_parameters` rows with a `get_parameter_num` SQL function, and a `trading_calendar` for the calendar predicate. |
+| **Proper fix** | Per item: package it, specify it for retail to re-create, or rule it out of retail scope; contract §9 updated as each is settled. |
+| **Home** | Tracker §2.2 band BR. |
+| **Status** | **OPEN.** |
+
+### TD-S101-NEW-9 (S4 priority) — superseded view files stay in `sql/` beside the registered one
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** A reader picking "the newest file" or a marker match gets a definition that is not live (the §D.55.14 failure). |
+| **Filed** | 2026-10-26 (Session 101; the O1 read) |
+| **Component** | `sql/` — `v_max_pain_by_strike` (2 of its 3 files superseded), `v_gex_strike_pin_zone` (3 older files), `v_gex_strike_accel_zone` (3 older files) |
+| **Measured** | O1 read 10-26: the live definition is reproduced by one file per view (contract §8); the others are older. |
+| **Proper fix** | A header line in each superseded file naming the registered one, or a move to an archive folder; the standing md5 check (TD-S101-NEW-2) names the live file. |
+| **Home** | Tracker §2.2 band BD. |
+| **Status** | **OPEN.** |
+
+### TD-S101-NEW-10 (S2 priority) — port 22 is open to 0.0.0.0/0 on the production box
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2 (security).** SSH reachable from any address; operator access is through SSM. |
+| **Filed** | 2026-10-26 (Session 101) |
+| **Component** | The security group attached to `i-0878c118835386ec2` |
+| **Measured** | Inbound 22 from `0.0.0.0/0` (S101 read). |
+| **Proper fix** | Narrow (operator IP, or remove if SSM covers every use); read the attached security group by the IMDSv2 query first (S39, as TD-S89-NEW-4). Operator action. |
+| **Home** | Tracker §2.2 band BS. |
+| **Status** | **OPEN** — operator action. |
+
+### TD-S101-NEW-11 (S3 priority) — the four-way check had no Local HEAD line, and Local trailed `main` by a session
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Rule 2's preflight compares Local with AWS; a Local tree a session behind passes any check that does not name its HEAD. |
+| **Filed** | 2026-10-26 (Session 101) |
+| **Component** | The four-way check (box route, S99-A); Local tree `C:\GammaEnginePython\` |
+| **Measured** | Before the S101 pull, Local was at `b29f320` (S100) while `main` was `7b91d1a`. |
+| **Proper fix** | The four-way check states "Local HEAD = `<sha>`" (`git rev-parse HEAD` in `C:\GammaEnginePython\`) as its own line, with `git diff --stat <sha>` = 0. |
+| **Home** | Tracker §2.2 band BD. |
+| **Status** | **OPEN.** |
+
+### TD-S101-NEW-12 (S3 priority) — unprivileged `journalctl` reads of the alert units look clean
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A read that returns `-- No entries --` for lack of permission is a check that cannot fail (Rule 0). |
+| **Filed** | 2026-10-26 (Session 101; §D.55.19) |
+| **Component** | Runbooks and session prompts that read the alert journal |
+| **Measured** | The S101 wsfeed alert read without `sudo` returned `-- No entries --`; re-read with `sudo`. |
+| **Proper fix** | Every runbook / prompt alert read uses `sudo journalctl`; a grep of `docs/runbooks/` for a bare `journalctl` returns nothing. |
+| **Home** | Tracker §2.2 band BD. |
+| **Status** | **OPEN.** |
+
+### TD-S101-NEW-13 (S3 priority) — Health OVERALL reads DEGRADED all session on a healthy fleet
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A health summary that is amber every day carries no signal; S100-M (a)'s "OVERALL green unless a tracked writer is stale" cannot hold. |
+| **Filed** | 2026-10-27 (Session 101; board read 10:20 IST) |
+| **Component** | `meridian-connect` Health page (live bundle `index-BFOk56iL.js`): the token tile is green iff `http_status == 200 && age < 30`, age in minutes (`Tf(ts) = (now − ts) / 6e4`) |
+| **Measured** | 2026-10-27 10:20 IST: fleet 14/14 current, OVERALL DEGRADED; token 2.5 h old → amber. The token refreshes once a day, so OVERALL is amber from ~30 min after the refresh until the next one. |
+| **Proper fix** | A threshold on the token's validity window (e.g. < 24 h) or expiry-based, in meridian-connect; a board change needs the operator's yes. |
+| **Home** | Tracker §2.2 band B5 (ruling row). |
+| **Status** | **OPEN** — ruling owed. |
+
+### TD-S101-NEW-14 (S3 priority) — Context IV SKEW is blank for NIFTY on expiry day
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The card shows nothing on the day the front leg matters most. |
+| **Filed** | 2026-10-27 (Session 101; board read 10:20 IST) |
+| **Component** | `meridian-connect` Context IV-skew card; view `leg_skew_98` (S100-P class) |
+| **Measured** | 2026-10-27 10:20 IST (NIFTY front leg 0 DTE): `—` after > 10 s; SENSEX (2 DTE) showed `+2.0 vol pts @ K98 72,000 · front leg · from view`. Likely the view has no 0-DTE front row, or the card does not fall back to the next leg — not yet read. |
+| **Proper fix** | Read the view on the next NIFTY expiry before ruling; then fall back to the next leg, or label the 0-DTE state. A board change needs the operator's yes. |
+| **Home** | Tracker §2.2 band B5 (ruling row). |
+| **Status** | **OPEN** — ruling owed. |
+
+### TD-S101-NEW-15 (S3 priority) — after the expiry-day close, the NIFTY board shows the expired leg's last-cycle gamma as the day's closing structure, overnight
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Arithmetically expected at T ≈ 0, but presented as the closing structure until the next pre-open. |
+| **Filed** | 2026-10-27 (Session 101; board close read 15:49 IST) |
+| **Component** | Marketview Board (NIFTY) after the 15:40 cycle on expiry day; the stored 15:40 rows of the expiring leg |
+| **Measured** | 2026-10-27 15:49 IST: NET Γ −2,007.6L Cr, short γ, −1.00 of gross (in session 10:19: +8.4L, +0.06); PIN 22,750 at 99.0 % of gross, lead 98.5 pts; corridor `22,750–22,750 · 0.00 % wide · below put wall`; IV `—`; priced move `no run`. The 15:40 run on the expiring leg is at T ≈ 0, so ATM gamma dominates (22,750 −1,987.8L of the total). Cleared by the 10-28 08:30 run. Not caused by S101 (gamma math byte-identical, DEP-3). |
+| **Proper fix** | Rule: after the expiry-day close the board rolls to the next leg, or labels the expired-leg state. Check the stored 15:40 rows before ruling. |
+| **Home** | Tracker §2.2 band B2 (ruling row). |
+| **Status** | **OPEN** — ruling owed. |
+
+### TD-S101-NEW-16 (S4 priority) — `eod.log` lines carry no timestamps
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** "Did today's run happen" needs the file's mtime; a grep cannot date its own lines (§D.55.24). |
+| **Filed** | 2026-10-27 (Session 101; the R19 read) |
+| **Component** | The EOD ingest and the daily breadth builder's summaries in `eod.log` |
+| **Measured** | 2026-10-27 17:52 IST: the builder / ingest summaries could not be tied to a run date; the discriminating read was the mtime (2026-10-27 11:35:42 box clock, UTC). |
+| **Proper fix** | One dated header line per run (IST date and time, run id). |
+| **Home** | Tracker §2.2 band B4. |
+| **Status** | **OPEN.** |
+
+### TD-S101-NEW-17 (S4 priority) — one ticker returns `DH-905` (bad parameters) on the EOD historical call
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** One security short in a run; not a token failure. |
+| **Filed** | 2026-10-27 (Session 101; the R19 read) |
+| **Component** | The EOD historical ingest; `dhan_scrip_map` |
+| **Measured** | One run in `eod.log` ends `PARTIAL_OK`, `Failures 1`, on a `DH-905` for one security. |
+| **Proper fix** | Identify the security id from the failure sample; likely a stale or malformed `dhan_scrip_map` row (TD-S90-NEW-1 class); remap or deactivate. |
+| **Home** | Tracker §2.2 band B4. |
+| **Status** | **OPEN.** |
+
+### S101 status changes to existing entries (doc-close run in Session 102; v5 Rule 3: one paragraph, no body edits)
+
+Rulings S101-A…H (`docs/research/s92_parity/rulings_s101.md`). Ledger: `TDs_NEW=17` (TD-S101-NEW-1…17) ·
+`TDs_CLOSED=5` (below; blocks moved to the end of `tech_debt_history.md`'s entries, unedited).
+**TD-S97-NEW-4, TD-S82-NEW-1, TD-S82-NEW-2 → CLOSED** (S101-F, 10-26 17:23 IST) on the Part C (a) read of 2026-10-26: γ
+median lag 12.6 / 20.3 s; 0 later-date rows; 3 closing rows per symbol; runner 87/87; one `[CYCLE WAIT]` line per cycle,
+0 missing. The day's one non-zero exit (14:00, the ENH-133 writer's `57014`) is a different class: TD-S101-NEW-1.
+TD-S97-NEW-4's part (b) (`actual_writes {}`), open at the S100 close, is not covered by that read; it rides with the
+tracker §2.2 B1 ledger row. **TD-S97-NEW-5 → CLOSED** on the 10-26 09:09 probe (all OK; `418a75b` labels a lapse).
+**TD-S80-NEW-17 → CLOSED:** on 10-26 the wsfeed started 03:40:01–03:40:03 UTC by its timer, no restarts, the `sudo` alert
+journal empty. **TD-S97-NEW-8, -9, -10** (closed S100) confirmed live 10-26: S99-H PASS in full. **TD-S100-NEW-1 → OPEN,
+re-measured 2026-10-27** (board FUT · BASIS sub-line against the S100-R close, 15:40): NIFTY `vs spot 22,760.8 @ 15:40`
+against the close 22,749.75 (Δ 11.05); SENSEX `vs spot 73,556.3 @ 15:40` against 73,598.67 (Δ 42.37) — the futures rows
+still carry a non-close spot at 15:40 on both symbols; on 10-28 pre-open the 16:00 row carried the close (22,749.8), as
+S100 predicted. **TD-S100-NEW-2:** extends to Home — first paint 10-27 10:19 read `prev close missing` / PIN `no run` / OI
+`no max pain` before the data loaded; no new TD. **TD-S83-NEW-2:** S101's finding "the volatility writer's `dte` uses the
+wall clock" (contract §9 item 2, "filed S101") is this entry's defect 2, still present at
+`compute_volatility_metrics_local.py:557–558` on `4a1d8e1`; not re-filed. **Not a TD:** WCB publishing from pre-open
+ticks (first row 09:11 on 10-26) is a design question — a tracker §2.2 ruling row. **Tracker rows:** R1 + R41 DONE; R2 +
+R21 live check PASS; R4's two TDs closed; R19 builder PASS on its input (10-26 / 10-27 owed to the 10-28 run).
+
 ### S100 status changes to existing entries (v5 Rule 3: one paragraph, no body edits)
 
 Rulings S100-C…S, Q.1 (`docs/research/s92_parity/rulings_s100.md`). Ledger: `TDs_NEW=6` (TD-S100-NEW-1…6; -6 filed
@@ -290,29 +515,6 @@ measured: the oldest `option_chain_snapshots` row is **2026-08-24 15:30 IST** on
 and 08-24 / 08-25 hold one 15:30 row each (S\* availability probe; P5 probe 1). **TD-S94-NEW-3**
 — both S95 applies ended their batch with a verification SELECT and both passed in one
 execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
-
-### TD-S97-NEW-4 (S1 priority) — a total ingest outage reads as a healthy day: the orchestrator re-runs the last existing run and logs SUCCESS / contract met with zero writes
-
-| Field | Value |
-|---|---|
-| **Priority** | **S1.** On 2026-10-21 no chain, spot, futures or γ was written all session and every orchestrator cycle reported success. |
-| **Filed** | 2026-10-22 (Session 97) |
-| **Component** | `run_merdian_shadow_runner_aws.py` (picks up the *latest existing* `run_ids`, does not check their age); the contract evaluation (`contract_met = true` with `actual_writes {}`) |
-| **Measured** | 2026-10-21: every cycle logged `Using run_ids: NIFTY 1bfd5d97…, SENSEX 4e81958a…` = **2026-10-19 15:40**'s runs; 83 ledger rows `status OK, exit_code 0, exit_reason SUCCESS, contract_met t, actual_writes {}` (+ one 11:00 IST `MISSING`, exit 1). `gex_strike_snapshots` / `gamma_metrics` 0 rows for 10-21 (164 / 164 on 10-19). Registered as Rule 13 row `ORCH-LEDGER-FALSE-SUCCESS-2026-10-21` (S97-M). |
-| **Also measured 2026-10-22 08:49 IST (healthy day)** | (i) **The first cycle of every session reuses the previous session's run:** the 08:30 cycle logged 10-19's `1bfd5d97` / `4e81958a` again, because it starts in the same minute as the first chain ingest; new run_ids from 08:35. (ii) **`actual_writes` is `{}` on healthy cycles too** (08:35–08:45 wrote γ: 3 runs per symbol), so the field is never populated and cannot detect zero writes as it stands. |
-| **Proper fix** | (a) the runner refuses run_ids not from today's session (or older than one cycle plus margin) and exits non-zero with a reason — this also fixes the daily first-cycle reuse; (b) the contract counts its own writes (the ledger's `actual_writes` is never filled) and cannot be met with zero. Both are capture-path changes: S90-J window, replay check, written rollback. |
-| **Status** | **OPEN.** |
-
-### TD-S97-NEW-5 (S2 priority) — a lapsed Dhan Data API subscription is visible only in `cron.log`
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** Cost one full session (10-21) of chain, spot, futures and γ, which cannot be recovered as snapshots. |
-| **Filed** | 2026-10-22 (Session 97) |
-| **Component** | Dhan account plan; `run_ingest.sh`, `capture_spot_1m_v2.py`, the futures quote and post-market capture (all log to `cron.log`; none pages) |
-| **Measured** | `cron.log` 2026-10-21: optionchain/expirylist and index-futures quote **HTTP 401 `{"806":"Data APIs not Subscribed"}`**; charts/intraday **401 `DH-902` "requires a PLUS subscription. Current plan: FREE"**; 16:00 `MARKET CLOSE CAPTURE FAILED`. 10-19 had full data; 10-20 was a holiday. Renewed 2026-10-22 ~05:06 IST; probes 05:07 IST: expirylist **200**, charts/intraday **200** (returned 10-21 candles), marketfeed/ltp **200**. The parity-target trial linked to the same Dhan account ended 10-19 — a coincidence of dates, **not shown to be related**. |
-| **Proper fix** | (a) a pre-open probe (e.g. 08:25 IST) of the three endpoints that pages through a delivering sender on any 401; (b) record the subscription's renewal date where the operator will see it before it lapses. |
-| **Status** | **OPEN** (subscription restored; the detection gap stands). |
 
 ### TD-S97-NEW-6 (S2 priority) — the Zerodha feed was down on 3 of the last 6 trading days; the daily manual Kite refresh is a single point of failure
 
@@ -825,49 +1027,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **Cross-ref** | **ADR-015** · **ENH-131** (which reads these columns correctly, by measurement rather than from the bullet) · **TD-S76-NEW-15** class: *a standing document describing behaviour it does not produce*. |
 | **Status** | **OPEN (erratum 1, `CLAUDE.md` bullet unedited)** · **erratum 2 applied in this close.** |
 
-### TD-S82-NEW-1 (S2 priority) — the shadow runner's cron hour range ends before the option-chain ingest's, and before its own docstring: the last three cycles of every session are never computed, and the fourth is computed the next morning
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** Real data loss, bounded and daily: three chain cycles per symbol per trading day acquire no derived row, permanently. **15:25 IST is the last IN-SESSION cycle** — the session closes 15:30 — so this is not a purely post-close tail; one of the three lost cycles is inside the trading session and the other two bracket the close. Not S1 because nothing routes on it — display-only per the S37 GEX-as-context-not-gate ruling. |
-| **Filed** | 2026-09-23 (Session 82) |
-| **Component** | crontab line 14 (shadow runner) · crontab lines 44–45 (`run_ingest.sh`, hour-10 block) · `run_merdian_shadow_runner_aws.py:20,35-36` (docstring) · `docs/registers/aws_crontab.txt` |
-| **The mismatch, which is the whole finding** | Shadow runner `*/5 **03-09** * * 1-5` → last fire **09:55 UTC = 15:25 IST**. Option-chain ingest `*/5 04,…,09` **plus `0,5,10 **10** * * 1-5`** → last fire **10:10 UTC = 15:40 IST**. The ingest owns a cron hour the runner does not. Chain cycles at **15:25, 15:30, 15:35, 15:40** have no runner fire after them within the session. |
-| **The deployed schedule contradicts the file's own spec** | `run_merdian_shadow_runner_aws.py:35-36` documents the cron as `… 03,04,05,06,07,08,09,`**`10`**` * * 1-5`, and `:20` as *"every 5 minutes (09:15-15:30 IST = 03:45-10:00 UTC)"*. **The deployed crontab line 14 is `*/5 03-09`.** Hour 10 is in the spec and absent from the deployment: **drift from documented intent, not a design choice.** The docstring is stale in other respects (its minute list `15,20,…,55` and its IST range match neither the deployment nor each other) — **treat it as evidence that hour 10 was intended, not as authoritative for the fix.** |
-| **Measured, 10 trading days, both symbols** | `c2_missing` = **3 on every day 2026-09-09 → 2026-09-22**, and the three are **always 15:25 / 15:30 / 15:35**. 2026-09-23 reads 4 because that day's 15:40 had not yet been backfilled at measurement time. One **unrelated** extra: 09-11 SENSEX 10:20:06, mid-session — see the "cannot distinguish" row. |
-| **Why 15:40 appears computed and is not an exception** | `gamma_last_ist = 15:40:05` on prior days is **next-morning backfill**, not evening computation. 2026-09-22's 15:40:05 gamma rows carry `created_at` **2026-09-23 08:35:12** (NIFTY, lag **16:55:06**) and **08:40:19** (SENSEX, lag **17:00:13**). Their `run_id`s (`7a2ec638…`, `be93cc98…`) match that cycle's chain `run_id`s exactly, so **the values are correct and only the write time is wrong** — a consequence of TD-S82-NEW-2's selector, which on the day's first fire finds the previous session's final cycle as the newest row. |
-| **So the loss is exactly three, not four** | 15:25/15:30/15:35 are **permanently uncomputed** — the runner processes **one** cycle per fire (`limit=1`), so once the next morning's first fire jumps to 15:40, the three intermediate cycles are never revisited by any path. Verified against `main()` end to end; see TD-S82-NEW-2 Consequence 3. |
-| **Consumer consequence at the close** | Post-close readers of "latest gamma" get whatever the tail left. `generate_pine_overlay.py` (crontab `52 10` = **16:22 IST**) and the ENH-116 compiler (`0 16` = **21:30 IST**) both run after the chain's final 15:40 cycle and before the next morning's backfill, so both read **15:20** — 20 minutes before the last chain cycle and 10 minutes before the session close. From ~08:35 the next morning the same query returns **yesterday's 15:40** instead. **Which value a post-close consumer sees is a function of when it runs, not of the data.** |
-| **Onset** | The runner window `*/5 03-09` is byte-identical across every recoverable snapshot (2026-07-11 `d3b02bb`, 2026-08-24 `PRE_S71`, 2026-09-05 `279fab1`, 2026-09-22 `51af3d8`). The **hour-10 ingest block is the new half**: absent 2026-07-11 and 2026-08-24, present 2026-09-05. **Onset is bounded to 2026-08-24 → 2026-09-05 and cannot be pinned finer** — `crontab` is not in git; only the mirror is, and it is snapshot-based (line counts 40 → 35 → 53 → 59 show churn no artefact explains). **Do not state a single date.** |
-| **`C` and `C2` cannot distinguish expected from real** | `C2` counts chain cycles with no gamma row at the same `ts`. It carries **no model of which cycles ought to have one**, so the three structural tail misses, the pending-overnight 15:40, and any genuine mid-session outage are **one undifferentiated integer**. The 10-day scan contains exactly such an unattributed case — **2026-09-11 SENSEX 10:20:06**, mid-session — whose **cause is unestablished**: runner logs are retained only back to **2026-09-15** (`logs/orchestrator.log.7.gz`), so it cannot be examined. **That it is indistinguishable from the tail by the check, and now unexaminable by log, is the point of this row.** `C` (one gamma row per cycle) only detects duplicates and is silent on absence entirely. A check that reads `3` on a healthy day and `4` on a day with one real outage **cannot fail for the reason it names** — CLAUDE.md Rule 0, and the `merdian-wsfeed` shape (§S72.B / D.27) at a third surface. |
-| **What an `eod_health_check` expected-set must be derived from** | The **two crontab schedules, read at check time** — the runner's hour/minute spec and the ingest's — never a hardcoded cycle count or a hardcoded 15:25–15:35 exclusion. A literal would have read "healthy" before 2026-08-24 and silently wrong after, which is the same latency-versus-growth failure ADR-021 records. The expected set is: chain cycles whose `ts` falls at or before the runner's last fire of that session, minus the current in-flight cycle. Anything outside that set is **expected-absent**; anything inside it and absent is a **real miss** and must be named individually, not counted. |
-| **Options, not a recommendation** | (1) extend the runner's hour range to `03-10`, restoring documented intent; (2) add a single dedicated post-close runner fire after 10:10 UTC; (3) leave the schedule and encode the tail in the expected-set so the tail stops being reported as loss; (4) move the hour-10 ingest block inside the runner's window. **(1) and (2) change what is computed; (3) changes only what is reported — they are not substitutes.** Note (3) alone leaves the three cycles permanently uncomputed by design, which may be correct if post-close chain snapshots have no consumer. |
-| **Cost to fix** | ~10 min for (1) or (4); ~30 min for (2). **The expected-set work is deliberately not costed here**: it is shared with TD-S82-NEW-2, is required under every option, and is tracked as **TD-S82-NEW-3 (`eod_health_check` expected-set)**. Costing it twice would double-count one piece of work. |
-| **Blocked by** | an operator decision between the four, and on whether post-close (15:25–15:40 IST) derived rows have any consumer. |
-| **Cross-ref** | **TD-S82-NEW-2** — the selector that produces the overnight backfill and the one-cycle lag; **same subsystem, different defect, DO NOT MERGE: fixing the cron window leaves the lag intact, and fixing the lag leaves the tail intact.** · **TD-S81-NEW-12** — **the same family at the morning end**: runner cron hour `03` starts an hour before its futures input exists, where this entry is the runner ending 15 minutes before its chain input stops. Both are runner-hour-range-versus-input-schedule mismatches; that one over-runs at the open, this one under-runs at the close. · **ADR-021** (cost/scope drift crossing a threshold unobserved) · **CLAUDE.md Rule 0** · §S72.B / **D.27** · **TD-S82-NEW-3** (`eod_health_check` expected-set). |
-| **Status** | **OPEN — measured, no fix applied, no fix proposed.** |
-
-### TD-S82-NEW-2 (S2 priority) — the shadow runner selects the previous chain cycle, every fire, by a sub-second margin: every derived row is one cycle stale and the skip is one race from becoming permanent
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** No data is currently lost — the lag is systematic, so each cycle is eventually computed. It is S2 because **the run_id-keyed outputs are five minutes stale**, because the first fire of each morning presents the **previous session's close as the current read**, and because the margin is sub-second: a single slow cycle converts the lag into a permanent skip with no signal. |
-| **Filed** | 2026-09-23 (Session 82) |
-| **Component** | `run_merdian_shadow_runner_aws.py::fetch_latest_run_ids` (`:85`, selector `:119`) · `compute_options_flow_local.py::fetch_latest_runs_per_symbol` (`:145`, selector `:164`) · crontab line 14 |
-| **Measured, 4 of 4 fires, resolved by `ts` not by timing** | Every `Using run_ids` line from 2026-09-23 07:20–07:35 UTC, resolved through `option_chain_snapshots`: **the selected cycle is always the previous one.** `07:20:07.672346` → cycle **12:45:06** IST · `07:25:06.704284` → **12:50:07** · `07:30:08.300218` → **12:55:06** · `07:35:06.675148` → **13:00:08**. Δ = **+5m01.42s / +4m58.94s / +5m01.42s / +4m58.19s**. |
-| **The margin, which is the whole finding** | The runner misses its own minute's cycle by **0.092 s / 0.177 s / 0.188 s / 0.707 s** (selection instant vs that cycle's NIFTY snapshot `ts`). Both jobs fire on `*/5`; the runner queries ~1.5–2.5 s after its own start and still lands a fraction of a second **before** the chain rows commit, so it takes the newest row available, which is five minutes old. **This is a race the runner loses consistently, not a designed offset** — nothing in the selector expresses an intent to read the prior cycle. |
-| **Consequence 1 — the stale run_id reaches two steps directly, and options_flow by its own identical selector** | Verified against the runner's step list (`:191-273`), 9 scripts / 16 invocations. **Only two are run_id-keyed**: `compute_gamma_metrics_local.py` (`:196`) and `compute_volatility_metrics_local.py` (`:202`) receive the stale run_id as argv. `compute_options_flow_local.py` (`:254`) takes no run_id but runs **its own** `fetch_latest_runs_per_symbol` with the identical `order="ts.desc,expiry_date.asc"` + `limit=1` selector (`:145-171`), inheriting the same lag independently. The remaining six — momentum, wcb, market_state, structural_divergence, basis_context, trade_signal — are **symbol-keyed**, do their own reads, and inherit staleness only transitively (market_state and structural_divergence read `gamma_metrics`). **An earlier statement in this session that all nine compute from the stale run_id was wrong; this is the verified form.** `gamma_metrics.ts` is stamped with the *chain's* `ts`, so nothing downstream can detect the lag. |
-| **Consequence 2 — the overnight case, which is a stale read at the open** | The first fire of each trading morning finds the **previous session's final cycle** as the newest row. Measured: 2026-09-22 15:40:05 gamma written **2026-09-23 08:35:12** (NIFTY, **16:55:06** late) and **08:40:19** (SENSEX, **17:00:13** late), `run_id` matching that cycle's chain rows. So between ~08:35 and the next fire, the newest `gamma_metrics` row **is yesterday's close**, correctly valued and 17 hours old. **That first fire runs the full 16-invocation pipeline on the prior session's 15:40 snapshot** — not gamma alone. **08:35 IST is also the Dhan token-refresh minute** (crontab line 2, `5 3 * * 1-5`), so the day's first runner fire coincides with the one minute per day when the token is rewritten; **no causal link is asserted between the two — they are recorded as coincident**, and the 401 family is **TD-S81-NEW-14** / **TD-S81-NEW-20**'s subject, not this entry's. Any consumer reading "latest gamma" in that window gets a stable, plausible, stale answer — the **ADR-001 stable-lie shape**, and a case an **ADR-018 D2** recency floor on the consumer side would catch where the writer cannot. |
-| **Consequence 3 — the skip is one race from permanent** | **Verified by reading `main()` end to end (`:292-346`)**, not inferred: the flow is holiday gate → client → `fetch_latest_run_ids(sb)` (`:315`) → `execute_pipeline(run_ids)` (`:335`) → return. **There is no loop over cycles, no backlog queue, and no re-selection.** The only retry is `retry_call(..., attempts=3)` wrapped around the fetch *query* (`:100-126`) — a network retry for one statement, not a cycle drain. Selection is `limit=1` per symbol (`:120`). **No path in the runner can revisit a skipped cycle.** The margins above are 92–707 ms. **When a cycle's rows commit before the runner's query — a faster ingest, a slower runner start, a chain with fewer strikes — the runner selects cycle N, and cycle N−1 is then never selected by any fire, ever.** The mechanism is arithmetic, not hypothetical, and it is the same shape as the permanent 15:25/15:30/15:35 loss in TD-S82-NEW-1, arriving by a different route. |
-| **`C2` is the detector, and it is the only one** | A permanent mid-session skip surfaces **only** as a `C2` count. There is no log line — the runner reports `PIPELINE COMPLETE` and `cycle complete (contract met)` for the cycle it *did* process, which is a real cycle with real data. **The success signal is accurate and the miss is invisible to it.** **No such event is confirmed in the measured window.** The 10-day scan shows one extra miss — **2026-09-11 SENSEX 10:20:06**, mid-session — but its **cause is unestablished and it is NOT attributable to this race**: runner logs are retained only back to **2026-09-15** (`logs/orchestrator.log.7.gz`; `shadow_runner.log*` retains 09-22 onward), so the 09-11 fires cannot be examined. Recorded as an **undiagnosed mid-session miss**. |
-| **`C` and `C2` cannot distinguish expected from real** | Identical limitation to TD-S82-NEW-1, reached from the other side. `C2`'s integer conflates: the three structural tail misses, the in-flight current cycle (expected, resolves in ~5 min), the pending-overnight final cycle (expected, resolves next morning), and a genuine permanent skip (**never** resolves). On 2026-09-23 the same query returned `1` at 13:08, `1` at 13:12 and `4` at 16:33 — **three different numbers for an unchanged system.** **Two of those three readings named different cycles** (13:05:07 at 13:08; 15:25–15:40 at 16:33), so even the *identity* of the miss is a function of read time. A count whose value depends on when it is read cannot be a check. `C` detects only duplicate rows and says nothing about absence. |
-| **What an `eod_health_check` expected-set must be derived from** | The **two crontab schedules read at check time**, as in TD-S82-NEW-1, **plus an explicit lag term**: a cycle is expected-computed only if at least one runner fire occurred *after* that cycle's rows committed. Derive the runner's fire times from its cron spec, not from a constant, and compare against `option_chain_snapshots.created_at` — **not `ts`** — because `ts` is the snapshot label and `created_at` is when the rows became visible to the selector, and the entire defect lives in the gap between them. Any cycle with no subsequent fire is **expected-absent**; any cycle with one or more subsequent fires and no gamma row is a **real permanent skip** and must be named, with its timestamp, not counted. |
-| **Options, not a recommendation** | (1) select by **expected cycle boundary** (floor the fire time to the `*/5` grid and demand that cycle) instead of "newest row", failing to absent when it is not yet present; (2) **retry/wait** briefly for the current cycle before falling back; (3) **drain the backlog** — process every chain cycle with no derived row since the last successful fire, which makes the skip self-healing and is the only option that repairs the 15:25/15:30/15:35 loss as a side effect; (4) **offset the runner's schedule** by ~30–60 s so it reliably lands after the commit. **(4) is the smallest and does not eliminate the race, only widens the margin; (1) converts a silent skip into a visible absence; (3) is the largest and the only one that is retroactive.** Note (1) and (4) interact with ADR-023 D1 fail-to-absent and must not reintroduce a fallback to stale. |
-| **Cost to fix** | ~15 min for (4); ~1 h for (1) or (2); ~3–4 h for (3). **The `eod_health_check` expected-set work is not costed here** — shared with TD-S82-NEW-1, required under every option, and tracked as **TD-S82-NEW-3**. Without it a permanent skip remains undetectable. |
-| **Blocked by** | an operator decision between the four, and on whether a 5-minute lag in derived rows is acceptable given all consumers are display-only per S37. |
-| **Cross-ref** | **TD-S82-NEW-1** — the cron-window tail; **same subsystem, different defect, DO NOT MERGE** (see the note there). · **`89ad2bb`** (S81) — the selector's current form `order="ts.desc,expiry_date.asc"`, correct for front-expiry resolution and **orthogonal to this**: it fixed *which expiry within a cycle*, not *which cycle*. · **TD-S81-NEW-14** (ENH-99 retry budget never exercised) and **TD-S81-NEW-20** (`DhanClient` reads the token at construction) — the 08:35 token-refresh family this entry is coincident with but does not explain. · **ADR-001** (stable lies) · **ADR-018 D2** (recency floors on readers) · **ADR-023 D1** (fail to absent, never to stale) · **CLAUDE.md Rule 0** · **TD-S82-NEW-3** (`eod_health_check` expected-set). |
-| **Status** | **OPEN — measured, no fix applied, no fix proposed.** |
-
 ### TD-S81-NEW-1 (S1 priority) — the live Dhan broker token was readable by anyone holding the public anon key, for an unbounded period; rotation decision and log review are owed
 
 | Field | Value |
@@ -1136,21 +1295,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **Blocked by** | nothing. |
 | **Cross-ref** | Deployment Topology §S68 (the crontab precedent) · §S74.B (the systemd units, open) · §S80.6 · TD-S72-NEW-14 (no canonical tracked crontab source) · TD-S73-NEW-1 (CLOSED by this session's widening). |
 | **Status** | **OPEN.** |
-
-### TD-S80-NEW-17 (S3 priority) — `merdian-wsfeed-start.timer` is `Persistent=false`, so a start missed while the host is wedged needs a human
-
-| Field | Value |
-|---|---|
-| **Priority** | **S3.** It is a decision, not a defect — but it cost ~34 minutes of feed on 2026-09-22 and will cost the same again. |
-| **Discovered** | Property recorded at **S72.B**; consequence measured at Session 80 (2026-09-22). |
-| **Component** | `/etc/systemd/system/merdian-wsfeed-start.timer` |
-| **Symptom** | The 03:40 UTC start **fired normally** at 09:10 IST and the feed delivered until the box wedged at ~09:28. On recovery the service was **`inactive (dead)`, not `failed`** — so `systemctl reset-failed` (the §S69 recovery canon) was neither needed nor sufficient — and because the timer is start-only and non-persistent, **nothing retried**. It was started by hand at 10:16 IST. |
-| **Root cause** | `Persistent=false` means a missed activation is not replayed on the next boot. Correct for a timer whose window has passed; wrong for one whose job should be running for the rest of the session. |
-| **Proper fix** | **Decide, do not default.** `Persistent=true` would have restarted the feed at 10:09 unattended — but it also fires a start on **any** boot, including one after `merdian-wsfeed-stop.timer` has legitimately run at 10:05 UTC, which would start a feed outside market hours. The alternative is a recovery unit conditioned on market hours. Either way the unit file must then be version-controlled (TD-S80-NEW-16). |
-| **Cost to fix** | ~30 min including the out-of-hours case. |
-| **Blocked by** | TD-S80-NEW-16 in practice — changing an unversioned unit file repeats §S74.B. |
-| **Cross-ref** | Deployment Topology §S72.B (the property) · §S80.5 (the consequence) · Assumption Register **D.37.4** · §S69 (`reset-failed` + `kill -9` canon, which did not apply here). |
-| **Status** | **OPEN — decision owed.** |
 
 ### TD-S79-NEW-1 (S2 priority) — `GREATEST(dte, 1)` overstates σ on expiry day, so the moneyness band is widest on the day it most needs to bind
 

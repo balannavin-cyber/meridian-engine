@@ -2071,3 +2071,17 @@ behind oauth2; the bare IP does not serve it (TD-S100-NEW-4).
 
 **Changed in Supabase.** `pg_cron` jobs 30, 31, 33, 34, 35, 36, 37, 40–44 inactive (S100-H; reversible); the three
 retired Edge Functions and the `x-cron-secret` remain. `merdian_ro_select` on 51 tables (S100-K).
+
+## §S101 — Session 101 (2026-10-25 → 10-28): one fast-forward deploy of the engine tree; no host, schedule or boundary change
+
+**Deployed (S101-B).** 2026-10-26 17:08 IST, `origin/main` `7b91d1a` → `4a1d8e1` (fast-forward, verified first), pushed
+from `~/meridian-cc`, pulled into `~/meridian-engine` and Local; four-way PASS 17:12 IST (box route, S99-A). The package
+`merdian_compute/` lives in the engine tree and the writers import it in place; it is not pip-installed on the box.
+Bundles in `s3://meridian-engine-deploy/s101/`. Crontab unchanged (70 lines); systemd unchanged; Marketview unchanged
+(`f964e40`). Rollback (`git revert --no-edit 7b91d1a..4a1d8e1`) written, not run.
+
+**A consumer outside production.** `retail-meridian` installs `merdian_compute` from GitHub pinned at `4a1d8e1` (MR-S2).
+It runs in the retail sandbox; the sandbox never touches production, and this tree changes only through the box route.
+
+**Observed, not changed.** The box's security group admits port 22 from `0.0.0.0/0` (TD-S101-NEW-10, operator action).
+Production Python is 3.10 (contract §10). Local's four-way leg is run in `C:\GammaEnginePython\` (§D.55.18).

@@ -206,6 +206,28 @@ def get_open_0915(symbol: str, trade_date: date) -> dict[str, Any] | None:
 
 
 def get_close_1530(symbol: str, trade_date: date) -> dict[str, Any] | None:
+    # S102_CLOSE_CAS (TD-S91-NEW-18 fix (b), TD-S74-NEW-5): the settled close is the CAS 15:29 bar
+    # that capture_cas_close.py writes at ~16:20 IST, stamped with its CAPTURE time and carrying the
+    # bar's own time in raw.bar_ts_ist -- so the old 15:29:00-15:30:59 window never contained it and
+    # every session read MISSING_CLOSE_1530 (measured 2026-10-12 .. 10-27, both symbols, every day).
+    # Read the day's latest cas_settled row; report the bar's time as close_1530_ts. Fallback: any row
+    # inside the old window (e.g. a reconciler-backfilled 15:29 bar).
+    rows = select_rows(
+        "market_spot_snapshots",
+        "symbol, ts, spot, source_table, source_id, raw",
+        filters_eq={"symbol": symbol, "raw->>cas_settled": "true"},
+        gte=("ts", utc_iso(ist_dt(trade_date, 15, 29, 0))),
+        lte=("ts", utc_iso(ist_dt(trade_date, 23, 59, 59))),
+        order_by="ts",
+        desc=True,
+        limit=1,
+    )
+    if rows:
+        row = dict(rows[0])
+        bar_ts = (row.get("raw") or {}).get("bar_ts_ist")
+        if bar_ts:
+            row["ts"] = bar_ts
+        return row
     return pick_last_row_in_window(
         symbol,
         ist_dt(trade_date, 15, 29, 0),

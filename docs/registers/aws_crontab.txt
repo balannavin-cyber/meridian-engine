@@ -20,7 +20,7 @@
 30 02 * * 1-5 cd /home/ssm-user/meridian-engine && /usr/bin/python3 seed_trading_calendar.py >> /home/ssm-user/meridian-engine/cron.log 2>&1
 35 3 * * 1-5 cd /home/ssm-user/meridian-engine && /usr/bin/python3 refresh_equity_intraday_last.py >> logs/refresh_equity_intraday_last.log 2>&1
 # S60: marker writer (TD-S60-NEW-1) — 16:10 IST, after postmarket capture
-40 10 * * 1-5 cd /home/ssm-user/meridian-engine && source .env && /usr/bin/python3 build_market_spot_session_markers.py >> logs/marker.log 2>&1
+0 11 * * 1-5 cd /home/ssm-user/meridian-engine && source .env && /usr/bin/python3 build_market_spot_session_markers.py >> logs/marker.log 2>&1
 0 14 * * 1-5 cd /home/ssm-user/meridian-engine && /usr/bin/python3 ingest_participant_positioning.py >> logs/participant_positioning.log 2>&1
 30 15 * * 1-5 cd /home/ssm-user/meridian-engine && /usr/bin/python3 ingest_participant_positioning.py >> logs/participant_positioning.log 2>&1
 0 16 * * 1-5 cd /home/ssm-user/meridian-engine && source .env && flock -n /tmp/ambient_compile.lock timeout 120 python3 compile_market_environment_local.py >> logs/ambient.log 2>&1

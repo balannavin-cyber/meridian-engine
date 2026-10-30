@@ -21,7 +21,12 @@ except ImportError:  # pragma: no cover
 # ----------------------------------------------------------------------------
 # Purpose:
 #   Capture latest front-month NIFTY and SENSEX futures prices from Dhan,
-#   compute basis vs latest spot, and write to public.index_futures_snapshots.
+#   compute basis vs the index LTP from the SAME Dhan request, and write to
+#   public.index_futures_snapshots.
+#   S102_TDS100_NEW1: the spot was the latest market_spot_snapshots row, whose writer stops at
+#   15:29 IST, so the 15:30-15:40 rows carried a frozen-window spot (2026-10-26/27: NIFTY mean
+#   23.6, SENSEX 83.8 points off the close); intraday the two sources agree (NIFTY mean 2.7,
+#   SENSEX 2.4). No index LTP in the response -> no row for that symbol (ADR-023 D1).
 #
 # Hardening:
 #   - Dynamic front-month contract resolution from public.dhan_scripmaster
@@ -49,6 +54,11 @@ INITIAL_BACKOFF_SECONDS = 2.0
 
 DEBUG_DIR = Path(__file__).resolve().parent / "debug_outputs"
 DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+
+# S102_TDS100_NEW1: the index itself, priced in the same marketfeed/ltp request as the future
+# (IDX_I ids as in ingest_option_chain_local.UNDERLYING_MAP and capture_market_spot_snapshot_local).
+INDEX_SEGMENT = "IDX_I"
+INDEX_SECURITY_IDS = {"NIFTY": 13, "SENSEX": 51}
 
 # One authoritative symbol map for futures capture.
 FUTURES_SYMBOLS = {
@@ -138,26 +148,6 @@ def supabase_insert_rows(table: str, rows: List[Dict[str, Any]]) -> None:
         raise SupabaseError(
             f"POST {table} failed | status={response.status_code} | body={response.text}"
         )
-
-
-def fetch_latest_spot(symbol: str) -> float:
-    rows = supabase_get(
-        "market_spot_snapshots",
-        {
-            "select": "symbol,spot,ts",
-            "symbol": f"eq.{symbol}",
-            "order": "ts.desc",
-            "limit": "1",
-        },
-    )
-    if not rows:
-        raise SupabaseError(f"No market_spot_snapshots row found for {symbol}")
-
-    spot = rows[0].get("spot")
-    if spot is None:
-        raise SupabaseError(f"Latest spot is null for {symbol}")
-
-    return float(spot)
 
 
 def load_candidate_contract_rows(symbol: str) -> List[Dict[str, Any]]:
@@ -250,6 +240,9 @@ def build_dhan_payload(resolved_contracts: List[Dict[str, Any]]) -> Dict[str, Li
         segment = contract["marketfeed_segment"]
         security_id = contract["security_id"]
         payload.setdefault(segment, []).append(security_id)
+        index_id = INDEX_SECURITY_IDS[contract["symbol"]]
+        if index_id not in payload.setdefault(INDEX_SEGMENT, []):
+            payload[INDEX_SEGMENT].append(index_id)
 
     return payload
 
@@ -348,10 +341,9 @@ def build_output_rows(
     for contract in resolved_contracts:
         symbol = contract["symbol"]
 
-        try:
-            spot = fetch_latest_spot(symbol)
-        except Exception as exc:
-            print(f"[WARN] Skipping {symbol} because latest spot could not be loaded: {exc}")
+        spot = extract_last_price_or_none(payload, INDEX_SEGMENT, INDEX_SECURITY_IDS[symbol])
+        if spot is None or spot <= 0:
+            print(f"[WARN] Skipping {symbol}: no index LTP in the same Dhan request (no row, ADR-023 D1)")
             continue
 
         futures_price = extract_last_price_or_none(
@@ -391,6 +383,8 @@ def build_output_rows(
                     "marketfeed_segment": contract["marketfeed_segment"],
                     "display_name": contract["display_name"],
                     "expiry_date": contract["expiry_date"],
+                    "spot_source": "dhan_ltp_idx_i_same_request",
+                    "spot_security_id": INDEX_SECURITY_IDS[symbol],
                 },
             }
         )

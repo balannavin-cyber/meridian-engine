@@ -1,11 +1,13 @@
 # Retail compute contract — `merdian_compute` (S101, retail scope §1.3)
 
-Status: **v2.1, S101 (2026-10-26)**. Owner: `meridian-engine`. Consumer: `retail-meridian` (scope §1.2,
+Status: **v2.2, S103 (2026-10-30)**. Owner: `meridian-engine`. Consumer: `retail-meridian` (scope §1.2,
 per-user compute). The engine keeps only this contract (ruling R-11); retail keeps its own docs.
 History: v1 (`11f2cbe`) the extracted parts · **v2: the composed gamma cycle (C2), the walls' ATM-IV
 input (C3), the pin path's pure cores (C4), the full view closure (§8) and the live-definition check.**
 v2.1 (C6): every §8 view's live definition recorded by md5; `v_gex_strike_pin_zone`'s live definition differs
-from every older file and is now registered (TD at the S101 close).
+from every older file and is now registered (TD at the S101 close). **v2.2 (S103-F): `v_gex_max_pain` and
+`v_gex_pin_maxpain` re-created with the S79 skip-scan `latest_run` (output unchanged, 17.9 s → 81 ms; TD-S90-NEW-5,
+TD-S101-NEW-1); their §8 files, lengths and md5s updated. No package change, no re-pin.**
 
 ## 1. How retail takes it
 
@@ -135,9 +137,9 @@ script (S101); files are the newest defining file at the S101 HEAD.
 | `v_gex_strike_walls` | `sql/2026-09-15_s79_v_gex_strike_walls.sql` | `gex_strike_snapshots`, `volatility_snapshots` (`atm_iv_avg` ← `derive_atm_iv`) |
 | `v_gex_concentration` | `sql/2026-09-15_s79_v_gex_concentration.sql` | `gex_strike_snapshots` |
 | `v_gex_strike_rank` | `sql/2026-09-22_s81_v_gex_strike_rank.sql` | `gex_strike_snapshots`, `volatility_snapshots` |
-| `v_gex_max_pain` | `sql/2026-09-22_s80_v_gex_max_pain.sql` | `gex_strike_snapshots`; `now()`; DB function `get_parameter_num('maxpain.stale_floor_min')` |
+| `v_gex_max_pain` | `sql/2026-10-30_s103_v_gex_max_pain_latest_run_skip_scan.sql` (BLOCK 1; supersedes the s80 file) | `gex_strike_snapshots`; `now()`; DB function `get_parameter_num('maxpain.stale_floor_min')` |
 | `v_gex_strike_pin_zone` | **`sql/2026-10-26_s101_v_gex_strike_pin_zone_live_captured.sql`** (live; the 3 older files are not) | `gex_strike_snapshots`; `get_parameter_num('pin.tau.<SYMBOL>')` **with default 0.3**, which drives the walk |
-| `v_gex_pin_maxpain` | `sql/2026-09-22_s80_v_gex_pin_maxpain.sql` | `gex_strike_snapshots`, `v_gex_max_pain`, `v_gex_strike_pin_zone`, `v_gex_strike_walls` |
+| `v_gex_pin_maxpain` | `sql/2026-10-30_s103_v_gex_max_pain_latest_run_skip_scan.sql` (BLOCK 1; supersedes the s80 file) | `gex_strike_snapshots`, `v_gex_max_pain`, `v_gex_strike_pin_zone`, `v_gex_strike_walls` |
 | `v_max_pain_by_strike` | `sql/2026-09-22_s81_v_max_pain_by_strike_latest_ts_retrofit.sql` (3 files) | `option_chain_snapshots` |
 | `v_gex_repriced_flip` | `sql/2026-09-25_s83_v_gex_repriced_flip.sql` | `option_chain_snapshots`, **`index_futures_snapshots`** — retail needs a futures quote per symbol |
 | `v_pin_board` | `sql/2026-10-08_s92_v_pin_board.sql` | `gex_cycle_history` (§7); `security_invoker = false` |
@@ -155,9 +157,9 @@ live view uses differently (S101 §D.55).
 | `v_gex_strike_walls` | `sql/2026-09-15_s79_v_gex_strike_walls.sql` | 4664 | `8135c42b4fe3613a676ec7e05af7ee9d` |
 | `v_gex_concentration` | `sql/2026-09-15_s79_v_gex_concentration.sql` | 2140 | `c4cf15aa43fdb932b56db77cefee7188` |
 | `v_gex_strike_rank` | `sql/2026-09-22_s81_v_gex_strike_rank.sql` | 4002 | `0ab189a40cd648e8cc0e8f77b55cc5f6` |
-| `v_gex_max_pain` | `sql/2026-09-22_s80_v_gex_max_pain.sql` | 3088 | `3d067c67ef36f9841af9eea81a4c0575` |
+| `v_gex_max_pain` | `sql/2026-10-30_s103_v_gex_max_pain_latest_run_skip_scan.sql` | 3537 | `6eddea31904b739549c592d02480f496` |
 | `v_gex_strike_pin_zone` | `sql/2026-10-26_s101_v_gex_strike_pin_zone_live_captured.sql` (byte-exact; length and md5 reproduced from the file) | 3523 | `89c9ac6aef9eb332ddd28f9062d0e21e` |
-| `v_gex_pin_maxpain` | `sql/2026-09-22_s80_v_gex_pin_maxpain.sql` | 2577 | `0d7d5258d6a1169ffe97a94aa82474e5` |
+| `v_gex_pin_maxpain` | `sql/2026-10-30_s103_v_gex_max_pain_latest_run_skip_scan.sql` | 3026 | `70d32c77ff1b854581773b3b0c2afa62` |
 | `v_max_pain_by_strike` | `sql/2026-09-22_s81_v_max_pain_by_strike_latest_ts_retrofit.sql` | 4028 | `3d0ed5cb979ab7ed6dbfcfa5e8f09f30` |
 | `v_gex_repriced_flip` | `sql/2026-09-25_s83_v_gex_repriced_flip.sql` | 10260 | `58ad6ba8f366c52a8e71b4ac1ea66864` |
 | `v_pin_board` | `sql/2026-10-08_s92_v_pin_board.sql` | 2922 | `9a827e8155e188db9ab9cd9b4fc429e0` |

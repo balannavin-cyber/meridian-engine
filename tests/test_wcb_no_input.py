@@ -43,7 +43,10 @@ NOW_0915 = datetime(2026, 10, 26, 3, 45, 0, tzinfo=UTC)        # Mon 09:15:00 IS
 
 WEIGHTS = [{"ticker": "AAA", "company_name": "A", "weight_pct": 60.0},
            {"ticker": "BBB", "company_name": "B", "weight_pct": 40.0}]
-PREV = [{"ticker": "AAA", "last_price": 100.0}, {"ticker": "BBB", "last_price": 200.0}]
+PREV = [{"ticker": "AAA", "last_price": 100.0, "ts": "2026-10-26T03:35:07.787163+00:00"},
+        {"ticker": "BBB", "last_price": 200.0, "ts": "2026-10-26T03:35:07.787163+00:00"}]
+PREV_STALE_B = [{"ticker": "AAA", "last_price": 100.0, "ts": "2026-10-26T03:35:07.787163+00:00"},
+                {"ticker": "BBB", "last_price": 200.0, "ts": "2026-03-27T10:00:52.940481+00:00"}]  # LTIM's shape, 2026-10-30
 DAILY = [{"ticker": t, "trade_date": "2026-10-23", "dma10": 1, "dma20": 1, "dma40": 1,
           "above_10": True, "above_20": True, "above_40": False,
           "dma10_gt_20": True, "dma20_gt_40": False} for t in ("AAA", "BBB")]
@@ -172,6 +175,17 @@ def cells(mod):
     # T14 the boundary: 09:15:00 writes (not before the open).
     rc, sb, lg, _ = run_case(mod, NOW_0915, pg(NOW_0915 - timedelta(minutes=1)), ticks(NOW_0915))
     chk("T14 09:15:00 IST writes", len(sb.upserts) == 1, "boundary is exclusive at the open")
+    # S103 TD-S41-NEW-5 (S103_WCB_PAGE): T15 a 50-ticker basket with 84 history rows each (4,200 rows) served in
+    # 1,000-row pages (the FakeSB slices by offset/limit exactly as PostgREST's max-rows does): every ticker must map.
+    big = [{"ticker": f"T{i:02d}", "trade_date": f"2026-10-{1 + (d % 28):02d}", "dma10": 1} for i in range(50) for d in range(84)]
+    mod._now_utc = lambda: NOW_SESSION
+    got = mod.fetch_daily_breadth_rows(FakeSB({"breadth_indicators_daily": big}), [f"T{i:02d}" for i in range(50)])
+    chk("T15 paged daily fetch maps all 50 tickers", len({r["ticker"] for r in got}) == 50 and len(got) == 4200,
+        "first 1,000 rows only -> ~12 tickers (the 2026-10-30 live shape)")
+    # T16 (S103_WCB_PREV_FLOOR): a prior close dated March is not a prior close -> that constituent drops out.
+    rc, sb, lg, _ = run_case(mod, NOW_SESSION, pg(NOW_SESSION - timedelta(minutes=2)), ticks(NOW_SESSION), prev=PREV_STALE_B)
+    chk("T16 stale prior close drops the constituent", len(sb.upserts) == 1 and sb.upserts[0][1][0]["constituent_count"] == 1
+        and "BBB" in sb.upserts[0][1][0]["raw"]["missing_daily"], "a March close priced as yesterday's")
     return out
 
 
@@ -194,6 +208,11 @@ MUTANTS = {
     "M5 no window clamp": ("    return max(now - timedelta(minutes=LIVE_TICK_WINDOW_MIN), session_open_utc(now))\n",
                            "    return now - timedelta(minutes=LIVE_TICK_WINDOW_MIN)\n",
                            {"T13 window clamped to 09:15 IST at 09:16"}),
+    # S103 TD-S41-NEW-5: M6 the page walk stops after the first page -> T15 must fail. M7 the floor removed -> T16 must fail.
+    "M6 no paging": ("        if len(rows) < WCB_PAGE:  # S103_WCB_PAGE: a short page ends the walk\n", "        if True:\n",
+                     {"T15 paged daily fetch maps all 50 tickers"}),
+    "M7 no prev-close floor": ("        if ts is None or ts < floor:  # S103_WCB_PREV_FLOOR\n", "        if False:\n",
+                               {"T16 stale prior close drops the constituent"}),
 }
 
 

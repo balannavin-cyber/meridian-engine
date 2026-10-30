@@ -200,14 +200,34 @@ def fetch_live_ltp_from_ticks(sb: SupabaseClient, tickers: List[str]) -> List[Di
     return list(latest.values())
 
 
+# S103_WCB_PREV_FLOOR (ADR-023 D2 shape): a prior close older than WCB_PREV_CLOSE_MAX_AGE_DAYS is not a prior close
+# (LTIM's equity_intraday_last row was dated 2026-03-27 on 2026-10-30 and was being used as "yesterday's close").
+# Fails to absent: the constituent drops out (missing_daily), never a stale fallback.
+WCB_PREV_CLOSE_MAX_AGE_DAYS = 5
+
+
 def fetch_prev_close_map(sb: SupabaseClient, tickers: List[str]) -> Dict[str, float]:
     out: Dict[str, float] = {}
+    floor = _now_utc() - timedelta(days=WCB_PREV_CLOSE_MAX_AGE_DAYS)
     for r in fetch_latest_intraday_prices(sb, tickers):
         t = str(r.get("ticker") or "").strip().upper()
         v = to_float(r.get("last_price"))
+        ts = parse_pg_ts(r.get("ts"))
+        if ts is None or ts < floor:  # S103_WCB_PREV_FLOOR
+            continue
         if t and v:
             out[t] = v
     return out
+
+
+# S103_WCB_PAGE (TD-S41-NEW-5 Sub-A, re-measured 2026-10-30): the daily fetch asked for limit=5000 but PostgREST's
+# server-side max-rows is 1,000, and the rows came back in primary-key order (ticker, trade_date) -- so the basket was
+# truncated to its first ~12-16 tickers alphabetically (NIFTY 13 of 50 priced, 20.5 % of the weight, 2026-10-26 ..
+# 10-30; 16 on 09-28 when the history was shorter). Now: the window is bounded to the last WCB_DAILY_LOOKBACK_DAYS,
+# ordered ticker, trade_date DESC, and PAGED by offset until a short page, so the row count can no longer decide
+# which tickers exist.
+WCB_DAILY_LOOKBACK_DAYS = 30
+WCB_PAGE = 1000
 
 
 def fetch_daily_breadth_rows(sb: SupabaseClient, tickers: List[str]) -> List[Dict[str, Any]]:
@@ -215,18 +235,26 @@ def fetch_daily_breadth_rows(sb: SupabaseClient, tickers: List[str]) -> List[Dic
         return []
 
     in_payload = "(" + ",".join(tickers) + ")"
-
-    return retry_call(
-        lambda: sb.select(
-            table="breadth_indicators_daily",
-            filters={"ticker": f"in.{in_payload}"},
-            limit=5000,
-        ),
-        attempts=3,
-        delay_seconds=5.0,
-        backoff_multiplier=1.5,
-        label="select breadth_indicators_daily for WCB basket",
-    )
+    since = (_now_utc() - timedelta(days=WCB_DAILY_LOOKBACK_DAYS)).date().isoformat()
+    out: List[Dict[str, Any]] = []
+    offset = 0
+    while True:
+        rows = retry_call(
+            lambda: sb.select(
+                table="breadth_indicators_daily",
+                filters={"ticker": f"in.{in_payload}", "trade_date": f"gte.{since}"},
+                order="ticker.asc,trade_date.desc", limit=WCB_PAGE, offset=offset,
+            ),
+            attempts=3,
+            delay_seconds=5.0,
+            backoff_multiplier=1.5,
+            label="select breadth_indicators_daily for WCB basket",
+        )
+        out.extend(rows)
+        if len(rows) < WCB_PAGE:  # S103_WCB_PAGE: a short page ends the walk
+            break
+        offset += WCB_PAGE
+    return out
 
 
 def fetch_latest_market_breadth_intraday(sb: SupabaseClient) -> Optional[Dict[str, Any]]:

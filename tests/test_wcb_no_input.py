@@ -37,6 +37,9 @@ NOW_PREOPEN = datetime(2026, 10, 26, 3, 1, 20, tzinfo=UTC)     # Mon 08:31 IST, 
 FRI_1540 = "2026-10-23T10:10:05.597305+00:00"                  # Friday's last breadth ts
 HOL_0920 = "2026-10-20T03:50:05.887201+00:00"                  # the 10-20 holiday breadth row
 NOW_AFTER_HOL = datetime(2026, 10, 21, 3, 1, 19, tzinfo=UTC)
+NOW_0910 = datetime(2026, 10, 26, 3, 40, 12, tzinfo=UTC)       # Mon 09:10 IST: the cycle that wrote from pre-open ticks
+NOW_0916 = datetime(2026, 10, 26, 3, 46, 5, tzinfo=UTC)        # Mon 09:16 IST: first cycle after the open
+NOW_0915 = datetime(2026, 10, 26, 3, 45, 0, tzinfo=UTC)        # Mon 09:15:00 IST exactly
 
 WEIGHTS = [{"ticker": "AAA", "company_name": "A", "weight_pct": 60.0},
            {"ticker": "BBB", "company_name": "B", "weight_pct": 40.0}]
@@ -154,6 +157,21 @@ def cells(mod):
     # T10 the psql wire form (+00, two-digit offset) parses and gates the same way.
     rc, sb, lg, _ = run_case(mod, NOW_SESSION, (NOW_SESSION - timedelta(minutes=2)).strftime("%Y-%m-%d %H:%M:%S.%f+00"), ticks(NOW_SESSION))
     chk("T10 psql-form fresh ts writes", len(sb.upserts) == 1, "ts unparsed -> skip on a healthy cycle")
+    # S103-D (S103_WCB_SESSION_OPEN): T11 the measured 09:10 cycle with fresh breadth AND ticks writes nothing.
+    rc, sb, lg, o = run_case(mod, NOW_0910, pg(NOW_0910 - timedelta(minutes=1)), ticks(NOW_0910))
+    chk("T11 09:10 IST cycle writes nothing", len(sb.upserts) == 0 and lg.reason == "SKIPPED_NO_INPUT" and rc == 0
+        and "09:15 IST open" in (getattr(lg, "error", None) or ""), "a row built from call-auction prints")
+    # T12 09:16 IST, same inputs: writes.
+    rc, sb, lg, _ = run_case(mod, NOW_0916, pg(NOW_0916 - timedelta(minutes=1)), ticks(NOW_0916))
+    chk("T12 09:16 IST cycle writes", len(sb.upserts) == 1 and lg.reason == "SUCCESS", "the open gate blocks the session")
+    # T13 the window never starts before 09:15 IST: at 09:16 it starts at 09:15:00, at 13:02 at now - 10 min.
+    s_open = mod.session_open_utc(NOW_0916)
+    chk("T13 window clamped to 09:15 IST at 09:16", mod.wcb_window_start(NOW_0916) == s_open
+        and s_open == datetime(2026, 10, 26, 3, 45, 0, tzinfo=UTC), "window reaches into the call auction")
+    chk("T13 window unclamped mid-session", mod.wcb_window_start(NOW_SESSION) == NOW_SESSION - timedelta(minutes=10), "clamp applied after the open")
+    # T14 the boundary: 09:15:00 writes (not before the open).
+    rc, sb, lg, _ = run_case(mod, NOW_0915, pg(NOW_0915 - timedelta(minutes=1)), ticks(NOW_0915))
+    chk("T14 09:15:00 IST writes", len(sb.upserts) == 1, "boundary is exclusive at the open")
     return out
 
 
@@ -170,6 +188,12 @@ MUTANTS = {
                             "        snapshot_row",
                             {"T3 stale breadth with ticks writes nothing", "T6 no breadth row writes nothing",
                              "T8 age 601 s skips"}),
+    # S103-D: M4 the open gate removed -> T11 must fail. M5 the window clamp removed -> T13 must fail.
+    "M4 no open gate": ("    if now < session_open_utc(now):  # S103_WCB_SESSION_OPEN\n", "    if False:\n",
+                        {"T11 09:10 IST cycle writes nothing"}),
+    "M5 no window clamp": ("    return max(now - timedelta(minutes=LIVE_TICK_WINDOW_MIN), session_open_utc(now))\n",
+                           "    return now - timedelta(minutes=LIVE_TICK_WINDOW_MIN)\n",
+                           {"T13 window clamped to 09:15 IST at 09:16"}),
 }
 
 

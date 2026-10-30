@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time as dtime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Any, Dict, List, Optional
 
 from core.supabase_client import SupabaseClient
@@ -26,6 +27,26 @@ from core.ts_parse import parse_pg_ts  # S99_WCB_NO_INPUT
 # fresh AND at least one constituent priced; exit 0 with SKIPPED_NO_INPUT (ruling S99-H).
 WCB_MAX_BREADTH_AGE_MIN = 10
 
+# S103_WCB_SESSION_OPEN (ruling S103-D, 2026-10-30): the continuous session opens 09:15 IST. The 09:00-09:08 call
+# auction prints are not price discovery (S25 settled decision), yet the 09:10 IST cycle built the first row of
+# 2026-10-26 from them (first row 09:11). So: no cycle before 09:15 IST writes (SKIPPED_NO_INPUT, exit 0, S99-H
+# shape), and the live-tick window never starts before today's 09:15 IST, so the 09:15-09:24 cycles read
+# continuous-session ticks only. First row 09:16.
+IST = ZoneInfo("Asia/Kolkata")
+WCB_SESSION_OPEN_IST = dtime(9, 15)
+
+
+def session_open_utc(now: datetime) -> datetime:
+    """Today's 09:15 IST as an aware UTC datetime (today = the IST date of `now`)."""
+    now_ist = now.astimezone(IST)
+    return now_ist.replace(hour=WCB_SESSION_OPEN_IST.hour, minute=WCB_SESSION_OPEN_IST.minute,
+                           second=0, microsecond=0).astimezone(timezone.utc)
+
+
+def wcb_window_start(now: datetime) -> datetime:
+    """Start of the live-tick window: now - LIVE_TICK_WINDOW_MIN, never before today's 09:15 IST (S103-D)."""
+    return max(now - timedelta(minutes=LIVE_TICK_WINDOW_MIN), session_open_utc(now))
+
 
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -35,6 +56,8 @@ def wcb_input_skip_reason(latest_breadth_row: Optional[Dict[str, Any]],
                           intraday_rows: List[Dict[str, Any]],
                           now: datetime) -> Optional[str]:
     """Return why this cycle must not write, or None when it may."""
+    if now < session_open_utc(now):  # S103_WCB_SESSION_OPEN
+        return f"before the {WCB_SESSION_OPEN_IST.strftime('%H:%M')} IST open ({now.astimezone(IST).strftime('%H:%M')} IST)"
     if not latest_breadth_row or latest_breadth_row.get("ts") is None:
         return "no latest_market_breadth_intraday row"
     bts = parse_pg_ts(latest_breadth_row.get("ts"))
@@ -151,7 +174,7 @@ def fetch_live_ltp_from_ticks(sb: SupabaseClient, tickers: List[str]) -> List[Di
     if not tickers:
         return []
     by_bare = {_bare(t): t for t in tickers}
-    since = (datetime.now(timezone.utc) - timedelta(minutes=LIVE_TICK_WINDOW_MIN)).isoformat()
+    since = wcb_window_start(_now_utc()).isoformat()  # S103_WCB_SESSION_OPEN: never before 09:15 IST
     in_payload = "(" + ",".join('"' + b + '"' for b in by_bare) + ")"
     latest: Dict[str, Dict[str, Any]] = {}
     offset, page = 0, 1000

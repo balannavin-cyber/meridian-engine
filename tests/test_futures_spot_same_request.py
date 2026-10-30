@@ -11,7 +11,8 @@ Rule 0 -- what each cell would catch:
   F3 the closing-window case: a stale table spot is used instead of the response's close
   F4 a missing index LTP falls back to anything (must write no row for that symbol only)
   F5 any Supabase read happens while building rows (the old market_spot_snapshots read)
-Mutants M1-M3 each remove one part.
+  F6 (S102_FUT_ARGV) a cron line's symbol argument is ignored (both symbols captured = duplicate rows)
+Mutants M1-M4 each remove one part.
 """
 from __future__ import annotations
 
@@ -82,12 +83,20 @@ def cells(src, tag):
         chk("F4 index LTP missing for NIFTY -> no NIFTY row, SENSEX row kept",
             [r["symbol"] for r in rows2] == ["SENSEX"], "a missing index LTP falls back")
         chk("F5 no Supabase read while building rows", reads == [], "the market_spot_snapshots read is back")
+        try:
+            mod.symbols_from_argv(["x", "BANKNIFTY"]); bad_raises = False
+        except mod.ConfigError:
+            bad_raises = True
+        chk("F6 argv NIFTY -> [NIFTY]; sensex -> [SENSEX]; none -> both; unknown -> error",
+            mod.symbols_from_argv(["x", "NIFTY"]) == ["NIFTY"] and mod.symbols_from_argv(["x", "sensex"]) == ["SENSEX"]
+            and mod.symbols_from_argv(["x"]) == ["NIFTY", "SENSEX"] and bad_raises, "the argument is ignored")
     except Exception as e:  # a crash is a failed cell
         for n in ("F1 request asks for IDX_I 13 and 51, once each",
                   "F2 spot = index LTP from the same response; basis = futures - spot",
                   "F3 closing window: the response's close is used (10-27: 22,749.75, not 22,760.8)",
                   "F4 index LTP missing for NIFTY -> no NIFTY row, SENSEX row kept",
-                  "F5 no Supabase read while building rows"):
+                  "F5 no Supabase read while building rows",
+                  "F6 argv NIFTY -> [NIFTY]; sensex -> [SENSEX]; none -> both; unknown -> error"):
             if n not in {x[0] for x in out}:
                 chk(n, False, f"crashed: {e}")
     return out
@@ -104,6 +113,8 @@ MUTANTS = {
     "M3 missing index falls back": ('        if spot is None or spot <= 0:\n',
                                     '        if spot is None:\n            spot = 1.0\n        if spot <= 0:\n',
                                     {"F4 index LTP missing for NIFTY -> no NIFTY row, SENSEX row kept"}),
+    "M4 argument ignored again": ("    sym = argv[1].strip().upper()\n", "    return list(FUTURES_SYMBOLS)\n    sym = argv[1].strip().upper()\n",
+                                  {"F6 argv NIFTY -> [NIFTY]; sensex -> [SENSEX]; none -> both; unknown -> error"}),
 }
 
 

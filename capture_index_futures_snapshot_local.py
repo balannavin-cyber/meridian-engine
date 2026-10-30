@@ -392,8 +392,21 @@ def build_output_rows(
     return rows
 
 
-def capture_once() -> int:
+def symbols_from_argv(argv: List[str]) -> List[str]:
+    """S102_FUT_ARGV: the cron lines pass one symbol each; the script used to ignore it and capture both,
+    so every cycle wrote two rows per symbol (2026-10-27: 150 rows over 75 minutes per symbol). With an
+    argument, capture only that symbol; with none, both (manual runs). An unknown symbol is an error."""
+    if len(argv) < 2:
+        return list(FUTURES_SYMBOLS)
+    sym = argv[1].strip().upper()
+    if sym not in FUTURES_SYMBOLS:
+        raise ConfigError(f"unknown symbol {argv[1]!r}; expected one of {sorted(FUTURES_SYMBOLS)}")
+    return [sym]
+
+
+def capture_once(argv: Optional[List[str]] = None) -> int:
     print_header()
+    symbols = symbols_from_argv(sys.argv if argv is None else argv)
 
     require_env("SUPABASE_URL", SUPABASE_URL)
     require_env("SUPABASE_SERVICE_ROLE_KEY", SUPABASE_SERVICE_ROLE_KEY)
@@ -402,7 +415,7 @@ def capture_once() -> int:
 
     resolved_contracts: List[Dict[str, Any]] = []
 
-    for symbol in FUTURES_SYMBOLS:
+    for symbol in symbols:
         try:
             contract = resolve_front_month_contract(symbol)
             resolved_contracts.append(contract)

@@ -91,30 +91,38 @@ def main() -> int:
     log("ingest_breadth_from_ticks - Zerodha WebSocket breadth")
     log("=" * 60)
 
-    # Step 1: Get latest LTP per EQ stock from market_ticks
-    log(f"Fetching EQ ticks from last {TICK_WINDOW_MINUTES} minutes...")
-
-    # Paginate to get all EQ ticks in window
-    all_ticks = []
-    offset = 0
+    # Step 1: Get latest LTP per EQ stock.
+    # S102_R40_LATEST_VIEW: one row per stock from public.v_market_ticks_eq_latest (newest non-NULL
+    # last_price per COALESCE(NULLIF(tradingsymbol,''), symbol), window = 10 min, the same key and the
+    # same "first tick seen in ts-desc order" this loop used to compute in Python). The old read paged
+    # every EQ tick in the window by offset (~161,000 rows, ~162 calls, 140-176 s per run, so ~3 runs
+    # overlapped every minute; measured 2026-10-26..28). Keyset paging on sym: 1,313 rows = 2 calls.
+    # The view's window is fixed at 10 minutes in its DDL and must equal TICK_WINDOW_MINUTES.
+    log(f"Fetching latest EQ LTP per stock (v_market_ticks_eq_latest, {TICK_WINDOW_MINUTES} min)...")
+    latest_ltp: dict[str, float] = {}
     page_size = 1000
-    while True:
-        r = sb.table("market_ticks").select(
-            "symbol,tradingsymbol,last_price,ts"
-        ).eq(
-            "instrument_type", "EQ"
-        ).gte(
-            "ts", window_start
-        ).order("ts", desc=True).range(offset, offset + page_size - 1).execute()
-
-        if not r.data:
-            break
-        all_ticks.extend(r.data)
-        if len(r.data) < page_size:
-            break
-        offset += page_size
-
-    log(f"  Total EQ ticks in window: {len(all_ticks)}")
+    last_sym = None
+    try:
+        while True:
+            q = sb.table("v_market_ticks_eq_latest").select("sym,last_price,ts").order("sym")
+            if last_sym is not None:
+                q = q.gt("sym", last_sym)
+            r = q.limit(page_size).execute()
+            rows = r.data or []
+            for row in rows:
+                sym, ltp = row.get("sym"), row.get("last_price")
+                if sym and ltp is not None and sym not in latest_ltp:
+                    latest_ltp[sym] = float(ltp)
+            if len(rows) < page_size:
+                break
+            last_sym = rows[-1]["sym"]
+    except Exception as e:
+        log(f"  ERROR: latest-tick read failed: {e}")
+        return xlog.exit_with_reason(
+            "DATA_ERROR", exit_code=1, error_message=str(e)[:1000],
+            notes="v_market_ticks_eq_latest read failed; nothing written",
+        )
+    all_ticks = latest_ltp  # the no-input test below reads "no stock has a tick in the window"
 
     if not all_ticks:
         log("  No EQ ticks found - WebSocket not running yet, or down. Nothing written.")
@@ -122,15 +130,6 @@ def main() -> int:
             "SKIPPED_NO_INPUT", exit_code=0,
             notes=f"No EQ ticks in the last {TICK_WINDOW_MINUTES} min - feed not started or down; nothing written",
         )
-
-    # Get latest tick per symbol (already ordered desc by ts)
-    latest_ltp: dict[str, float] = {}
-    for tick in all_ticks:
-        sym = tick.get("tradingsymbol") or tick.get("symbol", "")
-        if sym and sym not in latest_ltp:
-            ltp = tick.get("last_price")
-            if ltp is not None:
-                latest_ltp[sym] = float(ltp)
 
     log(f"  Unique EQ symbols with ticks: {len(latest_ltp)}")
 

@@ -11,7 +11,10 @@ Rule 0 -- what each cell would catch:
   B3 a normal minute stops writing either table, or is not SUCCESS
   B5 a failed upsert reads as success       B6 a calendar error silences a live session (gate must fail open)
   B7 the hand-rolled ledger insert is back (status / kind / host lost)
-Mutants M1-M4 each remove one part; a mutant whose named cells all pass means those cells assert nothing.
+  B8 (S102 R40) a second page of the latest-tick view is not read (1,313 stocks = 2 keyset pages)
+  B9 (S102 R40) a failed latest-tick read writes a row or reads as success
+  B10 (S102 R40) the raw market_ticks paging is back (161,000 rows / run, the overlap cause)
+Mutants M1-M6 each remove one part; a mutant whose named cells all pass means those cells assert nothing.
 """
 from __future__ import annotations
 
@@ -31,7 +34,10 @@ class Q:
     def __init__(self, db, name):
         self.db, self.name, self.op, self.payload = db, name, "select", None
         self.lo = self.hi = None
+        self.gt_v = self.lim = None
     def select(self, *_a): return self
+    def gt(self, _col, v): self.gt_v = v; return self
+    def limit(self, n): self.lim = n; return self
     def eq(self, *_a): return self
     def gte(self, *_a): return self
     def order(self, *_a, **_k): return self
@@ -45,13 +51,21 @@ class Q:
                 raise RuntimeError(f"simulated {self.name} failure")
             self.db.writes.setdefault(self.name, []).append(self.payload)
             return types.SimpleNamespace(data=[self.payload])
+        if self.name in self.db.fail:
+            raise RuntimeError(f"simulated {self.name} read failure")
         rows = self.db.rows.get(self.name, [])
+        if self.lim is not None:  # keyset page over the view, ordered by sym
+            rows = sorted(rows, key=lambda x: x["sym"])
+            if self.gt_v is not None:
+                rows = [x for x in rows if x["sym"] > self.gt_v]
+            return types.SimpleNamespace(data=rows[:self.lim])
         return types.SimpleNamespace(data=rows[self.lo:self.hi + 1] if self.lo is not None else rows)
 
 
 class DB:
     def __init__(self, ticks, prev, fail=()):
-        self.rows = {"market_ticks": ticks, "equity_intraday_last": prev}
+        latest = [{"sym": x["tradingsymbol"], "last_price": x["last_price"], "ts": x["ts"]} for x in ticks]
+        self.rows = {"market_ticks": ticks, "v_market_ticks_eq_latest": latest, "equity_intraday_last": prev}
         self.calls, self.writes, self.fail = [], {}, set(fail)
     def table(self, name): return Q(self, name)
 
@@ -128,6 +142,19 @@ def cells(src: str, tag: str) -> list[tuple[str, bool, str]]:
     names = {n for n, _ in db.calls}
     chk("B7 no hand-rolled script_execution_log insert", "script_execution_log" not in names,
         "the ledger is written outside core.execution_log again")
+    big = ticks(n_up=713, n_down=600); bigsyms = [x["tradingsymbol"] for x in big]
+    rc, led, db = run(src, tag + "8", DB(big, prev(bigsyms)))
+    hist = db.writes.get("breadth_intraday_history", [{}])[0]
+    reads = [n for n, op in db.calls if n == "v_market_ticks_eq_latest" and op == "select"]
+    chk("B8 1,313 stocks over two keyset pages -> all read, SUCCESS",
+        rc == 0 and led.final == ("SUCCESS", 0) and len(reads) == 2
+        and hist.get("advances") == 713 and hist.get("declines") == 600, "the second page is dropped")
+    rc, led, db = run(src, tag + "9", DB(t, prev(allsyms), fail={"v_market_ticks_eq_latest"}))
+    chk("B9 latest-tick read fails -> DATA_ERROR exit 1, nothing written",
+        rc == 1 and led.final == ("DATA_ERROR", 1) and db.writes == {}, "a failed read writes or succeeds")
+    rc, led, db = run(src, tag + "10", DB(t, prev(allsyms)))
+    chk("B10 no raw market_ticks read", "market_ticks" not in {n for n, _ in db.calls},
+        "the 161,000-row paging is back")
     return out
 
 
@@ -141,6 +168,14 @@ MUTANTS = {
     "M3 gate fails closed": ('        log(f"  WARN: calendar gate unavailable ({e}); proceeding")\n        return True\n',
                              '        log(f"  WARN: calendar gate unavailable ({e}); proceeding")\n        return False\n',
                              {"B6 calendar unavailable -> fail open, the minute is computed"}),
+    "M5 keyset stops after one page": ("            last_sym = rows[-1][\"sym\"]\n", "            break\n",
+                                       {"B8 1,313 stocks over two keyset pages -> all read, SUCCESS"}),
+    "M6 read error swallowed": ('        log(f"  ERROR: latest-tick read failed: {e}")\n        return xlog.exit_with_reason(',
+                                '        log(f"  ERROR: latest-tick read failed: {e}")\n        latest_ltp = {}\n        return 0 and xlog.exit_with_reason(',
+                                {"B9 latest-tick read fails -> DATA_ERROR exit 1, nothing written"}),
+    "M7 raw paging back": ('            q = sb.table("v_market_ticks_eq_latest").select("sym,last_price,ts").order("sym")\n',
+                           '            sb.table("market_ticks").select("x").execute()\n            q = sb.table("v_market_ticks_eq_latest").select("sym,last_price,ts").order("sym")\n',
+                           {"B10 no raw market_ticks read"}),
     "M4 upsert failure swallowed": ('            return xlog.exit_with_reason(\n                "DATA_ERROR", exit_code=2,',
                                     '            return 0 or xlog.exit_with_reason(\n                "DATA_ERROR", exit_code=2,',
                                     set()),
@@ -151,8 +186,8 @@ MUTANTS = {
 
 def main() -> int:
     src = WRITER.read_text(encoding="utf-8-sig")
-    if "S100_R40_BREADTH" not in src:
-        print("BREADTH FROM TICKS FAIL: writer lacks S100_R40_BREADTH"); return 1
+    if "S100_R40_BREADTH" not in src or "S102_R40_LATEST_VIEW" not in src:
+        print("BREADTH FROM TICKS FAIL: writer lacks S100_R40_BREADTH / S102_R40_LATEST_VIEW"); return 1
     res = cells(src, "base")
     fails = [n for n, ok, _ in res if not ok]
     names = {n for n, _, _ in res}

@@ -537,6 +537,9 @@ class HealthMonitor:
         # caught by check_hung_runs (S100_R3_HUNG), under its own key.
         finished = [r for r in rows
                     if not (r.get('exit_code') is None and r.get('finished_at') is None)]
+        # S102_R49: this alarm reads exit_code ALONE, never exit_reason. Any skip that exits
+        # non-zero (e.g. exit 1 SKIPPED_NO_INPUT) pages CRITICAL here. A skip meant to be benign
+        # must exit 0 (S99-H, S100-I); behaviour recorded, not changed (tracker 2.2 R49, S98 note).
         for row in finished:
             if row.get('exit_code') != 0:
                 msg = (f"Orchestrator FAILED: exit_code={row.get('exit_code')}, "

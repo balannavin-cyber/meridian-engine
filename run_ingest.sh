@@ -14,7 +14,9 @@ MODE="${2:-FULL}"
 echo "============================================================"
 echo "[run_ingest.sh] $(date -u +%Y-%m-%dT%H:%M:%SZ) START symbol=$SYMBOL mode=$MODE"
 echo "============================================================"
-python3 ingest_option_chain_local.py "$SYMBOL" "$MODE"
-rc=$?
+# S102_R48: under `set -e` a failing python3 ended the script before `rc=$?`, so the END line
+# never printed on a failure (the exit code itself was right). Capture rc without tripping -e.
+rc=0
+python3 ingest_option_chain_local.py "$SYMBOL" "$MODE" || rc=$?
 echo "[run_ingest.sh] $(date -u +%Y-%m-%dT%H:%M:%SZ) END symbol=$SYMBOL mode=$MODE rc=$rc"
 exit $rc

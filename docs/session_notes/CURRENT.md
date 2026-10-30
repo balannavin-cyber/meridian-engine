@@ -2,70 +2,103 @@
 
 > **Living file.** Overwritten at the end of every session to reflect what just happened and what the next session is for.
 > Claude reads this immediately after `CLAUDE.md` at session start. It replaces the practice of manually pasting a "session resume block."
-> **History.** Every session block before S89 lives in [`docs/registers/CURRENT_history.md`](../registers/CURRENT_history.md) — committed to git, **not** uploaded to project knowledge. Split at the S78 doc-close per **TD-S73-NEW-8**; S78 demoted to history at the S80 doc-close and **S81 at the S83 doc-close**, S82 at the S84 doc-close, **S83 at the S85 doc-close**, **S84 at the S86 doc-close** **S85 at the S87 doc-close** **S86 at the S88 doc-close**, **S87 at the S89 doc-close** and **S88 at the S90 / AM-1 doc-close**, each moved verbatim rather than retyped — the S87 move asserted byte-identical at **19,184 B**, sha256 `52b9364b…` on both sides. **S89 moved at the S91 close**, asserted byte-identical at **8,079 B**, sha256 `e2bec976…` on both sides. **S90 (with the AM-1 post-close block) moved at the S92 close**, asserted byte-identical at **9,482 B**, sha256 `8466bfbb…` on both sides. **S91 / AM-2 moved at the S93 close**, asserted byte-identical at **9,208 B**, sha256 `d5dc4e19…` on both sides. **S92 moved at the S94 close**, asserted byte-identical at **9,049 B**, sha256 `6f45dd8b…` on both sides. **S93 moved at the S95 close**, asserted byte-identical at **8,092 B**, sha256 `c84882be…` on both sides. **S94 moved at the S96 close**, asserted byte-identical at **8,326 B**, sha256 `0537ac73…` on both sides. **S95 moved at the S97 close**, asserted byte-identical at **4,816 B**, sha256 `f63116f5…` on both sides. **S99 (its pointer block, 1,090 B, sha256 `56ab7a26…`) and S100 (7,695 B, sha256 `d11e991b…`) moved at the S101 close (run in S102)**, each asserted byte-identical on both sides. This file carries the current session and one predecessor, and nothing else.
+> **History.** Every session block before S89 lives in [`docs/registers/CURRENT_history.md`](../registers/CURRENT_history.md) — committed to git, **not** uploaded to project knowledge. Split at the S78 doc-close per **TD-S73-NEW-8**; S78 demoted to history at the S80 doc-close and **S81 at the S83 doc-close**, S82 at the S84 doc-close, **S83 at the S85 doc-close**, **S84 at the S86 doc-close** **S85 at the S87 doc-close** **S86 at the S88 doc-close**, **S87 at the S89 doc-close** and **S88 at the S90 / AM-1 doc-close**, each moved verbatim rather than retyped — the S87 move asserted byte-identical at **19,184 B**, sha256 `52b9364b…` on both sides. **S89 moved at the S91 close**, asserted byte-identical at **8,079 B**, sha256 `e2bec976…` on both sides. **S90 (with the AM-1 post-close block) moved at the S92 close**, asserted byte-identical at **9,482 B**, sha256 `8466bfbb…` on both sides. **S91 / AM-2 moved at the S93 close**, asserted byte-identical at **9,208 B**, sha256 `d5dc4e19…` on both sides. **S92 moved at the S94 close**, asserted byte-identical at **9,049 B**, sha256 `6f45dd8b…` on both sides. **S93 moved at the S95 close**, asserted byte-identical at **8,092 B**, sha256 `c84882be…` on both sides. **S94 moved at the S96 close**, asserted byte-identical at **8,326 B**, sha256 `0537ac73…` on both sides. **S95 moved at the S97 close**, asserted byte-identical at **4,816 B**, sha256 `f63116f5…` on both sides. **S99 (its pointer block, 1,090 B, sha256 `56ab7a26…`) and S100 (7,695 B, sha256 `d11e991b…`) moved at the S101 close (run in S102)**, each asserted byte-identical on both sides. **S100 (its pointer block, 1,738 B, sha256 `e9003302…`) and S101 (5,674 B, sha256 `6a68012f…`) moved at the S102 close (run in S103)**, each asserted byte-identical on both sides. This file carries the current session and one predecessor, and nothing else.
 
 ---
 
 ## Last session
 
-**S101 — Sunday 2026-10-25 20:41 IST → Wednesday 10-28 09:58 IST** (closed in S102 Part A). The engine's pure compute
-became an importable package for retail (Part A, C2–C7), deployed Monday 10-26 17:08 IST and read live on 10-27; Monday's
-Part C reads closed the S98-B and B1 TDs. This block points; the detail lives in the files named. Rulings:
-`docs/research/s92_parity/rulings_s101.md` (S101-A…H; the single source). Evidence and findings:
-`docs/research/s101/S101_close_inputs.md`. **Progress lives in the tracker**, `docs/registers/agentic_layer_roadmap_S90.md`
-(v2.18), and **its §2.2 is the single list** of open work.
+**S102 — Wednesday 2026-10-28 09:58 IST → Friday 10-30 11:05 IST** (closed in S103 Part A). Wednesday applied the S101
+doc-close (`3abb83f`), read the NIFTY pin path across the expiry roll, and built and tested six engine bundles that were
+**not applied**; Friday found that every Γ size on the board was shown at 100 × its "₹ Cr" label and fixed the display in
+one morning — ADR-032 D1, seven `_1pct` wrapper views, two Lovable rounds, manual v0.5, promoted and read live at 11:02.
+This block points; the detail lives in the files named. Rulings: `docs/research/s92_parity/rulings_s102.md` (S102-A…F;
+the single source). Evidence and findings: `docs/research/s102/S102_close_inputs.md` (its stated record limit: the 10-28
+transcript was compacted; figures not in a commit message are re-read, not reconstructed). **Progress lives in the
+tracker**, `docs/registers/agentic_layer_roadmap_S90.md` (v2.19), and **its §2.2 is the single list** of open work.
 
-**`origin/main` — all pushed.** `11f2cbe` (A2–A7) · `4ed5671` (C2) · `50bef37` (C3) · `a0b6115` (C4) · `e0fb11d` (C5) ·
-`02a06ec` (C6) · `4a1d8e1` (C7) · this close. Fast-forward `7b91d1a → 4a1d8e1` 10-26 17:08 IST; four-way PASS 17:12
-(`origin/main` = `~/meridian-engine` = `~/meridian-cc` = Local); rollback written, not needed (10-27 read, 0 non-zero
-exits). Retail (MR-S2) pins `merdian_compute` at `4a1d8e1`. Offline suite **25 steps**. Crontab unchanged (70 lines).
-Marketview unchanged (live `f964e40`).
+**`origin/main` — `3abb83f` + this close.** No S102 engine code was pushed; the six 10-28 bundles (`s102r48` → `s102r40` →
+`s102td8` → `s102fut` → `s102argv` → `s102mk`, each baselined on the previous one's post state) wait for the S90-J window.
+Offline suite 25 steps on `main` (29 once the bundles land). Crontab unchanged (70 lines; `s102mk` carries the markers
+line `40 10` → `0 11` UTC). **Marketview live = staging = `30998f2`** (bundle `index-EtZmieBR.js`, promoted 10-30 11:01
+IST; rollback target `/var/www/marketview.bak-27c0e17` ≡ `f964e40` JS + manual v0.4, proven by `diff -rq`). Database: the
+seven `_1pct` views and `v_market_ticks_eq_latest` (applied 10-28 for `s102r40`). ACL baseline re-measured 10-30 10:59
+(`docs/lovable_prompts/s92/README.md`).
 
 **What was established**
 
-1. **`merdian_compute/` (S101-A, S101-C).** The pure compute surface — `gamma` (with the composed cycle
-   `compute_gamma_core`), `volatility` (`derive_atm_iv`), `pin` (`derive_core`), `cycle` (`held_for_cycles_next`,
-   `trading_days_between`) — stdlib only, packaged by `pyproject.toml`. The writers import every name back, so production
-   runs the code retail runs. Proofs per commit: AST equality, golden replay 486/486 before = after, error-path replays,
-   mutants (`S101_close_inputs.md` §2).
-2. **Offline suite 23 → 25 steps:** 24 import purity (no environment, no supabase / requests / dotenv / core, no socket);
-   25 the contract against production golden rows.
-3. **Contract `docs/interfaces/retail_compute_contract.md` v2.1:** composed calls, ATM IV, the pin path, the full view
-   closure (§8) with live `pg_get_viewdef` md5s; what retail must not import (§1); not covered (§9); interpreter (§10).
-4. **Two live views registered (S101-E).** `v_gex_strike_pin_zone` (C6) and `v_gex_strike_accel_zone` (C7) matched no
-   file in `sql/` — an unregistered S80-class change; the live definitions are now in `sql/` and reproduce length and md5.
-5. **Deployed 10-26 17:08 IST (S101-B).** A read-only recompute of the 15:40 cycle equalled the cron rows (18/18 fields,
-   both symbols); the first unattended run, 10-27 08:30, had 0 non-zero exits; the pin path ran live (carry, reset,
-   look-back across sessions); the NIFTY expiry roll read on 10-28 to 09:15.
-6. **Part C, 10-26.** S98-B / S99-H PASS in full; the 08:20 refresh and the 09:09 probe clean; the wsfeed self-started.
-   TD-S97-NEW-4, TD-S82-NEW-1, -2 closed (S101-F); TD-S97-NEW-5 and TD-S80-NEW-17 closed. **Board 10-27:** S100-N, Q.1,
-   R and S PASS; Health OVERALL DEGRADED on a healthy fleet (the 30-minute token tile). **R19:** the builder is correct on
-   its input; 10-26 / 10-27 breadth owed to the 10-28 run (Dhan publish lag).
+1. **The Γ unit (S102-A / S102-B, ADR-032).** Stored gamma exposure `γ·OI·S²/1e7` is the hedge for a **100 %** move; the
+   conventional "₹ Cr per 1 % move" is × 0.01, and only `v_dealer_flow_sim.flow_cr` applied it. No decision reads the
+   magnitude (sign, ratios and shares cancel a constant). **D1 RULED + LIVE:** the conversion is made once, in the
+   database, by seven additive `security_invoker` wrapper views (`sql/2026-10-30_s102_gex_per_1pct_views.sql`, T1–T5
+   PASS); stored columns, writers, source views, pins and the retail contract are untouched. **D2–D5 PROPOSED**, gated on
+   the §5 impact study and §6 roadmap. Inventory v2: `docs/research/s102/gex_unit_inventory_S102.md`.
+2. **Board (S102-C, S102-D; `docs/lovable_prompts/s102/`).** Round 1: seven files, 41 replacements, wording table W;
+   round 2: the legacy pages **rescaled** (not retired), the "Σdmp …k" mislabel fixed. Each round guarded, staged, read
+   against SQL at the same `ts` on both symbols, then promoted together with manual v0.5 as `30998f2`. Live read 11:02:
+   SENSEX Net Γ `+595 Cr · long γ · 0.06 of gross · ₹ Cr per 1 % move`, Hedge per 1 % SELL 595 (= −Net Γ × 1 %).
+3. **Manual v0.5 (S102-E).** 18 anchored edits on the engine source (`0f103a58…` → `e4872ab6…`), built on the box by
+   `s102_manual_v05.sh`; text restated ÷ 100 with "(then shown as …)"; screenshots still on the old scale (option B owed).
+   This close lands the same 18 edits in `docs/marketview_manual/` and points `build_help_pack.py` at `index-EtZmieBR.js`.
+4. **Six engine bundles built and tested 10-28, none applied** (`S102_close_inputs.md` §2.2): R48 / R49 (`run_ingest.sh`
+   END line carries the rc; offline step 26), R40 (breadth-from-ticks keyset-reads `v_market_ticks_eq_latest`: 1,313 rows
+   in 407 ms against ~161,000 rows / 140–176 s; 379 of 431 runs over 60 s on 10-26/27), TD-S77-NEW-8 (the refresh ledger
+   via `core.execution_log`; step 27), TD-S100-NEW-1 (futures basis against the index LTP from the same Dhan request;
+   step 28), the futures writer scoped to its cron line's symbol (10-27: both lines wrote both symbols), and the session
+   markers from the CAS-settled close with the cron moved 16:10 → 16:30 IST (`MISSING_CLOSE_1530` every session 10-12 →
+   10-27; step 29).
+5. **Pin path across the NIFTY expiry roll, part 2: PASS** (10-28) — the writer carries per `(symbol, expiry_date)`.
+6. **Process.** One writer per change (Lovable or the box, never both — a 10:47 race dropped a box commit); the promote
+   block checks live ≡ the named backup by `diff -rq` before naming a rollback target; rollback text only inside a
+   refusing block and never in the same paste-ready message as the forward step (§D.56.13 — the operator pasted it and
+   live reverted for about a minute).
 
-**Filed:** TD-S101-NEW-1…17 — the ENH-133 writer's `57014` timeout (first); the unregistered view change and a standing
-md5 check; `otm_oi_velocity` NULL in every row; two unbounded prior-row reads; gamma / volatility math re-implemented
-outside the package; `.gitignore` `_*.py`; the ≥ 3.12 `sum()`; retail gaps (contract §9); superseded view files; port 22;
-Local HEAD in the four-way; `sudo` journal reads; Health OVERALL; Context IV skew at 0 DTE; the NIFTY board after an
-expiry-day close; `eod.log` dates; one `DH-905` ticker. TD-S100-NEW-1 re-measured 10-27, open.
+**Filed:** TD-S102-NEW-1…8 — the Lovable-hosted public copy publishes `main` outside the guard; the help pack's
+`board_bundle` stamp; screenshots on the old scale; the engine manual source behind the live pack (closed by this close);
+two writers on one change (closed: the rule is in the s92 README); a file copied into the live tree outside a build; the
+`market_ticks` duplicate index; `hist_gamma_metrics.net_gex`'s contradictory unit. TD-S100-NEW-3 gains the bare-"Cr"
+note on `NarrativeModal`.
 
-**Corrections to my own work:** Assumption Register **§D.55** (S101, 25 rows). The one to carry: a live view is identified
-by full `pg_get_viewdef` md5 against a file that reproduces it, never by markers (D.55.14; `CLAUDE.md` rule 25).
+**Corrections to my own work:** Assumption Register **§D.56** (S102, 16 rows). The one to carry: read what is live before
+naming a rollback target, and never print the rollback beside the forward step (D.56.12–13).
 
-**Security:** port 22 is open to 0.0.0.0/0 on the box (TD-S101-NEW-10, operator action); TD-S99-NEW-1 and BS-1 stand.
-
-**No ADR filed or amended; rule 25 added (`CLAUDE.md` v1.73).** System Map §S101; Deployment Topology §S101.
+**ADR-032 filed (D1 RULED + LIVE; D2–D5 PROPOSED); settled line added (`CLAUDE.md` v1.74); rules 0–25 unchanged.** System
+Map §S102; Deployment Topology §S102.
 
 ## NEXT SESSION PICKS UP
 
-1. **Carried live reads (S102 Part B):** the NIFTY pin path across the expiry roll, part 2 (the first OPEN row of 10-28:
-   held 1, leader 23000 ≠ 22750); R19 re-read after the first EOD run on or after 10-28 16:10 IST (10-26 and 10-27
-   breadth, expected = actual, `eod_pct` ≥ 95).
-2. **Rulings owed (S101 §5), each raised with a recommendation before building:** Health OVERALL token threshold; the
-   NIFTY board after the expiry-day close; Context IV skew on a 0-DTE front leg; WCB from pre-open ticks;
-   `held_for_cycles` across an expiry roll on the same strike (tracker §2.2 rows).
-3. **Then tracker §2.2 in its order:** B1 (R48 / R49, the ledger row, the R40 overlap) → BS-1 → B2 (R5 close print, R20;
-   TD-S100-NEW-1 first) → B3 (R16 + R36) → B4 → B5 (R15, R11 + R39) → B6 (R12 with S100-Q step 2, R13); BR and the rest
-   of BS before any retail build.
+1. **The six 10-28 engine bundles** in their baseline order (r48 → r40 → td8 → fut → argv → mk): apply after 15:40 IST,
+   push after 16:30 IST (S90-J); per bundle baseline sha, dry-run, apply, `ast.parse`, its offline step; the full suite
+   (29 steps) once, out of hours, under `ulimit -v`; one commit per bundle; `s102mk` carries the live crontab edit, read
+   back with `crontab -l`. Next-session live checks: the END line with rc on a failing ingest; breadth-from-ticks run time;
+   the 09:05 refresh ledger row; futures rows one per symbol per minute with `raw.spot_source =
+   dhan_ltp_idx_i_same_request` through 15:40; markers `close_1530` from CAS.
+2. **R19 re-read (carried twice):** `breadth_indicators_daily` for 10-26 onward — expected = universe tickers with an
+   `equity_eod` close that date; PASS = equal, `eod_pct ≥ 95`.
+3. **Rulings owed, each raised with a recommendation from the code:** Health OVERALL token threshold; the NIFTY board after
+   the expiry-day close; Context IV skew on a 0-DTE front leg; WCB from pre-open ticks; `held_for_cycles` across an expiry
+   roll on the same strike; the 10-28 rulings 1–5, R16 freeze fix, R20 (a / b), TD-S97-NEW-4 (b); the Lovable-hosted public
+   copy (unpublish or keep); manual option B timing; ADR-032 D2–D5 only after the §5 study and §6 roadmap.
+4. **Then tracker §2.2 in its order** from where S102 stopped.
+
+## OPERATOR RULINGS, S102
+
+**All rulings live in `docs/research/s92_parity/rulings_s102.md`**, the single source.
+
+| # | Topic |
+|---|---|
+| **S102-A** | Γ size: display-only rescale first (× 0.01 to ₹ Cr per 1 % move) |
+| **S102-B** | ADR-032: D1 display now; D2–D5 after the impact study and roadmap |
+| **S102-C** | D1 board wording table W approved; √τ (R26) not taken |
+| **S102-D** | Legacy pages rescale, not retire |
+| **S102-E** | Manual: text restated now (A), new screenshots later (B) |
+| **S102-F** | Close S102; the doc-close runs in S103 |
+
+## Previous session S101
+
+**S101 — Sunday 2026-10-25 20:41 IST → Wednesday 10-28 09:58 IST** (doc-close `3abb83f`, run in S102). The engine's
+pure compute packaged as `merdian_compute` and imported back by the writers (deployed `4a1d8e1` 10-26 17:08 IST, read live
+10-27); contract v2.1; the live pin / accel zone views registered. The full block is in `docs/registers/CURRENT_history.md`.
 
 ## OPERATOR RULINGS, S101
 
@@ -81,35 +114,3 @@ by full `pg_get_viewdef` md5 against a file that reproduces it, never by markers
 | **S101-F** | Close TD-S97-NEW-4, TD-S82-NEW-1, -2; the `57014` exit a new TD |
 | **S101-G** | Schedule the 10-27 close reads and R19 |
 | **S101-H** | Close S101; the doc-close runs in S102 |
-
-## Previous session S100
-
-**S100 — Saturday 2026-10-24 07:39 IST → Sunday 10-25** (doc-close `7b91d1a`). S98 + S99 closed (`3ad5c81`); the weekend
-list built — monitoring and a pre-open probe, three writers taught to stop, the Rule 13 symbol scope, the board's closing
-session (Marketview `f964e40`). The full block is in `docs/registers/CURRENT_history.md`.
-
-## OPERATOR RULINGS, S100
-
-**All rulings live in `docs/research/s92_parity/rulings_s100.md`**, the single source.
-
-| # | Topic |
-|---|---|
-| **S100-A** | `tech_debt.md` split: open entries / history |
-| **S100-B** | R38–R49 homed in tracker §2.2, no TDs |
-| **S100-C** | Monitor window = union of runner lines, contiguous only |
-| **S100-D** | Alert daemon and daily audit recorded dead; design later |
-| **S100-E** | One broker-access probe at 09:09 IST |
-| **S100-F** | wsfeed retry timer plus deduped alert |
-| **S100-G** | Dhan token refresh at 08:20 IST |
-| **S100-H** | Deactivate the 12 Edge Function cron jobs |
-| **S100-I** | Breadth-from-ticks: no ticks → no row, exit 0 |
-| **S100-J** | `data_contamination_ranges.symbols text[]` |
-| **S100-K** | `merdian_ro_select` on the 51 RLS tables |
-| **S100-L** | Marketview backups: newest 3 plus named `PRE_*` |
-| **S100-M** | Health untracks the ICT writer; `SUBSCRIPTION_LAPSED`; CRITICAL display only |
-| **S100-N** | Legacy pages: Board's previous close and spot |
-| **S100-O** | Pass-2 misses: Muhurat not captured; v5 Rule 3; ADR-004 erratum |
-| **S100-P** | Context IV skew = the view's skew |
-| **S100-Q / Q.1** | Pocket word local, net γ beside it; then R12 |
-| **S100-R** | Spot label, dealer wording D1–D7, Γ kept |
-| **S100-S** | Session-state strip, stale window to 15:45, basis names its spot |

@@ -5092,9 +5092,9 @@
       "truncated_each_run": false
     }
   },
-  "version": "v79",
-  "last_updated_session": "Session 101 (closed in Session 102)",
-  "last_updated_date": "2026-10-28",
+  "version": "v80",
+  "last_updated_session": "Session 102 (closed in Session 103)",
+  "last_updated_date": "2026-10-30",
   "change_log": [
     {
       "session": "S91 / AM-2",
@@ -6051,6 +6051,48 @@
     "open": {
       "s102_part_b": "NIFTY pin path across the expiry roll part 2 (first OPEN row of 2026-10-28: held 1, leader 23000 != 22750); R19 re-read after the first EOD run on or after 2026-10-28 16:10 IST",
       "rulings_owed": "Health OVERALL token threshold; NIFTY board after the expiry-day close; Context IV skew on a 0-DTE front leg; WCB from pre-open ticks; held_for_cycles across an expiry roll on the same strike"
+    }
+  }
+,
+  "_s102_addendum": {
+    "session": "S102 (closed in S103)",
+    "date": "2026-10-28 -> 2026-10-30",
+    "scope": "Part A: the S101 doc-close applied (3abb83f). 10-28: pin path across the NIFTY expiry roll part 2 PASS; six engine bundles built and tested, NONE applied. 10-30: ADR-032 D1 - every gamma size on the board was 100x its Rs Cr label; seven _1pct wrapper views, two Lovable rounds, manual v0.5, promoted and read live 11:02 IST. Rulings S102-A..F. Docs-only close.",
+    "engine_commits": "none pushed in S102; this close only (docs, sql record, manual source v0.5)",
+    "bundles_not_applied": {
+      "order": "s102r48 -> s102r40 -> s102td8 -> s102fut -> s102argv -> s102mk (each baseline.txt = the previous one's post state)",
+      "s102r48": "R48 run_ingest.sh END line carries the ingest rc; R49 monitor comment; offline step 26",
+      "s102r40": "R40 ingest_breadth_from_ticks.py keyset-reads v_market_ticks_eq_latest (view live 2026-10-28; 1,313 rows / 406.6 ms vs ~161,000 rows / 140-176 s); step 20 + B8-B10",
+      "s102td8": "TD-S77-NEW-8 refresh_equity_intraday_last.py ledger via core.execution_log; stray PYEOF removed; step 27",
+      "s102fut": "TD-S100-NEW-1 futures basis vs the index LTP from the same Dhan request (IDX_I 13 / 51); step 28",
+      "s102argv": "futures writer captures only its cron line's symbol (10-27: both lines wrote both); step 28 F6 / M4",
+      "s102mk": "TD-S91-NEW-18 / TD-S74-NEW-5 session markers read the CAS-settled close; crontab markers line 40 10 -> 0 11 UTC (16:10 -> 16:30 IST); step 29",
+      "window": "apply after 15:40 IST, push after 16:30 IST (S90-J); suite (29 steps) out of hours under ulimit -v"
+    },
+    "adr_032": {
+      "file": "docs/decisions/ADR-032-gex-stored-unit.md",
+      "status": "D1 RULED + LIVE 2026-10-30 11:02 IST (Marketview 30998f2, index-EtZmieBR.js); D2-D5 PROPOSED, gated on the section 5 impact study and section 6 roadmap",
+      "unit": "stored gex_cr / net_gex = gamma*OI*S^2/1e7 = Rs Cr per 100 % move; display = x 0.01 = Rs Cr per 1 % move, made once in the database",
+      "views": "v_gex_abs_exposure_1pct, v_gex_net_gamma_river_1pct, v_gex_strike_terrain_1pct, v_gex_greeks_l2_net_1pct, v_gex_greeks_l2_strike_1pct, v_gex_strike_snapshots_1pct, v_gamma_metrics_1pct (security_invoker = true; anon + merdian_ro SELECT) - sql/2026-10-30_s102_gex_per_1pct_views.sql, T1-T5 PASS",
+      "not_rescaled": "v_dealer_flow_sim.flow_cr (already per 1 %); every delta-type column (oi*S/1e7)",
+      "inventory": "docs/research/s102/gex_unit_inventory_S102.md v2",
+      "board": "docs/lovable_prompts/s102/ - round 1 board (7 files, 41 replacements, S102-C), round 2 legacy pages rescaled (S102-D), guards, s102_manual_v05.sh; chain f964e40 -> 27c0e17 -> 8326ed0 -> 3b3b0d4 / 1171975 -> 30998f2",
+      "manual": "v0.5: 18 anchored edits 0f103a58 -> e4872ab6 (engine source landed at this close); manual.json ede04e14; screenshots still on the old scale (TD-S102-NEW-3); build_help_pack.py BOARD = index-EtZmieBR.js (pack rebuild owed, TD-S102-NEW-2)"
+    },
+    "marketview": "live = staging = 30998f2 (index-EtZmieBR.js), promoted 2026-10-30 11:01 IST; rollback target /var/www/marketview.bak-27c0e17 (= f964e40 JS + manual v0.4, proven by diff -rq); backups .bak-27c0e17, .bak-f964e40, .bak-1aeb000 + PRE_*",
+    "supabase": "seven _1pct views (10-30) and v_market_ticks_eq_latest (10-28) applied by the operator; ACL baseline 10-30 10:59: relations 358 830967b5, anon_public_privs 263 1f238394, rls_policies 80 be718afb, anon_writable_objs 0 (docs/lovable_prompts/s92/README.md)",
+    "aws_cron": "unchanged (70 lines); s102mk carries the markers line change",
+    "rulings": "docs/research/s92_parity/rulings_s102.md - S102-A..F",
+    "working_docs": "docs/research/s102/ (close inputs, inventory)",
+    "tech_debt": "TD-S102-NEW-1..8 filed (-4 engine manual source behind the live pack, -5 two writers on one change: closed at filing); TD-S100-NEW-3 annotated (NarrativeModal bare Cr)",
+    "assumption_register": "D.56 (16 rows) - the one to carry: D.56.12-13, read live before naming a rollback target; rollback only inside a refusing block, never beside the forward step",
+    "claude_md": "v1.74: ADR-032 settled line; rules 0-25 unchanged",
+    "decision_index": "ADR-032 row added; next-free ADR-033+",
+    "tracker": "docs/registers/agentic_layer_roadmap_S90.md v2.19",
+    "open": {
+      "s103_part_b": "the six bundles in order, after 15:40 / push after 16:30 IST; crontab read-back; live checks next session (END line rc, breadth run time, 09:05 ledger row, futures rows one per symbol per minute with raw.spot_source = dhan_ltp_idx_i_same_request, markers close_1530 from CAS)",
+      "s103_part_c": "R19 re-read for 10-26 onward (expected = universe tickers with an equity_eod close; PASS equal, eod_pct >= 95); then tracker 2.2 in order",
+      "rulings_owed": "Health OVERALL token threshold; NIFTY board after the expiry-day close; Context IV skew on a 0-DTE front leg; WCB from pre-open ticks; held_for_cycles across an expiry roll on the same strike; the 10-28 rulings 1-5, R16 freeze fix, R20 (a/b), TD-S97-NEW-4(b); the Lovable-hosted public copy (unpublish or keep); manual option B timing; ADR-032 D2-D5 after the study"
     }
   }
 }

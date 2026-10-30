@@ -352,6 +352,98 @@ the doc-close that closes it, with one line in that close's status paragraph.
 | **Home** | Tracker §2.2 band B4. |
 | **Status** | **OPEN.** |
 
+### TD-S102-NEW-1 (S3 priority) — the Lovable-hosted public copy serves whatever `main` holds, outside staging, the guard, promote and the box's access setup
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A second public surface of the board exists that no guard, staging read or promote step ever sees, and it reaches the database with the same anon key. |
+| **Filed** | 2026-10-30 (Session 102; found during the ADR-032 D1 rounds) |
+| **Component** | Lovable project `meridian-connect` — "Publish" → `https://meridian-welcomer.lovable.app/` |
+| **Measured** | Publish was clicked 2026-10-30 ~09:55 IST at `3b3b0d4` (round 2, before its guard and staging read). The copy serves that build of `main` until Publish is clicked again; it is not behind oauth2-proxy, reads only anon views, and is not in `docs/registers/MERDIAN_Deployment_Topology.md`. |
+| **Proper fix** | Operator ruling owed (tracker §2.2): unpublish unless it is used; if kept, record it in the Topology as a public read surface with its own promote rule (publish only a commit that has passed the guard and a staging read) and include it in the ACL exposure model (TD-S89-NEW-5, TD-S81-NEW-2). |
+| **Home** | Tracker §2.2 band BS. |
+| **Status** | **OPEN — ruling.** |
+
+### TD-S102-NEW-2 (S4 priority) — the help pack's `board_bundle` stamp names the previous board
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** The manual's "describes build …" line is wrong by one promote; nothing reads it programmatically. |
+| **Filed** | 2026-10-30 (Session 102; close inputs §5) |
+| **Component** | `docs/marketview_manual/build_help_pack.py` `BOARD` → `manual.json` `board_bundle`; live `public/help/manual.json` at `30998f2` |
+| **Measured** | `manual.json` (`ede04e14…`) carries `board_bundle = index-BFOk56iL.js`; the live bundle since 2026-10-30 11:01 IST is `index-EtZmieBR.js`. |
+| **Proper fix** | `BOARD = "index-EtZmieBR.js"` in `build_help_pack.py` (landed by the S102 doc-close) and the pack rebuilt and promoted in the next manual round — rebuilding the pack is a content round, not a doc-close edit. |
+| **Home** | Tracker §2.2 band B5 (manual follow-ups). |
+| **Status** | **OPEN — source fixed at the S102 close; the live pack still carries the old stamp until the next manual round.** |
+
+### TD-S102-NEW-3 (S4 priority) — the manual's 21 screenshots show Γ sizes on the old (× 100) scale
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** Manual v0.5 says so in its version row; a reader comparing a screenshot with the live board sees a 100× difference with the reason stated. |
+| **Filed** | 2026-10-30 (Session 102; ruling S102-E took option A — text restated now, screenshots later) |
+| **Component** | `docs/marketview_manual/` screenshots → `public/help/` |
+| **Measured** | 21 shots captured on `index-BFOk56iL.js` (v0.4) before ADR-032 D1; every Γ size in them is 100 × the per-1 % figure the text now gives. |
+| **Proper fix** | Option B: re-capture on the per-1 % board (`index-EtZmieBR.js` or later), rebuild the pack, promote; timing is an operator ruling (tracker §2.2). |
+| **Home** | Tracker §2.2 band B5 (manual follow-ups). |
+| **Status** | **OPEN — ruling on timing.** |
+
+### TD-S102-NEW-6 (S4 priority) — a file was copied into the live Marketview tree outside a build, so a `.bak-<sha>` backup name cannot be trusted without a `diff -rq`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** The rollback target was named wrongly twice in one minute on 2026-10-30 (§D.56.12) because the live tree's name and its contents had diverged; the promote block now proves the equality before naming it. |
+| **Filed** | 2026-10-30 (Session 102; close inputs §5) |
+| **Component** | `/var/www/marketview/` (live), `/var/www/marketview.bak-*`; the promote block in `docs/lovable_prompts/s92/README.md` |
+| **Measured** | After the `f964e40` build, manual v0.4 (`manual.json` `489a135e…`) was copied into `/var/www/marketview/help/` by hand (S100); the live tree was therefore `f964e40` JS + a v0.4 manual, which is the `27c0e17` tree, under no single commit's name. On 2026-10-30 the promote first set `PREV=27c0e17` from a comment, then `f964e40` from the JS name; a `diff -rq` against `.bak-27c0e17` settled it. |
+| **Proper fix** | Nothing enters the live tree except a build of one commit (rule now in the s92 README); the promote block names a rollback target only after `diff -rq` shows live ≡ that backup (done, S102). Residual: `.bak-27c0e17` is the only backup whose contents equal a commit's tree by construction; the older `.bak-f964e40` and `.bak-1aeb000` predate the rule and must be diffed before use. |
+| **Home** | Tracker §2.2 band BR. |
+| **Status** | **OPEN — rule landed; the two pre-rule backups stay untrusted until rotated out (S100-L).** |
+
+### TD-S102-NEW-7 (S3 priority) — `market_ticks` carries three exact duplicate indexes, ~450 MB of redundant index maintained on every tick insert
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Every `market_ticks` INSERT maintains six secondary indexes where three would do; ~450 MB of the table's ~980 MB of indexes is a copy. The TD-S72-NEW-4 shape on the highest-volume table. |
+| **Filed** | 2026-10-30 (Session 102; measured 10-28, re-read from `pg_indexes` 2026-10-30 11:30 IST before filing) |
+| **Component** | `public.market_ticks` indexes |
+| **Measured** | `pg_indexes` 2026-10-30: `idx_market_ticks_sym_type` = `idx_mt_sym_type` (`symbol, instrument_type, ts DESC`; 193 MB / 194 MB); `idx_market_ticks_token_ts` = `idx_mt_token_ts` (`instrument_token, ts DESC`; 208 MB / 207 MB); `idx_market_ticks_ts` = `idx_mt_ts` (`ts DESC`; 46 MB / 51 MB); `market_ticks_pkey` (`id`, 81 MB). Three pairs with identical `indexdef`; one of each pair is redundant (447 MB if the `idx_mt_*` set is dropped, 452 MB if the `idx_market_ticks_*` set is). `idx_*_ts` (`ts DESC`) is **not** covered by the composites (`ts` is their last column), so it is a duplicate pair, not a redundant prefix. |
+| **Proper fix** | Operator DDL out of market hours: `DROP INDEX CONCURRENTLY` one of each pair (keep the set the planner's `pg_stat_user_indexes.idx_scan` shows in use, or the `idx_market_ticks_*` names if equal), one statement per execution, with a `pg_indexes` read before and after; record in `sql/`. Then re-measure `v_market_ticks_eq_latest` (406.6 ms at 1,313 rows on 10-28) — it reads `(symbol, instrument_type, ts DESC)`, so the surviving composite must stay. Root cause (which migration created the second set under the `idx_mt_` names) by `git log -S` on `sql/`. |
+| **Home** | Tracker §2.2 band B4 (beside TD-S72-NEW-4). |
+| **Status** | **OPEN — operator DDL.** |
+
+### TD-S102-NEW-8 (S3 priority) — `hist_gamma_metrics.net_gex` has two writers that disagree on its unit, and a DDL that disagrees with both on its columns
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Not read by the board; read by research. Any study that joins `hist_gamma_metrics` to `gamma_metrics` mixes a /1e7 scale with an unscaled one without knowing it. |
+| **Filed** | 2026-10-30 (Session 102; inventory `docs/research/s102/gex_unit_inventory_S102.md` §5.1) |
+| **Component** | `backfill_gamma_metrics.py:83` (divides by 1e7), `fill_gamma_concentration.py:72,104` (treats the table as unscaled), the s62 DDL for `hist_gamma_metrics` |
+| **Measured** | Code read on `3abb83f`, 2026-10-30: the two writers apply different scales to the same column; the writer and the s62 DDL also disagree on the column set. Which rows carry which scale is not yet measured. |
+| **Proper fix** | Part of the ADR-032 §5 impact study: measure the scale per row range (by writer and date), state the unit in a `COMMENT` (ADR-032 D4), and either convert or register a dated unit break (D3) — never a silent rewrite. |
+| **Home** | Tracker §2.2 band B3 (chain data correctness); ADR-032 §5. |
+| **Status** | **OPEN — study.** |
+
+### S102 status changes to existing entries (doc-close run in Session 103; v5 Rule 3: one paragraph, no body edits)
+
+Rulings S102-A…F (`docs/research/s92_parity/rulings_s102.md`). Ledger: `TDs_NEW=8` (TD-S102-NEW-1…8; **-4 and -5 closed
+at filing**, their blocks written straight to the end of `tech_debt_history.md`'s entries) · `TDs_CLOSED=2` (those two).
+**TD-S102-NEW-4 → CLOSED at filing:** the engine manual source trailed the live pack (v0.4 vs v0.5) from 2026-10-30 10:20
+until this close landed the same 18 edits (`0f103a58…` → `e4872ab6…`, asserted) in `docs/marketview_manual/`.
+**TD-S102-NEW-5 → CLOSED at filing:** two writers on one change (10-30 10:47: the Σdmp wording applied by Lovable *and*
+committed on the box; push rejected `fetch first`; box commit dropped by a refusing reset) — the one-writer rule is now in
+`docs/lovable_prompts/s92/README.md`. **TD-S100-NEW-3** (unimported `NarrativeModal` / `AmbientTrajectory`): the inventory
+(§3E) found `NarrativeModal.tsx` would render `netDealerGamma` with a bare "Cr" — dead code, so no scale change was made;
+delete or label when the entry is worked; no new TD. **TD-S100-NEW-1:** `s102fut.tgz` built and tested 10-28 (the futures
+basis against the index LTP from the same Dhan request, `IDX_I 13 / 51`; 10-26/27 15:30–15:40 rows off the chain close by
+NIFTY 23.6 / SENSEX 83.8 on average), **not applied** — closes on the live check after it lands. **TD-S77-NEW-8:**
+`s102td8.tgz` (the refresh ledger via `core.execution_log`) built, not applied. **TD-S91-NEW-18, TD-S74-NEW-5:** `s102mk.tgz`
+(markers from the CAS-settled close; `MISSING_CLOSE_1530` every session 10-12..10-27 on both symbols) built, not applied.
+**TD-S71-NEW-5 / R48:** `s102r48.tgz` built, not applied. **TD-S72-NEW-4** (duplicate index on `gex_strike_snapshots`): the
+same shape measured on `market_ticks`, filed as TD-S102-NEW-7. **ADR-032** reopens the S28 settled item's *unit* wording
+("`net_gex` in Crore range") and nothing else; TD-NEW-3's fix stands. **Tracker rows:** R48 / R49, R40 (overlap), the
+B1 ledger row, TD-S100-NEW-1 and the R5 markers each carry "bundle built 10-28, not applied".
+
 ### S101 status changes to existing entries (doc-close run in Session 102; v5 Rule 3: one paragraph, no body edits)
 
 Rulings S101-A…H (`docs/research/s92_parity/rulings_s101.md`). Ledger: `TDs_NEW=17` (TD-S101-NEW-1…17) ·

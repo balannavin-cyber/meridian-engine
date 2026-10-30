@@ -4578,6 +4578,28 @@ The numeric ID TD-048 is reserved for the BEAR_FVG defect closed in Session 15. 
 | **Cross-ref** | Deployment Topology §S72.B (the property) · §S80.5 (the consequence) · Assumption Register **D.37.4** · §S69 (`reset-failed` + `kill -9` canon, which did not apply here). |
 | **Status** | **OPEN — decision owed.** |
 
+### TD-S102-NEW-4 (S4 priority) — the engine manual source trailed the live help pack by one version
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** `docs/marketview_manual/marketview_user_manual.md` is the manual's source of truth; for one session it did not reproduce the live pack. |
+| **Filed** | 2026-10-30 (Session 102; close inputs §5) |
+| **Component** | `docs/marketview_manual/marketview_user_manual.md` (engine) → `build_help_pack.py` → `meridian-connect/public/help/manual.json` |
+| **Measured** | Manual v0.5 was built on the box by `s102_manual_v05.sh` from a *copy* of the v0.4 source (`0f103a58…`) with 18 anchored edits (`e4872ab6…`) and committed to `meridian-connect` (`30998f2`), while the engine source stayed at v0.4 from 2026-10-30 10:20 IST until the S102 doc-close. |
+| **Fix** | The S102 doc-close (run in Session 103) applies the same 18 edits (`edits_man.py`) to the engine source and asserts `e4872ab6…`; `build_help_pack.py` `BOARD` → `index-EtZmieBR.js`. Rule: a manual change is made in the engine source first, or lands there in the same session. |
+| **Status** | **CLOSED — filed and fixed at the S102 close.** |
+
+### TD-S102-NEW-5 (S3 priority) — two writers raced one change on `meridian-connect`: Lovable applied the Σdmp wording while the box committed it
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A rejected push and a refusing reset were the whole cost this time; a force-push or a merge of two copies of the same change would have been worse. |
+| **Filed** | 2026-10-30 (Session 102; close inputs §5; §D.56.10) |
+| **Component** | `meridian-connect` `main` — Lovable (web) and the box (`~/meridian-connect`) as writers |
+| **Measured** | 2026-10-30 10:47 IST: the revised Σdmp wording was pasted to Lovable (`7cba2cd` / `1171975`) after the box had committed the same change; the box push was rejected (`fetch first`) and its commit dropped by a refusing reset. Cause: the round-2 wording was revised after the operator had already pasted the first prompt (§D.56.10). |
+| **Fix** | Rule in `docs/lovable_prompts/s92/README.md` (landed at the S102 close): one writer per change — either Lovable or the box, never both; a prompt is final when pasted, and a revision is a new round. |
+| **Status** | **CLOSED — filed and fixed at the S102 close (process rule).** |
+
 ## Resolved (audit trail)
 
 ### TD-S92-NEW-1 (S3 priority — **RESOLVED S94 2026-10-10, live `13b1410`**) — the OI tab still calls open interest "contracts" in three explanations, and the unit is quantity

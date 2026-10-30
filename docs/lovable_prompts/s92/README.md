@@ -92,5 +92,36 @@ only with an explicit argument). The reason is an unambiguous rollback target, n
 (`docs/lovable_prompts/s100/`), live chain `1072593` → `142c3e6` → `2ee83e1` → `3366bf1` → `1aeb000` → `f964e40`; after
 `f964e40`: `.bak-1aeb000`, `.bak-3366bf1`, `.bak-2ee83e1` plus the three `PRE_*`. The guard for each round is a copy of
 `mv_lovable_guard.sh` with its allowlist line edited for the round.
-**Re-baseline before the next round:** S100-K added 51 `merdian_ro_select` policies after the S97 baseline above, so
-`rls_policies` no longer matches it.
+**Re-baselined at S102 (below):** S100-K added 51 `merdian_ro_select` policies after the S97 baseline above, so
+`rls_policies` no longer matched it; the current baseline is the S102 table.
+
+**S102 record (2026-10-30, ADR-032 D1; `docs/lovable_prompts/s102/`).** Two rounds: the board (`lovable_prompt_s102_gamma_per_1pct.md`,
+guard `mv_lovable_guard_s102.sh`, base `27c0e17`) and the legacy pages (`lovable_prompt_s102b_legacy_per_1pct.md`, guard
+`mv_lovable_guard_s102b.sh`, base `8326ed0`), promoted with manual v0.5 as **`30998f2`** (bundle `index-EtZmieBR.js`, 11:01 IST;
+rollback target `/var/www/marketview.bak-27c0e17`). **Baseline (S102, measured 2026-10-30 10:59 IST, after the seven `_1pct`
+views and the S100-K policies; replaces the S97 table above):**
+
+| what | n | md5 |
+|---|---|---|
+| anon_public_privs | 263 | `1f2383944b7812dd37299130ff34274a` |
+| anon_role | 1 | `c506ff143129b1a369c90214c9489eaa` |
+| anon_writable_objs | 0 | — |
+| default_privileges | 27 | `9db86164a910289c334eb7691007cd58` |
+| public_functions | 41 | `ef1d66a16b1f17179f0f6fcbe2167d60` |
+| public_triggers | 0 | — |
+| relations | 358 | `830967b5d158d971e09aa6b842b167d0` |
+| rls_policies | 80 | `be718afbcc6537d31711f3923554ee56` |
+| schemas | 10 | `2a88931808ed74928a291a548c3678ed` |
+
+**Two rules from S102 (TD-S102-NEW-5, TD-S102-NEW-6):**
+
+1. **One writer per change.** A change to `meridian-connect` is made either by Lovable (a prompt) or on the box (a commit),
+   never both. A prompt is final when pasted; a revision is a new round. On 2026-10-30 10:47 IST the same wording change was
+   applied by Lovable and committed on the box; the box push was rejected (`fetch first`) and its commit dropped by a refusing
+   reset.
+2. **Promote only what a build made, and prove the rollback target before naming it.** Nothing is copied into
+   `/var/www/marketview/` outside a `vite build` of one commit (the S100 manual v0.4 copy made the live tree `f964e40` JS + a
+   v0.4 manual — the `27c0e17` tree under no commit's name, §D.56.12). The promote block names its rollback target only after
+   `diff -rq` shows live ≡ that `.bak-<sha>`; a `.bak-<sha>` made before this rule (`.bak-f964e40`, `.bak-1aeb000`) is diffed
+   before use. Rollback commands are printed only inside a refusing block, and never in the same paste-ready message as the
+   promote (§D.56.13).

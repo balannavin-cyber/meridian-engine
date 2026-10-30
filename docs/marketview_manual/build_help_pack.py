@@ -23,7 +23,7 @@ MANUAL = HERE / "marketview_user_manual.md"
 # Section id -> screenshots shown beside it. Every entry is a real capture from the live board.
 # Fields: file, caption, symbol, date, time_ist (board/chain time as shown), bundle.
 B = "index-CadQe4qO.js"
-BOARD = "index-BFOk56iL.js"  # S100: the live board the manual text describes (v0.4); B stays the screenshots' capture bundle
+BOARD = "index-EtZmieBR.js"  # S102: the live board the manual text describes (v0.5, ADR-032 D1); the screenshots were captured on index-BFOk56iL.js (TD-S102-NEW-3)
 D = "2026-10-12"
 SHOTS = {
     "part-1-getting-around": [

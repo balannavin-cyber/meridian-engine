@@ -4,11 +4,11 @@
 
 | | |
 |---|---|
-| Manual version | v0.4 (draft) |
+| Manual version | v0.5 (draft) |
 | Board | meridian-connect `f964e40`, served bundle `index-BFOk56iL.js` (2026-10-24 18:48 IST) |
-| Status | All parts drafted from pass 1 (09:00–09:12), pass 2 (09:40–09:41) and the capture pass (09:52–10:21), 2026-10-12. Pass 3 (after the close) and an expiry-day read are owed. v0.4 (2026-10-24): updated for the S97 and S100 board changes, read on staging and live that day (a non-trading day); the passages marked **UNVERIFIED (trading day)** describe states that only appear during a session and are checked on 2026-10-26. |
+| Status | All parts drafted from pass 1 (09:00–09:12), pass 2 (09:40–09:41) and the capture pass (09:52–10:21), 2026-10-12. Pass 3 (after the close) and an expiry-day read are owed. v0.4 (2026-10-24): updated for the S97 and S100 board changes, read on staging and live that day (a non-trading day); the passages marked **UNVERIFIED (trading day)** describe states that only appear during a session and are checked on 2026-10-26. v0.5 (2026-10-30, ADR-032 D1): every Γ size is restated in ₹ Cr per 1 % move. Figures quoted from earlier passes are divided by 100 and marked ≈ where the board had rounded them; **the screenshots still show the earlier scale** (100 × larger). |
 
-> **Read this first.** Marketview is a measuring board, not a signal service. No tile here tells you to buy or sell. Several tiles carry the board's own warnings: "band not measured", "unit definition pending", "not built", "declined on evidence". This manual repeats those warnings wherever they apply. Where the board says something is unmeasured, the manual says so too, and does not fill the gap with a guess.
+> **Read this first.** Marketview is a measuring board, not a signal service. No tile here tells you to buy or sell. Several tiles carry the board's own warnings: "band not measured", "not built", "declined on evidence". This manual repeats those warnings wherever they apply. Where the board says something is unmeasured, the manual says so too, and does not fill the gap with a guess.
 
 ---
 
@@ -55,7 +55,7 @@ On this board the deltas come from the **vendor**, and the vendor's deltas fail 
 
 ### 0.3 Gamma (γ)
 
-**Gamma** is how fast delta itself changes as the index moves. It is largest for strikes near spot and close to expiry. The board weights each strike's gamma by its OI and writes the result as **γ exposure**, in "₹ Cr", with the warning **"unit definition pending"**. What one unit of this number means is still an open question (E-1 / E-D1). Compare its **sign** and its **share of the total**. Do not compare its size from one day to the next.
+**Gamma** is how fast delta itself changes as the index moves. It is largest for strikes near spot and close to expiry. The board weights each strike's gamma by its OI and writes the result as **γ exposure**, in **₹ Cr per 1 % move**: roughly, the rupees of index exposure that would have to be re-hedged if the index moved 1 % (ADR-032 D1, from 2026-10-30; until then the board showed 100 × this figure under "unit definition pending"). It is not normalised for time to expiry — the parity target also scales it by √(τ / 5 d) — so across days compare its **sign** and its **share of the total**, not its size.
 
 ### 0.4 Why "dealer" is only a model
 
@@ -198,7 +198,7 @@ Keys act only when the board has focus: click a sub-tab first. *(Verified 2026-1
 2. **IV fence**
 3. **Pain bowl**
 
-It covers the last 14 sessions, with today marked *"partial"*. Height is |net γ| per strike at each session's settled run. Colour is sign. Holes are missing strikes, never zero. It is outside the parity work and is display-only. **R** resets the view; **Esc** returns to the 2D board.
+It covers the last 14 sessions, with today marked *"partial"*. Height is |net γ| per strike (₹ Cr per 1 % move) at each session's settled run; the label reads "peak |γ| ₹ … Cr per 1 % move". Colour is sign. Holes are missing strikes, never zero. It is outside the parity work and is display-only. **R** resets the view; **Esc** returns to the 2D board.
 
 ---
 
@@ -229,20 +229,20 @@ The strip has ten cells in two rows. It appears on every Board sub-tab and summa
 
 ### 2.3 NET Γ
 
-- **What it is.** The sum of signed γ exposure across every strike of the latest γ run, in ₹ Cr. The unit is still open.
+- **What it is.** The sum of signed γ exposure across every strike of the latest γ run, in ₹ Cr per 1 % move (ADR-032 D1). The sub-line ends "₹ Cr per 1 % move".
 - **How to read it.** Look at the **sign** and at **net ÷ gross**, not the size.
   - The sub-line says "long γ" (positive) or "short γ" (negative), then the net-to-gross ratio, for example "0.10 of gross". A ratio near 0 means the book nearly cancels out. A ratio near ±1 means it is one-sided.
   - The bar under the number splits gross into its warm (negative) and cool (positive) parts.
-- **Worked example.** NIFTY 09:41 showed `+9.2L Cr · long γ · 0.10 of gross`. At 09:00 the same symbol showed `−13.9L Cr · short γ · −0.23 of gross`, so the sign flipped across the open. SENSEX 09:40 showed `+5,444 Cr · long γ · 0.00 of gross`: positive, but so small against gross that the ratio rounds to 0.00. Treat that as balanced.
+- **Worked example.** NIFTY 09:41 (2026-10-12) read `+9,201 Cr · long γ · 0.10 of gross` on today's scale (then shown as +9.2L Cr). At 09:00 the same symbol read `−13,886 Cr · short γ · −0.23 of gross`, so the sign flipped across the open. SENSEX 09:40 read `+54 Cr · long γ · 0.00 of gross` (then +5,444 Cr): positive, but so small against gross that the ratio rounds to 0.00. Treat that as balanced. On 2026-10-30 SENSEX at 10:10 read `−256 Cr · short γ · -0.03 of gross · ₹ Cr per 1 % move`.
 - **Not telling you.**
   - Who holds the gamma. "Long γ" is the sign of an OI-weighted sum (§0.4).
   - How big a move to expect. A positive sign does **not** mean a calmer day: the P1c test was inconclusive, and P1c, P1 and P2 have produced no pre-registered YES between them.
 - **Caveats.**
-  - The size has no agreed unit (E-D1), so do not compare magnitudes across days.
+  - The size is not normalised for time to expiry (the parity target scales by √(τ / 5 d)), so compare sign and net/gross across days, not magnitude.
   - The strip/Overview drawer for this cell states the dealer reading as fact. The P2 caveat appears only on the Gamma-tab drawer (finding F-1).
   - The label uses a capital Γ (finding F-2).
 - **Read it with.** Pin (γ-conc), Flip, and on the Gamma tab, Gross |Γ|.
-- **Source.** `v_gex_abs_exposure.net_gex_cr`; net/gross = `net_gex_cr ÷ abs_gex_cr`. Rulings S94-F, ADR-015 Amendment A.
+- **Source.** `v_gex_abs_exposure_1pct.net_gex_cr_1pct` (= `net_gex_cr` × 0.01; the stored γ·OI·S²/1e7 is per 100 % move, ADR-032); net/gross = net ÷ gross. Rulings S94-F, ADR-015 Amendment A.
 
 ### 2.4 FLIP
 
@@ -365,7 +365,7 @@ Each sub-tab has the same layout: a **list** of values on the left, the **strike
 - Bars run from a centre axis, **warm to the left (amplifying)** and **cool to the right (dampening)**. The right-hand column reads each bar's value.
 - Spot is the bright solid rule. The walls are thin solid rules with pills, the pin is a dotted γ-CONC rule, and the flip is a dashed rule when it exists.
 - The faint fill behind the bars is the **terrain**.
-- **Example:** SENSEX 09:40, call OI wall 73,000 with +78,596 on its row, put OI wall ≡ γ-conc at 72,000 with −88,006.
+- **Example:** SENSEX 09:40, call OI wall 73,000 with +786 on its row (then shown as +78,596), put OI wall ≡ γ-conc at 72,000 with −880 (then −88,006). Row values are ₹ Cr per 1 % move.
 - **Not telling you:** each bar is OI × γ arithmetic. It is not a measure of which way hedgers will trade.
 
 **The "γ CEILING / FLOOR · pending measurement" toggle** sits above every ladder and is permanently disabled. The level has no column in the database (E-3). It is not a wall and is never drawn.
@@ -398,11 +398,11 @@ The header line says which session the tiles describe: **"pin state · this sess
 | Tile | What it is | Worked example | Not telling you / caveats |
 |---|---|---|---|
 | **Top-strike share** | the largest strike's share of gross \|γ\| (max ÷ sum), with a DTE bucket (0 · 1-2 · 3+) and a call/put split in the drawer | NIFTY 09:41: 10.8 % · 1-2 DTE bucket · at 22,700. SENSEX 09:00: 10.9 %, calls 9.7 %, puts 12.9 %. | *"This is max/sum, not a Σshare² index — never call it HHI."* 0-DTE concentrates naturally. The call/put split matters: one side can be concentrated while the other is spread. |
-| **Gross \|Γ\|** | the sum of absolute γ exposure | SENSEX 09:00: 10.5L Cr | Unit pending (E-D1); compare within a day. |
-| **Net Γ** | the same value as the strip, plus "Σ crosses zero n×" | SENSEX 09:00: −4.5L Cr · amplifying · Σ crosses zero 3× | This drawer carries the P2 sentence: *"This reading assumes dealers are net long calls and short puts; NSE aggregate participant OI shows that only in some regimes (P2, S94)."* Where the white dots cross zero, the running sum changes sign; *"that is not the repriced flip."* |
+| **Gross \|Γ\|** | the sum of absolute γ exposure | SENSEX 09:00: ≈ 10,500 Cr per 1 % move (then shown as 10.5L Cr) | Not normalised for time to expiry; compare within a day, not magnitudes across days. |
+| **Net Γ** | the same value as the strip, plus "Σ crosses zero n×" | SENSEX 09:00: ≈ −4,500 Cr (then −4.5L Cr) · amplifying · Σ crosses zero 3× | This drawer carries the P2 sentence: *"This reading assumes dealers are net long calls and short puts; NSE aggregate participant OI shows that only in some regimes (P2, S94)."* Where the white dots cross zero, the running sum changes sign; *"that is not the repriced flip."* |
 | **Contributing strikes** | strikes with non-zero γ out of all stored | SENSEX 09:00: 161 / 170 · 95 % | Unquoted strikes count as non-contributing. |
 | **Net-long γ strike** | the strike with the largest positive net γ (dotted NET-LONG γ rule) | SENSEX 09:00: 74,000 · +1.12 % from spot · not "near spot" | It can sit far from price (ADR-024 Amendment A). |
-| **Net Γ today** | sparkline of net γ at each run today | SENSEX 09:00: 6 runs · 08:30–09:00 | Drawn only with ≥ 3 runs. The pre-open runs count as "today". γ clock. |
+| **Net Γ today** | sparkline of net γ at each run today, in ₹ Cr per 1 % move | SENSEX 09:00: 6 runs · 08:30–09:00 | Drawn only with ≥ 3 runs. The pre-open runs count as "today". γ clock. |
 
 **The ladder** is the Overview ladder plus **white dots**: the cumulative Σγ from the top strike down.
 
@@ -448,11 +448,11 @@ Read §0.4 first. Everything here is OI arithmetic under the **house sign** (dea
 **Hedge flow vs spot move.** A chart of ₹ Cr at −2, −1, −0.5, +0.5, +1 and +2 %, plus the **HEDGE PER 1 %** tile.
 
 - *Worked example (NIFTY 09:41):* HEDGE PER 1 % = **SELL 9,201**; −1 %: BUY 9,201 · +1 %: SELL 9,201.
-  - The book was long γ (+9.2L Cr), so the model buys on falls and sells on rises.
+  - The book was long γ (+9,201 Cr per 1 % move, then shown as +9.2L Cr), so the model buys on falls and sells on rises. Since 2026-10-30 the hedge and Net Γ show the same number, because flow = −net Γ × move.
   - At 09:00, when NIFTY was short γ, the same tile read BUY 13,886 for +1 %.
 - *How to read it:* the six points lie **on one straight line by construction** (flow = −net γ × move), so they say no more than the one-percent figure.
 - *Not telling you:* what anyone will actually trade. It is a first-order model, and it ignores the second-order terms in the tiles below.
-- *Caveats:* the unit is pending (E-D1). "L3 flip not available." appears when the flip has no value; otherwise the flip is a dashed line on this chart. The caption now begins *"Under the house sign, for a +1% move dealers would …"*, and the drawer says what dealers *would* trade *if they hold the house sign* (S100-R).
+- *Caveats:* the hedge has always been per 1 % move (`flow_cr = −net_gex × move`); the tile now reads plain "₹ Cr". "L3 flip not available." appears when the flip has no value; otherwise the flip is a dashed line on this chart. The caption now begins *"Under the house sign, for a +1% move dealers would …"*, and the drawer says what dealers *would* trade *if they hold the house sign* (S100-R).
 - *Source:* `v_dealer_flow_sim`.
 
 **∂Δ/∂t · PER DAY** and **∂Δ/∂σ · PER VOL PT** (§0.7).
@@ -476,7 +476,7 @@ Read §0.4 first. Everything here is OI arithmetic under the **house sign** (dea
 
 - The same idea applied to gamma. The net is *"a small residue of large opposing terms"*, so the tile always shows **net beside gross**; the small bar is |net| ÷ gross.
 - **Never read the net alone.** No flow is shown for this pair.
-- *Worked example (NIFTY, chain 09:50):* ∂Γ/∂t **−4.7L Cr / 40.5L Cr · ratio −0.12**; ∂Γ/∂σ **+60,256 Cr / 5.3L Cr · ratio 0.11**. Each net is about a tenth of its gross, which is why it must be read with the gross.
+- *Worked example (NIFTY, chain 09:50):* ∂Γ/∂t **≈ −4,700 Cr / ≈ 40,500 Cr · ratio −0.12**; ∂Γ/∂σ **+603 Cr / ≈ 5,300 Cr · ratio 0.11** (then shown as −4.7L / 40.5L and +60,256 / 5.3L). On 2026-10-30 (SENSEX, chain 10:15): ∂Γ/∂t **−102 Cr / 653 Cr · ratio −0.16**; ∂Γ/∂σ **−13 Cr / 507 Cr · ratio −0.02**. Units: ₹ Cr per 1 % move, per calendar day and per +1 IV point. Each net is about a tenth of its gross, which is why it must be read with the gross.
 
 **EXPIRY LEG.** Which expiry the second-order tiles and bars describe (e.g. "15 OCT · chain 09:40").
 
@@ -586,7 +586,7 @@ This page still uses the **older header strip**:
 
 - a LIVE pill;
 - SPOT with a change figure;
-- NET Γ in full digits, e.g. "-13,81,560.7 Cr";
+- NET Γ in ₹ Cr per 1 % move, with that unit on its sub-line, e.g. "+1,569.67 Cr" (NIFTY, 2026-10-30 10:10; before 2026-10-30 it read 100 × larger, e.g. "-13,81,560.7 Cr");
 - MAX Γ (the net-long γ strike);
 - MAX PAIN;
 - PIN SCORE (the legacy score);
@@ -740,7 +740,7 @@ It never shows **0**. A zero would state a fact that was never measured, for exa
 
 | Word on the board | Where | What it means |
 |---|---|---|
-| **unit definition pending** / **unit pending (E-D1)** | Net Γ, Gross \|Γ\|, Hedge per 1 % | The size of this number has no agreed real-world unit yet. Compare signs and shares, not magnitudes across days. |
+| **₹ Cr per 1 % move** | Net Γ, Gross \|Γ\|, the ladder, ∂Γ/∂t, ∂Γ/∂σ, 3D, the legacy NET Γ | Rupees of index exposure re-hedged per 1 % move (ADR-032 D1, 2026-10-30). Not normalised for time to expiry; compare signs and shares across days, not magnitudes. Until 2026-10-30 these tiles read "unit definition pending" and showed 100 × this figure. |
 | **band not measured — calibration gap** | most SCALE slots | Nobody has measured what a "normal" or "large" value is, so the board gives no high/low words. |
 | **pending measurement** | γ CEILING / FLOOR toggle | This level has no column in the database; it is not drawn. |
 | **carry unmeasurable** / **unmeasurable r** / **r unmeasurable** | Flip, ∂ tiles, S\* | These tiles need a carry rate taken from futures prices. Futures start at 09:30 (strip: *"futures from 09:30"*), so before then the rate cannot be measured and the tile does not guess. Status code `UNMEASURABLE_R`. |

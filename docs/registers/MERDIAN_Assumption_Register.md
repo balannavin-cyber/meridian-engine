@@ -1367,3 +1367,34 @@ expected value is computed from the writer (and from every reader in its path) b
 
 **Update log — Session 101 close (run in Session 102, 2026-10-28):** §D.55 added (**25 rows, all mine**). Sources:
 `docs/research/s92_parity/rulings_s101.md`, `docs/research/s101/S101_close_inputs.md`.
+
+## D.56 — Session 102: a rollback target named before live was read, a rollback printed beside the forward step, and counts stated before they were computed (2026-10-28 → 10-30)
+
+Sixteen rows, **all my own**. Rulings: `docs/research/s92_parity/rulings_s102.md`. Source:
+`docs/research/s102/S102_close_inputs.md` §6. Recorded at the S102 doc-close (run in Session 103).
+
+| # | Assumption as held | Verdict on measurement |
+|---|---|---|
+| **D.56.1** | *(mine)* The S101 doc-close commit added 1,042 lines, as its message stated. | **REFUTED** — `git show --stat` at `3abb83f`: 821 insertions. The figure was stated before it was computed. |
+| **D.56.2** | *(mine)* The pin path carries `held_for_cycles` per symbol across the NIFTY expiry roll. | **REFUTED** — The writer carries per `(symbol, expiry_date)`; the PASS line was re-stated on the code. |
+| **D.56.3** | *(mine)* The R20 query's denominator covered every trading day in its window. | **REFUTED** — It excluded 10-21; fixed by reading `trading_calendar`. |
+| **D.56.4** | *(mine)* The table carried a `trade_date` column. | **REFUTED** — The column is `trade_date_ist`. |
+| **D.56.5** | *(mine)* The round-1 Lovable fingerprint was 12 / 16 replacement sites. | **REFUTED** — Computed: 13 / 15. Stated before computing. |
+| **D.56.6** | *(mine)* The doc-close TD history anchor was unique. | **REFUTED** — It matched 3 times; the count == 1 assert caught it and a heading-line regex replaced it. |
+| **D.56.7** | *(mine)* GEX unit inventory v1's list of rescale surfaces was complete and correct. | **REFUTED** — Three listed surfaces show no Γ size (Pin rank values are `share_of_abs`; the local-γ pocket uses a sign; `gamma_at_pin` is never rendered); found by an independent re-read of both trees; v2 corrected (inventory §6). |
+| **D.56.8** | *(mine)* The D1 SQL tests T1–T4 as first written were sufficient. | **REFUTED** — Outside review: no anon read (T5 added), no dedupe in T2, a T3 label, a missing ₹, caveat wording; fixed before apply. |
+| **D.56.9** | *(mine)* Round 1 would land on `main`. | **REFUTED** — It landed on `lovable-sync`; merged as PR #1 with a merge commit (`8326ed0`). |
+| **D.56.10** | *(mine)* The round-2 prompt could be revised after it was handed over. | **REFUTED** — The operator had already pasted the first version; staging carried the older wording, an extra round was needed, and the two-writer race (TD-S102-NEW-5) followed. A prompt is final when pasted. |
+| **D.56.11** | *(mine)* `v_gex_greeks_l2_net_1pct` keeps history, so a pinned-`ts` query would return the 10:15 chain; and (second guess) the view stores IST. | **REFUTED** — The view holds only the latest chain, so the pinned query returned no rows; the IST guess was also wrong; one unpinned read settled it. |
+| **D.56.12** | *(mine)* The rollback target could be named from the round-1 guard's comment (`PREV=27c0e17`), then corrected from the JS bundle name (`f964e40`), without reading live. | **REFUTED** — Two unverified claims in a row: `diff -rq` showed live = `f964e40` JS + manual v0.4 = the `27c0e17` tree. Read what is live before naming a rollback target (TD-S102-NEW-6; the promote block now checks live ≡ named backup). |
+| **D.56.13** | *(mine)* A rollback command could be printed in the same message as the promote, outside a refusing block, without being run. | **REFUTED** — The operator pasted it and live reverted for about a minute (10-30 ~11:00). Rollback text only inside a refusing block, and never in the same paste-ready message as the forward step. |
+| **D.56.14** | *(mine)* A GitHub web-UI upload step and "upload the guard" were useful instructions. | **REFUTED** — The operator works by command, and the guard was already on the box. |
+| **D.56.15** | *(mine)* The manual hash expectation could be stated before checking the box's `markdown` version. | **REFUTED in method** — The box runs `markdown 3.10.3` against my 3.11; the hashes were verified equal afterwards, but the expectation was stated before the version was known. |
+| **D.56.16** | *(mine)* "So lets go" was an explicit choice of option A. | **REFUTED** — It was a go on the three options; A was *taken*, and `rulings_s102.md` S102-E records it as taken, not as stated. |
+
+**The one to carry from §D.56: D.56.12 and D.56.13.** A rollback target is named only after live has been read and
+diffed against the named backup, and the rollback command is printed only inside a refusing block, never in the message
+that carries the forward step.
+
+**Update log — Session 102 close (run in Session 103, 2026-10-30):** §D.56 added (**16 rows, all mine**). Sources:
+`docs/research/s92_parity/rulings_s102.md`, `docs/research/s102/S102_close_inputs.md`.

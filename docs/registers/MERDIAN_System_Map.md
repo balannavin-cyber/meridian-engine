@@ -2205,3 +2205,21 @@ Doc Protocol v5: a table of what changed, no narrative. Detail: `tech_debt.md` S
 | `v_gex_strike_accel_zone` | view | γ strike rows, `get_parameter_num` | board | live definition registered: `sql/2026-10-26_s101_v_gex_strike_accel_zone_live_captured.sql` (C7; 3547 / `87a0691ef33ef5e08cbf315fd6511064`) |
 | `scripts/s101_purity_map.py` | analysis script | engine source | operator | the transitive purity map (A1) |
 | `tests/run_offline.sh` | offline suite | — | operator | **25 steps**: + 24 `merdian_compute` import purity (`tests/test_merdian_compute_import_purity.py`), 25 the contract against production golden rows (`tests/test_merdian_compute_contract.py`) |
+
+## §S102 — Session 102: Γ sizes stated per 1 % move by seven wrapper views; the board and the legacy pages read them; six engine bundles built, not applied (2026-10-28 → 10-30)
+
+Doc Protocol v5: a table of what changed, no narrative. Detail: `tech_debt.md` S102 paragraph;
+`docs/research/s92_parity/rulings_s102.md`; `docs/decisions/ADR-032-gex-stored-unit.md`;
+`docs/research/s102/gex_unit_inventory_S102.md`. Recorded at the S102 doc-close (run in Session 103).
+
+| Component | Kind | Reads | Read by | State |
+|---|---|---|---|---|
+| `v_gex_abs_exposure_1pct`, `v_gex_net_gamma_river_1pct`, `v_gex_strike_terrain_1pct`, `v_gex_greeks_l2_net_1pct`, `v_gex_greeks_l2_strike_1pct` | views (`security_invoker = true`, additive) | their unsuffixed source view, every column + `<col>_1pct = <col> × 0.01` | Marketview Board / Home / Lab3D hooks | **LIVE 2026-10-30** (`sql/2026-10-30_s102_gex_per_1pct_views.sql`; T1–T5 PASS; anon + `merdian_ro` SELECT, `authenticated` none). A wrapper depends on its source: a source changes by `CREATE OR REPLACE` (append-only) or with its wrapper dropped and re-created in the same batch |
+| `v_gex_strike_snapshots_1pct`, `v_gamma_metrics_1pct` | views, as above | `gex_strike_snapshots.gex_cr`, `gamma_metrics.net_gex` | the board's ladder and Net Γ today; the legacy pages (`src/lib/queries.ts`, round 2) | **LIVE 2026-10-30**; the direct table reads A3 / A4 / A9 / A10 of the inventory moved here, so the board never multiplies |
+| `gex_strike_snapshots.gex_cr`, `gamma_metrics.net_gex`, every copy, `merdian_compute.gamma` | stored Γ (unchanged) | — | writers, research, retail contract §8 | **unit = γ·OI·S²/1e7 = ₹ Cr per 100 % move** (ADR-032 context); unchanged until D2 is ruled; `v_dealer_flow_sim.flow_cr` already per 1 %; delta-type columns (`oi·S/1e7`) are true ₹ Cr and not wrapped |
+| `v_market_ticks_eq_latest` | view | `market_ticks` (latest EQ tick per ticker, keyset) | `ingest_breadth_from_ticks.py` once `s102r40` lands | applied by the operator 2026-10-28 (1,313 rows in 406.6 ms; anon / `authenticated` no SELECT); **no reader yet on `main`** |
+| Marketview (`meridian-connect`) | frontend | the seven `_1pct` views (+ unchanged reads) | operator | `f964e40` → `27c0e17` (manual v0.4) → `8326ed0` (round 1, PR #1) → `3b3b0d4` / `1171975` (round 2) → **`30998f2`** live = staging (manual v0.5; bundle `index-EtZmieBR.js`; S102-C / D / E). A second, un-gated copy exists at the Lovable-hosted URL (TD-S102-NEW-1) |
+| `docs/marketview_manual/marketview_user_manual.md`, `build_help_pack.py` | docs / build | — | `/manual` | **v0.5** (`e4872ab6…`, landed at this close = the live pack's source); `BOARD = "index-EtZmieBR.js"`; the live pack's `board_bundle` stamp and screenshots lag (TD-S102-NEW-2, -3) |
+| `docs/lovable_prompts/s102/` | round records | — | operator | two prompts, two guards, `s102_manual_v05.sh`, README (chain, reads, findings) |
+| `run_ingest.sh`; `ingest_breadth_from_ticks.py`; `refresh_equity_intraday_last.py`; the futures capture; the markers writer | engine code | — | — | **unchanged on `main`** — bundles `s102r48`, `s102r40`, `s102td8`, `s102fut`, `s102argv`, `s102mk` built and tested 2026-10-28 (offline steps 26–29 in the bundles), queued in that order for the S90-J window (`docs/research/s102/S102_close_inputs.md` §2.2) |
+| `tests/run_offline.sh` | offline suite | — | operator | **25 steps on `main`** (29 once the bundles land: 26 ingest rc, 27 refresh ledger, 28 futures basis / argv, 29 markers from CAS) |

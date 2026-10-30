@@ -2085,3 +2085,32 @@ It runs in the retail sandbox; the sandbox never touches production, and this tr
 
 **Observed, not changed.** The box's security group admits port 22 from `0.0.0.0/0` (TD-S101-NEW-10, operator action).
 Production Python is 3.10 (contract §10). Local's four-way leg is run in `C:\GammaEnginePython\` (§D.55.18).
+
+## §S102 — Session 102 (2026-10-28 → 10-30): seven views and one Marketview promote; the engine tree unchanged; a public copy found outside the topology
+
+**Changed in Supabase (operator, SQL editor).** Seven additive `security_invoker` wrapper views `*_1pct` (2026-10-30,
+`sql/2026-10-30_s102_gex_per_1pct_views.sql`; anon + `merdian_ro` SELECT; reversible by BLOCK R once nothing reads them) and
+`v_market_ticks_eq_latest` (2026-10-28; anon / `authenticated` no SELECT; no reader on `main` until `s102r40` lands). ACL
+fingerprint re-baselined 10-30 10:59 IST (`docs/lovable_prompts/s92/README.md`): `relations 358`, `anon_public_privs 263`,
+`rls_policies 80`, `anon_writable_objs 0`.
+
+**Marketview.** Live = staging = **`30998f2`** (bundle `index-EtZmieBR.js`), promoted 2026-10-30 11:01 IST by the refusing
+block (HEAD, clean tree, live ≡ named backup by `diff -rq`, manual hash, `/assets/` root). Rollback target
+`/var/www/marketview.bak-27c0e17` (≡ `f964e40` JS + manual v0.4). Backups: `.bak-27c0e17`, `.bak-f964e40`, `.bak-1aeb000` +
+the three `PRE_*` (`.bak-3366bf1` removed, S100-L). A rollback was pasted and run for about one minute at ~11:00 IST (§D.56.13)
+before the promote was re-run. Box packages for `build_help_pack.py`: `markdown 3.10.3`, `mdx_truly_sane_lists 1.3`
+(`pip3 --user --break-system-packages`, ssm-user).
+
+**A public surface outside this topology (TD-S102-NEW-1).** The Lovable project's own hosted copy,
+`https://meridian-welcomer.lovable.app/`, serves whatever `main` held when Publish was last clicked (2026-10-30 ~09:55 IST,
+`3b3b0d4`), with no oauth2-proxy, no guard, no staging read and no promote. It reaches the database with the anon key. Ruling
+owed: unpublish, or record it here with its own promote rule.
+
+**Engine tree: unchanged.** `origin/main` = `~/meridian-engine` = `~/meridian-cc` = Local = `3abb83f` + this docs-only close.
+Six bundles built and tested 2026-10-28 in `~/meridian-cc/scratch/` (`s102r48`, `s102r40`, `s102td8`, `s102fut`, `s102argv`,
+`s102mk`; each `baseline.txt` is the previous one's post state) — **none applied**; apply after 15:40 IST and push after
+16:30 IST (S90-J), the suite out of hours under `ulimit -v`. **Crontab unchanged (70 lines)**; `s102mk` carries the markers
+line `40 10 * * 1-5` → `0 11 * * 1-5` (16:10 → 16:30 IST) as part of its change, to be read back with `crontab -l`.
+
+**Project knowledge.** Re-uploaded 2026-10-30 11:15 IST from `3abb83f` with `pk_extract_s100.py` (owed since the S101 close);
+next re-upload after this close's commit.

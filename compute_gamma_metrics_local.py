@@ -19,6 +19,8 @@ import requests as _requests_for_vix
 # rule `script_execution_log_contract`. Pattern mirrored from
 # ingest_option_chain_local.py and capture_spot_1m.py.
 from core.execution_log import ExecutionLog
+from core.ts_parse import parse_pg_ts  # S103 TD-S101-NEW-3 / TD-S101-NEW-4: IST session bound of the prior-row read
+from zoneinfo import ZoneInfo  # S103
 # S101_MERDIAN_COMPUTE: pure compute lives in merdian_compute/gamma.py (moved byte-identical, S101);
 # re-imported under the same names so every caller is unchanged.
 from merdian_compute.gamma import (  # noqa: E402,F401
@@ -175,18 +177,44 @@ def fetch_symbols_for_run_id(run_id: str) -> dict[str, int]:
 # V18B: Velocity and range helpers
 # ---------------------------------------------------------------------------
 
+_IST = ZoneInfo("Asia/Kolkata")
+
+
+def _ist_session_floor_iso(current_ts: str) -> str | None:
+    """S103 (TD-S101-NEW-4 / TD-S101-NEW-3): 00:00 IST of current_ts's IST date, as a UTC ISO string.
+
+    The prior-row read is bounded to the SAME IST session, so the first cycle of a day has no prior row
+    and its straddle_velocity / otm_oi_velocity are NULL (the docstring's "first run of session"), never a
+    comparison against the previous day's 15:40 row. None when current_ts cannot be parsed: the caller then
+    reads nothing (fail to absent, ADR-023 D2), never an unbounded read.
+    """
+    dt = parse_pg_ts(current_ts)
+    if dt is None:
+        return None
+    floor_ist = dt.astimezone(_IST).replace(hour=0, minute=0, second=0, microsecond=0)
+    return floor_ist.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+
 def fetch_prior_gamma_metrics(symbol: str, current_ts: str) -> dict[str, Any] | None:
     """
-    Fetch the most recent gamma_metrics row for symbol before current_ts.
+    Fetch the most recent gamma_metrics row for symbol before current_ts, from the same IST session.
     Returns None if no prior row exists (first run of session).
     Used for straddle_velocity and otm_oi_velocity computation.
+
+    S103: selects `raw` (compute_otm_oi_velocity reads raw.otm_oi_snapshot of the prior row; without it
+    otm_oi_velocity was NULL in every production row, TD-S101-NEW-3) and bounds the read to today's IST
+    session (TD-S101-NEW-4, rulings S103-N / S103-O).
     """
+    floor_iso = _ist_session_floor_iso(current_ts)
+    if floor_iso is None:
+        return None
     try:
         result = (
             SUPABASE.table(TARGET_TABLE)
-            .select("straddle_atm,ts")
+            .select("straddle_atm,ts,raw")
             .eq("symbol", symbol)
             .lt("ts", current_ts)
+            .gte("ts", floor_iso)
             .order("ts", desc=True)
             .limit(1)
             .execute()

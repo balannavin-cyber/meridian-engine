@@ -695,6 +695,7 @@ class Recorder:
             "reconnects": st.reconnects, "reconnect_attempts": st.reconnect_attempts,
             "disconnects": st.disconnects, "unknown_tokens": st.unknown_tokens,
             "late_records_this_process": self.writer.late_records,
+            "torn_line_repairs_this_process": self.writer.torn_repairs,
             "spool_high_water_bytes": st.spool_hwm, "uploads": up,
             "n_subscribed": len(self.subscribed), "symbols": syms,
         })

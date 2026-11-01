@@ -7,7 +7,7 @@ with tests/test_tape_t0.py --root, and require FAIL. The control (unpatched copy
 
   python3 tests/tape_mutants.py [--repeat N] [--only M-T0-...]
 
-Last line: "TAPE T0 MUTANTS PASS (26/26 caught xN, 15/15 controls xN)" or FAIL. Exit 0 / 1.
+Last line: "TAPE T0 MUTANTS PASS (27/27 caught xN, 16/16 controls xN)" or FAIL. Exit 0 / 1.
 """
 import argparse
 import os
@@ -81,6 +81,8 @@ M = [
     ("M-T0-TERM-NO-CLOSE", "sigterm", "services/tape_runner/recorder.py",
      '            self._ctl_all("error", now, code="SIGTERM", reason="stop requested")\n            self.stopping = True\n            self.connected = False\n            self.writer.close_all()\n',
      '            self._ctl_all("error", now, code="SIGTERM", reason="stop requested")\n            self.stopping = True\n            self.connected = False\n'),
+    ("M-T0-NO-NEWLINE-REPAIR", "torn-line", "services/tape_runner/segments.py",
+     "            torn = _ends_torn(path)\n", "            torn = False\n"),
     ("M-T0-NO-MEMORYMAX", "fence", "services/tape_runner/tape-runner.service", "MemoryMax=400M\n", ""),
     ("M-T0-IMPORTS-DHAN", "no-db-no-dhan", "services/tape_runner/recorder.py",
      "import json\n", "import json\nimport dhanhq  # noqa\n"),

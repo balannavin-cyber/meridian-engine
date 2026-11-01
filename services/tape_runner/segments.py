@@ -82,6 +82,19 @@ def finish_part(part, taken=None):
     return dst
 
 
+def _ends_torn(path):
+    """True if an existing non-empty file does not end with a newline."""
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            if fh.tell() == 0:
+                return False
+            fh.seek(-1, os.SEEK_END)
+            return fh.read(1) != b"\n"
+    except FileNotFoundError:
+        return False
+
+
 class _Open:
     __slots__ = ("seg_ns", "fh", "path")
 
@@ -102,6 +115,7 @@ class SegmentWriter:
         self._open = {}
         self._last_seg = {}       # sym -> seg_ns of the last segment closed by this writer
         self.late_records = 0
+        self.torn_repairs = 0
 
     # -- paths -------------------------------------------------------------------------
     def part_path(self, sym, seg_ns):
@@ -139,7 +153,13 @@ class SegmentWriter:
         if cur is None:
             path = self.part_path(sym, seg_ns)
             os.makedirs(os.path.dirname(path), exist_ok=True)
+            torn = _ends_torn(path)
             fh = open(path, "a", encoding="utf-8")
+            if torn:
+                # reopened after a crash mid-line (finding 7): end the torn line so it stays one
+                # invalid line instead of swallowing the next record
+                fh.write("\n")
+                self.torn_repairs += 1
             cur = _Open(seg_ns, fh, path)
             self._open[sym] = cur
             prev = self._last_seg.get(sym)

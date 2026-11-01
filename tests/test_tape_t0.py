@@ -951,12 +951,40 @@ def g_sigterm():
     return cells
 
 
+def g_torn_line():
+    from services.tape_runner.segments import SegmentWriter
+    spool = tmpdir()
+    w0 = SegmentWriter(spool, ["NIFTY"], on_closed=lambda p: None)
+    part = w0.part_path("NIFTY", ist_ns(DAY, "10:00:00"))
+    os.makedirs(os.path.dirname(part))
+    with open(part, "w") as fh:          # what a SIGKILL mid-write leaves behind
+        fh.write('{"k":"pkt","tid":1}\n{"k":"pkt","tid":2}\n{"k":"pkt","tid":3,"last_pr')
+    closed = []
+    w = SegmentWriter(spool, ["NIFTY"], on_closed=closed.append, process_start_ns=9)   # the restarted process
+    for i in (4, 5):
+        w.write("NIFTY", {"k": "pkt", "tid": i}, ist_ns(DAY, "10:00:%02d" % (10 + i)))
+    w.close_all()
+    lines = gzip.decompress(open(closed[0], "rb").read()).decode().splitlines()
+    good, bad = [], []
+    for l in lines:
+        try:
+            good.append(json.loads(l))
+        except ValueError:
+            bad.append(l)
+    tids = [r.get("tid") for r in good if r.get("k") == "pkt"]
+    rot = [r for r in good if r.get("ctl") == "rotate" and r.get("process_start_ns") == 9]
+    return [(tids == [1, 2, 4, 5] and bad == ['{"k":"pkt","tid":3,"last_pr'] and rot and w.torn_repairs == 1,
+             "after reopen: valid packets %s, invalid lines %s (only the torn one), restart rotate ctl=%d, repairs=%d"
+             % (tids, bad, len(rot), w.torn_repairs))]
+
+
 GUARDS = [("classify-synthetic", g_classify_synthetic), ("classify-purity", g_classify_purity),
           ("segments-rotate", g_segments_rotate), ("upload-verify", g_upload_verify),
           ("subs-grow-only", g_subs_grow_only), ("ctl-records", g_ctl_records), ("spool-cap", g_spool_cap),
           ("token-fail", g_token_fail), ("closed-day", g_closed_day), ("fence", g_fence),
           ("no-db-no-dhan", g_no_db_no_dhan), ("smoke-s3", g_smoke_s3), ("segment-race", g_segment_race),
-          ("token-midsession", g_token_midsession), ("sigterm", g_sigterm)]
+          ("token-midsession", g_token_midsession), ("sigterm", g_sigterm),
+          ("torn-line", g_torn_line)]
 
 
 # ======================================================================== unit checks (not guards)

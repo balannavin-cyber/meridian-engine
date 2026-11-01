@@ -978,13 +978,48 @@ def g_torn_line():
              % (tids, bad, len(rot), w.torn_repairs))]
 
 
+def g_boot_start():
+    cells = []
+    td = _directives(open(os.path.join(ROOT, "services", "tape_runner", "tape-runner.timer")).read())
+    cells.append((("OnBootSec", "60") in td and ("OnCalendar", "Mon..Fri *-*-* 08:50:00 Asia/Kolkata") in td,
+                  "timer: OnBootSec=60 %s, weekday 08:50 IST calendar %s"
+                  % (("OnBootSec", "60") in td, ("OnCalendar", "Mon..Fri *-*-* 08:50:00 Asia/Kolkata") in td)))
+    # boot at 03:00 IST: exit 0 without touching Kite (the 08:50 timer starts a fresh process)
+    k = FakeKite()
+    rec, clock, tickers = make_recorder(kite=k, start="03:00")
+    code = rec.step(clock.now_ns())
+    cells.append((code == 0 and not k.calls and not tickers and json.load(open(rec.heartbeat_path))["state"] == "EARLY_EXIT",
+                  "boot 03:00: exit %s, Kite calls %s, ticker %s" % (code, k.calls, bool(tickers))))
+    # boot at 11:00 IST (reboot mid-session): records from there
+    k = FakeKite()
+    rec, clock, tickers = make_recorder(kite=k, start="11:00")
+    code = rec.step(clock.now_ns())
+    if tickers:
+        tickers[0].on_connect(tickers[0], {})
+    cells.append((code is None and "profile" in k.calls and tickers and len(tickers[0].subscribed) >= 4,
+                  "boot 11:00: keeps running (exit %s), profile+resolve done, %d tokens subscribed"
+                  % (code, len(tickers[0].subscribed) if tickers else 0)))
+    # boot at 16:00 IST: only re-ships the spool, no Kite
+    k = FakeKite()
+    root = tmpdir()
+    left = os.path.join(root, "spool", "NIFTY", DAY)
+    os.makedirs(left)
+    open(os.path.join(left, "seg_1525.ndjson.part"), "w").write('{"k":"pkt","tid":"leftover"}\n')
+    rec, clock, tickers = make_recorder(kite=k, start="16:00", root=root)
+    code = rec.step(clock.now_ns())
+    shipped = "NIFTY/%s/seg_1525.ndjson.gz" % DAY in rec.uploader.s3.objects
+    cells.append((code == 0 and not k.calls and shipped, "boot 16:00: exit %s, Kite calls %s, leftover shipped %s"
+                  % (code, k.calls, shipped)))
+    return cells
+
+
 GUARDS = [("classify-synthetic", g_classify_synthetic), ("classify-purity", g_classify_purity),
           ("segments-rotate", g_segments_rotate), ("upload-verify", g_upload_verify),
           ("subs-grow-only", g_subs_grow_only), ("ctl-records", g_ctl_records), ("spool-cap", g_spool_cap),
           ("token-fail", g_token_fail), ("closed-day", g_closed_day), ("fence", g_fence),
           ("no-db-no-dhan", g_no_db_no_dhan), ("smoke-s3", g_smoke_s3), ("segment-race", g_segment_race),
           ("token-midsession", g_token_midsession), ("sigterm", g_sigterm),
-          ("torn-line", g_torn_line)]
+          ("torn-line", g_torn_line), ("boot-start", g_boot_start)]
 
 
 # ======================================================================== unit checks (not guards)

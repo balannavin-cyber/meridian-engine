@@ -19,6 +19,7 @@ GROW_THRESHOLD = 12        # listed strikes between ATM and window centre before
 ATM_BAND = 3               # daily report: packets per minute at ATM +- 3 listed strikes
 
 # --- timeline (IST, "HH:MM") ----------------------------------------------------------------
+T_START = "08:50"          # a start before this exits 0 untouched: the 08:50 timer starts a fresh process (finding 4)
 T_RESOLVE = "08:55"
 T_RESOLVE_GIVEUP = "09:10"
 T_OPTIONS = "09:00"

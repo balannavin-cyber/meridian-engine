@@ -97,6 +97,7 @@ class Recorder:
         self.next_token_probe_ns = 0
         self.term_requested = False
         self.term_deadline_ns = None
+        self._first_step = True
 
         self.subscribed = {}
         self.centre = {}
@@ -199,6 +200,10 @@ class Recorder:
             return self._fail(now, self.fatal)
         if self.stats.closed or self.report_written or clk.at(now, config.T_STOP):
             return self._stop(now)
+        if self._first_step:
+            self._first_step = False
+            if not clk.at(now, config.T_START):
+                return self._early_exit(now)
         if not self.profiled:
             try:
                 self.kite.profile()
@@ -328,6 +333,17 @@ class Recorder:
         self._heartbeat(self.clock.now_ns())
         self._save_state()
         self.log("STOP state=STOPPED uploads_left=%d" % len(left))
+        return config.EXIT_OK
+
+    def _early_exit(self, now):
+        """Started before 08:50 IST (OnBootSec after a night-time boot): nothing is due, and this
+        process's environment (token) was read too early to trust for the session. Ship any
+        spool leftovers (<= 60 s), touch nothing at Kite, exit 0; the 08:50 timer starts a fresh
+        process that reads /etc/tape/kite_token.env again."""
+        self.log("EARLY_START before %s IST -- nothing due; the timer starts the session" % config.T_START)
+        self._drain(now + config.TERM_DRAIN_S * clk.NS)
+        self.state = "EARLY_EXIT"
+        self._heartbeat(self.clock.now_ns())
         return config.EXIT_OK
 
     def _over_cap(self):

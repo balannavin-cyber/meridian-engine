@@ -1,11 +1,14 @@
-# Starts tape-runner.service at 08:50 IST on weekdays. Persistent: a missed start (box down at
-# 08:50) fires at boot; the runner itself decides what is due (after 15:40 it only re-ships the spool).
+# Starts tape-runner.service at 08:50 IST on weekdays, and 60 s after every boot (a reboot
+# mid-session would otherwise leave the day unrecorded: the calendar trigger has already fired).
+# The runner decides what is due: before 08:50 it exits 0 untouched (the calendar trigger starts the
+# session with a freshly read token), 08:50-15:40 it records, after 15:40 it only re-ships the spool.
 [Unit]
 Description=MERIDIAN tape raw recorder (T0) -- weekday 08:50 IST
 
 [Timer]
 OnCalendar=Mon..Fri *-*-* 08:50:00 Asia/Kolkata
 Persistent=true
+OnBootSec=60
 Unit=tape-runner.service
 
 [Install]

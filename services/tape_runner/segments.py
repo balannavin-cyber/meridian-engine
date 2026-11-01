@@ -1,8 +1,9 @@
 """Per-symbol 5-minute segment files (amendment A-1).
 
 spool/<SYMBOL>/<IST date>/seg_<HHMM>.ndjson.part  -- plain, line per record, flushed each tick
-  on close -> seg_<HHMM>.ndjson.gz (gzip mtime=0, no filename: deterministic bytes, so a re-upload
-  after a crash is byte-identical), fsync, .part removed, path handed to ``on_closed``.
+  on close -> fsync, atomic rename to seg_<HHMM>.ndjson.closed, path handed to ``on_closed``. The
+  UPLOAD thread (never the websocket thread, review finding 5) gzips it with finish_part into
+  seg_<HHMM>.ndjson.gz (gzip mtime=0, no filename: deterministic bytes) and removes the .closed.
 
 A record's segment is floor(recv_ns -> IST, 5 min) (plan D-6: the box receive clock). Rotation
 fires on the first record of a different segment, or on ``tick(now)`` crossing a boundary so a
@@ -28,6 +29,7 @@ from . import clock as clk
 from .serialize import ctl_record, dumps
 
 PART = ".ndjson.part"
+CLOSED = ".ndjson.closed"   # closed by the writer, waiting for the upload thread to gzip it
 GZ = ".ndjson.gz"
 
 
@@ -60,11 +62,23 @@ def _md5(path):
     return h.hexdigest()
 
 
+def free_closed_path(part):
+    """The .closed name for a .part, never one that already exists: a segment closed by a stopped
+    process and still waiting for upload must not be replaced when a restarted process reopens and
+    closes the same 5-minute segment (seg_HHMM_c1.ndjson.closed, c2, ...)."""
+    base = part[: -len(PART)]
+    dst, n = base + CLOSED, 0
+    while os.path.exists(dst):
+        n += 1
+        dst = "%s_c%d%s" % (base, n, CLOSED)
+    return dst
+
+
 def finish_part(part, taken=None):
     """Gzip a closed .part into a NEW .gz (never overwriting one) and remove the .part.
     Returns the .gz path to upload."""
     taken = taken or (lambda path: False)
-    base = part[: -len(PART)]
+    base = part[: -len(CLOSED)] if part.endswith(CLOSED) else part[: -len(PART)]
     tmp = base + GZ + ".tmp"
     _gzip_into(part, tmp)
     new_md5 = _md5(tmp)
@@ -196,9 +210,12 @@ class SegmentWriter:
         cur.fh.close()
         last = self._last_seg.get(sym)
         self._last_seg[sym] = cur.seg_ns if last is None else max(last, cur.seg_ns)
-        gz = finish_part(cur.path, self.taken)
-        self.on_closed(gz)
-        return gz
+        # finding 5: no gzip here (this runs on the websocket thread under the recorder lock). An
+        # atomic rename marks the file closed; the upload thread gzips it.
+        closed = free_closed_path(cur.path)
+        os.rename(cur.path, closed)
+        self.on_closed(closed)
+        return closed
 
     def close_all(self):
         for sym in list(self._open):
@@ -229,7 +246,9 @@ class SegmentWriter:
                 if name.endswith(PART):
                     if path in cur_seg_paths:
                         continue
-                    ready.append(finish_part(path, self.taken))
+                    closed = free_closed_path(path)            # gzipped by the upload thread
+                    os.rename(path, closed)
+                    ready.append(closed)
                 else:
                     ready.append(path)
         return sorted(set(ready))

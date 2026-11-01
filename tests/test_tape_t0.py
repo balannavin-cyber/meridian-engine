@@ -339,7 +339,7 @@ def g_classify_purity():
 
 
 def g_segments_rotate():
-    from services.tape_runner.segments import SegmentWriter
+    from services.tape_runner.segments import SegmentWriter, finish_part
     from services.tape_runner.serialize import ctl_record
     spool = tmpdir()
     closed = []
@@ -357,6 +357,7 @@ def g_segments_rotate():
         w.write("NIFTY", rec(i, ns), ns)
         sent.append(i)
     w.tick(ist_ns(DAY, "09:45:00"))
+    closed[:] = [finish_part(c) for c in closed]          # what the upload thread does
     seen, where = [], {}
     for p in closed:
         for line in gzip.open(p, "rt"):
@@ -529,7 +530,7 @@ def g_spool_cap():
         for f in files:
             p = os.path.join(dp, f)
             opener = gzip.open if f.endswith(".gz") else open
-            if f.endswith(".gz") or f.endswith(".part"):
+            if f.endswith((".gz", ".part", ".closed")):
                 for line in opener(p, "rt"):
                     r = json.loads(line)
                     if r.get("k") == "pkt" and r.get("tid") is not None:
@@ -797,6 +798,7 @@ def g_segment_race():
     w.write("NIFTY", {"k": "pkt", "tid": "late"}, ist_ns(DAY, "09:19:59.999"))
     w.write("NIFTY", {"k": "pkt", "tid": "next"}, ist_ns(DAY, "09:20:00.010"))
     w.close_all()
+    closed[:] = [finish_part(c) for c in closed]
     got = {os.path.basename(p): _gz_ids(open(p, "rb").read()) for p in closed}
     cells.append((got.get("seg_0915.ndjson.gz") == list(range(1000)) and got.get("seg_0920.ndjson.gz") == ["late", "next"]
                   and len(closed) == 2 and w.late_records == 1,
@@ -952,7 +954,7 @@ def g_sigterm():
 
 
 def g_torn_line():
-    from services.tape_runner.segments import SegmentWriter
+    from services.tape_runner.segments import SegmentWriter, finish_part
     spool = tmpdir()
     w0 = SegmentWriter(spool, ["NIFTY"], on_closed=lambda p: None)
     part = w0.part_path("NIFTY", ist_ns(DAY, "10:00:00"))
@@ -964,7 +966,7 @@ def g_torn_line():
     for i in (4, 5):
         w.write("NIFTY", {"k": "pkt", "tid": i}, ist_ns(DAY, "10:00:%02d" % (10 + i)))
     w.close_all()
-    lines = gzip.decompress(open(closed[0], "rb").read()).decode().splitlines()
+    lines = gzip.decompress(open(finish_part(closed[0]), "rb").read()).decode().splitlines()
     good, bad = [], []
     for l in lines:
         try:
@@ -1013,13 +1015,84 @@ def g_boot_start():
     return cells
 
 
+def g_gzip_offthread():
+    import threading
+    from services.tape_runner import segments as segmod
+    from services.tape_runner.segments import SegmentWriter
+    cells = []
+    # 1. rotation on the websocket thread closes the file but never gzips there
+    calls = []
+    real = segmod._gzip_into
+
+    def spy(src, path):
+        calls.append(threading.current_thread().name)
+        return real(src, path)
+    segmod._gzip_into = spy
+    try:
+        rec, clock, tickers = make_recorder()
+        t = boot_open_day(rec, clock, tickers)
+        fut = TOK[("NIFTY", "FUT")]
+        clock.set(ist_ns(DAY, "09:24:59"))
+        t.on_ticks(t, [full_pkt(fut, 25000, 75, DAY, "09:24:59", tid="a")])
+        rec.uploader.process_once(clock.now_ns())       # ship everything closed so far
+
+        def ws():
+            clock.set(ist_ns(DAY, "09:25:01"))
+            t.on_ticks(t, [full_pkt(fut, 25000, 150, DAY, "09:25:01", tid="b")])   # crosses 09:25: rotation
+        th = threading.Thread(target=ws, name="ticker")
+        th.start()
+        th.join(5)
+        names = sorted(os.listdir(os.path.join(rec.spool, "NIFTY", DAY)))
+        on_ws = [c for c in calls if c == "ticker"]
+        rec.uploader.process_once(clock.now_ns())
+        key = "NIFTY/%s/seg_0920.ndjson.gz" % DAY
+        ids = _gz_ids(rec.uploader.s3.objects[key]) if key in rec.uploader.s3.objects else []
+    finally:
+        segmod._gzip_into = real
+    cells.append((not on_ws and "seg_0920.ndjson.closed" in names and "seg_0920.ndjson.gz" not in names,
+                  "rotation on the ws thread: gzip calls on it=%d; spool after rotation %s" % (len(on_ws), names)))
+    cells.append(("a" in ids and calls and set(calls) == {"MainThread"},
+                  "upload thread gzipped + shipped %s (ids %s); gzip threads %s" % (key.split("/")[-1], ids, sorted(set(calls)))))
+    # 2. crash recovery: a pending .closed and an earlier .part are both shipped by the next start
+    root = tmpdir()
+    d = os.path.join(root, "spool", "NIFTY", DAY)
+    os.makedirs(d)
+    open(os.path.join(d, "seg_0930.ndjson.closed"), "w").write('{"k":"pkt","tid":"closed-pending"}\n')
+    open(os.path.join(d, "seg_0935.ndjson.part"), "w").write('{"k":"pkt","tid":"part-earlier"}\n')
+    rec, clock, tickers = make_recorder(start="10:00", root=root)
+    rec.step(clock.now_ns())
+    objs = rec.uploader.s3.objects
+    got = {k.split("/")[-1]: _gz_ids(v) for k, v in objs.items() if k.startswith("NIFTY/")}
+    cells.append((got.get("seg_0930.ndjson.gz") == ["closed-pending"] and got.get("seg_0935.ndjson.gz") == ["part-earlier"]
+                  and not [f for f in os.listdir(d) if f.endswith((".closed", ".part")) and not f.startswith("seg_1000.")],
+                  "recovery after a crash shipped %s" % got))
+    # 3. a pending .closed is never replaced when the same segment is closed again (restart)
+    spool = tmpdir()
+    w1 = SegmentWriter(spool, ["NIFTY"], on_closed=lambda p: None)
+    w1.write("NIFTY", {"k": "pkt", "tid": "first-process"}, ist_ns(DAY, "10:00:01"))
+    first = w1.close("NIFTY")
+    w2 = SegmentWriter(spool, ["NIFTY"], on_closed=lambda p: None)
+    w2.write("NIFTY", {"k": "pkt", "tid": "second-process"}, ist_ns(DAY, "10:00:20"))
+    second = w2.close("NIFTY")
+    def text(path):
+        if not os.path.exists(path):
+            return ""
+        raw = open(path, "rb").read()
+        return (gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw).decode()
+    a, b2 = text(first), text(second)
+    cells.append((first != second and "first-process" in a and "second-process" in b2,
+                  "second close of seg_1000 -> %s; first kept=%s" % (os.path.basename(second), "first-process" in a)))
+    return cells
+
+
 GUARDS = [("classify-synthetic", g_classify_synthetic), ("classify-purity", g_classify_purity),
           ("segments-rotate", g_segments_rotate), ("upload-verify", g_upload_verify),
           ("subs-grow-only", g_subs_grow_only), ("ctl-records", g_ctl_records), ("spool-cap", g_spool_cap),
           ("token-fail", g_token_fail), ("closed-day", g_closed_day), ("fence", g_fence),
           ("no-db-no-dhan", g_no_db_no_dhan), ("smoke-s3", g_smoke_s3), ("segment-race", g_segment_race),
           ("token-midsession", g_token_midsession), ("sigterm", g_sigterm),
-          ("torn-line", g_torn_line), ("boot-start", g_boot_start)]
+          ("torn-line", g_torn_line), ("boot-start", g_boot_start),
+          ("gzip-offthread", g_gzip_offthread)]
 
 
 # ======================================================================== unit checks (not guards)

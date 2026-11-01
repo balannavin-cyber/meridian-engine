@@ -13,6 +13,7 @@ import threading
 
 from . import config
 from .clock import NS
+from .segments import CLOSED, PART, finish_part
 
 
 def file_digests(path):
@@ -68,11 +69,24 @@ class Uploader:
                 done += 1
         return done
 
+    def _gzip_closed(self, path):
+        """A closed segment (.ndjson.closed, or a recovered .part) is gzipped HERE, on the upload
+        thread, never on the websocket thread (review finding 5). finish_part never overwrites a
+        .gz. The queue entry moves to the .gz path; returns it."""
+        gz = finish_part(path, self.is_taken)
+        with self._lock:
+            st = self._q.pop(path)
+            self._q[gz] = st
+        return gz
+
     def _upload(self, path, now_ns):
         st = self._q[path]
         key = self.key_for(path)
         st["attempts"] += 1
         try:
+            if path.endswith(CLOSED) or path.endswith(PART):
+                path = self._gzip_closed(path)
+                key = self.key_for(path)
             md5, sha_hex, size = file_digests(path)
             md5_hex = md5.hexdigest()
             with open(path, "rb") as body:

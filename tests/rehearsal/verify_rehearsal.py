@@ -25,7 +25,9 @@ PASS criteria (fixed 2026-11-01 before the run):
   P4 mean CPU < 40 % of one core in the 2x phase
   P5 every upload verified by ETag on the first attempt, no retries
   P6 spool does not trend upward (per load phase, over the full 5-minute intervals: the trough after
-     each boundary does not grow by more than one segment's gzip size, and the peak by more than 10 %)
+     each boundary does not grow by more than one segment's gzip size, and the peak by more than 10 %).
+     A phase with fewer than two full 5-minute intervals cannot show a trend: P6 then reads NOT
+     EVALUATED and the verdict is INCOMPLETE (exit 3) -- never PASS.
 What this cannot see: anything S3 did after acknowledging the PutObject (no GetObject, by design);
 the generator's own CPU is inside P4's figure (measure it with run_rehearsal.py --calibrate).
 """
@@ -242,16 +244,18 @@ def main():
                  % (puts["n"], puts["ok"], len(manifest_rows), len(kept), first_try)))
     crit.append(spool_trend(samples, run, met))
     print("REHEARSAL %s  (%s, schedule %s)" % (run["id"], run_dir, run["schedule"]))
+    tag = {True: "PASS", False: "FAIL", None: "NOT EVALUATED"}
     for name, ok, detail in res + crit:
-        print("  [%s] %s -- %s" % ("PASS" if ok else "FAIL", name, detail))
+        print("  [%s] %s -- %s" % (tag[ok], name, detail))
     print("  metrics: gzip/segment max %ss mean %ss (raw max %s MB -> gz %s MB, threads %s); PutObject p50 %ss max %ss "
           "(segments max %ss); upload_queue max %s; spool high-water (1 s samples) %s MB"
           % (met["gzip_per_segment"]["max_s"], met["gzip_per_segment"]["mean_s"], met["gzip_per_segment"]["max_raw_mb"],
              met["gzip_per_segment"]["max_gz_mb"], met["gzip_per_segment"]["threads"], puts["p50_s"], puts["max_s"],
              puts["seg_max_s"], met["upload_queue_max"], met["spool_high_water_mb_sampled"]))
-    allok = all(ok for _, ok, _ in res + crit)
-    print("REHEARSAL VERDICT %s" % ("PASS" if allok else "FAIL"))
-    return 0 if allok else 1
+    states = [ok for _, ok, _ in res + crit]
+    verdict = "PASS" if all(x is True for x in states) else ("FAIL" if any(x is False for x in states) else "INCOMPLETE")
+    print("REHEARSAL VERDICT %s" % verdict)
+    return {"PASS": 0, "FAIL": 1, "INCOMPLETE": 3}[verdict]
 
 
 def spool_trend(samples, run, met):
@@ -262,7 +266,7 @@ def spool_trend(samples, run, met):
         phases.append((mult, acc, acc + secs))
         acc += secs
     seg_gz = (met["gzip_per_segment"]["max_gz_mb"] or 0) * 2 ** 20
-    out, ok = [], True
+    out, ok, unmeasured = [], True, False
     for mult, a, b in phases:
         by = {}
         for s in samples:
@@ -271,7 +275,10 @@ def spool_trend(samples, run, met):
         slots = sorted(by)
         full = [k for k in slots if len(by[k]) >= 0.9 * seg_s]
         if len(full) < 2:
-            out.append("%gx: %d full intervals (need 2)" % (mult, len(full)))
+            # Rule 0: a trend cannot be read from fewer than two points -- this phase is NOT
+            # EVALUATED, never a vacuous PASS
+            unmeasured = True
+            out.append("%gx: NOT EVALUATED, %d full interval(s) (need 2)" % (mult, len(full)))
             continue
         troughs = [min(by[k]) for k in full]
         peaks = [max(by[k]) for k in full]
@@ -279,7 +286,8 @@ def spool_trend(samples, run, met):
         ok &= good
         out.append("%gx: troughs %s MB, peaks %s MB" % (mult, [round(x / 2 ** 20, 1) for x in troughs],
                                                          [round(x / 2 ** 20, 1) for x in peaks]))
-    return ("P6 spool does not trend upward", ok, "; ".join(out))
+    status = False if not ok else (None if unmeasured or not phases else True)
+    return ("P6 spool does not trend upward", status, "; ".join(out) or "no phases")
 
 
 if __name__ == "__main__":

@@ -10,7 +10,8 @@ Copies the run (out dir + keep dir) to a temp dir, re-points run.json at the cop
   move a batch's packet into another segment -> I2 batches must FAIL
   rename a segment to _r1                     -> I3 names must FAIL
   flip one byte in a kept subscriptions object -> I4 manifest must FAIL (sha256 is its only check)
-Last line: VERIFIER SELFTEST PASS (6/6) or FAIL.
+  P6 on synthetic samples: one interval -> NOT EVALUATED, flat -> PASS, rising troughs -> FAIL
+Last line: VERIFIER SELFTEST PASS (9/9) or FAIL.
 """
 import argparse
 import gzip
@@ -110,6 +111,25 @@ def main():
     case("move a packet across segments", move, "I2 batches")
     case("rename a segment to _r1", rename, "I3 names")
     case("flip a byte in a kept object", flip, "I4 manifest")
+    # P6 on synthetic 1 s spool samples (no run needed): it must be able to PASS, FAIL and abstain
+    sys.path.insert(0, HERE)
+    from verify_rehearsal import spool_trend
+    seg = 300
+    met = {"gzip_per_segment": {"max_gz_mb": 10}}
+
+    def samples(n_intervals, trough_step_mb):
+        out, t0 = [], 1_793_000_100 * 10 ** 9 // (seg * 10 ** 9) * seg * 10 ** 9   # a boundary
+        for k in range(n_intervals * seg):
+            iv = k // seg
+            mb = trough_step_mb * iv + (k % seg) * 0.8      # saw-tooth: .part grows, rotates
+            out.append({"t": t0 + k * 10 ** 9, "el": float(k), "spool": int(mb * 2 ** 20)})
+        return out
+    for name, n, step, want in (("P6 one full interval -> NOT EVALUATED", 1, 0, None),
+                                ("P6 three flat intervals -> PASS", 3, 0, True),
+                                ("P6 troughs rising 15 MB/interval -> FAIL", 3, 15, False)):
+        run = {"seg_seconds": seg, "schedule": [[2.0, float(n * seg)]]}
+        got = spool_trend(samples(n, step), run, met)[1]
+        cases.append((name, got is want, {"P6": got}))
     for name, ok, got in cases:
         print("  [%s] %s -> %s" % ("ok" if ok else "XX", name, got))
     n = sum(ok for _, ok, _ in cases)

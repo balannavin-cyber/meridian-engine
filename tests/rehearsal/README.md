@@ -49,7 +49,8 @@ sudo systemd-run --unit=tape-rehearsal --uid=tape --gid=tape \
   /var/lib/tape/venv/bin/python /var/lib/tape/rehearsal_app/tests/rehearsal/run_rehearsal.py --schedule 2x:35m,4x:15m
 journalctl -fu tape-rehearsal | grep -vE 'TAPE (HB|SUBSCRIBE)'     # ends with "REHEARSAL DONE exit=0"; Ctrl-C to leave
 
-# 4. verify + score the PASS criteria (last line: REHEARSAL VERDICT PASS|FAIL)
+# 4. verify + score the PASS criteria (last line: REHEARSAL VERDICT PASS|FAIL|INCOMPLETE; exit 0/1/3)
+#    INCOMPLETE = a criterion could not be measured (e.g. P6 needs two full 5-minute intervals per phase)
 sudo -u tape /var/lib/tape/venv/bin/python /var/lib/tape/rehearsal_app/tests/rehearsal/verify_rehearsal.py --latest
 
 # 5. optional: prove the verifier can fail on this run's data (copies the run to /tmp; ~1 GB free needed)

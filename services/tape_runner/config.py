@@ -8,6 +8,22 @@ ENV_AWS = ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_DEFAULT_REGION")  
 ENV_REQUIRED = (ENV_API_KEY, ENV_ACCESS_TOKEN) + ENV_AWS
 
 BUCKET = os.environ.get("TAPE_BUCKET", "meridian-tape-raw")
+
+# --- rehearsal-only hooks (tests/rehearsal). BOTH UNSET IN PRODUCTION: the unit file sets neither,
+# and with both empty the runner's keys and files are exactly what they were before the hooks. ---
+KEY_PREFIX = os.environ.get("TAPE_KEY_PREFIX", "")            # e.g. "_rehearsal/20261101T070000Z/"
+REHEARSAL_KEEP = os.environ.get("TAPE_REHEARSAL_KEEP", "")    # e.g. "/var/lib/tape/rehearsal_keep"
+REHEARSAL_PREFIX_ROOT = "_rehearsal/"
+
+
+def check_rehearsal_hooks(prefix, keep):
+    """A prefix may only ever point under _rehearsal/ (production keys can never be moved by a stray
+    variable), and the local keep copy exists only together with such a prefix."""
+    if prefix and not (prefix.startswith(REHEARSAL_PREFIX_ROOT) and prefix.endswith("/")
+                       and ".." not in prefix and len(prefix) > len(REHEARSAL_PREFIX_ROOT)):
+        raise ValueError("TAPE_KEY_PREFIX must be empty or _rehearsal/<id>/")
+    if keep and not prefix:
+        raise ValueError("TAPE_REHEARSAL_KEEP requires TAPE_KEY_PREFIX")
 ROOT = os.environ.get("TAPE_ROOT", "/var/lib/tape")
 
 # --- universe -------------------------------------------------------------------------------

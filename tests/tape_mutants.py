@@ -7,7 +7,7 @@ with tests/test_tape_t0.py --root, and require FAIL. The control (unpatched copy
 
   python3 tests/tape_mutants.py [--repeat N] [--only M-T0-...]
 
-Last line: "TAPE T0 MUTANTS PASS (32/32 caught xN, 18/18 controls xN)" or FAIL. Exit 0 / 1.
+Last line: "TAPE T0 MUTANTS PASS (34/34 caught xN, 19/19 controls xN)" or FAIL. Exit 0 / 1.
 """
 import argparse
 import os
@@ -93,6 +93,10 @@ M = [
      "    while os.path.exists(dst):\n        n += 1\n        dst = \"%s_c%d%s\" % (base, n, CLOSED)\n", ""),
     ("M-T0-CLOSED-NO-SETTLE", "closed-day", "services/tape_runner/recorder.py",
      "                    and self._feed_settled(now)):\n", "                    and True):\n"),
+    ("M-T0-PREFIX-DEFAULT-SET", "rehearsal-hooks-unset", "services/tape_runner/config.py",
+     'KEY_PREFIX = os.environ.get("TAPE_KEY_PREFIX", "")', 'KEY_PREFIX = os.environ.get("TAPE_KEY_PREFIX", "_rehearsal/default/")'),
+    ("M-T0-KEEP-WHEN-UNSET", "rehearsal-hooks-unset", "services/tape_runner/uploader.py",
+     '            if self.keep_dir and not st.get("kept"):', '            if not st.get("kept"):'),
     ("M-T0-NO-MEMORYMAX", "fence", "services/tape_runner/tape-runner.service", "MemoryMax=400M\n", ""),
     ("M-T0-IMPORTS-DHAN", "no-db-no-dhan", "services/tape_runner/recorder.py",
      "import json\n", "import json\nimport dhanhq  # noqa\n"),

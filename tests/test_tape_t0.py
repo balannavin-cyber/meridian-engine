@@ -1110,6 +1110,62 @@ def g_gzip_offthread():
     return cells
 
 
+def g_rehearsal_hooks_unset():
+    """Production behaviour with TAPE_KEY_PREFIX / TAPE_REHEARSAL_KEEP unset is unchanged: keys are
+    the spool-relative paths, no keep copy is made anywhere, and a stray prefix cannot leave
+    _rehearsal/. The set case is exercised too, because the rehearsal depends on it."""
+    from services.tape_runner import config
+    from services.tape_runner.uploader import Uploader
+    cells = []
+    env = {k: v for k, v in os.environ.items() if not k.startswith("TAPE_")}
+    code = ("import sys;sys.path.insert(0,%r);from services.tape_runner import config as c;"
+            "print(repr((c.KEY_PREFIX, c.REHEARSAL_KEEP)))" % ROOT)
+    out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True).stdout.strip()
+    cells.append((out == "('', '')", "env unset -> (KEY_PREFIX, REHEARSAL_KEEP) = %s" % out))
+    # a full day with the defaults, cwd inside the test root so a stray relative keep copy would show
+    root = tmpdir()
+    old = os.getcwd()
+    os.chdir(root)
+    try:
+        rec, clock, tickers = make_recorder(root=root)
+        t = boot_open_day(rec, clock, tickers)
+        clock.set(ist_ns(DAY, "10:00:00"))
+        t.on_ticks(t, [full_pkt(TOK[("NIFTY", "FUT")], 25000, 100, DAY, "10:00:00")])
+        run_to_stop(rec, clock)
+    finally:
+        os.chdir(old)
+    keys = sorted(rec.uploader.s3.objects)
+    bad = [k for k in keys if not k.startswith(("NIFTY/", "SENSEX/", "session/"))]
+    extra = sorted({os.path.relpath(os.path.join(dp, f), root).split(os.sep)[0]
+                    for dp, _, fs in os.walk(root) for f in fs} - {"spool", "state", "manifest", "heartbeat.json"})
+    cells.append((rec.uploader.key_prefix == "" and rec.uploader.keep_dir == "" and keys and not bad and not extra,
+                  "defaults: %d keys, non-production keys %s, files outside spool/state/manifest %s"
+                  % (len(keys), bad or "none", extra or "none")))
+    refused = []
+    for pfx, keep in (("NIFTY/", ""), ("_rehearsal/", ""), ("_rehearsal/../x/", ""), ("", "/tmp/k"), ("_rehearsal/a", "")):
+        try:
+            config.check_rehearsal_hooks(pfx, keep)
+        except ValueError:
+            refused.append((pfx, keep))
+    cells.append((len(refused) == 5, "refused %d/5 invalid settings (non-_rehearsal prefix, keep without prefix)" % len(refused)))
+    # set case: prefix on the key, keep copy byte-identical, manifest/counts still keyed by date/symbol
+    r2 = tmpdir()
+    spool = os.path.join(r2, "spool")
+    p = _seg_file(spool, body=b"segment-bytes")
+    keep = os.path.join(r2, "keep")
+    s3 = FakeS3("ok")
+    u = Uploader(s3, "b", spool, os.path.join(r2, "manifest"), key_prefix="_rehearsal/T1/", keep_dir=keep)
+    u.enqueue(p)
+    u.process_once(0)
+    k = "_rehearsal/T1/NIFTY/%s/seg_0915.ndjson.gz" % DAY
+    kept = os.path.join(keep, k)
+    cells.append((list(s3.objects) == [k] and os.path.exists(kept) and open(kept, "rb").read() == b"segment-bytes"
+                  and u.manifest_lines(DAY) and list(u.counts) == ["NIFTY"],
+                  "prefix set: key %s, keep copy %s, manifest day file %s, counts %s"
+                  % (list(s3.objects), os.path.exists(kept), bool(u.manifest_lines(DAY)), list(u.counts))))
+    return cells
+
+
 GUARDS = [("classify-synthetic", g_classify_synthetic), ("classify-purity", g_classify_purity),
           ("segments-rotate", g_segments_rotate), ("upload-verify", g_upload_verify),
           ("subs-grow-only", g_subs_grow_only), ("ctl-records", g_ctl_records), ("spool-cap", g_spool_cap),
@@ -1117,7 +1173,7 @@ GUARDS = [("classify-synthetic", g_classify_synthetic), ("classify-purity", g_cl
           ("no-db-no-dhan", g_no_db_no_dhan), ("smoke-s3", g_smoke_s3), ("segment-race", g_segment_race),
           ("token-midsession", g_token_midsession), ("sigterm", g_sigterm),
           ("torn-line", g_torn_line), ("boot-start", g_boot_start),
-          ("gzip-offthread", g_gzip_offthread)]
+          ("gzip-offthread", g_gzip_offthread), ("rehearsal-hooks-unset", g_rehearsal_hooks_unset)]
 
 
 # ======================================================================== unit checks (not guards)

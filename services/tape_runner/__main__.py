@@ -48,6 +48,11 @@ def install_signal_handlers(rec):
 
 
 def main(argv):
+    try:
+        config.check_rehearsal_hooks(config.KEY_PREFIX, config.REHEARSAL_KEEP)
+    except ValueError as exc:
+        _log("CONFIG_REFUSED %s" % exc)
+        return config.EXIT_TOKEN_FAIL          # 78: a configuration error, no restart
     creds = _env()
     if creds is None:
         return config.EXIT_TOKEN_FAIL

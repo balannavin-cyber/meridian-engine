@@ -29,7 +29,11 @@ def file_digests(path):
 
 
 class Uploader:
-    def __init__(self, s3, bucket, spool_dir, manifest_dir, log=None):
+    def __init__(self, s3, bucket, spool_dir, manifest_dir, log=None, key_prefix=None, keep_dir=None):
+        self.key_prefix = config.KEY_PREFIX if key_prefix is None else key_prefix
+        self.keep_dir = config.REHEARSAL_KEEP if keep_dir is None else keep_dir
+        config.check_rehearsal_hooks(self.key_prefix, self.keep_dir)
+        self.keep_dups = 0
         self.s3 = s3
         self.bucket = bucket
         self.spool = spool_dir
@@ -45,11 +49,41 @@ class Uploader:
                     for row in self.manifest_lines(name[: -len(".ndjson")]):
                         self.uploaded_keys.add(row["key"])
 
-    def key_for(self, path):
+    def rel_for(self, path):
         return os.path.relpath(path, self.spool).replace(os.sep, "/")
 
-    def _c(self, key):
-        return self.counts.setdefault(key.split("/", 1)[0], {"ok": 0, "retried": 0, "failed_attempts": 0})
+    def key_for(self, path):
+        """The S3 key: the spool-relative path, under the rehearsal prefix when one is set
+        (empty in production, so the key IS the relative path)."""
+        return self.key_prefix + self.rel_for(path)
+
+    def _c(self, rel):
+        return self.counts.setdefault(rel.split("/", 1)[0], {"ok": 0, "retried": 0, "failed_attempts": 0})
+
+    def _keep(self, path, key):
+        """Rehearsal only: a hard link (copy across filesystems) of the exact bytes about to be
+        uploaded, under keep_dir/<key>. Never overwrites: a second file for the same key is kept as
+        <key>.dupN and counted, so a verifier can see it."""
+        dst = os.path.join(self.keep_dir, key)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        cand, n = dst, 0
+        while True:
+            try:
+                os.link(path, cand)
+                break
+            except FileExistsError:
+                n += 1
+                cand = "%s.dup%d" % (dst, n)
+            except OSError:
+                import shutil
+                if os.path.exists(cand):
+                    n += 1
+                    cand = "%s.dup%d" % (dst, n)
+                    continue
+                shutil.copyfile(path, cand)
+                break
+        if n:
+            self.keep_dups += 1
 
     def enqueue(self, path):
         with self._lock:
@@ -81,12 +115,15 @@ class Uploader:
 
     def _upload(self, path, now_ns):
         st = self._q[path]
-        key = self.key_for(path)
+        key, rel = self.key_for(path), self.rel_for(path)
         st["attempts"] += 1
         try:
             if path.endswith(CLOSED) or path.endswith(PART):
                 path = self._gzip_closed(path)
-                key = self.key_for(path)
+                key, rel = self.key_for(path), self.rel_for(path)
+            if self.keep_dir and not st.get("kept"):     # rehearsal only; empty in production
+                self._keep(path, key)
+                st["kept"] = True
             md5, sha_hex, size = file_digests(path)
             md5_hex = md5.hexdigest()
             with open(path, "rb") as body:
@@ -95,10 +132,10 @@ class Uploader:
                     ContentMD5=base64.b64encode(md5.digest()).decode("ascii"))
             etag = str((resp or {}).get("ETag", "")).strip('"')
             if etag == md5_hex:
-                self._record(key, size, md5_hex, sha_hex, st["attempts"], now_ns)
+                self._record(key, rel, size, md5_hex, sha_hex, st["attempts"], now_ns)
                 self.uploaded_keys.add(key)
                 os.unlink(path)
-                c = self._c(key)
+                c = self._c(rel)
                 c["ok"] += 1
                 if st["attempts"] > 1:
                     c["retried"] += 1
@@ -108,15 +145,15 @@ class Uploader:
             reason = "ETAG_MISMATCH"
         except Exception as exc:  # noqa: BLE001 -- any failure keeps the file
             reason = type(exc).__name__
-        self._c(key)["failed_attempts"] += 1
+        self._c(rel)["failed_attempts"] += 1
         delay = min(config.BACKOFF_CAP_S, 2 ** (st["attempts"] - 1))
         st["next_ns"] = now_ns + delay * NS
         self.log("UPLOAD_RETRY key=%s attempt=%d reason=%s next_in=%ss" % (key, st["attempts"], reason, delay))
         return False
 
-    def _record(self, key, size, md5_hex, sha_hex, attempts, now_ns):
+    def _record(self, key, rel, size, md5_hex, sha_hex, attempts, now_ns):
         os.makedirs(self.manifest_dir, exist_ok=True)
-        day = key.split("/")[1] if key.count("/") >= 2 else "undated"
+        day = rel.split("/")[1] if rel.count("/") >= 2 else "undated"
         line = json.dumps({"key": key, "bytes": size, "md5": md5_hex, "sha256": sha_hex,
                            "attempts": attempts, "uploaded_ns": now_ns}, separators=(",", ":"))
         with open(os.path.join(self.manifest_dir, day + ".ndjson"), "a", encoding="utf-8") as fh:
@@ -141,7 +178,7 @@ class Uploader:
     def failed_by_prefix(self):
         out = {}
         for p in self.pending():
-            k = self.key_for(p).split("/", 1)[0]
+            k = self.rel_for(p).split("/", 1)[0]
             out[k] = out.get(k, 0) + 1
         return out
 

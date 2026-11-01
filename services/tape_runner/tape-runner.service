@@ -1,0 +1,34 @@
+# MERIDIAN tape raw recorder (phase T0). Timer-driven only: no [Install] section.
+# Installed by services/tape_runner/install.sh; docs/tape/T0_install.md.
+[Unit]
+Description=MERIDIAN tape raw recorder (T0)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tape
+Group=tape
+EnvironmentFile=/etc/tape/kite_api.env
+EnvironmentFile=/etc/tape/kite_token.env
+EnvironmentFile=/etc/tape/aws.env
+Environment=TZ=Asia/Kolkata
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=HOME=/var/lib/tape
+Environment=PYTHONPATH=/var/lib/tape/app/current
+ExecStart=/var/lib/tape/venv/bin/python -m services.tape_runner
+WorkingDirectory=/var/lib/tape
+MemoryMax=400M
+CPUWeight=20
+Nice=10
+LimitAS=2000000000
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=90
+RestartPreventExitStatus=78 75
+ReadWritePaths=/var/lib/tape
+ProtectSystem=strict
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true

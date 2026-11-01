@@ -5,8 +5,16 @@ Exit 0: connected and subscribed (0 packets on a closed day is a PASS).
 Exit 3: CLOCK SKEW FAIL -- median (recv_ns - exchange_timestamp) outside [0, 3] s, or negative, after
         the UTC->IST conversion: the conversion is wrong.
 Exit 4: no connect, or subscribe failed.  Exit 78: profile failed (token).
+Exit 5: S3 FAIL -- one real PutObject to _smoke/<UTC timestamp>.txt in the real bucket and region, with
+        the runner's own parameters (ContentMD5, SSE-S3), did not return ETag == local md5. The S3 check
+        runs first and is reported even when the Kite part fails. GetObject/HeadObject are never used (A-3).
 """
+import base64
+import hashlib
+import os
+import socket
 import threading
+from datetime import datetime, timezone
 
 from . import clock as clk
 from . import config
@@ -15,9 +23,41 @@ from .serialize import packet_record, skew_seconds
 from .stats import DayStats
 
 
-def run_smoke(kite, ticker_factory, clock, wait_s=60, out=print):
+def s3_check(s3, bucket, region, clock, out=print):
+    """One real PutObject, verified exactly as the uploader verifies (ETag == md5 hex)."""
+    utc = datetime.fromtimestamp(clock.now_ns() / 1e9, timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    key = "_smoke/%s.txt" % utc
+    body = ("MERIDIAN tape T0 smoke %s host=%s pid=%d\n" % (utc, socket.gethostname(), os.getpid())).encode()
+    md5 = hashlib.md5(body)
+    try:
+        resp = s3.put_object(Bucket=bucket, Key=key, Body=body, ServerSideEncryption="AES256",
+                             ContentMD5=base64.b64encode(md5.digest()).decode("ascii"))
+    except Exception as exc:  # noqa: BLE001 -- error code only, never credentials
+        code = getattr(exc, "response", {}).get("Error", {}).get("Code", "") if hasattr(exc, "response") else ""
+        out("SMOKE S3 FAIL bucket=%s region=%s key=%s error=%s %s" % (bucket, region, key, type(exc).__name__, code))
+        return False
+    etag = str((resp or {}).get("ETag", "")).strip('"')
+    if etag == md5.hexdigest():
+        out("SMOKE S3 PASS bucket=%s region=%s key=%s etag=%s == md5" % (bucket, region, key, etag))
+        return True
+    out("SMOKE S3 FAIL bucket=%s region=%s key=%s etag=%s != md5=%s" % (bucket, region, key, etag, md5.hexdigest()))
+    return False
+
+
+def run_smoke(kite, ticker_factory, clock, wait_s=60, out=print, s3=None, bucket=None, region=None):
     now = clock.now_ns()
     day = clk.ist_date(now)
+    s3_ok = True
+    if s3 is not None:
+        s3_ok = s3_check(s3, bucket or config.BUCKET, region, clock, out)
+    code = _run_kite(kite, ticker_factory, clock, wait_s, out, now, day)
+    if code == 0 and not s3_ok:
+        out("SMOKE FAIL: S3 -- Monday's uploads would fail; fix the key, bucket or region before 08:50")
+        return 5
+    return code
+
+
+def _run_kite(kite, ticker_factory, clock, wait_s, out, now, day):
     try:
         kite.profile()
     except Exception as exc:  # noqa: BLE001

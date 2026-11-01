@@ -7,7 +7,7 @@ with tests/test_tape_t0.py --root, and require FAIL. The control (unpatched copy
 
   python3 tests/tape_mutants.py [--repeat N] [--only M-T0-...]
 
-Last line: "TAPE T0 MUTANTS PASS (14/14 caught xN, 11/11 controls xN)" or FAIL. Exit 0 / 1.
+Last line: "TAPE T0 MUTANTS PASS (19/19 caught xN, 12/12 controls xN)" or FAIL. Exit 0 / 1.
 """
 import argparse
 import os
@@ -53,6 +53,17 @@ M = [
      "RestartPreventExitStatus=78 75\n", "RestartPreventExitStatus=75\n"),
     ("M-T0-NO-CLOSED-CHECK", "closed-day", "services/tape_runner/recorder.py",
      "        verdict, source = self._closed_verdict(now)\n", '        verdict, source = "OPEN", "mutant"\n'),
+    ("M-T0-CLOSED-BEFORE-0920", "closed-day", "services/tape_runner/config.py",
+     'T_CLOSED_CHECK = "09:20"', 'T_CLOSED_CHECK = "09:16"'),
+    ("M-T0-CLOSED-ON-SNAPSHOT", "closed-day", "services/tape_runner/recorder.py",
+     '        try:\n            keys = [c["ltp_key"] for c in self.symbol_cfg.values()]\n            q = self.kite.quote(keys)\n',
+     '        return "CLOSED", "mutant"\n        try:\n            keys = [c["ltp_key"] for c in self.symbol_cfg.values()]\n            q = self.kite.quote(keys)\n'),
+    ("M-T0-CLOSED-ONE-WITNESS", "closed-day", "services/tape_runner/recorder.py",
+     "        if missing:\n", "        if len(missing) == len(need):\n"),
+    ("M-T0-SMOKE-ETAG-IGNORED", "smoke-s3", "services/tape_runner/smoke.py",
+     "    if etag == md5.hexdigest():\n", "    if True:\n"),
+    ("M-T0-SMOKE-NO-PUT", "smoke-s3", "services/tape_runner/smoke.py",
+     "    if s3 is not None:\n        s3_ok = s3_check(", "    if False:\n        s3_ok = s3_check("),
     ("M-T0-NO-MEMORYMAX", "fence", "services/tape_runner/tape-runner.service", "MemoryMax=400M\n", ""),
     ("M-T0-IMPORTS-DHAN", "no-db-no-dhan", "services/tape_runner/recorder.py",
      "import json\n", "import json\nimport dhanhq  # noqa\n"),

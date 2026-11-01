@@ -50,7 +50,8 @@ def main(argv):
     kite, ticker_factory = _kite(api_key, token)
     if "--smoke" in argv:
         from .smoke import run_smoke
-        return run_smoke(kite, ticker_factory, clock, wait_s=60)
+        return run_smoke(kite, ticker_factory, clock, wait_s=60, s3=_s3(), bucket=config.BUCKET,
+                         region=os.environ[config.ENV_AWS[2]])
 
     from .recorder import Recorder
     rec = Recorder(kite, ticker_factory, _s3(), clock, threaded=True, secrets=(api_key, token), log=_log)

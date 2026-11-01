@@ -5,7 +5,7 @@ no boto3 -- FakeKite / FakeTicker / FakeS3 / ManualClock are injected.
   python3 tests/test_tape_t0.py [--root DIR] [--only GUARD]
 
 --root runs the guards against another copy of the tree (tests/tape_mutants.py uses it).
-Last line: "TAPE T0 PASS (11/11 guards, N/N unit checks)" or "TAPE T0 FAIL ...". Exit 0 / 1.
+Last line: "TAPE T0 PASS (12/12 guards, N/N unit checks)" or "TAPE T0 FAIL ...". Exit 0 / 1.
 """
 import argparse
 import ast
@@ -167,8 +167,11 @@ class FakeS3:
         self.puts = []
 
     def put_object(self, Bucket, Key, Body, ServerSideEncryption=None, ContentMD5=None):
-        existed = os.path.exists(Body.name)
-        data = Body.read()
+        if isinstance(Body, (bytes, bytearray)):
+            existed, data = True, bytes(Body)
+        else:
+            existed = os.path.exists(Body.name)
+            data = Body.read()
         md5 = hashlib.md5(data)
         self.puts.append({"key": Key, "existed": existed, "sse": ServerSideEncryption, "md5": md5.hexdigest()})
         if self.mode == "fail":
@@ -566,44 +569,96 @@ def g_token_fail():
     ]
 
 
-def g_closed_day():
-    rec, clock, tickers = make_recorder()
-    assert rec.step(clock.now_ns()) is None
+STALE_QUOTE = {"NSE:NIFTY 50": {"timestamp": datetime(2026, 10, 30, 15, 30, 0)},
+               "BSE:SENSEX": {"timestamp": datetime(2026, 10, 30, 15, 30, 0)}}
+TODAY_QUOTE = {"NSE:NIFTY 50": {"timestamp": datetime(2026, 11, 2, 9, 19, 58)},
+               "BSE:SENSEX": {"timestamp": datetime(2026, 11, 2, 9, 19, 59)}}
+OPT_TOKENS = None
+
+
+def _closed_case(kite, snapshot, times=("09:00", "09:05", "09:10", "09:15", "09:16", "09:19", "09:19:59", "09:20")):
+    """08:50 boot, 08:55 connect, one batch of subscribe-time snapshot packets dated the last session,
+    then NO live ticks; step through `times`. Returns (exit code, time it exited, option tokens subscribed, rec)."""
+    rec, clock, tickers = make_recorder(kite=kite)
+    rec.step(clock.now_ns())
     clock.set(ist_ns(DAY, "08:55"))
     rec.step(clock.now_ns())
     t = tickers[0]
     t.on_connect(t, {})
     base = set(t.subscribed)
     clock.set(ist_ns(DAY, "08:55:02"))
-    t.on_ticks(t, [idx_pkt("NIFTY", 25000, PREV, "15:30:00"), idx_pkt("SENSEX", 80000, PREV, "15:30:00"),
-                   full_pkt(TOK[("NIFTY", "FUT")], 25100, 5000, PREV, "15:29:59"),
-                   full_pkt(TOK[("SENSEX", "FUT")], 80100, 5000, PREV, "15:29:59")])
-    code = None
-    for hm in ("09:00", "09:05", "09:10", "09:15", "09:16"):
+    if snapshot:
+        t.on_ticks(t, snapshot)
+    code, at = None, None
+    for hm in times:
         clock.set(ist_ns(DAY, hm))
         code = rec.step(clock.now_ns())
         if code is not None:
+            at = hm
             break
-    opt_tokens = {v for k, v in TOK.items() if len(k) == 3}
-    subscribed_opts = (t.subscribed - base) & opt_tokens
-    key = "session/%s/CLOSED" % DAY
-    body = json.loads(rec.uploader.s3.objects[key]) if key in rec.uploader.s3.objects else None
-    cells = [
-        (code == 0, "exit %s at %s" % (code, hm)),
-        (body is not None and body.get("verdict") == "CLOSED", "CLOSED uploaded: %s" % body),
-        (not subscribed_opts, "option tokens subscribed: %d" % len(subscribed_opts)),
-    ]
-    # absence is not a verdict: no packets at all and quote fails -> NOT closed, options subscribed
-    rec2, clock2, tick2 = make_recorder(kite=FakeKite(quote_fails=True))
-    rec2.step(clock2.now_ns())
-    clock2.set(ist_ns(DAY, "08:55"))
-    rec2.step(clock2.now_ns())
-    tick2[0].on_connect(tick2[0], {})
-    clock2.set(ist_ns(DAY, "09:16"))
-    code2 = rec2.step(clock2.now_ns())
-    cells.append((code2 is None and len(tick2[0].subscribed) == 148
-                  and "session/%s/CLOSED" % DAY not in rec2.uploader.s3.objects,
-                  "no packets + quote fails -> not closed (exit %s), %d tokens" % (code2, len(tick2[0].subscribed))))
+    opts = {v for k, v in TOK.items() if len(k) == 3}
+    return code, at, (t.subscribed - base) & opts, rec
+
+
+def _snap(idx=True, fut=True):
+    out = []
+    if idx:
+        out += [idx_pkt("NIFTY", 25000, PREV, "15:30:00"), idx_pkt("SENSEX", 80000, PREV, "15:30:00")]
+    if fut:
+        out += [full_pkt(TOK[("NIFTY", "FUT")], 25100, 5000, PREV, "15:29:59"),
+                full_pkt(TOK[("SENSEX", "FUT")], 80100, 5000, PREV, "15:29:59")]
+    return out
+
+
+def g_closed_day():
+    cells = []
+    closed_key = "session/%s/CLOSED" % DAY
+    # A. holiday: index + future snapshots stale for both symbols, REST quote stale -> CLOSED at 09:20, not before
+    code, at, opts, rec = _closed_case(FakeKite(quote=STALE_QUOTE), _snap())
+    body = json.loads(rec.uploader.s3.objects[closed_key]) if closed_key in rec.uploader.s3.objects else None
+    cells.append((code == 0 and at == "09:20", "holiday: exit %s at %s (must be 0 at 09:20, never earlier)" % (code, at)))
+    cells.append((body is not None and body.get("verdict") == "CLOSED" and body.get("source") == "packet+quote",
+                  "CLOSED uploaded: %s" % (body and {k: body[k] for k in ("verdict", "source")})))
+    cells.append((not opts, "holiday: option tokens subscribed: %d" % len(opts)))
+    # B. trading day, websocket stalled after the 08:55 snapshots: same stale witnesses, quote says today -> NOT closed
+    code, at, opts, rec = _closed_case(FakeKite(quote=TODAY_QUOTE), _snap())
+    cells.append((code is None and closed_key not in rec.uploader.s3.objects and len(opts) == 144,
+                  "stalled feed on a trading day: exit %s, CLOSED uploaded=%s, options subscribed=%d (144 expected)"
+                  % (code, closed_key in rec.uploader.s3.objects, len(opts))))
+    # C. only the index snapshots arrived (no future witness), quote stale -> NOT closed, keep recording
+    code, at, opts, rec = _closed_case(FakeKite(quote=STALE_QUOTE), _snap(fut=False))
+    cells.append((code is None and closed_key not in rec.uploader.s3.objects and len(opts) == 144,
+                  "index witnesses only: exit %s, options subscribed=%d, verdict=%s"
+                  % (code, len(opts), (rec.stats.closed_check or {}).get("source"))))
+    # D. no packets at all and the quote fails -> NOT closed (absence is not a verdict)
+    code, at, opts, rec = _closed_case(FakeKite(quote_fails=True), [])
+    cells.append((code is None and closed_key not in rec.uploader.s3.objects and len(opts) == 144,
+                  "no packets + quote fails: exit %s, options subscribed=%d" % (code, len(opts))))
+    return cells
+
+
+def g_smoke_s3():
+    from services.tape_runner.smoke import s3_check
+    cells = []
+    for mode, want in (("ok", True), ("corrupt", False), ("fail", False)):
+        s3, out = FakeS3(mode), []
+        ok = s3_check(s3, "meridian-tape-raw", "eu-north-1", ManualClock(ist_ns(DAY, "10:00:00")), out.append)
+        put = s3.puts[0] if s3.puts else {}
+        key_ok = bool(re.fullmatch(r"_smoke/\d{8}T\d{6}Z\.txt", put.get("key", "")))
+        verdict = "PASS" if want else "FAIL"
+        cells.append((ok is want and key_ok and put.get("sse") == "AES256" and len(s3.puts) == 1
+                      and any(("SMOKE S3 %s" % verdict) in l and "region=eu-north-1" in l for l in out),
+                      "S3 %s -> %s; key=%s; %s" % (mode, ok, put.get("key"), out[-1] if out else "")))
+    # end to end: Kite part passes, S3 returns a wrong ETag -> the smoke exits 5, not 0
+    from services.tape_runner.smoke import run_smoke
+
+    class T(FakeTicker):
+        def connect(self, threaded=False, **kw):
+            self.on_connect(self, {})
+    out = []
+    code = run_smoke(FakeKite(), T, ManualClock(ist_ns(DAY, "10:00:01")), wait_s=0, out=out.append,
+                     s3=FakeS3("corrupt"), bucket="meridian-tape-raw", region="eu-north-1")
+    cells.append((code == 5 and any("SMOKE FAIL: S3" in l for l in out), "run_smoke with a bad ETag -> exit %s" % code))
     return cells
 
 
@@ -664,7 +719,7 @@ GUARDS = [("classify-synthetic", g_classify_synthetic), ("classify-purity", g_cl
           ("segments-rotate", g_segments_rotate), ("upload-verify", g_upload_verify),
           ("subs-grow-only", g_subs_grow_only), ("ctl-records", g_ctl_records), ("spool-cap", g_spool_cap),
           ("token-fail", g_token_fail), ("closed-day", g_closed_day), ("fence", g_fence),
-          ("no-db-no-dhan", g_no_db_no_dhan)]
+          ("no-db-no-dhan", g_no_db_no_dhan), ("smoke-s3", g_smoke_s3)]
 
 
 # ======================================================================== unit checks (not guards)

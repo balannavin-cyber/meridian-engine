@@ -366,10 +366,20 @@ class Recorder:
         return any(d == self.day for d in self.witness.values())
 
     def _closed_verdict(self, now):
+        """CLOSED only on positive, two-source evidence (review 2026-11-01, item 4):
+        1. no witness dated today (any today-dated index/future packet -> OPEN);
+        2. for EVERY symbol both the index AND the future witness are present and stale -- a
+           subscribe-time snapshot of one instrument is not enough;
+        3. the REST quote independently confirms every index's last timestamp is stale -- a websocket
+           that delivered the 08:55 snapshots and then stalled cannot close a trading day.
+        Anything short of that is UNKNOWN: keep recording (absence is not a verdict). The check runs
+        at T_CLOSED_CHECK (09:20), never earlier."""
         if self._witness_today():
             return "OPEN", "packet"
-        if self.witness:
-            return "CLOSED", "packet"
+        need = [(s, r) for s in self.symbols for r in ("IDX", "FUT")]
+        missing = [k for k in need if k not in self.witness]
+        if missing:
+            return "UNKNOWN", "witness_missing:" + ",".join("%s/%s" % k for k in missing)
         try:
             keys = [c["ltp_key"] for c in self.symbol_cfg.values()]
             q = self.kite.quote(keys)
@@ -384,9 +394,9 @@ class Recorder:
             return "UNKNOWN", "quote_failed"
         if any(d == self.day for d in days):
             return "OPEN", "quote"
-        if days:
-            return "CLOSED", "quote"
-        return "UNKNOWN", "quote_empty"
+        if len(days) == len(keys):
+            return "CLOSED", "packet+quote"
+        return "UNKNOWN", "quote_incomplete"
 
     def _closed_check(self, now):
         self.closed_checked = True

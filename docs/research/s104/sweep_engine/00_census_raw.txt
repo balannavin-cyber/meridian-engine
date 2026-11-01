@@ -1,0 +1,85 @@
+==============================================================================
+TREE meridian-cc  root=/home/ssm-user/meridian-cc  HEAD=8f9d466
+  tracked files: 1366   total bytes: 46945697   (unreadable/missing on disk: 0)
+  modified-tracked (uncommitted): 0
+  untracked files (--untracked-files=all): 10811
+  tracked counts by extension:
+    .py             727
+    .md             274
+    .sql            180
+    .docx            36
+    .gz              30
+    .sh              21
+    .ps1             19
+    .bat             12
+    .csv             11
+    .json            11
+    .txt              8
+    .sha256           7
+    .pine             4
+    .service          4
+    .bak              3
+    .out              3
+    .timer            3
+    .conf             2
+    .diff             2
+    (noext)           1
+    .broken_runid_backup      1
+    .dead             1
+    .jsonl            1
+    .log              1
+    .pre_port80_20261004_0400      1
+    .pre_shadow_backup      1
+    .toml             1
+    .tsv              1
+==============================================================================
+TREE meridian-connect  root=/home/ssm-user/meridian-connect  HEAD=6f14a92
+  tracked files: 129   total bytes: 2319294   (unreadable/missing on disk: 0)
+  modified-tracked (uncommitted): 0
+  untracked files (--untracked-files=all): 0
+  tracked counts by extension:
+    .tsx             81
+    .jpg             21
+    .ts               9
+    .json             6
+    (noext)           4
+    .md               3
+    .css              1
+    .html             1
+    .js               1
+    .lock             1
+    .toml             1
+==============================================================================
+TREE meridian-engine  root=/home/ssm-user/meridian-engine  HEAD=8f9d466
+  tracked files: 1366   total bytes: 46945697   (unreadable/missing on disk: 0)
+  modified-tracked (uncommitted): 0
+  untracked files (--untracked-files=all): 14
+  tracked counts by extension:
+    .py             727
+    .md             274
+    .sql            180
+    .docx            36
+    .gz              30
+    .sh              21
+    .ps1             19
+    .bat             12
+    .csv             11
+    .json            11
+    .txt              8
+    .sha256           7
+    .pine             4
+    .service          4
+    .bak              3
+    .out              3
+    .timer            3
+    .conf             2
+    .diff             2
+    (noext)           1
+    .broken_runid_backup      1
+    .dead             1
+    .jsonl            1
+    .log              1
+    .pre_port80_20261004_0400      1
+    .pre_shadow_backup      1
+    .toml             1
+    .tsv              1

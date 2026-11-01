@@ -1,0 +1,864 @@
+# 41_db_raw.txt — raw query output backing 40_db_findings.md
+
+Role: merdian_ro via bin/roq.sh. All SELECT. Generated 2026-10-31.
+
+################ §1  Gamma-size columns x COMMENT state (94 rows) ################
+=== F1: EVERY relation.column that is a Gamma-SIZE by name, base tables and views, with comment presence ===
+relkind|relname|attname|typ|comment_state
+v|latest_atm_neighborhood|abs_net_gamma|numeric|NO COMMENT
+v|latest_atm_neighborhood|net_gamma|numeric|NO COMMENT
+v|latest_gamma_metrics|net_gex|numeric|NO COMMENT
+v|latest_gamma_metrics_v2|net_gex|numeric|NO COMMENT
+v|latest_gamma_walls|abs_net_gamma|numeric|NO COMMENT
+v|latest_gamma_walls|net_gamma|numeric|NO COMMENT
+v|latest_net_gamma_by_strike|abs_net_gamma|numeric|NO COMMENT
+v|latest_net_gamma_by_strike|net_gamma|numeric|NO COMMENT
+v|latest_signal_inputs|net_gex|numeric|NO COMMENT
+v|latest_signal_inputs_v2|net_gex|numeric|NO COMMENT
+v|latest_signal_snapshots|net_gex|numeric|NO COMMENT
+v|latest_top_gamma_strikes|abs_net_gamma|numeric|NO COMMENT
+v|latest_top_gamma_strikes|net_gamma|numeric|NO COMMENT
+v|signal_outcome_research_v1|net_gex|numeric|NO COMMENT
+v|signal_outcome_research_v2|net_gex|numeric|NO COMMENT
+v|v_dealer_flow_sim|net_gex|numeric|NO COMMENT
+v|v_gamma_metrics_1pct|net_gex|numeric|NO COMMENT
+v|v_gamma_metrics_1pct|net_gex_1pct|numeric|NO COMMENT
+v|v_gex_abs_exposure|abs_gex_cr|numeric|NO COMMENT
+v|v_gex_abs_exposure|net_gex_cr|numeric|NO COMMENT
+v|v_gex_abs_exposure_1pct|abs_gex_cr|numeric|NO COMMENT
+v|v_gex_abs_exposure_1pct|abs_gex_cr_1pct|numeric|NO COMMENT
+v|v_gex_abs_exposure_1pct|net_gex_cr|numeric|NO COMMENT
+v|v_gex_abs_exposure_1pct|net_gex_cr_1pct|numeric|NO COMMENT
+v|v_gex_greeks_l2_leg|u_gex_drift_iv|double precision|NO COMMENT
+v|v_gex_greeks_l2_leg|u_gex_drift_time|double precision|NO COMMENT
+v|v_gex_greeks_l2_net|gross_strike_gex_drift_iv|double precision|NO COMMENT
+v|v_gex_greeks_l2_net|gross_strike_gex_drift_time|double precision|NO COMMENT
+v|v_gex_greeks_l2_net|net_gex_drift_iv_cr_per_volpt|double precision|NO COMMENT
+v|v_gex_greeks_l2_net|net_gex_drift_time_cr_per_day|double precision|NO COMMENT
+v|v_gex_greeks_l2_net|net_over_gross_gex_drift_iv|double precision|NO COMMENT
+v|v_gex_greeks_l2_net|net_over_gross_gex_drift_time|double precision|NO COMMENT
+v|v_gex_greeks_l2_net_1pct|gross_strike_gex_drift_iv|double precision|NO COMMENT
+v|v_gex_greeks_l2_net_1pct|gross_strike_gex_drift_iv_1pct|double precision|NO COMMENT
+v|v_gex_greeks_l2_net_1pct|gross_strike_gex_drift_time|double precision|NO COMMENT
+v|v_gex_greeks_l2_net_1pct|gross_strike_gex_drift_time_1pct|double precision|NO COMMENT
+v|v_gex_greeks_l2_net_1pct|net_gex_drift_iv_cr_per_volpt|double precision|NO COMMENT
+v|v_gex_greeks_l2_net_1pct|net_gex_drift_iv_cr_per_volpt_1pct|double precision|NO COMMENT
+v|v_gex_greeks_l2_net_1pct|net_gex_drift_time_cr_per_day|double precision|NO COMMENT
+v|v_gex_greeks_l2_net_1pct|net_gex_drift_time_cr_per_day_1pct|double precision|NO COMMENT
+v|v_gex_greeks_l2_net_1pct|net_over_gross_gex_drift_iv|double precision|NO COMMENT
+v|v_gex_greeks_l2_net_1pct|net_over_gross_gex_drift_time|double precision|NO COMMENT
+v|v_gex_greeks_l2_strike|gex_drift_iv_cr_per_volpt|double precision|NO COMMENT
+v|v_gex_greeks_l2_strike|gex_drift_time_cr_per_day|double precision|NO COMMENT
+v|v_gex_greeks_l2_strike|gross_gex_drift_iv|double precision|NO COMMENT
+v|v_gex_greeks_l2_strike|gross_gex_drift_time|double precision|NO COMMENT
+v|v_gex_greeks_l2_strike_1pct|gex_drift_iv_cr_per_volpt|double precision|NO COMMENT
+v|v_gex_greeks_l2_strike_1pct|gex_drift_iv_cr_per_volpt_1pct|double precision|NO COMMENT
+v|v_gex_greeks_l2_strike_1pct|gex_drift_time_cr_per_day|double precision|NO COMMENT
+v|v_gex_greeks_l2_strike_1pct|gex_drift_time_cr_per_day_1pct|double precision|NO COMMENT
+v|v_gex_greeks_l2_strike_1pct|gross_gex_drift_iv|double precision|NO COMMENT
+v|v_gex_greeks_l2_strike_1pct|gross_gex_drift_time|double precision|NO COMMENT
+v|v_gex_net_gamma_river|net_gex_cr|numeric|NO COMMENT
+v|v_gex_net_gamma_river|session_max_net_gex_cr|numeric|NO COMMENT
+v|v_gex_net_gamma_river|session_min_net_gex_cr|numeric|NO COMMENT
+v|v_gex_net_gamma_river_1pct|net_gex_cr|numeric|NO COMMENT
+v|v_gex_net_gamma_river_1pct|net_gex_cr_1pct|numeric|NO COMMENT
+v|v_gex_net_gamma_river_1pct|session_max_net_gex_cr|numeric|NO COMMENT
+v|v_gex_net_gamma_river_1pct|session_max_net_gex_cr_1pct|numeric|NO COMMENT
+v|v_gex_net_gamma_river_1pct|session_min_net_gex_cr|numeric|NO COMMENT
+v|v_gex_net_gamma_river_1pct|session_min_net_gex_cr_1pct|numeric|NO COMMENT
+v|v_gex_strike_accel_zone|total_accel_gex_cr|numeric|NO COMMENT
+v|v_gex_strike_accel_zone|trough_gex_cr|numeric|NO COMMENT
+v|v_gex_strike_pin_zone|peak_pin_gex_cr|numeric|NO COMMENT
+v|v_gex_strike_pin_zone|total_pin_gex_cr|numeric|NO COMMENT
+v|v_gex_strike_rank|abs_gex_cr|numeric|NO COMMENT
+v|v_gex_strike_rank|gex_cr|numeric|NO COMMENT
+v|v_gex_strike_snapshots_1pct|gex_cr|numeric|NO COMMENT
+v|v_gex_strike_snapshots_1pct|gex_cr_1pct|numeric|NO COMMENT
+v|v_gex_strike_terrain|gex_cr|numeric|NO COMMENT
+v|v_gex_strike_terrain_1pct|gex_cr|numeric|NO COMMENT
+v|v_gex_strike_terrain_1pct|gex_cr_1pct|numeric|NO COMMENT
+v|v_pin_board|gamma_at_pin|numeric|NO COMMENT
+v|wcb_signal_validation_v1|net_gex|numeric|NO COMMENT
+v|wcb_signal_validation_v2|net_gex|numeric|NO COMMENT
+r|expiry_outcomes|gex_regime_persistence|numeric|NO COMMENT
+r|gamma_metrics|net_gex|numeric|ADR-032 UNIT COMMENT
+r|gamma_metrics_replay|net_gex|numeric|NO COMMENT
+r|gamma_metrics_shadow|net_gex|numeric|NO COMMENT
+r|gex_cycle_history|gamma_at_pin|numeric|ADR-032 UNIT COMMENT
+r|gex_cycle_history|net_gex|numeric|ADR-032 UNIT COMMENT
+r|gex_pin_maxpain_history|peak_pin_gex_cr|numeric|ADR-032 UNIT COMMENT
+r|gex_strike_snapshots|gex_cr|numeric|ADR-032 UNIT COMMENT
+r|hist_gamma_metrics|net_gex|numeric|ADR-032 UNIT COMMENT
+r|hist_market_state|net_gex|numeric|NO COMMENT
+r|market_environment_snapshots|gex_regime_persistence_20d|numeric|NO COMMENT
+r|market_environment_snapshots|net_gex_regime|text|NO COMMENT
+r|signal_snapshots|net_gex|numeric|ADR-032 UNIT COMMENT
+r|signal_snapshots_replay|net_gex|numeric|NO COMMENT
+r|signal_snapshots_shadow|net_gex|numeric|NO COMMENT
+r|structural_divergence_snapshots|net_gex|numeric|ADR-032 UNIT COMMENT
+r|structural_divergence_snapshots_replay|net_gex|numeric|NO COMMENT
+r|study_recon_accel|total_accel_gex_cr|numeric|NO COMMENT
+r|study_recon_pin|total_pin_gex_cr|numeric|NO COMMENT
+(94 rows)
+=== F2: can merdian_ro read pg_stat_statements? ===
+ERROR:  relation "pg_stat_statements" does not exist
+LINE 1: SELECT count(*) AS stmts_mentioning_gamma FROM pg_stat_state...
+                                                       ^
+
+################ §2  Views mentioning a Gamma token: deflen + defmd5 (53 rows) ################
+=== B1: every view/matview whose DEFINITION mentions a Gamma token, with md5 and length ===
+relkind|nspname|relname|deflen|defmd5|has_gex_cr|has_net_gex|has_scale_lit
+v|public|dashboard_last_updated|242|97fcd37d9b75dfd23c36dd6e0fc937c8|f|f|f
+v|public|dhan_nse_equity_norm|805|d88ee90dded33f43e5582e17d9fb3ca6|f|f|f
+v|public|equity_eod_norm|560|025314dde6bf85f0a77398f804684cb2|f|f|f
+v|public|latest_atm_neighborhood|1102|37ab654b53736a62d2839e14e73f4149|f|f|f
+v|public|latest_gamma_metrics|900|3a800c3c45d8a3e16be3af227680a65a|f|t|f
+v|public|latest_gamma_metrics_v2|357|0506360818b13fdded74772878594d1d|f|t|f
+v|public|latest_gamma_walls|1772|a737646362505748e18b9f4d522b03fb|f|f|f
+v|public|latest_net_gamma_by_strike|928|add59c3ed812f6490d7344a8ca4941c5|f|f|f
+v|public|latest_option_chain_run|930|a155a8fd9369f4250c3f4cae5c0f1864|f|f|f
+v|public|latest_option_chain_snapshots|368|14d4a7aadc1404f3e809a1fc13f37711|f|f|f
+v|public|latest_run_id|100|9a515855860957d07af4dee470c379fc|f|f|f
+v|public|latest_signal|342|2f098e26528f554d89bf00cda38c90a6|f|f|f
+v|public|latest_signal_inputs|525|a4c2edf3cb1277e97758056e27aa3431|f|t|f
+v|public|latest_signal_inputs_v2|493|1c385dbad0b19280a53c212420eb7bde|f|t|f
+v|public|latest_signal_intraday|2615|bceb780f232f918862deae9e2703bb67|f|f|f
+v|public|latest_signal_snapshots|719|6ce917887cc8a5f0d667f39a08b837cc|f|t|f
+v|public|latest_signal_v1|515|a33a2bbd7952dd5a82dff93e52599770|f|f|f
+v|public|latest_signal_v1_gated|983|69689e4ab674814b9888cdd74c6a8729|f|f|f
+v|public|latest_signal_v2|2106|275f340065b95c9cb76d21bddcb187ca|f|f|f
+v|public|latest_top_gamma_strikes|206|302f3d5c3d6c5dfd4c450e1a151d4830|f|f|f
+v|public|shadow_signal_validation_v1|1240|3ae463ce6cc8fd9b011dcb808ee51aa9|f|f|f
+v|public|signal_outcome_audit_dedup|1685|7a394fed03a73ad4dd2be8c95df86d43|f|f|f
+v|public|signal_outcome_research_v1|1319|19730b9b8827245efa059868c347ccbf|f|t|f
+v|public|signal_outcome_research_v2|873|e19556e032e9d1d679542fbec78c6f15|f|t|f
+v|public|v_dealer_flow_sim|1784|781e40e126944f2736b93f22e1558c6f|f|t|t
+v|public|v_delta_drift_flow_vs_book|15992|c905b35e6f119057d215f512d9e51e3e|f|f|t
+v|public|v_dex_repriced_zero|12166|e87300044ce9423c992c52bc23a9f1f4|f|f|t
+v|public|v_gamma_metrics_1pct|501|8e9908e26bbf496702a10811708bf413|f|t|t
+v|public|v_gex_abs_exposure|1378|2787513ebf09dd0106ad723a8d5a47da|t|t|f
+v|public|v_gex_abs_exposure_1pct|251|a587187e89ac4a35b12415d0e9f636ca|t|t|t
+v|public|v_gex_concentration|2140|c4cf15aa43fdb932b56db77cefee7188|t|f|f
+v|public|v_gex_greeks_l2_leg|9656|838ad0a62dd638068e80a43b716597ba|f|f|f
+v|public|v_gex_greeks_l2_net|1546|8962836c9839711b299aac4000cecbf9|f|t|f
+v|public|v_gex_greeks_l2_net_1pct|986|34e5c9b7b289486c89b5735244e42cf2|f|t|t
+v|public|v_gex_greeks_l2_strike|4028|66cfb53bd8fb63a445977d236b9d62d6|f|f|t
+v|public|v_gex_greeks_l2_strike_1pct|602|42e8ff77afbf959f8491eb18a63879f1|f|f|t
+v|public|v_gex_max_pain|3537|6eddea31904b739549c592d02480f496|f|f|f
+v|public|v_gex_net_gamma_river|2403|cea9d5c8e405c8bd30c2f99290b98cd9|t|t|f
+v|public|v_gex_net_gamma_river_1pct|423|7192428ee50f412e58368e83e9a7f308|t|t|t
+v|public|v_gex_pin_maxpain|3026|70d32c77ff1b854581773b3b0c2afa62|f|f|f
+v|public|v_gex_repriced_flip|10260|58ad6ba8f366c52a8e71b4ac1ea66864|f|f|t
+v|public|v_gex_strike_accel_zone|3547|87a0691ef33ef5e08cbf315fd6511064|t|f|f
+v|public|v_gex_strike_pin_zone|3523|89c9ac6aef9eb332ddd28f9062d0e21e|t|f|f
+v|public|v_gex_strike_rank|4002|0ab189a40cd648e8cc0e8f77b55cc5f6|t|f|f
+v|public|v_gex_strike_snapshots_1pct|240|670e13d9d601a602940bdfaaddb39104|t|f|t
+v|public|v_gex_strike_terrain|6463|c3beee55f60488da6dc20430f6b33981|t|f|f
+v|public|v_gex_strike_terrain_1pct|298|df14f1c1b991434b7c452e981deab526|t|f|t
+v|public|v_gex_strike_walls|4664|8135c42b4fe3613a676ec7e05af7ee9d|f|f|f
+v|public|v_pin_board|2922|9a827e8155e188db9ab9cd9b4fc429e0|f|t|f
+v|public|v_provenance_coverage_daily|1823|355d9eb7ea059a953271000c83601b10|f|f|f
+v|public|v_run_trace|357|8d86d44ef914f09a27b052c930364755|f|f|f
+v|public|wcb_signal_validation_v1|1467|aadafa8223ea7fc2cb8ee7ecfb40ba19|f|t|f
+v|public|wcb_signal_validation_v2|2507|cd1d5c3c7ed24aff8719e0e5ddbc6661|f|t|f
+(53 rows)
+=== B2: every function whose BODY mentions a Gamma token ===
+
+################ §3  Functions mentioning a Gamma token: srclen + srcmd5 (15 rows) ################
+=== B2: every function whose BODY mentions a Gamma token ===
+nspname|proname|args|srclen|srcmd5|has_scale_lit
+public|backfill_pin_maxpain_runs|p_symbol text, p_ts_from timestamp with time zone, p_ts_to timestamp with time zone, p_limit integer|4174|df1ffdf9d64f67ae371b15d05e09cd89|f
+public|cleanup_gamma_engine_data||2042|358129efb096c0719ab18ac359b9c136|f
+public|compute_expansion_probability|net_gex numeric, gamma_concentration numeric, straddle_slope numeric|881|c760d42ab2b824d06f3291026384bcf1|f
+public|compute_flip_level_v2|p_symbol text, p_run_id uuid|1140|eb1bb20f971c230172799f08a26c9a6e|f
+public|compute_flip_level_v3|p_symbol text, p_run_id uuid|1315|31eba77fbc3253334b56116b03787636|f
+public|compute_gamma_flip_for_run|p_run_id uuid|1371|35227fdb2a6773d9417f5bd831bafabb|f
+public|compute_gamma_metrics_for_run|p_run_id uuid|1150|a5fe7d746269fc356023f08b0cc3b7eb|f
+public|compute_options_regime|net_gex numeric|173|b7cc4cf0ac1f431cc5a2ac7c0227d4ca|f
+public|compute_signal_v1|breadth_regime text, breadth_score numeric, gamma_regime text, expansion_probability numeric|2412|b3f070c4297d8c806c4226cf92d4d244|f
+public|compute_signal_v2|breadth_regime text, breadth_score numeric, gamma_regime text, expansion_probability numeric, spot numeric, flip_level numeric, gamma_concentration numeric|2721|a19d63b4f07c63c4e8d46ce0de5b977f|f
+public|insert_option_chain_batch|p_symbol text, p_expiry_date date, p_spot numeric, p_rows jsonb, p_raw_chain jsonb|3168|caed8fe99e787ffda6276c4b457cf06a|f
+public|insert_option_chain_run|p_symbol text, p_expiry_date date, p_spot numeric, p_optionchain jsonb, p_metrics jsonb|1097|a81f817afad0136b1b7846d1e8e42325|f
+public|p3b_sweep|p_now timestamp with time zone, p_window interval, p_min_age interval|11293|af57a99c11fb83cf43872721c71b3ff9|t
+realtime|subscription_check_filters||5341|2f093b2c8ac47f69bee9d8c357a4ea79|f
+realtime|wal2json_escape_identifier|name text|120|55c607965ca03ea23e3da8bcaa1167f9|f
+(15 rows)
+
+################ §4  pg_depend/pg_rewrite dependents of every Gamma / _cr column ################
+=== E1: view dependents of the four Gamma SOURCE columns (pg_depend -> pg_rewrite) ===
+source_rel|source_col|dependent_view|relkind
+gamma_metrics|gamma_concentration|latest_gamma_metrics|v
+gamma_metrics|gamma_concentration|signal_outcome_research_v1|v
+gamma_metrics|gamma_concentration|v_gamma_metrics_1pct|v
+gamma_metrics|gamma_zone|v_gamma_metrics_1pct|v
+gamma_metrics|max_gamma_strike|v_gamma_metrics_1pct|v
+gamma_metrics|net_gex|latest_gamma_metrics|v
+gamma_metrics|net_gex|signal_outcome_research_v1|v
+gamma_metrics|net_gex|v_dealer_flow_sim|v
+gamma_metrics|net_gex|v_gamma_metrics_1pct|v
+gamma_metrics|net_gex|v_gex_net_gamma_river|v
+gex_cycle_history|gamma_at_pin|v_pin_board|v
+gex_cycle_history|gamma_regime|v_pin_board|v
+gex_cycle_history|net_gex|v_pin_board|v
+gex_strike_snapshots|gamma_call|v_gex_concentration|v
+gex_strike_snapshots|gamma_call|v_gex_strike_accel_zone|v
+gex_strike_snapshots|gamma_call|v_gex_strike_pin_zone|v
+gex_strike_snapshots|gamma_call|v_gex_strike_snapshots_1pct|v
+gex_strike_snapshots|gamma_call|v_gex_strike_terrain|v
+gex_strike_snapshots|gamma_put|v_gex_concentration|v
+gex_strike_snapshots|gamma_put|v_gex_strike_accel_zone|v
+gex_strike_snapshots|gamma_put|v_gex_strike_pin_zone|v
+gex_strike_snapshots|gamma_put|v_gex_strike_snapshots_1pct|v
+gex_strike_snapshots|gamma_put|v_gex_strike_terrain|v
+gex_strike_snapshots|gex_cr|v_gex_abs_exposure|v
+gex_strike_snapshots|gex_cr|v_gex_concentration|v
+gex_strike_snapshots|gex_cr|v_gex_strike_accel_zone|v
+gex_strike_snapshots|gex_cr|v_gex_strike_pin_zone|v
+gex_strike_snapshots|gex_cr|v_gex_strike_rank|v
+gex_strike_snapshots|gex_cr|v_gex_strike_snapshots_1pct|v
+gex_strike_snapshots|gex_cr|v_gex_strike_terrain|v
+latest_gamma_metrics|gamma_concentration|latest_gamma_metrics_v2|v
+latest_gamma_metrics|gamma_concentration|latest_signal_inputs|v
+latest_gamma_metrics|net_gex|latest_gamma_metrics_v2|v
+latest_gamma_metrics|net_gex|latest_signal_inputs|v
+latest_net_gamma_by_strike|abs_net_gamma|latest_atm_neighborhood|v
+latest_net_gamma_by_strike|abs_net_gamma|latest_gamma_walls|v
+latest_net_gamma_by_strike|abs_net_gamma|latest_top_gamma_strikes|v
+latest_net_gamma_by_strike|gamma_call|latest_atm_neighborhood|v
+latest_net_gamma_by_strike|gamma_call|latest_gamma_walls|v
+latest_net_gamma_by_strike|gamma_call|latest_top_gamma_strikes|v
+latest_net_gamma_by_strike|gamma_put|latest_atm_neighborhood|v
+latest_net_gamma_by_strike|gamma_put|latest_gamma_walls|v
+latest_net_gamma_by_strike|gamma_put|latest_top_gamma_strikes|v
+latest_net_gamma_by_strike|net_gamma|latest_atm_neighborhood|v
+latest_net_gamma_by_strike|net_gamma|latest_gamma_walls|v
+latest_net_gamma_by_strike|net_gamma|latest_top_gamma_strikes|v
+latest_signal_inputs|gamma_concentration|latest_signal_inputs_v2|v
+latest_signal_inputs|gamma_concentration|latest_signal_intraday|v
+latest_signal_inputs|gamma_concentration|latest_signal_v1|v
+latest_signal_inputs|gamma_concentration|latest_signal_v2|v
+latest_signal_inputs|net_gex|latest_signal_inputs_v2|v
+latest_signal_intraday|gamma_concentration|latest_signal|v
+latest_signal_intraday|gamma_regime|latest_signal|v
+latest_signal_v1|gamma_concentration|latest_signal_v1_gated|v
+latest_signal_v1|gamma_regime|latest_signal_v1_gated|v
+option_chain_snapshots|gamma|latest_net_gamma_by_strike|v
+option_chain_snapshots|gamma|latest_option_chain_run|v
+option_chain_snapshots|gamma|latest_option_chain_snapshots|v
+option_chain_snapshots|gamma|v_dex_repriced_zero|v
+option_chain_snapshots|gamma|v_gex_greeks_l2_leg|v
+option_chain_snapshots|gamma|v_gex_repriced_flip|v
+shadow_signal_snapshots|gamma_regime|shadow_signal_validation_v1|v
+signal_outcome_audit|gamma_regime|signal_outcome_audit_dedup|v
+signal_outcome_audit_dedup|gamma_regime|signal_outcome_research_v1|v
+signal_outcome_research_v1|gamma_concentration|signal_outcome_research_v2|v
+signal_outcome_research_v1|gamma_regime|signal_outcome_research_v2|v
+signal_outcome_research_v1|net_gex|signal_outcome_research_v2|v
+signal_snapshots|gamma_concentration|latest_signal_snapshots|v
+signal_snapshots|gamma_concentration|wcb_signal_validation_v1|v
+signal_snapshots|gamma_concentration|wcb_signal_validation_v2|v
+signal_snapshots|gamma_regime|latest_signal_snapshots|v
+signal_snapshots|gamma_regime|wcb_signal_validation_v1|v
+signal_snapshots|gamma_regime|wcb_signal_validation_v2|v
+signal_snapshots|net_gex|latest_signal_snapshots|v
+signal_snapshots|net_gex|wcb_signal_validation_v1|v
+signal_snapshots|net_gex|wcb_signal_validation_v2|v
+v_dex_standing_book|call_dex_cr|v_dex_flow_vs_book|v
+v_dex_standing_book|leg_call_dex_cr|v_dex_flow_vs_book|v
+v_dex_standing_book|leg_net_dex_cr|v_dex_flow_vs_book|v
+v_dex_standing_book|leg_put_dex_cr|v_dex_flow_vs_book|v
+v_dex_standing_book|net_dex_cr|v_dex_flow_vs_book|v
+v_dex_standing_book|put_dex_cr|v_dex_flow_vs_book|v
+v_gex_abs_exposure|abs_gex_cr|v_gex_abs_exposure_1pct|v
+v_gex_abs_exposure|net_gex_cr|v_gex_abs_exposure_1pct|v
+v_gex_greeks_l2_leg|gamma|v_delta_drift_flow_vs_book|v
+v_gex_greeks_l2_leg|gamma|v_gex_greeks_l2_strike|v
+v_gex_greeks_l2_leg|u_gex_drift_iv|v_delta_drift_flow_vs_book|v
+v_gex_greeks_l2_leg|u_gex_drift_iv|v_gex_greeks_l2_strike|v
+v_gex_greeks_l2_leg|u_gex_drift_time|v_delta_drift_flow_vs_book|v
+v_gex_greeks_l2_leg|u_gex_drift_time|v_gex_greeks_l2_strike|v
+v_gex_greeks_l2_net|gross_strike_gex_drift_iv|v_gex_greeks_l2_net_1pct|v
+v_gex_greeks_l2_net|gross_strike_gex_drift_time|v_gex_greeks_l2_net_1pct|v
+v_gex_greeks_l2_net|net_gex_drift_iv_cr_per_volpt|v_gex_greeks_l2_net_1pct|v
+v_gex_greeks_l2_net|net_gex_drift_time_cr_per_day|v_gex_greeks_l2_net_1pct|v
+v_gex_greeks_l2_net|net_over_gross_gex_drift_iv|v_gex_greeks_l2_net_1pct|v
+v_gex_greeks_l2_net|net_over_gross_gex_drift_time|v_gex_greeks_l2_net_1pct|v
+v_gex_greeks_l2_strike|gex_drift_iv_cr_per_volpt|v_gex_greeks_l2_net|v
+v_gex_greeks_l2_strike|gex_drift_iv_cr_per_volpt|v_gex_greeks_l2_strike_1pct|v
+v_gex_greeks_l2_strike|gex_drift_time_cr_per_day|v_gex_greeks_l2_net|v
+v_gex_greeks_l2_strike|gex_drift_time_cr_per_day|v_gex_greeks_l2_strike_1pct|v
+v_gex_greeks_l2_strike|gross_gex_drift_iv|v_gex_greeks_l2_strike_1pct|v
+v_gex_greeks_l2_strike|gross_gex_drift_time|v_gex_greeks_l2_strike_1pct|v
+v_gex_net_gamma_river|gamma_side|v_gex_net_gamma_river_1pct|v
+v_gex_net_gamma_river|net_gex_cr|v_gex_net_gamma_river_1pct|v
+v_gex_net_gamma_river|session_max_net_gex_cr|v_gex_net_gamma_river_1pct|v
+v_gex_net_gamma_river|session_min_net_gex_cr|v_gex_net_gamma_river_1pct|v
+v_gex_strike_terrain|gex_cr|v_gex_strike_terrain_1pct|v
+(107 rows)
+=== E2: triggers on Gamma relations ===
+
+################ §5  Scale-literal context inside every Gamma view (33 fragments) ################
+=== D1: occurrences of 10000000 / 1e7 / 0.01 in Gamma views, with context ===
+relname ~ frag
+v_dealer_flow_sim ~ 
+         SELECT s_1.pct,
+            s_1.label
+           FROM ( VALUES (- 0.02,'-2.0%'::text), ('-0.01'::numeric,'-1.0%'::text), ('-0.005'::numeric,'-0.5%'::text), (0.005,'
+v_dealer_flow_sim ~ +0.5%'::text), (0.01,'+1.0%'::text), (0.02,'+2.0%'::text)) s_1(pct, label)
+        ), late
+v_delta_drift_flow_vs_book ~ numeric::double precision * j.u_iv_put * j.d_oi_put::double precision * j.spot::double precision / '10000000'::numeric::double precision
+                END AS put_iv_flow_cr,
+  
+v_delta_drift_flow_vs_book ~ SE 1.0::double precision * j.u_t_call * j.d_oi_call::double precision * j.spot::double precision / '10000000'::numeric::double precision
+                END AS call_t_flow_cr,
+  
+v_delta_drift_flow_vs_book ~ ::double precision * j.u_t_put * j.pe_oi_anchor_qty::double precision * j.spot::double precision / '10000000'::numeric::double precision
+                END AS put_t_preopen_cr,
+
+v_delta_drift_flow_vs_book ~  j.call_in_book THEN 1.0::double precision * j.u_t_call * j.oi_call_d * j.spot::double precision / '10000000'::numeric::double precision
+                    WHEN COALESCE(j.oi_ca
+v_delta_drift_flow_vs_book ~ E 1.0::double precision * j.u_iv_call * j.d_oi_call::double precision * j.spot::double precision / '10000000'::numeric::double precision
+                END AS call_iv_flow_cr,
+ 
+v_delta_drift_flow_vs_book ~ :double precision * j.u_t_call * j.ce_oi_anchor_qty::double precision * j.spot::double precision / '10000000'::numeric::double precision
+                END AS call_t_preopen_cr,
+v_delta_drift_flow_vs_book ~ :double precision * j.u_iv_put * j.pe_oi_anchor_qty::double precision * j.spot::double precision / '10000000'::numeric::double precision
+                END AS put_iv_preopen_cr,
+v_delta_drift_flow_vs_book ~ double precision * j.u_iv_call * j.ce_oi_anchor_qty::double precision * j.spot::double precision / '10000000'::numeric::double precision
+                END AS call_iv_preopen_cr
+v_delta_drift_flow_vs_book ~ :numeric::double precision * j.u_t_put * j.d_oi_put::double precision * j.spot::double precision / '10000000'::numeric::double precision
+                END AS put_t_flow_cr,
+   
+v_delta_drift_flow_vs_book ~ j.call_in_book THEN 1.0::double precision * j.u_iv_call * j.oi_call_d * j.spot::double precision / '10000000'::numeric::double precision
+                    WHEN COALESCE(j.oi_ca
+v_delta_drift_flow_vs_book ~ book THEN '-1.0'::numeric::double precision * j.u_iv_put * j.oi_put_d * j.spot::double precision / '10000000'::numeric::double precision
+                    WHEN COALESCE(j.oi_pu
+v_delta_drift_flow_vs_book ~ _book THEN '-1.0'::numeric::double precision * j.u_t_put * j.oi_put_d * j.spot::double precision / '10000000'::numeric::double precision
+                    WHEN COALESCE(j.oi_pu
+v_dex_repriced_zero ~  THEN 1.0
+                    ELSE 0.0
+                END::double precision) * l.oi * gr.s_grid / '10000000'::numeric::double precision)) AS gross_dex
+           FROM grid gr
+  
+v_dex_repriced_zero ~  THEN 1.0
+                    ELSE 0.0
+                END::double precision) * l.oi * gr.s_grid / '10000000'::numeric::double precision) AS total_dex,
+            sum(abs((0.5::
+v_gamma_metrics_1pct ~ ,
+    spot_vs_range,
+    run_type,
+    dte,
+    max_gamma_strike,
+    pin_risk_score,
+    net_gex * 0.01 AS net_gex_1pct
+   FROM gamma_metrics t;
+v_gex_abs_exposure_1pct ~  dte,
+    spot,
+    net_gex_cr,
+    abs_gex_cr,
+    n_strikes,
+    n_contributing,
+    net_gex_cr * 0.01 AS net_gex_cr_1pct,
+    abs_gex_cr * 0.01 AS abs_gex_cr_1pct
+   FROM 
+v_gex_greeks_l2_net_1pct ~ ke_gex_drift_iv * 0.01::double precision AS gross_strike_gex_drift_iv_1pct
+   FROM v_gex_gre
+v_gex_greeks_l2_net_1pct ~ ss_gex_drift_iv,
+    net_over_gross_gex_drift_time,
+    status,
+    net_gex_drift_time_cr_per_day * 0.01::double precision AS net_gex_drift_time_cr_per_day_1pct,
+    net_gex_
+v_gex_greeks_l2_net_1pct ~ drift_iv_cr_per_volpt * 0.01::double precision AS net_gex_drift_iv_cr_per_volpt_1pct,
+    gross_st
+v_gex_greeks_l2_net_1pct ~ rike_gex_drift_time * 0.01::double precision AS gross_strike_gex_drift_time_1pct,
+    gross_stri
+v_gex_greeks_l2_strike ~ :double precision * b.u_delta_drift_time * b.oi * b.spot::double precision / '10000000'::numeric::double precision AS leg_delta_drift_time,
+            b.sg
+v_gex_greeks_l2_strike ~  b.k,
+            b.sgn::double precision * b.u_delta_drift_iv * b.oi * b.spot::double precision / '10000000'::numeric::double precision AS leg_delta_drift_iv,
+            b.sgn:
+v_gex_greeks_l2_strike ~ n::double precision * b.u_gex_drift_iv * b.oi * power(b.spot, 2::numeric)::double precision / '10000000'::numeric::double precision AS leg_gex_drift_iv,
+            b.sgn::d
+v_gex_greeks_l2_strike ~ ouble precision * b.u_gex_drift_time * b.oi * power(b.spot, 2::numeric)::double precision / '10000000'::numeric::double precision AS leg_gex_drift_time
+           FROM b
+ 
+v_gex_greeks_l2_strike_1pct ~ time,
+    gross_gex_drift_iv,
+    gross_gex_drift_time,
+    status,
+    gex_drift_time_cr_per_day * 0.01::double precision AS gex_drift_time_cr_per_day_1pct,
+    gex_drift_iv
+v_gex_greeks_l2_strike_1pct ~ _cr_per_volpt * 0.01::double precision AS gex_drift_iv_cr_per_volpt_1pct
+   FROM v_gex_gre
+v_gex_net_gamma_river_1pct ~ ession_max_net_gex_cr,
+    n_runs,
+    session_complete,
+    expiry_date,
+    dte,
+    net_gex_cr * 0.01 AS net_gex_cr_1pct,
+    session_min_net_gex_cr * 0.01 AS session_min_
+v_gex_net_gamma_river_1pct ~ net_gex_cr_1pct,
+    session_max_net_gex_cr * 0.01 AS session_max_net_gex_cr_1pct
+   FROM v_gex_net_gamma_river v;
+v_gex_repriced_flip ~  pi())) / (gr.s_grid * l.sigma * sqrt(e.t_years)) * l.oi * power(gr.s_grid, 2::double precision) / '10000000'::numeric::double precision) AS total_gex
+           FROM grid gr
+   
+v_gex_strike_snapshots_1pct ~ t,
+    oi_call,
+    oi_put,
+    gex_cr,
+    created_at,
+    gamma_call,
+    gamma_put,
+    gex_cr * 0.01 AS gex_cr_1pct
+   FROM gex_strike_snapshots t;
+v_gex_strike_terrain_1pct ~ ex_cr,
+    oi_call,
+    oi_put,
+    writer_pain,
+    max_pain_strike,
+    is_max_pain,
+    gex_cr * 0.01 AS gex_cr_1pct
+   FROM v_gex_strike_terrain v;
+(33 rows)
+
+################ §6  Triggers / indexes / policies / comments / constraints / generated cols ################
+=== E2: triggers on Gamma relations ===
+relname|tgname|proname|tgenabled
+(0 rows)
+=== E3: indexes on Gamma relations / Gamma expressions ===
+tablename|indexname|indexdef
+gex_cycle_history|gex_cycle_history_pk|CREATE UNIQUE INDEX gex_cycle_history_pk ON public.gex_cycle_history USING btree (symbol, expiry_date, ts)
+gex_cycle_history|ix_gex_cycle_history_sym_ts_session|CREATE INDEX ix_gex_cycle_history_sym_ts_session ON public.gex_cycle_history USING btree (symbol, ts DESC) WHERE (session_gate_state = 'OPEN'::text)
+gex_cycle_history|ix_gex_cycle_history_run|CREATE INDEX ix_gex_cycle_history_run ON public.gex_cycle_history USING btree (run_id)
+gex_pin_maxpain_history|gex_pin_maxpain_history_pkey|CREATE UNIQUE INDEX gex_pin_maxpain_history_pkey ON public.gex_pin_maxpain_history USING btree (id)
+gex_pin_maxpain_history|gex_pin_maxpain_history_symbol_run_id_expiry_date_key|CREATE UNIQUE INDEX gex_pin_maxpain_history_symbol_run_id_expiry_date_key ON public.gex_pin_maxpain_history USING btree (symbol, run_id, expiry_date)
+gamma_metrics|gamma_metrics_pkey|CREATE UNIQUE INDEX gamma_metrics_pkey ON public.gamma_metrics USING btree (id)
+gamma_metrics|idx_gm_ts_symbol_expiry|CREATE INDEX idx_gm_ts_symbol_expiry ON public.gamma_metrics USING btree (ts DESC, symbol, expiry_date)
+gamma_metrics|uix_gamma_metrics_symbol_ts|CREATE UNIQUE INDEX uix_gamma_metrics_symbol_ts ON public.gamma_metrics USING btree (symbol, ts)
+gamma_metrics|uix_gm_run|CREATE UNIQUE INDEX uix_gm_run ON public.gamma_metrics USING btree (run_id)
+hist_gamma_metrics|hist_gamma_metrics_pkey|CREATE UNIQUE INDEX hist_gamma_metrics_pkey ON public.hist_gamma_metrics USING btree (id)
+hist_gamma_metrics|hist_gamma_metrics_symbol_bar_ts_key|CREATE UNIQUE INDEX hist_gamma_metrics_symbol_bar_ts_key ON public.hist_gamma_metrics USING btree (symbol, bar_ts)
+hist_pattern_signals|idx_hist_pattern_signals_pattern|CREATE INDEX idx_hist_pattern_signals_pattern ON public.hist_pattern_signals USING btree (pattern_type, session, gamma_regime)
+market_state_snapshots_shadow|market_state_snapshots_shadow_gamma_run_id_idx|CREATE INDEX market_state_snapshots_shadow_gamma_run_id_idx ON public.market_state_snapshots_shadow USING btree (gamma_run_id)
+market_state_snapshots|idx_market_state_snapshots_gamma_run_id|CREATE INDEX idx_market_state_snapshots_gamma_run_id ON public.market_state_snapshots USING btree (gamma_run_id)
+market_state_snapshots_replay|market_state_snapshots_replay_gamma_run_id_idx|CREATE INDEX market_state_snapshots_replay_gamma_run_id_idx ON public.market_state_snapshots_replay USING btree (gamma_run_id)
+signal_premium_outcomes|idx_spo_conditions|CREATE INDEX idx_spo_conditions ON public.signal_premium_outcomes USING btree (gamma_regime, breadth_regime, confidence_decile, action)
+signal_premium_outcomes|idx_spo_iv_crush|CREATE INDEX idx_spo_iv_crush ON public.signal_premium_outcomes USING btree (iv_crushed, action, gamma_regime) WHERE (iv_crushed = true)
+structural_alerts|idx_structural_alerts_patterns|CREATE INDEX idx_structural_alerts_patterns ON public.structural_alerts USING btree (symbol, ts DESC) WHERE ((gamma_pinning = true) OR (stop_hunt_risk = true) OR (opening_gap_alert = true) OR (rollover_window = true))
+gamma_metrics_replay|gamma_metrics_replay_pkey|CREATE UNIQUE INDEX gamma_metrics_replay_pkey ON public.gamma_metrics_replay USING btree (id)
+gamma_metrics_replay|gamma_metrics_replay_run_id_idx|CREATE UNIQUE INDEX gamma_metrics_replay_run_id_idx ON public.gamma_metrics_replay USING btree (run_id)
+gamma_metrics_replay|gamma_metrics_replay_symbol_ts_idx|CREATE UNIQUE INDEX gamma_metrics_replay_symbol_ts_idx ON public.gamma_metrics_replay USING btree (symbol, ts)
+gamma_metrics_replay|gamma_metrics_replay_ts_symbol_expiry_date_idx|CREATE INDEX gamma_metrics_replay_ts_symbol_expiry_date_idx ON public.gamma_metrics_replay USING btree (ts DESC, symbol, expiry_date)
+gamma_metrics_shadow|gamma_metrics_shadow_pkey|CREATE UNIQUE INDEX gamma_metrics_shadow_pkey ON public.gamma_metrics_shadow USING btree (id)
+gamma_metrics_shadow|gamma_metrics_shadow_symbol_ts_key|CREATE UNIQUE INDEX gamma_metrics_shadow_symbol_ts_key ON public.gamma_metrics_shadow USING btree (symbol, ts)
+gamma_metrics_shadow|gamma_metrics_shadow_run_id_idx|CREATE UNIQUE INDEX gamma_metrics_shadow_run_id_idx ON public.gamma_metrics_shadow USING btree (run_id)
+gamma_metrics_shadow|gamma_metrics_shadow_ts_symbol_expiry_date_idx|CREATE INDEX gamma_metrics_shadow_ts_symbol_expiry_date_idx ON public.gamma_metrics_shadow USING btree (ts DESC, symbol, expiry_date)
+gamma_metrics_shadow|idx_gms_symbol_ts|CREATE INDEX idx_gms_symbol_ts ON public.gamma_metrics_shadow USING btree (symbol, ts DESC)
+gex_strike_snapshots|gex_strike_snapshots_pkey|CREATE UNIQUE INDEX gex_strike_snapshots_pkey ON public.gex_strike_snapshots USING btree (id)
+gex_strike_snapshots|uq_gss_run_strike_expiry|CREATE UNIQUE INDEX uq_gss_run_strike_expiry ON public.gex_strike_snapshots USING btree (run_id, strike, expiry_date)
+gex_strike_snapshots|idx_gss_run_id|CREATE INDEX idx_gss_run_id ON public.gex_strike_snapshots USING btree (run_id)
+gex_strike_snapshots|idx_gss_symbol_exp_ts|CREATE INDEX idx_gss_symbol_exp_ts ON public.gex_strike_snapshots USING btree (symbol, expiry_date, ts DESC)
+gex_strike_snapshots|idx_gss_symbol_ts|CREATE INDEX idx_gss_symbol_ts ON public.gex_strike_snapshots USING btree (symbol, ts DESC)
+gex_strike_snapshots|idx_gss_symbol_ts_strike|CREATE INDEX idx_gss_symbol_ts_strike ON public.gex_strike_snapshots USING btree (symbol, ts DESC, strike)
+gex_strike_snapshots|ix_gex_strike_snap_sym_ts|CREATE INDEX ix_gex_strike_snap_sym_ts ON public.gex_strike_snapshots USING btree (symbol, ts DESC)
+gex_strike_snapshots|idx_gss_ts|CREATE INDEX idx_gss_ts ON public.gex_strike_snapshots USING btree (ts)
+(35 rows)
+=== E4: RLS policies on Gamma relations ===
+tablename|policyname|roles|cmd|qual
+gex_strike_snapshots|anon read|{anon}|SELECT|true
+gamma_metrics|anon read gamma_metrics|{anon}|SELECT|true
+gex_strike_snapshots|anon read gex_strike_snapshots|{anon}|SELECT|true
+gamma_metrics|gamma_metrics_anon_read|{anon}|SELECT|true
+gex_strike_snapshots|gex_strike_snapshots_anon_read|{anon}|SELECT|true
+gamma_metrics|merdian_ro_select|{merdian_ro}|SELECT|true
+gex_strike_snapshots|merdian_ro_select|{merdian_ro}|SELECT|true
+gamma_metrics_replay|merdian_ro_select|{merdian_ro}|SELECT|true
+gex_pin_maxpain_history|merdian_ro_select|{merdian_ro}|SELECT|true
+(9 rows)
+=== E5: COMMENTs mentioning a Gamma token (object + column) ===
+relname|col|description
+gamma_metrics|max_gamma_strike|S41 P0.a — strike with max |gex_cr| in this cycle. Replaces client-side aggregation against gex_strike_snapshots (Marketview S40 correction prompt mapping). NULL on degenerate strike map.
+gamma_metrics|net_gex|ADR-032: net gamma exposure over all strikes of the run, INR crore for a 100% spot move (gamma*OI*S^2/1e7), signed. Per-1% figure = x0.01, served by v_gamma_metrics_1pct.net_gex_1pct. Stored unit; D2 not built.
+gamma_metrics|otm_oi_velocity|Rate of change of OTM OI vs prior run. Positive spike = pre-squeeze accumulation signal.
+gamma_metrics|pin_risk_score|S41 P0.a — additive-weighted pin risk score 0-100. Components: gamma_concentration*0.30 + spot_proximity*0.30 + sustained_time*0.20 + (1-expansion_prob)*0.20. Renormalized when factors unavailable. See ADR-002 v2 PINNED state and compute_pin_risk_score() docstring.
+gamma_metrics|run_type|FULL = full chain fetch every 5 min. PARTIAL = ATM+-5 fetch on intervening minutes.
+gamma_metrics|spot_vs_range|Spot position within session high-low range. 0 = session low, 1 = session high. From intraday_ohlc.
+gamma_metrics|straddle_velocity|Rate of change of straddle_atm vs prior run. NULL on first run of session. Negative = IV compressing.
+gamma_metrics|vix|S41 P0.a — India VIX live (Dhan marketfeed/ltp IDX_I/21). NULL on Dhan fetch failure (token/429/network). Index-wide value, replicated across NIFTY+SENSEX rows per cycle.
+gamma_metrics_replay|otm_oi_velocity|Rate of change of OTM OI vs prior run. Positive spike = pre-squeeze accumulation signal.
+gamma_metrics_replay|run_type|FULL = full chain fetch every 5 min. PARTIAL = ATM+-5 fetch on intervening minutes.
+gamma_metrics_replay|spot_vs_range|Spot position within session high-low range. 0 = session low, 1 = session high. From intraday_ohlc.
+gamma_metrics_replay|straddle_velocity|Rate of change of straddle_atm vs prior run. NULL on first run of session. Negative = IV compressing.
+gex_cycle_history|(relation)|ENH-133 per-cycle layer history. One row per (symbol, expiry_date, ts) at the 5-minute gamma cadence, both expiry legs, written by the existing compute chain. Grain accommodates a future 1-minute pass (Candidate A) unchanged.
+RETENTION: KEEP INDEFINITELY. This table is explicitly NOT a target of pg_cron jobid 19 (cleanup_gamma_engine_daily, currently active=false). Any future retention job must name this table explicitly to touch it; a blanket gamma-chain cleanup must not.
+Rows are written on every cycle regardless of session state; the DEFAULT history read filters session_gate_state = 'OPEN'. A frozen-market cycle (see TD-S89-NEW-1, 2026-10-02) is recorded and flagged FROZEN, never silently dropped.
+Scope ruled 2026-10-03 — docs/research/s89_rulings/rulings_s89.md; bound spec — docs/research/s89_rulings/ENH-133_schema_spec_S89.md. Complement to ENH-134 (as-of functions cover the already-stored window; this table accumulates forward).
+gex_cycle_history|conc_hhi|True Herfindahl concentration = sum of squared per-strike shares (share_of_abs^2) over all ranked strikes for the run. Distinct from conc_top1_share, which is the single top strike's share. Measured 2026-10-03 NIFTY 10-01: conc_hhi = 0.04635883019194746740 vs conc_top1_share 0.09419433182919231685 (factor ~2). This is the real HHI; conc_top1_share is dominance, not dispersion.
+gex_cycle_history|conc_top1_share|v_gex_concentration.hhi_net, stored under an honest name: it is the TOP-1 STRIKE SHARE of total abs(gex_cr), NOT a Herfindahl. Measured 2026-10-03 on NIFTY 10-01: published value 0.09419433182919231685 is byte-identical to v_gex_strike_rank.share_of_abs at strike_rank 1 and to gamma_metrics.gamma_concentration, while the true Herfindahl (sum of squared shares) is 0.04635883019194746740 — a factor of ~2. Never name this column hhi_*.
+gex_cycle_history|conc_top1_share_call|v_gex_concentration.hhi_call, carried verbatim. SEMANTICS UNVERIFIED: the net leg was proven to be a top-1 share rather than a Herfindahl, and the call/put legs have NOT been checked either way. Do not publish as a Herfindahl, and do not compare with conc_top1_share, until verified.
+gex_cycle_history|conc_top1_share_put|v_gex_concentration.hhi_put, carried verbatim. SEMANTICS UNVERIFIED — see conc_top1_share_call.
+gex_cycle_history|conviction|(1 - runnerup_share_ratio) * boost(T), boost(T) = 2.53 * T^(-0.5), T in TRADING days to expiry, cap 3.70, floor T = 0.47 (D-5b / D-5c). Stage 1 only; Stage 2 multiplies by the 30-session conc_top1_share percentile once this table has history. The runner-up margin exists in NO relation and is computed by the writer — see the spec.
+gex_cycle_history|conviction_reason|Why conviction is NULL, when it is: a null runnerup_share_ratio, trading_calendar unavailable (fail-open detected, so T is not trustworthy), or a null t_days. NULL when conviction resolved. Kept SEPARATE from pin_state_reason so the two gaps are never conflated — a valid pin_state must carry pin_state_reason NULL even on a cycle whose conviction could not be computed, and vice versa. Absence is not a verdict (ADR-020): a NULL conviction with no stored reason would be indistinguishable from one never attempted.
+gex_cycle_history|dte|gamma_metrics.dte, which is CALENDAR days to expiry — measured 2026-10-03 across 8 runs (dte == expiry_date - run_date on all; trading days ahead differed, e.g. 10-01 dte 5 = 2 trading days). boost(T) takes TRADING days, so the writer converts via trading_calendar; do NOT feed this column to boost() directly.
+gex_cycle_history|gamma_at_pin|ADR-032: gex_cr of the rank-1 (pin leader) strike, copied: INR crore for a 100% spot move (gamma*OI*S^2/1e7). Per-1% = x0.01. Stored unit; D2 not built.
+gex_cycle_history|held_for_cycles|Consecutive cycles for which pin_leader_strike has been unchanged, counting only session_gate_state = 'OPEN' rows, so a frozen or holiday date adds nothing. Starts at 1 on a leader change. WRITE-TIME VALUE IS PROVISIONAL and is RECOMPUTED by the EOD reconciler over the finalised OPEN set, which also CARRIES THE STREAK FORWARD across an overnight or holiday gap — a leader that persists continues its streak. Spec: docs/research/s89_rulings/ENH-133_reconciler_spec_S89.md.
+gex_cycle_history|is_fresh|Persisted from v_gex_pin_maxpain / v_gex_max_pain, never dropped: without it a stale-book cycle is indistinguishable from a fresh one in history. Measured example 2026-10-03: is_fresh = f at snapshot_age_min = 2670.7 reading Saturday.
+gex_cycle_history|net_gex|ADR-032: copy of gamma_metrics.net_gex for the cycle: INR crore for a 100% spot move (gamma*OI*S^2/1e7). Per-1% = x0.01. Stored unit; D2 not built.
+gex_cycle_history|pin_state|NO PIN | SHIFTING | STABLE | LOCKED, derived from held_for_cycles, runnerup_share_ratio and conc_top1_share using thresholds read from merdian_parameters (ADR-016 dot-keys). Thresholds are PROVISIONAL and owe D-6 calibration. A missing parameter key leaves this NULL with the reason in pin_state_reason — absence is not a verdict (ADR-020) and the writer must never substitute a default.
+gex_cycle_history|reconciled_at|NULL until the EOD reconciler has finalised this row; set to the reconciler run's timestamp when it has. This is the CANONICAL unreconciled signal — the absence of a PRE_TICK state is NOT, because a date whose every cycle began after the first spot tick (~09:11 IST) is written with no PRE_TICK row at all and would otherwise be indistinguishable from a reconciled one. The reconciler NEVER overwrites writer or writer_version: the two provenances are separate facts about the same row. Spec: docs/research/s89_rulings/ENH-133_reconciler_spec_S89.md §6.1.
+gex_cycle_history|reconciler_version|Identity of the reconciler build that finalised this row, mirroring writer_version. Kept separate so a re-derivation after a rule change (reconciler spec §5, --recompute) is attributable without destroying the original write's provenance.
+gex_cycle_history|repriced_flip_level|v_gex_repriced_flip.flip (L3), CLOCK-MATCHED to this row's gamma run. That view carries NO run_id and NO dte, names its expiry front_expiry, and its latest row can sit on a different trading date than the gamma run (measured 2026-10-03: its latest was 2026-10-02 10:10:04+00 at the frozen spot 22421.95 while the gamma clock was 2026-10-01 09:50:07+00 — a ~1,460-minute gap on a frozen book). If the writer cannot match the clock it stores NULL here and UNMATCHED_NULL in repriced_flip_source. Kept SEPARATE from flip_level per ADR-025 B7: the two are different definitions and measured 22368.20 vs 22692.00 on those runs.
+gex_cycle_history|repriced_flip_ts|The ts the L3 view actually RETURNED, stored so a reader can test the clock match rather than trust it. Compared by column name, never by position.
+gex_cycle_history|session_gate_state|Three states, because two cannot tell a pre-open cycle from a closed market. OPEN = spot was observed to MOVE (distinct spot > 1). FROZEN = ticks exist but spot never moved — a closed or frozen book; 2026-10-02 carried ~143k chain rows across 83 distinct ts with distinct_spot = 1 for both symbols, so row-count and distinct-ts checks CANNOT find it (TD-S89-NEW-1). PRE_TICK = no spot tick existed yet at this ts, which is the NORMAL state of the first 6-8 cycles of every trading day: the gamma clock starts 08:30-08:40 IST while the first market_spot_snapshots tick lands ~09:11:03 IST (measured across 2026-09-22..10-01, 6-8 of 74-83 cycles per day). A two-state gate would have stamped those real cycles not-a-session. WRITE-TIME VALUE IS PROVISIONAL: PRE_TICK is FINALISED to OPEN or FROZEN by the EOD reconciler (reconcile_gex_cycle_history_session_local.py), which judges the whole completed date once the tape has settled. Spec: docs/research/s89_rulings/ENH-133_reconciler_spec_S89.md.
+gex_cycle_history|session_gate_ticks|Count of market_spot_snapshots rows for this symbol on this IST date at or before ts, AS SEEN AT WRITE TIME. Kept so a PRE_TICK row is provably a tick-absence rather than a failed read: 0 means the tape had not started, NULL means the writer could not count. The reconciler does not rewrite this column — it records what the writer saw, not what was true by end of day.
+gex_pin_maxpain_history|peak_pin_gex_cr|ADR-032: gex_cr at the pin peak strike, INR crore for a 100% spot move (gamma*OI*S^2/1e7). Per-1% = x0.01. Static backfill 2026-05-25..2026-09-18 (S80); no live writer.
+gex_strike_snapshots|(relation)|Per-strike GEX time-series. ENH-80 / ADR-014. See ADR for sign convention and falsification rule.
+gex_strike_snapshots|gamma_call|Black-Scholes gamma of the CE leg at this strike. NULL if no CE row present in chain. Source: option_chain_snapshots via chain cache.
+gex_strike_snapshots|gamma_put|Black-Scholes gamma of the PE leg at this strike. NULL if no PE row present in chain. Source: option_chain_snapshots via chain cache.
+gex_strike_snapshots|gex_cr|ADR-032: per-strike dealer gamma exposure, INR crore for a 100% spot move (gamma*OI*S^2/1e7). Per-1% figure = x0.01, served by the *_1pct views. Stored unit; no per-1% column exists yet (ADR-032 D2 not built). Sign note (pre-existing text, kept verbatim): Signed Cr. Positive=dampening (dealer long). Negative=amplifying (dealer short).
+gex_strike_snapshots|oi_call|Call OI at this strike at snapshot time. Source: chain cache.
+gex_strike_snapshots|oi_put|Put OI at this strike at snapshot time. Source: chain cache.
+gex_strike_snapshots|run_id|Joins to gamma_metrics.run_id. SUM(gex_cr) per run_id == gamma_metrics.net_gex ±0.01 Cr.
+hist_gamma_metrics|net_gex|ADR-032: RAW scale, about 1e7 x the live gamma_metrics unit (gamma*OI*S^2, no /1e7). INR crore per 1% = value/1e9. Measured 2026-10-31: 182,430 of 182,461 non-null rows >= 1e9, one scale throughout (2025-04..2026-03).
+market_spot_snapshots|source_table|Origin table for the spot reading, e.g. gamma_metrics.
+market_spot_snapshots_replay|source_table|Origin table for the spot reading, e.g. gamma_metrics.
+p3b_invariant_checks|(relation)|P3b (S96-H): per-cycle invariants I1-I4 (asserted) and I5-I6 (descriptive) on every gamma run, written by public.p3b_sweep() under pg_cron job p3b_invariants. Definitions and tolerances = P3a (tests/test_p3a_invariants.py). kind=sweep rows are the heartbeat. Shadow: no consumer. Off switch: SELECT cron.unschedule('p3b_invariants').
+script_execution_log|run_id|ADR-031 D7: the cycle run_id (correlation key with gamma_metrics / option_chain_snapshots / volatility_snapshots / gex_cycle_history).
+signal_snapshots|net_gex|ADR-032: copy of gamma_metrics.net_gex at signal time: INR crore for a 100% spot move (gamma*OI*S^2/1e7). Per-1% = x0.01. Stored unit; D2 not built.
+structural_divergence_snapshots|net_gex|ADR-032: copy of gamma_metrics.net_gex at snapshot time: INR crore for a 100% spot move (gamma*OI*S^2/1e7). Per-1% = x0.01. Stored unit; D2 not built.
+v_dealer_flow_sim|(relation)|ENH-81 v0 — dealer hedge-flow projection at ±0.5 %, ±1 %, ±2 % for the latest run per symbol. flow_cr = -net_gex × Δspot (first order): per ADR-014 §2.3 a long-gamma book (net_gex > 0) SELLS rallies and BUYS dips. SIGN CORRECTED S90 2026-10-05 (MV-1): the v0 body had flow_cr = +net_gex × Δspot, which inverted every direction. Not ADR-021 scoped (TD-S81-NEW-4): read it filtered by symbol or run_id.
+v_delta_drift_flow_vs_book|(relation)|S96 / roadmap P7b / rulings S96-F, S96-G -- d(delta)/d(sigma) and d(delta)/dt FLOW since the pre-open row beside the BOOK of ENH-98 L7/L8, per FRONT-expiry strike, in Rs crore of delta-notional (per +1 IV point; per calendar day). NOT a parity layer; display-only (S37); routes nothing; makes NO PREDICTIVE CLAIM. NO BADGE COLUMN. Grain (symbol, expiry_date, strike); consumers MUST ORDER BY symbol, strike. ONE IMPLEMENTATION OF THE GREEKS: every value is sgn x unit x quantity x spot / 1e7 with the unit read from v_gex_greeks_l2_leg (the S89 Black-Scholes chain, gate C5 bit-for-bit) and sgn the L7/L8 dealer assumption (CE +1, PE -1). book uses oi at the L7/L8 latest ts over the L7/L8 leg set, so leg book equals v_gex_greeks_l2_net front-leg net; flow uses dOI = oi(latest) - oi(anchor); pre-open uses the anchor OI valued at TODAY'S greeks (not the book at 08:30), so book = pre-open + flow exactly, the change being open interest only, never repricing; leg_*_no_anchor_cr is the book on sides with no anchor OI, the one term outside that split. CLOCK: the L7/L8 latest chain ts and its OI; the anchor (anchor_ts, anchor OI) from v_oi_since_preopen (ENH-142, S95-B). JOIN GUARD: rows appear only when the base ts IST date equals the P5 session date and the front expiry equals P5's; otherwise NO ROWS, never a fallback. After 15:15 this view sits on the latest run (to 15:40) while v_dex_flow_vs_book holds at the settled run -- the D5 split, recorded, not fixed. flow_window PRE_OPEN before 09:15 IST, where a non-zero dOI is a vendor revision, not flow; consumers draw flow only in SESSION. NULL IS A GAP, NEVER A ZERO: a leg is priced wherever the base's unit is not NULL (priceable and evaluable; a leg closed to zero OI is priced, S96-F E2); a non-zero dOI on an unpriced side publishes NULL flow and its |dOI| in gap_d_oi_qty; a side with no anchor publishes NULL dOI and its OI in no_anchor_oi_qty; a book side with OI outside the leg set is NULL; nets are NULL when either side is. dte 0 is SKIPPED in L7/L8 (status SKIPPED_EXPIRY), so on the front leg's expiry day every non-zero dOI is a gap. Strikes absent from the latest run are not drawn (as in v_dex_flow_vs_book). LEG TOTALS are window sums of each side's MEASURED contribution, read with leg_gap_d_oi_qty and leg_no_anchor_oi_qty or not at all. AN OI CHANGE CANNOT DISTINGUISH WRITING FROM BUYING; NO DEALER CLAIM (P2: dealer side regime-dependent). Flow is unclassified (D-4 not built) and valued at the latest greeks, not at the greeks when each contract was added. Runs with the owner privileges (security_invoker = false); adding a column here publishes it to anon. Never label second-order terms vanna or charm (L78-1).
+v_dex_flow_vs_book|(relation)|S96 / roadmap P7a / ruling S96-A -- DEX FLOW since the pre-open row beside the DEX standing BOOK, per front-expiry strike, in Rs crore. NOT a parity layer; display-only (S37); routes nothing; makes NO PREDICTIVE CLAIM. Grain (symbol, expiry_date, strike), front leg only; consumers MUST ORDER BY symbol, strike. BADGE (S96-E): M-P7 (docs/research/s96_priority/p7/MP7_flow_badge_result_2026-10-11.md) scored a SAME/OPPOSITE badge BUILD on condition of an untraded-leg guard (TD-S95-NEW-1 c, ruled S96-D); flow_book_badge and flow_book_abstain_code are appended below. JOINS TWO LIVE VIEWS AND RE-IMPLEMENTS NO RULE: v_dex_standing_book (ENH-140) gives the session, the front leg, the settled run (last run at or before 15:15 IST), OI, vendor delta and spot at it, the gap rule and the book; v_oi_since_preopen (ENH-142, S95-B) gives the anchor, the session first front-expiry row stamped before 09:15 IST, and the anchor OI. flow = delta(settled) x (oi(settled) - oi(anchor)) x spot / 1e7, no PE flip (delta carries its sign), oi a quantity with the lot inside it. ONE CLOCK: everything is valued at the book settled run; P5 own latest snapshot and delta columns are not used, because after 15:15 P5 latest moves to 15:40 while the book holds. book minus flow equals delta x oi(anchor) x spot / 1e7 wherever both sides are measured. JOIN GUARD: rows appear for a symbol only when the book session date and front expiry equal P5 (P5 session = IST date of anchor_ts); otherwise NO ROWS for that symbol, never a fallback (ADR-023 D1) -- expected from the pre-open rows (~08:30) until the tape moves after 09:15, and on a frozen closed day that wrote chain rows. NULL IS A GAP, NEVER A ZERO: a side whose delta is a gap publishes NULL flow and its |dOI| in d_oi_call_no_delta / d_oi_put_no_delta; a side with no anchor OI has NULL dOI and NULL flow, its settled OI in leg_no_anchor_oi_qty; net_flow_cr is NULL when either side is NULL. Gap detection: where settled OI is above 0, the book own NULL call_dex_cr / put_dex_cr; where it is 0, delta IS NULL OR delta = 0 (ENH-140 marker differs only on a zero delta beside a live iv, measured at zero rows; Section 4d recomputes with the iv form). LEG TOTALS are window sums of each side MEASURED contribution, read with leg_gap_d_oi_qty and leg_no_anchor_oi_qty or not at all; the book leg totals ride beside them unchanged. flow_window is PRE_OPEN when the settled run is stamped before 09:15 IST -- a non-zero flow then is a vendor OI revision before any trade -- and SESSION otherwise; consumers draw flow only in SESSION. AN OI DELTA CANNOT DISTINGUISH WRITING FROM BUYING; NO DEALER CLAIM (P2: dealer side regime-dependent). Flow is unclassified (no long/short build-up, covering or unwinding) and is valued at the settled run delta, not at the delta when each contract was added. FLOW NET IS ITSELF A PARTIAL CANCELLATION: M-P7 measured flow |net|/gross median 0.27 NIFTY, 0.19 SENSEX over 31 and 28 sessions. VENDOR OI ON UNTRADED LEGS (TD-S95-NEW-1) does not move flow after 09:15 on any of 22 symbol-sessions measured, but it inflates the BOOK beside it on days like SENSEX 2026-09-25 / 09-28 / 09-29. Runs with the owner privileges (security_invoker = false); adding a column here publishes it to anon. PRE-OPEN COLUMNS (S96-C, appended): call_preopen_dex_cr / put_preopen_dex_cr / net_preopen_dex_cr and their leg totals are the PRE-OPEN OI VALUED AT THE SETTLED DELTA x spot / 1e7 -- not the book as it stood at 08:30 -- so book = pre-open + flow splits the change into OI change only, never repricing; a surface labels it from x at pre-open OI. Same gap rule as flow. leg_no_anchor_dex_cr is the book DEX on sides with no anchor OI, the one term outside the split: leg book = leg pre-open + leg flow + leg_no_anchor_dex_cr exactly. These exist so a surface that draws held / added / removed since the pre-open reads the remembered value from here, never from its own memory. UNTRADED-LEG GUARD (S96-D, appended): leg_s2_gross_cr is the |book DEX| on strike sides that at the settled run have oi above 0, volume 0 so far and oi_change equal to oi (OI that appeared with no trade, signature S2); leg_s2_gross_share is that over the leg |book DEX| (gap sides count 0 in both; NULL when the leg has no measured book); untraded_guard is leg_s2_gross_share >= 0.02, NULL when the share is NULL. 2 percent is the geometric mean of the survey edges (unmarked max 0.06 percent, marked min 69.01 percent; docs/research/s96_priority/guard/guard_survey_result_2026-10-11.md). It gates the M-P7 SAME/OPPOSITE badge only: a badge draws only where untraded_guard is false. It does not change the book, the flow or any other column. FLOW-VS-BOOK BADGE (S96-E, appended, identical on every row of a symbol): leg_book_net_p_cr and leg_flow_net_p_cr are the book and flow nets under the parity delta set -- PE delta replaced by delta_call - 1, CE unchanged, a PE value a gap when its strike CE delta is a gap (ENH-140 iv form) or absent -- measured part, as M-P7 summed them. flow_book_badge is ABSTAIN when flow_book_abstain_code is not NULL, else SAME when sign(leg_net_flow_cr) = sign(leg_net_dex_cr), else OPPOSITE. flow_book_abstain_code, first match wins: PRE_OPEN (flow_window not SESSION), UNTRADED (untraded_guard not false, NULL included), ZERO_NET (any of the four nets exactly 0), DELTA_SET (vendor and parity signs differ on flow or on book). It says only whether flow and book agree in sign; M-P7 tested that it can speak, not that it predicts. Never label second-order terms vanna or charm (L78-1).
+v_dex_repriced_zero|(relation)|S95 / roadmap P6 / ruling S94-H -- S*, the RE-PRICED zero-delta level of the open-interest delta book. Companion to v_dex_standing_book (ENH-140). NOT a parity layer; display-only (S37). Grain (symbol), latest chain cycle, front expiry. WHAT IT IS: the spot level S* at which sum_i Delta_i(S*) x OI_i = 0, Delta from Black-Scholes at each leg own iv held fixed (sticky strike), swept over 201 points at +/-10 pct of spot, linear interpolation, the crossing nearest spot. IT IS ENH-131 (v_gex_repriced_flip) WITH EXACTLY TWO CHANGES: the greek is Phi(d1) for a call and Phi(d1) - 1 for a put, Phi(x) = 0.5 erfc(-x/sqrt 2), d1 identical to L3; and each leg contributes Delta x oi x S / 1e7, ONE power of S, with NO PE sign flip (Phi(d1) - 1 is already negative; copying the L3 flip would turn every put positive and remove the zero). Every other CTE is L3 unchanged: R1 frozen leg set (oi > 0, vendor gamma non-zero, iv > 0, deep-ITM guard), r = session-median futures carry 09:20 IST to ts with p10/p90 published and fewer than 6 rows UNMEASURABLE_R, T exact seconds to 15:30 IST on expiry over 365 d, dte 0 SKIPPED_EXPIRY never floored (S62). UNIQUE BY CONSTRUCTION: every BS delta increases in S, so sum Delta x OI is strictly increasing and there is at most one crossing, always neg->pos. A crossing beyond +/-10 pct is NO_CROSSING, a statement about the book. DROPPED LEGS ARE PUBLISHED, never assumed zero (P6 note 5.3): n_dropped_no_iv / oi_dropped_no_iv, n_dropped_other / oi_dropped_other, oi_total. GATE RECORD (pre-registration docs/research/s95_priority/sstar/sstar_prereg_2026-10-11.md, git hash-object 7bfafb49, commit 90c8c50, committed before the first real export). Arms: L3 five gate arms, five out-of-sample arms (2026-10-07/08/09 12:00) and one dte-0 control (SENSEX 2026-10-08). G1 PASS on all 11 arms: the view body run as-of equals an independent Python recompute (S* within 1e-6 x spot, net at spot within 1e-6 x gross, leg and drop counts exact), and the control was refused on both sides. G3 PASS: strictly increasing, at most one neg->pos crossing, on every scorable arm under all nine r x T variants. G4 PASS: S* across the r p10-p90 band moved 0.005 to 0.164 sigma_1d. G5 PASS (L3 Gate 5 re-run, r band x T conventions (a) dte/365, (b) exact seconds, (c) sessions/252, tolerance 0.25 sigma_1d inherited unchanged): spreads 0.027 to 0.239 sigma_1d. MARGIN, MEASURED: the 1-dte SENSEX L3 arm (2026-09-23 15:40) spread 0.2386 sigma_1d, 95 pct of the tolerance, with an r band of -0.113 to 0.222 and T(c)/T(b) = 1.46. On 1-dte SENSEX this is the least stable reading the view publishes. SCORABLE ARMS 7 of 10: the three NIFTY L3 arms span September weekends that hold no trading_calendar row, so T(c) was unmeasurable and they were not scored (ADR-020: absence is not a verdict). Only two of the five L3 arms were re-scored. L3 Gate 4 (single-cycle carry band) was NOT re-run: S83 recorded it as mis-specified. Mutants M1 (L3 PE flip copied) G1, M2 (two powers of S) G1, M3 (r x 100) G1 and G4, M4 (dte 0 floored) G1, M5 (d1 negated) G3: all caught. G2, DESCRIPTIVE ONLY: on every scorable arm S* sat ABOVE spot, +0.009 to +0.456 sigma_1d, with the repriced net at spot negative. The repriced book and the VENDOR-delta book (what v_dex_standing_book shows) DISAGREED IN SIGN at spot on 2 of 7 arms (SENSEX 2026-09-22: -477 vs +2,069 Cr; NIFTY 2026-10-07: -4,046 vs +621 Cr). Vendor delta fails put-call parity (P6 note 4.1); this view does not use it. A reader may therefore see the standing-book Net DEX and the side of S* point opposite ways; neither is a dealer claim. NO DEALER CLAIM: open-interest delta; dealer side regime-dependent (P2). The magnitude of the curve is indicative only; the LEVEL is what is published. Never label second-order terms vanna or charm (L78-1). Runs with owner privileges (security_invoker false); adding a column here publishes it to anon.
+v_dex_standing_book|(relation)|S93 / ENH-140 -- P6 of the S92-I post-parity track. The DEX standing book: the delta exposure standing in the open interest, per strike, in Rs crore. NOT a parity layer (ADR-025 closed, Amendment D); display-only per S37. Grain (symbol, expiry_date, strike). Consumers MUST ORDER BY symbol, expiry_date, strike -- a view body carries no ordering guarantee -- and filter leg_n = 1 for the front leg. NO DEALER COLUMN AND NO DEALER CLAIM. call_dex_cr, put_dex_cr and net_dex_cr are signed by each option OWN delta, so they are the OPEN INTEREST delta. ADR-014 section 2.3, which ADR-015 says it carries unchanged, reads positive gex_cr as DEALER LONG with calls the positive term -- calls dealer-long, puts dealer-short -- while ADR-015 own gloss says the convention coincides with dealers short calls and long puts, the exact inverse on both legs. The code is not in doubt; the English in ADR-015 is inverted. The two readings give dealer delta = call_dex_cr - put_dex_cr and dealer delta = -net_dex_cr respectively, which on NIFTY W1 2026-10-08 are +129,272.61 and +11,878.01 Cr -- the same sign on that leg but an order of magnitude apart. They differ in SIGN whenever net_dex_cr is above zero, which was NOT observed on the four legs measured (all four were below zero, so both readings came out positive); four legs of one run says nothing about how often that holds. P2 (S94) returned REGIME-DEPENDENT: NSE aggregate participant OI does not consistently show either reading. NOTHING HERE ASSERTS THAT ANY DEALER NUMBER IS -net_dex_cr. Every surface rendering these columns reads "open-interest delta -- dealer side regime-dependent (P2)". FORMULA delta x oi x spot / 1e7: ONE power of spot where gex_cr uses two, and NO PE sign flip, because delta already carries its own sign (PE delta is stored negative, measured min -0.99341) whereas vendor gamma is positive on both sides and gex_cr must negate PE explicitly. Copying that flip would double the negation and destroy the netting. oi is a QUANTITY, contracts times lot with the lot already inside it, so there is no multiplier: measured 100 pct divisibility at 20 for SENSEX and 65 for NIFTY with min positive oi equal to the lot, corroborated by public.instruments.lot_size and by ADR-014 section 2.3 S75 correction. SESSION IS DECIDED HERE, NOT BY THE CONSUMER. Stepping back up to 5 dates from the newest chain run, a date is a session only if trading_calendar holds no explicit is_open = false row for it AND the tape moved -- count(DISTINCT spot) greater than 1 over market_spot_snapshots for that symbol and date to 15:15 IST, the house liveness rule of ADR-030 / ENH-133 section 3.6. The liveness clause is what catches 2026-10-02: 77 frozen chain cycles, about 143k rows, and no trading_calendar row at all (TD-S92-NEW-5), so a consumer-side calendar gate would have drawn a holiday frozen book as the standing book. Measured 10-02 reads 1 tick and distinct_spot 1 on both symbols against 360 and 349 / 359 on 10-08. market_spot_snapshots rather than the chain own spot because the chain spot is in no index and that form measured 899 ms per symbol-day against 0.578 ms; they are the same event and check 4f asserts they agree. A missing calendar row is still not a verdict (ADR-020). SETTLED RUN is the last run at or before 15:15 IST of the session, per (symbol, expiry_date) -- the ENH-126 river rule, because after 15:15 the index is auction-frozen (ADR-022). Mid-session the settled run IS the latest run; after 15:15 it holds at the 15:10 cycle. run_id is per (symbol, ts, expiry_date) and NOT per cycle: at one ts the chain carries a different run_id per leg, and gex_strike_snapshots holds the W1 leg only, so W2 run is not discoverable from it. NULL IS A GAP, NEVER A ZERO. A side with OI and no delta publishes NULL; a side with no OI publishes 0, a true zero; net_dex_cr is NULL when either side is NULL. The vendor drops the whole greeks block together -- over the 2026-10-08 session, 55,228 positive-OI rows, every delta = 0 row also carries gamma = 0 and iv = 0 (2,321 of 2,321 NIFTY, 7,053 of 7,053 SENSEX), with zero rows at delta = 0 with iv above 0 -- so the marker is delta IS NULL OR (delta = 0 AND COALESCE(iv, 0) = 0), and a zero delta beside a live iv would be read as a true zero. iv is nullable too, which is why the marker coalesces it: a NULL iv beside a zero delta is a GAP, and a bare iv = 0 is NULL there and would publish a fabricated zero exposure. The gap is ITM-concentrated and put-asymmetric: at the SENSEX settled run the ITM subset is 3 CE rows carrying 4,100 units against 51 PE rows carrying 7,722,860 units, and an ITM option cannot have zero delta. Un-deltaed OI rides in oi_call_no_delta and oi_put_no_delta. BECAUSE net_dex_cr NULL-PROPAGATES, sum(net_dex_cr) does not equal sum(call_dex_cr) + sum(put_dex_cr) -- measured on the 2026-10-09 13:20 IST run, NIFTY W1, 103,096.29 minus 107,932.77 is -4,836.48 against a sum(net_dex_cr) of -3,446.47, a 1,390.01 Cr discrepancy that is exactly the good half of the one-sided-gap strikes. THAT IS WHY THE LEG TOTALS ARE COLUMNS: leg_call_dex_cr, leg_put_dex_cr and leg_net_dex_cr are window sums over each side MEASURED contribution, so the client never sums and never computes the wrong total (S92-G, one rule one implementation in the database). THEY ARE THE MEASURED PART OF THE LEG, NOT A COMPLETE TOTAL: leg_gap_oi_qty is the OI they do not cover, leg_oi_qty is the leg total OI, and the leg total is read together with those or not at all. THERE IS NO cum_net_dex_cr: its only consumer was the cumulative zero-delta candidate, which was measured degenerate and withdrawn, and a running sum over COALESCE(.., 0) walks past gap strikes as if they were zero while carrying no flag that it did. THE MAGNITUDE IS INDICATIVE, NOT MEASURED, AND NO GATE IS BUILT ON IT. net_dex is a difference of nearly-cancelling terms: measured absolute net over gross is 9.2 pct NIFTY W1, 21.4 pct SENSEX W1. Put-call delta parity fails in the vendor data -- delta_CE minus delta_PE measured 0.577 to 1.281 with a mean of 0.816 to 0.882 against a theoretical 1, outside a 0.998 to 1.002 band on essentially every strike -- so a parity gate is recorded as MIS-SPECIFIED FOR THIS DATA AND DROPPED, never widened until it passes (S83). Substituting the parity-implied put delta moves net_dex by 1.6 to 2.9 times on the same run, sign unchanged on all four legs; four legs of one run is not a measurement of sign stability. The book reads the vendor delta by operator ruling S94-I; an in-house Black-Scholes delta may return once S* exists, since S* builds the repricer. NO ZERO-DELTA COLUMN. The two candidates briefed for P6 were measured and withdrawn: the cumulative has no zero crossing on any of four legs under either of two delta sets, and nearest-strike-to-zero lands on the chain lowest strike where net is zero because there is no OI. Their replacement, S* the RE-PRICED zero-delta level where the sum of delta_i(S*) times OI_i is zero, is specified to reuse the ENH-131 v_gex_repriced_flip code path with gamma replaced by delta and ships as its own view after this one, with the L3 gate record re-run for the delta curve (ruling S94-H) -- an absent column here, not a provisional one. ROW COUNT 862 measured across both symbols and both legs on 2026-10-09, under the PostgREST 1,000-row cap (rule 15) but not by much; filter leg_n = 1 or page with range. Zero-OI strikes are kept so the book shares one strike axis with the chain, which is why it carries more strikes than gex_strike_snapshots. Runs with the owner privileges (security_invoker = false); adding a column here publishes it to anon. Design note docs/research/s93_priority/p6/P6_dex_design_note.md carries every measurement with its probe SQL. Never label second-order terms vanna or charm (L78-1).
+v_gamma_metrics_1pct|(relation)|S102 / ADR-032 D1 -- display wrapper: every source column, plus <col>_1pct = <col> x 0.01 = Rs Cr of delta-notional per 1 % move (stored gamma exposure is gamma*OI*S^2/1e7, i.e. per 100 % move). security_invoker = true; grants nothing the reader lacks. Retired by ADR-032 D2 if ruled.
+v_gex_abs_exposure_1pct|(relation)|S102 / ADR-032 D1 -- display wrapper: every source column, plus <col>_1pct = <col> x 0.01 = Rs Cr of delta-notional per 1 % move (stored gamma exposure is gamma*OI*S^2/1e7, i.e. per 100 % move). security_invoker = true; grants nothing the reader lacks. Retired by ADR-032 D2 if ruled.
+v_gex_concentration|(relation)|S79 / ENH-122 -- L12 gamma concentration. Herfindahl max/sum on the gamma book, three legs: hhi_net over abs(gex_cr), hhi_call over abs(gamma_call*oi_call), hhi_put over abs(gamma_put*oi_put). Latest-run scoped (ADR-021, S72 FIX 2 lateral form), grain (run_id, symbol, expiry_date). THE SPLIT IS LOAD-BEARING: call and put concentration correlate 0.71-0.87 at 0 DTE but -0.00 to 0.15 away from it, so a single combined number averages two independent signals on most days. CONCENTRATION FALLS ~2x ACROSS DTE, so dte_bucket is stored and any percentile MUST be computed within bucket and per symbol -- NIFTY runs ~35 pct more concentrated than SENSEX at every quantile, and live p90 exceeds historical p90 by 36-42 pct while p10 barely moves. hhi_net IS gamma_metrics.gamma_concentration recomputed by the identical formula from the same signed_gamma_exposure() output -- comparing them passes BY CONSTRUCTION and verifies nothing (ADR-014 s2.5, Rule 0 clause 1). The split legs bypass the TD-NEW-2 deep-ITM guard because signed netting destroys the per-side view; measured effect at p90 is at most 0.0021 (1.2 pct of that cell) against a 0.01 criterion fixed before the query, so filtered legs were considered and DELIBERATELY NOT BUILT. hhi_call 0.32 vs hhi_net 0.22 at 0 DTE is entirely sign netting, not the guard. Percentile, d1D and d-vs-mean are a separate historical object, not this one. top_strike_net is a GAMMA-WEIGHTED argmax over abs(gex_cr) -- the strike hhi_net is measured on -- and is NOT v_gex_strike_walls.call_wall/put_wall, which are RAW-OI argmaxes inside a +/-band*sigma window (gamma weighting was tested and rejected for that layer because it collapses to ATM), nor gamma_metrics.max_gamma_strike, which is the argmax of POSITIVE gex_cr (ADR-024 Amendment A). Coincidence across runs is expected: it is coincidence, not identity. Both bases are OI-weighted, so coincidence is partly arithmetic and is not evidence of anything.
+v_gex_greeks_l2_leg|(relation)|S96 / roadmap P7b step 1 / ruling S96-F -- the PER-LEG base of ENH-98 L7/L8. One row per option_chain_snapshots row at the LATEST chain ts per symbol, BOTH captured expiry legs, grain (symbol, ts, expiry_date, strike, option_type). NOT a parity layer; display-only (S37); routes nothing; makes NO PREDICTIVE CLAIM. It carries the S89 v_gex_greeks_l2_strike scoping, header (spot, dte, t_years exact/365), session gate (AS MATERIALIZED, load-bearing), futures-implied r_sess (median, UNMEASURABLE below 6 rows) and Black-Scholes chain VERBATIM, so v_gex_greeks_l2_strike now reads this view and multiplies by sgn x oi x spot / 1e7 (x spot again for the gamma pair) in the S89 evaluation order: gate C5 compared the two bodies column by column and found them bit-for-bit equal. FLAGS: in_leg_set is the ENH-131 leg set (oi > 0, vendor gamma non-zero, iv > 0, TD-NEW-2 deep-ITM guard) -- the legs the strike view sums; priceable is the same predicates WITHOUT oi > 0, so a leg whose OI went to zero can still be valued for flow (S96-F E2); evaluable is dte > 0, T > 0 and r measurable. A NULL flag input reads false, as a WHERE would. UNIT COLUMNS u_delta_drift_iv, u_delta_drift_time, u_gex_drift_iv, u_gex_drift_time are PER-CONTRACT derivatives, UNSIGNED and UNSCALED: d(delta)/d(sigma)/100 (per IV point), d(delta)/dt/365 (per calendar day), d(gamma)/d(sigma)/100, d(gamma)/dt/365 -- no sgn, no oi, no spot. NULL unless priceable and evaluable; a NULL is a gap, never a zero. With q = 0 they are identical for CE and PE at equal sigma, but each leg carries its own vendor iv, so CE and PE differ in practice. sgn is -1 on PE (the S89 dealer assumption) and is NOT applied here. No OI arithmetic is done in this view beyond carrying oi; consumers multiply. Runs with the owner privileges (security_invoker = false); anon reads it only through views built on it. Never label second-order terms vanna or charm (L78-1).
+v_gex_greeks_l2_net|(relation)|S89 / ENH-98 -- ADR-025 parity L7 and L8, net roll-up. Grain (symbol, expiry_date) at the LATEST option_chain_snapshots ts. Selects from v_gex_greeks_l2_strike and adds nothing to the method -- read that view COMMENT for the full specification, the units, the sign convention, the dte-0 skip and the PROVISIONAL stamp. PROVISIONAL -- flow-vs-book (D-4) not built; T1 PASSED 2026-10-07 (detail and badge in the strike view COMMENT). DISPLAY ONLY. THE ONE THING THIS VIEW ADDS IS THE DENOMINATOR, AND IT IS A DIFFERENT DENOMINATOR FROM THE STRIKE VIEW. The gross_strike_* columns are sums of ABSOLUTE PER-STRIKE NETS, so CE and PE cancellation inside a strike has already happened before the absolute value is taken. The gross_* columns on v_gex_greeks_l2_strike are per-LEG. The two are not interchangeable and neither is implied by the other. net_over_gross_* is published for all four constructs so no consumer has to decide for itself whether a net is a signal or a cancellation residue -- ENH-131 Gate 2 FAILED precisely for want of that distinction, scoring a cancellation rather than a model because net over gross ran 0.0095 to 0.341 while the gate compared nets at 1 pct. Measured over eight arms at the 10:15 cycle: the DELTA pair reads 0.976 to 1.000 on seven of eight arms and 0.181 on SENSEX dte 2, so its net is meaningfully signed; the GAMMA pair reads 0.008 to 0.384 on all eight, so its net is a residue and must be read with its gross. status is the per-strike status propagated by max(), which is safe only because every strike inside one (symbol, expiry_date) group shares one dte, one r window and one ts, so the group cannot be mixed -- verification V5 asserts that rather than assuming it.
+v_gex_greeks_l2_net_1pct|(relation)|S102 / ADR-032 D1 -- display wrapper: every source column, plus <col>_1pct = <col> x 0.01 = Rs Cr of delta-notional per 1 % move (stored gamma exposure is gamma*OI*S^2/1e7, i.e. per 100 % move). security_invoker = true; grants nothing the reader lacks. Retired by ADR-032 D2 if ruled.
+v_gex_greeks_l2_strike|(relation)|S89 / ENH-98 -- ADR-025 parity L7 (vanna) and L8 (charm), per-strike. Grain (symbol, expiry_date, strike) at the LATEST option_chain_snapshots ts, BOTH captured expiry legs. Consumers MUST ORDER BY -- a view body carries no ordering guarantee. PROVISIONAL -- flow-vs-book (D-4) not built. T1 PASSED 2026-10-07 on the A5 arm (SENSEX dte 1, cycle 10:15:59 IST; exact/365 median gamma_relerr ATM 0.0716, NEAR 0.0369; ATM rows 28 >= 10), against a pre-registration hashed before the read; the S89 pre-committed DROP therefore did not fire. The flow-vs-book classification ruled into L7/L8 scope (D-4) needs a previous-close OI baseline (PPC-1) and is recorded as an ADR-025 D3 deviation, deferred post-parity (ruling S92-E). Every surface rendering this view MUST carry the badge "PROVISIONAL -- flow-vs-book (D-4) not built" (ruling S92-C). DISPLAY ONLY per the S37 GEX-as-context-not-gate ruling and TD-S79-NEW-15: it routes nothing, gates nothing, and makes NO PREDICTIVE CLAIM. FOUR CONSTRUCTS, per OPERATOR RULING L78-1, which requires BOTH the textbook delta-derivatives AND the parity target dGamma constructs, each under a distinct name, and NEITHER labelled plain vanna or charm. delta_drift_iv_cr_per_volpt is d(delta)/d(sigma); delta_drift_time_cr_per_day is d(delta)/dt; gex_drift_iv_cr_per_volpt is d(gamma)/d(sigma); gex_drift_time_cr_per_day is d(gamma)/dt. METHOD IS ANALYTIC BLACK-SCHOLES, NOT A FINITE DIFFERENCE OFF THE ENH-131 GRID. Stated because that is the tempting wrong answer: ENH-131 sweeps SPOT at fixed sigma and fixed T, so it carries neither a sigma axis nor a t axis and NEITHER derivative can be read off it. Every quantity here is the closed form evaluated once at the observed spot. With q = 0: d1 = (ln(S/K) + (r + sigma squared / 2) T) / (sigma sqrt T), d2 = d1 - sigma sqrt T, n(d1) = exp(-d1 squared / 2) / sqrt(2 pi), Gamma = n(d1) / (S sigma sqrt T), and dd1/dT = (r + sigma squared / 2)/(sigma sqrt T) - d1/(2T). Then d(delta)/d(sigma) = -n(d1) d2 / sigma, d(delta)/dt = -n(d1) times dd1/dT, d(gamma)/d(sigma) = Gamma (d1 d2 - 1) / sigma, and d(gamma)/dt = Gamma (d1 times dd1/dT + 1/(2T)). q = 0 MEANS CALL AND PUT CARRY THE SAME SECOND-ORDER GREEK at a strike, so the CE/PE distinction enters ONLY through the dealer sign and through oi. UNITS, STATED BECAUSE AN IMPLICIT UNIT IS THE DEFECT -- TD-NEW-3 cost this system a 100x error and Rule 14 cost it another. A _cr_per_volpt column is the per-contract derivative divided by 100 then multiplied by oi and spot and divided by 1e7: rupees crore gained per +1 IMPLIED-VOL POINT, that is per +0.01 of sigma, NOT per 1.00. A _cr_per_day column is the per-contract derivative divided by 365 then scaled the same way: per ONE CALENDAR DAY of time passing, 365 and not 252, calendar decay including weekends per OPERATOR RULING L78-3 and consistent with the exact/365 T convention. The DELTA pair scales by oi times spot over 1e7, which is delta-notional crore per L78-1. The GAMMA pair scales by oi times spot squared over 1e7, one power of spot higher, which is signed_gamma_exposure() own Crore convention, so the dGamma pair sits in the same unit as gex_cr per unit of sigma or time. SIGN CONVENTION: PE legs are NEGATED exactly as signed_gamma_exposure() negates them, carrying the standard dealer assumption of long calls and short puts into the second-order layer. This is NOT a flip applied to an already-signed delta -- with q = 0 the second-order greeks are IDENTICAL for call and put, so the negation is the whole of the dealer-side assumption and nothing else. INPUTS ARE ENH-131 VERBATIM so L3 and L7/L8 remain reconcilable: same leg set including the TD-NEW-2 deep-ITM guard, same session-median futures carry r with no look-ahead and UNMEASURABLE_R below six rows, same exact-seconds T over a 365-day year, same latest-ts run scoping, same Crore convention. R BARELY MATTERS HERE AND T DOES, WHICH IS THE OPPOSITE OF L3. Sweeping r over 0 to 0.12, wider than any dispersion this system has measured, moves SENSEX dte 1 net d(delta)/dt by 0.22 pct and net d(delta)/d(sigma) by 0.50 pct, and NIFTY dte 5 by 7.6 pct and 2.0 pct. Across exact/365, dte/365 and dte/252 on the same rows, SENSEX dte 2 net d(delta)/dt reads -1150, -1760 and -2746 crore per day, a factor of 2.4. exact/365 is used because it is the convention T1 is written on; S86 observation (b) found dte/252 roughly 10x better on gamma at dte 1 and recorded it WITHOUT changing T1, and that observation is deliberately NOT acted on here, because changing a convention after seeing which arm it favours is the fitting a pre-registration exists to prevent. DTE 0 IS SKIPPED, NEVER FLOORED, and on this layer that is measured rather than inherited: net d(delta)/dt reads -1820 crore per day at SENSEX dte 2, -23744 at dte 1 and -156855 at dte 0, and net d(gamma)/dt reads -4951550 at dte 0. A per-calendar-day rate published with 0.222 days left to run is an instantaneous derivative extrapolated over a horizon that does not exist. The independent d1 control agrees: median absolute Black-Scholes minus vendor delta inside the 0.05 to 0.95 band reads 0.0031 to 0.0185 at dte 1 to 12 and 0.0643 at dte 0. On dte 0 the four value columns are NULL and status is SKIPPED_EXPIRY. Per L78-3 the W1 expiry-day leg would be computed and recorded but NOT displayed, and E1 (S85) and E2 (S87) BOTH REFUSED, so that leg stays UNRECORDED and is not built here. CAPTURE DEPTH LIMITS THE EXPIRY SCOPE: L78-3 names W2 and the monthlies, but capture stage 1 holds exactly W1 and W2 -- measured as n_expiry = 2 on every session 2026-09-28 through 2026-10-02 on both symbols -- so the monthly legs cannot appear in this view and their absence is a capture limit, not a filter. VENDOR INPUT QUALITY, MEASURED AT THE 10:15 CYCLE: iv is null or zero on 27 to 50 pct of chain rows and iv_max reaches 2062.81 on the SENSEX W2 leg. The iv above zero predicate and the deep-ITM guard remove those BY RULE and never by eye, and n_legs publishes how many survived at each strike. is_trading_session is count(DISTINCT spot) above 1 over this symbol rows from 00:00 IST on the ts date THROUGH ts INCLUSIVE, so it carries no look-ahead; it is the ENH-133 D-3 clause 3 gate and it is WRITE-AND-FLAG, meaning the row is published either way and the consumer filters. 2026-10-02, Gandhi Jayanti, is why it exists: 83 distinct ts and 79680 NIFTY rows, so it passes a row count and a distinct-ts count per TD-S89-NEW-1 and fails only on distinct spot. THE GATE CTE IS AS MATERIALIZED AND THAT KEYWORD IS LOAD-BEARING, NOT STYLISTIC. The three gate shapes were measured against each other on a TWO-CONSTRUCT PRECURSOR of this body -- same scoping, same legs, same data, two of the four value columns -- so the comparison is between the shapes and is not a timing of this view: the gate as a plain CTE grouped off a day window runs 11040 ms on a sequential scan, the gate as an un-materialized correlated subquery runs 26424 ms over 490 loops, and the gate AS MATERIALIZED joined on (symbol, ts) runs 164 ms. The first two breach the PostgREST 8 s ceiling, which is the exact ADR-021 failure reproduced inside this file own first draft; removing the keyword reverts a sub-second view to a 26 s one that returns HTTP 500 and reads to a consumer as no data. THIS BODY, measured on its own pre-apply on 2026-10-03 as an inline query with no object created, and measured TWICE because one timing on a shared instance is a sample rather than a figure, runs 210.280 then 186.476 ms, with v_gex_greeks_l2_net at 157.714 then 191.610 ms returning 4 rows both times; every reading is roughly 40x under the 8 s ceiling, and CTE Scan on gate reports loops = 1 in both plans, so the MATERIALIZED hint demonstrably took rather than being assumed. NET VERSUS GROSS, AND THE TWO PAIRS DIFFER. Absolute net over gross-of-per-strike-nets, measured over eight arms, per construct: d(delta)/d(sigma) runs 0.844 to 1.000 with the minimum at SENSEX dte 2; d(delta)/dt runs 0.957 to 1.000 on seven of eight arms with SENSEX dte 2 the exception at 0.181; d(gamma)/d(sigma) runs 0.008 to 0.384; d(gamma)/dt runs 0.092 to 0.376. The delta pair net is therefore meaningfully signed and very nearly equals its gross, structurally because d2 changes sign at the money while (oi_call - oi_put) changes sign with it so the two flips cancel; the gamma pair net is a small residue of large opposing terms and MUST NOT be read alone. Gross is published beside net for all four constructs here, and v_gex_greeks_l2_net publishes the ratios. STATUS values are OK, SKIPPED_EXPIRY, UNMEASURABLE_R and NO_LEGS; the four value columns are NULL on all but OK.
+v_gex_greeks_l2_strike_1pct|(relation)|S102 / ADR-032 D1 -- display wrapper: every source column, plus <col>_1pct = <col> x 0.01 = Rs Cr of delta-notional per 1 % move (stored gamma exposure is gamma*OI*S^2/1e7, i.e. per 100 % move). security_invoker = true; grants nothing the reader lacks. Retired by ADR-032 D2 if ruled.
+v_gex_max_pain|(relation)|ENH-123 (S80). Max pain over gex_strike_snapshots, scoped per (symbol, run_id, expiry_date), emitting ts/dte/coverage/freshness. Distinct from v_max_pain_by_strike (S40), which is chain-based, has no expiry filter and emits no timestamp. Both are live. Extension (L19), not a parity layer -- ADR-025 D5. S103 (ruling S103-F, 2026-10-30): latest_run is the S79 skip-scan + LATERAL shape (O(symbols) index seeks), replacing DISTINCT ON over the full index that timed out at 8 s (TD-S90-NEW-5, TD-S101-NEW-1). Output unchanged.
+v_gex_net_gamma_river|(relation)|S81 / ENH-126 -- L14 net-gamma river, 30 sessions. One row per symbol per session, the settled daily net dealer gamma with its sign and the spot it was observed at. Grain (symbol, session_date). Consumers MUST ORDER BY session_rank or session_date -- a view body carries no ordering guarantee. session_rank 1 is the most recent session. SOURCE IS gamma_metrics ONLY, AND THAT IS A DECISION, NOT A CONVENIENCE. Measured S81: hist_gamma_metrics spans 2025-04-01 to 2026-03-30 and gamma_metrics starts 2026-06-10/12, so the two DO NOT OVERLAP AT ALL and the x1e7 unit bridge between the eras is UNVERIFIED and not verifiable from those two tables. Stitching them would be the TD-S30-CANDIDATE-1 trap, which cost seven sessions. One source means one writer, one unit (Cr, per TD-NEW-3), and no bridge. EXPIRY DAYS NEED NO SPECIAL HANDLING, by construction rather than by omission: S62 rules that 0-DTE flat-vol net_gex is numerically unreconstructible and must be live-sourced, and gamma_metrics IS the live source, so every session here including expiry days is already S62-compliant. THE DAILY VALUE IS THE LAST RUN AT OR BEFORE 15:15 IST, not the last run of the session. Per ADR-022 continuous trading for F and O names ends at 15:15 and the index is then FROZEN through the closing auction until 15:28, so the shadow runner cycle that lands around 15:25 restates the 15:14 value rather than observing a new one. Taking it would thread an auction-frozen spot into every session of the river. session_complete is true when the session reached its final pre-auction cycle: any run at or after 15:10 IST. THERE IS NO DATE CLAUSE. An earlier version read -session_date before today OR a run at or after 15:15- and that was a DEFECT: it declared every past session complete BY CONSTRUCTION, so the column could not fail for the reason it existed. 2026-08-17 is the counter-example it missed -- 64 runs on both symbols, last run 14:10, the writer stopped about an hour early, and the old rule called the day finished. Today mid-session now reads false under the same rule, with no special case. THE DAILY VALUE IS EFFECTIVELY THE 15:10 CYCLE. Runs stamp about seven seconds past the five-minute mark, so the 15:15 cycle lands at 15:15:07 and falls outside the at-or-before-15:15 test. The last qualifying cycle is 15:10:07. That is intended -- inside continuous trading and clear of the auction boundary -- but the window is named 15:15 while the value taken is the 15:10 cycle, and those are not the same sentence. gamma_side IS DERIVED FROM sign(net_gex) PER ADR-015 AND IS DELIBERATELY NOT gamma_metrics.regime. regime is not the sign: parity spec section 4 decision 2 records that dropping flip_level from determine_regime moves ~3 pct of cycles and the net_gex >= 0 suppression moves ~70 pct, and that decision is OPEN. Consuming regime here would import an unresolved question into a display layer. The column is named gamma_side rather than regime so the two cannot be confused. Two explicit branches and no ELSE: a net_gex of exactly zero yields NULL, which is honest, rather than being silently labelled AMPLIFYING. READ THE SIGN WITH ADR-024 AMENDMENT A IN MIND. At per-strike level the sign of gex_cr is driven by OI imbalance rather than by positioning. At this aggregate level the sign is the conventional dealer-gamma regime read, but it is still arithmetic over a book, not an observation of dealer behaviour. HOLES RENDER AS ABSENCE. A session with no data emits no row; nothing is interpolated and nothing is zero-filled. trading_calendar is deliberately NOT joined: it was measured S81 to be missing the 2026-05-28 Bakri Id closure row that trading_calendar.json carries, so labelling holidays from it would assert holiday where the truth is unknown. This view states only what gamma_metrics holds. WINDOW AND RETENTION ARE COUPLED. 30 sessions is about 42 calendar days and fits inside the 90-day gamma_metrics horizon that pg_cron jobid 19 enforces, so this panel does NOT block re-enabling it (TD-S76-NEW-2). Note that gamma_metrics starting 2026-06-10/12 is a RETENTION ARTEFACT -- 90 days before 2026-09-09, when jobid 19 was disabled -- so the available span records when the janitor stopped, not when data began, and it will snap back to 90 days on re-enable. A 299-day river would not survive that. NO HISTORY TABLE IS NEEDED and ADR-021 does not bite: gamma_metrics already persists every run, unlike the latest-run-scoped views that forced gex_pin_maxpain_history at S80. The 90-day predicate is nevertheless deliberate -- it is nearly the whole table today, and becomes the only thing bounding the scan as the table grows while jobid 19 is off. Display-only per the S37 GEX-as-context-not-gate ruling; it routes nothing.
+v_gex_net_gamma_river_1pct|(relation)|S102 / ADR-032 D1 -- display wrapper: every source column, plus <col>_1pct = <col> x 0.01 = Rs Cr of delta-notional per 1 % move (stored gamma exposure is gamma*OI*S^2/1e7, i.e. per 100 % move). security_invoker = true; grants nothing the reader lacks. Retired by ADR-032 D2 if ruled.
+v_gex_pin_maxpain|(relation)|ENH-124 (S80). Distance between max pain (ENH-123) and peak gamma (ENH-81), in points, strikes and sigma, with band/corridor tests. Emits a distance, never a verdict -- no tolerance constant, per TD-S79-NEW-21. History: the gap is a stable -0.4 sigma across both symbols, all DTE and all session hours. Extension (L19), not a parity layer -- ADR-025 D5. S103 (ruling S103-F, 2026-10-30): latest_run is the S79 skip-scan + LATERAL shape; output unchanged.
+v_gex_repriced_flip|(relation)|S83 / ENH-131 -- ADR-025 parity spec L3, the REPRICED zero-gamma level, per ADR-025 Amendment B clause B7. One row per symbol at the LATEST option_chain_snapshots ts. Grain (symbol). Consumers MUST ORDER BY symbol -- a view body carries no ordering guarantee. DISPLAY ONLY per the S37 GEX-as-context-not-gate ruling and TD-S79-NEW-15: it routes nothing, gates nothing, and makes NO PREDICTIVE CLAIM. Whether price is attracted to, repelled by, or indifferent to this level is UNMEASURED; the S74 holdout answered that question NO for the pin zone and left the acceleration zone unanswered, and nothing here revisits either. INDEPENDENT OF gamma_metrics.flip_level: this view neither reads nor writes that column. The existing scalar comes from a cumulative walk over VENDOR gamma inside compute_gamma_metrics_local.py; this level comes from a Black-Scholes repricing of the front chain. They share no code, no column and no input, they are two independent measurements of one idea, and they may disagree. Nothing here reconciles them and nothing here overwrites them. TD-S79-NEW-16 CONTEXT: the stored flip_level was measured sitting about three times closer to spot than the 0.54 sigma reference figure, while the repriced level measured 0.1 to 0.8 sigma from spot across the five gate arms. That is context for the disagreement, NOT a verdict that either is right. METHOD. The front expiry chain at that ts is repriced strike by strike with Black-Scholes gamma, d1 = (ln(S/K) + (r + sigma squared / 2) T) / (sigma sqrt T) and gamma = n(d1) / (S sigma sqrt T), each leg contributing gamma * oi * S squared / 1e7 with PE negated -- identical to signed_gamma_exposure() except that gamma is Black-Scholes rather than vendor. TotalGEX is swept over 201 points spanning plus or minus 10 pct of spot in 0.1 pct steps, sign changes are linearly interpolated between adjacent points, and flip is the crossing NEAREST SPOT. STICKY-STRIKE IS AN ASSUMPTION, NOT A NEUTRAL CHOICE: iv is held FIXED per strike across the entire sweep, so this prices a parallel-shift world, and a real 10 pct spot move would move the smile. THE LEG SET IS FROZEN at the observed spot -- oi above zero, vendor gamma non-zero, iv above zero, and the TD-NEW-2 deep-ITM guard (drop when distance from spot exceeds 5 pct AND absolute gamma exceeds 5e-5). That guard is NOT re-applied per sweep point: it exists to reject spurious VENDOR gamma, and re-applying it against Black-Scholes gamma would inject artefact steps into the curve. r IS THE SESSION-MEDIAN FUTURES CARRY, WITH NO LOOK-AHEAD. For each index_futures_snapshots row of the same symbol carrying the front-month FUTURE expiry -- the earliest futures expiry on or after the IST date of ts, which is NOT always the option front expiry -- carry is ln(futures_price / spot_price) divided by the exact time from THAT ROW OWN ts to 15:30 IST on the futures expiry over a 365-day year. The window runs from 09:20 IST on the ts date through ts INCLUSIVE, so no row after the snapshot is used. r_sess is the median over that window and r_p10 and r_p90 are its tenth and ninetieth percentiles. FEWER THAN SIX ROWS IS UNMEASURABLE_R with a NULL flip, never a substituted default (ADR-023 D1: fail to absent, never to stale). futures_price IS A LAST TRADE, NOT A QUOTE: index_futures_snapshots carries no bid or ask, its source tag names a last-traded-price feed, and the CLAUDE.md warning that a last trade is not an executable price applies. The median over a session is what makes it usable -- single-cycle carry measured 0.0203 to 0.2087 across the five gate arms while the session median measured 0.0368 to 0.0584, an 8.7-fold reduction in dispersion. T IS EXACT SECONDS from ts to 15:30 IST on the front expiry over a 365-day year, which is Gate 5 convention (b). DTE 0 IS SKIPPED, NEVER FLOORED: S62 settled that expiry-day 0-DTE gamma exposure is numerically unreconstructible, so such a cycle returns status SKIPPED_EXPIRY with a NULL flip rather than a number produced by a floored T. THE GATE RECORD, BECAUSE THREE OF FIVE FAILED AND THE FAILURES ARE PART OF WHAT THIS COLUMN MEANS. Gate 1 PASSED: it rebuilt each strike stored gex_cr from gamma_call, gamma_put, oi_call, oi_put and spot using signed_gamma_exposure() verbatim and matched to a max per-strike absolute difference of 1.1e-10 Cr and a relative difference of at most 6.5e-15, on both symbols. Gate 2 FAILED and was MIS-SPECIFIED: it compared the repriced NET against the stored net at 1 pct and missed by 19.3 and 19.7 pct, but net divided by gross measured 0.0095 to 0.341 across arms, so it amplified a 2 to 4 pct gross error into a 19 pct net error and scored the cancellation rather than the model. Gate 3 FAILED on 1 of 3 arms, its spread was r-driven on every arm with the fixed-T r spread at 31.6, 20.6 and 38.6 points against T spreads of 10.9, 12.2 and 1.0, and its second clause was mis-specified because a plus or minus 5 pct window could not see one arm full-grid crossing count change from 2 to 1. Gate 4 FAILED on 1 of 4 arms and its r band was UNDER-SPECIFIED, about 19 times narrower than the measured cross-arm dispersion of single-cycle carry, so passing it measured the band width rather than a pinned r. Gate 5 PASSED 5 of 5 on NIFTY 2026-09-24 15:20, SENSEX 2026-09-23 15:40, NIFTY 2026-09-23 12:00, SENSEX 2026-09-22 12:00 and NIFTY 2026-09-18 12:00 -- every arm held its nearest-spot crossing inside 0.25 of a 1-day sigma across the full measured p10-to-p90 r band and across three T conventions, every crossing ran negative to positive, and every arm carried exactly one crossing within 2 sigma. CAVEATS, EACH MEASURED. Gate 3b gross fidelity, the sum of absolute per-leg Black-Scholes minus vendor contribution over the sum of absolute vendor contribution, measured 3.4 pct, 10.9 pct and 4.7 pct, and it FAILED its 5 pct threshold on the SENSEX 1-dte arm at up to about 11 pct. A STABLE CROSSING IS NOT A REPRODUCED CURVE, and near expiry on SENSEX the curve is the least faithful. FAR-TAIL CROSSINGS BEYOND 2 SIGMA CAN BE UNSTABLE: one arm carried a second crossing at 9.4 pct of spot, roughly 17 sigma away, which appeared and disappeared with the T convention. n_cross_full_grid publishes that count so the instability stays visible; flip itself is always the crossing nearest spot, and n_cross_within_2sigma was 1 on every gate arm. sigma_1d = spot * atm_iv / 100 * sqrt(1 / 365), a calendar-day convention consistent with T. atm_iv USES THE HOUSE ATM GRID, round(spot / step) * step with step 50 for NIFTY and 100 for SENSEX, matching compute_volatility_metrics_local.py:86-88 and :624, averaging call and put iv with NULLIF(iv, 0) so a zero abstains -- the same deliberate deviation recorded in v_iv_term_structure. When that grid strike is not listed, atm_iv and sigma_1d are NULL and flip_sigma and n_cross_within_2sigma abstain rather than sliding to a neighbouring strike. STATUS values are OK, SKIPPED_EXPIRY, UNMEASURABLE_R and NO_CROSSING; flip is NULL on all but OK.
+v_gex_strike_accel_zone|(relation)|ENH-81 v0 + S69 perf — accel zone via prominence walk, SCOPED to latest run_id per symbol (latest_run CTE). Identical output for the current snapshot; no longer scans all history. τ_accel via get_parameter_num.
+v_gex_strike_pin_zone|(relation)|ENH-81 v0 + S69 perf — pin zone via prominence walk, SCOPED to latest run_id per symbol (latest_run CTE). Identical output for the current snapshot; no longer scans all history. τ_pin via get_parameter_num.
+v_gex_strike_rank|(relation)|S81 / ENH-125 -- L12 pin conviction, ranked leg. One row per contributing strike of the latest run per symbol (ADR-021, S72 FIX 2 lateral form), grain (run_id, symbol, expiry_date, strike). The siblings v_gex_strike_walls / v_gex_abs_exposure / v_gex_concentration are one row per RUN; this one is per STRIKE. Consumers MUST ORDER BY strike_rank -- a view body carries no ordering guarantee. No LIMIT and no depth constant: every strike with gex_cr <> 0 is ranked and the consumer chooses depth, because a depth constant here would be an unmeasured literal and belongs in merdian_parameters (ADR-016) at the consumer. RANK BASIS IS abs(gex_cr), NOT SIGNED, AND THAT IS LOAD-BEARING: per ADR-024 Amendment A gex_cr is a per-strike NET (CE contribution minus PE contribution) whose sign is driven by OI imbalance, and which side is OTM flips at spot -- measured over 1,515,008 rows, call-OI-heaviness runs 0.34 pct at-or-below spot against 99.5 pct above on NIFTY (0.39 / 99.1 SENSEX), so a positive-only ranking CANNOT select a strike below spot and would restate -OTM calls are above spot- as a finding. The sign is carried as side (DAMPENING / AMPLIFYING) instead of being smuggled into the sort order. TIE-BREAK abs(gex_cr) DESC, strike ASC IS FORCED, NOT CHOSEN: it is identical to the array_agg ordering inside v_gex_concentration.top_strike_net, so that strike_rank = 1 names the same strike. strike_rank = 1 EQUALS v_gex_concentration.top_strike_net, and share_of_abs at strike_rank = 1 EQUALS v_gex_concentration.hhi_net -- BY CONSTRUCTION, same table and same formula, so comparing them passes for the reason that it is the same arithmetic and verifies nothing (ADR-014 s2.5, Rule 0 clause 1). The gex_cr <> 0 filter moves neither denominator: a zero contributes nothing to a sum or to a max. THREE DIFFERENT STRIKE SCALARS EXIST AND THIS VIEW IS NEITHER OF THE OTHER TWO: v_gex_strike_walls.call_wall / put_wall are RAW-OI argmaxes inside a +/-band*sigma window, and gamma_metrics.max_gamma_strike is the argmax of POSITIVE gex_cr (ADR-024 Amendment A); this view ranks on gamma MAGNITUDE across the whole chain, unbanded. dist_sigma is the only distance measure -- points and percent are deliberately absent, because a board read in percent manufactures findings of one shape (TD-S79-NEW-11, ADR-024 sA4). dist_sigma INHERITS THE GREATEST(dte,1) FLOOR from the same sigma formula v_gex_strike_walls uses, so on expiry day sigma prices a full trading day and every dist_sigma is UNDERSTATED -- approximately 1.9x on NIFTY at 13:45 IST on 2026-09-22 (TD-S79-NEW-1). SIGMA ALSO INHERITS THE volatility_snapshots CAVEATS: the source is single-expiry and silently switches expiry class mid-history (TD-S78-NEW-6 -- expiry_type MONTHLY on 560 NIFTY timestamps 2026-03-25 to 2026-04-13 and 674 SENSEX 2026-03-20 to 2026-05-27, both inside otherwise-weekly history), and the lateral takes the newest row at or before ts with NO age bound. Staleness is therefore SURFACED (atm_iv_used / atm_iv_age_min / iv_fresh against get_parameter_num (-wall.iv_floor_min-), default 120 minutes) but NOT enforced to absent -- the same ADR-023 deviation v_gex_strike_walls records, carried here deliberately so the two views degrade identically. sigma resolves through a LEFT JOIN LATERAL, so a run with no resolvable ATM IV still ranks and sigma / dist_sigma are NULL: a gap, never a zero. n_ranked / n_strikes are the partial-chain denominator (TD-S79-NEW-8) and repeat down the rows, which is the cost of a per-strike grain. Also satisfies parity spec 2.5 L15 Absolute Gamma Strike (strike_rank = 1) and Large Gamma Strike ranked (strike_rank 1..N); per ADR-025 D5 that is an extension and does not count toward parity, so this object counts as L12 only. Display-only per the S37 GEX-as-context-not-gate ruling; it routes nothing.
+v_gex_strike_snapshots_1pct|(relation)|S102 / ADR-032 D1 -- display wrapper: every source column, plus <col>_1pct = <col> x 0.01 = Rs Cr of delta-notional per 1 % move (stored gamma exposure is gamma*OI*S^2/1e7, i.e. per 100 % move). security_invoker = true; grants nothing the reader lacks. Retired by ADR-032 D2 if ruled.
+v_gex_strike_terrain|(relation)|S92 / ruling S92-J -- read surface for the OPTIONAL Marketview 3D view (/board/3d: gamma terrain, pain bowl). NOT a parity layer; display-only. Grain (symbol, session_date, strike). The 14 most recent sessions per symbol that hold a GEX run and are not explicitly closed (trading_calendar is_open = false drops a date; a missing row does not). Per session the SETTLED run = last run at or before 15:15 IST (the ENH-126 river rule; after 15:15 the index is auction-frozen, ADR-022); session_complete = a run at or after 15:10 IST. Front expiry. Strikes within +/- 6 pct of session 1 settled spot, one common axis. gex_cr is NULL where the run has no gamma for the strike (gamma_call and gamma_put both NULL) -- a gap, never a zero (SENSEX lacks gamma on ~30 pct of strikes, ADR-024 A3). writer_pain is the ENH-123 formula verbatim over all of the run strikes; is_max_pain marks the argmin over all candidates (ties to the lower strike), so the max-pain strike can lie outside the window -- max_pain_strike says where. Consumers MUST order by session_date, strike. SENSEX can exceed 1,000 rows: page with range. Height carries magnitude, hue carries sign; gex_cr has no defined unit yet (E-D1). Never label second-order terms vanna or charm (L78-1).
+v_gex_strike_terrain_1pct|(relation)|S102 / ADR-032 D1 -- display wrapper: every source column, plus <col>_1pct = <col> x 0.01 = Rs Cr of delta-notional per 1 % move (stored gamma exposure is gamma*OI*S^2/1e7, i.e. per 100 % move). security_invoker = true; grants nothing the reader lacks. Retired by ADR-032 D2 if ruled.
+v_gex_strike_walls|(relation)|S79 / ENH-120 -- OI walls: put/call wall as raw-OI argmax within a +/-band*sigma moneyness window, scoped to the latest run per symbol (ADR-021, S72 FIX 2 lateral form). Band via get_parameter_num('wall.band.<symbol>'), default 1.5. Gamma-weighted argmax was tested and rejected (collapses to ATM). Sigma columns are the distance measure; raw strikes exist for labelling only. corridor_state is four-valued: ~30% of runs sit outside the corridor, and a NULL wall is UNDEFINED, not BELOW_FLOOR. atm_iv is sourced from volatility_snapshots, which is single-expiry and silently switches expiry class -- staleness is surfaced (atm_iv_age_min / iv_fresh) but NOT enforced to absent; see ADR-023 deviation noted in sql/2026-09-15_s79_v_gex_strike_walls.sql. NOT the same strike as v_gex_concentration.top_strike_net: these walls are a RAW-OI argmax (gamma weighting was tested for this layer and rejected because it collapses to ATM), top_strike_net is a GAMMA-WEIGHTED argmax over abs(gex_cr) and is the strike its Herfindahl is measured on, and neither is gamma_metrics.max_gamma_strike, which is the argmax of POSITIVE gex_cr -- the max net-long-gamma strike, ADR-024 Amendment A. Three bases, three questions; they may land on the same strike on any run and did on 2026-09-22 (NIFTY call_wall = top_strike_net = 23400). That is coincidence, not identity. Both bases are OI-weighted, so coincidence is partly arithmetic and is not evidence of anything.
+v_iv_surface|(relation)|S83 / ENH-132 -- ADR-025 parity spec L10, the IV SURFACE: a strike by expiry mesh of implied volatility at the LATEST option_chain_snapshots ts per symbol, with a companion SKEW per leg. Grain (symbol, ts, expiry_date, strike). Consumers MUST ORDER BY symbol, leg, strike -- a view body carries no ordering guarantee. DISPLAY ONLY per the S37 GEX-as-context-not-gate ruling: it routes nothing, gates nothing, and makes no predictive claim. NO FITTING, NO INTERPOLATION, NO MONEYNESS CUT -- the mesh is published as quoted, and moneyness_pct is carried so a consumer can cut its own. THE OTM CONVENTION IS MEASURED, NOT PREFERRED. iv is the OTM side: the PUT below spot, the CALL above it. Inside plus or minus 2 pct the CE minus PE disagreement is negligible -- medians of -0.064, -0.079 and -0.065 vol points across the three central buckets on the NIFTY front leg -- so averaging would be harmless there. Outside that band it is not: on the SENSEX front leg the -5 to -2 pct bucket reads a median AVERAGE of 369.99 vol points where the OTM side reads 40.30 on the same strikes, and on the NIFTY back leg the -5 to -2 pct bucket reads an average of 51.29 against an OTM side of 14.98. 789 of 876 mesh rows carry a quoted OTM side, which is EXACTLY the number carrying any quote at all, so there is no strike where averaging recovers a value the OTM convention loses. ce_iv, pe_iv and parity_gap are all published so the choice is auditable per row. ZERO MEANS ABSENT. Measured S83: iv IS NULL on 0 of 1752 legs while iv = 0 appears on 20 to 134 legs PER SIDE PER LEG across 8 side-leg pairs -- the feed encodes absence as zero. Every iv read here is NULLIF(iv, 0), and quote_state reports OTM_QUOTED or OTM_ABSENT per row. The L9 view records the same deviation, but L9 measured only the ATM strike and found a single zero per leg; that does NOT generalise to the surface. LEG_SKEW_98 IS NOT COMPARABLE ACROSS EXPIRIES. It is defined as the OTM PUT at leg_k98 minus leg_atm_iv, where leg_k98 is the LISTED strike nearest 0.98 times leg_atm_strike with ties resolved to the lower strike, and no search: if that strike has no quoted put the value is NULL rather than sliding to a neighbour, because sliding would move the moneyness and silently change what is measured. A FIXED 2 PCT BELOW-ATM STRIKE SITS AT A DIFFERENT POINT ON THE SMILE AT EACH TENOR, so a single level threshold applied across tenors is not a valid test, and comparing this column between legs is not a valid reading. It is a per-leg quantity. This is recorded because an S83 gate did exactly that and was withdrawn as MIS-SPECIFIED rather than loosened; the strike anchor was separately measured and cleared, landing within 0.013 pct of the -2.000 pct target over 170 cycles with 0 cycles more than 0.25 pct off. DTE-0 LEGS ARE SKIPPED_EXPIRY per the S62 house rule: leg_atm_iv, leg_skew_98, iv and iv_over_atm are withheld while ce_iv and pe_iv are KEPT so the degradation stays inspectable. Measured S83, ATM iv on the front leg averages 17.07 across dte-0 session cycles but collapses to 0.89 at the post-expiry 15:40 cycle, so the collapse is an end-of-session event rather than a property of the whole expiry day -- the rule is right, for a narrower reason than it first appears. WING QUALITY IS POOR AND NEAR-MONEY QUALITY IS PERFECT ON NIFTY ONLY: the three central buckets carry 0 pct absent and 0 outliers on TWO of four legs, both of them NIFTY; the SENSEX back leg shows 3 over-3x-ATM and 2 adjacent jumps in the -2 to -0.5 pct bucket, and the SENSEX front leg fails all three central buckets. The wings run 33 to 89 pct absent, and the strike range is far wider than the eye expects -- the NIFTY front leg spans -93.5 pct to +114.6 pct of spot with a maximum step of 1500. OUTLIERS ARE NOT ALL DEAD STRIKES: 14 of the 20 worst by iv over ATM carry oi = 0, and the six with real open interest are the NIFTY front leg at 26300 PE and 28500 PE plus the SENSEX back leg at 72100 to 72400 CE. ALL TWENTY SIT ON THE ITM SIDE, so the OTM convention excludes every one of them; that, not the open-interest count, is why they do not reach iv. The high open-interest case is the SENSEX back leg at 72100 to 72400 CE, 1.6 to 2.0 pct in the money, reading iv 110 to 117 against an ATM of 13.1 while holding 48.7 million open interest, including a 92.14 point jump between adjacent strikes. oi_otm and iv_over_atm are published so that row is visible rather than silently rendered. THIS VIEW IS LIVE-ONLY: it reads one cycle per symbol and holds no history, so the parity target history horizon, including any gap that must render as absence rather than being interpolated, is NOT addressed here and no claim about it is made by this view.
+v_iv_term_structure|(relation)|S83 / ENH-130 -- ADR-025 parity spec L9, IV term structure. One row per (symbol, leg) at the LATEST ts per symbol. Grain (symbol, leg). Consumers MUST ORDER BY symbol, leg -- a view body carries no ordering guarantee. DISPLAY ONLY per the S37 GEX-as-context-not-gate ruling; it routes nothing and makes no predictive claim. ATM IS THE HOUSE SPOT GRID, round(spot / step) * step on option_chain_snapshots.spot with step 50 for NIFTY and 100 for SENSEX, matching compute_volatility_metrics_local.py:86-88 and :624. That is the GRID strike and may not be a listed strike; when it is not, ce_iv and pe_iv are NULL and the leg abstains rather than sliding to a neighbouring strike. ZERO MAPS TO NULL, AND THAT IS A DELIBERATE DEVIATION FROM THE HOUSE CODE. compute_volatility_metrics_local.py:670-686 guards None but not zero, so an iv of 0 is averaged into atm_iv_avg there as though it were a real volatility. Here NULLIF(iv, 0) makes the leg abstain. Measured S83: the house ATM strike is quoted with a non-null iv on 100 pct of cycles on both legs of both symbols, and the ONLY availability losses are a single iv = 0 on three of four symbol-leg pairs -- so this deviation is the entire difference between the two definitions on the measured window. T = dte / 365 IS A STATED CONVENTION, NOT A MODEL. The house file carries no T at all (grep for 365, 252 and sqrt returns only an unrelated 252-row history window) and its dte at :690 is anchored on datetime.now() rather than on the row ts, which is the TD-NEW-4 wall-clock shape. This view anchors dte on ts. ENH-98 measured that calendar-year time fits the vendor greeks better than trading-day time and that dte/365 and exact/365 separate only at low DTE; neither is adopted as truth here, and t_years is published so a consumer can substitute its own. dte_sessions COUNTS OPEN trading_calendar ROWS in (IST date of ts, expiry_date]. The is_open filter is NOT redundant: measured S83 the table holds 218 rows of which 208 are open and 10 are closed, and weekends and most holidays are ABSENT rows rather than is_open=false rows. BEYOND THE SEEDED HORIZON dte_sessions IS NULL, because an absent row is not a verdict (ADR-020): counting rows past max(trade_date) would return a short count and present it as a fact. parity_gap = ce_iv - pe_iv IS THE QUALITY COLUMN. A spread_vs_front or term_slope smaller in magnitude than the parity_gap at the same strike is inside measurement noise and must not be read as structure. Measured S83, CE minus PE at ATM is negative on all four symbol-leg pairs, median -0.589 to -2.502 vol points, so averaging CE and PE is not a neutral operation. THERE IS NO FALLBACK TO AN EARLIER ts. A latest cycle carrying one expiry yields ONE row with term_slope NULL and is_back true on that single leg. Measured S83: three of 341 cycles in the stage 1 window carried one expiry, so this path fires roughly once per hundred cycles and is not hypothetical. Reaching back for a second leg would compute a slope between two different market moments and present it as one observation. fwd_vol_from_prev IS NEVER CLAMPED: a negative forward variance means the two legs disagree, and NULL reports that rather than flooring at zero and dressing a disagreement as a small positive number. Measured S83: forward variance was negative in 0 of 336 paired cycles. PARITY-TARGET COMPARABILITY, AND WHERE THIS VIEW DEPARTS. The ADR-025 L9 target defines BACK ATM IV as the FURTHEST LISTED expiry, TERM SLOPE as back minus front with inverted read below -1 point, and DTE as trading sessions. At capture stage 1 this view sees only W1 and W2, so its back leg is W2 and term_slope is a SHORT-END SLOPE that is NOT comparable to the L9 target figure until capture includes the furthest listed expiry. That is an ADR-025 D3 deviation and is PENDING AN OPERATOR DECISION. The two slopes may differ in sign as well as magnitude; a W1-to-furthest slope has not been measured because capture does not hold that leg. term_slope is not comparable to a normal-day reading when front_is_0dte is true: front ATM IV on expiry day is dominated by expiry mechanics. The L9 target keeps 0DTE and weekly chains separate. front_is_0dte is a DISPLAY FLAG ONLY: no rows are dropped and there is no fallback. dte_sessions is published precisely so the trading-session convention is available when the comparison becomes possible. The L9 target does not state whether its ATM IV is the call, the put, or the average; THE AVERAGE IS A MERDIAN CHOICE, and parity_gap is published so the choice can be audited per row. fwd_vol_from_prev has no L9 target counterpart and is a MERDIAN addition. READ THE INVERSION WITH THE MEASUREMENT IN MIND: over the stage 1 window term structure was inverted on 93.5 pct of NIFTY cycles and 97.6 pct of SENSEX cycles, in every dte bucket present including NIFTY front-dte 5 and 6, so inversion is the normal state of this window rather than an event.
+v_max_pain_by_strike|(relation)|S81 / TD-S80-NEW-10 -- max pain per candidate strike, scoped to the LATEST snapshot and its FRONT expiry. Grain (symbol, expiry_date, candidate_strike). THE EXPIRY FILTER IS THE FIX: the S40 baseline grouped by (symbol, strike) with no expiry in the grain, so a snapshot carrying two expiries collapsed into a per-strike max() MIXTURE of two different contracts. It was not firing -- one expiry per cycle measured across 2,923 cycles -- and becomes live the moment TD-S80-NEW-1 raises ingest depth and the ladder lands in this table. It is therefore fixed BEFORE that depth change, not after. NEAREST EXPIRY = min(expiry_date) among the latest snapshot rows, RESTRICTED to expiry_date >= the IST date of ts. Both clauses are load-bearing: min() picks the front contract, and the >= guard stops a past expiry lingering in the chain from winning the min and silently becoming the pinned one. There is NO FALLBACK when that set is empty -- the symbol returns no rows, because a fallback to plain min() would reinstate the hazard and ADR-023 D1 is explicit: fail to absent, never to stale. ts is timestamptz (measured via information_schema, S81), so AT TIME ZONE converts UTC to IST wall-clock, which is the intended direction. FRESHNESS IS SURFACED, NOT SUPPRESSED. ts, snapshot_age_min, stale_floor_min_used and is_fresh are emitted; rows are NOT dropped when stale. ADR-023 D1 prefers suppression, but D3 requires the operator to be able to tell a stall from an empty result, and under ADR-025 Amendment B the Marketview presentation layer is frozen, so the panel cannot be given that message. Blanking the page would be a silent state change, which is what D3 forbids. ENH-123 v_gex_max_pain made the same call for the same reason, and shares this parameter: get_parameter_num (-maxpain.stale_floor_min-), default 30 minutes. THE SUPPRESSION HALF IS OWED to the Marketview change Amendment B defers; it is deferred, not skipped. BACKWARD COMPATIBILITY IS A HARD CONSTRAINT here. The live Marketview Max Pain page selects candidate_strike, total_pain, max_pain_strike and side, filters on symbol, orders by candidate_strike, reads max_pain_strike from row [0] as a broadcast scalar, and branches on the exact strings MAX_PAIN and PE_SIDE. Those five columns keep their names, order, types and semantics; the seven added columns follow them. Never rename or drop a column here while that page is frozen. NOT CORRECTED, AND DELIBERATELY SO: max_pain ties break NON-DETERMINISTICALLY. The partition is widened to (symbol, expiry_date) but the ORDER BY is unchanged from the baseline -- total_pain with no tie-break column -- so equal total_pain yields an arbitrary winner. ENH-123 orders by (total_pain, candidate_strike). Correcting it is one line and was OUT OF THE APPROVED SCOPE of this change; it is reported for a TD rather than altered silently in a view the frozen frontend reads. latest_ts WAS RETROFITTED S81 and is now the S72 FIX 2 skip-scan plus CROSS JOIN LATERAL probe. It was max(ts) GROUP BY symbol over the whole table -- a full-index scan of 1,336,714 rows costing 3,260 ms of a 3,396 ms view, on a roughly four-week trajectory to the PostgREST 8 second ceiling, at which point this view would have emptied the live Max Pain page silently. Measured after: 0.288 ms, 22 shared hits, 0 reads, one row per symbol with nothing discarded to find each match. Equivalence was proven in a single statement against the old aggregate and was identical on both symbols. KNOWN DEGRADATION MODE, accepted deliberately: the only ts DESC index is idx_ocs_ts_symbol_expiry (ts DESC, symbol, expiry_date), in which symbol is the SECOND column, so the probe walks in ts order and filters on symbol. Both symbols write every cycle, so the match is the first row; if one symbol-s ingest stalls, its probe walks back through the other symbol-s newer entries, about 34,000 index entries per stalled day, index-only, so milliseconds rather than seconds. A dedicated (symbol, ts DESC) index would remove it; that is a separate decision and is deliberately NOT taken here. ANON GRANTS WERE WRONG AND ARE CORRECTED HERE. Measured 2026-09-22: anon held ALL SEVEN privileges on this object -- the S39 Lovable ALL-grants shape on an S40 object created AFTER the S39 13-surface REVOKE cleanup, so that cleanup did not hold for objects added later. It was one of 211 such relations, remediated schema-wide the same day together with ALTER DEFAULT PRIVILEGES so it cannot regress. Practical exposure on THIS object was LOW: it is not auto-updatable (GROUP BY, aggregates, joins), so INSERT / UPDATE / DELETE fail; TRUNCATE does not apply to views; REFERENCES and TRIGGER need DDL, which PostgREST does not issue. PROVENANCE: no DDL for this object existed in the repository before S81 -- the S40 register footer naming sql/v_max_pain_by_strike.sql is false and git has no history for that path. The pre-change body is committed verbatim as sql/2026-09-22_s81_v_max_pain_by_strike_CAPTURED_BASELINE.sql. Display-only per the S37 GEX-as-context-not-gate ruling; it routes nothing.
+v_oi_rotation_since_open|(relation)|S81 / ENH-127 -- L13 OI rotation since open, LIVE ONLY. One row per symbol per front-expiry strike, CE and PE side by side: open interest at the session anchor, at the latest snapshot, and the delta between them. Grain (symbol, expiry_date, strike). Historical rotation is OUT OF SCOPE and deferred; note that pg_cron jobid 19, currently disabled (TD-S76-NEW-2), thins option_chain_snapshots beyond 14 days to one 10:00 UTC row per day, which would cap any historical rotation at 14 days by construction. SESSION IS THE IST DATE OF THE LATEST FRONT-EXPIRY SNAPSHOT, NOT today. Keying it to now() would blank the panel overnight, every weekend and every holiday. Keying it to the data means: between 08:35 and 09:15 on a trading day the latest snapshot is the pre-open row, that date has no 09:15 anchor yet, and the view returns NO ROWS -- correct; after 15:40, overnight, at weekends and on holidays it shows the last completed session with latest_ts emitted -- the data-s actual state, not a stale value dressed as current. One rule, no special cases. ANCHOR IS THE FIRST SNAPSHOT AT OR AFTER 09:15 IST ON THAT SESSION DATE, resolved WITHIN the front expiry. Measured S81: the first row of the day lands 08:35-08:40 IST, pre-open, and NIFTY pre-open OI equals the previous close on 472 of 472 strikes with max diff 0 -- so anchoring on the first row would measure overnight nothing. SENSEX differs on 134 of 392 with max abs diff 8,180, so something revises BSE OI between close and pre-open; that is recorded as an observation and this view does not depend on it. A 09:15:0x snapshot exists on every measured session, and the at-or-after test includes it -- note the contrast with ENH-126, where cycles stamping ~7s past the mark put 15:15:07 OUTSIDE an at-or-before-15:15 test. Same offset, opposite comparison, opposite effect. FRONT EXPIRY IS RESOLVED FIRST, from the latest snapshot: min(expiry_date) restricted to expiry_date >= the IST date of that snapshot, with NO FALLBACK, exactly as v_max_pain_by_strike does and for the same ADR-023 D1 reason -- fail to absent, never to stale. The anchor lookup then filters on that same expiry_date. When TD-S80-NEW-1 stage 1 raises ingest depth to two expiries, a cycle will carry two expiry ladders at one ts under two run_ids; resolving front expiry BEFORE selecting the anchor is what keeps the delta inside one contract. Inert today, correct after. VENDOR oi_change IS DELIBERATELY IGNORED AND THE DELTA IS COMPUTED HERE. Measured S81 on the 15:40 NIFTY snapshot, n=472: 343 rows match latest-minus-session-first, 343 match latest-minus-previous- close (indistinguishable, because for NIFTY those anchors coincide), 317 match latest-minus- previous-snapshot but only degenerately since post-close OI is static and those are the zero rows, and 129 rows -- 27 pct -- match NO candidate definition at all. A column that fits no definition on a quarter of strikes is not a definition. AN OI DELTA CANNOT DISTINGUISH WRITING FROM BUYING. Positive means open interest rose; it does not mean anyone was short. There is deliberately no ADDED/UNWOUND enum -- the sign carries it, and a label column would restate sign(delta) while implying an agency the number does not support. That is the ADR-024 Amendment A discipline: name the arithmetic, never assert the behaviour. UNITS ARE NATIVE QUANTITY, hence the _qty suffix on every OI column. Measured S81: NIFTY oi divides by 65 on 13,090 of 13,090 rows and by 75 on only 729; SENSEX by 20 on 18,037 of 18,037. So oi is shares-equivalent at the CURRENT lot size, and the 729 rows divisible by 75 are the fingerprint of a lot-size change during the data-s life. Any conversion to lots or contracts needs an instrument master with effective dates, never a literal, and is DEFERRED. Do not divide these columns by a constant. STRIKE CHURN IS CARRIED, NOT HIDDEN. Anchor and latest are FULL OUTER JOINed, so a strike present on one side only yields a NULL delta and a presence flag of ANCHOR_ONLY or LATEST_ONLY -- NEVER 0, which would assert no rotation where the truth is not comparable. Presence is per side because a strike can carry CE without PE. A single expiry-day sample showed 472 in both and no churn either way; that is n=1 and is not evidence the chain window is stable. FRESHNESS IS SURFACED, NOT SUPPRESSED. Because the session follows the data rather than the clock, a mid-session ingest stall would otherwise present a partial rotation as a complete one. snapshot_age_min, stale_floor_min_used and is_fresh are emitted and rows are NOT dropped -- ADR-023 D3, the same call ENH-123 and the S81 max-pain fix made, and for the same reason: under ADR-025 Amendment B the presentation layer is frozen, so a blanked panel could not explain itself. The parameter is get_parameter_num(-rotation.stale_floor_min-), default 30 minutes. It is a SEPARATE key from maxpain.stale_floor_min, with the same default: same writer and same cadence justify the same number, but ADR-023 A1.2 is explicit that a floor binds the CONSUMER, and a shared key would let a max-pain tuning silently retune rotation. PERFORMANCE: symbols via the S72 FIX 2 recursive skip-scan, latest via CROSS JOIN LATERAL ORDER BY ts DESC LIMIT 1, anchor via CROSS JOIN LATERAL ORDER BY ts LIMIT 1 under a ts floor derived from the session date. There is NO max(ts) GROUP BY over option_chain_snapshots -- that is the shape measured at 3,260 ms over 1,336,714 rows inside v_max_pain_by_strike and filed with a clock on it. Working set here is two snapshots per symbol, a few hundred rows each. Display-only per the S37 GEX-as-context-not-gate ruling; it routes nothing.
+v_oi_since_preopen|(relation)|S95 / roadmap P5 (PPC-1) / ruling S95-B -- open interest since the PRE-OPEN row, per front-expiry strike. The previous-close baseline the flow leg (P7, ENH-98 D-4) needs. NOT a parity layer; display-only (S37); routes nothing. Grain (symbol, expiry_date, strike), CE and PE side by side: OI at the anchor, at the latest snapshot, and the delta. IT IS v_oi_rotation_since_open (L13, ENH-127) WITH EXACTLY ONE CHANGE, THE ANCHOR: the first snapshot of the session date in the front expiry, which must be stamped before 09:15 IST, instead of the first snapshot at or after 09:15. Every other line of L13 is unchanged: session = IST date of the latest snapshot (follows the data, not the clock); front expiry from the latest snapshot, no fallback (ADR-023 D1); FULL OUTER JOIN with per-side presence (LATEST_ONLY / ANCHOR_ONLY / BOTH), a strike on one side only has a NULL delta, never 0; vendor oi_change ignored; native quantity (_qty), never divided by a lot constant; freshness surfaced, rows never dropped, floor key oi_preopen.stale_floor_min (default 30, a separate key from L13 rotation.stale_floor_min). WHY THE PRE-OPEN ROW (S95-B, measured S95 over 26 session changeovers per symbol, 2026-08-27 to 2026-10-09): on NIFTY the pre-open row equals the previous session 15:40 close on every leg of every changeover, so it IS the previous close; on SENSEX it differs from the 15:40 close on 23 to 41 pct of legs every night (BSE revises OI after the close; S81 saw 134 of 392 on 09-22, reproduced exactly), and anchoring on it keeps that overnight revision out of the day flow. It reads only the session own rows, so a closed day that carries rows (2026-10-02 has none in trading_calendar and wrote a full day) cannot become the baseline. Between the pre-open and 09:15 NIFTY OI changes on 111 to 190 legs a day and that change IS counted here; L13 excludes it. ABSENCE: a session whose first front-expiry row is at or after 09:15 IST (late start, thinned retention day) returns NO ROWS for that symbol. From 08:30 to 09:15 on a trading day the latest row is itself a pre-open row, so a delta then is a change in vendor-reported OI before any trade. VENDOR OI ON UNTRADED LEGS IS NOT A MEASUREMENT (S95): deep in-the-money SENSEX calls with volume 0 and a frozen ltp carried OI that jumped between 0, about 1.84 million and 48.8 million from one session to the next (2026-09-25, 09-28, 09-29, front expiry 2026-10-01); on those three days legs with no volume held 33 to 94 pct of front SENSEX OI. No untraded leg changed OI between 09:15 and the close on any of 22 symbol-sessions measured (2026-09-24 to 10-09), so from 09:15 on it does not move this view delta; it does inflate every reader of OI LEVELS (the DEX book, GEX, max pain) for the whole session. Read a large delta on a leg with no volume as a vendor value, not flow. AN OI DELTA CANNOT DISTINGUISH WRITING FROM BUYING; no dealer claim (P2: dealer side regime-dependent). Anchor seek measured 0.18 ms (index-only scan, idx_ocs_ts_symbol_expiry) against 25,117 ms for v_oi_prev_close_snapshots (S89). Never label second-order terms vanna or charm (L78-1).
+v_pin_board|(relation)|S92 / ADR-025 parity L12 read surface for the Marketview Pin tab (ruling S92-D). Grain (symbol, ts): every session_gate_state = OPEN row of gex_cycle_history for the latest IST date that has an OPEN row, restricted to the expiry_date of the newest OPEN row (front leg). is_latest marks the newest row per symbol. On a holiday or before the first OPEN cycle it returns the PREVIOUS session; compare session_date_ist with trading_calendar before showing it as today. FROZEN and PRE_TICK rows are never returned (ADR-030: written and flagged, filtered on read). Nothing is derived here: pin_state (NO PIN | SHIFTING | STABLE | LOCKED), held_for_cycles and conviction are stored by core/pin_state.py at write time and finalised by the EOD reconciler (reconciled_at NULL until then). pin_state thresholds are merdian_parameters pin_state.*. conviction = (1 - runnerup_share_ratio) * boost(T), boost(T) = 2.53 * T^(-0.5), D-5c STAGE 1 ONLY, NO MEASURED BAND (D-6): show the number, never a word. conc_top1_share is a TOP-1 SHARE, not a Herfindahl; conc_hhi is the true Herfindahl. The lead in share points is not derivable here; read it from v_gex_strike_rank. Runs with the owner's privileges (security_invoker = false) so anon reads it without a grant on gex_cycle_history, which deliberately has none; adding a column here publishes it to anon.
+v_run_trace|(relation)|S90 R0.7 (ADR-031 D7.5): every ledger run carrying a gamma_metrics row's run_id (ingest, gamma, volatility). Filter by symbol and gamma_ts. security_invoker.
+(78 rows)
+=== E6: CHECK constraints mentioning a Gamma token ===
+rel|conname|pg_get_constraintdef
+(0 rows)
+=== E7: generated columns anywhere ===
+table_name|column_name|generation_expression
+hist_completeness_checks|coverage_pct|round((((actual_bars)::numeric / (NULLIF(expected_bars, 0))::numeric) * (100)::numeric), 2)
+ict_zones|zone_mid|((zone_high + zone_low) / (2)::numeric)
+ict_zones_replay|zone_mid|((zone_high + zone_low) / (2)::numeric)
+ict_htf_zones|zone_mid|((zone_high + zone_low) / (2)::numeric)
+index_constituent_weights|weight_fraction|(weight_pct / 100.0)
+(5 rows)
+
+################ §7  Positive controls: every zero paired with a non-zero from the same query shape ################
+triggers_gamma|0|triggers_all_user|9
+ck_gamma|0|ck_symbol_control|41
+gencol_gamma|0|gencol_all|5
+idx_on_gamma_value|0|idx_on_gamma_rel_control|28
+matviews_any|0|views_any|82
+rls_policies_gamma|9|rls_policies_all|78
+
+################ §8  Full column inventory: any column named gex|gamma|dealer or ending _cr ################
+=== A1: current role and db ===
+ current_user | current_database |                                      version                                       
+--------------+------------------+------------------------------------------------------------------------------------
+ merdian_ro   | postgres         | PostgreSQL 17.6 on aarch64-unknown-linux-gnu, compiled by gcc (GCC) 15.2.0, 64-bit
+(1 row)
+
+=== A2: ALL columns whose name contains gex/gamma/dealer or ends _cr, with type, in any schema ===
+ table_schema |               table_name               | table_type |            column_name             |        data_type         | is_generated 
+--------------+----------------------------------------+------------+------------------------------------+--------------------------+--------------
+ public       | expiry_outcomes                        | BASE TABLE | gex_regime_persistence             | numeric                  | NEVER
+ public       | fii_dii_cash_daily                     | BASE TABLE | dii_buy_cr                         | numeric                  | NEVER
+ public       | fii_dii_cash_daily                     | BASE TABLE | dii_net_cr                         | numeric                  | NEVER
+ public       | fii_dii_cash_daily                     | BASE TABLE | dii_sell_cr                        | numeric                  | NEVER
+ public       | fii_dii_cash_daily                     | BASE TABLE | fii_buy_cr                         | numeric                  | NEVER
+ public       | fii_dii_cash_daily                     | BASE TABLE | fii_net_cr                         | numeric                  | NEVER
+ public       | fii_dii_cash_daily                     | BASE TABLE | fii_sell_cr                        | numeric                  | NEVER
+ public       | gamma_metrics                          | BASE TABLE | gamma_concentration                | numeric                  | NEVER
+ public       | gamma_metrics                          | BASE TABLE | gamma_zone                         | text                     | NEVER
+ public       | gamma_metrics                          | BASE TABLE | max_gamma_strike                   | numeric                  | NEVER
+ public       | gamma_metrics                          | BASE TABLE | net_gex                            | numeric                  | NEVER
+ public       | gamma_metrics_replay                   | BASE TABLE | gamma_concentration                | numeric                  | NEVER
+ public       | gamma_metrics_replay                   | BASE TABLE | gamma_zone                         | text                     | NEVER
+ public       | gamma_metrics_replay                   | BASE TABLE | net_gex                            | numeric                  | NEVER
+ public       | gamma_metrics_shadow                   | BASE TABLE | gamma_concentration                | numeric                  | NEVER
+ public       | gamma_metrics_shadow                   | BASE TABLE | gamma_zone                         | text                     | NEVER
+ public       | gamma_metrics_shadow                   | BASE TABLE | net_gex                            | numeric                  | NEVER
+ public       | gex_cycle_history                      | BASE TABLE | gamma_at_pin                       | numeric                  | NEVER
+ public       | gex_cycle_history                      | BASE TABLE | gamma_regime                       | text                     | NEVER
+ public       | gex_cycle_history                      | BASE TABLE | net_gex                            | numeric                  | NEVER
+ public       | gex_pin_maxpain_history                | BASE TABLE | peak_pin_gex_cr                    | numeric                  | NEVER
+ public       | gex_strike_snapshots                   | BASE TABLE | gamma_call                         | double precision         | NEVER
+ public       | gex_strike_snapshots                   | BASE TABLE | gamma_put                          | double precision         | NEVER
+ public       | gex_strike_snapshots                   | BASE TABLE | gex_cr                             | numeric                  | NEVER
+ public       | hist_atm_option_bars_15m               | BASE TABLE | ce_gamma                           | numeric                  | NEVER
+ public       | hist_atm_option_bars_15m               | BASE TABLE | pe_gamma                           | numeric                  | NEVER
+ public       | hist_atm_option_bars_5m                | BASE TABLE | ce_gamma                           | numeric                  | NEVER
+ public       | hist_atm_option_bars_5m                | BASE TABLE | pe_gamma                           | numeric                  | NEVER
+ public       | hist_gamma_metrics                     | BASE TABLE | gamma_concentration                | numeric                  | NEVER
+ public       | hist_gamma_metrics                     | BASE TABLE | gamma_zone                         | text                     | NEVER
+ public       | hist_gamma_metrics                     | BASE TABLE | net_gex                            | numeric                  | NEVER
+ public       | hist_market_state                      | BASE TABLE | gamma_regime                       | text                     | NEVER
+ public       | hist_market_state                      | BASE TABLE | gamma_zone                         | text                     | NEVER
+ public       | hist_market_state                      | BASE TABLE | net_gex                            | numeric                  | NEVER
+ public       | hist_option_bars_1m                    | BASE TABLE | gamma                              | numeric                  | NEVER
+ public       | hist_option_greeks_1m                  | BASE TABLE | gamma                              | numeric                  | NEVER
+ public       | hist_pattern_signals                   | BASE TABLE | gamma_regime                       | text                     | NEVER
+ public       | historical_option_chain_snapshots      | BASE TABLE | gamma                              | numeric                  | NEVER
+ public       | latest_atm_neighborhood                | VIEW       | abs_net_gamma                      | numeric                  | NEVER
+ public       | latest_atm_neighborhood                | VIEW       | gamma_call                         | numeric                  | NEVER
+ public       | latest_atm_neighborhood                | VIEW       | gamma_put                          | numeric                  | NEVER
+ public       | latest_atm_neighborhood                | VIEW       | net_gamma                          | numeric                  | NEVER
+ public       | latest_gamma_metrics                   | VIEW       | gamma_concentration                | numeric                  | NEVER
+ public       | latest_gamma_metrics                   | VIEW       | net_gex                            | numeric                  | NEVER
+ public       | latest_gamma_metrics_v2                | VIEW       | gamma_concentration                | numeric                  | NEVER
+ public       | latest_gamma_metrics_v2                | VIEW       | net_gex                            | numeric                  | NEVER
+ public       | latest_gamma_walls                     | VIEW       | abs_net_gamma                      | numeric                  | NEVER
+ public       | latest_gamma_walls                     | VIEW       | gamma_call                         | numeric                  | NEVER
+ public       | latest_gamma_walls                     | VIEW       | gamma_put                          | numeric                  | NEVER
+ public       | latest_gamma_walls                     | VIEW       | net_gamma                          | numeric                  | NEVER
+ public       | latest_net_gamma_by_strike             | VIEW       | abs_net_gamma                      | numeric                  | NEVER
+ public       | latest_net_gamma_by_strike             | VIEW       | gamma_call                         | numeric                  | NEVER
+ public       | latest_net_gamma_by_strike             | VIEW       | gamma_put                          | numeric                  | NEVER
+ public       | latest_net_gamma_by_strike             | VIEW       | net_gamma                          | numeric                  | NEVER
+ public       | latest_option_chain_run                | VIEW       | gamma                              | numeric                  | NEVER
+ public       | latest_option_chain_snapshots          | VIEW       | gamma                              | numeric                  | NEVER
+ public       | latest_signal                          | VIEW       | gamma_concentration                | numeric                  | NEVER
+ public       | latest_signal                          | VIEW       | gamma_regime                       | text                     | NEVER
+ public       | latest_signal_inputs                   | VIEW       | gamma_concentration                | numeric                  | NEVER
+ public       | latest_signal_inputs                   | VIEW       | net_gex                            | numeric                  | NEVER
+ public       | latest_signal_inputs_v2                | VIEW       | gamma_concentration                | numeric                  | NEVER
+ public       | latest_signal_inputs_v2                | VIEW       | net_gex                            | numeric                  | NEVER
+ public       | latest_signal_intraday                 | VIEW       | gamma_concentration                | numeric                  | NEVER
+ public       | latest_signal_intraday                 | VIEW       | gamma_regime                       | text                     | NEVER
+ public       | latest_signal_snapshots                | VIEW       | gamma_concentration                | numeric                  | NEVER
+ public       | latest_signal_snapshots                | VIEW       | gamma_regime                       | text                     | NEVER
+ public       | latest_signal_snapshots                | VIEW       | net_gex                            | numeric                  | NEVER
+ public       | latest_signal_v1                       | VIEW       | gamma_concentration                | numeric                  | NEVER
+ public       | latest_signal_v1                       | VIEW       | gamma_regime                       | text                     | NEVER
+ public       | latest_signal_v1_gated                 | VIEW       | gamma_concentration                | numeric                  | NEVER
+ public       | latest_signal_v1_gated                 | VIEW       | gamma_regime                       | text                     | NEVER
+ public       | latest_signal_v2                       | VIEW       | gamma_concentration                | numeric                  | NEVER
+ public       | latest_signal_v2                       | VIEW       | gamma_regime                       | text                     | NEVER
+ public       | latest_top_gamma_strikes               | VIEW       | abs_net_gamma                      | numeric                  | NEVER
+ public       | latest_top_gamma_strikes               | VIEW       | gamma_call                         | numeric                  | NEVER
+ public       | latest_top_gamma_strikes               | VIEW       | gamma_put                          | numeric                  | NEVER
+ public       | latest_top_gamma_strikes               | VIEW       | net_gamma                          | numeric                  | NEVER
+ public       | market_environment_snapshots           | BASE TABLE | gex_regime_persistence_20d         | numeric                  | NEVER
+ public       | market_environment_snapshots           | BASE TABLE | max_gamma_strike_drift_5d          | numeric                  | NEVER
+ public       | market_environment_snapshots           | BASE TABLE | net_gex_regime                     | text                     | NEVER
+ public       | market_state_snapshots                 | BASE TABLE | gamma_features                     | jsonb                    | NEVER
+ public       | market_state_snapshots                 | BASE TABLE | gamma_run_id                       | uuid                     | NEVER
+ public       | market_state_snapshots_replay          | BASE TABLE | gamma_features                     | jsonb                    | NEVER
+ public       | market_state_snapshots_replay          | BASE TABLE | gamma_run_id                       | uuid                     | NEVER
+ public       | market_state_snapshots_shadow          | BASE TABLE | gamma_features                     | jsonb                    | NEVER
+ public       | market_state_snapshots_shadow          | BASE TABLE | gamma_run_id                       | uuid                     | NEVER
+ public       | measurement_health_snapshots           | BASE TABLE | gamma_status                       | jsonb                    | NEVER
+ public       | option_chain_snapshots                 | BASE TABLE | gamma                              | numeric                  | NEVER
+ public       | option_chain_snapshots_replay          | BASE TABLE | gamma                              | numeric                  | NEVER
+ public       | shadow_reconstruction_v1               | BASE TABLE | gamma_regime                       | text                     | NEVER
+ public       | shadow_reconstruction_v2               | BASE TABLE | gamma_regime                       | text                     | NEVER
+ public       | shadow_reconstruction_v3               | BASE TABLE | gamma_regime                       | text                     | NEVER
+ public       | shadow_signal_snapshots                | BASE TABLE | gamma_regime                       | text                     | NEVER
+ public       | shadow_signal_snapshots_v3             | BASE TABLE | gamma_regime                       | text                     | NEVER
+ public       | shadow_signal_validation_v1            | VIEW       | gamma_regime                       | text                     | NEVER
+ public       | shadow_state_signal_snapshots          | BASE TABLE | gamma_bias                         | text                     | NEVER
+ public       | shadow_state_signal_snapshots          | BASE TABLE | gamma_zone                         | text                     | NEVER
+ public       | signal_outcome_audit                   | BASE TABLE | gamma_regime                       | text                     | NEVER
+ public       | signal_outcome_audit_dedup             | VIEW       | gamma_regime                       | text                     | NEVER
+ public       | signal_outcome_research_v1             | VIEW       | gamma_concentration                | numeric                  | NEVER
+ public       | signal_outcome_research_v1             | VIEW       | gamma_regime                       | text                     | NEVER
+ public       | signal_outcome_research_v1             | VIEW       | net_gex                            | numeric                  | NEVER
+ public       | signal_outcome_research_v2             | VIEW       | gamma_concentration                | numeric                  | NEVER
+ public       | signal_outcome_research_v2             | VIEW       | gamma_regime                       | text                     | NEVER
+ public       | signal_outcome_research_v2             | VIEW       | net_gex                            | numeric                  | NEVER
+ public       | signal_premium_outcomes                | BASE TABLE | gamma_regime                       | text                     | NEVER
+ public       | signal_regret_log                      | BASE TABLE | gamma_regime                       | text                     | NEVER
+ public       | signal_runs                            | BASE TABLE | gamma_run_ids                      | jsonb                    | NEVER
+ public       | signal_snapshots                       | BASE TABLE | gamma_concentration                | numeric                  | NEVER
+ public       | signal_snapshots                       | BASE TABLE | gamma_regime                       | text                     | NEVER
+ public       | signal_snapshots                       | BASE TABLE | net_gex                            | numeric                  | NEVER
+ public       | signal_snapshots_replay                | BASE TABLE | gamma_concentration                | numeric                  | NEVER
+ public       | signal_snapshots_replay                | BASE TABLE | gamma_regime                       | text                     | NEVER
+ public       | signal_snapshots_replay                | BASE TABLE | net_gex                            | numeric                  | NEVER
+ public       | signal_snapshots_shadow                | BASE TABLE | gamma_concentration                | numeric                  | NEVER
+ public       | signal_snapshots_shadow                | BASE TABLE | gamma_regime                       | text                     | NEVER
+ public       | signal_snapshots_shadow                | BASE TABLE | net_gex                            | numeric                  | NEVER
+ public       | signal_state_snapshots                 | BASE TABLE | gamma_bias                         | text                     | NEVER
+ public       | signal_state_snapshots                 | BASE TABLE | gamma_zone                         | text                     | NEVER
+ public       | structural_alerts                      | BASE TABLE | cond_short_gamma                   | boolean                  | NEVER
+ public       | structural_alerts                      | BASE TABLE | gamma_pinning                      | boolean                  | NEVER
+ public       | structural_divergence_snapshots        | BASE TABLE | gamma_concentration                | numeric                  | NEVER
+ public       | structural_divergence_snapshots        | BASE TABLE | gamma_concentration_delta          | numeric                  | NEVER
+ public       | structural_divergence_snapshots        | BASE TABLE | net_gex                            | numeric                  | NEVER
+ public       | structural_divergence_snapshots_replay | BASE TABLE | gamma_concentration                | numeric                  | NEVER
+ public       | structural_divergence_snapshots_replay | BASE TABLE | gamma_concentration_delta          | numeric                  | NEVER
+ public       | structural_divergence_snapshots_replay | BASE TABLE | net_gex                            | numeric                  | NEVER
+ public       | study_recon_accel                      | BASE TABLE | total_accel_gex_cr                 | numeric                  | NEVER
+ public       | study_recon_pin                        | BASE TABLE | total_pin_gex_cr                   | numeric                  | NEVER
+ public       | v_dealer_flow_sim                      | VIEW       | flow_cr                            | numeric                  | NEVER
+ public       | v_dealer_flow_sim                      | VIEW       | net_gex                            | numeric                  | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | call_iv_book_cr                    | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | call_iv_flow_cr                    | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | call_iv_preopen_cr                 | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | call_t_book_cr                     | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | call_t_flow_cr                     | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | call_t_preopen_cr                  | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | leg_iv_book_cr                     | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | leg_iv_flow_cr                     | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | leg_iv_gross_flow_cr               | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | leg_iv_no_anchor_cr                | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | leg_iv_preopen_cr                  | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | leg_t_book_cr                      | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | leg_t_flow_cr                      | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | leg_t_gross_flow_cr                | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | leg_t_no_anchor_cr                 | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | leg_t_preopen_cr                   | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | net_iv_book_cr                     | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | net_iv_flow_cr                     | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | net_iv_preopen_cr                  | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | net_t_book_cr                      | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | net_t_flow_cr                      | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | net_t_preopen_cr                   | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | put_iv_book_cr                     | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | put_iv_flow_cr                     | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | put_iv_preopen_cr                  | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | put_t_book_cr                      | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | put_t_flow_cr                      | double precision         | NEVER
+ public       | v_delta_drift_flow_vs_book             | VIEW       | put_t_preopen_cr                   | double precision         | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | call_dex_cr                        | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | call_flow_cr                       | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | call_preopen_dex_cr                | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | leg_book_net_p_cr                  | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | leg_call_dex_cr                    | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | leg_call_flow_cr                   | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | leg_call_preopen_dex_cr            | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | leg_flow_net_p_cr                  | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | leg_gross_flow_cr                  | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | leg_net_dex_cr                     | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | leg_net_flow_cr                    | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | leg_net_preopen_dex_cr             | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | leg_no_anchor_dex_cr               | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | leg_put_dex_cr                     | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | leg_put_flow_cr                    | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | leg_put_preopen_dex_cr             | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | leg_s2_gross_cr                    | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | net_dex_cr                         | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | net_flow_cr                        | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | net_preopen_dex_cr                 | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | put_dex_cr                         | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | put_flow_cr                        | numeric                  | NEVER
+ public       | v_dex_flow_vs_book                     | VIEW       | put_preopen_dex_cr                 | numeric                  | NEVER
+ public       | v_dex_repriced_zero                    | VIEW       | gross_dex_at_spot_cr               | double precision         | NEVER
+ public       | v_dex_repriced_zero                    | VIEW       | net_dex_at_spot_cr                 | double precision         | NEVER
+ public       | v_dex_standing_book                    | VIEW       | call_dex_cr                        | numeric                  | NEVER
+ public       | v_dex_standing_book                    | VIEW       | leg_call_dex_cr                    | numeric                  | NEVER
+ public       | v_dex_standing_book                    | VIEW       | leg_net_dex_cr                     | numeric                  | NEVER
+ public       | v_dex_standing_book                    | VIEW       | leg_put_dex_cr                     | numeric                  | NEVER
+ public       | v_dex_standing_book                    | VIEW       | net_dex_cr                         | numeric                  | NEVER
+ public       | v_dex_standing_book                    | VIEW       | put_dex_cr                         | numeric                  | NEVER
+ public       | v_gamma_metrics_1pct                   | VIEW       | gamma_concentration                | numeric                  | NEVER
+ public       | v_gamma_metrics_1pct                   | VIEW       | gamma_zone                         | text                     | NEVER
+ public       | v_gamma_metrics_1pct                   | VIEW       | max_gamma_strike                   | numeric                  | NEVER
+ public       | v_gamma_metrics_1pct                   | VIEW       | net_gex                            | numeric                  | NEVER
+ public       | v_gamma_metrics_1pct                   | VIEW       | net_gex_1pct                       | numeric                  | NEVER
+ public       | v_gex_abs_exposure                     | VIEW       | abs_gex_cr                         | numeric                  | NEVER
+ public       | v_gex_abs_exposure                     | VIEW       | net_gex_cr                         | numeric                  | NEVER
+ public       | v_gex_abs_exposure_1pct                | VIEW       | abs_gex_cr                         | numeric                  | NEVER
+ public       | v_gex_abs_exposure_1pct                | VIEW       | abs_gex_cr_1pct                    | numeric                  | NEVER
+ public       | v_gex_abs_exposure_1pct                | VIEW       | net_gex_cr                         | numeric                  | NEVER
+ public       | v_gex_abs_exposure_1pct                | VIEW       | net_gex_cr_1pct                    | numeric                  | NEVER
+ public       | v_gex_greeks_l2_leg                    | VIEW       | gamma                              | numeric                  | NEVER
+ public       | v_gex_greeks_l2_leg                    | VIEW       | u_gex_drift_iv                     | double precision         | NEVER
+ public       | v_gex_greeks_l2_leg                    | VIEW       | u_gex_drift_time                   | double precision         | NEVER
+ public       | v_gex_greeks_l2_net                    | VIEW       | gross_strike_gex_drift_iv          | double precision         | NEVER
+ public       | v_gex_greeks_l2_net                    | VIEW       | gross_strike_gex_drift_time        | double precision         | NEVER
+ public       | v_gex_greeks_l2_net                    | VIEW       | net_delta_drift_iv_cr_per_volpt    | double precision         | NEVER
+ public       | v_gex_greeks_l2_net                    | VIEW       | net_delta_drift_time_cr_per_day    | double precision         | NEVER
+ public       | v_gex_greeks_l2_net                    | VIEW       | net_gex_drift_iv_cr_per_volpt      | double precision         | NEVER
+ public       | v_gex_greeks_l2_net                    | VIEW       | net_gex_drift_time_cr_per_day      | double precision         | NEVER
+ public       | v_gex_greeks_l2_net                    | VIEW       | net_over_gross_gex_drift_iv        | double precision         | NEVER
+ public       | v_gex_greeks_l2_net                    | VIEW       | net_over_gross_gex_drift_time      | double precision         | NEVER
+ public       | v_gex_greeks_l2_net_1pct               | VIEW       | gross_strike_gex_drift_iv          | double precision         | NEVER
+ public       | v_gex_greeks_l2_net_1pct               | VIEW       | gross_strike_gex_drift_iv_1pct     | double precision         | NEVER
+ public       | v_gex_greeks_l2_net_1pct               | VIEW       | gross_strike_gex_drift_time        | double precision         | NEVER
+ public       | v_gex_greeks_l2_net_1pct               | VIEW       | gross_strike_gex_drift_time_1pct   | double precision         | NEVER
+ public       | v_gex_greeks_l2_net_1pct               | VIEW       | net_delta_drift_iv_cr_per_volpt    | double precision         | NEVER
+ public       | v_gex_greeks_l2_net_1pct               | VIEW       | net_delta_drift_time_cr_per_day    | double precision         | NEVER
+ public       | v_gex_greeks_l2_net_1pct               | VIEW       | net_gex_drift_iv_cr_per_volpt      | double precision         | NEVER
+ public       | v_gex_greeks_l2_net_1pct               | VIEW       | net_gex_drift_iv_cr_per_volpt_1pct | double precision         | NEVER
+ public       | v_gex_greeks_l2_net_1pct               | VIEW       | net_gex_drift_time_cr_per_day      | double precision         | NEVER
+ public       | v_gex_greeks_l2_net_1pct               | VIEW       | net_gex_drift_time_cr_per_day_1pct | double precision         | NEVER
+ public       | v_gex_greeks_l2_net_1pct               | VIEW       | net_over_gross_gex_drift_iv        | double precision         | NEVER
+ public       | v_gex_greeks_l2_net_1pct               | VIEW       | net_over_gross_gex_drift_time      | double precision         | NEVER
+ public       | v_gex_greeks_l2_strike                 | VIEW       | delta_drift_iv_cr_per_volpt        | double precision         | NEVER
+ public       | v_gex_greeks_l2_strike                 | VIEW       | delta_drift_time_cr_per_day        | double precision         | NEVER
+ public       | v_gex_greeks_l2_strike                 | VIEW       | gex_drift_iv_cr_per_volpt          | double precision         | NEVER
+ public       | v_gex_greeks_l2_strike                 | VIEW       | gex_drift_time_cr_per_day          | double precision         | NEVER
+ public       | v_gex_greeks_l2_strike                 | VIEW       | gross_gex_drift_iv                 | double precision         | NEVER
+ public       | v_gex_greeks_l2_strike                 | VIEW       | gross_gex_drift_time               | double precision         | NEVER
+ public       | v_gex_greeks_l2_strike_1pct            | VIEW       | delta_drift_iv_cr_per_volpt        | double precision         | NEVER
+ public       | v_gex_greeks_l2_strike_1pct            | VIEW       | delta_drift_time_cr_per_day        | double precision         | NEVER
+ public       | v_gex_greeks_l2_strike_1pct            | VIEW       | gex_drift_iv_cr_per_volpt          | double precision         | NEVER
+ public       | v_gex_greeks_l2_strike_1pct            | VIEW       | gex_drift_iv_cr_per_volpt_1pct     | double precision         | NEVER
+ public       | v_gex_greeks_l2_strike_1pct            | VIEW       | gex_drift_time_cr_per_day          | double precision         | NEVER
+ public       | v_gex_greeks_l2_strike_1pct            | VIEW       | gex_drift_time_cr_per_day_1pct     | double precision         | NEVER
+ public       | v_gex_greeks_l2_strike_1pct            | VIEW       | gross_gex_drift_iv                 | double precision         | NEVER
+ public       | v_gex_greeks_l2_strike_1pct            | VIEW       | gross_gex_drift_time               | double precision         | NEVER
+ public       | v_gex_net_gamma_river                  | VIEW       | gamma_side                         | text                     | NEVER
+ public       | v_gex_net_gamma_river                  | VIEW       | net_gex_cr                         | numeric                  | NEVER
+ public       | v_gex_net_gamma_river                  | VIEW       | session_max_net_gex_cr             | numeric                  | NEVER
+ public       | v_gex_net_gamma_river                  | VIEW       | session_min_net_gex_cr             | numeric                  | NEVER
+ public       | v_gex_net_gamma_river_1pct             | VIEW       | gamma_side                         | text                     | NEVER
+ public       | v_gex_net_gamma_river_1pct             | VIEW       | net_gex_cr                         | numeric                  | NEVER
+ public       | v_gex_net_gamma_river_1pct             | VIEW       | net_gex_cr_1pct                    | numeric                  | NEVER
+ public       | v_gex_net_gamma_river_1pct             | VIEW       | session_max_net_gex_cr             | numeric                  | NEVER
+ public       | v_gex_net_gamma_river_1pct             | VIEW       | session_max_net_gex_cr_1pct        | numeric                  | NEVER
+ public       | v_gex_net_gamma_river_1pct             | VIEW       | session_min_net_gex_cr             | numeric                  | NEVER
+ public       | v_gex_net_gamma_river_1pct             | VIEW       | session_min_net_gex_cr_1pct        | numeric                  | NEVER
+ public       | v_gex_strike_accel_zone                | VIEW       | total_accel_gex_cr                 | numeric                  | NEVER
+ public       | v_gex_strike_accel_zone                | VIEW       | trough_gex_cr                      | numeric                  | NEVER
+ public       | v_gex_strike_pin_zone                  | VIEW       | peak_pin_gex_cr                    | numeric                  | NEVER
+ public       | v_gex_strike_pin_zone                  | VIEW       | total_pin_gex_cr                   | numeric                  | NEVER
+ public       | v_gex_strike_rank                      | VIEW       | abs_gex_cr                         | numeric                  | NEVER
+ public       | v_gex_strike_rank                      | VIEW       | gex_cr                             | numeric                  | NEVER
+ public       | v_gex_strike_snapshots_1pct            | VIEW       | gamma_call                         | double precision         | NEVER
+ public       | v_gex_strike_snapshots_1pct            | VIEW       | gamma_put                          | double precision         | NEVER
+ public       | v_gex_strike_snapshots_1pct            | VIEW       | gex_cr                             | numeric                  | NEVER
+ public       | v_gex_strike_snapshots_1pct            | VIEW       | gex_cr_1pct                        | numeric                  | NEVER
+ public       | v_gex_strike_terrain                   | VIEW       | gex_cr                             | numeric                  | NEVER
+ public       | v_gex_strike_terrain_1pct              | VIEW       | gex_cr                             | numeric                  | NEVER
+ public       | v_gex_strike_terrain_1pct              | VIEW       | gex_cr_1pct                        | numeric                  | NEVER
+ public       | v_pin_board                            | VIEW       | gamma_at_pin                       | numeric                  | NEVER
+ public       | v_run_trace                            | VIEW       | gamma_ts                           | timestamp with time zone | NEVER
+ public       | wcb_signal_validation_v1               | VIEW       | gamma_concentration                | numeric                  | NEVER
+ public       | wcb_signal_validation_v1               | VIEW       | gamma_regime                       | text                     | NEVER
+ public       | wcb_signal_validation_v1               | VIEW       | net_gex                            | numeric                  | NEVER
+ public       | wcb_signal_validation_v2               | VIEW       | gamma_concentration                | numeric                  | NEVER
+ public       | wcb_signal_validation_v2               | VIEW       | gamma_regime                       | text                     | NEVER
+ public       | wcb_signal_validation_v2               | VIEW       | net_gex                            | numeric                  | NEVER
+(270 rows)
+

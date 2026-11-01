@@ -262,3 +262,24 @@ Archive commit `2b69506` note: `parity_render_contract.md` was CRLF in PK and is
 | retail flags (3) | `claude/retail/glossary_v0.1.json`, `claude/retail_scope_draft_2026-10-25.md`, `claude/retail/day_plan_2026-10-26.md` | **not acted on** (operator instruction) |
 
 PK after this step: **149 docs** (162 − 1 − 12). Still open: 10 DEFERRED until the S103 doc-close; the 3 retail flags (untouched); root-level `cc_prompt_adr032_sweep_retail_box.md` stray duplicate of `claude/cc_prompt_adr032_sweep_retail_box.md` (offer: delete root dup).
+
+### S103 doc-close deletions (2026-11-01, after `9d26281` landed on all four trees)
+
+The ten DEFERRED docs are deleted from PK after the S103 doc-close (`9d26281`) and the follow-up docs commit that archives the one doc git did not hold (`S103_session_prompt`). **Where each can be found:**
+
+| PK doc (deleted) | Git home (engine repo `balannavin-cyber/meridian-engine`) |
+|---|---|
+| claude/S103_session_prompt.md | `docs/research/s103/S103_session_prompt.md` (follow-up docs commit; session prompts were never committed before — archived here per the batch-1 precedent) |
+| claude/lovable_prompt_s103_health_token_skew_expiry.md | `docs/lovable_prompts/s103/` (`9d26281`) |
+| claude/mv_lovable_guard_s103.sh | `docs/lovable_prompts/s103/` (`9d26281`; sha256 `b5434d6e…` verified equal to the hash recorded in rulings_s103) |
+| claude/mv_promote_s103.sh | `docs/lovable_prompts/s103/` (`9d26281`) |
+| claude/lovable_prompt_s103_r16_freeze_button.md | `docs/lovable_prompts/s103/` (`9d26281`) |
+| claude/mv_lovable_guard_s103r16.sh | `docs/lovable_prompts/s103/` (`9d26281`; sha256 `a6b16eb0…` verified) |
+| claude/lovable_prompt_s103_r20_prev_close.md | `docs/lovable_prompts/s103/` (`9d26281`) |
+| claude/mv_lovable_guard_s103r20.sh | `docs/lovable_prompts/s103/` (`9d26281`; sha256 `1493a786…` verified) |
+| claude/2026-10-30_s103_v_close_print.sql | `sql/2026-10-30_s103_v_close_print.sql` (`9d26281`) |
+| claude/rulings_s103_addendum_rounds_2_3.md | merged into `docs/research/s92_parity/rulings_s103.md` (`9d26281`; PK `claude/rulings_s103.md` replaced by the merged file) |
+
+Kept in PK (reference for the next session, git copies at `9d26281`): S103_close_inputs, S104_session_prompt, adr032_f0_k1_k3_records, adr032_fallback_plan, adr032_s5_s6_impact_study, the two CC sweep prompts, the sweep Phase-1/90-report/95-diff records, 2026-10-31_s103_adr032_s1_unit_comments.sql, and the filed `ADR-032-gex-stored-unit.md` (the DRAFT `claude/ADR-032-DRAFT-gex-stored-unit.md` is replaced by it).
+
+Copy-fidelity note: the git copies of the S103/S104 working docs were transcribed from PK by a helper, not copied byte-for-byte; the three guard scripts and the key hashes in the F0 record, impact study, sweep records and rulings were verified mechanically. The audit file itself is byte-identical (`cmp`). Any doubt about a script is resolved against the operator's Downloads copy.

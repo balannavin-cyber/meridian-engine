@@ -28,6 +28,10 @@ T_SESSION_END = "15:30"
 T_STOP = "15:40"
 DRAIN_SECONDS = 15 * 60    # 15:40 stop -> uploads drained until 15:55
 RESOLVE_RETRY_S = 30
+TOKEN_PROBE_AFTER_S = 60   # disconnected this long -> kite.profile() probe (review finding 3)
+TOKEN_PROBE_EVERY_S = 60
+TOKEN_FAIL_DRAIN_S = 60
+TOKEN_EXCEPTIONS = ("TokenException", "PermissionException")  # kiteconnect.exceptions class names
 
 # --- exit codes -----------------------------------------------------------------------------
 EXIT_OK = 0

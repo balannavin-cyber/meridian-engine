@@ -7,7 +7,7 @@ with tests/test_tape_t0.py --root, and require FAIL. The control (unpatched copy
 
   python3 tests/tape_mutants.py [--repeat N] [--only M-T0-...]
 
-Last line: "TAPE T0 MUTANTS PASS (22/22 caught xN, 13/13 controls xN)" or FAIL. Exit 0 / 1.
+Last line: "TAPE T0 MUTANTS PASS (24/24 caught xN, 14/14 controls xN)" or FAIL. Exit 0 / 1.
 """
 import argparse
 import os
@@ -71,6 +71,11 @@ M = [
      "        if last is not None and seg_ns <= last:\n", "        if False:\n"),
     ("M-T0-GZ-OVERWRITE", "segment-race", "services/tape_runner/segments.py",
      "    while os.path.exists(dst) or taken(dst):\n", "    while False:\n"),
+    ("M-T0-NO-TOKEN-PROBE", "token-midsession", "services/tape_runner/recorder.py",
+     "        if self._token_probe_due(now):\n", "        if False:\n"),
+    ("M-T0-PROBE-UNDER-LOCK", "token-midsession", "services/tape_runner/recorder.py",
+     "            code = self._token_probe(now)      # REST call made WITHOUT the recorder lock\n",
+     "            with self.lock:\n                code = self._token_probe(now)\n"),
     ("M-T0-NO-MEMORYMAX", "fence", "services/tape_runner/tape-runner.service", "MemoryMax=400M\n", ""),
     ("M-T0-IMPORTS-DHAN", "no-db-no-dhan", "services/tape_runner/recorder.py",
      "import json\n", "import json\nimport dhanhq  # noqa\n"),

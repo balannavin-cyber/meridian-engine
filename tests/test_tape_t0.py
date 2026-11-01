@@ -826,11 +826,91 @@ def g_segment_race():
     return cells
 
 
+class TokenException(Exception):
+    """Same class name as kiteconnect.exceptions.TokenException (the runner matches by name)."""
+
+
+class ProbeKite(FakeKite):
+    """profile() raises `exc` when armed, and records whether another thread could take the
+    recorder lock DURING the call (the REST call must not hold it)."""
+
+    def __init__(self):
+        super().__init__()
+        self.exc = None
+        self.rec = None
+        self.lock_free_during_profile = []
+
+    def profile(self):
+        import threading
+        if self.rec is not None and self.exc is not None:
+            got = []
+
+            def probe():
+                ok = self.rec.lock.acquire(timeout=0.5)
+                got.append(ok)
+                if ok:
+                    self.rec.lock.release()
+            th = threading.Thread(target=probe)
+            th.start()
+            th.join(2)
+            self.lock_free_during_profile.append(bool(got and got[0]))
+        self.calls.append("profile")
+        if self.exc is not None:
+            raise self.exc
+        return {"user_id": "XX0000"}
+
+
+def g_token_midsession():
+    cells = []
+    kite = ProbeKite()
+    rec, clock, tickers = make_recorder(kite=kite)
+    kite.rec = rec
+    t = boot_open_day(rec, clock, tickers)
+    fut = TOK[("NIFTY", "FUT")]
+    clock.set(ist_ns(DAY, "10:00:00"))
+    t.on_ticks(t, [full_pkt(fut, 25000, 100, DAY, "10:00:00", tid="before-drop")])
+    rec.step(clock.now_ns())
+    clock.set(ist_ns(DAY, "10:00:05"))
+    t.on_close(t, 1006, "WebSocket connection upgrade failed (403 - Forbidden)")
+    n_prof = kite.calls.count("profile")
+    # inside 60 s: no probe
+    clock.set(ist_ns(DAY, "10:01:00"))
+    c1 = rec.step(clock.now_ns())
+    no_early = kite.calls.count("profile") == n_prof
+    # > 60 s, network error: not a token verdict, keep running
+    kite.exc = ConnectionError("dns")
+    clock.set(ist_ns(DAY, "10:01:06"))
+    c2 = rec.step(clock.now_ns())
+    # next probe (60 s later), token rejected -> close, drain, TOKEN_FAIL, exit 1
+    kite.exc = TokenException("Incorrect `api_key` or `access_token`.")
+    clock.set(ist_ns(DAY, "10:02:07"))
+    c3 = rec.step(clock.now_ns())
+    hb = json.load(open(rec.heartbeat_path))
+    objs = rec.uploader.s3.objects
+    seg = "NIFTY/%s/seg_1000.ndjson.gz" % DAY
+    ids = _gz_ids(objs[seg]) if seg in objs else []
+    ctl = [json.loads(l) for l in gzip.decompress(objs.get(seg, gzip.compress(b""))).decode().splitlines()]
+    tf = [r for r in ctl if r.get("ctl") == "error" and r.get("code") == "TOKEN_FAIL"]
+    cells.append((no_early and c1 is None and c2 is None and kite.calls.count("profile") == n_prof + 2,
+                  "no probe before 60 s; network error -> keep running (exits %s, %s); probes=%d"
+                  % (c1, c2, kite.calls.count("profile") - n_prof)))
+    cells.append((c3 == 1 and hb["state"] == "TOKEN_FAIL", "token rejected -> exit %s, heartbeat %s" % (c3, hb["state"])))
+    cells.append(("before-drop" in ids and tf and not rec.uploader.pending() and ("close",) in t.calls,
+                  "open segment closed + uploaded before exit (%s has %s, TOKEN_FAIL ctl=%d), queue empty=%s, ticker closed=%s"
+                  % (seg.split("/")[-1], ids, len(tf), not rec.uploader.pending(), ("close",) in t.calls)))
+    cells.append((kite.lock_free_during_profile and all(kite.lock_free_during_profile),
+                  "recorder lock free during the REST profile() call: %s" % kite.lock_free_during_profile))
+    cells.append(("session/%s/daily_report_%s.json" % (DAY, DAY) not in objs,
+                  "no daily report written (the day continues after the restart)"))
+    return cells
+
+
 GUARDS = [("classify-synthetic", g_classify_synthetic), ("classify-purity", g_classify_purity),
           ("segments-rotate", g_segments_rotate), ("upload-verify", g_upload_verify),
           ("subs-grow-only", g_subs_grow_only), ("ctl-records", g_ctl_records), ("spool-cap", g_spool_cap),
           ("token-fail", g_token_fail), ("closed-day", g_closed_day), ("fence", g_fence),
-          ("no-db-no-dhan", g_no_db_no_dhan), ("smoke-s3", g_smoke_s3), ("segment-race", g_segment_race)]
+          ("no-db-no-dhan", g_no_db_no_dhan), ("smoke-s3", g_smoke_s3), ("segment-race", g_segment_race),
+          ("token-midsession", g_token_midsession)]
 
 
 # ======================================================================== unit checks (not guards)

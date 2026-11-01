@@ -93,6 +93,8 @@ class Recorder:
         self._up_stop = threading.Event()
         self._up_thread = None
         self.stopping = False
+        self.disconnected_since = None
+        self.next_token_probe_ns = 0
 
         self.subscribed = {}
         self.centre = {}
@@ -210,7 +212,11 @@ class Recorder:
                     return config.EXIT_FAIL
                 self.next_resolve_ns = now + config.RESOLVE_RETRY_S * clk.NS
         if self.universe is not None and self.ticker is None:
-            self._start_ticker()
+            self._start_ticker(now)
+        if self._token_probe_due(now):
+            code = self._token_probe(now)      # REST call made WITHOUT the recorder lock
+            if code is not None:
+                return code
         with self.lock:
             if (self.universe is not None and not self.options_on and self.connected
                     and clk.at(now, config.T_OPTIONS) and self._witness_today()):
@@ -232,7 +238,8 @@ class Recorder:
             self.uploader.process_once(now)
         return None
 
-    def _start_ticker(self):
+    def _start_ticker(self, now):
+        self.disconnected_since = now
         t = self.ticker_factory()
         t.on_ticks = self.on_ticks
         t.on_connect = self.on_connect
@@ -243,6 +250,51 @@ class Recorder:
         self.ticker = t
         t.connect(threaded=True)
         self.log("TICKER_CONNECTING")
+
+    # ------------------------------------------------------------------ mid-session token (finding 3)
+    def _token_probe_due(self, now):
+        since = self.disconnected_since
+        return (self.ticker is not None and not self.connected and since is not None
+                and now - since > config.TOKEN_PROBE_AFTER_S * clk.NS and now >= self.next_token_probe_ns)
+
+    def _token_probe(self, now):
+        self.next_token_probe_ns = now + config.TOKEN_PROBE_EVERY_S * clk.NS
+        try:
+            self.kite.profile()
+        except Exception as exc:  # noqa: BLE001 -- the type only
+            name = type(exc).__name__
+            if name in config.TOKEN_EXCEPTIONS:
+                return self._token_dead(now, name)
+            self.log("TOKEN_PROBE_INCONCLUSIVE %s (not a token error; still retrying)" % name)
+            return None
+        self.log("TOKEN_PROBE_OK (disconnected %ds; the ticker keeps reconnecting)"
+                 % ((now - self.disconnected_since) // clk.NS))
+        return None
+
+    def _token_dead(self, now, name):
+        """Token rejected mid-session: close segments, drain uploads (<= 60 s), heartbeat
+        TOKEN_FAIL, exit 1 so systemd restarts the unit and re-reads /etc/tape/kite_token.env.
+        The restart's own profile() exits 78 if the token is still bad."""
+        self.log("TOKEN_FAIL_MIDSESSION %s" % name)
+        if self.ticker is not None:
+            try:
+                self.ticker.close()
+            except Exception:  # noqa: BLE001
+                pass
+        if self._up_thread is not None:
+            self._up_stop.set()
+            self._up_thread.join(timeout=120)
+            self._up_thread = None
+        with self.lock:
+            self._ctl_all("error", now, code="TOKEN_FAIL", reason=name)
+            self.stopping = True
+            self.connected = False
+            self.writer.close_all()
+        self._drain(self.clock.now_ns() + config.TOKEN_FAIL_DRAIN_S * clk.NS)
+        self.state = "TOKEN_FAIL"
+        self._heartbeat(self.clock.now_ns())
+        self._save_state()
+        return config.EXIT_FAIL
 
     def _over_cap(self):
         if self._spool_bytes <= self.spool_cap:
@@ -427,6 +479,7 @@ class Recorder:
             now = self.clock.now_ns()
             first = not self.ever_connected
             self.connected = True
+            self.disconnected_since = None
             self.ever_connected = True
             if not first:
                 self.stats.reconnects += 1
@@ -456,6 +509,8 @@ class Recorder:
         with self.lock:
             now = self.clock.now_ns()
             self.connected = False
+            if self.disconnected_since is None:
+                self.disconnected_since = now
             self.stats.disconnects += 1
             self._ctl_all("disconnect", now, code=code, reason=self._clean(reason))
         self.log("DISCONNECT code=%s" % code)

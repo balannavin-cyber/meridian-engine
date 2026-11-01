@@ -14,7 +14,7 @@ the prompt leaves something open, the decision is marked **[D-n]** so the operat
 | Engine is a flat repo of scripts; packages are `merdian_compute/` (pure, stdlib-only, 4 modules) and `core/`; **no `services/`** | `services/tape_runner/` is new. `services/__init__.py` is added so `python -m services.tape_runner` resolves |
 | `pyproject.toml` packages **only** `merdian_compute` (retail installs it pinned by SHA) and lists no subpackages | `merdian_compute/tape/` is **not** shipped to retail by setuptools (a subpackage needs listing). Correct for T0: the tape library is not part of the retail contract (`docs/interfaces/retail_compute_contract.md`). `merdian_compute/__init__.py` is **not** edited, so steps 24/25 (import purity, contract) see no change |
 | Tests are standalone scripts (no pytest on the box, none installed); `tests/run_offline.sh` = **30 steps**, each `python3 tests/X.py \| tail -1` + `${PIPESTATUS[0]}` check, rule-23 guard at the top | Tape tests follow the same idiom: stdlib-only scripts, last line is the verdict, mutants inside. Appended as **steps 31 and 32** after step 30's pair (TD-S93-NEW-1) |
-| Python 3.12.3; `kiteconnect` **not installed**, `boto3` 1.34.46 system-wide, `python3 -m venv` works; systemd 255 | Runner gets its own venv at install (`/opt/tape/venv`). Tests never import `kiteconnect` or `boto3` (fakes injected; real modules imported lazily in the live path only) |
+| Python 3.12.3; `kiteconnect` **not installed** system-wide, `boto3` 1.34.46 system-wide; systemd 255. **Build correction 2:** the runner's venv already exists at `/var/lib/tape/venv` (user `tape`, Python 3.12, kiteconnect 5.2.2, boto3 1.43.123) | The unit runs `/var/lib/tape/venv/bin/python`; `install.sh` never creates or modifies a venv. Tests never import `kiteconnect` or `boto3` (fakes injected; real modules imported lazily in the live path only) |
 | Box clock **`Etc/UTC`**, NTP synchronised; 1.8 GB RAM, 7.3 GB free on `/` | `kiteconnect` builds timestamps with naive `datetime.fromtimestamp` (box-local tz). See §2.3 for the fix; 2 GB spool cap fits on the disk |
 | User `tape` exists (uid 995, nologin); `/etc/tape` and `/var/lib/tape` exist, mode 700, owned by `tape` | `install.sh` does not create the user; it creates `/var/lib/tape/{spool,state,manifest}` |
 | Engine already has a Kite consumer: `ws_feed_zerodha.py` (`KiteTicker, KiteConnect`) | Not imported or reused: it carries `requests` and the engine's Supabase path. The tape runner shares no code with the engine |
@@ -204,7 +204,11 @@ botocore config: `retries={"mode":"standard","max_attempts":3}`, connect 5 s, re
   `ATM±3` (CE+PE at the 7 strikes around that minute's ATM); `feed_gaps_gt10s` and `feed_gaps_gt60s` (intervals with no
   packet of any instrument of the symbol, 09:15–15:30, measured on `recv_ns`; the 60 s list is separate); `reconnects`;
   `uploads {ok, retried, failed}`; `spool_high_water_bytes`; `subscribed_count` over time (minute → count);
-  `last_packet_ist`; plus day-level `restarts`, `closed`, `classified=null` (T0 does not classify).
+  `last_packet_ist`; **`clock_skew` (build correction 3)**: per symbol the median, max and min of
+  (`recv_ns` − `exchange_timestamp`) in seconds, computed from the *serialised* `+05:30` string (i.e. after the
+  UTC→IST conversion), over packets whose exchange date is the session date (older snapshot packets are counted
+  as `stale_excluded`); `verdict` = `FAIL` if the median is negative or above 3 s, `NOT_EXERCISED` if no same-day
+  packet exists. The smoke test prints the same section and exits 3 with a banner on `FAIL`; plus day-level `restarts`, `closed`, `classified=null` (T0 does not classify).
   Completeness % (pre-registration rule 4) is **derivable** from the per-minute counts; T0 does not compute verdicts.
 
 ## 6. Failure behaviour
@@ -277,7 +281,7 @@ Plus non-guard unit checks inside the same file (count toward its cells, not the
 restart; daily-report gap lists (one 12 s and one 75 s planted gap).
 
 **Engine suite wiring.** `tests/run_offline.sh`: header and every `N/30` label → `N/32`; append after step 30:
-`31/32 tape T0 guards (11)` → `python3 tests/test_tape_t0.py`, and `32/32 tape T0 mutants (12, each must be
+`31/32 tape T0 guards (11)` → `python3 tests/test_tape_t0.py`, and `32/32 tape T0 mutants (14, each must be
 caught)` → `python3 tests/tape_mutants.py`. Both pure Python, no fixtures, no golden day (rule-23 class of steps 8–10).
 Steps before → after: **30 → 32**.
 
@@ -289,8 +293,8 @@ Steps before → after: **30 → 32**.
 [Unit] Description=MERIDIAN tape raw recorder (T0)  After=network-online.target  Wants=network-online.target
 [Service] Type=simple  User=tape  Group=tape
 EnvironmentFile=/etc/tape/kite_api.env  EnvironmentFile=/etc/tape/kite_token.env  EnvironmentFile=/etc/tape/aws.env
-Environment=TZ=Asia/Kolkata PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HOME=/var/lib/tape PYTHONPATH=/opt/tape/app/current
-ExecStart=/opt/tape/venv/bin/python -m services.tape_runner
+Environment=TZ=Asia/Kolkata PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HOME=/var/lib/tape PYTHONPATH=/var/lib/tape/app/current
+ExecStart=/var/lib/tape/venv/bin/python -m services.tape_runner
 WorkingDirectory=/var/lib/tape  MemoryMax=400M  CPUWeight=20  Nice=10  LimitAS=2000000000
 Restart=on-failure  RestartSec=10  RestartPreventExitStatus=78 75
 ReadWritePaths=/var/lib/tape  ProtectSystem=strict  NoNewPrivileges=true  PrivateTmp=true  ProtectHome=true
@@ -300,8 +304,8 @@ ReadWritePaths=/var/lib/tape  ProtectSystem=strict  NoNewPrivileges=true  Privat
 timer-driven only. `tape-runner.timer`: `OnCalendar=Mon..Fri *-*-* 08:50:00 Asia/Kolkata`, `Persistent=true`,
 `[Install] WantedBy=timers.target`.
 
-**Env-var names [D-8]** (values never read by this session, never printed by the runner): `KITE_API_KEY`
-(kite_api.env), `KITE_ACCESS_TOKEN` (kite_token.env), `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+**Env-var names [D-8]** (values never read by this session, never printed by the runner): `ZERODHA_API_KEY`
+(kite_api.env), `ZERODHA_ACCESS_TOKEN` (kite_token.env) — **build correction 1**, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
 `AWS_DEFAULT_REGION` (aws.env), optional `TAPE_BUCKET` (default `meridian-tape-raw`). If the operator's files use other
 names, `config.py` is the one place to change. `T0_install.md` gives a names-only check
 (`sudo sed -n 's/=.*//p' /etc/tape/*.env`) — it prints names, never values (rule 19).
@@ -312,9 +316,10 @@ scope (no runbook exists on this box); a stale token is caught as `TOKEN_FAIL` /
 `install.sh` (operator runs `sudo bash services/tape_runner/install.sh` from `~/meridian-tape-dev` after the merge):
 1. **Refuses** Mon–Fri 08:30–15:45 IST (starts nothing during market hours) and refuses unless run as root.
 2. Checks `id tape`, the three `/etc/tape/*.env` files exist (existence only).
-3. Copies `services/` (only) at the clone's HEAD into `/opt/tape/app/<shortsha>/`, points `/opt/tape/app/current` at it.
-4. Creates `/opt/tape/venv` (if absent) and installs `services/tape_runner/requirements.txt` (`kiteconnect==5.0.1`,
-   `boto3==1.34.46`, pinned).
+3. Copies `services/` (only, committed content via `git archive HEAD`) into `/var/lib/tape/app/<sha12>/` (root-owned,
+   0755), points `/var/lib/tape/app/current` at it (**build correction 2: no `/opt` path**).
+4. Checks — does not create or modify — `/var/lib/tape/venv`: imports `kiteconnect`, `boto3` as user `tape` and
+   requires the versions pinned in `requirements.txt` (`kiteconnect==5.2.2`, `boto3==1.43.123`, the installed ones).
 5. Creates `/var/lib/tape/{spool,state,manifest}` owned `tape:tape`, mode 700.
 6. Installs the unit + timer to `/etc/systemd/system/`, `daemon-reload`, `systemd-analyze verify`, `enable` +
    `start` **the timer only**; prints `systemctl list-timers tape-runner.timer`. Never starts the service.
@@ -322,17 +327,17 @@ scope (no runbook exists on this box); a stale token is caught as `TOKEN_FAIL` /
 **Smoke test** (`--smoke`): env-var names present → `profile()` → resolve → print subscription list size → one 60 s
 websocket connection with the packet count → exit 0 if connect + subscribe succeeded (0 packets on a weekend is a
 PASS). Writes nothing to the spool or S3. Run under the same fence with
-`sudo systemd-run --uid=tape --gid=tape -p EnvironmentFile=… (×3) -p Environment=PYTHONPATH=/opt/tape/app/current
---pipe --wait /opt/tape/venv/bin/python -m services.tape_runner --smoke`.
+`sudo systemd-run --uid=tape --gid=tape -p EnvironmentFile=… (×3) -p Environment=PYTHONPATH=/var/lib/tape/app/current
+--pipe --wait /var/lib/tape/venv/bin/python -m services.tape_runner --smoke`.
 
 ## 10. Build order (Sonnet session)
 
-1. `kiteconnect==5.0.1` source fetched into the scratchpad (`pip download --no-deps`) to confirm callback names,
+1. `kiteconnect` source (read in place from `/var/lib/tape/venv`, 5.2.2; `pip` is not on the box) to confirm callback names,
    `MODE_FULL`, the packet dict keys and the `fromtimestamp` use before the fakes are written. Not installed into the repo.
 2. Tests first: `tests/test_tape_t0.py` with fakes, all guards, against stub modules → every guard FAILs (the
    must-fail run is recorded).
 3. Library, then serialize/clock/segments/uploader/stats/instruments/recorder/smoke, unit + timer + install.sh.
-4. Guards PASS; `tests/tape_mutants.py` → 12/12 caught; `--repeat 5` → 5/5 for every row.
+4. Guards PASS; `tests/tape_mutants.py` → 14/14 caught (DROP-CTL split into its disconnect and reconnect halves); `--repeat 5` → 5/5 for every row.
 5. Wire steps 31–32; full suite `( ulimit -v 2000000; bash tests/run_offline.sh )`, last line recorded.
 6. `bash -n install.sh`; `systemd-analyze verify` on the unit files with paths rewritten to a temp dir (no install).
 7. `docs/tape/T0_install.md`; commit on `tape/t0-raw`; push to `staging` only.
@@ -344,3 +349,17 @@ PASS). Writes nothing to the spool or S3. Run under the same fence with
 - S3 bucket region (taken from `AWS_DEFAULT_REGION`).
 - The design doc is not on the box; if it pins anything above differently, this plan follows the prompt and the
   pre-registration, and the difference should be recorded as a slip.
+
+## 12. Build corrections applied (operator, 2026-11-01, before the build)
+
+1. Credential names `ZERODHA_API_KEY` (`/etc/tape/kite_api.env`) and `ZERODHA_ACCESS_TOKEN` (`/etc/tape/kite_token.env`);
+   AWS names unchanged. Single place: `services/tape_runner/config.py`.
+2. No `/opt` path. The venv is the existing `/var/lib/tape/venv`; the code is installed to `/var/lib/tape/app/<sha12>`
+   (root-owned) with `current` pointing at it. `requirements.txt` pins the **installed** versions (kiteconnect 5.2.2,
+   boto3 1.43.123), not the 5.0.1 / 1.34.46 this plan first named.
+3. Clock-skew section in the daily report and the smoke test (§5). Rule 0 sentence: a naive timestamp read in the wrong
+   zone gives a median of ±19,800 s, which is outside [0, 3] — the unit checks `u_report_gaps_and_skew` and
+   `u_smoke_skew_fails_loudly` construct exactly that case and assert FAIL / exit 3.
+
+D-4 and D-6 accepted as written. One refinement of D-4: CLOSED needs at least one witness and every present witness
+stale (not "all four present"), so a closed day with a missing future snapshot still closes.

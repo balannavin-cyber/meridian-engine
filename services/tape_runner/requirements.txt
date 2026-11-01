@@ -1,0 +1,4 @@
+# Pinned to what is ALREADY installed in /var/lib/tape/venv (2026-11-01). install.sh does not
+# create or modify the venv; it only checks these imports and versions.
+kiteconnect==5.2.2
+boto3==1.43.123

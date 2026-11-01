@@ -5092,9 +5092,9 @@
       "truncated_each_run": false
     }
   },
-  "version": "v80",
-  "last_updated_session": "Session 102 (closed in Session 103)",
-  "last_updated_date": "2026-10-30",
+  "version": "v81",
+  "last_updated_session": "Session 103 (closed in Session 104)",
+  "last_updated_date": "2026-11-01",
   "change_log": [
     {
       "session": "S91 / AM-2",
@@ -6094,5 +6094,42 @@
       "s103_part_c": "R19 re-read for 10-26 onward (expected = universe tickers with an equity_eod close; PASS equal, eod_pct >= 95); then tracker 2.2 in order",
       "rulings_owed": "Health OVERALL token threshold; NIFTY board after the expiry-day close; Context IV skew on a 0-DTE front leg; WCB from pre-open ticks; held_for_cycles across an expiry roll on the same strike; the 10-28 rulings 1-5, R16 freeze fix, R20 (a/b), TD-S97-NEW-4(b); the Lovable-hosted public copy (unpublish or keep); manual option B timing; ADR-032 D2-D5 after the study"
     }
+  },
+  "_s103_addendum": {
+      "session": "S103 (closed in S104)",
+      "date": "2026-10-30 -> 2026-10-31 (close 2026-11-01)",
+      "scope": "Friday: S102 doc-close applied (762e4d7); the six S102 bundles deployed in the S90-J window (f63368a c36fc3e eafc2e4 711f78b 99560c5 b2a5ce6; suite 29/29); rulings S103-A..L; S103-F max-pain views on the skip-scan latest_run (613c2cb); S103-D WCB gated to 09:15 IST (82c517d); S103-G WCB basket bounded/ordered/paged, prior close under a 5-day floor (608917e) - the basket had been truncated by PostgREST max-rows=1000, NIFTY priced 13 of 50 since 10-26; S103-H TATAMOTORS->TMPV and LTIM->LTM renamed in six tables (operator SQL); three Marketview rounds (05f556c Health token + 0-DTE skew; 2f3c2f0 freeze button; 6f14a92 prev close from v_close_print). Saturday: Lovable-hosted copy unpublished (S103-M); three duplicate market_ticks indexes dropped; OTM OI velocity on + prior-row read bounded to the IST session (S103-N/O, c11b564, suite 30/30); ADR-032 section 5/6 impact study, rulings S103-P..T; F0 (tag adr032-pre on c11b564, K2 snapshot 4e14a1d, K3 control totals); S1 unit COMMENTs (8b58e54) applied 09:00, undone by a superseded rollback, re-applied in S104 10:14 IST. S2 held until after launch.",
+      "engine_commits": "f63368a c36fc3e eafc2e4 711f78b 99560c5 b2a5ce6 613c2cb 82c517d 608917e c11b564 4e14a1d 8b58e54; then S104 docs-only 8f9d466 2b69506 232a3bc (PK-prune archives); this close on 232a3bc",
+      "tag": "adr032-pre (annotated, object 95fec276) on c11b564 - the ADR-032 code recovery point",
+      "offline_suite": "30 steps (+30 tests/test_gamma_prior_row.py)",
+      "adr_032": {
+          "file": "docs/decisions/ADR-032-gex-stored-unit.md (Amendment A)",
+          "status": "D1 LIVE (10-30); D4 COMMENTs LIVE as S1 (10-31 10:14 IST, 8 columns); D2 additive and D3 dated break RULED in form (S103-P/Q), not built; D5 out of scope; S2a-S2c held until after launch (~10 days); K3 equality required after every stage",
+          "f0_record": "docs/research/s103/adr032_f0_k1_k3_records_2026-10-31.md",
+          "study": "docs/research/s103/adr032_s5_s6_impact_study_S103.md (md5s in pg_get_viewdef(oid) form; rule-25 form is (oid, true) - TD-S103-NEW-10)",
+          "fallback_plan": "docs/research/s103/adr032_fallback_plan_S103.md",
+          "sweeps": "docs/research/s104/sweep_engine/ (engine box, 28 min 50 s) and docs/research/s104/sweep_retail/ (retail box, 5 min 54 s); findings: no magnitude reader; four scale conventions; insert_option_chain_batch a fourth net_gex writer that never fired; v_gex_greeks_l2_strike_1pct half-converted (TD-S103-NEW-9); additive DB columns invisible to every retail gate",
+          "s1_rollback": "ONLY docs/research/s104/S104_session_prompt.md Appendix A4 (removes comments starting ADR-032:, restores the gex_cr sign note exactly); the first rollback text must never be run",
+          "legacy_reader": "service_role PostgREST reads of wcb_signal_validation_v2 (632/490/236) and latest_signal_snapshots (~100), flat across Saturday 10-31; re-run pg_stat_statements Monday 2026-11-02 after 15:40 (TD-S103-NEW-7)"
+      },
+      "marketview": "live = staging = 6f14a92 (index-BIJiXoC3.js), promoted 2026-10-30 21:48 IST; rollback target /var/www/marketview.bak-2f3c2f0; backups .bak-2f3c2f0 .bak-05f556c .bak-30998f2 + PRE_*; Lovable-hosted copy unpublished (404)",
+      "supabase": "v_gex_max_pain / v_gex_pin_maxpain rebuilt (sql/2026-10-30_s103_v_gex_max_pain_latest_run_skip_scan.sql; 3537/6eddea31, 3026/70d32c77); v_close_print (sql/2026-10-30_s103_v_close_print.sql; 92a4eac4); TMPV/LTM renamed in dhan_scrip_map, breadth_universe_members, index_constituent_weights, equity_intraday_last, breadth_indicators_daily, equity_eod; market_ticks indexes 7 -> 4; eight ADR-032 column COMMENTs (sql/2026-10-31_s103_adr032_s1_unit_comments.sql); pg_stat_statements not granted to merdian_ro",
+      "aws_cron": "70 lines; markers line 0 11 * * 1-5 UTC (16:30 IST) after b2a5ce6, read back",
+      "rulings": "docs/research/s92_parity/rulings_s103.md - S103-A..T (addendum rounds 2-3 merged)",
+      "working_docs": "docs/research/s103/ (close inputs, F0 record, study, fallback plan, cc sweep prompts); docs/research/s104/ (sweep records, PK prune audit, S104 session prompt); docs/lovable_prompts/s103/ (three rounds)",
+      "tech_debt": "TD-S103-NEW-1..11 filed (-10 closed at filing: md5 form annotated); closed TD-S102-NEW-1 (unpublished), -6 (pre-rule backups gone), -7 (three pairs dropped), -8 (one scale, commented), TD-S101-NEW-13 (token threshold live), TD-S90-NEW-5 (skip scan); Monday closes owed: TD-S41-NEW-5, TD-S101-NEW-1, TD-S101-NEW-3, TD-S100-NEW-1, TD-S77-NEW-8, TD-S91-NEW-18/TD-S74-NEW-5, TD-S71-NEW-5; Tuesday: TD-S101-NEW-14, TD-S101-NEW-15 (S103-B build)",
+      "enhancement_register": "ENH-146 (Candidate A, 1-minute re-pricing pass) and ENH-147 (Candidate B, MTF leverage context) minted PROPOSED, owed since S89; the S89 detail doc lost in the S104 PK prune (D.57.16)",
+      "assumption_register": "D.57 (16 rows, all mine) - carry D.57.13 (a replaced rollback block is removed from the chat) and D.57.16 (a PK doc is deleted only after its git copy is read and found identical)",
+      "claude_md": "v1.75: ADR-032 settled line updated (Amendment A); rules 0-25 unchanged",
+      "decision_index": "ADR-032 row annotated AMENDMENT A; no row added; next-free ADR-033+",
+      "tracker": "docs/registers/agentic_layer_roadmap_S90.md v2.20",
+      "pk_prune_s104": "186 -> 149 docs; every deleted doc in git: docs/research/s100..s102/ session prompts (8f9d466); docs/registers/archive/pk_only_2026-10-31/ (5 docs, 2b69506) and pk_only_2026-10-31b/ (12 docs, 232a3bc) with verified SHA256SUMS; audit docs/research/s104/pk_prune_audit_S104.md; the ten DEFERRED S103 docs deleted after this close lands",
+      "open": {
+          "monday_2026_11_02": "live checks (S103_close_inputs section 5): END line rc; breadth-from-ticks run time; 09:05 refresh writes NSE:LTM; futures rows one per symbol per minute with raw.spot_source = dhan_ltp_idx_i_same_request; markers close_1530 from CAS 16:30; 09:10 WCB SKIPPED_NO_INPUT, first row 09:16 with 50/50 priced; wsfeed subscribing LTM/TMPV; 14:00 ENH-133 cycle clean; Health OVERALL green; otm_oi_velocity NULL first cycle then a number, none spanning two IST dates; R16 live read; after 15:40 re-run pg_stat_statements",
+          "tuesday_2026_11_03": "read the S103-C expiry branch before 15:30; build S103-B (board leg roll) after 15:40",
+          "tracker_2_2": "B2 R5/R38 live reads; BS-1 credential rotations + port 22 (operator); B3 chain data correctness; TD-S101-NEW-4 other half; manual option B timing (owed ruling)",
+          "adr_032_build": "after launch and the sweeps' operator items: S2a-S2c per the fallback plan; K3 after each stage; rule the emergency lever then (proposed: flag-off valid only at S2b-S2c; from S3 the SQL wrapper revert); dated unit-break row at S2c",
+          "launch_date": "unknown (operator: maybe in 10 days from 2026-10-31)"
+      }
   }
 }

@@ -292,18 +292,6 @@ the doc-close that closes it, with one line in that close's status paragraph.
 | **Home** | Tracker §2.2 band BD. |
 | **Status** | **OPEN.** |
 
-### TD-S101-NEW-13 (S3 priority) — Health OVERALL reads DEGRADED all session on a healthy fleet
-
-| Field | Value |
-|---|---|
-| **Priority** | **S3.** A health summary that is amber every day carries no signal; S100-M (a)'s "OVERALL green unless a tracked writer is stale" cannot hold. |
-| **Filed** | 2026-10-27 (Session 101; board read 10:20 IST) |
-| **Component** | `meridian-connect` Health page (live bundle `index-BFOk56iL.js`): the token tile is green iff `http_status == 200 && age < 30`, age in minutes (`Tf(ts) = (now − ts) / 6e4`) |
-| **Measured** | 2026-10-27 10:20 IST: fleet 14/14 current, OVERALL DEGRADED; token 2.5 h old → amber. The token refreshes once a day, so OVERALL is amber from ~30 min after the refresh until the next one. |
-| **Proper fix** | A threshold on the token's validity window (e.g. < 24 h) or expiry-based, in meridian-connect; a board change needs the operator's yes. |
-| **Home** | Tracker §2.2 band B5 (ruling row). |
-| **Status** | **OPEN** — ruling owed. |
-
 ### TD-S101-NEW-14 (S3 priority) — Context IV SKEW is blank for NIFTY on expiry day
 
 | Field | Value |
@@ -352,18 +340,6 @@ the doc-close that closes it, with one line in that close's status paragraph.
 | **Home** | Tracker §2.2 band B4. |
 | **Status** | **OPEN.** |
 
-### TD-S102-NEW-1 (S3 priority) — the Lovable-hosted public copy serves whatever `main` holds, outside staging, the guard, promote and the box's access setup
-
-| Field | Value |
-|---|---|
-| **Priority** | **S3.** A second public surface of the board exists that no guard, staging read or promote step ever sees, and it reaches the database with the same anon key. |
-| **Filed** | 2026-10-30 (Session 102; found during the ADR-032 D1 rounds) |
-| **Component** | Lovable project `meridian-connect` — "Publish" → `https://meridian-welcomer.lovable.app/` |
-| **Measured** | Publish was clicked 2026-10-30 ~09:55 IST at `3b3b0d4` (round 2, before its guard and staging read). The copy serves that build of `main` until Publish is clicked again; it is not behind oauth2-proxy, reads only anon views, and is not in `docs/registers/MERDIAN_Deployment_Topology.md`. |
-| **Proper fix** | Operator ruling owed (tracker §2.2): unpublish unless it is used; if kept, record it in the Topology as a public read surface with its own promote rule (publish only a commit that has passed the guard and a staging read) and include it in the ACL exposure model (TD-S89-NEW-5, TD-S81-NEW-2). |
-| **Home** | Tracker §2.2 band BS. |
-| **Status** | **OPEN — ruling.** |
-
 ### TD-S102-NEW-2 (S4 priority) — the help pack's `board_bundle` stamp names the previous board
 
 | Field | Value |
@@ -388,41 +364,162 @@ the doc-close that closes it, with one line in that close's status paragraph.
 | **Home** | Tracker §2.2 band B5 (manual follow-ups). |
 | **Status** | **OPEN — ruling on timing.** |
 
-### TD-S102-NEW-6 (S4 priority) — a file was copied into the live Marketview tree outside a build, so a `.bak-<sha>` backup name cannot be trusted without a `diff -rq`
+### TD-S103-NEW-1 (S3 priority) — every `sb.select(...)` with `limit > 1000` and no paging is silently truncated by PostgREST `max-rows`, in an order the caller did not ask for
 
 | Field | Value |
 |---|---|
-| **Priority** | **S4.** The rollback target was named wrongly twice in one minute on 2026-10-30 (§D.56.12) because the live tree's name and its contents had diverged; the promote block now proves the equality before naming it. |
-| **Filed** | 2026-10-30 (Session 102; close inputs §5) |
-| **Component** | `/var/www/marketview/` (live), `/var/www/marketview.bak-*`; the promote block in `docs/lovable_prompts/s92/README.md` |
-| **Measured** | After the `f964e40` build, manual v0.4 (`manual.json` `489a135e…`) was copied into `/var/www/marketview/help/` by hand (S100); the live tree was therefore `f964e40` JS + a v0.4 manual, which is the `27c0e17` tree, under no single commit's name. On 2026-10-30 the promote first set `PREV=27c0e17` from a comment, then `f964e40` from the JS name; a `diff -rq` against `.bak-27c0e17` settled it. |
-| **Proper fix** | Nothing enters the live tree except a build of one commit (rule now in the s92 README); the promote block names a rollback target only after `diff -rq` shows live ≡ that backup (done, S102). Residual: `.bak-27c0e17` is the only backup whose contents equal a commit's tree by construction; the older `.bak-f964e40` and `.bak-1aeb000` predate the rule and must be diffed before use. |
-| **Home** | Tracker §2.2 band BR. |
-| **Status** | **OPEN — rule landed; the two pre-rule backups stay untrusted until rotated out (S100-L).** |
+| **Priority** | **S3.** The one live instance (the WCB basket, TD-S41-NEW-5) priced 13 of 50 NIFTY constituents every cycle for weeks with no alarm; the class is the same wherever a basket outgrows 1,000 rows. |
+| **Filed** | 2026-10-30 (Session 103; measured 19:33–19:35 IST, ruling S103-G) |
+| **Component** | `build_wcb_snapshot_local.py` (fixed `608917e`); `fetch_latest_intraday_prices` and `fetch_active_weights` (both `limit=5000`, basket-sized today, safe only while the basket is < 1,000 rows); any other `limit=5000` in a writer |
+| **Measured** | The basket's daily history was 4,106 rows (49 tickers × 84 days): under the client's 5,000 cap, over PostgREST's `max-rows = 1,000`, returned in `(ticker, trade_date)` order — so the first 13 tickers alphabetically got rows and the rest none (NIFTY 16 → 13 priced as history grew; SENSEX 17 → 12). Every one of the 35 `missing_daily` names had a fresh 09:05 prior close and a 10-28 breadth row. |
+| **Proper fix** | Standing check: grep the writers for `limit=` above 1,000 in a `sb.select` without `.range()` paging; each site either bounded (date window + `ORDER BY` + paged) or asserted under 1,000 rows at runtime (fail loud). The WCB writer is the pattern (`608917e`: bounded 30 d, ordered `ticker, trade_date desc`, paged). |
+| **Home** | Tracker §2.2 band B1. |
+| **Status** | **OPEN.** WCB instance fixed; the class check not written. |
 
-### TD-S102-NEW-7 (S3 priority) — `market_ticks` carries three exact duplicate indexes, ~450 MB of redundant index maintained on every tick insert
+### TD-S103-NEW-2 (S3 priority) — nothing compares the breadth universe with the vendors' symbol lists, so an exchange rename leaves a constituent unpriced for weeks
 
 | Field | Value |
 |---|---|
-| **Priority** | **S3.** Every `market_ticks` INSERT maintains six secondary indexes where three would do; ~450 MB of the table's ~980 MB of indexes is a copy. The TD-S72-NEW-4 shape on the highest-volume table. |
-| **Filed** | 2026-10-30 (Session 102; measured 10-28, re-read from `pg_indexes` 2026-10-30 11:30 IST before filing) |
-| **Component** | `public.market_ticks` indexes |
-| **Measured** | `pg_indexes` 2026-10-30: `idx_market_ticks_sym_type` = `idx_mt_sym_type` (`symbol, instrument_type, ts DESC`; 193 MB / 194 MB); `idx_market_ticks_token_ts` = `idx_mt_token_ts` (`instrument_token, ts DESC`; 208 MB / 207 MB); `idx_market_ticks_ts` = `idx_mt_ts` (`ts DESC`; 46 MB / 51 MB); `market_ticks_pkey` (`id`, 81 MB). Three pairs with identical `indexdef`; one of each pair is redundant (447 MB if the `idx_mt_*` set is dropped, 452 MB if the `idx_market_ticks_*` set is). `idx_*_ts` (`ts DESC`) is **not** covered by the composites (`ts` is their last column), so it is a duplicate pair, not a redundant prefix. |
-| **Proper fix** | Operator DDL out of market hours: `DROP INDEX CONCURRENTLY` one of each pair (keep the set the planner's `pg_stat_user_indexes.idx_scan` shows in use, or the `idx_market_ticks_*` names if equal), one statement per execution, with a `pg_indexes` read before and after; record in `sql/`. Then re-measure `v_market_ticks_eq_latest` (406.6 ms at 1,313 rows on 10-28) — it reads `(symbol, instrument_type, ts DESC)`, so the surviving composite must stay. Root cause (which migration created the second set under the `idx_mt_` names) by `git log -S` on `sql/`. |
-| **Home** | Tracker §2.2 band B4 (beside TD-S72-NEW-4). |
+| **Priority** | **S3.** Two NIFTY 50 constituents (TATAMOTORS → TMPV, LTIM → LTM) carried no ticks and a March prior close until 2026-10-30; the index weight they carry (2 × 1.13 %) was absent from every WCB row. |
+| **Filed** | 2026-10-30 (Session 103; ruling S103-H, 19:46–20:01 IST) |
+| **Component** | `breadth_universe_members`, `dhan_scrip_map` (TD-S90-NEW-1 is the root: never re-synced), `index_constituent_weights`, the Kite refresh, the wsfeed universe |
+| **Measured** | Universe symbols vs Zerodha's EQ dump: **77 of 1,385 absent** — 65 under series-suffixed names (`SYM-BE / -SM / -IV / -RR`: trade-for-trade, SME, InvIT, REIT) and 12 absent outright (`AKZOINDIA, ARISINFRA, CIGNITITEC, GSPL, GUJGASLTD, HEG, ICICIPRULI, JBCHEPHARM, LTIM (now LTM), MIRCELECTR, SANGHIIND, SASTASUNDR`); ≈ 5.6 % of the universe gets no Kite ticks or prior close. The only index constituent among them was LTIM (SENSEX: none). Causes of the 11 other absent symbols not read. LTM / TMPV renamed by one fail-closed `DO` block in `dhan_scrip_map` (1), `breadth_universe_members` (1), `index_constituent_weights` (1), `equity_intraday_last` (1), `breadth_indicators_daily` (80), `equity_eod` (308); verified `old_n = 0`. |
+| **Proper fix** | A daily `universe_vs_vendor` read (Zerodha EQ dump + Dhan master vs `breadth_universe_members`) that pages on any **index constituent** absent from either list and reports the rest; then TD-S90-NEW-1's re-sync. Read the 11 other absences once. |
+| **Home** | Tracker §2.2 band B1 (beside TD-S90-NEW-1). |
+| **Status** | **OPEN.** |
+
+### TD-S103-NEW-3 (S4 priority) — `index_constituent_weights` gives LTM and TMPV the identical `weight_pct 1.1345`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** Two different stocks equal to four decimals suggests a stale or copied weights snapshot; the WCB regime uses weights, so a wrong vector biases every row a little. |
+| **Filed** | 2026-10-30 (Session 103; seen during S103-H) |
+| **Component** | `public.index_constituent_weights` (NIFTY rows for `NSE:LTM`, `NSE:TMPV`) |
+| **Measured** | Both rows `weight_pct = 1.1345` on 2026-10-30. The snapshot's source and date were not read. |
+| **Proper fix** | Read the vector's provenance (which script, which NSE factsheet date); compare every NIFTY 50 weight with the current factsheet; refresh or document the copy. |
+| **Home** | Tracker §2.2 band B4. |
+| **Status** | **OPEN — unread.** |
+
+### TD-S103-NEW-4 (S3 priority) — seven copies of the Γ formula outside `merdian_compute`, two behind named constants, with no gate that would catch an eighth; the suite's Γ mutants anchor on source text and its tolerances are absolute in scale A
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** ADR-032 D2 (S103-P) changes the writer **and every copy in one bundle**; a copy missed, or a mutant that stops testing the divisor on the first edit, is a silent unit split. Extends TD-S101-NEW-5 (which names the backfill, rate-sensitivity and replay copies) with the full list and the test findings. |
+| **Filed** | 2026-10-31 (Session 103 impact study §W6; S104 engine sweep 70_tests, 95_diff) |
+| **Component** | `backfill_gamma_metrics.py:83`, `backfill_gamma_metrics_to_main.py:224`, `replay/replay_compute_gamma_metrics.py:88`, `measure_rate_sensitivity.py:107`, `backfill_hist_greeks.py:56/164` (`CR_SCALE = 1e7`), the SQL recompute in `p3b_sweep()` / `sql/2026-10-12_s96_p3b_invariant_checks.sql:104`, `canonical_ob_gamma_zone*.py:204/323` (a × 100 variant, unscheduled); tests `tests/test_p3a_invariants.py:38` (its own copy, by design), `tests/test_dex_recompute.py:174/351` (`CR = 1e7` — step 11 recomputes the gamma formula, not only DEX), `tests/test_merdian_compute_contract.py:264` (M1 anchors on the text `(spot ** 2) / 1e7`; M2 / M5 share the fragility); a golden query `tests/golden/2026-10-01_SENSEX/queries/ladder_replay_1001.sql:8,63` at a fourth convention (`× 0.01 × lot`) |
+| **Measured** | S104 sweep (read-only, `8f9d466`): no suite step asserts the unit — every Γ assertion in all 30 steps is scale-invariant; I1 `≤ 0.01 Cr` and I2 `≤ 1e-6 + 1e-9·rel` are absolute in scale-A crore (100 × looser relative at scale B). Four conventions in the repo: raw (`hist_gamma_metrics`), /1e7 (live), /1e7 × 100 (research), /1e7 × 0.01 × lot (the golden query). |
+| **Proper fix** | Before D2 step 2: (a) a standing gate that matches the **formula shape** (`gamma … oi … spot ** 2` over a divisor, literal or named), not the literal `/ 1e7`, failing on any site outside `merdian_compute` not on an allow-list; (b) M1 / M2 / M5 re-anchored on behaviour (patch the function, not the text); (c) I1 / I2 tolerances re-derived relative to scale; (d) each copy routed onto `merdian_compute.gamma` or deleted. |
+| **Home** | Tracker §2.2 band B5 (ADR-032 row); beside TD-S101-NEW-5. |
+| **Status** | **OPEN — ADR-032 S2 prerequisite.** |
+
+### TD-S103-NEW-5 (S3 priority) — `generate_pine_overlay.py` prints Γ magnitudes as "K Cr" at the stored (× 100) scale, under renamed keys a column grep never reaches
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The TradingView overlay is a live operator surface (AWS cron 10:52 UTC) that still shows the pre-ADR-032 figures with a unit word; missing from the S102 inventory. |
+| **Filed** | 2026-10-31 (Session 103 impact study; ruling S103-S) |
+| **Component** | `generate_pine_overlay.py:334–364` — `total_pin_gex_cr` / `peak_pin_gex_cr` / `total_accel_gex_cr` renamed to dict keys `total_gex_cr` / `peak_gex_cr` (PIN and ACCEL share `total_gex_cr`), rendered `/1000` with a hard-coded `"K Cr"` |
+| **Measured** | S104 engine sweep §4.1: the render lines carry no source column name; the values are scale A (₹ Cr per 100 % move) labelled as crore. |
+| **Proper fix** | Relabel to per-1 % with the unit named (× 0.01 at the render, or read a `_1pct` view) — **the wording is the operator's to rule when the round is built** (S103-S). |
+| **Home** | Tracker §2.2 band B5 (ADR-032 row). |
+| **Status** | **OPEN — wording ruling when built.** |
+
+### TD-S103-NEW-6 (S3 priority) — `gex_strike_snapshots` carries an exact duplicate index pair among its eight indexes
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The highest-volume Γ table (2.1 M rows, 824 MB) maintains one index twice on every insert; TD-S72-NEW-4's shape, now measured. |
+| **Filed** | 2026-10-31 (Session 103 impact study §5) |
+| **Component** | `public.gex_strike_snapshots` indexes: `idx_gss_symbol_ts` = `ix_gex_strike_snap_sym_ts` (identical `indexdef`) |
+| **Measured** | `pg_indexes` 2026-10-31: 8 indexes on the table; one pair identical. (`idx_gss_ts`, S97-F, is the planner's `ts` path and is not a duplicate.) |
+| **Proper fix** | The same fail-closed `DO` block as TD-S102-NEW-7 (identical definition, keeper valid / non-unique / not the PK; `DROP INDEX` one of the pair out of market hours), `pg_indexes` read before and after; record in `sql/`. Then re-read TD-S72-NEW-4's third ("redundant against the composite") claim on the surviving set. |
+| **Home** | Tracker §2.2 band B4 (beside TD-S72-NEW-4, TD-S102-NEW-7). |
 | **Status** | **OPEN — operator DDL.** |
 
-### TD-S102-NEW-8 (S3 priority) — `hist_gamma_metrics.net_gex` has two writers that disagree on its unit, and a DDL that disagrees with both on its columns
+### TD-S103-NEW-7 (S3 priority) — the legacy Γ objects: one retirement list, starting with the writer that never fired and the reader nobody can name
 
 | Field | Value |
 |---|---|
-| **Priority** | **S3.** Not read by the board; read by research. Any study that joins `hist_gamma_metrics` to `gamma_metrics` mixes a /1e7 scale with an unscaled one without knowing it. |
-| **Filed** | 2026-10-30 (Session 102; inventory `docs/research/s102/gex_unit_inventory_S102.md` §5.1) |
-| **Component** | `backfill_gamma_metrics.py:83` (divides by 1e7), `fill_gamma_concentration.py:72,104` (treats the table as unscaled), the s62 DDL for `hist_gamma_metrics` |
-| **Measured** | Code read on `3abb83f`, 2026-10-30: the two writers apply different scales to the same column; the writer and the s62 DDL also disagree on the column set. Which rows carry which scale is not yet measured. |
-| **Proper fix** | Part of the ADR-032 §5 impact study: measure the scale per row range (by writer and date), state the unit in a `COMMENT` (ADR-032 D4), and either convert or register a dated unit break (D3) — never a silent rewrite. |
-| **Home** | Tracker §2.2 band B3 (chain data correctness); ADR-032 §5. |
-| **Status** | **OPEN — study.** |
+| **Priority** | **S3.** None of these decides anything today, but one is a fourth writer to `gamma_metrics.net_gex` at a proxy scale, and two are read hundreds of times by a `service_role` client no repo contains. ADR-032 S2 (additive, S103-P) leaves every one of them untouched; retirement is its own lane. |
+| **Filed** | 2026-10-31 (Session 103; ruling S103-T and its 08:17 amendment; S104 sweep 95_diff) |
+| **Component** | `insert_option_chain_batch` (prosrc :78 INSERT placeholder, :121 `UPDATE gamma_metrics SET net_gex = v_net_gex … WHERE run_id = v_run_id` — bare Σγ, scale D; no caller in either repo); nine `net_gex` pass-through views; the four `latest_*` gamma views (`latest_net_gamma_by_strike.net_gamma` = `gamma_call − gamma_put`, no OI, no S² — **not Γ**, feeding `latest_atm_neighborhood`, `latest_gamma_walls`, `latest_top_gamma_strikes`); four legacy SQL functions; `study_recon_pin` / `study_recon_accel`; `wcb_signal_validation_v2` and `latest_signal_snapshots` |
+| **Measured** | `pg_stat_statements` (stats since 2026-08-18): as `service_role`, `wcb_signal_validation_v2` 632 / 490 / 236 calls (three `WITH pgrst_source AS (SELECT …)` shapes = PostgREST, single-column selects + `*`: a sheet-sync client; candidates the Lovable *Sheet Sync Live* / *Live Sheet Sync* projects), `latest_signal_snapshots` ~100; every other legacy object one dashboard-style call; **counts identical at 07:xx and 13:59 IST on 2026-10-31** (no calls in ~6 h, a Saturday). `select … from gamma_metrics where abs(net_gex) < 1` → no rows (12:17 IST): `insert_option_chain_batch` has never fired on the live table; `gamma_metrics.net_gex` is one scale. `merdian_ro` cannot read `pg_stat_statements` (not granted) or `cron.job`. |
+| **Proper fix** | (1) Monday 2026-11-02 after 15:40: re-run the same `pg_stat_statements` query; a rise in `calls` = a live reader — name it (the Lovable projects' data sources, or a sheet-sync script) before anything is dropped. (2) Drop `insert_option_chain_batch` first (no caller, never fired). (3) The rest in a ruled order, each with a `pg_depend` read and a fail-closed block, after the other Lovable apps and the retail repos are checked (the S104 retail sweep: retail reads none of them). |
+| **Home** | Tracker §2.2 band B4 (retirement lane); **out of ADR-032 D2**. |
+| **Status** | **OPEN — reader identity owed (Monday re-run).** |
+
+### TD-S103-NEW-8 (S3 priority) — `gex_cycle_history` holds 86 cycle rows against 87 in `gamma_metrics` on two NIFTY days
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** One cycle per day missing from the per-cycle history on 2 of 10 symbol-days; the pin state machine and `held_for_cycles` read this table. |
+| **Filed** | 2026-10-31 (Session 103; ADR-032 K3 control totals, `docs/research/s103/adr032_f0_k1_k3_records_2026-10-31.md`) |
+| **Component** | `public.gex_cycle_history` (ENH-133 writer) vs `public.gamma_metrics` |
+| **Measured** | NIFTY 2026-10-26: 86 vs 87; 2026-10-29: 86 vs 87; the `net_gex` sums differ on exactly those two days; every other symbol-day 87 = 87 and sums equal digit for digit. Not investigated; not ADR-032. Candidate cause: the ENH-133 writer's `57014` exits (TD-S101-NEW-1; ledger hits 10-26 14:00 and 10-29 14:00 — the same days). |
+| **Proper fix** | Join the two tables on `(symbol, run_id)` for the window and name the missing cycles; if they are the 14:00 `57014` cycles, TD-S101-NEW-1's fix (S103-F) closes the cause and a one-off backfill of the two rows closes this. |
+| **Home** | Tracker §2.2 band B1 (beside TD-S101-NEW-1). |
+| **Status** | **OPEN — read.** |
+
+### TD-S103-NEW-9 (S3 priority) — `v_gex_greeks_l2_strike_1pct` converts only two of its four Γ columns
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A D1 wrapper that is half-converted: `gross_gex_drift_iv` / `gross_gex_drift_time` pass through at scale A beside `_1pct` siblings at scale B. No live display is wrong today (the board renders the `_net` wrapper's gross pair, `Board.tsx:538,541`), so the defect is latent. |
+| **Filed** | 2026-10-31 (Session 104 engine sweep, 95_diff §1.2) |
+| **Component** | `sql/2026-10-30_s102_gex_per_1pct_views.sql` — `v_gex_greeks_l2_strike_1pct` |
+| **Measured** | Live viewdef 2026-10-31: the `_strike` wrapper adds `_1pct` for `leg_gex_drift_*` only; the `_net` wrapper adds them for its gross pair. |
+| **Proper fix** | `CREATE OR REPLACE` the wrapper with `gross_gex_drift_iv_1pct` / `gross_gex_drift_time_1pct` appended (append-only, ADR-032 D1 dependency rule), T1 re-run for that view, file in `sql/`; registered md5 updated. |
+| **Home** | Tracker §2.2 band B5 (ADR-032 row). |
+| **Status** | **OPEN — operator DDL (small).** |
+
+### TD-S103-NEW-11 (S4 priority) — `gamma_metrics` and `gex_strike_snapshots` each carry two duplicate `anon` SELECT policies with `qual = true`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** Pre-existing; no exposure change (both policies grant the same read). Noise in every ACL fingerprint and in the retail exposure model (TD-S81-NEW-2). |
+| **Filed** | 2026-10-31 (Session 104 engine sweep, 40_db_findings) |
+| **Component** | `pg_policies` on `public.gamma_metrics`, `public.gex_strike_snapshots` |
+| **Measured** | Two `anon` SELECT policies per table, each `qual = true`, read as `merdian_ro` 2026-10-31. |
+| **Proper fix** | `DROP POLICY` one of each pair after a `pg_policies` read names which migration created the second; re-baseline the ACL fingerprint (`rls_policies 80` → 78). |
+| **Home** | Tracker §2.2 band BS. |
+| **Status** | **OPEN — operator DDL.** |
+
+### S103 status changes to existing entries (doc-close run in Session 104; v5 Rule 3: one paragraph, no body edits)
+
+Rulings S103-A…T (`docs/research/s92_parity/rulings_s103.md`, the addendum merged). Ledger: `TDs_NEW=11` (TD-S103-NEW-1…11;
+**-10 closed at filing**, its block written straight to the end of `tech_debt_history.md`'s entries) · `TDs_CLOSED=6` (blocks
+moved to the end of `tech_debt_history.md`'s entries, unedited). **TD-S102-NEW-1 → CLOSED** (S103-M, 2026-10-31 06:3x IST:
+the Lovable-hosted copy unpublished, HTTP 404 read 06:35; the project keeps `meridian-welcomer.lovable.app`).
+**TD-S102-NEW-6 → CLOSED:** the two pre-rule backups are gone — retention deleted `.bak-1aeb000` at round 1 and
+`.bak-f964e40` at round 2 (2026-10-30); every surviving `.bak-<sha>` was created from live and proven ≡ live by `diff -rq`
+before it was named. **TD-S102-NEW-7 → CLOSED** (2026-10-31 06:40 IST): three duplicate pairs, not one — `idx_market_ticks_token_ts`
+= `idx_mt_token_ts`, `idx_mt_sym_type` = `idx_market_ticks_sym_type`, `idx_mt_ts` = `idx_market_ticks_ts`; one fail-closed
+`DO` block dropped `idx_market_ticks_token_ts`, `idx_mt_sym_type`, `idx_mt_ts` (≈ 453 MB); 4 indexes remain, all valid.
+**TD-S102-NEW-8 → CLOSED** (S103-R): `hist_gamma_metrics.net_gex` measured one scale throughout (182,430 of 182,461 non-null
+rows ≥ 1e9, ≈ 1e7 × the live scale); left as is and commented (ADR-032 S1, `ADR-032: … raw scale, ÷1e9 for ₹ Cr per 1 %`);
+no conversion, no dated break needed. **TD-S101-NEW-13 → CLOSED** (S103-A): `statusFor(tokenProbeAge, 1440)`, live `05f556c`
+19:30 IST, token `11.2h ago · 200 ✓` green. **TD-S90-NEW-5 → CLOSED** (S103-F, `613c2cb`): the cause was never the 3-second
+anon timeout but `DISTINCT ON (symbol)` walking the full `ix_gex_strike_snap_sym_ts` (2,207,583 rows, 17,562 ms) against
+`authenticator`'s 8 s; rebuilt on the skip-scan `latest_run`, 17,891 ms → 81 ms, equality 271 = 271, EXCEPT 0 both ways.
+**TD-S101-NEW-1:** same fix; closes on the first clean 14:00 ENH-133 cycle (Monday 2026-11-02). **TD-S41-NEW-5:** the true
+mechanism was PostgREST `max-rows` on an unordered, unbounded basket query (TD-S103-NEW-1), not the client's 5,000 cap;
+fixed `608917e` (S103-G); closes on Monday's first row with 50 of 50 NIFTY priced. **TD-S101-NEW-3:** fixed `c11b564`
+(S103-N; the prior read selected no `raw`); closes on Monday's read (NULL first cycle, a number from the second).
+**TD-S101-NEW-4:** the `fetch_prior_gamma_metrics` half fixed `c11b564` (S103-O, bounded to the IST session;
+`straddle_velocity` NULL on a session's first cycle by design); the `fetch_recent_max_gamma_strikes` half stays OPEN.
+**TD-S101-NEW-14:** built and live `05f556c` (S103-C); closes on the Tuesday 2026-11-03 expiry-day read. **TD-S101-NEW-15:**
+ruled S103-B (board-side roll, "next leg · front expired today"); build Tuesday after 15:40. **TD-S97-NEW-19:** R16 live
+`2f3c2f0` (S103-I); closes on the next live market read. **TD-S97-NEW-13:** R20 (a) live `6f14a92` + `v_close_print`
+(S103-J); closes at the next live read of a day whose 16:00 capture failed. **TD-S97-NEW-4 (b):** closed as by design
+(S103-L; its block already in history). **TD-S90-NEW-1:** the LTIM → LTM miss is this entry's cost made concrete (S103-H);
+the vendor comparison is TD-S103-NEW-2. **TD-S72-NEW-4:** the duplicate pair measured, TD-S103-NEW-6. **TD-S101-NEW-5:**
+the full copy list and the test findings are TD-S103-NEW-4. **TD-S80-NEW-7:** still owes its Rule 10 ADR; the table is a
+static S80 backfill (11,795 rows, last ts 2026-09-18, no live writer) — its ADR-032 K3 is the whole-table total.
+**TD-S100-NEW-1, TD-S77-NEW-8, TD-S91-NEW-18, TD-S74-NEW-5, TD-S71-NEW-5 / R48:** the S102 bundles landed 2026-10-30
+(`f63368a` → `b2a5ce6`, suite 29/29); each closes on its Monday live check (close inputs §5). **TD-S103-NEW-10 → CLOSED at
+filing:** the study §4 and K2 md5s are `md5(pg_get_viewdef(oid))`, the sweep's are the rule-25 form `pg_get_viewdef(oid,
+true)` — all 19 differ in form only, no view changed; the committed copies of the study and the F0 record carry a header
+note saying so. **Tracker rows:** every S103 ruling row DONE or re-homed; TD-S103-NEW-1…9, -11 added; v2.20.
 
 ### S102 status changes to existing entries (doc-close run in Session 103; v5 Rule 3: one paragraph, no body edits)
 
@@ -806,16 +903,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **Filed** | 2026-10-06 (Session 90 / AM-1) |
 | **Component** | inline gates across the scheduled scripts (S68 counted ~28; 2 routed in S90) |
 | **Proper fix** | ADR-031 D5.3 / roadmap R0.8: route each onto the shared gate, one per change, with the absent-row and gate-failure cases tested as in `docs/research/s90_agentic/patches/patch_r08_gates.py`. |
-| **Status** | **OPEN.** |
-
-### TD-S90-NEW-5 (S3 priority) — `v_gex_max_pain` fails intermittently at about anon's 3-second statement timeout
-
-| Field | Value |
-|---|---|
-| **Priority** | **S3.** One failed read per occurrence; the board shows "no max pain" for that cycle. |
-| **Filed** | 2026-10-06 (Session 90 / AM-1) |
-| **Evidence** | One HTTP 500 after 3,282 ms (retry 200 at 1,283 ms); `anon` `statement_timeout = 3s` (MV-6, R0.1 P4). Not reproduced at 15:10 (888 ms). Cause **probable, not proven** — the PostgREST error body was not captured. |
-| **Proper fix** | Capture the error body; then index, simplify, or cache per run. |
 | **Status** | **OPEN.** |
 
 ### TD-S90-NEW-8 (S2 priority) — Marketview Settings is read-only since S90-E; the authenticated write route, `changed_by` and `config_version` are owed

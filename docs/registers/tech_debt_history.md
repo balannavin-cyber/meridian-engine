@@ -5659,3 +5659,85 @@ All four verification conditions met. **(a)** The daily layer accumulates — 38
 
 
 **S90 / AM-1 (2026-10-05 → 06) — 11 new items filed (TD-S90-NEW-1..11), 0 closed; status changes on six existing items.** Ledger: **`TDs_NEW=11 (0×S1, 3×S2, 8×S3)` · `TDs_CLOSED=0`**. Hybrid close: each item points at its evidence in `docs/research/s90_agentic/`; progress on the agentic layer is tracked in the roadmap, not here. **Existing items, updated without editing their bodies** (anchors would not be unique, and the body is the record of what was believed): **TD-S89-NEW-1 → MITIGATED** — proper fix (2) deployed: closed days written as rows (`82619f8`, belt rows 10-20 / 11-10) and the chain ingest + spot capture on `core/trading_calendar_gate.py` (`ca79717`); the contract runner calls 10-02 CLOSED; **close after 2026-10-20 passes with no chain rows.** **TD-S89-NEW-2 → premise REFUTED** (§D.46.3): the table holds 16 rows and the write path exists as an anon-executable RPC; closed to anon by S90-E; the remaining half is **TD-S90-NEW-8** — recommend closing TD-S89-NEW-2 as superseded. **TD-S89-NEW-5 → evidence added**: R01-F8 measures `anon=rm` (MAINTAIN) on six base tables (`option_chain_snapshots`, `market_spot_snapshots`, `market_ticks`, `volatility_snapshots`, `script_execution_log`, `trading_calendar`), not only the two views. **TD-S81-NEW-16 → partly remediated further**: `merdian_ro` read policies added on `script_execution_log`, `merdian_parameters`, `dhan_scripmaster` (S90); new S90 tables carry RLS + a `merdian_ro` policy in their own DDL (ADR-031 D6). **TD-S82-NEW-4 → interacts**: the seeder now writes Muhurat 2026-11-08 CLOSED as the engine says; it self-heals through the merge when the engine is fixed. **TD-S88-NEW-1 → not reproduced** on 2026-10-05 10:27 (previous close resolved across the 10-02 holiday); one observation, not a closure. **AM-2 / S91 addendum (2026-10-07), folding in the AM-1 post-close delta.** Three items filed: **TD-S90-NEW-12** (CAS close rejected on every session 2026-08-24 → 10-06), **TD-S90-NEW-13** (SENSEX can settle after the 15:29 bar), **TD-S90-NEW-14** (off-box writer of the `equity_eod` cursor) — the S90 ledger becomes **`TDs_NEW=14 (0×S1, 5×S2, 9×S3)`**. Status on three S90 items, **bodies unedited**: **TD-S90-NEW-1 → DH-905 remaps VERIFIED** — after a clean `equity_eod_aws` lap (28 runs, guard 0), 2026-10-01 coverage is **1,379 / 1,381 = 99.86 %**; ANZEN is sporadic (fine); **ROADSTAR has never had an EOD row and Kite `ohlc()` is empty for it too**, so it deactivates via R1.10 — the recurrence half of the item stands **OPEN**. **TD-S90-NEW-2 → CLOSED 2026-10-07:** `git -C ~/meridian-connect fetch origin && git -C ~/meridian-connect rev-parse origin/main` prints **`255cca054af52130d31753a03d372f374bbbcb8b`**, the commit the deployed bundle was built from, so live = staging = `origin/main`. (The item's body names `265ceb0` as the deployed commit and the three post-close Marketview commits are `eda1ca0`, `c53dbea`, `255cca0`; the body is left as written.) **TD-S90-NEW-4 → the purge is now named, by the tick freeze** `47c795c` / `8f0007f`: `scripts/freeze_market_ticks.sh` on `*/5 3-10 * * 1-5` copies `market_ticks` to `~/merdian_fixtures/ticks` with 10-day retention, ahead of **`pg_cron` jobid 46**, which deletes rows older than 1 hour — what remains of the item is the retention decision under R1.9, and **nothing consumes the frozen ticks yet**. **TD-S90-NEW-9 unchanged.** **S91 / AM-2 (2026-10-07) — 11 new items filed, TD-S91-NEW-1…11, 0 closed.** Ledger: **`TDs_NEW=11 (0×S1, 4×S2, 7×S3)` · `TDs_CLOSED=0`**. **S2:** NEW-1 (ENH-133 writer + reconciler ts-fraction crash; 23 rows lost and unrecoverable under ADR-030 D2; fix tested, pending deploy), NEW-3 (Zerodha feed down 09:10–09:36, mechanism UNIDENTIFIED), NEW-5 (`breadth_indicators_daily` gate set below the settled Dhan lag, so it cannot pass on a healthy day), NEW-7 (the fixture suite OOM-killed the box in pre-open; one of the two kills unattributed). **S3:** NEW-2 (six more unpadded `fromisoformat` sites, ~40 copies of the padding, no `core/` helper), NEW-4 (UTC stamped under an IST label), NEW-6 (`compute_basis_context` exit 1, undiagnosed), NEW-8 / NEW-9 / NEW-10 (the R1.6 harness: no row band, un-floored lookback, single-dropped-cycle blind spot — evidence in `scratch/s91/r16_result.txt`), NEW-11 (two sessions on one tree, **both rooted in the engine tree, this one included**). **No existing entry body was edited.** Two fixes prepared and UNCOMMITTED (NEW-1 deploys ≥ 16:30 IST in the S90-J window; NEW-7 applied but unverified, post-15:40 run owed) and two rules proposed for ruling (NEW-7, NEW-11). **RULED 2026-10-07 ~11:50 IST:** both proposals were accepted — **TD-S91-NEW-7's rule as S91-A** (no fixture-suite run 08:30–15:40 IST; every run under an explicit `ulimit -v`) and **TD-S91-NEW-11's rule as S91-B** (one Claude Code session per tree; never root a session in `~/meridian-engine`). Codified as **`CLAUDE.md` rules 23 and 24** respectively; single source `docs/research/s91_agentic/rulings_s91.md`. Neither item is CLOSED by the ruling: NEW-7 still owes its post-15:40 verification run, and NEW-11 is a process item whose first compliance point is the next session's root. **Entry bodies unedited** — the ruling is recorded here, in the footer, not in the rows.
+
+### TD-S102-NEW-1 (S3 priority) — the Lovable-hosted public copy serves whatever `main` holds, outside staging, the guard, promote and the box's access setup
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A second public surface of the board exists that no guard, staging read or promote step ever sees, and it reaches the database with the same anon key. |
+| **Filed** | 2026-10-30 (Session 102; found during the ADR-032 D1 rounds) |
+| **Component** | Lovable project `meridian-connect` — "Publish" → `https://meridian-welcomer.lovable.app/` |
+| **Measured** | Publish was clicked 2026-10-30 ~09:55 IST at `3b3b0d4` (round 2, before its guard and staging read). The copy serves that build of `main` until Publish is clicked again; it is not behind oauth2-proxy, reads only anon views, and is not in `docs/registers/MERDIAN_Deployment_Topology.md`. |
+| **Proper fix** | Operator ruling owed (tracker §2.2): unpublish unless it is used; if kept, record it in the Topology as a public read surface with its own promote rule (publish only a commit that has passed the guard and a staging read) and include it in the ACL exposure model (TD-S89-NEW-5, TD-S81-NEW-2). |
+| **Home** | Tracker §2.2 band BS. |
+| **Status** | **OPEN — ruling.** |
+
+### TD-S102-NEW-6 (S4 priority) — a file was copied into the live Marketview tree outside a build, so a `.bak-<sha>` backup name cannot be trusted without a `diff -rq`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** The rollback target was named wrongly twice in one minute on 2026-10-30 (§D.56.12) because the live tree's name and its contents had diverged; the promote block now proves the equality before naming it. |
+| **Filed** | 2026-10-30 (Session 102; close inputs §5) |
+| **Component** | `/var/www/marketview/` (live), `/var/www/marketview.bak-*`; the promote block in `docs/lovable_prompts/s92/README.md` |
+| **Measured** | After the `f964e40` build, manual v0.4 (`manual.json` `489a135e…`) was copied into `/var/www/marketview/help/` by hand (S100); the live tree was therefore `f964e40` JS + a v0.4 manual, which is the `27c0e17` tree, under no single commit's name. On 2026-10-30 the promote first set `PREV=27c0e17` from a comment, then `f964e40` from the JS name; a `diff -rq` against `.bak-27c0e17` settled it. |
+| **Proper fix** | Nothing enters the live tree except a build of one commit (rule now in the s92 README); the promote block names a rollback target only after `diff -rq` shows live ≡ that backup (done, S102). Residual: `.bak-27c0e17` is the only backup whose contents equal a commit's tree by construction; the older `.bak-f964e40` and `.bak-1aeb000` predate the rule and must be diffed before use. |
+| **Home** | Tracker §2.2 band BR. |
+| **Status** | **OPEN — rule landed; the two pre-rule backups stay untrusted until rotated out (S100-L).** |
+
+### TD-S102-NEW-7 (S3 priority) — `market_ticks` carries three exact duplicate indexes, ~450 MB of redundant index maintained on every tick insert
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Every `market_ticks` INSERT maintains six secondary indexes where three would do; ~450 MB of the table's ~980 MB of indexes is a copy. The TD-S72-NEW-4 shape on the highest-volume table. |
+| **Filed** | 2026-10-30 (Session 102; measured 10-28, re-read from `pg_indexes` 2026-10-30 11:30 IST before filing) |
+| **Component** | `public.market_ticks` indexes |
+| **Measured** | `pg_indexes` 2026-10-30: `idx_market_ticks_sym_type` = `idx_mt_sym_type` (`symbol, instrument_type, ts DESC`; 193 MB / 194 MB); `idx_market_ticks_token_ts` = `idx_mt_token_ts` (`instrument_token, ts DESC`; 208 MB / 207 MB); `idx_market_ticks_ts` = `idx_mt_ts` (`ts DESC`; 46 MB / 51 MB); `market_ticks_pkey` (`id`, 81 MB). Three pairs with identical `indexdef`; one of each pair is redundant (447 MB if the `idx_mt_*` set is dropped, 452 MB if the `idx_market_ticks_*` set is). `idx_*_ts` (`ts DESC`) is **not** covered by the composites (`ts` is their last column), so it is a duplicate pair, not a redundant prefix. |
+| **Proper fix** | Operator DDL out of market hours: `DROP INDEX CONCURRENTLY` one of each pair (keep the set the planner's `pg_stat_user_indexes.idx_scan` shows in use, or the `idx_market_ticks_*` names if equal), one statement per execution, with a `pg_indexes` read before and after; record in `sql/`. Then re-measure `v_market_ticks_eq_latest` (406.6 ms at 1,313 rows on 10-28) — it reads `(symbol, instrument_type, ts DESC)`, so the surviving composite must stay. Root cause (which migration created the second set under the `idx_mt_` names) by `git log -S` on `sql/`. |
+| **Home** | Tracker §2.2 band B4 (beside TD-S72-NEW-4). |
+| **Status** | **OPEN — operator DDL.** |
+
+### TD-S102-NEW-8 (S3 priority) — `hist_gamma_metrics.net_gex` has two writers that disagree on its unit, and a DDL that disagrees with both on its columns
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Not read by the board; read by research. Any study that joins `hist_gamma_metrics` to `gamma_metrics` mixes a /1e7 scale with an unscaled one without knowing it. |
+| **Filed** | 2026-10-30 (Session 102; inventory `docs/research/s102/gex_unit_inventory_S102.md` §5.1) |
+| **Component** | `backfill_gamma_metrics.py:83` (divides by 1e7), `fill_gamma_concentration.py:72,104` (treats the table as unscaled), the s62 DDL for `hist_gamma_metrics` |
+| **Measured** | Code read on `3abb83f`, 2026-10-30: the two writers apply different scales to the same column; the writer and the s62 DDL also disagree on the column set. Which rows carry which scale is not yet measured. |
+| **Proper fix** | Part of the ADR-032 §5 impact study: measure the scale per row range (by writer and date), state the unit in a `COMMENT` (ADR-032 D4), and either convert or register a dated unit break (D3) — never a silent rewrite. |
+| **Home** | Tracker §2.2 band B3 (chain data correctness); ADR-032 §5. |
+| **Status** | **OPEN — study.** |
+
+### TD-S101-NEW-13 (S3 priority) — Health OVERALL reads DEGRADED all session on a healthy fleet
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A health summary that is amber every day carries no signal; S100-M (a)'s "OVERALL green unless a tracked writer is stale" cannot hold. |
+| **Filed** | 2026-10-27 (Session 101; board read 10:20 IST) |
+| **Component** | `meridian-connect` Health page (live bundle `index-BFOk56iL.js`): the token tile is green iff `http_status == 200 && age < 30`, age in minutes (`Tf(ts) = (now − ts) / 6e4`) |
+| **Measured** | 2026-10-27 10:20 IST: fleet 14/14 current, OVERALL DEGRADED; token 2.5 h old → amber. The token refreshes once a day, so OVERALL is amber from ~30 min after the refresh until the next one. |
+| **Proper fix** | A threshold on the token's validity window (e.g. < 24 h) or expiry-based, in meridian-connect; a board change needs the operator's yes. |
+| **Home** | Tracker §2.2 band B5 (ruling row). |
+| **Status** | **OPEN** — ruling owed. |
+
+### TD-S90-NEW-5 (S3 priority) — `v_gex_max_pain` fails intermittently at about anon's 3-second statement timeout
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** One failed read per occurrence; the board shows "no max pain" for that cycle. |
+| **Filed** | 2026-10-06 (Session 90 / AM-1) |
+| **Evidence** | One HTTP 500 after 3,282 ms (retry 200 at 1,283 ms); `anon` `statement_timeout = 3s` (MV-6, R0.1 P4). Not reproduced at 15:10 (888 ms). Cause **probable, not proven** — the PostgREST error body was not captured. |
+| **Proper fix** | Capture the error body; then index, simplify, or cache per run. |
+| **Status** | **OPEN.** |
+
+### TD-S103-NEW-10 (S4 priority) — the impact study §4 and the K2 snapshot record their view md5s in a different `pg_get_viewdef` form from rule 25, so a rebuild check would report 19 false mismatches
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** Docs only; no view changed. Left unannotated, the first rule-25 check against the study would have raised 19 alarms. |
+| **Filed** | 2026-10-31 (Session 104 engine sweep, 95_diff "disagreements resolved"); **CLOSED at filing (S103 doc-close, 2026-11-01)** |
+| **Component** | `docs/research/s103/adr032_s5_s6_impact_study_S103.md` §4; `docs/research/s103/adr032_f0_k1_k3_records_2026-10-31.md` K2; `sql/snapshots/adr032_pre_defs_2026-10-31.sql` |
+| **Measured** | Study and K2: `md5(pg_get_viewdef(oid))`; sweep `41_db_raw.txt` §2: `md5(pg_get_viewdef(oid, true))` (the rule-25 form, `CLAUDE.md` rule 25). All 19 shared views differ between the two tables and none between the study's 07:xx read and the K2 08:35 read; the function md5s (`prosrc`) are form-independent and equal. |
+| **Proper fix** | State the form beside each md5 table. Done: a header note on the committed copies of the study and the F0 record (the PK copies are unchanged; the note is the git copy's). Any later rebuild check uses the rule-25 form and re-reads live. |
+| **Home** | — (closed). |
+| **Status** | **CLOSED at filing.** |

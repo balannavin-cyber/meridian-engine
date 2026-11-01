@@ -1398,3 +1398,35 @@ that carries the forward step.
 
 **Update log — Session 102 close (run in Session 103, 2026-10-30):** §D.56 added (**16 rows, all mine**). Sources:
 `docs/research/s92_parity/rulings_s102.md`, `docs/research/s102/S102_close_inputs.md`.
+
+## D.57 — Sessions 103 and 104: a mechanism hypothesised before the row count was read, a superseded rollback left in the chat and run, and a git copy assumed identical to the doc it replaced (2026-10-30 → 11-01)
+
+Sixteen rows, **all my own**. Rulings: `docs/research/s92_parity/rulings_s103.md`. Sources:
+`docs/research/s103/S103_close_inputs.md` §4, the rulings file's §D.57 lists, `docs/research/s104/pk_prune_audit_S104.md`.
+Recorded at the S103 doc-close (run in Session 104).
+
+| # | Assumption as held | Verdict on measurement |
+|---|---|---|
+| **D.57.1** | *(mine)* The WCB basket was truncated by the client's 5,000-row cap. | **REFUTED** — The basket's history was 4,106 rows; PostgREST `max-rows = 1,000` on an unordered, unbounded query was the mechanism (the `rows_for_basket` read, settled by the `missing_daily` name list; TD-S103-NEW-1). |
+| **D.57.2** | *(mine)* The first `pg_stat_statements` query as written would run. | **REFUTED** — A stray column with a `double precision` `round()` failed it; re-issued. |
+| **D.57.3** | *(mine)* A single-table `UPDATE` would rename LTIM safely. | **REFUTED in method** — The tables key on different vendor forms; it would have split Zerodha and Dhan keys. Caught by the table-by-table read before anything ran; one fail-closed `DO` block replaced it. |
+| **D.57.4** | *(mine)* `source .env` exports its variables; an `LTI` name filter matches only LTIM. | **REFUTED** — No export; `LTI` matched "MULTI". Both caught by their own output. |
+| **D.57.5** | *(mine)* The 10-28 rulings 1–5 could not be recovered. | **REFUTED** — They were in the S102 chat's rulings table, found by a past-chats search at 21:03 IST. Search before saying "not recoverable". |
+| **D.57.6** | *(mine)* The R16 guard's fingerprint (`grep -c frozenSince`) counted the diff correctly. | **REFUTED** — Case-sensitive; `setFrozenSince(...)` has a capital F; the guard FAILED on a correct diff and was fixed to `grep -ci`. |
+| **D.57.7** | *(mine)* The first R16 click at (1134, 26) would land on the header button. | **REFUTED** — The page was scrolled by my own Space test; no effect on the board. |
+| **D.57.8** | *(mine)* "Yes" to an either/or question meant yes to both (S103-N / S103-O). | **Stated before acting** — Read as yes to both and said so; the rulings were acted on only after that reading was on record. Recorded so the reading is traceable. |
+| **D.57.9** | *(mine)* The ADR-032 study could name the empty K3 window of `gex_pin_maxpain_history` only after an operator query. | **REFUTED** — The S80 docs already said it: a static backfill, window 2026-05-25 → 09-18, no live writer. Read the docs before asking the operator to check (project rule). |
+| **D.57.10** | *(mine)* No comment existed on any Γ column before S1. | **REFUTED** — `gex_strike_snapshots.gex_cr` carried the sign note; found by the fail-closed S1 pre-check and kept verbatim at the end of the new comment. |
+| **D.57.11** | *(mine)* The impact study's W6 list and §4 md5 table were complete and in the rule-25 form. | **REFUTED** — The S104 sweep added `CR_SCALE` / `CR` named constants and a golden query at a fourth convention (TD-S103-NEW-4); the md5s were `pg_get_viewdef(oid)`, not `(oid, true)` — 19 false mismatches waiting (TD-S103-NEW-10, closed at filing). |
+| **D.57.12** | *(mine)* The legacy Γ objects had no readers. | **REFUTED** — `pg_stat_statements`: `wcb_signal_validation_v2` 632 / 490 / 236 calls and `latest_signal_snapshots` ~100 as `service_role` (PostgREST shapes). S103-T amended: name the reader first (TD-S103-NEW-7). |
+| **D.57.13** | *(mine)* A superseded rollback block could stay in the chat after a replacement was posted. | **REFUTED** — It was run after the S1 apply (~09:0x IST) and removed all eight comments, `gex_cr` included; the operator restored the sign note; S1 re-applied in S104 10:14 IST. A replaced block is deleted or struck through where it stands; only the valid one is paste-ready. |
+| **D.57.14** | *(mine)* My first S1 verification query checked the `gex_cr` sign note. | **REFUTED** — It passed vacuously on the old comment; replaced by `LIKE 'ADR-032:%Signed Cr. …'` (unit and sign note together). |
+| **D.57.15** | *(mine)* The Local / box four-way check earlier in the session needed a correction. | **CONFIRMED — no correction needed** (recorded because it was listed; the check held at every hash). |
+| **D.57.16** | *(mine, S104)* The git file `docs/research/post_parity_candidates.md` held the same content as the PK doc `claude/post_parity_candidates_S89.md`, so the PK doc could be deleted in prune batch 3. | **REFUTED** — The git file holds PPC-1 (prev-close ΔOI, later ENH-142) only; the PK doc held Candidates A (1-minute re-pricing pass) and B (MTF leverage context), whose detail is now gone with the deletion. ENH-146 / ENH-147 are minted at this close from the summary that survives in `claude/parity_dovetail_and_post_parity_plan_S89.md` §2. A PK doc is deleted only after its git copy is **read and found identical**, never on a name match. |
+
+**The one to carry from §D.57: D.57.13 and D.57.16.** A replaced rollback block is removed from the chat where it stands,
+and a project-knowledge doc is deleted only after its git copy has been read and found to be the same document.
+
+**Update log — Session 103 close (run in Session 104, 2026-11-01):** §D.57 added (**16 rows, all mine**). Sources:
+`docs/research/s92_parity/rulings_s103.md`, `docs/research/s103/S103_close_inputs.md`,
+`docs/research/s104/pk_prune_audit_S104.md`.

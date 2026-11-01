@@ -2114,3 +2114,50 @@ line `40 10 * * 1-5` → `0 11 * * 1-5` (16:10 → 16:30 IST) as part of its cha
 
 **Project knowledge.** Re-uploaded 2026-10-30 11:15 IST from `3abb83f` with `pk_extract_s100.py` (owed since the S101 close);
 next re-upload after this close's commit.
+
+## §S103 — Session 103 (2026-10-30 → 10-31): six bundles deployed in the S90-J window; two views rebuilt and one added; three promotes; the public copy unpublished; ADR-032 F0 + S1
+
+**Engine tree.** `origin/main` = `~/meridian-engine` = `~/meridian-cc` = Local (`C:\GammaEnginePython`) = **`232a3bc`** at this
+close (= `8b58e54` + three docs-only PK-prune archive commits). The six S102 bundles were applied on the box 2026-10-30 after
+15:40 IST and pushed after 16:30 (S90-J): `f63368a` → `c36fc3e` → `eafc2e4` → `711f78b` → `99560c5` → `b2a5ce6`, suite 29/29
+under `ulimit -v`. Then `613c2cb` (S103-F record), `82c517d` (S103-D), `608917e` (S103-G), `c11b564` (S103-N / O, suite 30/30,
+box route `apply_s103v.sh --apply`, 06:50 IST on a Saturday), `4e14a1d` (K2 snapshot), `8b58e54` (S1 SQL). **Tag `adr032-pre`**
+(annotated, object `95fec276…`) on `c11b564`, pushed; the first tag object (`99bedc62…`) was created, deleted by the rollback
+rehearsal and re-created. **Crontab 70 lines**; the markers line now `0 11 * * 1-5` UTC (16:30 IST) — read back with `crontab -l`
+after `b2a5ce6`. Production Python 3.10; the sandbox's Python 3.13 fails step 10 on the unmodified baseline (environment, not code).
+
+**Changed in Supabase (operator, SQL editor).** `v_gex_max_pain` and `v_gex_pin_maxpain` replaced on the skip-scan `latest_run`
+(10-30 18:5x IST; `sql/2026-10-30_s103_v_gex_max_pain_latest_run_skip_scan.sql`); `v_close_print` created (10-30 21:36 IST,
+`security_invoker = true`, anon + `merdian_ro` SELECT; `sql/2026-10-30_s103_v_close_print.sql`); TMPV / LTM renamed in six tables
+(10-30 19:46–20:01, one fail-closed `DO` block, no file in `sql/` — the block is in `rulings_s103.md` S103-H); three duplicate
+`market_ticks` indexes dropped (10-31 06:40, ≈ 453 MB; 4 remain); the eight ADR-032 unit COMMENTs (10-31 09:00, undone ~09:0x by a
+superseded rollback, **re-applied 10:14 IST**; `sql/2026-10-31_s103_adr032_s1_unit_comments.sql`). `pg_stat_statements` is
+installed but **not granted to `merdian_ro`** (nor `cron.job`): the `service_role` reader question needs one editor query under
+`postgres` (TD-S103-NEW-7).
+
+**Marketview.** Live = staging = **`6f14a92`** (bundle `index-BIJiXoC3.js`), promoted 2026-10-30 21:48 IST by the refusing block
+(`mv_promote_s103r20.sh GO`). Chain: `30998f2` → `05f556c` (round 1, 19:30 IST, `index-CqeQ18mx.js`) → `2f3c2f0` (round 2, 21:27,
+`index-CNMHc_Oz.js`) → `6f14a92` (round 3). Each promote created `.bak-<prev>` from live and proved it ≡ live by `diff -rq` before
+naming it as the rollback target. **Rollback target `/var/www/marketview.bak-2f3c2f0`.** Backups: `.bak-2f3c2f0`, `.bak-05f556c`,
+`.bak-30998f2` + `PRE_IV_20261004_0329`, `PRE_S89_20261003_1340`, `PRE_S81`; retention deleted `.bak-1aeb000`, `.bak-f964e40`,
+`.bak-27c0e17` in that order (S100-L) — the two pre-rule backups are gone (TD-S102-NEW-6 CLOSED). Manual `ede04e14…` (v0.5)
+unchanged. One writer per round (Lovable), the box only reads.
+
+**The public surface is gone (TD-S102-NEW-1 CLOSED).** The Lovable-hosted copy was unpublished 2026-10-31 06:3x IST (Lovable →
+Meridian Connect → Publish → Unpublish); HTTP 404 at 06:35. The project keeps the subdomain `meridian-welcomer.lovable.app`;
+MeridianAlpha_Retail and the other Published projects were not touched. The topology's only board surface is again
+`marketview.meridianalpha.in` behind oauth2-proxy, with `/staging/`.
+
+**Read-only sweeps (S104, 2026-10-31).** Claude Code ran once on each box, read-only: engine box (`~/meridian-cc` @ `8f9d466`,
+`~/meridian-connect` @ `6f14a92`, DB via `bin/roq.sh` as `merdian_ro`; tmux `s103_sweep`; 28 min 50 s; exit check: HEADs unchanged,
+0 modified tracked files, no new reflog entry) and the retail sandbox box (`ubuntu@ip-172-31-30-166`, `~/retail-platform` @
+`d95caf1`, `~/retail-meridian` @ `595ed47`; no DB, no engine clone; 5 min 54 s; the box has no `aws` — prompt delivered by base64
+heredoc, results by presigned PUT to `s3://meridian-engine-deploy/s104/`, region `eu-north-1`). Outputs land in this close at
+`docs/research/s104/sweep_engine/` and `sweep_retail/` with per-folder `SHA256SUMS` (tgz sha256 `d5b680b3…` / `591c8b4a…`).
+
+**Project knowledge.** Pruned 2026-10-31 from 186 to 149 docs (`docs/research/s104/pk_prune_audit_S104.md`); every deleted doc has a
+git home (the audit's execution record names each). Canonical files re-uploaded after this close's commit; the ten DEFERRED S103
+docs deleted from PK after it lands (their git homes: `docs/research/s103/`, `docs/lovable_prompts/s103/`, `sql/`).
+
+**Observed, not changed.** Port 22 still open to `0.0.0.0/0` (TD-S101-NEW-10). Two duplicate `anon` SELECT policies on
+`gamma_metrics` and `gex_strike_snapshots` (TD-S103-NEW-11). `gex_strike_snapshots` carries a duplicate index pair (TD-S103-NEW-6).

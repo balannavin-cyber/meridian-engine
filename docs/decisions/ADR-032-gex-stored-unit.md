@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **D1 RULED + LIVE; D2–D5 PROPOSED.** D1 **RULED** by the operator 2026-10-30 ("1 first", S102-A / S102-B) and **LIVE 2026-10-30 11:02 IST** (Marketview `30998f2`, bundle `index-EtZmieBR.js`; record below). **D2–D5 PROPOSED — not to be implemented** until the impact study (§5) and the change roadmap (§6) are written, reviewed and ruled, and every step has passed its test before it reaches the board. Filed into `docs/decisions/` at the S102 doc-close (run in Session 103) from the S102 draft, header changed from PROPOSED to this line and the inventory link repointed; nothing else rewritten. |
+| Status | **D1 RULED + LIVE; D2–D5 RULED in form (Amendment A, S103-P…T, 2026-10-31); F0 + S1 (D4 COMMENTs) LIVE 2026-10-31; S2 held until after launch.** Earlier status text kept below as filed: **D1 RULED + LIVE; D2–D5 PROPOSED.** D1 **RULED** by the operator 2026-10-30 ("1 first", S102-A / S102-B) and **LIVE 2026-10-30 11:02 IST** (Marketview `30998f2`, bundle `index-EtZmieBR.js`; record below). **D2–D5 PROPOSED — not to be implemented** until the impact study (§5) and the change roadmap (§6) are written, reviewed and ruled, and every step has passed its test before it reaches the board. Filed into `docs/decisions/` at the S102 doc-close (run in Session 103) from the S102 draft, header changed from PROPOSED to this line and the inventory link repointed; nothing else rewritten. |
 | Date | 2026-10-30 |
 | Session | S102 |
 | Supersedes | nothing. **Reopens** the CLAUDE.md settled item "TD-NEW-2 + TD-NEW-3 P0 verification PASS" (S28) only as to the *unit* it names ("net_gex in Crore range"); the S28 fix itself stands |
@@ -110,3 +110,43 @@ writer changes.
 
 When D1 is applied and read live, CLAUDE.md gains a settled-decisions line: *"Γ sizes on the board are ₹ Cr per 1 % move, made by
 the `_1pct` wrapper views; stored columns remain γ·OI·S²/1e7 until ADR-032 D2 is ruled."* D2–D5 add no CLAUDE.md text until ruled.
+
+
+---
+
+## Amendment A — D2–D5 RULED in form; F0 and S1 LIVE; S2 held until after launch (2026-10-31; recorded at the S103 doc-close, 2026-11-01)
+
+**Rulings S103-P…T** (`docs/research/s92_parity/rulings_s103.md`; operator: "Go with your recco — after you have done one more
+check", 07:45 IST, taken after a second pass of the study). Study: `docs/research/s103/adr032_s5_s6_impact_study_S103.md`
+(engine `c11b564`, board `6f14a92`). Fallback plan: `docs/research/s103/adr032_fallback_plan_S103.md`. Independent read-only
+sweeps (S104, Claude Code on the engine box and the retail box): `docs/research/s104/sweep_engine/`, `docs/research/s104/sweep_retail/`.
+
+| Clause | Ruling | Consequence |
+|---|---|---|
+| **D2 (S103-P)** | **Additive.** New nullable per-1 % columns written **beside** the old by the capture writer and by every formula copy (TD-S103-NEW-4) in one bundle; the D1 wrappers are repointed to the new columns; the board needs no change. No in-place factor change anywhere. | The S2 bundle lands in the S90-J window; the old columns keep scale A until retirement (§6 step 5). Retail (sweep): additive DB columns are **invisible to every retail gate by construction**; if the writer's dataclass gains fields, retail's `test_surface` breaks on the next SHA bump — the S2 design states which. |
+| **D3 (S103-Q)** | **A dated unit break, everywhere; no conversion of history.** `gex_strike_snapshots` (2.10 M rows, 824 MB, 8 indexes) would be a full rewrite; a partial conversion makes several boundaries. One registered date, written at S2c when T exists. | The registration must also list the six unnamed Γ-carrying base-table columns the sweep found: `signal_snapshots_shadow.net_gex`, `signal_snapshots_replay.net_gex`, `structural_divergence_snapshots_replay.net_gex`, `market_state_snapshots_shadow.gamma_features`, `market_state_snapshots_replay.gamma_features`, `study_recon_pin.total_pin_gex_cr` / `study_recon_accel.total_accel_gex_cr`. |
+| **D4 (S103-R; S1)** | **COMMENTs — LIVE.** Eight Γ columns carry an `ADR-032:` unit comment (`sql/2026-10-31_s103_adr032_s1_unit_comments.sql`, `8b58e54`): applied 2026-10-31 09:00 IST, removed ~09:0x by a superseded rollback block run after the apply (§D.57.13), **re-applied 10:14 IST** (8/8, `gex_cr_unit_and_sign_note = true`). `hist_gamma_metrics.net_gex` is **one scale throughout** (182,430 of 182,461 non-null rows ≥ 1e9, ≈ 1e7 × live): left as is and commented "raw scale, ÷1e9 for ₹ Cr per 1 %" — TD-S102-NEW-8 closed. | The only valid S1 rollback is Appendix A4 of `docs/research/s104/S104_session_prompt.md` (removes only comments still starting `ADR-032:`; restores the `gex_cr` sign note exactly). The sweep confirmed independently: the eight comments are the only machine-readable unit statement in the cluster (0 triggers, 0 CHECKs, 0 generated columns on Γ). |
+| **Pine labels (S103-S)** | `generate_pine_overlay.py` relabels to per-1 % with the unit named; **the wording is the operator's when that round is built** (TD-S103-NEW-5). | — |
+| **Legacy objects (S103-T, amended 08:17)** | **One retirement TD, kept out of D2** (TD-S103-NEW-7). Not reader-free: `wcb_signal_validation_v2` (632 / 490 / 236 calls) and `latest_signal_snapshots` (~100) are read as `service_role` through PostgREST by a client in no repo; **first step: name the reader** (Monday 2026-11-02 re-run of `pg_stat_statements`). `insert_option_chain_batch` — a fourth writer to `gamma_metrics.net_gex` at a proxy scale, no caller — has never fired (`abs(net_gex) < 1` → no rows) and goes first. | Nothing dropped before the other Lovable apps and the retail repos are checked (retail: none of them read, S104 sweep). |
+| **D5** | Unchanged: out of scope (R26). | — |
+
+**F0 (2026-10-31, `docs/research/s103/adr032_f0_k1_k3_records_2026-10-31.md`):** K1 annotated tag **`adr032-pre`** on `c11b564`
+(object `95fec276…`); K2 definitions snapshot of 22 objects `sql/snapshots/adr032_pre_defs_2026-10-31.sql` (`4e14a1d`; md5s in the
+`pg_get_viewdef(oid)` form — the rule-25 form is `(oid, true)`, TD-S103-NEW-10); K3 control totals for the seven Γ tables over
+2026-10-26 → 10-30 (strike-level Σ`gex_cr` = `gamma_metrics.net_gex` on all 10 symbol-days to < 1e-6 Cr; the static pin table by
+whole-table total and `row_md5`). **After every ADR-032 stage the K3 queries (S104 prompt Appendix A5) must return the F0 record's rows.**
+
+**Sweep findings that bind the build (S104):** no reader uses a Γ magnitude for a decision (sign, ratios, shares only; `regime_sign(eps =
+2.5e5)` is research-only); **four scale conventions** exist in the repo — raw (`hist_gamma_metrics`), /1e7 (live), /1e7 × 100
+(`canonical_ob_gamma_zone*.py`, unscheduled), /1e7 × 0.01 × lot (a golden query); the offline suite is **not** a control for D2 (every
+Γ assertion in all 30 steps is scale-invariant; mutant M1 anchors on the source text `(spot ** 2) / 1e7` and stops testing the divisor
+at the first edit of `gamma.py:54`; I1 / I2 tolerances are absolute in scale A) — TD-S103-NEW-4 is therefore an S2 prerequisite;
+`v_gex_greeks_l2_strike_1pct` converts 2 of its 4 Γ columns (a D1 defect, TD-S103-NEW-9; no live display wrong today); three board
+formatters (`crLakh` / `fmtCr`, `lad`, `lak` in `GammaRiver.tsx`) change the unit word at |v| ≥ 1e5 and are reached only through the
+data; `latest_net_gamma_by_strike.net_gamma` (`gamma_call − gamma_put`, no OI, no S²) and every `*_dex_cr` / `*_flow_cr` / `*_iv_*_cr` /
+`*_t_*_cr` column **look like Γ and are not** — excluded from any rescale.
+
+**Status after this amendment:** D1 LIVE (2026-10-30) · D4 LIVE (S1, 2026-10-31 10:14 IST) · D2 / D3 RULED in form, **not built** ·
+D5 out of scope · **S2a–S2c held until after launch** (operator: ~10 days; fewer than two quiet trading weeks) and until the sweeps'
+operator items are ruled. The emergency lever is ruled when S2 is scheduled (proposed: a flag-off lever valid only at S2b–S2c; from
+S3 the recovery is the SQL wrapper revert).

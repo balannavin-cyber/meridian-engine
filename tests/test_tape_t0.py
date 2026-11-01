@@ -905,12 +905,58 @@ def g_token_midsession():
     return cells
 
 
+def g_sigterm():
+    import signal
+    from services.tape_runner.__main__ import install_signal_handlers
+    cells = []
+    rec, clock, tickers = make_recorder()
+    t = boot_open_day(rec, clock, tickers)
+    fut = TOK[("NIFTY", "FUT")]
+    clock.set(ist_ns(DAY, "11:02:00"))
+    t.on_ticks(t, [full_pkt(fut, 25000, 100, DAY, "11:02:00", tid="pre-term")])
+    rec.step(clock.now_ns())
+    fallback = []
+    old = signal.signal(signal.SIGTERM, lambda s, f: fallback.append(s))   # never let a test die on SIGTERM
+    try:
+        install_signal_handlers(rec)
+        os.kill(os.getpid(), signal.SIGTERM)
+    finally:
+        signal.signal(signal.SIGTERM, old)
+    clock.set(ist_ns(DAY, "11:02:01"))
+    code = rec.step(clock.now_ns())
+    objs = rec.uploader.s3.objects
+    seg = "NIFTY/%s/seg_1100.ndjson.gz" % DAY
+    recs = [json.loads(l) for l in gzip.decompress(objs[seg]).decode().splitlines()] if seg in objs else []
+    hb = json.load(open(rec.heartbeat_path))
+    cells.append((rec.term_requested and not fallback, "SIGTERM reached the recorder handler: %s (fallback hit: %s)"
+                  % (rec.term_requested, bool(fallback))))
+    cells.append((code == 0 and hb["state"] == "STOPPED", "exit %s, heartbeat %s" % (code, hb["state"])))
+    cells.append((any(r.get("tid") == "pre-term" for r in recs) and any(r.get("code") == "SIGTERM" for r in recs)
+                  and not rec.uploader.pending() and not any(f.endswith(".part") for _, _, fs in os.walk(rec.spool) for f in fs),
+                  "open segment closed, uploaded and verified before exit (%s in S3: %s); no .part left" % (seg.split("/")[-1], seg in objs)))
+    cells.append(("session/%s/daily_report_%s.json" % (DAY, DAY) not in objs, "no daily report on SIGTERM"))
+    # S3 down during the drain: bounded at 60 s and nothing deleted
+    rec2, clock2, tk2 = make_recorder(s3=FakeS3("fail"))
+    t2 = boot_open_day(rec2, clock2, tk2)
+    clock2.set(ist_ns(DAY, "11:02:00"))
+    t2.on_ticks(t2, [full_pkt(fut, 25000, 100, DAY, "11:02:00")])
+    rec2.request_stop()
+    t0 = ist_ns(DAY, "11:02:01")
+    clock2.set(t0)
+    code2 = rec2.step(t0)
+    spent = (clock2.now_ns() - t0) / 1e9
+    left = rec2.uploader.pending()
+    cells.append((code2 == 0 and 59 <= spent <= 62 and left and all(os.path.exists(p) for p in left),
+                  "S3 down: exit %s after %.0f s of draining; %d files kept in the spool" % (code2, spent, len(left))))
+    return cells
+
+
 GUARDS = [("classify-synthetic", g_classify_synthetic), ("classify-purity", g_classify_purity),
           ("segments-rotate", g_segments_rotate), ("upload-verify", g_upload_verify),
           ("subs-grow-only", g_subs_grow_only), ("ctl-records", g_ctl_records), ("spool-cap", g_spool_cap),
           ("token-fail", g_token_fail), ("closed-day", g_closed_day), ("fence", g_fence),
           ("no-db-no-dhan", g_no_db_no_dhan), ("smoke-s3", g_smoke_s3), ("segment-race", g_segment_race),
-          ("token-midsession", g_token_midsession)]
+          ("token-midsession", g_token_midsession), ("sigterm", g_sigterm)]
 
 
 # ======================================================================== unit checks (not guards)

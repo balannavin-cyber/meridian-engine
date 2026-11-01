@@ -31,6 +31,7 @@ RESOLVE_RETRY_S = 30
 TOKEN_PROBE_AFTER_S = 60   # disconnected this long -> kite.profile() probe (review finding 3)
 TOKEN_PROBE_EVERY_S = 60
 TOKEN_FAIL_DRAIN_S = 60
+TERM_DRAIN_S = 60          # SIGTERM: drain uploads this long, inside systemd TimeoutStopSec=90 (finding 6)
 TOKEN_EXCEPTIONS = ("TokenException", "PermissionException")  # kiteconnect.exceptions class names
 
 # --- exit codes -----------------------------------------------------------------------------

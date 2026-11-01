@@ -25,6 +25,7 @@ Nice=10
 LimitAS=2000000000
 Restart=on-failure
 RestartSec=10
+TimeoutStopSec=90
 RestartPreventExitStatus=78 75
 ReadWritePaths=/var/lib/tape
 ProtectSystem=strict

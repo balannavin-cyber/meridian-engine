@@ -95,6 +95,8 @@ class Recorder:
         self.stopping = False
         self.disconnected_since = None
         self.next_token_probe_ns = 0
+        self.term_requested = False
+        self.term_deadline_ns = None
 
         self.subscribed = {}
         self.centre = {}
@@ -186,7 +188,13 @@ class Recorder:
                                      separators=(",", ":")))
 
     # ------------------------------------------------------------------ timeline
+    def request_stop(self, *_):
+        """SIGTERM handler body: only sets a flag (signal-safe); step() does the work."""
+        self.term_requested = True
+
     def step(self, now):
+        if self.term_requested:
+            return self._terminate(now)
         if self.fatal:
             return self._fail(now, self.fatal)
         if self.stats.closed or self.report_written or clk.at(now, config.T_STOP):
@@ -295,6 +303,32 @@ class Recorder:
         self._heartbeat(self.clock.now_ns())
         self._save_state()
         return config.EXIT_FAIL
+
+    def _terminate(self, now):
+        """SIGTERM (systemctl stop, shutdown): close segments, drain uploads <= 60 s, exit 0.
+        No daily report: a later start the same day resumes the day from the state file."""
+        self.log("SIGTERM -- closing segments, draining uploads (<= %ds)" % config.TERM_DRAIN_S)
+        if self.ticker is not None:
+            try:
+                self.ticker.close()
+            except Exception:  # noqa: BLE001
+                pass
+        if self._up_thread is not None:
+            self._up_stop.set()
+            self._up_thread.join(timeout=30)
+            self._up_thread = None
+        with self.lock:
+            self._ctl_all("error", now, code="SIGTERM", reason="stop requested")
+            self.stopping = True
+            self.connected = False
+            self.writer.close_all()
+        self._drain(self.clock.now_ns() + config.TERM_DRAIN_S * clk.NS)
+        left = self.uploader.pending()
+        self.state = "STOPPED"
+        self._heartbeat(self.clock.now_ns())
+        self._save_state()
+        self.log("STOP state=STOPPED uploads_left=%d" % len(left))
+        return config.EXIT_OK
 
     def _over_cap(self):
         if self._spool_bytes <= self.spool_cap:
@@ -574,7 +608,9 @@ class Recorder:
     def _drain(self, deadline_ns):
         while self.uploader.pending():
             now = self.clock.now_ns()
-            if now >= deadline_ns:
+            if self.term_requested and self.term_deadline_ns is None:
+                self.term_deadline_ns = now + config.TERM_DRAIN_S * clk.NS   # SIGTERM during a drain
+            if now >= deadline_ns or (self.term_deadline_ns is not None and now >= self.term_deadline_ns):
                 break
             self.uploader.process_once(now)
             if self.uploader.pending():

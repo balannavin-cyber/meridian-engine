@@ -5,6 +5,7 @@ need them. Exit codes: 0 done/closed, 1 failure (systemd restarts), 75 spool cap
 os._exit is used so the twisted reactor thread cannot hold the process open.
 """
 import os
+import signal
 import sys
 import time
 
@@ -41,6 +42,11 @@ def _s3():
         retries={"mode": "standard", "max_attempts": 3}, connect_timeout=5, read_timeout=30))
 
 
+def install_signal_handlers(rec):
+    """SIGTERM -> rec.request_stop(): the main loop closes segments, drains uploads, exits 0."""
+    signal.signal(signal.SIGTERM, rec.request_stop)
+
+
 def main(argv):
     creds = _env()
     if creds is None:
@@ -55,6 +61,7 @@ def main(argv):
 
     from .recorder import Recorder
     rec = Recorder(kite, ticker_factory, _s3(), clock, threaded=True, secrets=(api_key, token), log=_log)
+    install_signal_handlers(rec)
     _log("START pid=%d day=%s bucket=%s" % (os.getpid(), rec.day, rec.bucket))
     try:
         while True:

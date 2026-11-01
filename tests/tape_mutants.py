@@ -7,7 +7,7 @@ with tests/test_tape_t0.py --root, and require FAIL. The control (unpatched copy
 
   python3 tests/tape_mutants.py [--repeat N] [--only M-T0-...]
 
-Last line: "TAPE T0 MUTANTS PASS (34/34 caught xN, 19/19 controls xN)" or FAIL. Exit 0 / 1.
+Last line: "TAPE T0 MUTANTS PASS (36/36 caught xN, 20/20 controls xN)" or FAIL. Exit 0 / 1.
 """
 import argparse
 import os
@@ -97,6 +97,12 @@ M = [
      'KEY_PREFIX = os.environ.get("TAPE_KEY_PREFIX", "")', 'KEY_PREFIX = os.environ.get("TAPE_KEY_PREFIX", "_rehearsal/default/")'),
     ("M-T0-KEEP-WHEN-UNSET", "rehearsal-hooks-unset", "services/tape_runner/uploader.py",
      '            if self.keep_dir and not st.get("kept"):', '            if not st.get("kept"):'),
+    ("M-T0-FSYNC-UNDER-LOCK", "fsync-offlock", "services/tape_runner/segments.py",
+     "        cur.fh.flush()\n        cur.fh.close()      # no fsync here",
+     "        cur.fh.flush()\n        os.fsync(cur.fh.fileno())\n        cur.fh.close()      # no fsync here"),
+    ("M-T0-NO-FSYNC-BEFORE-GZIP", "fsync-offlock", "services/tape_runner/uploader.py",
+     "        sync_file(path)\n        gz = finish_part(path, self.is_taken)",
+     "        gz = finish_part(path, self.is_taken)"),
     ("M-T0-NO-MEMORYMAX", "fence", "services/tape_runner/tape-runner.service", "MemoryMax=400M\n", ""),
     ("M-T0-IMPORTS-DHAN", "no-db-no-dhan", "services/tape_runner/recorder.py",
      "import json\n", "import json\nimport dhanhq  # noqa\n"),

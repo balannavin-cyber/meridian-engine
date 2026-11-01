@@ -1,8 +1,9 @@
 """Per-symbol 5-minute segment files (amendment A-1).
 
 spool/<SYMBOL>/<IST date>/seg_<HHMM>.ndjson.part  -- plain, line per record, flushed each tick
-  on close -> fsync, atomic rename to seg_<HHMM>.ndjson.closed, path handed to ``on_closed``. The
-  UPLOAD thread (never the websocket thread, review finding 5) gzips it with finish_part into
+  on close -> flush (no fsync: this runs under the recorder lock), atomic rename to
+  seg_<HHMM>.ndjson.closed, path handed to ``on_closed``. The UPLOAD thread fsyncs the .closed file
+  (sync_file) and then (never the websocket thread, review finding 5) gzips it with finish_part into
   seg_<HHMM>.ndjson.gz (gzip mtime=0, no filename: deterministic bytes) and removes the .closed.
 
 A record's segment is floor(recv_ns -> IST, 5 min) (plan D-6: the box receive clock). Rotation
@@ -60,6 +61,15 @@ def _md5(path):
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def sync_file(path):
+    """fsync a closed segment's data to disk (called by the upload thread, off the recorder lock)."""
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def free_closed_path(part):
@@ -206,8 +216,8 @@ class SegmentWriter:
         if cur is None:
             return None
         cur.fh.flush()
-        os.fsync(cur.fh.fileno())
-        cur.fh.close()
+        cur.fh.close()      # no fsync here: the upload thread fsyncs the .closed file (rehearsal: a
+        #                     116-232 MB fsync under the recorder lock stalled on_ticks ~190 ms)
         last = self._last_seg.get(sym)
         self._last_seg[sym] = cur.seg_ns if last is None else max(last, cur.seg_ns)
         # finding 5: no gzip here (this runs on the websocket thread under the recorder lock). An

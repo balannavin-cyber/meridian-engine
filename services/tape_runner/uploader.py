@@ -13,7 +13,7 @@ import threading
 
 from . import config
 from .clock import NS
-from .segments import CLOSED, PART, finish_part
+from .segments import CLOSED, PART, finish_part, sync_file
 
 
 def file_digests(path):
@@ -106,7 +106,10 @@ class Uploader:
     def _gzip_closed(self, path):
         """A closed segment (.ndjson.closed, or a recovered .part) is gzipped HERE, on the upload
         thread, never on the websocket thread (review finding 5). finish_part never overwrites a
-        .gz. The queue entry moves to the .gz path; returns it."""
+        .gz. The queue entry moves to the .gz path; returns it. The .closed file is fsynced first
+        (the writer no longer fsyncs under the recorder lock), so a power loss after this point
+        cannot lose a segment whose .gz is not yet durable either."""
+        sync_file(path)
         gz = finish_part(path, self.is_taken)
         with self._lock:
             st = self._q.pop(path)

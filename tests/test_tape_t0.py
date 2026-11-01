@@ -1166,6 +1166,75 @@ def g_rehearsal_hooks_unset():
     return cells
 
 
+def g_fsync_offlock():
+    """No segment fsync while the recorder lock is held (the rehearsal measured ~190 ms on_ticks
+    stalls from a 116-232 MB fsync at rotation); the upload thread fsyncs each .closed file before
+    gzipping it; a .closed left by a crash between the rename and that fsync is fsynced and shipped."""
+    import threading
+    from services.tape_runner import segments as segmod
+    cells = []
+    events = []
+    real_fsync, real_gz = os.fsync, segmod._gzip_into
+    holder = {"rec": None}
+
+    def spy_fsync(fd):
+        try:
+            path = os.readlink("/proc/self/fd/%d" % fd)
+        except OSError:
+            path = "?"
+        rec = holder["rec"]
+        owned = bool(rec is not None and rec.lock._is_owned())
+        events.append(("fsync", os.path.basename(path), threading.current_thread().name, owned))
+        return real_fsync(fd)
+
+    def spy_gz(src, path):
+        events.append(("gzip", os.path.basename(src), threading.current_thread().name, None))
+        return real_gz(src, path)
+    os.fsync, segmod._gzip_into = spy_fsync, spy_gz
+    try:
+        rec, clock, tickers = make_recorder()
+        holder["rec"] = rec
+        t = boot_open_day(rec, clock, tickers)
+        fut = TOK[("NIFTY", "FUT")]
+        clock.set(ist_ns(DAY, "09:24:59"))
+        t.on_ticks(t, [full_pkt(fut, 25000, 75, DAY, "09:24:59", tid="a")])
+
+        def ws():
+            clock.set(ist_ns(DAY, "09:25:01"))
+            t.on_ticks(t, [full_pkt(fut, 25000, 150, DAY, "09:25:01", tid="b")])   # rotation on 'ticker'
+        th = threading.Thread(target=ws, name="ticker")
+        th.start()
+        th.join(5)
+        rec.step(ist_ns(DAY, "09:25:02"))        # main tick rotates SENSEX; then the upload pass
+        seg_events = [e for e in events if ".ndjson." in e[1]]
+        under_lock = [e for e in seg_events if e[0] == "fsync" and e[3]]
+        on_ticker = [e for e in seg_events if e[0] == "fsync" and e[2] == "ticker"]
+        cells.append((not under_lock and not on_ticker,
+                      "segment fsyncs under the recorder lock: %d, on the ws thread: %d" % (len(under_lock), len(on_ticker))))
+        order_ok, closed_names = True, sorted({e[1] for e in seg_events if e[0] == "gzip"})
+        for name in closed_names:
+            i_f = next((i for i, e in enumerate(seg_events) if e[0] == "fsync" and e[1] == name), None)
+            i_g = next(i for i, e in enumerate(seg_events) if e[0] == "gzip" and e[1] == name)
+            order_ok &= i_f is not None and i_f < i_g
+        cells.append((closed_names and order_ok, "each .closed fsynced before its gzip: %s (%s)" % (order_ok, closed_names)))
+        # crash after the rename, before the upload thread's fsync: the next start fsyncs and ships it
+        events.clear()
+        root = tmpdir()
+        d = os.path.join(root, "spool", "NIFTY", DAY)
+        os.makedirs(d)
+        open(os.path.join(d, "seg_0930.ndjson.closed"), "w").write('{"k":"pkt","tid":"renamed-not-synced"}\n')
+        rec2, clock2, tk2 = make_recorder(start="10:00", root=root)
+        holder["rec"] = rec2
+        rec2.step(clock2.now_ns())
+        obj = rec2.uploader.s3.objects.get("NIFTY/%s/seg_0930.ndjson.gz" % DAY)
+        synced = [e for e in events if e[0] == "fsync" and e[1] == "seg_0930.ndjson.closed"]
+        cells.append((obj is not None and _gz_ids(obj) == ["renamed-not-synced"] and synced,
+                      "crash between rename and fsync: fsynced %d time(s), shipped %s" % (len(synced), obj is not None)))
+    finally:
+        os.fsync, segmod._gzip_into = real_fsync, real_gz
+    return cells
+
+
 GUARDS = [("classify-synthetic", g_classify_synthetic), ("classify-purity", g_classify_purity),
           ("segments-rotate", g_segments_rotate), ("upload-verify", g_upload_verify),
           ("subs-grow-only", g_subs_grow_only), ("ctl-records", g_ctl_records), ("spool-cap", g_spool_cap),
@@ -1173,7 +1242,8 @@ GUARDS = [("classify-synthetic", g_classify_synthetic), ("classify-purity", g_cl
           ("no-db-no-dhan", g_no_db_no_dhan), ("smoke-s3", g_smoke_s3), ("segment-race", g_segment_race),
           ("token-midsession", g_token_midsession), ("sigterm", g_sigterm),
           ("torn-line", g_torn_line), ("boot-start", g_boot_start),
-          ("gzip-offthread", g_gzip_offthread), ("rehearsal-hooks-unset", g_rehearsal_hooks_unset)]
+          ("gzip-offthread", g_gzip_offthread), ("rehearsal-hooks-unset", g_rehearsal_hooks_unset),
+          ("fsync-offlock", g_fsync_offlock)]
 
 
 # ======================================================================== unit checks (not guards)

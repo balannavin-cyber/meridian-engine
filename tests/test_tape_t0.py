@@ -635,6 +635,31 @@ def g_closed_day():
     code, at, opts, rec = _closed_case(FakeKite(quote_fails=True), [])
     cells.append((code is None and closed_key not in rec.uploader.s3.objects and len(opts) == 144,
                   "no packets + quote fails: exit %s, options subscribed=%d" % (code, len(opts))))
+    # E. start after 09:20 (boot / install on a closed day): judged only after 60 s connected, then CLOSED
+    rec, clock, tk = make_recorder(kite=FakeKite(quote=STALE_QUOTE), start="11:00")
+    c0 = rec.step(clock.now_ns())
+    tk[0].on_connect(tk[0], {})
+    clock.set(ist_ns(DAY, "11:00:02"))
+    tk[0].on_ticks(tk[0], _snap())
+    clock.set(ist_ns(DAY, "11:00:30"))
+    c1 = rec.step(clock.now_ns())
+    clock.set(ist_ns(DAY, "11:01:01"))
+    c2 = rec.step(clock.now_ns())
+    cells.append((c0 is None and c1 is None and c2 == 0 and closed_key in rec.uploader.s3.objects,
+                  "late start on a closed day: exits %s, %s, %s (CLOSED ~60 s after connect)" % (c0, c1, c2)))
+    # F. restart after 09:20 on a trading day: today-dated packets -> options at once, never CLOSED
+    rec, clock, tk = make_recorder(kite=FakeKite(quote=STALE_QUOTE), start="11:00")
+    rec.step(clock.now_ns())
+    tk[0].on_connect(tk[0], {})
+    clock.set(ist_ns(DAY, "11:00:03"))
+    tk[0].on_ticks(tk[0], [idx_pkt("NIFTY", 25000, DAY, "11:00:03"), idx_pkt("SENSEX", 80000, DAY, "11:00:03")])
+    clock.set(ist_ns(DAY, "11:00:04"))
+    c1 = rec.step(clock.now_ns())
+    n_after = len(tk[0].subscribed)
+    clock.set(ist_ns(DAY, "11:01:05"))
+    c2 = rec.step(clock.now_ns())
+    cells.append((c1 is None and c2 is None and n_after == 148 and (rec.stats.closed_check or {}).get("verdict") == "OPEN",
+                  "restart on a trading day: %d tokens at 11:00:04, verdict %s" % (n_after, (rec.stats.closed_check or {}).get("verdict"))))
     return cells
 
 

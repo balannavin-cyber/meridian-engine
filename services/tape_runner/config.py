@@ -24,6 +24,7 @@ T_RESOLVE = "08:55"
 T_RESOLVE_GIVEUP = "09:10"
 T_OPTIONS = "09:00"
 T_CLOSED_CHECK = "09:20"   # never declare CLOSED before 09:20 IST (review 2026-11-01, item 4)
+CLOSED_CHECK_SETTLE_S = 60 # ... and only after the feed has been connected this long (late/boot starts)
 T_SESSION_START = "09:15"
 T_SESSION_END = "15:30"
 T_STOP = "15:40"

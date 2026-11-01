@@ -98,6 +98,7 @@ class Recorder:
         self.term_requested = False
         self.term_deadline_ns = None
         self._first_step = True
+        self.connected_since = None
 
         self.subscribed = {}
         self.centre = {}
@@ -234,7 +235,8 @@ class Recorder:
             if (self.universe is not None and not self.options_on and self.connected
                     and clk.at(now, config.T_OPTIONS) and self._witness_today()):
                 self._open_options(now, "open_window")
-            if self.universe is not None and not self.closed_checked and clk.at(now, config.T_CLOSED_CHECK):
+            if (self.universe is not None and not self.closed_checked and clk.at(now, config.T_CLOSED_CHECK)
+                    and self._feed_settled(now)):
                 code = self._closed_check(now)
                 if code is not None:
                     return code
@@ -465,6 +467,13 @@ class Recorder:
         self._save_state()
 
     # ------------------------------------------------------------------ closed day (plan D-4)
+    def _feed_settled(self, now):
+        """The closed check needs witnesses: only once the feed has been connected for
+        CLOSED_CHECK_SETTLE_S (a start after 09:20 -- boot, restart, install -- must not judge
+        an empty witness set; unchanged for the normal 08:55 connect)."""
+        return (self.connected and self.connected_since is not None
+                and now - self.connected_since >= config.CLOSED_CHECK_SETTLE_S * clk.NS)
+
     def _witness_today(self):
         return any(d == self.day for d in self.witness.values())
 
@@ -529,6 +538,7 @@ class Recorder:
             now = self.clock.now_ns()
             first = not self.ever_connected
             self.connected = True
+            self.connected_since = now
             self.disconnected_since = None
             self.ever_connected = True
             if not first:
@@ -559,6 +569,7 @@ class Recorder:
         with self.lock:
             now = self.clock.now_ns()
             self.connected = False
+            self.connected_since = None
             if self.disconnected_since is None:
                 self.disconnected_since = now
             self.stats.disconnects += 1

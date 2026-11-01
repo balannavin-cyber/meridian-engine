@@ -7,7 +7,7 @@ with tests/test_tape_t0.py --root, and require FAIL. The control (unpatched copy
 
   python3 tests/tape_mutants.py [--repeat N] [--only M-T0-...]
 
-Last line: "TAPE T0 MUTANTS PASS (31/31 caught xN, 18/18 controls xN)" or FAIL. Exit 0 / 1.
+Last line: "TAPE T0 MUTANTS PASS (32/32 caught xN, 18/18 controls xN)" or FAIL. Exit 0 / 1.
 """
 import argparse
 import os
@@ -91,6 +91,8 @@ M = [
      "        closed = finish_part(cur.path, self.taken)\n"),
     ("M-T0-CLOSED-OVERWRITE", "gzip-offthread", "services/tape_runner/segments.py",
      "    while os.path.exists(dst):\n        n += 1\n        dst = \"%s_c%d%s\" % (base, n, CLOSED)\n", ""),
+    ("M-T0-CLOSED-NO-SETTLE", "closed-day", "services/tape_runner/recorder.py",
+     "                    and self._feed_settled(now)):\n", "                    and True):\n"),
     ("M-T0-NO-MEMORYMAX", "fence", "services/tape_runner/tape-runner.service", "MemoryMax=400M\n", ""),
     ("M-T0-IMPORTS-DHAN", "no-db-no-dhan", "services/tape_runner/recorder.py",
      "import json\n", "import json\nimport dhanhq  # noqa\n"),

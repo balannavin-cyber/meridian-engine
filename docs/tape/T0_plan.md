@@ -99,12 +99,15 @@ the serializer is correct without it).
 
 | Time | Action | Failure |
 |---|---|---|
+| boot+60 s / install | `OnBootSec=60` start: before 08:50 → exit 0 with no Kite call (the token was read too early; the 08:50 trigger starts a fresh process); after 15:40 → re-ship the spool, exit 0; otherwise as below from that moment (review finding 4) | — |
 | 08:50 | timer starts unit. `kite.profile()` | any exception → log `TOKEN_FAIL` (type only, never the message body if it could echo a token), heartbeat `state=TOKEN_FAIL`, **exit 78** |
 | 08:55 | `kite.instruments("NFO")`, `("BFO")`; `kite.ltp(["NSE:NIFTY 50","BSE:SENSEX"])` for index tokens | exception → retry every 30 s until 09:10, then exit 1 (systemd restarts) |
 | 08:55 | open the websocket; subscribe index + front future (`MODE_FULL`) | — |
 | 09:00 | options window around ATM from `kite.ltp` — **gated, see [D-4]** | — |
 | every minute | heartbeat; grow check; state snapshot | — |
-| 09:16 | closed-day check — **see [D-4]** | — |
+| disconnected > 60 s | `kite.profile()` probe every 60 s, outside the recorder lock (review finding 3) | `TokenException`/`PermissionException` → close segments, drain ≤ 60 s, `TOKEN_FAIL`, **exit 1** (restart re-reads the token; 78 if still bad); any other error → keep running |
+| ≥ 09:20 and feed connected ≥ 60 s | closed-day check — **see [D-4] as amended** | — |
+| SIGTERM | close segments, drain ≤ 60 s, heartbeat `STOPPED`, exit 0, no daily report (review finding 6) | — |
 | 15:40 | stop: close all segments, drain uploads (≤ 15 min), daily report, `MANIFEST.sha256`, exit 0 | uploads still failing at 15:55 → files stay in spool, report counts them `failed`, exit 0 (next start re-ships them) |
 
 **Late start / restart.** The timeline is a state machine evaluated at `now`, so a restart at 11:00 runs every due step
@@ -117,7 +120,15 @@ future = `segment` `*-FUT` with the minimum `expiry ≥ today`. Index tokens com
 256265 / 265; a mismatch is logged, the response wins). Strikes are the sorted distinct strikes of the front expiry;
 **windows count listed strikes, not points**, so 50/100-step grids need no constant.
 
-**[D-4] Closed-day gate — two clarifications forced by the prompt itself.**
+**[D-4] Closed-day gate — AMENDED by the review of 2026-11-01 (commits `8ec2faf`, `57aae3d`).** The rule in force:
+the check is due at **≥ 09:20 IST** and only once the feed has been **connected for ≥ 60 s**. **CLOSED** requires
+(i) no index/future packet dated today, (ii) for **every** symbol both the **index and the future** witness present
+and stale, and (iii) the **REST quote** confirming every index's last timestamp stale. A quote error, an incomplete
+quote or a missing witness is **UNKNOWN → keep recording**; nothing closes on absence or on an error. Why: as first
+built, the 08:55 subscribe-time snapshots alone (all stale) closed the day if no live tick arrived by 09:16, and
+exit 0 is not restarted. The original text below is kept for the record and is superseded.
+
+*Original D-4 (superseded):* **Two clarifications forced by the prompt itself.**
 1. *Kite index packets carry no `last_trade_time`* (32-byte full index packet). The check reads the index packet's
    `exchange_timestamp`, falling back to `last_trade_time` if a future feed adds it, and the front future's
    `last_trade_time` as a second witness.
@@ -164,8 +175,10 @@ from UTC, so this is also UTC-aligned). Rotation fires on (a) the first record w
 main-loop tick crossing a boundary, so a quiet symbol's segment still closes on time. 09:19:59.9 → `seg_0915`,
 09:20:00.0 → `seg_0920`.
 
-Files: `spool/<SYMBOL>/<date>/seg_<HHMM>.ndjson.part` (plain, line-buffered, `flush()` each tick batch). On close:
-stream-gzip to `seg_<HHMM>.ndjson.gz` with **`mtime=0` and no filename in the header** (deterministic bytes, so a
+Files: `spool/<SYMBOL>/<date>/seg_<HHMM>.ndjson.part` (plain, line-buffered, `flush()` each tick batch). On close
+(**as amended, review finding 5**): `fsync`, atomic rename to `seg_<HHMM>.ndjson.closed` (never replacing one:
+`_c1`, `_c2` …), enqueue; the **upload thread** gzips it — never the websocket thread. Gzip writes
+`seg_<HHMM>.ndjson.gz` with **`mtime=0` and no filename in the header** (deterministic bytes, so a
 re-upload after a crash is byte-identical and idempotent), `fsync`, delete `.part`, enqueue. Writing plain-then-gzip
 means a crash loses at most the unflushed tail, never the whole segment (a killed gzip stream has no trailer).
 
@@ -186,9 +199,14 @@ botocore config: `retries={"mode":"standard","max_attempts":3}`, connect 5 s, re
 - **Cap 2 GB** over everything under `spool/` (tracked counter, re-walked each minute). Exceeded → ctl `error
   SPOOL_CAP`, flush and close open `.part` files **without deleting anything**, heartbeat `state=SPOOL_CAP`, **exit 75**
   (`RestartPreventExitStatus` holds 75). Nothing outside `/var/lib/tape` is touched.
-- **Start-up recovery** (every start, any date): `.part` of a segment earlier than the current one → gzip + enqueue;
-  `.part` of the current segment (restart inside a segment) → reopened in append mode; any `.gz` / session file present
-  → enqueued. A previous day's leftovers ship under their own date keys.
+- **Start-up recovery** (every start, any date): `.part` of a segment earlier than the current one → renamed to
+  `.closed` + enqueued (gzipped by the upload thread); `.closed` → enqueued; `.part` of the current segment (restart
+  inside a segment) → reopened in append mode, with a newline written first if it ends in a torn line (review
+  finding 7); any `.gz` / session file present → enqueued.
+- **Immutability (review finding 2):** the receive time is read inside the recorder lock; a closed segment is never
+  reopened (a late record goes to the open/next segment with its own `recv_ns`; counted as `late_records_this_process`);
+  a `.gz` is never overwritten — an existing file or an already-uploaded key (local manifest) gives
+  `seg_<HHMM>_r1.ndjson.gz`; a byte-identical re-gzip after a crash reuses the existing file. A previous day's leftovers ship under their own date keys.
 - At 1.8 GB RAM the writer holds no packet buffers beyond the file buffer; the upload thread streams from disk.
 
 ## 5. Heartbeat, state, daily report (A-2: no database)
@@ -216,12 +234,14 @@ botocore config: `retries={"mode":"standard","max_attempts":3}`, connect 5 s, re
 | Failure | Behaviour | Exit / restart |
 |---|---|---|
 | token invalid at start | `TOKEN_FAIL` | 78, no restart |
-| token dies mid-session (WS 403) | ctl `error` + `reconnect` records; KiteTicker retries; `on_noreconnect` → exit 1 | restart → profile fails → 78 |
+| token dies mid-session (WS 403) | after 60 s disconnected, `profile()` probe (no lock); token error → ctl `error TOKEN_FAIL`, segments closed, uploads drained ≤ 60 s, heartbeat `TOKEN_FAIL` | **1** → restart re-reads `kite_token.env`; profile fails → 78 |
+| SIGTERM (`systemctl stop`, shutdown) | segments closed, uploads drained ≤ 60 s (inside `TimeoutStopSec=90`), heartbeat `STOPPED` | 0, no restart |
+| crash mid-line (SIGKILL/OOM) | next start reopens the current `.part`, repairs the torn line, ships earlier ones | systemd restart |
 | WS drop | ctl `disconnect`, `reconnect`; recording continues after reconnect; gap visible in report | none |
 | S3 down | files accumulate in spool, retried with backoff | 75 at 2 GB |
 | instrument dump fails | retry 30 s until 09:10 | 1 → restart |
 | unhandled exception in writer/main loop | ctl `error`, flush `.part` files | 1 → restart (RestartSec 10) |
-| box reboot mid-session | timer `Persistent=true` restarts the unit at boot if 08:50 was missed; recovery ships leftovers | — |
+| box reboot mid-session | timer `OnBootSec=60` starts the unit 60 s after boot; it records from then (state file resumes the day); recovery ships leftovers | — |
 | unit started after 15:40 | recovery uploads only | 0 |
 
 The runner never places, modifies or queries orders: the only Kite calls are `profile`, `instruments`, `ltp`,
@@ -363,3 +383,20 @@ PASS). Writes nothing to the spool or S3. Run under the same fence with
 
 D-4 and D-6 accepted as written. One refinement of D-4: CLOSED needs at least one witness and every present witness
 stale (not "all four present"), so a closed day with a missing future snapshot still closes.
+
+## 13. Review fixes (fresh-eyes review, 2026-11-01; one commit each, test + mutant caught 5/5)
+
+| Commit | Fix | Guard | Mutants |
+|---|---|---|---|
+| `8ec2faf` | (a) `--smoke` makes one real `PutObject` to `_smoke/<UTC>.txt` (real bucket, region from `AWS_DEFAULT_REGION`, ContentMD5 + SSE-S3) and compares ETag with md5; FAIL → exit 5. (c) closed-day rule: ≥ 09:20, index AND future witnesses stale for every symbol, REST quote confirms; otherwise keep recording | `smoke-s3`, `closed-day` | SMOKE-ETAG-IGNORED, SMOKE-NO-PUT, CLOSED-BEFORE-0920, CLOSED-ON-SNAPSHOT, CLOSED-ONE-WITNESS |
+| `940ea64` | finding 2: receive time inside the lock; never reopen a closed segment; never overwrite a `.gz` (`_r1`) | `segment-race` | TIME-BEFORE-LOCK, REOPEN-CLOSED, GZ-OVERWRITE |
+| `c045695` | finding 3: mid-session token death → probe after 60 s disconnected → close, drain ≤ 60 s, `TOKEN_FAIL`, exit 1 | `token-midsession` | NO-TOKEN-PROBE, PROBE-UNDER-LOCK |
+| `5dc221c` | finding 6: SIGTERM → close, drain ≤ 60 s, exit 0 | `sigterm` | NO-SIGTERM-HANDLER, TERM-NO-CLOSE |
+| `f5e08b3` | finding 7: newline repair when a `.part` is reopened | `torn-line` | NO-NEWLINE-REPAIR |
+| `527565f` | finding 4: `OnBootSec=60`; a start before 08:50 exits 0 untouched | `boot-start` | NO-ONBOOT, EARLY-START-RUNS |
+| `c8767fd` | finding 5: gzip on the upload thread (`.closed` hand-off, never replaced) | `gzip-offthread` | GZIP-ON-WS-THREAD, CLOSED-OVERWRITE |
+| `57aae3d` | finding 4 follow-up: the closed check waits for 60 s of connected feed (late/boot/install starts) | `closed-day` | CLOSED-NO-SETTLE |
+
+Region (review item 1): no defect — the S3 client takes `AWS_DEFAULT_REGION` (`__main__._s3`); no region literal in the
+runner. Not done (operator decision): finding 8 (retries re-hash the file each attempt; the spool cap stops the day).
+Counts: guards 11 → 18, mutants 14 → 32, controls 18/18, each 5/5.

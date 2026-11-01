@@ -715,11 +715,122 @@ def g_no_db_no_dhan():
              "%d files; forbidden imports %s; forbidden strings %s" % (n, bad_imp or "none", bad_txt or "none"))]
 
 
+class _RaceClock:
+    """Main thread reads `ns`. The thread named 'ticker' reads `ticker_ns`, but only after signalling
+    `read` and waiting (bounded) for `step_done`: if the recorder reads the time BEFORE taking its
+    lock, the main loop's step (and its rotation) runs in that gap."""
+
+    def __init__(self, ns):
+        import threading
+        self.ns = ns
+        self.ticker_ns = None
+        self.read = threading.Event()
+        self.step_done = threading.Event()
+
+    def now_ns(self):
+        import threading
+        if threading.current_thread().name == "ticker":
+            self.read.set()
+            self.step_done.wait(0.5)
+            return self.ticker_ns
+        return self.ns
+
+    def sleep(self, s):
+        self.ns += int(s * 1e9)
+
+    def set(self, ns):
+        self.ns = ns
+
+
+def _gz_ids(data):
+    return [json.loads(l).get("tid") for l in gzip.decompress(data).decode().splitlines() if '"k":"pkt"' in l]
+
+
+def g_segment_race():
+    import threading
+    from services.tape_runner.recorder import Recorder
+    from services.tape_runner.segments import SegmentWriter, finish_part
+    cells = []
+    # 1. two threads at the 09:20 boundary: a batch stamped 09:19:59.999 vs the main loop's 09:20:00.000 step
+    clock = _RaceClock(ist_ns(DAY, "08:50"))
+    tk = []
+    rec = Recorder(FakeKite(), lambda: tk.append(FakeTicker()) or tk[-1], FakeS3(), clock, root=tmpdir(),
+                   bucket="b", threaded=False, log=lambda m: None)
+    rec.step(clock.now_ns())
+    clock.set(ist_ns(DAY, "08:55"))
+    rec.step(clock.now_ns())
+    t = tk[0]
+    t.on_connect(t, {})
+    clock.set(ist_ns(DAY, "09:00:01"))
+    t.on_ticks(t, [idx_pkt("NIFTY", 25000, DAY, "09:00:01"), idx_pkt("SENSEX", 80000, DAY, "09:00:01")])
+    rec.step(clock.now_ns())
+    fut = TOK[("NIFTY", "FUT")]
+    for i in range(1000):
+        clock.set(ist_ns(DAY, "09:19:00") + i * 50_000_000)
+        t.on_ticks(t, [full_pkt(fut, 25000, 75 * (i + 1), DAY, "09:19:00", tid=i)])
+    clock.ticker_ns = ist_ns(DAY, "09:19:59.999")
+    th = threading.Thread(target=lambda: t.on_ticks(t, [full_pkt(fut, 25000, 99999, DAY, "09:19:59", tid="late")]),
+                          name="ticker")
+    th.start()
+    clock.read.wait(2)
+    clock.set(ist_ns(DAY, "09:20:00.000"))
+    rec.step(clock.now_ns())
+    clock.step_done.set()
+    th.join(5)
+    clock.set(ist_ns(DAY, "09:20:01"))
+    t.on_ticks(t, [full_pkt(fut, 25000, 100074, DAY, "09:20:01", tid="next")])
+    run_to_stop(rec, clock)
+    objs = rec.uploader.s3.objects
+    k15, k20 = "NIFTY/%s/seg_0915.ndjson.gz" % DAY, "NIFTY/%s/seg_0920.ndjson.gz" % DAY
+    ids15 = _gz_ids(objs[k15]) if k15 in objs else []
+    ids20 = _gz_ids(objs[k20]) if k20 in objs else []
+    rkeys = [k for k in objs if re.search(r"_r\d+\.ndjson\.gz$", k)]
+    cells.append((ids15 == list(range(1000)) + ["late"] and ids20 == ["next"] and not rkeys,
+                  "threaded boundary: seg_0915 holds %d packets ending %s; seg_0920 %s; _rN objects %s"
+                  % (len(ids15), ids15[-1:] if ids15 else None, ids20, rkeys)))
+    # 2. writer: a late record after rotation never reopens the closed segment
+    spool, closed = tmpdir(), []
+    w = SegmentWriter(spool, ["NIFTY"], on_closed=closed.append)
+    for i in range(1000):
+        w.write("NIFTY", {"k": "pkt", "tid": i}, ist_ns(DAY, "09:19:00") + i * 10**7)
+    w.tick(ist_ns(DAY, "09:20:00"))
+    w.write("NIFTY", {"k": "pkt", "tid": "late"}, ist_ns(DAY, "09:19:59.999"))
+    w.write("NIFTY", {"k": "pkt", "tid": "next"}, ist_ns(DAY, "09:20:00.010"))
+    w.close_all()
+    got = {os.path.basename(p): _gz_ids(open(p, "rb").read()) for p in closed}
+    cells.append((got.get("seg_0915.ndjson.gz") == list(range(1000)) and got.get("seg_0920.ndjson.gz") == ["late", "next"]
+                  and len(closed) == 2 and w.late_records == 1,
+                  "late record after tick: files %s; seg_0915 %d packets; late_records=%d"
+                  % ({k: len(v) for k, v in got.items()}, len(got.get("seg_0915.ndjson.gz", [])), w.late_records)))
+    # 3. finish_part never overwrites a .gz: an existing different file, and an already-uploaded key
+    d = os.path.join(tmpdir(), "NIFTY", DAY)
+    os.makedirs(d)
+    old = os.path.join(d, "seg_0915.ndjson.gz")
+    open(old, "wb").write(gzip.compress(b'{"k":"pkt","tid":"original"}\n', mtime=0))
+    before = open(old, "rb").read()
+    part = os.path.join(d, "seg_0915.ndjson.part")
+    open(part, "w").write('{"k":"pkt","tid":"second"}\n')
+    r1 = finish_part(part)
+    open(part, "w").write('{"k":"pkt","tid":"third"}\n')
+    r2 = finish_part(part, taken=lambda p: p.endswith("seg_0915_r2.ndjson.gz"))
+    cells.append((open(old, "rb").read() == before and os.path.basename(r1) == "seg_0915_r1.ndjson.gz"
+                  and os.path.basename(r2) == "seg_0915_r3.ndjson.gz" and not os.path.exists(part),
+                  "existing .gz untouched; new files %s, %s (r2 skipped: already uploaded)"
+                  % (os.path.basename(r1), os.path.basename(r2))))
+    # crash between gzip and .part removal: the identical re-gzip is the same object, not an _r1
+    open(part, "w").write('{"k":"pkt","tid":"x"}\n')
+    first = finish_part(part)
+    open(part, "w").write('{"k":"pkt","tid":"x"}\n')
+    again = finish_part(part)
+    cells.append((first == again, "identical re-gzip after a crash reuses %s" % os.path.basename(again)))
+    return cells
+
+
 GUARDS = [("classify-synthetic", g_classify_synthetic), ("classify-purity", g_classify_purity),
           ("segments-rotate", g_segments_rotate), ("upload-verify", g_upload_verify),
           ("subs-grow-only", g_subs_grow_only), ("ctl-records", g_ctl_records), ("spool-cap", g_spool_cap),
           ("token-fail", g_token_fail), ("closed-day", g_closed_day), ("fence", g_fence),
-          ("no-db-no-dhan", g_no_db_no_dhan), ("smoke-s3", g_smoke_s3)]
+          ("no-db-no-dhan", g_no_db_no_dhan), ("smoke-s3", g_smoke_s3), ("segment-race", g_segment_race)]
 
 
 # ======================================================================== unit checks (not guards)

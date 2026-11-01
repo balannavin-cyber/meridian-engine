@@ -37,6 +37,12 @@ class Uploader:
         self._lock = threading.RLock()
         self._q = {}  # path -> {"attempts": n, "next_ns": t}
         self.counts = {}  # key prefix -> {"ok", "retried", "failed_attempts"}
+        self.uploaded_keys = set()  # every key in the local manifests: never written to again
+        if os.path.isdir(manifest_dir):
+            for name in os.listdir(manifest_dir):
+                if name.endswith(".ndjson"):
+                    for row in self.manifest_lines(name[: -len(".ndjson")]):
+                        self.uploaded_keys.add(row["key"])
 
     def key_for(self, path):
         return os.path.relpath(path, self.spool).replace(os.sep, "/")
@@ -76,6 +82,7 @@ class Uploader:
             etag = str((resp or {}).get("ETag", "")).strip('"')
             if etag == md5_hex:
                 self._record(key, size, md5_hex, sha_hex, st["attempts"], now_ns)
+                self.uploaded_keys.add(key)
                 os.unlink(path)
                 c = self._c(key)
                 c["ok"] += 1
@@ -113,6 +120,9 @@ class Uploader:
                 if line.strip():
                     out.append(json.loads(line))
         return out
+
+    def is_taken(self, path):
+        return self.key_for(path) in self.uploaded_keys
 
     def failed_by_prefix(self):
         out = {}

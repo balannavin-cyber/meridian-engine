@@ -73,7 +73,8 @@ class Recorder:
         self.uploader = Uploader(s3, self.bucket, self.spool, self.manifest_dir, log=self.log)
         self._spool_bytes = 0
         self.writer = SegmentWriter(self.spool, self.symbols, on_closed=self.uploader.enqueue,
-                                    process_start_ns=self.start_ns, on_bytes=self._add_bytes)
+                                    process_start_ns=self.start_ns, on_bytes=self._add_bytes,
+                                    taken=self.uploader.is_taken)
 
         self.state = "WAITING"
         self.profiled = False
@@ -422,8 +423,8 @@ class Recorder:
 
     # ------------------------------------------------------------------ ticker callbacks
     def on_connect(self, ws, response=None):
-        now = self.clock.now_ns()
         with self.lock:
+            now = self.clock.now_ns()
             first = not self.ever_connected
             self.connected = True
             self.ever_connected = True
@@ -452,35 +453,37 @@ class Recorder:
         self.log("CONNECTED first=%s tokens=%d" % (first, len(self.subscribed)))
 
     def on_close(self, ws, code=None, reason=None):
-        now = self.clock.now_ns()
         with self.lock:
+            now = self.clock.now_ns()
             self.connected = False
             self.stats.disconnects += 1
             self._ctl_all("disconnect", now, code=code, reason=self._clean(reason))
         self.log("DISCONNECT code=%s" % code)
 
     def on_error(self, ws, code=None, reason=None):
-        now = self.clock.now_ns()
         with self.lock:
+            now = self.clock.now_ns()
             self._ctl_all("error", now, code=code, reason=self._clean(reason))
         self.log("WS_ERROR code=%s" % code)
 
     def on_reconnect(self, ws, attempt=None):
-        now = self.clock.now_ns()
         with self.lock:
+            now = self.clock.now_ns()
             self.stats.reconnect_attempts += 1
             self._ctl_all("reconnect", now, attempt=attempt)
         self.log("RECONNECT attempt=%s" % attempt)
 
     def on_noreconnect(self, ws):
-        now = self.clock.now_ns()
         with self.lock:
+            now = self.clock.now_ns()
             self._ctl_all("error", now, code="NORECONNECT", reason="reconnect attempts exhausted")
         self.fatal = "NORECONNECT"
 
     def on_ticks(self, ws, ticks):
-        now = self.clock.now_ns()
+        # the receive time is read INSIDE the lock (review finding 2): a time read before the lock
+        # could be older than a rotation the main loop performs while this thread waits.
         with self.lock:
+            now = self.clock.now_ns()
             if self.stopping:
                 return
             try:
@@ -600,6 +603,7 @@ class Recorder:
             "closed": st.closed, "closed_check": st.closed_check, "restarts": st.restarts,
             "reconnects": st.reconnects, "reconnect_attempts": st.reconnect_attempts,
             "disconnects": st.disconnects, "unknown_tokens": st.unknown_tokens,
+            "late_records_this_process": self.writer.late_records,
             "spool_high_water_bytes": st.spool_hwm, "uploads": up,
             "n_subscribed": len(self.subscribed), "symbols": syms,
         })

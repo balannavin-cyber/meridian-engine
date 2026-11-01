@@ -7,7 +7,7 @@ with tests/test_tape_t0.py --root, and require FAIL. The control (unpatched copy
 
   python3 tests/tape_mutants.py [--repeat N] [--only M-T0-...]
 
-Last line: "TAPE T0 MUTANTS PASS (19/19 caught xN, 12/12 controls xN)" or FAIL. Exit 0 / 1.
+Last line: "TAPE T0 MUTANTS PASS (22/22 caught xN, 13/13 controls xN)" or FAIL. Exit 0 / 1.
 """
 import argparse
 import os
@@ -64,6 +64,13 @@ M = [
      "    if etag == md5.hexdigest():\n", "    if True:\n"),
     ("M-T0-SMOKE-NO-PUT", "smoke-s3", "services/tape_runner/smoke.py",
      "    if s3 is not None:\n        s3_ok = s3_check(", "    if False:\n        s3_ok = s3_check("),
+    ("M-T0-TIME-BEFORE-LOCK", "segment-race", "services/tape_runner/recorder.py",
+     "        with self.lock:\n            now = self.clock.now_ns()\n            if self.stopping:\n                return\n            try:\n                for pkt in ticks:",
+     "        now = self.clock.now_ns()\n        with self.lock:\n            if self.stopping:\n                return\n            try:\n                for pkt in ticks:"),
+    ("M-T0-REOPEN-CLOSED", "segment-race", "services/tape_runner/segments.py",
+     "        if last is not None and seg_ns <= last:\n", "        if False:\n"),
+    ("M-T0-GZ-OVERWRITE", "segment-race", "services/tape_runner/segments.py",
+     "    while os.path.exists(dst) or taken(dst):\n", "    while False:\n"),
     ("M-T0-NO-MEMORYMAX", "fence", "services/tape_runner/tape-runner.service", "MemoryMax=400M\n", ""),
     ("M-T0-IMPORTS-DHAN", "no-db-no-dhan", "services/tape_runner/recorder.py",
      "import json\n", "import json\nimport dhanhq  # noqa\n"),

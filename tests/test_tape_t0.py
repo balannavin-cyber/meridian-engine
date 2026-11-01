@@ -1235,6 +1235,39 @@ def g_fsync_offlock():
     return cells
 
 
+def g_install_root_reads():
+    """install.sh reads requirements.txt as root and hands user tape only the pins as arguments:
+    no command run as tape may name the clone ($HERE / $REPO / requirements / /home), and the tape-side
+    check reads nothing from disk. The pin extraction is run for real against requirements.txt."""
+    path = os.path.join(ROOT, "services", "tape_runner", "install.sh")
+    text = open(path).read()
+    lines = text.splitlines()
+    tape_lines = [l for l in lines if "sudo -u tape" in l]
+    bad = [l.strip() for l in tape_lines if any(x in l for x in ("$HERE", "$REPO", "requirements", "/home"))]
+    i = next((n for n, l in enumerate(lines) if "sudo -u tape" in l and "<<'PY'" in l), None)
+    body = []
+    if i is not None:
+        for l in lines[i + 1:]:
+            if l.strip() == "PY":
+                break
+            body.append(l)
+    body_s = "\n".join(body)
+    pins_line = next((l for l in lines if l.startswith("PINS=")), "")
+    root_reads = "$HERE/requirements.txt" in text and "sudo -u tape" not in pins_line
+    script = "\n".join(lines[lines.index(pins_line): lines.index(pins_line) + 2]) if pins_line else "false"
+    req_dir = os.path.join(ROOT, "services", "tape_runner")
+    out = subprocess.run(["bash", "-c", "HERE=%s; %s; echo \"$PINS\"" % (req_dir, script)],
+                         capture_output=True, text=True).stdout.split()
+    want = [l.split("#")[0].strip() for l in open(os.path.join(req_dir, "requirements.txt"))
+            if "==" in l.split("#")[0]]
+    return [
+        (tape_lines and not bad, "commands run as tape: %d; naming the clone: %s" % (len(tape_lines), bad or "none")),
+        (i is not None and "open(" not in body_s and "sys.argv[1:]" in body_s,
+         "tape-side venv check reads pins from argv, opens no file: %s" % (i is not None and "open(" not in body_s)),
+        (root_reads and out == want, "requirements.txt read as root -> pins %s (requirements.txt: %s)" % (out, want)),
+    ]
+
+
 GUARDS = [("classify-synthetic", g_classify_synthetic), ("classify-purity", g_classify_purity),
           ("segments-rotate", g_segments_rotate), ("upload-verify", g_upload_verify),
           ("subs-grow-only", g_subs_grow_only), ("ctl-records", g_ctl_records), ("spool-cap", g_spool_cap),
@@ -1243,7 +1276,7 @@ GUARDS = [("classify-synthetic", g_classify_synthetic), ("classify-purity", g_cl
           ("token-midsession", g_token_midsession), ("sigterm", g_sigterm),
           ("torn-line", g_torn_line), ("boot-start", g_boot_start),
           ("gzip-offthread", g_gzip_offthread), ("rehearsal-hooks-unset", g_rehearsal_hooks_unset),
-          ("fsync-offlock", g_fsync_offlock)]
+          ("fsync-offlock", g_fsync_offlock), ("install-root-reads", g_install_root_reads)]
 
 
 # ======================================================================== unit checks (not guards)

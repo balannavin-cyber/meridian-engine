@@ -7,7 +7,7 @@ with tests/test_tape_t0.py --root, and require FAIL. The control (unpatched copy
 
   python3 tests/tape_mutants.py [--repeat N] [--only M-T0-...]
 
-Last line: "TAPE T0 MUTANTS PASS (36/36 caught xN, 20/20 controls xN)" or FAIL. Exit 0 / 1.
+Last line: "TAPE T0 MUTANTS PASS (37/37 caught xN, 21/21 controls xN)" or FAIL. Exit 0 / 1.
 """
 import argparse
 import os
@@ -103,6 +103,9 @@ M = [
     ("M-T0-NO-FSYNC-BEFORE-GZIP", "fsync-offlock", "services/tape_runner/uploader.py",
      "        sync_file(path)\n        gz = finish_part(path, self.is_taken)",
      "        gz = finish_part(path, self.is_taken)"),
+    ("M-T0-INSTALL-TAPE-READS-HOME", "install-root-reads", "services/tape_runner/install.sh",
+     'sudo -u tape "$VENV_PY" - $PINS <<\'PY\' || die "venv check failed"',
+     'sudo -u tape "$VENV_PY" - "$HERE/requirements.txt" <<\'PY\' || die "venv check failed"'),
     ("M-T0-NO-MEMORYMAX", "fence", "services/tape_runner/tape-runner.service", "MemoryMax=400M\n", ""),
     ("M-T0-IMPORTS-DHAN", "no-db-no-dhan", "services/tape_runner/recorder.py",
      "import json\n", "import json\nimport dhanhq  # noqa\n"),

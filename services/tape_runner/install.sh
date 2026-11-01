@@ -26,15 +26,16 @@ for f in /etc/tape/kite_api.env /etc/tape/kite_token.env /etc/tape/aws.env; do
   [ -f "$f" ] || die "missing $f"
 done
 [ -x "$VENV_PY" ] || die "missing $VENV_PY (the venv is provisioned separately; install.sh does not create it)"
-sudo -u tape "$VENV_PY" - "$HERE/requirements.txt" <<'PY' || die "venv check failed"
+# The pins are read HERE, as root. User tape is never asked to read anything under the clone
+# (/home/<user>/...), so no permission on the operator's home directory is ever needed.
+PINS=$(sed -e 's/#.*//' -e 's/[[:space:]]//g' "$HERE/requirements.txt" \
+       | grep -E '^[A-Za-z0-9_.-]+==[A-Za-z0-9_.+-]+$' | tr '\n' ' ')
+[ -n "$PINS" ] || die "no pins found in $HERE/requirements.txt"
+# shellcheck disable=SC2086
+sudo -u tape "$VENV_PY" - $PINS <<'PY' || die "venv check failed"
 import sys
 from importlib.metadata import version
-want = {}
-for line in open(sys.argv[1]):
-    line = line.split("#")[0].strip()
-    if "==" in line:
-        n, v = line.split("==")
-        want[n.strip()] = v.strip()
+want = dict(arg.split("==", 1) for arg in sys.argv[1:])
 import kiteconnect, boto3  # noqa: F401
 bad = {n: (version(n), v) for n, v in want.items() if version(n) != v}
 for n, v in want.items():

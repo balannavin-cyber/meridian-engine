@@ -181,9 +181,9 @@ echo "== 29/32 session markers close_1530 from the CAS-settled bar (S102 / TD-S9
 # database, no .env). 14 cells, mutants M1-M4. Appended AFTER step 29 (TD-S93-NEW-1).
 echo "== 30/32 gamma prior-row read: raw selected, same-IST-session bound (S103 / TD-S101-NEW-3, -4)"; python3 tests/test_gamma_prior_row.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # TAPE_T0: the tape raw recorder (services/tape_runner) and the classification library (merdian_compute/tape):
-# 20 guards with fakes (no network, no credentials, no kiteconnect/boto3), then 36 mutants each of which must be
+# 21 guards with fakes (no network, no credentials, no kiteconnect/boto3), then 37 mutants each of which must be
 # caught by its guard. Pure Python, no fixtures, no golden day. Appended AFTER step 30, never inside a pair (TD-S93-NEW-1).
-echo "== 31/32 tape T0 guards (20) + unit checks (docs/tape/T0_plan.md §8)"; python3 tests/test_tape_t0.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 32/32 tape T0 mutants (36, each must be caught)"; python3 tests/tape_mutants.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 31/32 tape T0 guards (21) + unit checks (docs/tape/T0_plan.md §8)"; python3 tests/test_tape_t0.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 32/32 tape T0 mutants (37, each must be caught)"; python3 tests/tape_mutants.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 echo "OFFLINE $([ $rc -eq 0 ] && echo PASS || echo FAIL)"
 exit $rc

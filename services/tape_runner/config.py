@@ -52,6 +52,17 @@ TOKEN_FAIL_DRAIN_S = 60
 TERM_DRAIN_S = 60          # SIGTERM: drain uploads this long, inside systemd TimeoutStopSec=90 (finding 6)
 TOKEN_EXCEPTIONS = ("TokenException", "PermissionException")  # kiteconnect.exceptions class names
 
+# --- silence watchdog (T0.1): no websocket frame of any kind (tick packet or 1-byte heartbeat) for
+# SILENCE_S seconds, inside the recording window -> force-close the socket; the library reconnects. ---
+SILENCE_S = 15             # seconds
+SILENCE_MIN_S = 5          # hard floor: a mis-set SILENCE_S can never go below this
+WD_BACKOFF_S = (1, 2, 4, 8, 15)   # seconds between watchdog attempts while the silence persists; last value repeats
+WD_TRIP_LIST_CAP = 200     # trips kept in the daily report
+LIB_RECONNECT = {"initialDelay": 1.0, "factor": 2.0, "maxDelay": 15, "jitter": 0}   # Twisted factory: 1,2,4,8,15,15 s
+
+# --- special sessions (T0.1): dates that override the default window (Muhurat). IST, checked in. ---
+SPECIAL_SESSIONS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "special_sessions.json")
+
 # --- exit codes -----------------------------------------------------------------------------
 EXIT_OK = 0
 EXIT_FAIL = 1

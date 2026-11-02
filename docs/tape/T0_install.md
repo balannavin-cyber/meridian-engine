@@ -136,3 +136,20 @@ sudo systemctl stop tape-runner.service             # SIGTERM: closes segments, 
 
 The spool is never deleted by the runner except after a verified upload (ETag == md5). The next start re-ships
 whatever is left, under its original date keys.
+
+## 7. T0.1: silence watchdog and special sessions
+
+**Silence watchdog.** Inside the recording window (09:15-15:30 IST, or the special-session window), if no websocket
+frame of any kind (tick packet or 1-byte heartbeat) arrives for 15 s (`config.SILENCE_S`, hard minimum 5 s), the
+runner aborts the socket and the library reconnects after 1, 2, 4, 8, 15, 15 ... s. The journal shows
+`WATCHDOG_TRIP age=<s> n=<k>`; the heartbeat JSON and the daily report carry `watchdog_trips` and `watchdog_errors`.
+A watchdog failure never stops recording; exit codes 75 and 78 are unchanged.
+
+**G2 (amended 2026-11-03):** no unexplained gap; an external gap over 60 s is allowed if logged, with detection
+delay <= 20 s.
+
+**Special sessions.** `services/tape_runner/special_sessions.json` lists dates that replace the default 09:15-15:30
+window (today: Sun 2026-11-08 Muhurat, 14:20-15:30). `install.sh` writes a one-off
+`tape-runner-special-<date>.timer` (start 25 min before open, `Persistent=false`) for every future date in the file and
+removes past ones; it also refuses to run from 60 min before a special open to 30 min after its close. The weekday timer
+is untouched. Counters: see T0_plan.md section 14.

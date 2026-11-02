@@ -25,7 +25,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from merdian_compute.tape import minute, replay  # noqa: E402
+from merdian_compute.tape import minute, replay, special  # noqa: E402
 
 SYMBOLS = ("NIFTY", "SENSEX")
 PROGRESS_EVERY = 100000
@@ -62,8 +62,8 @@ def read_token_map(day_dir, day):
     return replay.build_token_map(items)
 
 
-def process_symbol(sym, paths, day, meta, progress=None):
-    rp = replay.SymbolReplay(sym, day, meta)
+def process_symbol(sym, paths, day, meta, progress=None, win=None):
+    rp = replay.SymbolReplay(sym, day, meta, win)
     cur, n, bad_files = None, 0, []
     for path in replay.order_segments(paths):
         base = os.path.basename(path)
@@ -146,6 +146,9 @@ def read_daily(day_dir, day):
         return len(v) if isinstance(v, (list, dict)) else v
 
     out = {k: cnt(d.get(k)) for k in ("closed", "restarts", "reconnects", "disconnects", "unknown_tokens")}
+    for k in ("connects", "reconnect_attempts", "close_at_stop", "watchdog_trips", "watchdog_errors"):
+        if k in d:
+            out[k] = cnt(d[k])
     out["symbols"] = {s: {"packets": v.get("packets"), "feed_gaps_gt10s": cnt(v.get("feed_gaps_gt10s")),
                           "feed_gaps_gt60s": cnt(v.get("feed_gaps_gt60s"))}
                       for s, v in sorted((d.get("symbols") or {}).items())}
@@ -177,6 +180,7 @@ def main(argv=None):
     ap.add_argument("--day", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--verify-manifest", action="store_true")
+    ap.add_argument("--calendar", default=None, help="special_sessions.json (default: the checked-in one)")
     args = ap.parse_args(argv)
     day = args.day
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
@@ -189,6 +193,19 @@ def main(argv=None):
     if out == day_dir or out.startswith(day_dir + os.sep):
         print("--out must not be inside the day directory (the input is read-only)", file=sys.stderr)
         return 2
+    try:
+        w = special.special_window(day, args.calendar)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    ses = None
+    if w:
+        if not ("09:15" <= w["open"] < w["close"] <= "15:30"):
+            print("special session %s %s-%s lies outside 09:15-15:30: the hour buckets cannot represent it"
+                  % (day, w["open"], w["close"]), file=sys.stderr)
+            return 2
+        ses = {"kind": "special", "label": w["label"], "open": w["open"], "close": w["close"]}
+    win = (w["open"], w["close"]) if ses else None
     syms = [s for s in SYMBOLS if os.path.isdir(os.path.join(day_dir, s, day))]
     if not syms:
         print("no NIFTY/%s or SENSEX/%s directory under %s" % (day, day, day_dir), file=sys.stderr)
@@ -217,7 +234,7 @@ def main(argv=None):
 
     results = {}
     for sym in syms:
-        results[sym] = process_symbol(sym, list_symbol_files(day_dir, sym, day), day, meta, progress)
+        results[sym] = process_symbol(sym, list_symbol_files(day_dir, sym, day), day, meta, progress, win)
     ignored = []
     for sym in syms:
         for n in sorted(os.listdir(os.path.join(day_dir, sym, day))):
@@ -227,7 +244,7 @@ def main(argv=None):
             "bad_files": sorted(["%s/%s" % (s, b["file"]) for s, r in results.items() for b in r["bad_files"]]),
             "unknown_files": len(os.listdir(os.path.join(day_dir, "_UNKNOWN", day)))
             if os.path.isdir(os.path.join(day_dir, "_UNKNOWN", day)) else 0}
-    rep = minute.build_report(day, results, read_daily(day_dir, day), conflicts, info)
+    rep = minute.build_report(day, results, read_daily(day_dir, day), conflicts, info, ses)
     rows = [r for s in syms for r in results[s]["rows"]]
     os.makedirs(out, exist_ok=True)
     outputs = {
@@ -241,8 +258,13 @@ def main(argv=None):
     _write(os.path.join(out, "run_manifest.json"), minute.render_json(man))
     for s in syms:
         v = rep["symbols"][s]
-        print("%s G3 VERDICT: %s  (early %s %%, late %s %%)" % (
-            s, v["verdict"], v["verdict_detail"]["early"]["share_pct"], v["verdict_detail"]["late"]["share_pct"]))
+        if ses:
+            print("%s G3 VERDICT: %s  (overall %s %%)" % (s, v["verdict"], v["verdict_detail"]["overall"]["share_pct"]))
+        else:
+            print("%s G3 VERDICT: %s  (early %s %%, late %s %%)" % (
+                s, v["verdict"], v["verdict_detail"]["early"]["share_pct"], v["verdict_detail"]["late"]["share_pct"]))
+    if rep["reconcile"].get("ok") is False:
+        print("RECONCILE MISMATCH: daily report counters differ from the control lines (see g3_report.txt)")
     print("outputs in %s" % out)
     if not all(rep["symbols"][s]["invariants"]["ok"] for s in syms):
         print("INVARIANT VIOLATED - verdict INVALID; outputs written for inspection", file=sys.stderr)

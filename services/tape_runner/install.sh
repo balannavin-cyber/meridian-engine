@@ -45,7 +45,7 @@ if bad:
     sys.exit(1)
 PY
 
-# 3. code at the clone's HEAD (committed content only) -> /var/lib/tape/app/<sha>, current -> it
+# 3. code at the clone's HEAD (committed content only; ONLY the runner: services/tape_offline is never shipped, T1a D-9) -> /var/lib/tape/app/<sha>, current -> it
 REPO="$(git -C "$HERE" rev-parse --show-toplevel)"
 G=(git -c safe.directory="$REPO" -C "$REPO")
 [ -z "$("${G[@]}" status --porcelain -- services)" ] || die "uncommitted changes under services/ in $REPO"
@@ -54,7 +54,7 @@ DEST="$APP_ROOT/$SHA"
 install -d -o root -g root -m 755 "$APP_ROOT"
 if [ ! -d "$DEST" ]; then
   install -d -o root -g root -m 755 "$DEST.tmp"
-  "${G[@]}" archive HEAD services | tar -x -C "$DEST.tmp"
+  "${G[@]}" archive HEAD services/__init__.py services/tape_runner | tar -x -C "$DEST.tmp"
   chown -R root:root "$DEST.tmp"; chmod -R u=rwX,go=rX "$DEST.tmp"
   mv "$DEST.tmp" "$DEST"
 fi

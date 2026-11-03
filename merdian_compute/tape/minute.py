@@ -41,8 +41,11 @@ class RuleParityError(AssertionError):
 
 def bucket_of(hhmm, win=None):
     """Hour bucket of an IST HH:MM. ``win`` = (open, close) on a special session, else None. A special window
-    must lie inside 09:15-15:30 (the processor refuses others), so before open / at-or-after close map to the
-    existing pre_0915 / post_1530 buckets and the minutes in between keep their clock-hour bucket."""
+    must lie inside 09:15-15:40 (the processor refuses others), so before open / at-or-after close map to the
+    existing pre_0915 / post_1530 buckets and the minutes in between keep their clock-hour bucket. The F&O
+    close of a special session can be 15:40 (Muhurat 2026-11-08, NSE/FAOP/76940): there the in-window minutes
+    from 15:30 belong to the session, so the 1500_1530 bucket runs to the window close on a special day. (A
+    normal day, win=None, is unchanged: 15:30 and later is post_1530.)"""
     if not isinstance(hhmm, str) or len(hhmm) != 5 or hhmm[2] != ":":
         return "unknown"
     if win is not None:
@@ -50,6 +53,8 @@ def bucket_of(hhmm, win=None):
             return "pre_0915"
         if hhmm >= win[1]:
             return "post_1530"
+        if hhmm >= "15:00":
+            return "1500_1530"
     if hhmm < "09:15":
         return "pre_0915"
     if hhmm < "10:00":

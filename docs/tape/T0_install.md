@@ -139,17 +139,17 @@ whatever is left, under its original date keys.
 
 ## 7. T0.1: silence watchdog and special sessions
 
-**Silence watchdog.** Inside the recording window (09:15-15:30 IST, or the special-session window), if no websocket
+**Silence watchdog.** Inside the recording window (09:15-15:30 IST, or the special-session window: Muhurat 2026-11-08 is 14:20-15:40, NSE/FAOP/76940), if no websocket
 frame of any kind (tick packet or 1-byte heartbeat) arrives for 15 s (`config.SILENCE_S`, hard minimum 5 s), the
 runner aborts the socket and the library reconnects after 1, 2, 4, 8, 15, 15 ... s. The journal shows
-`WATCHDOG_TRIP age=<s> n=<k>`; the heartbeat JSON and the daily report carry `watchdog_trips` and `watchdog_errors`.
+`WATCHDOG_TRIP age=<s> n=<k>`; the heartbeat JSON and the daily report carry `watchdog_trips`, `watchdog_errors` and `frame_errors` (the frame hook failed and was contained; expect 0). The watchdog is not armed before 09:15 (follow-up pending `frames_hb` data).
 A watchdog failure never stops recording; exit codes 75 and 78 are unchanged.
 
 **G2 (amended 2026-11-03):** no unexplained gap; an external gap over 60 s is allowed if logged, with detection
 delay <= 20 s.
 
 **Special sessions.** `services/tape_runner/special_sessions.json` lists dates that replace the default 09:15-15:30
-window (today: Sun 2026-11-08 Muhurat, 14:20-15:30). `install.sh` writes a one-off
+window (today: Sun 2026-11-08 Muhurat, F&O 14:20-15:40 per NSE/FAOP/76940; the recorder starts 13:55 and stops 15:50). `install.sh` writes a one-off
 `tape-runner-special-<date>.timer` (start 25 min before open, `Persistent=false`) for every future date in the file and
-removes past ones; it also refuses to run from 60 min before a special open to 30 min after its close. The weekday timer
+removes past ones; it also refuses to run from 60 min before a special open to 30 min after its close (Muhurat: 13:20-16:10), and refuses whenever the guard cannot be evaluated (`session.py --in-window` answers 0 inside, 10 outside; any other code, including the 1 of a SyntaxError, refuses). The weekday timer
 is untouched. Counters: see T0_plan.md section 14.

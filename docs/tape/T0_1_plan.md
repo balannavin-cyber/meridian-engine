@@ -3,6 +3,12 @@
 Status: PLAN, awaiting operator go. Base: engine `origin/main` a1636b9 (T0 + T1a). Installed build: `a2694081d1fe`.
 Written 2026-11-03 04:33 IST. Nothing in this plan has been built or run.
 
+> **Corrections applied after the plan (2026-11-03), the code and tests follow these, not the plan text below where they differ:**
+> 1. **Muhurat close is 15:40, not 15:30** (NSE/FAOP/76940, F&O segment, 2026-11-08: pre-open 14:05-14:20, normal market 14:20-15:40). The calendar reads `open 14:20, close 15:40`; derived: start 13:55, resolve 14:00, options 14:05 (= the pre-open start), closed check 14:25, **stop 15:50**, watchdog armed 14:20-15:40, install guard 13:20-16:10. The offline processor accepts a special close up to 15:40; on a special day its `1500_1530` bucket runs to the window close.
+> 2. **`on_frame` never raises.** The body is in a try/except; a failure increments `frame_errors` (heartbeat, daily report, persisted in `DayStats`) and logs at most one `FRAME_ERROR` line a minute. The liveness stamp is taken first.
+> 3. **The install guard's "outside" answer is exit code 10 (`session.EXIT_OUTSIDE`), not 1.** `install.sh` proceeds on 10 only; 0 (inside), 1 (a SyntaxError or import failure in `session.py`), 2 (could not evaluate) and everything else refuse.
+> 4. **Not done, by decision: the watchdog is not armed before 09:15.** Follow-up, pending `frames_hb` data: if the live feed shows heartbeats arriving through the pre-open, arming from the connect (or from open - 5 min) would remove the up-to-16 s blind spot at the open that exists when the socket is already dead at 09:15:00.
+
 ## 0. What I read, and what it showed
 
 | Fact | Source | Consequence |
@@ -19,7 +25,7 @@ Written 2026-11-03 04:33 IST. Nothing in this plan has been built or run.
 
 **New config** (`config.py`): `SILENCE_S = 15`, `SILENCE_MIN_S = 5`, `WD_BACKOFF_S = (1, 2, 4, 8, 15)`. Effective threshold is `max(SILENCE_MIN_S, SILENCE_S)`, so a mis-set value cannot go below 5 s. Units: seconds in config, converted once with `* clk.NS`.
 
-**Frame stamping.** `t.on_message = self.on_frame` stamps `self.last_frame_ns = clock.now_ns()` and bumps `frames_hb` (1-byte) or `frames_other`. No lock (an attribute store; `on_ticks` already holds the lock for the real work). `on_ticks` stamps too, so a ticker that only calls `on_ticks` (every existing test fake) behaves as before.
+**Frame stamping.** `t.on_message = self.on_frame` stamps `self.last_frame_ns = clock.now_ns()` and bumps `frames_hb` (1-byte) or `frames_other`, inside a try/except that cannot raise (correction 2). No lock (an attribute store; `on_ticks` already holds the lock for the real work). `on_ticks` stamps too, so a ticker that only calls `on_ticks` (every existing test fake) behaves as before.
 
 **Trip rule**, evaluated in `step()` every second, main thread, under the recorder lock:
 - armed only when `connected` and `session_open <= now <= session_close` for today's window (section 2; default 09:15-15:30);
@@ -36,13 +42,13 @@ Written 2026-11-03 04:33 IST. Nothing in this plan has been built or run.
 
 **Disabled** pre-open, post-close, and while `connected` is false (the library is already retrying then; the existing token probe covers a dead token).
 
-**Reported:** heartbeat JSON gains `watchdog_trips`, `watchdog_errors`, `last_frame_age_s`, `frames_hb`, `frames_other`. Daily report gains `watchdog_trips`, `watchdog_errors`, `watchdog` (the trip list). `watchdog_trips` is persisted in `DayStats` so restarts accumulate. The `frames_hb` counter exists because I have **no measurement of Kite's heartbeat cadence**: the tape records neither heartbeats nor `on_message` events, and I will not assume one. In a window with live index/future packets the feed is never quiet for 15 s; the counters will tell us from Tuesday's data whether the 15 s default is safe in thin moments.
+**Reported:** heartbeat JSON gains `watchdog_trips`, `watchdog_errors`, `last_frame_age_s`, `frames_hb`, `frames_other`, `frame_errors`. Daily report gains `watchdog_trips`, `watchdog_errors`, `watchdog` (the trip list), `frame_errors`. `watchdog_trips` is persisted in `DayStats` so restarts accumulate. The `frames_hb` counter exists because I have **no measurement of Kite's heartbeat cadence**: the tape records neither heartbeats nor `on_message` events, and I will not assume one. In a window with live index/future packets the feed is never quiet for 15 s; the counters will tell us from Tuesday's data whether the 15 s default is safe in thin moments.
 
 ## 2. B. Special sessions
 
 **`services/tape_runner/special_sessions.json`** (checked in, IST):
 ```json
-[{"date": "2026-11-08", "open": "14:20", "close": "15:30", "label": "Muhurat"}]
+[{"date": "2026-11-08", "open": "14:20", "close": "15:40", "label": "Muhurat F&O per NSE/FAOP/76940"}]
 ```
 **`services/tape_runner/session.py`** (stdlib, pure): `load(path)` validates (ISO date, HH:MM, open < close, unique dates, loud failure on malformed) and `window(day)` returns a dict of the times the recorder uses. Default days return `config.T_*` read at call time (rehearsal overwrite still works). A special day derives them from `open`/`close` with the **same offsets the defaults have today**:
 
@@ -52,19 +58,19 @@ Written 2026-11-03 04:33 IST. Nothing in this plan has been built or run.
 | `T_RESOLVE` | 08:55 | 14:00 | open - 20 |
 | `T_OPTIONS` | 09:00 | 14:05 | open - 15 |
 | `T_CLOSED_CHECK` | 09:20 | **14:25** | open + 5 (as ruled) |
-| `T_SESSION_START/END` | 09:15 / 15:30 | 14:20 / 15:30 | open / close |
-| `T_STOP` | 15:40 | 15:40 | close + 10 |
+| `T_SESSION_START/END` | 09:15 / 15:30 | 14:20 / 15:40 | open / close |
+| `T_STOP` | 15:40 | 15:50 | close + 10 |
 | `T_RESOLVE_GIVEUP` | 09:10 | 14:15 | resolve + 15 |
 
 `Recorder` and `DayStats` take their times from `session.window(self.day)` (`DayStats.from_dict` rebuilds from the day, so a restart re-derives it). A missing or unreadable calendar file falls back to the defaults with a loud log line, never a crash: the weekday case must not depend on this file.
 
-**Added for special days only:** if `options_on` is still false at `open` and the feed is connected, open options anyway (`reason="special_open_forced"`), so a pre-open with nothing dated today cannot cost the first minutes. I need your call on this (D4). The pre-open start time for Muhurat is in the NSE circular, which I do not have.
+**Added for special days only:** if `options_on` is still false at `open` and the feed is connected, open options anyway (`reason="special_open_forced"`), so a pre-open with nothing dated today cannot cost the first minutes. I need your call on this (D4). The Muhurat pre-open is 14:05-14:20 (NSE/FAOP/76940), so `T_OPTIONS` (open - 15 = 14:05) is the pre-open start; whether packets dated today arrive that early is still unmeasured.
 
 **One-off timer, generated by `install.sh`** from the calendar through a stdlib helper (`session.py --emit-timers`), run as root from the installed copy. For 2026-11-08 the exact text is:
 ```
-# /etc/systemd/system/tape-runner-special-2026-11-08.timer  (generated from special_sessions.json; Muhurat)
+# /etc/systemd/system/tape-runner-special-2026-11-08.timer  (generated from special_sessions.json; Muhurat F&O per NSE/FAOP/76940)
 [Unit]
-Description=MERIDIAN tape raw recorder (T0) -- special session 2026-11-08 (Muhurat), start 13:55 IST
+Description=MERIDIAN tape raw recorder (T0) -- special session 2026-11-08 (Muhurat F&O per NSE/FAOP/76940), start 13:55 IST
 
 [Timer]
 OnCalendar=2026-11-08 13:55:00 Asia/Kolkata
@@ -75,7 +81,7 @@ Unit=tape-runner.service
 [Install]
 WantedBy=timers.target
 ```
-`install.sh` additions: (1) write one such file per entry whose date is >= today IST, `daemon-reload`, `systemd-analyze verify`, `enable --now`; (2) for any existing `tape-runner-special-*.timer` whose date is in the past **or no longer in the calendar**, `disable --now` and delete it; (3) the market-hours guard is extended: it also refuses within `[open - 60 min, close + 30 min]` on a special date, because the current guard only covers Mon-Fri and Muhurat is a Sunday. The weekday timer is untouched (its `OnBootSec=60` still covers a mid-session reboot on a special day, and the recorder then reads the special window).
+`install.sh` additions: (1) write one such file per entry whose date is >= today IST, `daemon-reload`, `systemd-analyze verify`, `enable --now`; (2) for any existing `tape-runner-special-*.timer` whose date is in the past **or no longer in the calendar**, `disable --now` and delete it; (3) the market-hours guard is extended: it also refuses within `[open - 60 min, close + 30 min)` on a special date (13:20-16:10 for Muhurat; `session.py --in-window` exits 0 inside and 10 outside, `install.sh` proceeds on 10 only), because the current guard only covers Mon-Fri and Muhurat is a Sunday. The weekday timer is untouched (its `OnBootSec=60` still covers a mid-session reboot on a special day, and the recorder then reads the special window).
 
 **Offline processor.** `process_day.py` takes the window from `session.window(--day)`. For a special day: `bucket_of` is window-aware (before open -> `pre_0915`, at/after close -> `post_1530`, otherwise the clock-hour bucket), the G3 early/late split is skipped, the report carries one overall share over all in-window option volume, verdict string `NOT EVALUATED (special session)`, a `session` block in the JSON, exit 0 (INVALID/exit 4 on a broken invariant is unchanged). **Normal days must stay byte-identical**: the new keys appear only on special days, and the T1a golden/byte-identity tests are the check. Bucket key names are reused literally (`pre_0915` means "before open" on a special day), and the report says so in a note.
 
@@ -98,7 +104,7 @@ New `tests/test_tape_t0_1.py` in the same style as `test_tape_t0.py` (`--root`, 
 | 1 | Frames every 1 s for 60 s, then silence. Age 14.9 s: no trip. 15.0 s: trip. Exactly one `force_reconnect`; on_close/on_connect then recording resumes. | threshold unit wrong (either direction), watchdog off, trip not counted |
 | 2 | Silence 08:55-09:15 with connected feed: no trip at 09:15:00 or 09:15:14. Silence 15:31-15:39: no trip. Reconnect at 11:00 with a stale stamp: no trip. | window ignored, no `session_open`/`connected_since` floor |
 | 3 | `force_reconnect` raises x3 then works. Attempts at +0, +1, +3, +7 s (gaps 1, 2, 4), recording resumes, `watchdog_errors == 3`, process still alive, no exit code returned. | backoff wrong, a raise propagates, exit code changed |
-| 4 | Date 2026-11-08 with the calendar: window, `T_CLOSED_CHECK` = 14:25 (CLOSED not declared at 14:02 even with a stale witness), stop 15:40, options opened at 14:05 and forced at 14:20 if no witness, first price read at 14:05 far from the resolve-time price still gives the right ATM window. Timer text equals the literal above, byte for byte. | calendar ignored, default 09:20 used, timer text drifts |
+| 4 | Date 2026-11-08 with the calendar: window, `T_CLOSED_CHECK` = 14:25 (CLOSED not declared at 14:02 even with a stale witness), stop 15:50, options opened at 14:05 and forced at 14:20 if no witness, first price read at 14:05 far from the resolve-time price still gives the right ATM window. Timer text equals the literal above, byte for byte. | calendar ignored, default 09:20 used, timer text drifts |
 | 5 | A normal date (2026-11-02, 11-03) with the calendar present: every time equals `config.T_*`, no special timer emitted. | special logic leaking into normal days |
 | 6 | Counter reconciliation: scripted events (3 connects, 8 disconnects, 6 reconnect callbacks, one `on_close` after `stopping`). The daily report fields equal counts of ctl lines read back from the written segments with the processor's own reader. | any counter defined differently from its event |
 | 7 | Library glue: stub factory gets `initialDelay=1, factor=2, maxDelay=15, jitter=0` after `connect()`. `force_reconnect` goes through `callFromThread` (stub reactor). This checks the attributes **set**, not the delay sequence; see the gap in section 7. | glue not applied |
@@ -106,7 +112,7 @@ New `tests/test_tape_t0_1.py` in the same style as `test_tape_t0.py` (`--root`, 
 | 9 | `install.sh` timer step (dry-run mode that writes into a temp dir, no systemd): past and removed dates are deleted, future one written, guard refuses inside the Muhurat window. | stale timers kept, guard hole |
 
 **Mutants** (`tests/tape_t0_1_mutants.py`, copy of the `tape_mutants.py` harness: one exact-string patch, must match once, guard must FAIL, unpatched control must PASS, repeated):
-M1 watchdog disabled; M2 threshold unit error (seconds read as milliseconds; I add the x1000 direction as a seventh, reported separately); M3 watchdog active outside the window; M4 calendar ignored; M5 `watchdog_trips` not incremented; M6 daily-report counters reverted to the old definitions. Gate: 6/6 caught, 6/6 controls pass.
+M7 `on_frame` re-raises (guard `frame-errors`); M8 `install.sh` reads exit 1 as "outside" (guard `timer-sync`, run against a SyntaxError'd `session.py`). M1 watchdog disabled; M2 threshold unit error (seconds read as milliseconds; I add the x1000 direction as a seventh, reported separately); M3 watchdog active outside the window; M4 calendar ignored; M5 `watchdog_trips` not incremented; M6 daily-report counters reverted to the old definitions. Gate: 8/8 caught (M1-M8), every guard's control passes.
 
 **Existing-test risk, stated now.** Existing T0 tests jump the clock with a "connected" fake that sends no frames; the new watchdog would trip in them. Planned handling: the existing fakes keep no `force_reconnect`, so a trip with no drop method logs `WATCHDOG_NO_DROP` and counts, but I expect some exact-count assertions in `test_tape_t0.py` to move. If any do, I will fix the **fixture** (feed a frame where the test means "healthy") and say which ones changed, not loosen an assertion. Order of work: write the new tests first, run the **unchanged** T0/T1a suites on the new code, list every failure, then decide per failure.
 
@@ -129,7 +135,7 @@ Now 04:33 IST; target 07:30; no tests after 08:30. Rough budget: tests+code 1h45
 - The Twisted/autobahn versions actually in the venv, and so the delay sequence of the real `ReconnectingClientFactory` under the tuned attributes. Tests check the attributes set; the sequence is read from source. If I can extract pure-Python wheels into the scratchpad and run the real factory on `twisted.internet.task.Clock`, I will; otherwise the first evidence is the first live outage's journal.
 - Kite heartbeat cadence (counters added to measure it).
 - The 9 vs 8 disconnect cause, without day-1 control lines.
-- The Muhurat pre-open start time and whether packets dated today arrive before 14:05.
+- Whether packets dated today arrive before 14:05 on Muhurat (the pre-open start is 14:05 per NSE/FAOP/76940; the forced options open at 14:20 covers the case where they do not).
 - Behaviour of `callFromThread(dropConnection(abort=True))` on a real half-dead TCP socket: tests use stubs.
 
 ## 8. Files

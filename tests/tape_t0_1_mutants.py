@@ -2,11 +2,11 @@
 """Tape T0.1 mutant harness (docs/tape/T0_1_plan.md section 4). Same discipline as tests/tape_mutants.py:
 copy the tree, apply ONE exact-string patch (it must match exactly once -- "MUTANT NOT APPLIED" is a FAIL,
 never a skip), run the named guard of tests/test_tape_t0_1.py against the copy and require FAIL. The control
-(the unpatched copy, same guard) must PASS. M1-M6 are the required set; X* are extras, reported separately.
+(the unpatched copy, same guard) must PASS. M1-M8 are the required set; X* are extras, reported separately.
 
   python3 tests/tape_t0_1_mutants.py [--repeat N] [--only NAME]
 
-Last line: "TAPE T0.1 MUTANTS PASS (6/6 required caught xN, E/E extra caught, C/C controls)" or FAIL.
+Last line: "TAPE T0.1 MUTANTS PASS (8/8 required caught xN, E/E extra caught, C/C controls)" or FAIL.
 """
 import argparse
 import os
@@ -35,6 +35,13 @@ M = [
     ("M6-COUNTERS-OLD-DEFINITION", "counters", R,
      '            if self.stopping:\n                self.stats.close_at_stop += 1     # our own shutdown close: no ctl line is written, so not a "disconnect"\n            else:\n                self.stats.disconnects += 1\n',
      "            self.stats.disconnects += 1\n", True),
+    # M7: on_frame's try/except removed (it re-raises) -> the guard "frame-errors" must FAIL; its control passes unpatched.
+    ("M7-ON-FRAME-RAISES", "frame-errors", R,
+     "            self._frame_failed(exc)\n", "            raise\n", True),
+    # M8: install.sh reads exit 1 (what a SyntaxError / import failure in session.py exits) as "outside" -> the
+    # guard block run against a broken session.py proceeds -> the guard "timer-sync" must FAIL; control passes.
+    ("M8-INSTALL-GUARD-1-IS-OUTSIDE", "timer-sync", "services/tape_runner/install.sh",
+     '  "$OUTSIDE_RC") ;;\n', '  1|"$OUTSIDE_RC") ;;\n', True),
     ("X1-THRESHOLD-X1000", "wd-trip", R,
      "threshold = max(config.SILENCE_MIN_S, config.SILENCE_S) * clk.NS\n",
      "threshold = max(config.SILENCE_MIN_S, config.SILENCE_S) * clk.NS * 1000\n", False),
@@ -56,6 +63,8 @@ M = [
      '"maxDelay": 15, "jitter": 0}', '"maxDelay": 15, "jitter": 0.1}', False),
     ("X9-SPECIAL-VERDICT-OFF", "processor-special", "merdian_compute/tape/minute.py",
      "    if special:\n        # G3's early / late split", "    if False:\n        # G3's early / late split", False),
+    ("X12-CALENDAR-CLOSE-1530", "fo-close", "services/tape_runner/special_sessions.json",
+     '"close": "15:40"', '"close": "15:30"', False),
     ("X11-GUARD-ERROR-READS-OUTSIDE", "timer-sync", "services/tape_runner/session.py",
      '        print("session.py: %s: %s" % (type(exc).__name__, exc), file=sys.stderr)\n        return 2\n',
      '        print("session.py: %s: %s" % (type(exc).__name__, exc), file=sys.stderr)\n        return 1\n', False),

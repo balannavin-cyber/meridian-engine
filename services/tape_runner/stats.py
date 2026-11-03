@@ -39,6 +39,7 @@ class DayStats:
         self.watchdog_trips = 0       # silence-watchdog reconnect attempts == ctl "watchdog" lines
         self.watchdog_errors = 0      # attempts whose force_reconnect raised
         self.watchdog = []            # bounded list of {ts_ist, age_s, ok}
+        self.frame_errors = 0         # on_frame raised (counted, never propagated): should be 0
         self.unknown_tokens = 0
         self.spool_hwm = 0
         self.restarts = []

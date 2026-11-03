@@ -8,7 +8,8 @@ give-up resolve+15). All times are IST ``HH:MM``.
 
 Stdlib only; also runs as a script (``python -I session.py ...``) for install.sh:
   --emit-timers OUTDIR --today YYYY-MM-DD     write one systemd timer per special date >= today
-  --in-window YYYY-MM-DD HHMM                 exit 0 when inside [open-60 min, close+30 min) of a special date
+  --in-window YYYY-MM-DD HHMM                 exit 0 when inside [open-60 min, close+30 min) of a special date,
+                                              EXIT_OUTSIDE (10) when outside; any other exit means "could not evaluate"
 """
 import argparse
 import json
@@ -19,6 +20,10 @@ from datetime import datetime
 OFF_START, OFF_RESOLVE, OFF_OPTIONS, OFF_CLOSED = -25, -20, -15, 5     # minutes from open
 OFF_STOP, OFF_GIVEUP = 10, 15                                          # minutes from close / from resolve
 GUARD_BEFORE, GUARD_AFTER = 60, 30                                     # install guard, minutes
+# --in-window answers: 0 = inside (install must refuse), EXIT_OUTSIDE = outside (install may proceed). It is NOT 1:
+# a SyntaxError or an import failure before _guarded_main exits 1 and must never read as "outside". install.sh
+# proceeds on exactly this code and refuses on every other (parity asserted by tests/test_tape_t0_1.py, timer-sync).
+EXIT_OUTSIDE = 10
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_PATH = os.path.join(_HERE, "special_sessions.json")
 
@@ -150,12 +155,13 @@ def _main(argv):
             print(n)
         return 0
     if a.in_window:
-        return 0 if in_window(entries, *a.in_window) else 1
+        return 0 if in_window(entries, *a.in_window) else EXIT_OUTSIDE
     ap.error("nothing to do")
 
 
 def _guarded_main(argv):
-    """exit 0 / 1 are answers (inside / outside); 2 means 'could not evaluate' so a caller can fail closed."""
+    """exit 0 / EXIT_OUTSIDE are the answers (inside / outside); 2 means 'could not evaluate'. A caller proceeds on
+    EXIT_OUTSIDE only and refuses on every other code, including the 1 an uncaught import-time error produces."""
     try:
         return _main(argv)
     except SystemExit:

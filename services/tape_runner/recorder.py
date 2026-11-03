@@ -70,6 +70,7 @@ class Recorder:
         self.last_frame_ns = None        # any websocket frame, tick packet or 1-byte heartbeat (silence watchdog)
         self.frames_hb = 0
         self.frames_other = 0
+        self._frame_err_log_ns = None    # last FRAME_ERROR log line (at most one a minute)
         self._wd_step = 0
         self._wd_next_ns = 0
         self.pid = os.getpid()
@@ -193,6 +194,7 @@ class Recorder:
             "watchdog_trips": self.stats.watchdog_trips, "watchdog_errors": self.stats.watchdog_errors,
             "last_frame_age_s": None if self.last_frame_ns is None else round((now - self.last_frame_ns) / clk.NS, 1),
             "frames_hb": self.frames_hb, "frames_other": self.frames_other,
+            "frame_errors": self.stats.frame_errors,
         }
         prev_min = clk.ist_hm(now - 60 * clk.NS)
         for s in self.symbols:
@@ -661,14 +663,37 @@ class Recorder:
 
     # ------------------------------------------------------------------ silence watchdog (T0.1)
     def on_frame(self, ws, payload=None, is_binary=None):
-        """KiteTicker calls this for EVERY websocket frame (tick packets and 1-byte heartbeats). It only
-        stamps the receive time: no lock, no parsing."""
-        self.last_frame_ns = self.clock.now_ns()
-        if is_binary and payload is not None and len(payload) <= 1:
-            self.frames_hb += 1
-        else:
-            self.frames_other += 1
-        self._wd_step, self._wd_next_ns = 0, 0
+        """KiteTicker calls this for EVERY websocket frame (tick packets and 1-byte heartbeats), on the reactor
+        thread, BEFORE it parses and dispatches the frame to on_ticks. It only stamps the receive time: no lock, no
+        parsing. It must never raise: an exception here would propagate into the library's _on_message and the
+        frame's ticks would never reach on_ticks. The stamp is taken first, so a failure in the counting below
+        cannot lose the liveness signal."""
+        try:
+            self.last_frame_ns = self.clock.now_ns()
+            self._wd_step, self._wd_next_ns = 0, 0
+            if is_binary and payload is not None and len(payload) <= 1:
+                self.frames_hb += 1
+            else:
+                self.frames_other += 1
+        except Exception as exc:  # noqa: BLE001 -- on_frame must never raise
+            self._frame_failed(exc)
+
+    def _frame_failed(self, exc):
+        """Count the failure; log at most one line a minute. Every statement is guarded: this is the handler of
+        the handler, so it must not raise either."""
+        try:
+            self.stats.frame_errors += 1
+        except Exception:  # noqa: BLE001
+            return
+        try:
+            now = self.clock.now_ns()
+            last = self._frame_err_log_ns
+            if last is None or now - last >= 60 * clk.NS:
+                self._frame_err_log_ns = now
+                self.log("FRAME_ERROR %s n=%d (on_frame; ticks of the frame are unaffected)" % (
+                    type(exc).__name__, self.stats.frame_errors))
+        except Exception:  # noqa: BLE001
+            pass
 
     def _watchdog(self, now):
         """Connected, inside the recording window, and silent for SILENCE_S -> force the socket closed so the
@@ -798,6 +823,7 @@ class Recorder:
             "connects": st.connects, "reconnects": st.reconnects, "reconnect_attempts": st.reconnect_attempts,
             "disconnects": st.disconnects, "close_at_stop": st.close_at_stop,
             "watchdog_trips": st.watchdog_trips, "watchdog_errors": st.watchdog_errors, "watchdog": st.watchdog,
+            "frame_errors": st.frame_errors,
             "unknown_tokens": st.unknown_tokens,
             "late_records_this_process": self.writer.late_records,
             "torn_line_repairs_this_process": self.writer.torn_repairs,

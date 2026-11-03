@@ -28,12 +28,14 @@ for f in /etc/tape/kite_api.env /etc/tape/kite_token.env /etc/tape/aws.env; do
 done
 [ -x "$VENV_PY" ] || die "missing $VENV_PY (the venv is provisioned separately; install.sh does not create it)"
 # special-session guard (the weekday guard above cannot see a Sunday Muhurat). Fail CLOSED: exit 0 = inside the
-# window, 1 = outside, anything else = the guard itself could not be evaluated -> refuse.
+# window (refuse), OUTSIDE_RC = outside (proceed), anything else = the guard itself could not be evaluated -> refuse.
+# OUTSIDE_RC is session.EXIT_OUTSIDE and is deliberately not 1: a SyntaxError / import failure in session.py exits 1.
+OUTSIDE_RC=10
 rc=0
 "$VENV_PY" -I "$HERE/session.py" --calendar "$HERE/special_sessions.json" --in-window "$IST_DATE" "$IST_HHMM" || rc=$?
 case "$rc" in
   0) die "special session window (special_sessions.json) is open or about to open; install outside it" ;;
-  1) ;;
+  "$OUTSIDE_RC") ;;
   *) die "could not evaluate the special-session guard (exit $rc): fix special_sessions.json" ;;
 esac
 # The pins are read HERE, as root. User tape is never asked to read anything under the clone

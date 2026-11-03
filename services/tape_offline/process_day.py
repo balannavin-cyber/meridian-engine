@@ -200,8 +200,8 @@ def main(argv=None):
         return 2
     ses = None
     if w:
-        if not ("09:15" <= w["open"] < w["close"] <= "15:30"):
-            print("special session %s %s-%s lies outside 09:15-15:30: the hour buckets cannot represent it"
+        if not ("09:15" <= w["open"] < w["close"] <= "15:40"):
+            print("special session %s %s-%s lies outside 09:15-15:40: the hour buckets cannot represent it"
                   % (day, w["open"], w["close"]), file=sys.stderr)
             return 2
         ses = {"kind": "special", "label": w["label"], "open": w["open"], "close": w["close"]}

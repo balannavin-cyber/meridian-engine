@@ -14,6 +14,7 @@ import gzip
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -50,13 +51,15 @@ from services.tape_runner import config  # noqa: E402
 DN = "2026-11-03"       # a Tuesday, normal session (front weekly expiry 2026-11-04 in the T0 fake instruments)
 DS = "2026-11-08"       # Sunday, Muhurat
 PREV_S = "2026-11-06"   # last ordinary session before it
-CAL = [{"date": "2026-11-08", "open": "14:20", "close": "15:30", "label": "Muhurat"}]
+LABEL = "Muhurat F&O per NSE/FAOP/76940"
+# NSE/FAOP/76940 (F&O segment, 2026-11-08): pre-open 14:05-14:20, normal market 14:20-15:40. Written from the circular.
+CAL = [{"date": "2026-11-08", "open": "14:20", "close": "15:40", "label": LABEL}]
 SILENCE = 15
 NS = 10 ** 9
 
-TIMER_TEXT = """# /etc/systemd/system/tape-runner-special-2026-11-08.timer  (generated from special_sessions.json; Muhurat)
+TIMER_TEXT = """# /etc/systemd/system/tape-runner-special-2026-11-08.timer  (generated from special_sessions.json; Muhurat F&O per NSE/FAOP/76940)
 [Unit]
-Description=MERIDIAN tape raw recorder (T0) -- special session 2026-11-08 (Muhurat), start 13:55 IST
+Description=MERIDIAN tape raw recorder (T0) -- special session 2026-11-08 (Muhurat F&O per NSE/FAOP/76940), start 13:55 IST
 
 [Timer]
 OnCalendar=2026-11-08 13:55:00 Asia/Kolkata
@@ -296,10 +299,10 @@ def g_special_day():
     """Fails if the calendar is ignored (window, closed-day rule, options, stop), or the timer text drifts."""
     from services.tape_runner import session
     cells = []
-    # window, from the operator's ruling: open 14:20, close 15:30; offsets of the weekday timeline
+    # window, from NSE/FAOP/76940 (F&O): open 14:20, close 15:40; offsets of the weekday timeline (stop = close + 10)
     rec, clock, tk = make_rec(DS, "13:55:00")
     want = {"start": "13:55", "resolve": "14:00", "options": "14:05", "closed_check": "14:25",
-            "session_start": "14:20", "session_end": "15:30", "stop": "15:40", "resolve_giveup": "14:15"}
+            "session_start": "14:20", "session_end": "15:40", "stop": "15:50", "resolve_giveup": "14:15"}
     got = {k: rec.win[k] for k in want}
     cells.append((got == want and rec.win["special"] is True, "window %s" % got))
     # 13:54:59 is an early start; 13:55:00 is not
@@ -342,10 +345,10 @@ def g_special_day():
     rec.step(clock.now_ns())
     cells.append((before is False and rec.closed_checked and rec.stats.closed_check["verdict"] == "OPEN",
                   "closed check not before 14:25 (%s), then verdict %s" % (before, rec.stats.closed_check)))
-    # stop at close + 10
-    code_a = rec.step(at(clock, DS, "15:39:59"))     # after the close: the watchdog is not armed
-    code_b = rec.step(at(clock, DS, "15:40:00"))
-    cells.append((code_a is None and code_b == 0, "stop: 15:39:59 -> %s, 15:40:00 -> %s" % (code_a, code_b)))
+    # stop at close + 10 = 15:50 (the F&O close is 15:40)
+    code_a = rec.step(at(clock, DS, "15:49:59"))     # after the close: the watchdog is not armed
+    code_b = rec.step(at(clock, DS, "15:50:00"))
+    cells.append((code_a is None and code_b == 0, "stop: 15:49:59 -> %s, 15:50:00 -> %s" % (code_a, code_b)))
     # holiday-shaped special day: only previous-session witnesses, stale REST quote -> CLOSED at 14:25, not 14:02
     stale = {"NSE:NIFTY 50": {"timestamp": T0.datetime(2026, 11, 6, 15, 29, 58)},
              "BSE:SENSEX": {"timestamp": T0.datetime(2026, 11, 6, 15, 29, 59)}}
@@ -372,6 +375,136 @@ def g_special_day():
     return cells
 
 
+def _boot_special(hold=("14:21", "14:22", "14:23", "14:24", "14:25")):
+    """A Muhurat recorder that is healthy and open: connects 14:00, options forced 14:20, today's packet 14:20:05,
+    a heartbeat before every step so nothing is silent, closed check OPEN at 14:25."""
+    rec, clock, tk = make_rec(DS, "13:55:00")
+    rec.step(clock.now_ns())
+    rec.step(at(clock, DS, "14:00:00"))
+    t = tk[0]
+    t.on_connect(t, {})
+    rec.step(at(clock, DS, "14:20:00"))
+    at(clock, DS, "14:20:05")
+    t.on_ticks(t, [idx_pkt("NIFTY", 25000.0, DS, "14:20:05"), idx_pkt("SENSEX", 80000.0, DS, "14:20:05")])
+    for hms in hold:
+        beat(t, at(clock, DS, hms))
+        assert rec.step(clock.now_ns()) is None
+    return rec, clock, t
+
+
+def g_fo_close():
+    """NSE/FAOP/76940: the F&O close on 2026-11-08 is 15:40 (pre-open 14:05-14:20, market 14:20-15:40). Fails if the
+    checked-in calendar says anything else, the stop / gap accounting / watchdog window still use 15:30, or the
+    watchdog stays armed after 15:40."""
+    from services.tape_runner import session
+    from services.tape_runner.stats import DayStats
+    real = os.path.join(ROOT, "services", "tape_runner", "special_sessions.json")
+    ent = [e for e in json.load(open(real)) if e.get("date") == DS]
+    cells = [(len(ent) == 1 and ent[0].get("open") == "14:20" and ent[0].get("close") == "15:40"
+              and "NSE/FAOP/76940" in ent[0].get("label", ""),
+              "checked-in calendar: open 14:20, close 15:40, label cites the circular: %s" % ent)]
+    w = session.window(DS, path=real)
+    cells.append(((w["session_start"], w["session_end"], w["stop"], w["closed_check"]) == ("14:20", "15:40", "15:50", "14:25"),
+                  "window from the checked-in file: open %s close %s stop %s closed_check %s"
+                  % (w["session_start"], w["session_end"], w["stop"], w["closed_check"])))
+    saved = config.SPECIAL_SESSIONS_PATH
+    try:
+        config.SPECIAL_SESSIONS_PATH = real
+        st = DayStats(DS, ["NIFTY", "SENSEX"])
+        cells.append((st._end_ns == ist_ns(DS, "15:40") and st._start_ns == ist_ns(DS, "14:20"),
+                      "gap accounting spans 14:20 -> 15:40, not -> 15:30"))
+    finally:
+        config.SPECIAL_SESSIONS_PATH = saved
+    # watchdog: silent from 15:39:40 -> trips at 15:39:55, which is after the old 15:30 close and inside the new one
+    rec, clock, t = _boot_special()
+    for hms in ("15:00", "15:39:40"):
+        beat(t, at(clock, DS, hms))
+        rec.step(clock.now_ns())
+    rec.step(at(clock, DS, "15:39:54"))
+    before = rec.stats.watchdog_trips
+    rec.step(at(clock, DS, "15:39:55"))
+    cells.append((before == 0 and rec.stats.watchdog_trips == 1 and len(t.drops) == 1,
+                  "control: silence from 15:39:40 trips at 15:39:55 (inside the F&O session): before=%d trips=%d"
+                  % (before, rec.stats.watchdog_trips)))
+    # ... and silence after the F&O close is not a fault
+    rec, clock, t = _boot_special()
+    for hms in ("15:00", "15:39:50"):
+        beat(t, at(clock, DS, hms))
+        rec.step(clock.now_ns())
+    codes = [rec.step(at(clock, DS, hms)) for hms in ("15:40:00", "15:40:30", "15:45", "15:49:59")]
+    cells.append((rec.stats.watchdog_trips == 0 and not t.drops and all(c is None for c in codes),
+                  "silence after 15:40 until 15:49:59: trips=%d codes=%s" % (rec.stats.watchdog_trips, codes)))
+    return cells
+
+
+class _BadPayload:
+    """A frame whose length cannot be read: the one way on_frame's counting can raise."""
+
+    def __len__(self):
+        raise RuntimeError("payload length unreadable")
+
+
+def g_frame_errors():
+    """Fails if on_frame can raise (the library would drop that frame's ticks), loses the liveness stamp when its
+    counting fails, does not count or report the failure, or logs more than once a minute."""
+    cells = []
+    rec, clock, t = boot_normal(DN)
+    at(clock, DN, "09:30:00")
+    raised = None
+    try:
+        t.on_message(t, _BadPayload(), True)
+    except BaseException as exc:  # noqa: BLE001
+        raised = exc
+    cells.append((raised is None, "on_frame with an unreadable payload does not raise (%r)" % (raised,)))
+    cells.append((rec.stats.frame_errors == 1, "failure counted: frame_errors=%d" % rec.stats.frame_errors))
+    cells.append((rec.last_frame_ns == ist_ns(DN, "09:30:00"),
+                  "the liveness stamp survived the failed counting (last_frame_ns age %s s)"
+                  % ((clock.now_ns() - (rec.last_frame_ns or 0)) / NS)))
+    # ticks still flow after a failed on_message (they are a separate callback)
+    before = rec.stats.packets["NIFTY"]
+    at(clock, DN, "09:30:01")
+    t.on_ticks(t, [idx_pkt("NIFTY", 25001.0, DN, "09:30:01")])
+    cells.append((rec.stats.packets["NIFTY"] == before + 1, "on_ticks unaffected: NIFTY packets %d -> %d"
+                  % (before, rec.stats.packets["NIFTY"])))
+    # rate limit: 4 more failures inside the same minute add no log line; one 61 s later adds exactly one
+    for s in (2, 3, 4, 5):
+        at(clock, DN, "09:30:0%d" % s)
+        t.on_message(t, _BadPayload(), True)
+    n_same_minute = sum(1 for m in rec.lines if "FRAME_ERROR" in m)
+    at(clock, DN, "09:31:01")
+    t.on_message(t, _BadPayload(), True)
+    n_later = sum(1 for m in rec.lines if "FRAME_ERROR" in m)
+    cells.append((rec.stats.frame_errors == 6 and n_same_minute == 1 and n_later == 2,
+                  "6 failures: counted %d; log lines after 5 in one minute=%d (want 1), after the 6th 61 s later=%d (want 2)"
+                  % (rec.stats.frame_errors, n_same_minute, n_later)))
+    # reported: heartbeat and daily report
+    beat(t, clock)
+    rec.step(at(clock, DN, "09:31:02"))
+    hb = json.load(open(rec.heartbeat_path))
+    daily = rec.daily_report(clock.now_ns())
+    cells.append((hb.get("frame_errors") == 6 and daily.get("frame_errors") == 6,
+                  "heartbeat frame_errors=%s, daily report frame_errors=%s (want 6, 6)" % (hb.get("frame_errors"), daily.get("frame_errors"))))
+    # the handler of the handler cannot raise either: a log sink that raises
+    rec2, clock2, t2 = boot_normal(DN)
+
+    def bad_log(_m):
+        raise OSError("log sink gone")
+    rec2._log = bad_log
+    raised2 = None
+    try:
+        at(clock2, DN, "09:30:00")
+        t2.on_message(t2, _BadPayload(), True)
+    except BaseException as exc:  # noqa: BLE001
+        raised2 = exc
+    cells.append((raised2 is None and rec2.stats.frame_errors == 1, "a raising log sink does not escape on_frame (%r)" % (raised2,)))
+    # a healthy run reports zero
+    rec3, clock3, t3 = boot_normal(DN)
+    run_beats(rec3, t3, clock3, DN, "09:16:00", 30)
+    cells.append((rec3.stats.frame_errors == 0 and rec3.frames_hb == 31, "healthy heartbeats: frame_errors=%d frames_hb=%d"
+                  % (rec3.stats.frame_errors, rec3.frames_hb)))
+    return cells
+
+
 def g_normal_day():
     """Fails if special-session logic leaks into ordinary days, or the rehearsal's config overwrite stops working."""
     from services.tape_runner import session
@@ -391,7 +524,7 @@ def g_normal_day():
         w = session.window(DN)
         cells.append((w["start"] == "10:11" and w["stop"] == "10:55", "config overwrite (rehearsal) still moves a normal day"))
         w = session.window(DS)
-        cells.append((w["start"] == "13:55" and w["stop"] == "15:40", "...and does not move a special day"))
+        cells.append((w["start"] == "13:55" and w["stop"] == "15:50", "...and does not move a special day"))
     finally:
         config.T_START, config.T_STOP = saved
     d = tmpdir()
@@ -541,7 +674,20 @@ def g_processor_special():
     nif = rep["symbols"]["NIFTY"]
     share = nif["verdict_detail"].get("overall", {}).get("share_pct")
     want = round(100.0 * exp_cls / exp_tot, 6) if exp_tot else None
-    cells.append((rc == 0, "special day: exit code %s" % rc))
+    cells.append((rc == 0, "special day (calendar close 15:40, the F&O close): exit code %s" % rc))
+    out_bad = os.path.join(tmpdir(), "o_bad")
+    cal_bad = write_cal([dict(CAL[0], close="15:41")], "cal_1541.json")
+    rc_bad = process_day.main([root, "--day", DS, "--out", out_bad, "--calendar", cal_bad])
+    cells.append((rc_bad == 2, "a special close after 15:40 is refused (15:41 -> exit %s)" % rc_bad))
+    from merdian_compute.tape import minute as M
+    win = ("14:20", "15:40")
+    bk = {hm: M.bucket_of(hm, win) for hm in ("14:19", "14:20", "15:00", "15:29", "15:30", "15:35", "15:39", "15:40")}
+    want_bk = {"14:19": "pre_0915", "14:20": "1400_1500", "15:00": "1500_1530", "15:29": "1500_1530",
+               "15:30": "1500_1530", "15:35": "1500_1530", "15:39": "1500_1530", "15:40": "post_1530"}
+    cells.append((bk == want_bk, "special window 14:20-15:40: minutes 15:30-15:39 are in-session, 15:40 is after: %s" % bk))
+    cells.append((M.bucket_of("15:30") == "post_1530" and M.bucket_of("15:35") == "post_1530"
+                  and M.bucket_of("15:29") == "1500_1530",
+                  "a normal day is unchanged: 15:29 -> 1500_1530, 15:30 and 15:35 -> post_1530"))
     cells.append((nif["verdict"] == "NOT EVALUATED (special session)", "verdict %r" % nif["verdict"]))
     cells.append((exp_tot > 0 and share is not None and abs(share - want) < 1e-5,
                   "one overall share %s (independent expectation %s over minutes >= 14:20)" % (share, want)))
@@ -655,10 +801,17 @@ def g_timer_sync():
     def inside(date, hhmm):
         return subprocess.run([sys.executable, "-I", py, "--calendar", CAL_PATH, "--in-window", date, hhmm],
                               capture_output=True, text=True).returncode == 0
+    # window = [open - 60 min, close + 30 min) = [13:20, 16:10) for open 14:20, close 15:40
     probes = {("2026-11-08", "13:19"): False, ("2026-11-08", "13:20"): True, ("2026-11-08", "15:59"): True,
-              ("2026-11-08", "16:00"): False, ("2026-11-03", "14:00"): False, ("2026-11-07", "14:30"): False}
+              ("2026-11-08", "16:00"): True, ("2026-11-08", "16:09"): True, ("2026-11-08", "16:10"): False,
+              ("2026-11-03", "14:00"): False, ("2026-11-07", "14:30"): False}
     got = {k: inside(*k) for k in probes}
     cells.append((got == probes, "install guard on a special date: %s" % {"%s %s" % k: v for k, v in got.items()}))
+    from services.tape_runner import session as S
+    rcs = {k: subprocess.run([sys.executable, "-I", py, "--calendar", CAL_PATH, "--in-window", *k],
+                             capture_output=True, text=True).returncode for k in (("2026-11-08", "1400"), ("2026-11-03", "1400"))}
+    cells.append((S.EXIT_OUTSIDE not in (0, 1, 2) and rcs == {("2026-11-08", "1400"): 0, ("2026-11-03", "1400"): S.EXIT_OUTSIDE},
+                  "guard exit codes: inside -> 0, outside -> EXIT_OUTSIDE=%s (not 0, 1 or 2): %s" % (S.EXIT_OUTSIDE, list(rcs.values()))))
     badcal = os.path.join(tmpdir(), "bad.json")
     open(badcal, "w").write("{not json")
     rc_bad = subprocess.run([sys.executable, "-I", py, "--calendar", badcal, "--in-window", "2026-11-08", "1400"],
@@ -667,9 +820,39 @@ def g_timer_sync():
     inst = open(os.path.join(ROOT, "services", "tape_runner", "install.sh")).read()
     cells.append(("sync_special_timers.sh" in inst and "--in-window" in inst,
                   "install.sh calls the sync script and the window guard"))
+    m_out = re.search(r"^OUTSIDE_RC=(\d+)$", inst, re.M)
+    cells.append((m_out is not None and int(m_out.group(1)) == S.EXIT_OUTSIDE,
+                  "install.sh OUTSIDE_RC (%s) equals session.EXIT_OUTSIDE (%s)" % (m_out and m_out.group(1), S.EXIT_OUTSIDE)))
+    # Run install.sh's own guard block, against a real session.py and against one that exits 1 on import:
+    # only "outside" may proceed; "inside", "could not evaluate" and a SyntaxError (exit 1) must all refuse.
+    blk = re.search(r"^OUTSIDE_RC=.*?^esac\n", inst, re.M | re.S)
+
+    def run_guard_block(session_src, date, hhmm, cal_src=None):
+        h = tmpdir()
+        open(os.path.join(h, "session.py"), "w", encoding="utf-8").write(session_src)
+        shutil.copy(CAL_PATH, os.path.join(h, "special_sessions.json"))
+        if cal_src is not None:
+            open(os.path.join(h, "special_sessions.json"), "w").write(cal_src)
+        script = ('die() { echo "REFUSED: $*"; exit 2; }\nset -e\nHERE="%s"\nVENV_PY="%s"\nIST_DATE="%s"\nIST_HHMM="%s"\n%s\necho PROCEED\n'
+                  % (h, sys.executable, date, hhmm, blk.group(0) if blk else "exit 99"))
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        return "PROCEED" if "PROCEED" in r.stdout else ("REFUSED" if "REFUSED" in r.stdout else "?%s" % r.returncode)
+    real_src = open(os.path.join(ROOT, "services", "tape_runner", "session.py"), encoding="utf-8").read()
+    broken_src = real_src + "\ndef broken(:\n"
+    exits_1 = os.path.join(tmpdir(), "s.py")
+    open(exits_1, "w", encoding="utf-8").write(broken_src)
+    rc_syntax = subprocess.run([sys.executable, "-I", exits_1, "--in-window", "2026-11-03", "1400"],
+                               capture_output=True).returncode
+    g = {"outside (Tue 14:00)": run_guard_block(real_src, "2026-11-03", "1400"),
+         "inside (Sun 14:30)": run_guard_block(real_src, "2026-11-08", "1430"),
+         "SyntaxError in session.py": run_guard_block(broken_src, "2026-11-03", "1400"),
+         "malformed calendar": run_guard_block(real_src, "2026-11-03", "1400", cal_src="{not json")}
+    cells.append((g == {"outside (Tue 14:00)": "PROCEED", "inside (Sun 14:30)": "REFUSED",
+                        "SyntaxError in session.py": "REFUSED", "malformed calendar": "REFUSED"} and rc_syntax == 1,
+                  "install.sh guard block (a broken session.py itself exits %s, i.e. 1): %s" % (rc_syntax, g)))
     cells.append(('0) die "special session window' in inst and '*) die "could not evaluate the special-session guard' in inst
                   and inst.index("--in-window") > inst.index('[ -x "$VENV_PY" ]'),
-                  "install.sh: guard runs after the venv check and fails closed on any exit other than 0 / 1"))
+                  "install.sh: guard runs after the venv check and fails closed on any exit other than 0 / OUTSIDE_RC"))
     return cells
 
 
@@ -677,7 +860,7 @@ def g_timer_sync():
 def u_calendar_file():
     from services.tape_runner import session
     p = os.path.join(ROOT, "services", "tape_runner", "special_sessions.json")
-    cells = [(json.load(open(p)) == CAL, "checked-in calendar is exactly the operator's Muhurat entry")]
+    cells = [(json.load(open(p)) == CAL, "checked-in calendar is exactly the NSE/FAOP/76940 Muhurat entry")]
     for bad, why in (([{"date": "2026-11-08", "open": "15:30", "close": "14:20", "label": "x"}], "open >= close"),
                      ([{"date": "08-11-2026", "open": "14:20", "close": "15:30", "label": "x"}], "bad date"),
                      ([{"date": "2026-11-08", "open": "14:20", "close": "15:30", "label": "x"}] * 2, "duplicate date"),
@@ -708,7 +891,8 @@ def u_calendar_failsoft():
 
 
 GUARDS = [("wd-trip", g_wd_trip), ("wd-window", g_wd_window), ("wd-backoff", g_wd_backoff),
-          ("special-day", g_special_day), ("normal-day", g_normal_day), ("counters", g_counters), ("glue", g_glue),
+          ("special-day", g_special_day), ("fo-close", g_fo_close), ("frame-errors", g_frame_errors),
+          ("normal-day", g_normal_day), ("counters", g_counters), ("glue", g_glue),
           ("processor-special", g_processor_special), ("timer-sync", g_timer_sync)]
 UNITS = [u_calendar_file, u_calendar_failsoft]
 

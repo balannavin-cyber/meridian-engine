@@ -81,8 +81,10 @@ class SyntheticKite:
 class SyntheticTicker:
     MODE_FULL = "full"
 
-    def __init__(self, universe_tokens, schedule, metrics, batch_log=None, seed=1):
-        """universe_tokens: token -> (sym, role, ref_price); schedule: [(mult, seconds), ...]."""
+    def __init__(self, universe_tokens, schedule, metrics, batch_log=None, seed=1, silence=None, reconnect_delay=1.0):
+        """universe_tokens: token -> (sym, role, ref_price); schedule: [(mult, seconds), ...].
+        silence: [(start_s, dur_s), ...] after connect (P7): the socket goes quiet WITHOUT closing -- no packet,
+        no heartbeat, no callback -- until force_reconnect() is called or the window ends."""
         self.universe = universe_tokens
         self.schedule = schedule
         self.metrics = metrics
@@ -90,6 +92,12 @@ class SyntheticTicker:
         self.rnd = random.Random(seed)
         self.on_ticks = self.on_connect = self.on_close = self.on_error = None
         self.on_reconnect = self.on_noreconnect = None
+        self.on_message = None
+        self.silence = list(silence or [])
+        self.reconnect_delay = reconnect_delay
+        self.drops = []                       # time.time_ns() of each force_reconnect()
+        self._drop_req = threading.Event()
+        self._healed = set()
         self._lock = threading.Lock()
         self.subscribed = {"NIFTY": [], "SENSEX": []}
         self._sub_set = set()
@@ -128,6 +136,18 @@ class SyntheticTicker:
 
     def stop(self):
         self._stop.set()
+
+    def force_reconnect(self):
+        """What the production WatchedTicker does: abort the socket. Here the generator thread plays the
+        reactor: on_close, the library's backoff, on_connect, feed resumes."""
+        self.drops.append(time.time_ns())
+        self._drop_req.set()
+
+    def _silent(self, elapsed):
+        for i, (a, d) in enumerate(self.silence):
+            if i not in self._healed and a <= elapsed < a + d:
+                return True
+        return False
 
     # -- packets -----------------------------------------------------------------------
     def _packet(self, tok, now_s):
@@ -173,6 +193,18 @@ class SyntheticTicker:
             mult = self._mult_at(now - t_start)
             if mult is None:
                 break
+            if self._drop_req.is_set():
+                self._drop_req.clear()
+                self.on_close(self, 1006, "rehearsal: socket aborted")
+                self._stop.wait(self.reconnect_delay)
+                self._healed.update(i for i, (a, d) in enumerate(self.silence) if a <= now - t_start)
+                self.on_connect(self, {"rehearsal": True})
+                last = time.monotonic()
+                continue
+            if self._silent(now - t_start):
+                last = now
+                self._stop.wait(TICK_S)
+                continue
             dt = now - last
             last = now
             batch, counts = [], {}

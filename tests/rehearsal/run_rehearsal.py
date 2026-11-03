@@ -134,6 +134,11 @@ def main():
     ap.add_argument("--calibrate", default=None, help="generator-only CPU, e.g. 2x:60s")
     ap.add_argument("--seg-seconds", type=int, default=None, help="self-test only: shorter segments")
     ap.add_argument("--allow-market-hours", action="store_true", help="self-test only")
+    ap.add_argument("--silence", default=None, help="P7: START:DUR seconds after connect the socket goes silent, e.g. 120:40")
+    ap.add_argument("--special", action="store_true",
+                    help="P8: today is a special session (temp calendar: open = start+1 min, close = stop); the "
+                         "T_* constants are NOT moved, the calendar alone drives the timeline")
+    ap.add_argument("--terminate-after", type=float, default=None, help="P8: SIGTERM-equivalent after this many seconds")
     a = ap.parse_args()
 
     now_utc = datetime.now(timezone.utc)
@@ -174,11 +179,17 @@ def main():
     from feed import SyntheticKite, SyntheticTicker, universe_tokens
 
     hm = lambda d: d.strftime("%H:%M")  # noqa: E731
-    for k in ("T_START", "T_RESOLVE", "T_OPTIONS", "T_SESSION_START", "T_CLOSED_CHECK"):
-        setattr(config, k, hm(start))
-    config.T_RESOLVE_GIVEUP = hm(start + timedelta(minutes=5))
-    config.T_STOP = hm(stop)
-    config.T_SESSION_END = hm(stop)
+    if a.special:
+        cal = os.path.join(out, "special_sessions.json")
+        json.dump([{"date": start.strftime("%Y-%m-%d"), "open": hm(start + timedelta(minutes=1)), "close": hm(stop),
+                    "label": "Rehearsal"}], open(cal, "w"))
+        config.SPECIAL_SESSIONS_PATH = cal
+    else:
+        for k in ("T_START", "T_RESOLVE", "T_OPTIONS", "T_SESSION_START", "T_CLOSED_CHECK"):
+            setattr(config, k, hm(start))
+        config.T_RESOLVE_GIVEUP = hm(start + timedelta(minutes=5))
+        config.T_STOP = hm(stop)
+        config.T_SESSION_END = hm(stop)
     config.CLOSED_CHECK_SETTLE_S = 5
     if a.seg_seconds:
         config.SEG_SECONDS = a.seg_seconds
@@ -219,8 +230,13 @@ def main():
     batch_log = open(os.path.join(out, "batches.ndjson"), "a", buffering=1024 * 1024)
     tickers = []
 
+    silence = None
+    if a.silence:
+        s0, d0 = a.silence.split(":")
+        silence = [(float(s0), float(d0))]
+
     def factory():
-        t = SyntheticTicker(utoks, schedule, metrics, batch_log=batch_log)
+        t = SyntheticTicker(utoks, schedule, metrics, batch_log=batch_log, silence=silence)
         tickers.append(t)
         return t
 
@@ -273,8 +289,12 @@ def main():
     th.start()
 
     code = None
+    t_loop = time.monotonic()
     try:
         while code is None:
+            if a.terminate_after is not None and time.monotonic() - t_loop >= a.terminate_after:
+                rec.request_stop()
+                a.terminate_after = None
             code = rec.step(clock.now_ns())
             if code is None:
                 time.sleep(1.0 - (time.time() % 1.0))

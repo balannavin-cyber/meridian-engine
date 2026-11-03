@@ -29,6 +29,7 @@ from . import minute as M
 SEG_RE = re.compile(r"^seg_(\d{4})(?:_c(\d+))?(?:_r(\d+))?\.ndjson\.gz$")
 SUB_RE = re.compile(r"^subscriptions_(\d{6})(?:_(\d+))?\.json$")
 GAP_KINDS = ("disconnect", "reconnect", "connect")
+CTL_COUNTED = ("connect", "disconnect", "reconnect", "watchdog")   # distinct (kind, recv_ns) per symbol file
 WATERMARK_S = 600
 
 Pkt = namedtuple("Pkt", "token ex recv vol ltp atp bid ask bq aq oi exts mn bk dg")
@@ -111,12 +112,12 @@ def _sum_qty(levels):
     return t
 
 
-def _recv_bucket(rec):
+def _recv_bucket(rec, win=None):
     ri = rec.get("recv_ist")
-    return M.bucket_of(ri[11:16]) if isinstance(ri, str) and len(ri) >= 16 else "unknown"
+    return M.bucket_of(ri[11:16], win) if isinstance(ri, str) and len(ri) >= 16 else "unknown"
 
 
-def parse_line(raw, day):
+def parse_line(raw, day, win=None):
     """One raw line -> ("bad"|"other", None) | ("ctl", (kind, recv_ns, rec)) | ("drop", (reason, bucket))
     | ("pkt", Pkt)."""
     try:
@@ -138,13 +139,13 @@ def parse_line(raw, day):
         return "bad", None
     exts = rec.get("exchange_timestamp")
     if not isinstance(exts, str) or len(exts) < 16:
-        return "drop", ("no_exchange_ts", _recv_bucket(rec), tok)
+        return "drop", ("no_exchange_ts", _recv_bucket(rec, win), tok)
     if exts[:10] != day:
-        return "drop", ("stale_date", _recv_bucket(rec), tok)
+        return "drop", ("stale_date", _recv_bucket(rec, win), tok)
     try:
         ex = _epoch(exts)
     except ValueError:
-        return "drop", ("no_exchange_ts", _recv_bucket(rec), tok)
+        return "drop", ("no_exchange_ts", _recv_bucket(rec, win), tok)
     depth = rec.get("depth")
     buy = sell = None
     if isinstance(depth, dict):
@@ -152,7 +153,7 @@ def parse_line(raw, day):
     mn = exts[11:16]
     return "pkt", Pkt(tok, ex, rn, _num(rec.get("volume_traded")), _num(rec.get("last_price")),
                       _num(rec.get("average_traded_price")), _lvl_price(buy), _lvl_price(sell),
-                      _sum_qty(buy), _sum_qty(sell), _num(rec.get("oi")), exts, mn, M.bucket_of(mn),
+                      _sum_qty(buy), _sum_qty(sell), _num(rec.get("oi")), exts, mn, M.bucket_of(mn, win),
                       hashlib.sha256(raw).digest()[:16])
 
 
@@ -163,8 +164,10 @@ def mini(p):
 
 
 class SymbolReplay:
-    def __init__(self, sym, day, meta):
+    def __init__(self, sym, day, meta, win=None):
         self.sym, self.day = sym, day
+        self.win = win                       # (open, close) "HH:MM" on a special session, else None
+        self.ctl_n = {k: 0 for k in CTL_COUNTED}
         self.meta = {t: m for t, m in meta.items() if m.get("sym") == sym}
         self.strikes = sorted({m["strike"] for m in self.meta.values()
                                if m["role"] == "OPT" and m.get("strike") is not None})
@@ -176,6 +179,7 @@ class SymbolReplay:
         self.err_set = set()
         self.idx_price, self._atm = None, (None, None)
         self.seen = set()
+        self.seen_ctl = set()
         self.c = dict(lines=0, pkt_lines=0, ctl_lines=0, bad_lines=0, other_lines=0, chain_pkts=0, index_pkts=0,
                       gap_pairs=0)
         self.gap_qty = 0
@@ -187,7 +191,7 @@ class SymbolReplay:
 
     def feed(self, raw):
         self.c["lines"] += 1
-        kind, val = parse_line(raw, self.day)
+        kind, val = parse_line(raw, self.day, self.win)
         if kind == "bad":
             self.c["bad_lines"] += 1
             self.disc("bad_line", "unknown")
@@ -211,7 +215,12 @@ class SymbolReplay:
         self.seq += 1
 
     def _ctl(self, kind, rn, rec):
+        if kind == "watchdog":
+            if ("watchdog", rn) not in self.seen_ctl:
+                self.seen_ctl.add(("watchdog", rn))
+                self.ctl_n["watchdog"] += 1       # not a gap event: the disconnect that follows is
         if kind in GAP_KINDS and (kind, rn) not in self.ev_set:
+            self.ctl_n[kind] += 1
             self.ev_set.add((kind, rn))
             bisect.insort(self.events, rn)
         if kind == "connect" and isinstance(rec.get("process_start_ns"), int):
@@ -324,4 +333,5 @@ class SymbolReplay:
                 "invariants": inv, "baseline_qty": self.baseline_qty, "tokens_no_packets": nopkt,
                 "gaps": {"events": [{"kind": k, "recv_ns": r} for k, r in sorted(self.ev_set, key=lambda e: (e[1], e[0]))],
                          "gap_pairs": self.c["gap_pairs"], "gap_qty": self.gap_qty},
-                "restarts": max(0, len(self.procs) - 1), "errors": sorted(self.errors, key=lambda e: e["recv_ns"])}
+                "restarts": max(0, len(self.procs) - 1), "errors": sorted(self.errors, key=lambda e: e["recv_ns"]),
+                "ctl_events": dict(self.ctl_n)}

@@ -12,6 +12,8 @@ from collections import Counter
 BUCKETS = ("pre_0915", "0915_1000", "1000_1100", "1100_1200", "1200_1300", "1300_1400", "1400_1500",
            "1500_1530", "post_1530", "unknown")
 EARLY = ("0915_1000",)
+SESSION_BUCKETS = tuple(b for b in BUCKETS if b not in ("pre_0915", "post_1530", "unknown"))   # a special day's in-window hours
+SPECIAL_VERDICT = "NOT EVALUATED (special session)"
 LATE = ("1000_1100", "1100_1200", "1200_1300", "1300_1400", "1400_1500", "1500_1530")
 GROUPS = ("ATM3_CE", "ATM3_PE", "OTHER_CE", "OTHER_PE", "FUT", "NO_ATM")
 OPTION_GROUPS = ("ATM3_CE", "ATM3_PE", "OTHER_CE", "OTHER_PE", "NO_ATM")
@@ -37,9 +39,22 @@ class RuleParityError(AssertionError):
     """The rule label and the side classify() returned disagree: the rule column would be lying."""
 
 
-def bucket_of(hhmm):
+def bucket_of(hhmm, win=None):
+    """Hour bucket of an IST HH:MM. ``win`` = (open, close) on a special session, else None. A special window
+    must lie inside 09:15-15:40 (the processor refuses others), so before open / at-or-after close map to the
+    existing pre_0915 / post_1530 buckets and the minutes in between keep their clock-hour bucket. The F&O
+    close of a special session can be 15:40 (Muhurat 2026-11-08, NSE/FAOP/76940): there the in-window minutes
+    from 15:30 belong to the session, so the 1500_1530 bucket runs to the window close on a special day. (A
+    normal day, win=None, is unchanged: 15:30 and later is post_1530.)"""
     if not isinstance(hhmm, str) or len(hhmm) != 5 or hhmm[2] != ":":
         return "unknown"
+    if win is not None:
+        if hhmm < win[0]:
+            return "pre_0915"
+        if hhmm >= win[1]:
+            return "post_1530"
+        if hhmm >= "15:00":
+            return "1500_1530"
     if hhmm < "09:15":
         return "pre_0915"
     if hhmm < "10:00":
@@ -214,8 +229,15 @@ def _window(cells, buckets):
     return q, n
 
 
-def verdict(cells):
+def verdict(cells, special=False):
     out = {}
+    if special:
+        # G3's early / late split does not apply to a special session: one overall share, no PASS / FAIL
+        q, n = _window(cells, SESSION_BUCKETS)
+        tot = q[0] + q[1] + q[2]
+        out["overall"] = {"classified_qty": q[0] + q[1], "volume_ex_gap": tot, "gap_qty": q[3], "n_deltas": n,
+                          "share_pct": _r6(100.0 * (q[0] + q[1]) / tot) if tot else None}
+        return SPECIAL_VERDICT, out
     for name, bks in (("early", EARLY), ("late", LATE)):
         q, n = _window(cells, bks)
         tot = q[0] + q[1] + q[2]
@@ -251,9 +273,9 @@ def check_invariants(rows, spans, pkt_lines, accounted):
 
 
 # ------------------------------------------------------------------------------ report
-def symbol_section(res):
+def symbol_section(res, special=False):
     cells = res["cells"]
-    v, detail = verdict(cells)
+    v, detail = verdict(cells, special)
     if not res["invariants"]["ok"]:
         v = "INVALID"
     hours = {bk: {grp: cell_json(c) for grp, c in sorted(gs.items())} for bk, gs in cells.items()}
@@ -267,13 +289,40 @@ def symbol_section(res):
     return {"verdict": v, "verdict_detail": detail, "invariants": res["invariants"], "packets": res["counters"],
             "discards": res["discards"], "hours": hours, "by_group": by_group, "rule_mix": rule_mix,
             "baseline_qty": res["baseline_qty"], "tokens_no_packets": res["tokens_no_packets"],
-            "gaps": res["gaps"], "restarts": res["restarts"], "errors": res["errors"]}
+            "gaps": res["gaps"], "restarts": res["restarts"], "errors": res["errors"],
+            "ctl_events": res.get("ctl_events", {})}
 
 
-def build_report(day, results, daily, conflicts, inputs):
-    return {"schema": "g3_report_v1", "day": day,
-            "symbols": {s: symbol_section(r) for s, r in sorted(results.items())},
-            "daily_report": daily, "token_map": {"conflicts": conflicts}, "inputs": inputs}
+def reconcile(symbols, daily):
+    """Daily-report connection counters against the control lines in the segments (T0.1 plan s3). The ctl lines
+    are written to every symbol's file, so one symbol's counts are THE event log. Each check names the event it
+    compares; a report that predates a counter simply has no check for it."""
+    if not isinstance(daily, dict) or daily.get("unreadable") or not symbols:
+        return {"ok": None, "note": "no readable daily report"}
+    sym = "NIFTY" if "NIFTY" in symbols else sorted(symbols)[0]
+    ev = symbols[sym].get("ctl_events") or {}
+    checks = []
+
+    def chk(name, log, rep):
+        if rep is not None:
+            checks.append({"name": name, "log": log, "report": rep, "ok": log == rep})
+    chk("connects", ev.get("connect", 0), daily.get("connects"))
+    chk("reconnects (= connects - 1)", max(0, ev.get("connect", 0) - 1), daily.get("reconnects"))
+    chk("disconnects", ev.get("disconnect", 0), daily.get("disconnects"))
+    chk("reconnect_attempts", ev.get("reconnect", 0), daily.get("reconnect_attempts"))
+    chk("watchdog_trips", ev.get("watchdog", 0), daily.get("watchdog_trips"))
+    return {"ok": all(c["ok"] for c in checks), "symbol": sym, "checks": checks}
+
+
+def build_report(day, results, daily, conflicts, inputs, session=None):
+    special = bool(session and session.get("kind") == "special")
+    rep = {"schema": "g3_report_v1", "day": day,
+           "symbols": {s: symbol_section(r, special) for s, r in sorted(results.items())},
+           "daily_report": daily, "token_map": {"conflicts": conflicts}, "inputs": inputs}
+    rep["reconcile"] = reconcile(rep["symbols"], daily)
+    if special:
+        rep["session"] = session
+    return rep
 
 
 def render_json(obj):
@@ -302,11 +351,19 @@ def render_text(rep):
     for sym, s in rep["symbols"].items():
         d = s["verdict_detail"]
         L.append("=== %s: G3 VERDICT %s ===" % (sym, s["verdict"]))
-        for name, label in (("early", "09:15-10:00"), ("late", "10:00-15:30")):
-            w = d[name]
+        if "overall" in d:
+            w = d["overall"]
             sp = "n/a" if w["share_pct"] is None else "%.2f %%" % w["share_pct"]
-            L.append("  %-12s classified share %s of option volume, %d option deltas (need >= %d %%, >= %d deltas)"
-                     % (label, sp, w["n_deltas"], d["thresholds_pct"][name], d["thresholds_pct"]["min_deltas"]))
+            ses = rep.get("session") or {}
+            L.append("  %-12s classified share %s of option volume, %d option deltas (special session %s: no early / late split;"
+                     " bucket pre_0915 = before the open, post_1530 = at or after the close)"
+                     % ("%s-%s" % (ses.get("open"), ses.get("close")), sp, w["n_deltas"], ses.get("label")))
+        else:
+            for name, label in (("early", "09:15-10:00"), ("late", "10:00-15:30")):
+                w = d[name]
+                sp = "n/a" if w["share_pct"] is None else "%.2f %%" % w["share_pct"]
+                L.append("  %-12s classified share %s of option volume, %d option deltas (need >= %d %%, >= %d deltas)"
+                         % (label, sp, w["n_deltas"], d["thresholds_pct"][name], d["thresholds_pct"]["min_deltas"]))
         iv = s["invariants"]
         L.append("  invariants: %s (rows sum %d vs volume span %d; packets %d read, %d accounted)"
                  % ("OK" if iv["ok"] else "VIOLATED", iv["rows_sum_total"], iv["volume_span_total"],
@@ -339,6 +396,11 @@ def render_text(rep):
     dr = rep.get("daily_report")
     if dr:
         L.append("daily_report: " + json.dumps(dr, sort_keys=True))
+    rc = rep.get("reconcile") or {}
+    if rc.get("checks"):
+        L.append("reconcile (daily report vs control lines in %s): %s" % (rc["symbol"], "OK" if rc["ok"] else "MISMATCH"))
+        for c in rc["checks"]:
+            L.append("  %-26s log %s  report %s  %s" % (c["name"], c["log"], c["report"], "ok" if c["ok"] else "MISMATCH"))
     if rep["token_map"]["conflicts"]:
         L.append("token map conflicts: %d" % len(rep["token_map"]["conflicts"]))
     L.append("inputs: " + json.dumps(rep["inputs"], sort_keys=True))

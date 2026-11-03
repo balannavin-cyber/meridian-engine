@@ -400,3 +400,19 @@ stale (not "all four present"), so a closed day with a missing future snapshot s
 Region (review item 1): no defect — the S3 client takes `AWS_DEFAULT_REGION` (`__main__._s3`); no region literal in the
 runner. Not done (operator decision): finding 8 (retries re-hash the file each attempt; the spool cap stops the day).
 Counts: guards 11 → 18, mutants 14 → 32, controls 18/18, each 5/5.
+
+## 14. T0.1 amendments (2026-11-03; plan `docs/tape/T0_1_plan.md`)
+
+**G2 — amended by operator ruling (2026-11-03):** *no unexplained gap; an external gap over 60 s is allowed if logged,
+with detection delay <= 20 s.* "External" means the exchange or Kite side (502 / handshake timeouts on reconnect,
+peer closing without a close handshake). "Logged" means the daily report's `feed_gaps_gt60s` lists it, the ctl
+`disconnect` / `connect` lines bracket it, and any silence-watchdog trip is in `watchdog` with its last-frame age.
+"Detection delay" is the time from the last frame to our own reaction: the silence watchdog bounds it at
+`SILENCE_S` (15 s) plus one 1 s poll.
+Origin: live day 1 (2026-11-02) had one 96 s gap, 11:00-12:00 IST; our detection took ~59 s because kiteconnect
+5.2.2 never sends a ping, so its pong check cannot fire (T0_1_plan.md section 0).
+
+**Counter definitions (daily report; each is the count of ONE control-line event):** `connects` = ctl `connect`;
+`reconnects` = `connects - 1`; `reconnect_attempts` = ctl `reconnect` (the library does not call it for an outage's
+first retry); `disconnects` = ctl `disconnect` (an `on_close` after our own shutdown began is written nowhere and is
+counted in `close_at_stop`); `watchdog_trips` = ctl `watchdog`.

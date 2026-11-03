@@ -27,11 +27,14 @@ def _env():
 
 def _kite(api_key, token):
     from kiteconnect import KiteConnect, KiteTicker  # noqa: lazy, production only
+    from twisted.internet import reactor  # noqa: lazy, production only (a kiteconnect dependency)
+    from .ticker_glue import make_watched_ticker_class
     kite = KiteConnect(api_key=api_key, timeout=15)
     kite.set_access_token(token)
+    watched = make_watched_ticker_class(KiteTicker, reactor.callFromThread)
 
     def ticker_factory():
-        return KiteTicker(api_key, token, reconnect=True, reconnect_max_tries=300, reconnect_max_delay=60)
+        return watched(api_key, token, reconnect=True, reconnect_max_tries=300, reconnect_max_delay=60)
     return kite, ticker_factory
 
 

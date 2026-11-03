@@ -13,6 +13,7 @@ import threading
 
 from . import clock as clk
 from . import config
+from . import session
 from .instruments import resolve
 from .segments import SegmentWriter, spool_bytes
 from .serialize import ctl_record, jsonable, packet_record, skew_seconds
@@ -60,6 +61,18 @@ class Recorder:
 
         self.start_ns = clock.now_ns()
         self.day = clk.ist_date(self.start_ns)
+        self.win = session.window(self.day, log=self.log)      # today's timeline (special_sessions.json overrides)
+        self.log("SESSION kind=%s label=%s open=%s close=%s start=%s closed_check=%s stop=%s" % (
+            "special" if self.win["special"] else "regular", self.win["label"], self.win["session_start"],
+            self.win["session_end"], self.win["start"], self.win["closed_check"], self.win["stop"]))
+        self._open_ns = clk.ist_ns(self.day, self.win["session_start"])
+        self._close_ns = clk.ist_ns(self.day, self.win["session_end"])
+        self.last_frame_ns = None        # any websocket frame, tick packet or 1-byte heartbeat (silence watchdog)
+        self.frames_hb = 0
+        self.frames_other = 0
+        self._frame_err_log_ns = None    # last FRAME_ERROR log line (at most one a minute)
+        self._wd_step = 0
+        self._wd_next_ns = 0
         self.pid = os.getpid()
         self.spool = os.path.join(self.root, "spool")
         self.state_dir = os.path.join(self.root, "state")
@@ -178,6 +191,10 @@ class Recorder:
             "packets_last_min": {}, "last_packet_ist": {},
             "n_subscribed": len(self.subscribed), "spool_bytes": self._spool_bytes,
             "upload_queue": len(self.uploader.pending()), "uploads": self.uploads_total(),
+            "watchdog_trips": self.stats.watchdog_trips, "watchdog_errors": self.stats.watchdog_errors,
+            "last_frame_age_s": None if self.last_frame_ns is None else round((now - self.last_frame_ns) / clk.NS, 1),
+            "frames_hb": self.frames_hb, "frames_other": self.frames_other,
+            "frame_errors": self.stats.frame_errors,
         }
         prev_min = clk.ist_hm(now - 60 * clk.NS)
         for s in self.symbols:
@@ -199,11 +216,11 @@ class Recorder:
             return self._terminate(now)
         if self.fatal:
             return self._fail(now, self.fatal)
-        if self.stats.closed or self.report_written or clk.at(now, config.T_STOP):
+        if self.stats.closed or self.report_written or clk.at(now, self.win["stop"]):
             return self._stop(now)
         if self._first_step:
             self._first_step = False
-            if not clk.at(now, config.T_START):
+            if not clk.at(now, self.win["start"]):
                 return self._early_exit(now)
         if not self.profiled:
             try:
@@ -215,12 +232,12 @@ class Recorder:
                 self._save_state()
                 return config.EXIT_TOKEN_FAIL
             self.profiled = True
-        if self.universe is None and clk.at(now, config.T_RESOLVE) and now >= self.next_resolve_ns:
+        if self.universe is None and clk.at(now, self.win["resolve"]) and now >= self.next_resolve_ns:
             try:
                 self.universe = resolve(self.kite, clk.ist_dt(now).date(), log=self.log, symbols=self.symbol_cfg)
             except Exception as exc:  # noqa: BLE001
                 self.log("RESOLVE_FAIL %s" % type(exc).__name__)
-                if clk.at(now, config.T_RESOLVE_GIVEUP):
+                if clk.at(now, self.win["resolve_giveup"]):
                     self.state = "RESOLVE_FAIL"
                     self._heartbeat(now)
                     return config.EXIT_FAIL
@@ -233,9 +250,13 @@ class Recorder:
                 return code
         with self.lock:
             if (self.universe is not None and not self.options_on and self.connected
-                    and clk.at(now, config.T_OPTIONS) and self._witness_today()):
+                    and clk.at(now, self.win["options"]) and self._witness_today()):
                 self._open_options(now, "open_window")
-            if (self.universe is not None and not self.closed_checked and clk.at(now, config.T_CLOSED_CHECK)
+            if (self.win["special"] and self.universe is not None and not self.options_on and self.connected
+                    and now >= self._open_ns):
+                # a special session may open with nothing dated today on the feed yet: do not lose its first minutes
+                self._open_options(now, "special_open_forced")
+            if (self.universe is not None and not self.closed_checked and clk.at(now, self.win["closed_check"])
                     and self._feed_settled(now)):
                 code = self._closed_check(now)
                 if code is not None:
@@ -244,6 +265,7 @@ class Recorder:
             if minute != self._last_minute:
                 self._last_minute = minute
                 self._minute(now)
+            self._watchdog(now)
             self.writer.tick(now)
             self.writer.flush()
             self._flush_subs(now)
@@ -262,6 +284,7 @@ class Recorder:
         t.on_error = self.on_error
         t.on_reconnect = self.on_reconnect
         t.on_noreconnect = self.on_noreconnect
+        t.on_message = self.on_frame
         self.ticker = t
         t.connect(threaded=True)
         self.log("TICKER_CONNECTING")
@@ -342,7 +365,7 @@ class Recorder:
         process's environment (token) was read too early to trust for the session. Ship any
         spool leftovers (<= 60 s), touch nothing at Kite, exit 0; the 08:50 timer starts a fresh
         process that reads /etc/tape/kite_token.env again."""
-        self.log("EARLY_START before %s IST -- nothing due; the timer starts the session" % config.T_START)
+        self.log("EARLY_START before %s IST -- nothing due; the timer starts the session" % self.win["start"])
         self._drain(now + config.TERM_DRAIN_S * clk.NS)
         self.state = "EARLY_EXIT"
         self._heartbeat(self.clock.now_ns())
@@ -485,7 +508,7 @@ class Recorder:
         3. the REST quote independently confirms every index's last timestamp is stale -- a websocket
            that delivered the 08:55 snapshots and then stalled cannot close a trading day.
         Anything short of that is UNKNOWN: keep recording (absence is not a verdict). The check runs
-        at T_CLOSED_CHECK (09:20), never earlier."""
+        at the window's closed_check time (09:20; open+5 on a special day), never earlier."""
         if self._witness_today():
             return "OPEN", "packet"
         need = [(s, r) for s in self.symbols for r in ("IDX", "FUT")]
@@ -541,6 +564,8 @@ class Recorder:
             self.connected_since = now
             self.disconnected_since = None
             self.ever_connected = True
+            self._wd_step, self._wd_next_ns = 0, 0
+            self.stats.connects += 1
             if not first:
                 self.stats.reconnects += 1
             self._ctl_all("connect", now, pid=self.pid, process_start_ns=self.start_ns,
@@ -572,7 +597,10 @@ class Recorder:
             self.connected_since = None
             if self.disconnected_since is None:
                 self.disconnected_since = now
-            self.stats.disconnects += 1
+            if self.stopping:
+                self.stats.close_at_stop += 1     # our own shutdown close: no ctl line is written, so not a "disconnect"
+            else:
+                self.stats.disconnects += 1
             self._ctl_all("disconnect", now, code=code, reason=self._clean(reason))
         self.log("DISCONNECT code=%s" % code)
 
@@ -602,6 +630,8 @@ class Recorder:
             now = self.clock.now_ns()
             if self.stopping:
                 return
+            self.last_frame_ns = now
+            self._wd_step, self._wd_next_ns = 0, 0
             try:
                 for pkt in ticks:
                     self._record(pkt, now)
@@ -630,6 +660,75 @@ class Recorder:
             return
         if isinstance(w, str):
             self.witness[(sym, role)] = w[:10]
+
+    # ------------------------------------------------------------------ silence watchdog (T0.1)
+    def on_frame(self, ws, payload=None, is_binary=None):
+        """KiteTicker calls this for EVERY websocket frame (tick packets and 1-byte heartbeats), on the reactor
+        thread, BEFORE it parses and dispatches the frame to on_ticks. It only stamps the receive time: no lock, no
+        parsing. It must never raise: an exception here would propagate into the library's _on_message and the
+        frame's ticks would never reach on_ticks. The stamp is taken first, so a failure in the counting below
+        cannot lose the liveness signal."""
+        try:
+            self.last_frame_ns = self.clock.now_ns()
+            self._wd_step, self._wd_next_ns = 0, 0
+            if is_binary and payload is not None and len(payload) <= 1:
+                self.frames_hb += 1
+            else:
+                self.frames_other += 1
+        except Exception as exc:  # noqa: BLE001 -- on_frame must never raise
+            self._frame_failed(exc)
+
+    def _frame_failed(self, exc):
+        """Count the failure; log at most one line a minute. Every statement is guarded: this is the handler of
+        the handler, so it must not raise either."""
+        try:
+            self.stats.frame_errors += 1
+        except Exception:  # noqa: BLE001
+            return
+        try:
+            now = self.clock.now_ns()
+            last = self._frame_err_log_ns
+            if last is None or now - last >= 60 * clk.NS:
+                self._frame_err_log_ns = now
+                self.log("FRAME_ERROR %s n=%d (on_frame; ticks of the frame are unaffected)" % (
+                    type(exc).__name__, self.stats.frame_errors))
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _watchdog(self, now):
+        """Connected, inside the recording window, and silent for SILENCE_S -> force the socket closed so the
+        library reconnects. Armed only while connected and between the session open and close: a quiet pre-open
+        or a quiet post-close is not a fault. While the silence persists it retries under WD_BACKOFF_S; it never
+        raises and never ends the process."""
+        if not self.connected or self.ticker is None or now < self._open_ns or now > self._close_ns:
+            return
+        ref = max(self.last_frame_ns or 0, self.connected_since or 0, self._open_ns)
+        threshold = max(config.SILENCE_MIN_S, config.SILENCE_S) * clk.NS
+        if now - ref < threshold or now < self._wd_next_ns:
+            return
+        k = self._wd_step
+        self._wd_step += 1
+        self._wd_next_ns = now + config.WD_BACKOFF_S[min(k, len(config.WD_BACKOFF_S) - 1)] * clk.NS
+        age = (now - ref) / clk.NS
+        self.stats.watchdog_trips += 1
+        self.log("WATCHDOG_TRIP age=%d n=%d" % (age, self.stats.watchdog_trips))
+        ok = True
+        try:
+            self._ctl_all("watchdog", now, age_s=round(age, 1), attempt=k + 1)
+        except Exception as exc:  # noqa: BLE001 -- the reconnect below must happen regardless
+            self.log("WATCHDOG_CTL_FAIL %s" % type(exc).__name__)
+        try:
+            drop = getattr(self.ticker, "force_reconnect", None)
+            if drop is None:
+                raise RuntimeError("ticker has no force_reconnect")
+            drop()
+        except Exception as exc:  # noqa: BLE001 -- a watchdog failure must never stop recording
+            ok = False
+            self.stats.watchdog_errors += 1
+            self.log("WATCHDOG_RECONNECT_FAIL %s (retrying in %ds)" % (
+                type(exc).__name__, (self._wd_next_ns - now) // clk.NS))
+        if len(self.stats.watchdog) < config.WD_TRIP_LIST_CAP:
+            self.stats.watchdog.append({"ts_ist": clk.ist_iso(now), "age_s": round(age, 1), "ok": ok})
 
     # ------------------------------------------------------------------ stop
     def _drain(self, deadline_ns):
@@ -662,7 +761,7 @@ class Recorder:
             recorded = self.had_state or self.ever_connected
             if recorded and not self.stats.closed:
                 self.stats.close_gaps(now)
-        deadline = max(now, clk.ist_ns(self.day, config.T_STOP)) + config.DRAIN_SECONDS * clk.NS
+        deadline = max(now, clk.ist_ns(self.day, self.win["stop"])) + config.DRAIN_SECONDS * clk.NS
         self._drain(deadline)
         if recorded and not self.report_written:
             d = os.path.join(self.spool, "session", self.day)
@@ -719,8 +818,13 @@ class Recorder:
             "day": self.day, "generated_ist": clk.ist_iso(now), "phase": "T0",
             "process_start_ist": clk.ist_iso(self.start_ns), "classified": None,
             "closed": st.closed, "closed_check": st.closed_check, "restarts": st.restarts,
-            "reconnects": st.reconnects, "reconnect_attempts": st.reconnect_attempts,
-            "disconnects": st.disconnects, "unknown_tokens": st.unknown_tokens,
+            "session": {"kind": "special" if self.win["special"] else "regular", "label": self.win["label"],
+                        "open": self.win["session_start"], "close": self.win["session_end"]},
+            "connects": st.connects, "reconnects": st.reconnects, "reconnect_attempts": st.reconnect_attempts,
+            "disconnects": st.disconnects, "close_at_stop": st.close_at_stop,
+            "watchdog_trips": st.watchdog_trips, "watchdog_errors": st.watchdog_errors, "watchdog": st.watchdog,
+            "frame_errors": st.frame_errors,
+            "unknown_tokens": st.unknown_tokens,
             "late_records_this_process": self.writer.late_records,
             "torn_line_repairs_this_process": self.writer.torn_repairs,
             "spool_high_water_bytes": st.spool_hwm, "uploads": up,

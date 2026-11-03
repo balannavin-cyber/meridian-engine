@@ -5,6 +5,7 @@ Clock skew is kept as a 0.1 s histogram per symbol (bounded memory at ~10^7 pack
 """
 from . import clock as clk
 from . import config
+from . import session
 
 SKEW_BIN = 0.1
 
@@ -29,14 +30,24 @@ class DayStats:
         self.skew_min = {s: None for s in self.symbols}
         self.skew_stale = {s: 0 for s in self.symbols}
         self.subscribed_count = {s: {} for s in self.symbols}   # minute -> count
-        self.reconnects = 0
-        self.reconnect_attempts = 0
-        self.disconnects = 0
+        # Connection counters. Each is the count of ONE event in the control-line log (docs/tape/T0_1_plan.md s3):
+        self.connects = 0             # on_connect calls          == ctl "connect" lines
+        self.reconnects = 0           # connects after the first  == ctl "connect" lines with first=false
+        self.reconnect_attempts = 0   # on_reconnect callbacks    == ctl "reconnect" lines (the library omits each outage's first retry)
+        self.disconnects = 0          # on_close calls LOGGED     == ctl "disconnect" lines
+        self.close_at_stop = 0        # on_close after our own shutdown began: not logged, so counted apart
+        self.watchdog_trips = 0       # silence-watchdog reconnect attempts == ctl "watchdog" lines
+        self.watchdog_errors = 0      # attempts whose force_reconnect raised
+        self.watchdog = []            # bounded list of {ts_ist, age_s, ok}
+        self.frame_errors = 0         # on_frame raised (counted, never propagated): should be 0
         self.unknown_tokens = 0
         self.spool_hwm = 0
         self.restarts = []
         self.closed = None
         self.closed_check = None
+        win = session.window(day)
+        self._start_ns = clk.ist_ns(day, win["session_start"])     # gap accounting window (not persisted)
+        self._end_ns = clk.ist_ns(day, win["session_end"])
 
     # -- packets -----------------------------------------------------------------------
     def on_packet(self, sym, role, in_band, recv_ns, skew_s, exch_day):
@@ -63,8 +74,7 @@ class DayStats:
                     self.skew_min[sym] = skew_s
 
     def _gap(self, sym, now_ns, final=False):
-        start = clk.ist_ns(self.day, config.T_SESSION_START)
-        end = clk.ist_ns(self.day, config.T_SESSION_END)
+        start, end = self._start_ns, self._end_ns
         if now_ns <= start:
             return
         now_c = min(now_ns, end)
@@ -112,7 +122,7 @@ class DayStats:
 
     # -- persistence -------------------------------------------------------------------
     def to_dict(self):
-        d = dict(self.__dict__)
+        d = {k: v for k, v in self.__dict__.items() if not k.startswith("_")}
         d["skew_hist"] = {s: {str(k): v for k, v in h.items()} for s, h in self.skew_hist.items()}
         return d
 

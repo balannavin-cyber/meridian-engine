@@ -138,3 +138,5 @@ cron.log*
 !docs/research/s95_priority/sstar/arms.csv
 # S95-F: a CSV that is the expected value of a committed result is committed by its own negation line
 !docs/research/s93_priority/p6/expected/dex_standing_book_1001_SENSEX.csv
+# tape T1b: the package marker would be swallowed by _*.py above (CLAUDE.md: negate, never git add -f)
+!services/tape_chain/__init__.py

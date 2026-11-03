@@ -140,3 +140,5 @@ cron.log*
 !docs/research/s93_priority/p6/expected/dex_standing_book_1001_SENSEX.csv
 # tape T1b: the package marker would be swallowed by _*.py above (CLAUDE.md: negate, never git add -f)
 !services/tape_chain/__init__.py
+# tape T1-db: same, for the sidecar package marker
+!services/tape_db/__init__.py

@@ -62,6 +62,9 @@ class Recorder:
         self.start_ns = clock.now_ns()
         self.day = clk.ist_date(self.start_ns)
         self.win = session.window(self.day, log=self.log)      # today's timeline (special_sessions.json overrides)
+        self.log("SESSION kind=%s label=%s open=%s close=%s start=%s closed_check=%s stop=%s" % (
+            "special" if self.win["special"] else "regular", self.win["label"], self.win["session_start"],
+            self.win["session_end"], self.win["start"], self.win["closed_check"], self.win["stop"]))
         self._open_ns = clk.ist_ns(self.day, self.win["session_start"])
         self._close_ns = clk.ist_ns(self.day, self.win["session_end"])
         self.last_frame_ns = None        # any websocket frame, tick packet or 1-byte heartbeat (silence watchdog)

@@ -154,5 +154,16 @@ def _main(argv):
     ap.error("nothing to do")
 
 
+def _guarded_main(argv):
+    """exit 0 / 1 are answers (inside / outside); 2 means 'could not evaluate' so a caller can fail closed."""
+    try:
+        return _main(argv)
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        print("session.py: %s: %s" % (type(exc).__name__, exc), file=sys.stderr)
+        return 2
+
+
 if __name__ == "__main__":
-    sys.exit(_main(sys.argv[1:]))
+    sys.exit(_guarded_main(sys.argv[1:]))

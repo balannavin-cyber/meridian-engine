@@ -56,6 +56,9 @@ M = [
      '"maxDelay": 15, "jitter": 0}', '"maxDelay": 15, "jitter": 0.1}', False),
     ("X9-SPECIAL-VERDICT-OFF", "processor-special", "merdian_compute/tape/minute.py",
      "    if special:\n        # G3's early / late split", "    if False:\n        # G3's early / late split", False),
+    ("X11-GUARD-ERROR-READS-OUTSIDE", "timer-sync", "services/tape_runner/session.py",
+     '        print("session.py: %s: %s" % (type(exc).__name__, exc), file=sys.stderr)\n        return 2\n',
+     '        print("session.py: %s: %s" % (type(exc).__name__, exc), file=sys.stderr)\n        return 1\n', False),
     ("X10-SYNC-KEEPS-STALE", "timer-sync", "services/tape_runner/sync_special_timers.sh",
      '  if [ ! -e "$tmp/$n" ]; then\n', '  if false; then\n', False),
 ]

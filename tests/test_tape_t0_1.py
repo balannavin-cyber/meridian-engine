@@ -659,9 +659,17 @@ def g_timer_sync():
               ("2026-11-08", "16:00"): False, ("2026-11-03", "14:00"): False, ("2026-11-07", "14:30"): False}
     got = {k: inside(*k) for k in probes}
     cells.append((got == probes, "install guard on a special date: %s" % {"%s %s" % k: v for k, v in got.items()}))
+    badcal = os.path.join(tmpdir(), "bad.json")
+    open(badcal, "w").write("{not json")
+    rc_bad = subprocess.run([sys.executable, "-I", py, "--calendar", badcal, "--in-window", "2026-11-08", "1400"],
+                            capture_output=True, text=True).returncode
+    cells.append((rc_bad == 2, "guard on a malformed calendar exits 2 (could not evaluate), not 1 (outside): %s" % rc_bad))
     inst = open(os.path.join(ROOT, "services", "tape_runner", "install.sh")).read()
     cells.append(("sync_special_timers.sh" in inst and "--in-window" in inst,
                   "install.sh calls the sync script and the window guard"))
+    cells.append(('0) die "special session window' in inst and '*) die "could not evaluate the special-session guard' in inst
+                  and inst.index("--in-window") > inst.index('[ -x "$VENV_PY" ]'),
+                  "install.sh: guard runs after the venv check and fails closed on any exit other than 0 / 1"))
     return cells
 
 

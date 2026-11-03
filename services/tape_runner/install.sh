@@ -20,9 +20,6 @@ if [ "$dow" -le 5 ] && [ "$hhmm" -ge 830 ] && [ "$hhmm" -lt 1545 ]; then
   die "market hours (Mon-Fri 08:30-15:45 IST); install after 15:45 or at the weekend"
 fi
 IST_DATE=$(TZ=Asia/Kolkata date +%F); IST_HHMM=$(TZ=Asia/Kolkata date +%H%M)
-if "$VENV_PY" -I "$HERE/session.py" --calendar "$HERE/special_sessions.json" --in-window "$IST_DATE" "$IST_HHMM"; then
-  die "special session window (special_sessions.json) is open or about to open; install outside it"
-fi
 
 # 2. preconditions (existence only -- contents are never read)
 id tape >/dev/null 2>&1 || die "user tape does not exist"
@@ -30,6 +27,15 @@ for f in /etc/tape/kite_api.env /etc/tape/kite_token.env /etc/tape/aws.env; do
   [ -f "$f" ] || die "missing $f"
 done
 [ -x "$VENV_PY" ] || die "missing $VENV_PY (the venv is provisioned separately; install.sh does not create it)"
+# special-session guard (the weekday guard above cannot see a Sunday Muhurat). Fail CLOSED: exit 0 = inside the
+# window, 1 = outside, anything else = the guard itself could not be evaluated -> refuse.
+rc=0
+"$VENV_PY" -I "$HERE/session.py" --calendar "$HERE/special_sessions.json" --in-window "$IST_DATE" "$IST_HHMM" || rc=$?
+case "$rc" in
+  0) die "special session window (special_sessions.json) is open or about to open; install outside it" ;;
+  1) ;;
+  *) die "could not evaluate the special-session guard (exit $rc): fix special_sessions.json" ;;
+esac
 # The pins are read HERE, as root. User tape is never asked to read anything under the clone
 # (/home/<user>/...), so no permission on the operator's home directory is ever needed.
 PINS=$(sed -e 's/#.*//' -e 's/[[:space:]]//g' "$HERE/requirements.txt" \

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tape T1-db loader: one processed day -> the six tape_* sidecar tables (docs/tape/T1_db_plan.md section 1.4).
 
-  python services/tape_offline/load_day.py --day 2026-11-02 --out C:\\tape_data\\out_2026-11-02
+  python services/tape_db/load_day.py --day 2026-11-02 --out C:\\tape_data\\out_2026-11-02
       --cyc C:\\tape_data\\cyc_2026-11-02 --chain C:\\tape_data\\chain_2026-11-02\\events
       --session C:\\tape_data\\2026-11-02\\session [--replace]
 
@@ -35,7 +35,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from merdian_compute.tape import replay  # noqa: E402
-from services.tape_offline import tape_schema as S  # noqa: E402
+from services.tape_db import tape_schema as S  # noqa: E402
 
 SCRIPT = "load_day.py"
 BATCH = 1000
@@ -264,7 +264,7 @@ def git_info():
         except (OSError, subprocess.SubprocessError):
             return None
     sha = git("rev-parse", "HEAD")
-    st = git("status", "--porcelain", "--", "services/tape_offline", "merdian_compute/tape", "sql")
+    st = git("status", "--porcelain", "--", "services/tape_db", "merdian_compute/tape", "sql")
     return sha, (None if st is None else bool(st))
 
 

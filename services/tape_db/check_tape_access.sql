@@ -1,5 +1,5 @@
 -- Tape T1-db post-apply access check (docs/tape/T1_db_plan.md section 1.2).
--- Rendered by services/tape_offline/sidecar_sql.py. Supabase SQL editor, postgres, ONE execution:
+-- Rendered by services/tape_db/sidecar_sql.py. Supabase SQL editor, postgres, ONE execution:
 -- the role switch and the reads must share one execution (the editor opens a new session per run, S84).
 -- Fails LOUDLY (permission denied) if merdian_ro cannot read a table. A 0 row count is not a failure
 -- before the first load: the read proves privilege, not data. role_now must read merdian_ro or every

@@ -71,12 +71,12 @@ import gen_chain  # noqa: E402
 import gen_cycle  # noqa: E402
 import gen_day  # noqa: E402
 from fake_client import FakeClient, FakeLedger  # noqa: E402
-from services.tape_offline import contract_seed, load_day, sidecar_sql, tape_schema as S  # noqa: E402
+from services.tape_db import contract_seed, load_day, sidecar_sql, tape_schema as S  # noqa: E402
 
 DAY = gen_chain.DAY
 MIG = "sql/2026-11-03_tape_t1db_sidecar.sql"
 SEED_SQL = "sql/2026-11-03_tape_t1db_contracts.sql"
-ACCESS = "services/tape_offline/check_tape_access.sql"
+ACCESS = "services/tape_db/check_tape_access.sql"
 TMP = []
 
 
@@ -287,8 +287,8 @@ FORBIDDEN = re.compile(r"\bjoin\b|create\s+(or\s+replace\s+)?(materialized\s+)?(
                        r"generated\s+(always|by)\b|\blead(_|\b)|coverage|agreement|straddle|\batm\b", re.I)
 CHAIN_T = {t for t in S.ORDER if t.startswith("tape_chain_")}
 TAPE_T = set(S.ORDER) - CHAIN_T
-PY_NOJOIN = ("services/tape_offline/load_day.py", "services/tape_offline/contract_seed.py",
-             "services/tape_offline/tape_schema.py")
+PY_NOJOIN = ("services/tape_db/load_day.py", "services/tape_db/contract_seed.py",
+             "services/tape_db/tape_schema.py")
 
 
 def g_no_join():
@@ -418,7 +418,7 @@ CLIENT_OPS = {"insert", "upsert", "delete", "select", "count_exact", "rpc", "upd
 
 
 def g_tables_only():
-    rel = "services/tape_offline/load_day.py"
+    rel = "services/tape_db/load_day.py"
     tree = ast.parse(src(rel))
     bad, seen = [], set()
     for node in ast.walk(tree):
@@ -463,24 +463,24 @@ def g_isolated():
         if f.endswith(".py"):
             top, inner = _imports(os.path.join(rdir, f))
             text = open(os.path.join(rdir, f), encoding="utf-8").read()
-            bad += ["%s: %s" % (f, m) for m in top + inner if "tape_offline" in m or m == "services"]
-            bad += ["%s: names load_day" % f] if "load_day" in text or "tape_offline" in text else []
-    cells.append((not bad, "no services/tape_runner module imports or names services.tape_offline: %s" % (bad or "none")))
+            bad += ["%s: %s" % (f, m) for m in top + inner if "tape_db" in m or "tape_offline" in m or m == "services"]
+            bad += ["%s: names load_day" % f] if "load_day" in text or "tape_db" in text or "tape_offline" in text else []
+    cells.append((not bad, "no services/tape_runner module imports or names services.tape_db / tape_offline: %s" % (bad or "none")))
     inst = src("services/tape_runner/install.sh")
     m = re.search(r"archive HEAD ([^|]*?) \|", inst)
-    cells.append((bool(m) and m.group(1).split() == ["services/__init__.py", "services/tape_runner"] and "tape_offline" not in m.group(1),
+    cells.append((bool(m) and m.group(1).split() == ["services/__init__.py", "services/tape_runner"] and "tape_db" not in m.group(1) and "tape_offline" not in m.group(1),
                   "install.sh archives only %s" % (m.group(1) if m else "?")))
     std = set(sys.stdlib_module_names)
     badtop = []
-    for rel in ("services/tape_offline/load_day.py", "services/tape_offline/contract_seed.py",
-                "services/tape_offline/tape_schema.py", "services/tape_offline/sidecar_sql.py"):
+    for rel in ("services/tape_db/load_day.py", "services/tape_db/contract_seed.py",
+                "services/tape_db/tape_schema.py", "services/tape_db/sidecar_sql.py"):
         top, inner = _imports(os.path.join(ROOT, rel))
         for mod in top:
-            if mod.split(".")[0] in std or mod.startswith("merdian_compute.tape") or mod.startswith("services.tape_offline") \
-                    or mod in ("merdian_compute", "services", "services.tape_offline"):
+            if mod.split(".")[0] in std or mod.startswith("merdian_compute.tape") or mod.startswith("services.tape_db") \
+                    or mod in ("merdian_compute", "services", "services.tape_db"):
                 continue
             badtop.append("%s: %s" % (os.path.basename(rel), mod))
-    cells.append((not badtop, "module-level imports are stdlib / merdian_compute.tape / services.tape_offline only "
+    cells.append((not badtop, "module-level imports are stdlib / merdian_compute.tape / services.tape_db only "
                               "(core.* only inside functions): %s" % (badtop or "none")))
     fx_events()
     run_load(fx_events())

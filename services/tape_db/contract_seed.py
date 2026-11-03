@@ -2,7 +2,7 @@
 """Tape T1-db: compute the ADR-031 D1 contract rows for the tape sidecar from ONE processed day, and write the SQL
 (docs/tape/T1_db_plan.md section 1.3). Expected values are computed here from the files, never recalled.
 
-  python services/tape_offline/contract_seed.py --day 2026-11-02 --out <out_> --cyc <cyc_> --chain <chain_>\\events
+  python services/tape_db/contract_seed.py --day 2026-11-02 --out <out_> --cyc <cyc_> --chain <chain_>\\events
       --session <day>\\session --sql sql/2026-11-03_tape_t1db_contracts.sql
 
 Read-only on its inputs (the same manifest verification as load_day.py). No .env, no network, no database.
@@ -23,7 +23,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from merdian_compute.tape import cycle, replay  # noqa: E402
-from services.tape_offline import load_day, tape_schema as S  # noqa: E402
+from services.tape_db import load_day, tape_schema as S  # noqa: E402
 
 SYMBOLS = ("NIFTY", "SENSEX")
 CALENDAR = {"NIFTY": "NSE_FO", "SENSEX": "BSE_FO"}
@@ -178,7 +178,7 @@ def arr(xs):
 def render_sql(day, cons, edges, derived, inputs, sub_files):
     L = ["-- =====================================================================",
          "-- Tape T1-db: ADR-031 D1 contracts for the tape sidecar (docs/tape/T1_db_plan.md section 1.3).",
-         "-- AUTHORED, NOT APPLIED. Written by services/tape_offline/contract_seed.py from day %s;" % day,
+         "-- AUTHORED, NOT APPLIED. Written by services/tape_db/contract_seed.py from day %s;" % day,
          "-- every number below is computed from these files (sha256), never recalled:"]
     for k in ("out", "cyc", "chain"):
         L.append("--   %-5s run_manifest.json  %s" % (k, inputs[k]))

@@ -67,7 +67,7 @@ Facts 2–3 make the prompt's grain **impossible as a PRIMARY KEY** for `tape_st
 One transaction. First statement is a `DO` block that **raises** unless `server_version_num >= 150000`
 (`UNIQUE NULLS NOT DISTINCT` needs PG 15); nothing is created on an older server.
 
-**Single source of the column set:** `services/tape_offline/tape_schema.py` imports the five tuples above and declares,
+**Single source of the column set:** `services/tape_db/tape_schema.py` imports the five tuples above and declares,
 per table, only (a) the **renames** (CSV name → DB name), (b) the **added** key/derived columns, (c) the provenance
 block, (d) a type for every DB column. Every CSV column not renamed keeps its name. The loader builds rows from this
 module; the `db-ddl-columns` guard parses the SQL and asserts column names **and types** equal it.
@@ -126,7 +126,7 @@ never 0 — ADR-020 / "NULL is a gap, never a zero"):
 | `connects` int | **NULL — owed** (runner does not write it; T0.1). |
 | `watchdog_trips`, `frame_errors` int | **NULL — owed until T0.1**, as the prompt says. |
 
-Every table gets a `COMMENT ON TABLE` naming writer `services/tape_offline/load_day.py`, owner operator, tier research,
+Every table gets a `COMMENT ON TABLE` naming writer `services/tape_db/load_day.py`, owner operator, tier research,
 the pre-registration hash, and the separation rule; owed columns get `COMMENT ON COLUMN … 'OWED: …'`.
 
 Indexes: none beyond the keys (every PK/UNIQUE leads with `symbol, trading_day`; the loader filters on `trading_day`
@@ -138,7 +138,7 @@ Per table: `ALTER TABLE … ENABLE ROW LEVEL SECURITY;` a `DO` block that create
 TO merdian_ro USING (true)` only if absent (CREATE POLICY has no IF NOT EXISTS); `REVOKE ALL … FROM anon,
 authenticated;` `GRANT SELECT … TO merdian_ro;`. The service role (the loader) bypasses RLS. Nothing else is granted.
 
-**Post-apply check** `services/tape_offline/check_tape_access.sql` — SQL editor, postgres, **one execution**:
+**Post-apply check** `services/tape_db/check_tape_access.sql` — SQL editor, postgres, **one execution**:
 `BEGIN; SET LOCAL ROLE merdian_ro;` then one `SELECT` returning one row per table with `current_user`, a real read
 `(SELECT count(*) FROM public.<t>)`, `relrowsecurity`, policy count, the one policy's `cmd`/roles, `has_table_privilege`
 for merdian_ro SELECT and for anon / authenticated across all seven privileges, and a final column
@@ -163,7 +163,7 @@ privilege, merdian_ro without SELECT, or a read refused; `current_user` must rea
 
 The runner is not extended in this phase.
 
-Rows (all `tier 3`, `writer 'services/tape_offline/load_day.py'`, `access_rls 'ENABLED_WITH_RO_POLICY'`,
+Rows (all `tier 3`, `writer 'services/tape_db/load_day.py'`, `access_rls 'ENABLED_WITH_RO_POLICY'`,
 `time_col 'trading_day'`, `cadence_min 1440`, `freshness_sla_min 1440`, `scope_col 'symbol'`, `INSERT … ON CONFLICT
 (product) DO NOTHING`):
 
@@ -183,16 +183,16 @@ Rows (all `tier 3`, `writer 'services/tape_offline/load_day.py'`, `access_rls 'E
 - `product_lineage`: `tape_strike_cycle:S ← tape_minute:S`, `tape_events:S ← tape_strike_cycle:S`,
   `tape_chain_events:S ← tape_chain_runs:S`, for S ∈ {NIFTY, SENSEX}. No edge crosses tape ↔ chain.
 
-**Expected values are computed, never recalled:** `services/tape_offline/contract_seed.py --out … --cyc … --chain …
+**Expected values are computed, never recalled:** `services/tape_db/contract_seed.py --out … --cyc … --chain …
 --session …` reads only the day-1 files (manifest-verified, same code path as the loader), computes every number above,
 and writes the SQL with each derivation and the input sha256s in comments. A test runs it on the fixture and feeds the
 emitted contract to `check_contracts_shadow.own_status` (pure) — OK on the fixture, DEGRADED with one row over the
 ceiling — so the runner is shown to understand the fields, not assumed to.
 
-### 1.4 Loader — `services/tape_offline/load_day.py`
+### 1.4 Loader — `services/tape_db/load_day.py`
 
 ```
-python services/tape_offline/load_day.py --day 2026-11-02 --out C:\tape_data\out_2026-11-02 \
+python services/tape_db/load_day.py --day 2026-11-02 --out C:\tape_data\out_2026-11-02 \
   --cyc C:\tape_data\cyc_2026-11-02 --chain C:\tape_data\chain_2026-11-02\events \
   --session C:\tape_data\2026-11-02\session [--replace]
 ```
@@ -235,7 +235,7 @@ with an embedded resource, no string naming two relations — the loader cannot 
 
 ## 2. Build (Sonnet) — tester first
 
-Files: `services/tape_offline/{tape_schema,load_day,contract_seed}.py`, `services/tape_offline/check_tape_access.sql`,
+Files: `services/tape_db/{tape_schema,load_day,contract_seed}.py`, `services/tape_db/check_tape_access.sql`,
 `sql/2026-11-03_tape_t1db_sidecar.sql`, `sql/2026-11-03_tape_t1db_contracts.sql`, `tests/tape_t1db/fake_client.py`,
 `tests/test_tape_t1db.py`, `tests/tape_t1db_mutants.py`, `tests/run_offline.sh`.
 
@@ -264,7 +264,7 @@ the finalising call. Tests import neither `core.config` nor `core.execution_log`
 | `load-replace` | pre-seeded day without `--replace` → exit 2, 0 writes, no ledger; with `--replace` → deletes before inserts, superseded run_id in ledger notes, new run_id on every row | `M-T1DB-SILENT-OVERWRITE` |
 | `load-provenance` | every inserted row has `run_id` (== ledger run_id), `code_sha` == `git rev-parse HEAD` of the worktree, `source`, `loaded_at`; exactly one ledger constructed and finalised once | `M-T1DB-NO-LEDGER` |
 | `load-tables-only` | AST: every first argument to a client method is a `tape_*` table from `tape_schema` | `M-T1DB-WRITES-GEX` |
-| `t1db-isolated` | `services/tape_runner/*` imports nothing from `services.tape_offline`; `install.sh` archives only `services/__init__.py services/tape_runner`; no `.env` read (core modules absent from `sys.modules`) | `M-T1DB-RUNNER-IMPORTS` |
+| `t1db-isolated` | `services/tape_runner/*` imports nothing from `services.tape_db` / `services.tape_offline`; `install.sh` archives only `services/__init__.py services/tape_runner`; no `.env` read (core modules absent from `sys.modules`) | `M-T1DB-RUNNER-IMPORTS` |
 
 Unit checks (no mutant): typed conversion of empty strings → NULL; `HH:MM` → `+05:30`; `in_window` → bool;
 `contract_seed` on the fixture → `own_status` OK, one row over the ceiling → DEGRADED; `check_tape_access.sql` names
@@ -280,7 +280,7 @@ step 36, header count updated. Mutants run `--repeat 5`.
 1. Apply `sql/2026-11-03_tape_t1db_sidecar.sql` — **Supabase SQL editor**, postgres, one execution (the engine's
    usual path; `bin/roq.sh` is merdian_ro and cannot create). If the editor offers to enable RLS, accept: the DDL
    enables it with a policy, so either answer ends in the same state (S90 precedent).
-2. Run `services/tape_offline/check_tape_access.sql` in the editor → six lines `tape_… ACCESS PASS`, `current_user =
+2. Run `services/tape_db/check_tape_access.sql` in the editor → six lines `tape_… ACCESS PASS`, `current_user =
    merdian_ro`.
 3. Apply `sql/2026-11-03_tape_t1db_contracts.sql` (after step 2).
 4. `load_day.py` for 2026-11-02 and 2026-11-03 (PowerShell, `Tee-Object`, Rule 21) → six `LOAD PASS` lines each.
@@ -315,12 +315,12 @@ no `.env`, no network) and its SQL is committed with the input sha256s in its he
 
 | File | Role |
 |---|---|
-| `services/tape_offline/tape_schema.py` | the one definition: imported CSV tuples + renames + added + provenance + types + keys |
-| `services/tape_offline/sidecar_sql.py` | renders the migration and the access check from it (deterministic; a unit check asserts the committed files equal the render) |
+| `services/tape_db/tape_schema.py` | the one definition: imported CSV tuples + renames + added + provenance + types + keys |
+| `services/tape_db/sidecar_sql.py` | renders the migration and the access check from it (deterministic; a unit check asserts the committed files equal the render) |
 | `sql/2026-11-03_tape_t1db_sidecar.sql` | the migration (6 tables, RLS, one `merdian_ro_select` policy each, REVOKE anon/authenticated, GRANT merdian_ro, comments) |
-| `services/tape_offline/check_tape_access.sql` | post-apply check, one execution, `SET LOCAL ROLE merdian_ro`, one `ACCESS PASS/FAIL` line per table |
-| `services/tape_offline/contract_seed.py` → `sql/2026-11-03_tape_t1db_contracts.sql` | 12 contracts + 6 lineage edges, computed from day 2026-11-02 |
-| `services/tape_offline/load_day.py` | the loader |
+| `services/tape_db/check_tape_access.sql` | post-apply check, one execution, `SET LOCAL ROLE merdian_ro`, one `ACCESS PASS/FAIL` line per table |
+| `services/tape_db/contract_seed.py` → `sql/2026-11-03_tape_t1db_contracts.sql` | 12 contracts + 6 lineage edges, computed from day 2026-11-02 |
+| `services/tape_db/load_day.py` | the loader |
 | `tests/tape_t1db/fake_client.py`, `tests/test_tape_t1db.py`, `tests/tape_t1db_mutants.py` | fakes, 9 guards + 15 unit checks, 10 mutants |
 
 Day-1 seed (measured by `contract_seed.py`, 2026-11-02; ceilings derived from the inputs, never from the counts):
@@ -339,6 +339,20 @@ day-1 manifests against the files on disk, and `load_day.build_all` typed every 
 
 ### 6.1 Build-time slips
 
+- **Package moved: `services/tape_offline/` → `services/tape_db/`** (loader, seed, schema, renderer, access check).
+  The prompt and §1–§3 named `services/tape_offline/`, but the T1a guards `proc-isolated` and `proc-no-outcomes` hold
+  every module in that directory to stdlib-only with no database or chain identifiers. The first commit (`883ff3a`)
+  put the loader there and turned T1a red (10/12). Widening those guards would loosen a standing gate, so the T1-db
+  code moved to its own package — the T1b precedent of `services/tape_chain/`. `install.sh` still archives only
+  `services/__init__.py services/tape_runner`, so `services/tape_db` is not shipped either. Paths in this document
+  were updated to match; the row `source` value stays `tape_offline_v1`, as the prompt specified.
+
+- **`services/tape_db/__init__.py` was silently ignored** by `.gitignore` `_*.py` (git status clean, file untracked,
+  S68). Fixed with a negation line beside T1b's `!services/tape_chain/__init__.py`, never `git add -f`.
+- **T0 suite on Windows: environmental, not a regression.** `tests/test_tape_t0.py` exits 15 with no output on this
+  Local Windows machine. Per the operator, CC A measured the same on a clean `a1636b9` export the same afternoon, and
+  the T0 suite passed 21/21 guards and 12/12 units on the retail box at `1682b52`. T1-db changes no T0 file. T1a
+  (12/12, 9/9), T1b (14/14, 5/5) and T1-db (9/9, 15/15) pass here after the package move.
 - **Fixture plumbing.** The `gen_day` path produces 0 CONC/THIN candidates (measured with windows up to 09:15–11:00,
   15–23 s per build), so the events fixture uses `gen_cycle`'s planted day as `tape_minute.csv`; that fixture's T1a
   `run_manifest.json` is re-hashed by the test (stated in `tests/test_tape_t1db.py` and in the manifest itself as
@@ -358,7 +372,7 @@ day-1 manifests against the files on disk, and `load_day.build_all` typed every 
    once. If the editor offers to enable RLS, accept it: the DDL already enables RLS with a policy, so either answer ends
    in the same state. **If the editor reports any error, do not assume nothing landed** (S90 AM-1): the file is
    idempotent — re-run it, then run step 2. A server below PostgreSQL 15 is refused by the first `DO` block.
-2. **Access check** — paste `services/tape_offline/check_tape_access.sql`, run once. Expected, six lines, `role_now =
+2. **Access check** — paste `services/tape_db/check_tape_access.sql`, run once. Expected, six lines, `role_now =
    merdian_ro`, `rows_readable_by_ro = 0`:
    ```
    tape_chain_events ACCESS PASS
@@ -374,7 +388,7 @@ day-1 manifests against the files on disk, and `load_day.build_all` typed every 
    cd C:\wt-tape-b
    git status --porcelain ; git log --oneline -1
    $env:PYTHONIOENCODING = "utf-8"
-   python services\tape_offline\load_day.py --day 2026-11-02 --out C:\tape_data\out_2026-11-02 --cyc C:\tape_data\cyc_2026-11-02 --chain C:\tape_data\chain_2026-11-02\events --session C:\tape_data\2026-11-02\session 2>&1 | Tee-Object -FilePath "C:\tape_data\load_2026-11-02_$(Get-Date -Format yyyyMMdd_HHmm).log"
+   python services\tape_db\load_day.py --day 2026-11-02 --out C:\tape_data\out_2026-11-02 --cyc C:\tape_data\cyc_2026-11-02 --chain C:\tape_data\chain_2026-11-02\events --session C:\tape_data\2026-11-02\session 2>&1 | Tee-Object -FilePath "C:\tape_data\load_2026-11-02_$(Get-Date -Format yyyyMMdd_HHmm).log"
    ```
    Expected for 2026-11-02 (sums of the day-1 seed above):
    ```

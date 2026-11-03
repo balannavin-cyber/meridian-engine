@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tape T1-db: render the sidecar migration from tape_schema (docs/tape/T1_db_plan.md sections 1.1-1.2).
 
-  python services/tape_offline/sidecar_sql.py > sql/2026-11-03_tape_t1db_sidecar.sql
+  python services/tape_db/sidecar_sql.py > sql/2026-11-03_tape_t1db_sidecar.sql
 
 Deterministic. tests/test_tape_t1db.py asserts the committed file equals this output AND, separately, parses the
 committed file and compares its columns and access statements with tape_schema (the parse is the guard; the equality
@@ -14,7 +14,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from services.tape_offline import tape_schema as S  # noqa: E402
+from services.tape_db import tape_schema as S  # noqa: E402
 
 SIDE = {"tape_minute": "tape", "tape_strike_cycle": "tape", "tape_events": "tape", "tape_daily_report": "tape",
         "tape_chain_runs": "chain", "tape_chain_events": "chain"}
@@ -95,13 +95,13 @@ def render():
     parts = [
         "-- =====================================================================",
         "-- Tape T1-db: sidecar tables (docs/tape/T1_db_plan.md sections 1.1-1.2).",
-        "-- AUTHORED, NOT APPLIED. Rendered by services/tape_offline/sidecar_sql.py from tape_schema.py.",
+        "-- AUTHORED, NOT APPLIED. Rendered by services/tape_db/sidecar_sql.py from tape_schema.py.",
         "-- Supabase SQL editor, postgres, ONE execution. Idempotent: IF NOT EXISTS everywhere, policies",
         "-- created only if absent, REVOKE/GRANT/COMMENT re-runnable. Additive only.",
         "-- When the editor offers to enable RLS: the DDL already enables it WITH a merdian_ro policy",
         "-- (ADR-031 D6) - either answer leaves the same end state (S90 precedent).",
         "-- Pre-registration v0.2 sha256 %s." % S.PREREG_SHA,
-        "-- Post-apply check: services/tape_offline/check_tape_access.sql.",
+        "-- Post-apply check: services/tape_db/check_tape_access.sql.",
         "-- =====================================================================",
         "",
         "BEGIN;",
@@ -125,7 +125,7 @@ PRIVS = "SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER"
 
 
 def render_access_check():
-    """services/tape_offline/check_tape_access.sql: one execution, acting role carried in the same result set (S84)."""
+    """services/tape_db/check_tape_access.sql: one execution, acting role carried in the same result set (S84)."""
     sel = []
     for t in S.ORDER:
         sel.append("""SELECT '{t}' AS relation,
@@ -142,7 +142,7 @@ FROM pg_class c WHERE c.oid = 'public.{t}'::regclass""".format(t=t, privs=PRIVS)
     body = "\nUNION ALL\n".join(sel)
     return "\n".join([
         "-- Tape T1-db post-apply access check (docs/tape/T1_db_plan.md section 1.2).",
-        "-- Rendered by services/tape_offline/sidecar_sql.py. Supabase SQL editor, postgres, ONE execution:",
+        "-- Rendered by services/tape_db/sidecar_sql.py. Supabase SQL editor, postgres, ONE execution:",
         "-- the role switch and the reads must share one execution (the editor opens a new session per run, S84).",
         "-- Fails LOUDLY (permission denied) if merdian_ro cannot read a table. A 0 row count is not a failure",
         "-- before the first load: the read proves privilege, not data. role_now must read merdian_ro or every",

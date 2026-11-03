@@ -18,7 +18,7 @@ from merdian_compute.tape import chain_events, cycle, events, minute  # noqa: E4
 
 PREREG_SHA = "71950f92eb1313f2e58a40772c8671a2beefce220d5222213d39e8a80dfa4800"
 SOURCE = "tape_offline_v1"
-WRITER = "services/tape_offline/load_day.py"
+WRITER = "services/tape_db/load_day.py"
 
 PROVENANCE = (("run_id", "uuid"), ("code_sha", "text"), ("source", "text"), ("config_version", "text"),
               ("loaded_at", "timestamptz"))

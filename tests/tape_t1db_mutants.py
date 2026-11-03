@@ -23,7 +23,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MIG = "sql/2026-11-03_tape_t1db_sidecar.sql"
 COPY = ["merdian_compute", "services", "tests/test_tape_t1db.py", "tests/tape_t1db", "tests/tape_t1a", "tests/tape_t1b",
         MIG, "sql/2026-11-03_tape_t1db_contracts.sql", "check_contracts_shadow.py"]
-LD = "services/tape_offline/load_day.py"
+LD = "services/tape_db/load_day.py"
 NULL_LEDGER = ('    ledger = (lambda **kw: type("NullLedger", (), {"record_write": lambda s, t, n: None, '
                '"complete": lambda s, notes=None: 0, '
                '"exit_with_reason": lambda s, *a, **k: k.get("exit_code", 1)})())(\n')
@@ -44,7 +44,7 @@ M = [
     ("M-T1DB-WRITES-GEX", "load-tables-only", LD, "        # 7. read back\n",
      '        client.insert("gex_strike_snapshots", [])\n        # 7. read back\n'),
     ("M-T1DB-RUNNER-IMPORTS", "t1db-isolated", "services/tape_runner/recorder.py",
-     "import json\n", "import json\nfrom services.tape_offline import load_day  # noqa\n"),
+     "import json\n", "import json\nfrom services.tape_db import load_day  # noqa\n"),
 ]
 
 

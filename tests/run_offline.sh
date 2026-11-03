@@ -199,7 +199,7 @@ echo "== 34/38 tape T1a mutants (15, each must be caught)"; python3 tests/tape_t
 # (operator ruling R-1, 2026-11-03) lives in tests/test_tape_t1b.py only. Appended AFTER step 34, never inside a pair (TD-S93-NEW-1).
 echo "== 35/38 tape T1b guards (14) + unit checks (docs/tape/T1b_plan.md)"; python3 tests/test_tape_t1b.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 echo "== 36/38 tape T1b mutants (21, each must be caught)"; python3 tests/tape_t1b_mutants.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-# TAPE_T1DB: the tape Supabase sidecar (sql/2026-11-03_tape_t1db_*.sql, services/tape_offline/{tape_schema,sidecar_sql,
+# TAPE_T1DB: the tape Supabase sidecar (sql/2026-11-03_tape_t1db_*.sql, services/tape_db/{tape_schema,sidecar_sql,
 # load_day,contract_seed}.py): 9 guards on T1a/T1b generator fixtures with a recording fake client (docs/tape/T1_db_plan.md
 # section 2) + 15 unit checks, then 10 mutants x5 each of which must be caught. No database, no network, no .env (the guard
 # t1db-isolated asserts core.config / core.execution_log were never imported). Same rule-23 refusal as T1b; Local-only

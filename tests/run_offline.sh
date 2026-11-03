@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # S90 / AM-1 — every offline check in one command. No database, no network.
-# 38 steps as of tape T1-db (2026-11-03; 36 as of tape T1b, 2026-11-03; 34 as of tape T1a, 2026-11-02; 32 as of tape T0, 2026-11-01; 30 as of S103). Every step's exit code is checked and ANY non-zero is a FAIL,
+# 40 steps as of tape scoring (2026-11-03; 38 as of tape T1-db, 2026-11-03; 36 as of tape T1b, 2026-11-03; 34 as of tape T1a, 2026-11-02; 32 as of tape T0, 2026-11-01; 30 as of S103). Every step's exit code is checked and ANY non-zero is a FAIL,
 # including a step's own rule-23 refusal (exit 2) — a refusal is never a skip.
 #   ( ulimit -v 700000; bash tests/run_offline.sh )   -> exit 0 only if all pass
 # NOT any hour, and not without a memory ceiling: see the rule 23 guard below. Exit 2 is a
@@ -33,24 +33,24 @@ rule23_guard() {
 rule23_guard || exit $?
 
 rc=0
-echo "== 1/38 contract runner unit tests";   python3 tests/test_check_contracts_shadow.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 2/38 seeded defects on golden day"; python3 tests/replay/test_replay_seeded.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 3/38 replay vs pinned statuses";    python3 tests/replay/replay_contracts.py --check | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 4/38 ledger child runs (S90_CHILD_RUN)"; python3 tests/test_execution_log_child.py 2>/dev/null | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 5/38 CAS close slot pick (S90_CAS_SLOT_PICK)"; python3 tests/test_cas_close_slot_pick.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 6/38 CAS recon auto-correct (two sources)"; python3 tests/test_cas_recon_autocorrect.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 7/38 cycle-history ts fraction widths (ENH-133 _ist_date)"; python3 tests/test_cycle_history_ts_parse.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 1/40 contract runner unit tests";   python3 tests/test_check_contracts_shadow.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 2/40 seeded defects on golden day"; python3 tests/replay/test_replay_seeded.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 3/40 replay vs pinned statuses";    python3 tests/replay/replay_contracts.py --check | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 4/40 ledger child runs (S90_CHILD_RUN)"; python3 tests/test_execution_log_child.py 2>/dev/null | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 5/40 CAS close slot pick (S90_CAS_SLOT_PICK)"; python3 tests/test_cas_close_slot_pick.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 6/40 CAS recon auto-correct (two sources)"; python3 tests/test_cas_recon_autocorrect.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 7/40 cycle-history ts fraction widths (ENH-133 _ist_date)"; python3 tests/test_cycle_history_ts_parse.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S91: TD-S91-NEW-2 site 2 (marker writer parse_ts) and the orchestrator-monitor alert
 # gate. Both are pure-Python, no fixtures and no golden days, so neither contributes to
 # the rule 23 memory ceiling -- they are in this suite for the single-command property.
-echo "== 8/38 marker writer ts fraction widths (TD-S91-NEW-2 site 2)"; python3 tests/test_marker_ts_parse.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 9/38 orchestrator monitor alert gate + dedupe"; python3 tests/test_monitor_orchestrator_gate.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 8/40 marker writer ts fraction widths (TD-S91-NEW-2 site 2)"; python3 tests/test_marker_ts_parse.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 9/40 orchestrator monitor alert gate + dedupe"; python3 tests/test_monitor_orchestrator_gate.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S92: TD-S91-NEW-2 site 7 / TD-S91-NEW-6. core.ts_parse is the shared PostgREST
 # timestamp parser; this exercises widths 0-6, Z, offsets, naive and malformed input,
 # and the five real wire strings from 2026-10-08 including the rows[0] of that day's
 # three DATA_ERROR basis runs. Pure Python, no fixtures, no golden day -- it adds
 # nothing to the rule 23 memory ceiling.
-echo "== 10/38 core.ts_parse shared ts parser (TD-S91-NEW-2 site 7)"; python3 tests/test_ts_parse_core.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 10/40 core.ts_parse shared ts parser (TD-S91-NEW-2 site 7)"; python3 tests/test_ts_parse_core.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S93: P6 / ENH-140 offline DEX recompute. UNLIKE steps 8-10 this one DOES load a golden
 # day -- tests/golden/2026-10-01_SENSEX, 31,914 chain rows over 81 cycles -- so it is the
 # first addition since S90 that moves this suite's memory profile, and it is the reason the
@@ -76,7 +76,7 @@ echo "== 10/38 core.ts_parse shared ts parser (TD-S91-NEW-2 site 7)"; python3 te
 # This step WRITES docs/research/s93_priority/p6/expected/dex_standing_book_1001_SENSEX.csv
 # on every run. That path is gitignored (.gitignore:43 `*.csv`), so running the suite leaves
 # no git noise -- but it is not a read-only step, unlike every other one here.
-echo "== 11/38 DEX recompute vs golden day (S93 / ENH-140 P6)"; python3 tests/test_dex_recompute.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 11/40 DEX recompute vs golden day (S93 / ENH-140 P6)"; python3 tests/test_dex_recompute.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S95: P3a (roadmap P3 = R2.2 + R2.3, phase a). Offline invariants I1-I4 asserted, I5-I6 descriptive,
 # on ALL six golden days -- the first step that loads every fixture, so it is the step the rule 23
 # ceiling exists for. Read-only: it writes nothing. Wired in only after its standalone pass on the box
@@ -86,7 +86,7 @@ echo "== 11/38 DEX recompute vs golden day (S93 / ENH-140 P6)"; python3 tests/te
 # added MUTANT NOT APPLIED so an unchanged mutant can no longer pass as caught.
 # MEASURED standalone 2026-10-10 under ( ulimit -v 700000 ): ~17 s, peak RSS 224,216 kB (workspace run).
 # MEASURED full suite 2026-10-23 05:29 IST, 13 steps, ( ulimit -v 700000 ): wall 1:48, peak RSS 331,740 kB, exit 0.
-echo "== 12/38 P3a invariants + independent recompute, six golden days (S95)"; python3 -I tests/test_p3a_invariants.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 12/40 P3a invariants + independent recompute, six golden days (S95)"; python3 -I tests/test_p3a_invariants.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S98: S97-N / TD-S97-NEW-7 — the contract check's spot condition (09:15-15:15 IST window,
 # 3-min threshold, clear-on-pass, `74b45ce`). Pure Python: requests.get and the state file are
 # mocked, no fixtures and no golden day, so it adds nothing to the rule 23 memory ceiling --
@@ -101,7 +101,7 @@ echo "== 12/38 P3a invariants + independent recompute, six golden days (S95)"; p
 #
 # Appended AFTER step 12's pipeline-and-test pair, never between one and its test (TD-S93-NEW-1:
 # the ${PIPESTATUS[0]} idiom is positional, so an insertion inside a pair silently disarms it).
-echo "== 13/38 contract check spot condition (S97-N / TD-S97-NEW-7)"; python3 tests/test_contract_check_s97.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 13/40 contract check spot condition (S97-N / TD-S97-NEW-7)"; python3 tests/test_contract_check_s97.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S99: S98-B / rulings S98-E, S98-E.1 -- the shadow runner's cycle wait (ts >= the 5-min cycle
 # floor, poll 5 s, wait 120 s, timeout -> exit 1 SKIPPED_NO_INPUT). Pure Python: the runner is
 # loaded from source with dotenv, the Supabase client, the execution log, the calendar gate and
@@ -109,102 +109,107 @@ echo "== 13/38 contract check spot condition (S97-N / TD-S97-NEW-7)"; python3 te
 # its own mutants M / R / Z. Targets the LIVE runner (repointed from the S98 dry-run copy, S99 A4).
 # Plain `python3`, as step 13 (not measured under -I). Appended AFTER step 13, never inside a
 # pair (TD-S93-NEW-1).
-echo "== 14/38 shadow runner cycle wait (S98-B / TD-S97-NEW-4)"; python3 tests/test_runner_cycle_wait.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 14/40 shadow runner cycle wait (S98-B / TD-S97-NEW-4)"; python3 tests/test_runner_cycle_wait.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S99: R2 / TD-S97-NEW-9, -10 (rulings S99-H, S99-I) -- the WCB writer's no-input guard: write only
 # when the breadth ts is <= 10 min old AND >= 1 constituent is priced, else exit 0 SKIPPED_NO_INPUT.
 # Pure Python: the writer is loaded from source with the Supabase client, the execution log and retry
 # utils stubbed; core.ts_parse is real. No fixtures, no golden day -- same class as steps 8-10, 13, 14.
 # Carries its own mutants M1-M3. Appended AFTER step 14, never inside a pair (TD-S93-NEW-1).
-echo "== 15/38 WCB writer no-input guard (S99 R2 / TD-S97-NEW-9)"; python3 tests/test_wcb_no_input.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 15/40 WCB writer no-input guard (S99 R2 / TD-S97-NEW-9)"; python3 tests/test_wcb_no_input.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S100_R3_HUNG: R3 / TD-S97-NEW-3 -- the orchestrator monitor's hung-run probe (unfinished ledger rows
 # started more than HUNG_MIN = 6 min ago today -> CRITICAL under its own key). Pure Python: the monitor is
 # loaded from source with Telegram blanked and every ledger read injected or `requests.get` mocked. Carries
 # its own mutants M1-M5. Appended AFTER step 15, never inside a pair (TD-S93-NEW-1).
-echo "== 16/38 orchestrator monitor hung-run probe (S100 R3 / TD-S97-NEW-3)"; python3 tests/test_monitor_hung_run.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 16/40 orchestrator monitor hung-run probe (S100 R3 / TD-S97-NEW-3)"; python3 tests/test_monitor_hung_run.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S100_R42_UNION: R42 (ruling S100-C) -- the monitor window is the union of every runner crontab line when
 # that union is one uniform-step run on one set of weekdays (else a loud fallback). Parses the committed
 # docs/registers/aws_crontab.txt against an independent expansion. Carries its own mutants M1-M3.
 # Appended AFTER step 16, never inside a pair (TD-S93-NEW-1).
-echo "== 17/38 orchestrator monitor window = union of runner lines (S100 R42)"; python3 tests/test_monitor_window_union.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 17/40 orchestrator monitor window = union of runner lines (S100 R42)"; python3 tests/test_monitor_window_union.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S100_R4_PROBE: R4 (ruling S100-E) -- preopen_probe.py, the 09:09 IST broker access check (Dhan expiry list,
 # LTP, intraday; Kite profile). Pure Python: every broker, sender, calendar and ledger is a stub. Carries its own
 # mutants M1-M6. Appended AFTER step 17, never inside a pair (TD-S93-NEW-1).
-echo "== 18/38 pre-open broker access probe (S100 R4)"; python3 tests/test_preopen_probe.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 18/40 pre-open broker access probe (S100 R4)"; python3 tests/test_preopen_probe.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S100_WSFEED_RETRY: R4 / TD-S80-NEW-17 (ruling S100-F) -- the wsfeed retry script and the deduped preflight /
 # OnFailure alert. Runs the real bash scripts in a temp engine dir with systemctl, curl, date and python3 stubbed.
 # Carries its own mutants M1-M4. Appended AFTER step 18, never inside a pair (TD-S93-NEW-1).
-echo "== 19/38 wsfeed retry + deduped preflight alert (S100 R4 / TD-S80-NEW-17)"; python3 tests/test_wsfeed_retry.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 19/40 wsfeed retry + deduped preflight alert (S100 R4 / TD-S80-NEW-17)"; python3 tests/test_wsfeed_retry.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S100_R40_BREADTH: R40 (ruling S100-I) -- ingest_breadth_from_ticks.py: holiday gate, no ticks -> no row and
 # exit 0, ledger via core.execution_log. Writer loaded from source with supabase / dotenv / ledger / calendar stubbed.
 # Carries its own mutants M1-M3 and a no-op control M4. Appended AFTER step 19 (TD-S93-NEW-1).
-echo "== 20/38 breadth-from-ticks writer (S100 R40)"; python3 tests/test_breadth_from_ticks.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 20/40 breadth-from-ticks writer (S100 R40)"; python3 tests/test_breadth_from_ticks.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S100_CHAIN_5XX: TD-S81-NEW-11 -- the chain ingest retries a Dhan 5xx at most twice per call (429 unchanged, auth
 # fails fast). Predicates taken from the ingest source by ast, driven through the real retry_call. Mutants M1-M3.
 # Appended AFTER step 20, never inside a pair (TD-S93-NEW-1).
-echo "== 21/38 chain ingest Dhan 5xx retry (S100 / TD-S81-NEW-11)"; python3 tests/test_chain_dhan_retry.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 21/40 chain ingest Dhan 5xx retry (S100 / TD-S81-NEW-11)"; python3 tests/test_chain_dhan_retry.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S100 R19 (TD-S97-NEW-11): the daily breadth builder fills a complete EOD date that a later date overtook
 # before it was built (10-08, 10-15). Builder loaded from source, HTTP helpers stubbed. Mutants M1-M3.
 # Appended AFTER step 21, never inside a pair (TD-S93-NEW-1).
-echo "== 22/38 daily breadth gap-fill (S100 R19 / TD-S97-NEW-11)"; python3 tests/test_breadth_daily_gapfill.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 22/40 daily breadth gap-fill (S100 R19 / TD-S97-NEW-11)"; python3 tests/test_breadth_daily_gapfill.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S100-M (b): SUBSCRIPTION_LAPSED -- Dhan 806 / DH-902 is a lapsed plan, not a dead token (chain ingest, spot 1m,
 # CAS close, pre-open probe, core, alert daemon, CHECK DDL). Real 10-21 error texts. Mutants M1-M6.
 # Appended AFTER step 22, never inside a pair (TD-S93-NEW-1).
-echo "== 23/38 Dhan plan lapse -> SUBSCRIPTION_LAPSED (S100-M / TD-S97-NEW-21 b)"; python3 tests/test_subscription_lapsed.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 23/40 Dhan plan lapse -> SUBSCRIPTION_LAPSED (S100-M / TD-S97-NEW-21 b)"; python3 tests/test_subscription_lapsed.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S101_IMPORT_PURITY: retail scope §1.3 -- `import merdian_compute` reads no env, imports no
 # supabase / requests / dotenv / core, opens no socket (empty-env -I child with three tripwires),
 # then calls one exported function. Mutants M1-M6, each must trip its own wire. Pure Python, no
 # fixtures, no golden day. Appended AFTER step 23, never inside a pair (TD-S93-NEW-1).
-echo "== 24/38 merdian_compute import purity (S101 / retail scope §1.3)"; python3 tests/test_merdian_compute_import_purity.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 24/40 merdian_compute import purity (S101 / retail scope §1.3)"; python3 tests/test_merdian_compute_import_purity.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S101_CONTRACT: the surface retail depends on -- 26 signatures + GammaMetricsResult field order,
 # and the Board core recomputed from each golden chain by merdian_compute ALONE vs the value production
 # wrote (313 rows x 11 fields; pin_risk_score on the 291 rows with a full in-day 5-cycle window).
 # Loads all six golden days: same rule-23 class as step 12, and like step 12 stdlib-only under -I.
 # Mutants M1-M5. Appended AFTER step 24, never inside a pair (TD-S93-NEW-1).
-echo "== 25/38 merdian_compute contract vs production golden rows (S101 / retail scope §1.3)"; python3 -I tests/test_merdian_compute_contract.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 25/40 merdian_compute contract vs production golden rows (S101 / retail scope §1.3)"; python3 -I tests/test_merdian_compute_contract.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S102_R48: run_ingest.sh reports the ingest rc on its END line and exits with it -- a COPY of the
 # wrapper in a temp dir with a stub .env and a stub ingest (the real .env is never read, rule 19).
 # Mutant M1 = the pre-S102 capture. Appended AFTER step 25, never inside a pair (TD-S93-NEW-1).
-echo "== 26/38 run_ingest.sh rc on the END line (S102 / tracker 2.2 R48)"; python3 tests/test_run_ingest_rc.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 26/40 run_ingest.sh rc on the END line (S102 / tracker 2.2 R48)"; python3 tests/test_run_ingest_rc.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S102_TD_S77_NEW_8: refresh_equity_intraday_last.py writes its ledger row through core.execution_log (no
 # hand-rolled insert), labels a Kite token error TOKEN_EXPIRED, declares its 1000-row floor, and imports cleanly.
 # Stubs only. Mutants M1-M4. Appended AFTER step 26, never inside a pair (TD-S93-NEW-1).
-echo "== 27/38 refresh_equity_intraday_last ledger via core.execution_log (S102 / TD-S77-NEW-8)"; python3 tests/test_refresh_equity_intraday_last.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 27/40 refresh_equity_intraday_last ledger via core.execution_log (S102 / TD-S77-NEW-8)"; python3 tests/test_refresh_equity_intraday_last.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S102_TDS100_NEW1: the futures writer prices the index (IDX_I 13 / 51) in the same Dhan ltp request as the
 # future and computes basis against it; no index LTP -> no row; no Supabase read while building rows.
 # Stubs only. Mutants M1-M3. Appended AFTER step 27, never inside a pair (TD-S93-NEW-1).
-echo "== 28/38 futures basis vs the same-request index LTP (S102 / TD-S100-NEW-1)"; python3 tests/test_futures_spot_same_request.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 28/40 futures basis vs the same-request index LTP (S102 / TD-S100-NEW-1)"; python3 tests/test_futures_spot_same_request.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S102_CLOSE_CAS: the session markers read the CAS-settled 15:29 bar (written ~16:20 IST, ts = capture time,
 # raw.bar_ts_ist = bar time) as close_1530. Stubs only. Mutants M1-M3. Appended AFTER step 28 (TD-S93-NEW-1).
-echo "== 29/38 session markers close_1530 from the CAS-settled bar (S102 / TD-S91-NEW-18)"; python3 tests/test_marker_close_cas.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 29/40 session markers close_1530 from the CAS-settled bar (S102 / TD-S91-NEW-18)"; python3 tests/test_marker_close_cas.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # S103_PRIOR_ROW: the gamma writer's prior-row read selects `raw` (TD-S101-NEW-3: otm_oi_velocity was NULL in every
 # production row) and is bounded to the same IST session (TD-S101-NEW-4: no cross-day prior row). Stubs only (no
 # database, no .env). 14 cells, mutants M1-M4. Appended AFTER step 29 (TD-S93-NEW-1).
-echo "== 30/38 gamma prior-row read: raw selected, same-IST-session bound (S103 / TD-S101-NEW-3, -4)"; python3 tests/test_gamma_prior_row.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 30/40 gamma prior-row read: raw selected, same-IST-session bound (S103 / TD-S101-NEW-3, -4)"; python3 tests/test_gamma_prior_row.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # TAPE_T0: the tape raw recorder (services/tape_runner) and the classification library (merdian_compute/tape):
 # 21 guards with fakes (no network, no credentials, no kiteconnect/boto3), then 37 mutants each of which must be
 # caught by its guard. Pure Python, no fixtures, no golden day. Appended AFTER step 30, never inside a pair (TD-S93-NEW-1).
-echo "== 31/38 tape T0 guards (21) + unit checks (docs/tape/T0_plan.md §8)"; python3 tests/test_tape_t0.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 32/38 tape T0 mutants (37, each must be caught)"; python3 tests/tape_mutants.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 31/40 tape T0 guards (21) + unit checks (docs/tape/T0_plan.md §8)"; python3 tests/test_tape_t0.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 32/40 tape T0 mutants (37, each must be caught)"; python3 tests/tape_mutants.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # TAPE_T1A: the tape offline processor (services/tape_offline + merdian_compute/tape/{replay,minute}.py): 12 guards on
 # synthetic segment-days with planted answers (docs/tape/T1a_plan.md section 2) + 9 unit checks, then 15 mutants each of
 # which must be caught. Pure Python, generated fixtures under a temp dir, no golden day. The test refuses 08:30-15:45 IST
 # Mon-Fri (a 5-minute margin over this suite's own 15:40 guard) and an unlimited `ulimit -v`. Measured under
 # ( ulimit -v 700000 ). Appended AFTER step 32, never inside a pair (TD-S93-NEW-1).
-echo "== 33/38 tape T1a guards (12) + unit checks (docs/tape/T1a_plan.md)"; python3 tests/test_tape_t1a.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 34/38 tape T1a mutants (15, each must be caught)"; python3 tests/tape_t1a_mutants.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 33/40 tape T1a guards (12) + unit checks (docs/tape/T1a_plan.md)"; python3 tests/test_tape_t1a.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 34/40 tape T1a mutants (15, each must be caught)"; python3 tests/tape_t1a_mutants.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # TAPE_T1B: the tape cycle aggregator + event candidates (merdian_compute/tape/{cycle,events}.py, services/tape_offline/cycle_day.py) and the
 # chain-side merged events (merdian_compute/tape/chain_events.py, services/tape_chain/): 14 guards on synthetic days with planted answers
 # (docs/tape/T1b_plan.md section 2) + 5 unit checks, then 21 mutants each of which must be caught. Generated fixtures, no golden day, no
 # network, no database. Same rule-23 refusal as T1a (08:30-15:45 IST Mon-Fri, unlimited ulimit -v); Local-only override TAPE_RULE23_OVERRIDE_R1=1
 # (operator ruling R-1, 2026-11-03) lives in tests/test_tape_t1b.py only. Appended AFTER step 34, never inside a pair (TD-S93-NEW-1).
-echo "== 35/38 tape T1b guards (14) + unit checks (docs/tape/T1b_plan.md)"; python3 tests/test_tape_t1b.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 36/38 tape T1b mutants (21, each must be caught)"; python3 tests/tape_t1b_mutants.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 35/40 tape T1b guards (14) + unit checks (docs/tape/T1b_plan.md)"; python3 tests/test_tape_t1b.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 36/40 tape T1b mutants (21, each must be caught)"; python3 tests/tape_t1b_mutants.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # TAPE_T1DB: the tape Supabase sidecar (sql/2026-11-03_tape_t1db_*.sql, services/tape_db/{tape_schema,sidecar_sql,
 # load_day,contract_seed}.py): 9 guards on T1a/T1b generator fixtures with a recording fake client (docs/tape/T1_db_plan.md
 # section 2) + 15 unit checks, then 10 mutants x5 each of which must be caught. No database, no network, no .env (the guard
 # t1db-isolated asserts core.config / core.execution_log were never imported). Same rule-23 refusal as T1b; Local-only
 # override TAPE_RULE23_OVERRIDE_R1=1 (operator ruling R-1) lives in tests/test_tape_t1db.py. Appended AFTER step 36 (TD-S93-NEW-1).
-echo "== 37/38 tape T1-db guards (9) + unit checks (docs/tape/T1_db_plan.md)"; python3 tests/test_tape_t1db.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 38/38 tape T1-db mutants (10 x5, each must be caught)"; python3 tests/tape_t1db_mutants.py --repeat 5 | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 37/40 tape T1-db guards (9) + unit checks (docs/tape/T1_db_plan.md)"; python3 tests/test_tape_t1db.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 38/40 tape T1-db mutants (10 x5, each must be caught)"; python3 tests/tape_t1db_mutants.py --repeat 5 | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+# Tape scoring (docs/tape/scoring_plan.md): planted-truth guards for the H-A / H-B scoring code, and the mutants that each guard
+# must catch (29 x5). No database, no network, no .env; the scorer runs only on fixtures. Same rule-23 refusal as T1b / T1-db; Local-only
+# override TAPE_RULE23_OVERRIDE_R1=1 (operator ruling R-1) lives in tests/test_tape_scoring.py. Appended AFTER step 38.
+echo "== 39/40 tape scoring guards (19) + unit checks (docs/tape/scoring_plan.md)"; python3 tests/test_tape_scoring.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 40/40 tape scoring mutants (29 x5, each must be caught)"; python3 tests/tape_scoring_mutants.py --repeat 5 | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 echo "OFFLINE $([ $rc -eq 0 ] && echo PASS || echo FAIL)"
 exit $rc

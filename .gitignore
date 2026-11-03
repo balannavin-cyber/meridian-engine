@@ -142,3 +142,5 @@ cron.log*
 !services/tape_chain/__init__.py
 # tape T1-db: same, for the sidecar package marker
 !services/tape_db/__init__.py
+# tape scoring: same, for the scoring package marker
+!services/tape_scoring/__init__.py

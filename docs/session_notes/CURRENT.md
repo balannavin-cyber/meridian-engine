@@ -8,105 +8,104 @@
 
 ## Last session
 
-**S103 — Friday 2026-10-30 11:05 IST → Saturday 10-31 09:11 IST** (closed in S104, Sunday 2026-11-01). Friday applied the
-S102 doc-close (`762e4d7`) and the six S102 engine bundles (`f63368a` → `b2a5ce6`, suite 29/29), took the twelve owed
-rulings S103-A…L in one sitting, fixed the max-pain views' timeout (S103-F, `613c2cb`), gated the WCB writer to the 09:15
-open (S103-D, `82c517d`), found and fixed the WCB basket's PostgREST `max-rows` truncation (S103-G, `608917e`), renamed
-TMPV and LTM in our tables (S103-H, operator SQL), and ran three Marketview rounds (Health token threshold + 0-DTE skew,
-the freeze button, the prev-close view `v_close_print`). Saturday unpublished the Lovable-hosted copy (S103-M), dropped
-three duplicate `market_ticks` indexes, turned on OTM OI velocity with the prior-row read bounded to the IST session
-(S103-N / S103-O, `c11b564`), wrote the ADR-032 §5 / §6 impact study and ruled D2–D5 in form (S103-P…T), and built
-ADR-032 F0 (tag `adr032-pre`, K2 snapshot `4e14a1d`, K3 control totals) and S1 (the eight unit COMMENTs, `8b58e54`;
-**live 2026-10-31 10:14 IST** after a re-apply in S104). This block points; the detail lives in the files named. Rulings:
-`docs/research/s92_parity/rulings_s103.md` (S103-A…T, the addendum merged; the single source). Evidence and findings:
-`docs/research/s103/S103_close_inputs.md`, `docs/research/s103/adr032_f0_k1_k3_records_2026-10-31.md`. **Progress lives
-in the tracker**, `docs/registers/agentic_layer_roadmap_S90.md` (v2.20), and **its §2.2 is the single list** of open work.
+**S104 — Saturday 2026-10-31 09:19 IST → Wednesday 2026-11-04 06:30 IST** (operator-called end of session; this close). S104
+opened as the carry-forward of S103 and became the session that closed the Marketview anon-key exposure. Saturday: the
+project-knowledge prune (186 → 149 docs, `docs/research/s104/pk_prune_audit_S104.md`), the S1 re-apply (live 10:14 IST) and
+the two read-only CC sweeps. Sunday: the S103 doc-close (`9d26281`) and its follow-up (`d5a4600`), the eleven PK deletions, the
+TD-S103-NEW-6 (a first drop undone by its own rollback, AR §D.58.1) and TD-S103-NEW-9 DDL. Sunday–Monday: the BS-1 Dhan TOTP +
+PIN rotation (operator) and the Marketview unit read against the database. Tuesday: from 18:40 the tape stream's brief that the Marketview bundle
+carries the Supabase anon key — **measured, fixed and closed the same evening** (`docs/decisions/CASE-2026-11-03-marketview-anon-key-exposure.md`).
+Wednesday 01:41 IST the production box's SSM agent lost DNS; the operator, who had been in arrears on AWS payments, paid and
+the box was **rebooted 06:25 IST** and verified (TD-S104-NEW-7). Rulings: `docs/research/s92_parity/rulings_s104.md` (S104-A…F).
+**Progress lives in the tracker**, `docs/registers/agentic_layer_roadmap_S90.md` (v2.21), **§2.2 is the single list**.
 
-**`origin/main` — `232a3bc` + this close.** Chain: `762e4d7` (S102 close) → `f63368a` … `b2a5ce6` (the six S102 bundles,
-applied 10-30 after 15:40, suite 29/29) → `613c2cb` (S103-F; contract v2.2) → `82c517d` (S103-D) → `608917e` (S103-G) →
-`c11b564` (S103-N / O; step 30; tag **`adr032-pre`** here) → `4e14a1d` (K2 snapshot) → `8b58e54` (S1 SQL) → `8f9d466`,
-`2b69506`, `232a3bc` (S104 PK-prune archives, docs only). Offline suite **30 steps**. Crontab 70 lines, markers line
-`0 11 * * 1-5` UTC (16:30 IST) read back. **Marketview live = staging = `6f14a92`** (bundle `index-BIJiXoC3.js`; chain
-`30998f2` → `05f556c` round 1 → `2f3c2f0` round 2 → `6f14a92` round 3; rollback target `/var/www/marketview.bak-2f3c2f0`;
-backups `.bak-2f3c2f0`, `.bak-05f556c`, `.bak-30998f2` + three `PRE_*`). Database: `v_gex_max_pain` / `v_gex_pin_maxpain`
-on the skip-scan `latest_run` (3537 / `6eddea31…`, 3026 / `70d32c77…`); `v_close_print` (`92a4eac4…`); the three
-`market_ticks` duplicate indexes dropped; the eight `ADR-032:` column COMMENTs; TMPV / LTM renamed in six tables.
+**State at close.** Engine `origin/main` at the start of this close = `9268b9a` (the S103 close `9d26281`, the sweep records
+`d5a4600`, and the tape stream's merges `0b61672`…`9268b9a`, all docs and offline tape code) + this close. Offline suite
+**30 steps**, no engine code changed in S104. **Marketview live = `6f14a92` built for the same-origin data path**, bundle
+**`index-DkX9XNeY.js`** (promoted ≈ 22:00 IST 2026-11-03 by `~/mv_promote_s104_proxy.sh GO`); rollback target
+`/var/www/marketview.bak-pre-proxy-20261103_1623` (previous bundle `index-BIJiXoC3.js`); the S103 `.bak-*` set is unchanged.
+Database: `anon` holds **zero** SELECT grants in `public` (Phase 1 18:58, final revoke 22:36 IST), `marketview_ro` reads the 48
+relations Marketview needs, `gex_strike_snapshots` has 7 indexes (the unused twin dropped), `v_gex_greeks_l2_strike_1pct` has
+24 columns. nginx: `location ^~ /rest/v1/` proxies GET/HEAD to Supabase under the Google session with server-held
+credentials (`/etc/nginx/snippets/marketview_supabase_auth.conf`).
 
 **What was established**
 
-1. **ADR-032 D2–D5 ruled in form (S103-P…T), nothing built past S1.** D2 additive (new nullable per-1 % columns beside
-   the old, written by the writer and every formula copy in one bundle; wrappers repointed; board unchanged); D3 a dated
-   unit break everywhere, no conversion of history; D4 COMMENTs (**live**, S1); `hist_gamma_metrics.net_gex` is one scale
-   throughout (≈ 1e7 × live; left and commented); Pine labels relabelled when that round is built; the legacy objects
-   become one retirement TD (TD-S103-NEW-7) whose first step is to name the `service_role` PostgREST reader of
-   `wcb_signal_validation_v2` / `latest_signal_snapshots` (632 / 490 / 236 and ~100 calls; flat across Saturday). **S2
-   onward is held until after launch** (operator: ~10 days). Study `docs/research/s103/adr032_s5_s6_impact_study_S103.md`;
-   fallback plan `docs/research/s103/adr032_fallback_plan_S103.md`; the two S104 read-only CC sweeps (engine box 28 min,
-   retail box 6 min; `docs/research/s104/sweep_engine/`, `sweep_retail/`) found no magnitude reader and four scale
-   conventions in the repo, a fourth `gamma_metrics.net_gex` writer that never fired (`insert_option_chain_batch`), a D1
-   defect (`v_gex_greeks_l2_strike_1pct` converts 2 of 4 Γ columns, TD-S103-NEW-9), and that additive DB columns are
-   invisible to every retail gate by construction. ADR-032 **Amendment A** records all of this.
-2. **The WCB basket was truncated by PostgREST, not by the client's 5,000 cap (S103-G).** NIFTY priced 13 of 50 every cycle
-   since 10-26 (the first 13 tickers alphabetically); the basket's 4,106-row history came back in `(ticker, trade_date)`
-   order under `max-rows = 1,000`. Fixed `608917e` (bounded 30 d, ordered, paged; prior close rejected past 5 days).
-   Every `limit > 1000` without paging is the same class (TD-S103-NEW-1). First full read Monday 2026-11-02 (50 of 50).
-3. **Two NIFTY constituents sat unpriced for weeks under exchange renames (S103-H):** TATAMOTORS → TMPV, LTIM → LTM
-   (LTIM's prior close dated 2026-03-27). Renamed by one fail-closed `DO` block across six tables (308 / 80 / 1 / 1 / 1 / 1
-   rows); no code change. 77 of 1,385 universe symbols are not Zerodha EQ symbols (TD-S103-NEW-2); LTIM and TMPV both
-   carry `weight_pct 1.1345` (TD-S103-NEW-3).
-4. **`v_gex_max_pain` / `v_gex_pin_maxpain` timed out on a full index walk (S103-F):** `DISTINCT ON (symbol)` over
-   2,207,583 rows, 17,562 ms against `authenticator`'s 8 s; rebuilt on the S79 / S72 skip-scan `latest_run`: 17,891 ms →
-   81 ms, equality 271 = 271. TD-S90-NEW-5 CLOSED; TD-S101-NEW-1 closes on the first clean 14:00 cycle.
-5. **Board rounds 1–3 (S103-A, -C, -I, -J).** Health token scored as the daily writers are (`statusFor(age, 1440)`); IV
-   skew shows `SKIPPED_EXPIRY · front leg expires today` plus the next leg; an explicit `freeze` / `resume` button with a
-   full-width "frozen since" strip (Space removed); `useOpenGap` reads the previous close from `v_close_print`
-   (`close_rank` 1 = `dhan_idx_i` 16:00–16:10, 2 = `dhan_charts_historical` 15:29–15:31; 10-21 proved the fallback).
-   Each round: guard → staging read → refusing promote with live ≡ named backup by `diff -rq`. S103-B (board-side leg roll
-   after an expiry-day close) is ruled, not built — Tuesday 2026-11-03 after 15:40.
-6. **OTM OI velocity was NULL in every production row because the prior-row read selected no `raw` (S103-N);** the read is
-   now bounded to the IST session (S103-O), so `straddle_velocity` is NULL on a session's first cycle too. `c11b564`, step
-   30 (14 cells, M1–M4, 0 surviving). First live read Monday.
-7. **Process.** The S1 COMMENTs were applied 09:00, then removed by a superseded rollback block left in the chat and run
-   after the apply (§D.57.13); re-applied in S104 from the committed file; **the only valid S1 rollback is Appendix A4 of
-   `docs/research/s104/S104_session_prompt.md`** (restores the `gex_cr` sign note exactly). After every ADR-032 stage the
-   K3 queries must return the F0 record's rows.
+1. **The Marketview exposure was the read surface, not only the write surface.** `anon` could SELECT 265 relations (116
+   `public` tables with RLS off, ≈ 30.8 GB, including `capital_tracker`, `trade_log`, `app_settings`) and EXECUTE five
+   SECURITY DEFINER write functions (`insert_option_chain_*`, `trigger_ingest*`); the key was in the public bundle and the
+   public repo's `.env`. Fixed in four layers: Phase 1 shrink (265 → 48), `marketview_ro`, the same-origin nginx proxy with a
+   server-held read-only token, and the final revoke (48 → 0). The bundle holds no credential and no Supabase URL; the old
+   key gets 401 on every table (outside check). It is the **fourth** time this class has surfaced (S81, S84, S89, S104):
+   **CLAUDE.md rule 26** now states the standing rule. Detail, rollbacks and the decision trail are in the CASE.
+2. **The plug costs speed.** The self-hosted PostgREST (A2) measured ≈ 1.16 s per request and was dropped for nginx → Supabase
+   REST (S104-C). Board first load ≈ 6.5 s against ≈ 3.1 s; accepted (S104-D). Next: `http2` on the two `listen 443` lines,
+   then the Mumbai region move (ENH-148, needs a plan: new project, new keys everywhere).
+3. **Anon-key rotation is now hygiene.** It must update the `apikey` line of the nginx snippet in the same step; the
+   `marketview_ro` token expires **2027-11-03** (TD-S104-NEW-2). The committed `.env` is TD-S39-NEW-3 (open).
+4. **Operations.** The production box's SSM agent lost DNS (error 2026-11-03 20:11:03Z, `lookup ssm.eu-north-1.amazonaws.com on
+   127.0.0.53:53 … i/o timeout`), Ping Offline for ≈ 5 h after an AWS billing lapse; an EC2 reboot restored it (nginx,
+   oauth2-proxy, cron, DNS, the site all verified). Cause not established; no alarm exists (TD-S104-NEW-7). **The second
+   instance (retail / tape, `ip-172-31-30-166`) was not checked.**
+5. **Process (AR §D.58, 10 rows, all mine).** A rollback in the same message as its forward step was run (D.58.1); I kept the
+   0-scan twin and sent a live-table DDL during market hours without stating the S90-J window (D.58.2); I claimed the new path
+   would load "like production" before measuring (D.58.4); my first fix of the promote script did not work and was shown wrong
+   by `bash -x` (D.58.8). The two to carry: **a rollback is never in the same message as its forward step; a fix is shown
+   working by its own trace before it is called a fix.**
 
-**Filed:** TD-S103-NEW-1…11 (-10 closed at filing: the study §4 and K2 md5s annotated with their `pg_get_viewdef` form).
-**Closed:** TD-S102-NEW-1 (unpublished), TD-S102-NEW-6 (the two pre-rule backups rotated out), TD-S102-NEW-7 (three pairs
-dropped), TD-S102-NEW-8 (one scale, commented), TD-S101-NEW-13 (live `05f556c`), TD-S90-NEW-5 (`613c2cb`).
-**Enhancement Register:** ENH-146 / ENH-147 minted (post-parity Candidates A and B, PROPOSED, owed since the S89 close).
+**Filed:** TD-S104-NEW-1…8 (-3 closed at filing as a duplicate of TD-S39-NEW-3). **Closed:** TD-S103-NEW-6 (twin dropped),
+TD-S103-NEW-9 (24-column wrapper), TD-S81-NEW-2, TD-S84-NEW-5, TD-S89-NEW-5 (anon read surface: 265 → 48 → 0). **Open in this
+class:** TD-S81-NEW-3 (the standing check; next), TD-S39-NEW-3, TD-S92-NEW-4, TD-S103-NEW-11, TD-S90-NEW-8, TD-S104-NEW-2/-4/-5/-6.
+**Enhancement Register:** ENH-148 minted (HTTP/2, then the Mumbai region). **Not evidenced in this close:** the Monday
+2026-11-02 live-check readings (taken in the session chat, not written down), the Tuesday S103-B board leg roll (**not built**),
+the `pg_stat_statements` re-run for TD-S103-NEW-7 (**not done**); each keeps its S103 status until a read is recorded.
 
-**Corrections to my own work:** Assumption Register **§D.57** (S103 + S104, 16 rows). The one to carry: a superseded
-rollback block must not stay in the chat once replaced (D.57.13), and a PK doc is deleted only after its git copy is read
-and found identical, not assumed (D.57.16).
-
-**ADR-032 Amendment A (D2–D5 RULED in form; F0 + S1 LIVE; S2 held); CLAUDE.md v1.75 (settled line updated; rules 0–25
-unchanged).** System Map §S103; Deployment Topology §S103.
-
-**Project-knowledge prune (S104, 2026-10-31):** 186 → 149 docs. Every deleted doc is in git — the S100–S102 session
-prompts at `docs/research/s100/`, `s101/`, `s102/` (`8f9d466`); the S98–S102 close inputs, rulings and working docs
-already at `docs/research/s98/` … `s102/`, `s89_rulings/`, `s90_agentic/`, `s92_priority/`, `s96_priority/{p7,guard,p3b}/`,
-`docs/lovable_prompts/s97/`, `docs/research/post_parity_candidates.md`; five PK-only parity docs archived at
-`docs/registers/archive/pk_only_2026-10-31/` (`2b69506`) and twelve more at `docs/registers/archive/pk_only_2026-10-31b/`
-(`232a3bc`), each folder with a verified `SHA256SUMS`. The audit with the per-doc rulings is
-`docs/research/s104/pk_prune_audit_S104.md` (also in PK as `claude/pk_prune_audit_S104.md`). This close deletes the ten
-DEFERRED S103 docs after it lands; their git homes are `docs/research/s103/`, `docs/lovable_prompts/s103/` and `sql/`.
+**CLAUDE.md v1.76 (rule 26 added: no browser-side credential; new relations unreachable by default).** Deployment Topology
+§S104; System Map §S104; ADR next-free marker unchanged (`ADR-033+`; the decision is a CASE, an ADR candidate is noted).
+**Project knowledge:** `claude/anon_plug_RESULT_S104.md` (working record), `claude/anon_exposure_plan_S104.md`,
+`claude/anon_phase2_design_S104.md` (marked superseded); the ten DEFERRED S103 docs and the old ADR-032 draft were deleted
+earlier in S104 (git homes named in the prune audit).
 
 ## NEXT SESSION PICKS UP
 
-1. **Monday 2026-11-02 live checks** (`docs/research/s103/S103_close_inputs.md` §5): END line rc on a failing ingest;
-   breadth-from-ticks run time; the 09:05 refresh writes `NSE:LTM`'s prior close; futures rows one per symbol per minute
-   with `raw.spot_source = dhan_ltp_idx_i_same_request`; markers `close_1530` from CAS at 16:30; the 09:10 WCB cycle
-   `SKIPPED_NO_INPUT`, first row 09:16 with 50 of 50 priced; wsfeed subscribing `LTM` / `TMPV`; the 14:00 ENH-133 cycle
-   clean; Health OVERALL green; `otm_oi_velocity` NULL on the first cycle, a number from the second, none spanning two IST
-   dates (`straddle_velocity` the same); R16 live read; after 15:40 re-run the `pg_stat_statements` query and compare
-   `calls` on `wcb_signal_validation_v2` / `latest_signal_snapshots` (a rise = live reader).
-2. **Tuesday 2026-11-03:** read the expiry-day branch of S103-C before 15:30; build S103-B (board leg roll) after 15:40.
-3. **Tracker §2.2 remainder in its order:** B2 R5 / R38 live reads; BS-1 credential rotations and port 22 (operator);
-   B3 chain data correctness; TD-S101-NEW-4's other half (`recent_max_strikes` unbounded); manual option B timing (owed).
-4. **ADR-032 build only after launch:** S2a–S2c per `docs/research/s103/adr032_fallback_plan_S103.md`; after each stage
-   re-run the K3 queries (S104 prompt Appendix A5) against the F0 record; rule the emergency lever then (proposed: valid
-   only at S2b–S2c; from S3 the recovery is the SQL wrapper revert); the dated unit-break row is written at S2c.
+1. **The second box (retail / tape, `ip-172-31-30-166`) and the Wednesday open.** Connect via SSM; if Offline, reboot the
+   instance (not Stop / Start; the Elastic IP is kept on the production box, check the other); `uptime -s`. On the
+   production box read the first runs of 2026-11-04: the 08:20 IST Dhan refresh, the 09:11 spot capture, the 09:15 ingest, and
+   any engine script that fell back to the anon key (it now answers 401; TD-S104-NEW-4); `cron.log`.
+2. **Marketview through the proxy:** parity on Pin, Gamma, OI, Flows, IV and Settings (staging covered Board and Health);
+   then **`http2`** on the two `listen 443` lines (backup, anchored edit, hunk count, `nginx -t`, reload) and re-measure with
+   the Performance API (TD-S104-NEW-1).
+3. **Close the anon class:** the standing check from `data_contracts.access` (TD-S81-NEW-3); replace the committed `.env`
+   (TD-S39-NEW-3; who owns the push); the API-log review while the 7-day window still reaches the exposure (TD-S104-NEW-5,
+   operator); stop `postgrest-mv` (TD-S104-NEW-6); calendar reminder for the token (TD-S104-NEW-2).
+4. **Read live and register** the md5 of `v_gex_greeks_l2_strike_1pct` (24 columns; TD-S103-NEW-9 closed on the operator's run).
+5. **Carried from S103:** the Monday / Tuesday live-check readings that were not recorded (close inputs §5), S103-B (board
+   leg roll after an expiry-day close), the `pg_stat_statements` re-run (TD-S103-NEW-7), tracker §2.2 remainder in its order
+   (B2 R5 / R38 live reads, BS-1 remainder, B3, TD-S101-NEW-4 other half, manual option B timing), and the S99-D gate question
+   (the options were offered and not answered). **ADR-032 S2 onward stays held until after launch** (date unknown).
+6. **Offered, not drafted:** the Mumbai migration plan (ENH-148: inventory, cutover order, rollback, checks; one new project,
+   one anon-key rotation, three streams).
+
+## OPERATOR RULINGS, S104
+
+**All rulings live in `docs/research/s92_parity/rulings_s104.md`**, the single source.
+
+| # | Topic |
+|---|---|
+| **S104-A** | Anon shrink Phase 1 approved (applied 18:58 IST) |
+| **S104-B** | Dedicated read role `marketview_ro` |
+| **S104-C** | Option B-nginx: same-origin `/rest/v1/` to Supabase REST with a server-held read-only token; A2 dropped |
+| **S104-D** | Promote the same-origin bundle first, speed afterwards |
+| **S104-E** | Final revoke of `anon` SELECT (22:36 IST) |
+| **S104-F** | End of session called by the operator; this close |
+
+## Previous session S103
+
+**S103 — Friday 2026-10-30 11:05 IST → Saturday 10-31 09:11 IST** (doc-close `9d26281`, run in S104). The six S102 engine
+bundles applied, twelve owed rulings (S103-A…L) taken in one sitting, the WCB basket found truncated by PostgREST `max-rows`
+and two NIFTY constituents found renamed (TMPV, LTM), three Marketview rounds (live `6f14a92`), the Lovable-hosted copy
+unpublished, and ADR-032 D2–D5 ruled in form with F0 and S1 live (S2 held until after launch). The full block is in
+`docs/registers/CURRENT_history.md`.
 
 ## OPERATOR RULINGS, S103
 
@@ -129,22 +128,3 @@ DEFERRED S103 docs after it lands; their git homes are `docs/research/s103/`, `d
 | **S103-N / O** | OTM OI velocity on; prior-row read bounded to the IST session (`c11b564`) |
 | **S103-P…T** | ADR-032 D2 additive · D3 dated break · D4 COMMENTs · Pine labels · legacy objects one retirement TD (S103-T amended: name the `service_role` reader first) |
 
-## Previous session S102
-
-**S102 — Wednesday 2026-10-28 09:58 IST → Friday 10-30 11:05 IST** (doc-close `762e4d7`, run in S103). Every Γ size on
-the board was 100 × its "₹ Cr" label; fixed in the database in one morning (ADR-032 D1, seven `_1pct` wrapper views, two
-Lovable rounds, manual v0.5, live `30998f2`); six engine bundles built 10-28 and applied in S103. The full block is in
-`docs/registers/CURRENT_history.md`.
-
-## OPERATOR RULINGS, S102
-
-**All rulings live in `docs/research/s92_parity/rulings_s102.md`**, the single source.
-
-| # | Topic |
-|---|---|
-| **S102-A** | Γ size: display-only rescale first (× 0.01 to ₹ Cr per 1 % move) |
-| **S102-B** | ADR-032: D1 display now; D2–D5 after the impact study and roadmap |
-| **S102-C** | D1 board wording table W approved; √τ (R26) not taken |
-| **S102-D** | Legacy pages rescale, not retire |
-| **S102-E** | Manual: text restated now (A), new screenshots later (B) |
-| **S102-F** | Close S102; the doc-close runs in S103 |

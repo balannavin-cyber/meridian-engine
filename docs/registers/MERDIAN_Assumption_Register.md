@@ -1430,3 +1430,25 @@ and a project-knowledge doc is deleted only after its git copy has been read and
 **Update log — Session 103 close (run in Session 104, 2026-11-01):** §D.57 added (**16 rows, all mine**). Sources:
 `docs/research/s92_parity/rulings_s103.md`, `docs/research/s103/S103_close_inputs.md`,
 `docs/research/s104/pk_prune_audit_S104.md`.
+
+## D.58 — Session 104: a rollback sent with its forward step, a pipefail trap I "fixed" without testing, and a performance claim I made before measuring (2026-11-01 → 11-04)
+
+Ten rows, **all my own**. Rulings: `docs/research/s92_parity/rulings_s104.md`. Sources: `docs/decisions/CASE-2026-11-03-marketview-anon-key-exposure.md`, the TD-S103-NEW-6 SQL files and their correction note, the S104 session chat.
+Recorded at the S104 doc-close (2026-11-04).
+
+| # | Assumption as held | Verdict on measurement |
+|---|---|---|
+| **D.58.1** | *(mine)* A rollback statement can sit in the same message as the forward DDL block, clearly labelled. | **REFUTED** — The TD-S103-NEW-6 drop block and its `CREATE INDEX` rollback were run one after the other, so the dropped index was recreated and the net effect was nil (`pg_stat_statements`, role `postgres`, 1 call, same text). Rule (already in the S104 prompt, now in practice): a rollback goes in a **separate message** after the forward step has been read. |
+| **D.58.2** | *(mine)* Which of two identical indexes to drop does not matter; the DDL may be run when the operator has a moment. | **REFUTED, twice** — I had kept the twin with **0 scans** (28 MB) and dropped the one with 62,319; the final block dropped the unused one after `pg_stat_user_indexes` was read. And the final drop ran on a **weekday during market hours** (~11:1x IST), outside the S90-J window for live-table schema changes; fail-closed with a 5 s lock timeout and no effect seen, but the window rule was not stated by me before the run. Read `idx_scan` before choosing a twin; state the window before sending a live-table DDL. |
+| **D.58.3** | *(mine)* "Success. No rows returned" belonged to the block just run. | **REFUTED** — It was the output of the rollback; I read the result as the forward block's and so missed the undo for one exchange. |
+| **D.58.4** | *(mine)* The new same-origin path would load the Board "~3 s, like production". | **REFUTED** — Measured 6.5 s against 3.1 s; per request ≈ 2×. The operator asked directly for confirmation and the honest answer was no (TD-S104-NEW-1). Say "unmeasured" before a measurement, not a number. |
+| **D.58.5** | *(mine)* Browser caching would help the polling (30 s / 60 s / 5 min) as much as the first load. | **REFUTED** — The polls re-request on every interval (React Query `refetchInterval`); only the static bundle is cached. |
+| **D.58.6** | *(mine)* Because `anon` had DELETE grants on `cron`, `net`, `storage`, `realtime`, writes were open. | **REFUTED** — The REST API does not expose those schemas (406, probed); the real write path was the five SECURITY DEFINER functions. Corrected in the same session; the CASE carries the corrected statement. |
+| **D.58.7** | *(mine)* PostgREST on the production box would be fast enough as the read proxy (design A2). | **REFUTED** — ≈ 1.16 s per request through the Sydney pooler; dropped for nginx → Supabase REST. The design doc in project knowledge is marked superseded. |
+| **D.58.8** | *(mine)* My `sed` fix (`| wc -l || true`) would stop the promote script's silent exit. | **REFUTED** — The pattern did not match the line; `bash -x` showed `OLD=0` then exit (a zero-match `grep` returns 1, `pipefail` fails the substitution, `set -e` quits). Fixed by `set -eu` after the trace. **Test a fix with the trace before saying it works.** |
+| **D.58.9** | *(mine)* A `getpass` / paste design for the role token would work over SSM. | **REFUTED** — The DB password or a stale clipboard was pasted repeatedly ("Expected 3 parts in JWT; got 1"); resolved by minting locally and handing the file over by S3 with a length / dots / sha256 check, then shredding both copies. |
+| **D.58.10** | *(mine)* A Health tile reading UNKNOWN, and the Chrome tool's 503 on a HEAD request, were findings. | **REFUTED** — The first was a loading state; the second a tool quirk (nginx logged 200). Neither was filed. Also: commands were twice run on the wrong box because I did not state the hostname first (harmless). |
+
+**The one to carry from §D.58: D.58.1 and D.58.8.** A rollback is never in the same message as its forward step, and a fix to a script is shown working by its own trace before it is called a fix.
+
+**Update log — Session 104 close (2026-11-04):** §D.58 added (**10 rows, all mine**). Sources: `docs/research/s92_parity/rulings_s104.md`, `docs/decisions/CASE-2026-11-03-marketview-anon-key-exposure.md`.

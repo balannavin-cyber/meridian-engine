@@ -1,0 +1,47 @@
+# CASE — 2026-11-03 · the Marketview browser bundle held the Supabase anon key, so anyone could read the database; closed by a same-origin read-only proxy and a zero-grant `anon`
+
+**Filed as a CASE, not a TD**, per Doc Protocol v4/v5: a single-event failure with a diagnosis, a remediation and a residual. The residual work is filed as **TD-S104-NEW-1…8** (-3 closed at filing as a duplicate of TD-S39-NEW-3) and as status changes to TD-S81-NEW-2 / TD-S84-NEW-5 / TD-S89-NEW-5 (closed here) and TD-S81-NEW-3 (open).
+It is the **fourth** occurrence of the same class: CASE-2026-09-22 (S81, `anon` write privileges), TD-S84-NEW-5 (MAINTAIN), TD-S89-NEW-5 (bundle reached scanners), and now the whole read surface. CLAUDE.md **rule 26** records the standing rule.
+
+**Origin:** the tape stream's brief (`claude/brief_marketview_anon_key_exposure.md`, 2026-11-03 18:40 IST, project knowledge; found while designing a `/tape` page). **Discovered, measured and closed 2026-11-03 (Session 104), 18:40 → 22:45 IST.** No access by a third party is known; the API-log window (7 days) was not reviewed (owed, TD-S104-NEW-5). Lineage (project knowledge, kept): `claude/anon_exposure_plan_S104.md` (the measurements before any change, restated in §1), `claude/anon_phase2_design_S104.md` (the self-hosted PostgREST design A2, dropped; its outcome is §3), `claude/anon_plug_RESULT_S104.md` (the working record this CASE was filed from).
+
+---
+
+## 1. The problem and what was measured, before any change
+
+Marketview's browser bundle held the Supabase anon key (the repo `balannavin-cyber1/meridian-connect` is public with a committed `.env` holding URL + anon key). Anyone could call the REST API directly with no Google sign-in. Measured 2026-11-03 (read-only, `bin/roq.sh` as `merdian_ro`; from the production box with no session `GET /rest/v1/gex_strike_snapshots` returned HTTP 200 with rows):
+
+- `anon` could SELECT **265 relations** (251 in `public`: 175 tables, 76 views). **116 `public` tables had RLS off (≈ 30.8 GB)** — including `capital_tracker`, `trade_log`, `app_settings`, `exit_alerts`, `eq_watchlist`, the `option_execution_*` and `signal_*outcome*` families and vendor-derived history (`option_chain_snapshots`, `hist_option_bars_1m`, `historical_option_chain_snapshots`, `market_ticks`, `eq_price_daily`). Contents were not read; eight probes confirmed HTTP 200.
+- `anon` held `MAINTAIN` (PG17) on ≈ 190 `public` relations (not exercisable through the REST API). The DELETE/INSERT/UPDATE grants found sit in `cron`, `net`, `storage`, `realtime`; the REST API answers 406 for those schemas — probed, not reachable.
+- **The write path that was open: five SECURITY DEFINER functions executable by `anon`**, owner `postgres`: `insert_option_chain_batch`, `insert_option_chain_run`, `trigger_ingest`, `trigger_ingest_nifty`, `trigger_ingest_sensex`. 34 more functions were executable by `anon` with invoker rights.
+- Marketview's reads: `.from()` names 39 relations, 43 quoted relation names, plus 5 source views for the `security_invoker` `_1pct` wrappers = **48**. One RPC, `update_parameter` (not executable by `anon` since S90-E). No Realtime in `src`.
+
+## 2. What was changed (all done and verified)
+
+| # | Change | Where | Rollback |
+|---|---|---|---|
+| 1 | **Phase 1 anon shrink** (2026-11-03 18:58 IST): `REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon`; `GRANT SELECT` on the 48; default privileges revoked for `postgres` in `public` (tables, sequences); EXECUTE revoked from PUBLIC / anon / authenticated on the five functions and re-granted to `service_role` | DB | `sql/2026-11-03_s104_anon_shrink_ROLLBACK.sql` (re-grants the original 251 SELECTs) |
+| 2 | **Role `marketview_ro`**: LOGIN, connection limit 8, `statement_timeout 8s`, SELECT on the same 48 only | DB | `sql/2026-11-03_s104_marketview_ro_role_ROLLBACK.sql` (`DROP OWNED BY marketview_ro; DROP ROLE marketview_ro;`) |
+| 3 | **Same-origin data path**: nginx `location ^~ /rest/v1/` on `marketview.meridianalpha.in` proxies to `https://kilmcowcikwdhvdxwofi.supabase.co`, **GET/HEAD only** (`limit_except`), under the existing Google `auth_request`; the browser Cookie is stripped, server-held credentials injected; `location ^~ /rest/v1/rpc/` returns 403; `resolver 127.0.0.53` + `proxy_pass $variable` (re-resolves), TLS verify on | `/etc/nginx/sites-available/marketview` | restore `.PRE_S104_PHASE2B_20261103_1547` (earlier `.PRE_S104_PHASE2_20261103_1513`); `nginx -t`; **reload, not restart** |
+| 4 | **Credentials only on the box**: `/etc/nginx/snippets/marketview_supabase_auth.conf` (mode 600, root) holds the `marketview_ro` role JWT as `Authorization: Bearer` **and** the project anon key as `apikey` (the Supabase gateway requires `apikey`; it only passes the gateway, the data role is `marketview_ro`). Token `{"iss":"supabase","ref":"kilmcowcikwdhvdxwofi","role":"marketview_ro"}` signed with the project's legacy HS256 JWT secret, **expires 2027-11-03** | box | re-mint before expiry (TD-S104-NEW-2) |
+| 5 | **Production bundle promoted** (≈ 22:00 IST): live `assets/index-DkX9XNeY.js`, built from `meridian-connect@6f14a92` with `VITE_SUPABASE_URL=https://marketview.meridianalpha.in`, `VITE_SUPABASE_ANON_KEY=proxy`. Bundle audit: 1 same-origin URL, **0** references to the project ref, **0** JWT-shaped strings. Chrome, signed in: Board renders, **42 data requests, all to `/rest/v1/` on our own domain, 0 to `supabase.co`** | `/var/www/marketview` | `sudo rsync -a --delete /var/www/marketview.bak-pre-proxy-20261103_1623/ /var/www/marketview/` (previous bundle `index-BIJiXoC3.js`) |
+| 6 | **Final revoke** (22:36 IST): `REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;` — `anon_select_remaining = 0`. Board re-read afterwards (renders, 42 requests, 0 direct, no errors). **Outside check with the old anon key** (taken from the backed-up bundle, run on the box): `gex_strike_snapshots` 401, `v_pin_board` 401, `capital_tracker` 401 | DB | the GRANT block of `sql/2026-11-03_s104_anon_final_revoke_ROLLBACK.sql` |
+| 7 | **Token cleanup** (22:39 IST): `/tmp/mvro.tok` shredded; `s3://meridian-engine-deploy/s104/mvro.tok` deleted | box, S3 | — |
+
+Tests passed on the new path before promote: no Google session returns 0 rows (the sign-in page); signed in returns rows; `rpc/*` 403; `capital_tracker` 403/401; a tampered token 401; non-GET denied. Promote script `~/mv_promote_s104_proxy.sh` (dry run unless the single argument `GO`).
+
+## 3. Decision trail
+
+Brief options: A (FastAPI read service), B (Supabase Auth + per-user RLS), C (Edge Functions), D (do nothing). The engine stream first built **A2** — PostgREST 13.0.4 on the box (`/opt/postgrest/postgrest-13.0.4`, unit `postgrest-mv`, `/etc/postgrest/marketview.conf`, 127.0.0.1) as `marketview_ro` through the Sydney pooler. It worked but cost **≈ 1.16 s per request**, and was dropped for **nginx → Supabase REST with a server-held read-only token** (operator: "Lets do this", Option B-nginx). Operator ruled "lets promote if safe. We can circle back to improve the times." Measured cost of the plug: Board first load **≈ 6.5 s against ≈ 3.1 s** before; per request ≈ 2×. My first claim that it would load "like production" was wrong (AR §D.58.4). Remedies: HTTP/2 on the two `listen 443` lines (HTTP/1.1's 6 connections is the first suspect), and a region move of the Supabase project from Sydney (`ap-southeast-2`) to Mumbai (`ap-south-1`) — not in place: new project + migration touching engine, retail and tape env files (ENH-148).
+
+## 4. State after this CASE and what remains
+
+`anon` holds **zero** SELECT grants in `public`; Marketview reads everything as `marketview_ro` through `/rest/v1/`. **Open:** replace the committed `.env` with a placeholder (the old key stays in git history and reads nothing; the existing TD-S39-NEW-3, whose cost is now smaller); anon-key rotation is hygiene, no longer urgent, and **must update the `apikey` line of the nginx snippet in the same step** (TD-S104-NEW-2); standing check generated from `data_contracts.access` (TD-S81-NEW-3); the 34 invoker-rights functions and the PUBLIC default for EXECUTE (TD-S104-NEW-4); the 7-day API-log review and the retired Edge Functions with their `x-cron-secret` (TD-S104-NEW-5); stop `postgrest-mv` (TD-S104-NEW-6); unchecked parity on Pin, Gamma, OI, Flows, IV and Settings (staging covered Board and Health); engine scripts whose `SUPABASE_ANON_KEY` fallback would now answer 401 (TD-S104-NEW-4).
+
+## 5. Standing rules (promoted to CLAUDE.md rule 26)
+
+- No browser-side component holds a database credential; Marketview reads through same-origin `/rest/v1/`, GET only, behind the Google session. The anon key is a gateway pass-through on the box and reads nothing.
+- A new relation is unreachable by default (`anon` default privileges revoked). Exposing it to Marketview is an explicit `GRANT SELECT` to `marketview_ro` plus a `data_contracts.access` entry.
+- **Tape** (`tape_*`, ADR-031 D6): RLS on, no anon grant, not readable by `marketview_ro`; a `/tape` page needs its own read role and token and an nginx location gated to the operator's email (`$email` from oauth2-proxy). Not built; do not widen `marketview_ro` for it.
+- **Retail** has its own Supabase project; none of this applies; do not point a retail component at the engine project's keys.
+- Secrets (the snippet, tokens) are never committed, pasted into chat, or left in `/tmp`; never `nginx restart` — `nginx -t`, then reload, with a timestamped backup and anchored edits (S89 runbook).

@@ -424,18 +424,6 @@ the doc-close that closes it, with one line in that close's status paragraph.
 | **Home** | Tracker §2.2 band B5 (ADR-032 row). |
 | **Status** | **OPEN — wording ruling when built.** |
 
-### TD-S103-NEW-6 (S3 priority) — `gex_strike_snapshots` carries an exact duplicate index pair among its eight indexes
-
-| Field | Value |
-|---|---|
-| **Priority** | **S3.** The highest-volume Γ table (2.1 M rows, 824 MB) maintains one index twice on every insert; TD-S72-NEW-4's shape, now measured. |
-| **Filed** | 2026-10-31 (Session 103 impact study §5) |
-| **Component** | `public.gex_strike_snapshots` indexes: `idx_gss_symbol_ts` = `ix_gex_strike_snap_sym_ts` (identical `indexdef`) |
-| **Measured** | `pg_indexes` 2026-10-31: 8 indexes on the table; one pair identical. (`idx_gss_ts`, S97-F, is the planner's `ts` path and is not a duplicate.) |
-| **Proper fix** | The same fail-closed `DO` block as TD-S102-NEW-7 (identical definition, keeper valid / non-unique / not the PK; `DROP INDEX` one of the pair out of market hours), `pg_indexes` read before and after; record in `sql/`. Then re-read TD-S72-NEW-4's third ("redundant against the composite") claim on the surviving set. |
-| **Home** | Tracker §2.2 band B4 (beside TD-S72-NEW-4, TD-S102-NEW-7). |
-| **Status** | **OPEN — operator DDL.** |
-
 ### TD-S103-NEW-7 (S3 priority) — the legacy Γ objects: one retirement list, starting with the writer that never fired and the reader nobody can name
 
 | Field | Value |
@@ -460,18 +448,6 @@ the doc-close that closes it, with one line in that close's status paragraph.
 | **Home** | Tracker §2.2 band B1 (beside TD-S101-NEW-1). |
 | **Status** | **OPEN — read.** |
 
-### TD-S103-NEW-9 (S3 priority) — `v_gex_greeks_l2_strike_1pct` converts only two of its four Γ columns
-
-| Field | Value |
-|---|---|
-| **Priority** | **S3.** A D1 wrapper that is half-converted: `gross_gex_drift_iv` / `gross_gex_drift_time` pass through at scale A beside `_1pct` siblings at scale B. No live display is wrong today (the board renders the `_net` wrapper's gross pair, `Board.tsx:538,541`), so the defect is latent. |
-| **Filed** | 2026-10-31 (Session 104 engine sweep, 95_diff §1.2) |
-| **Component** | `sql/2026-10-30_s102_gex_per_1pct_views.sql` — `v_gex_greeks_l2_strike_1pct` |
-| **Measured** | Live viewdef 2026-10-31: the `_strike` wrapper adds `_1pct` for `leg_gex_drift_*` only; the `_net` wrapper adds them for its gross pair. |
-| **Proper fix** | `CREATE OR REPLACE` the wrapper with `gross_gex_drift_iv_1pct` / `gross_gex_drift_time_1pct` appended (append-only, ADR-032 D1 dependency rule), T1 re-run for that view, file in `sql/`; registered md5 updated. |
-| **Home** | Tracker §2.2 band B5 (ADR-032 row). |
-| **Status** | **OPEN — operator DDL (small).** |
-
 ### TD-S103-NEW-11 (S4 priority) — `gamma_metrics` and `gex_strike_snapshots` each carry two duplicate `anon` SELECT policies with `qual = true`
 
 | Field | Value |
@@ -483,6 +459,90 @@ the doc-close that closes it, with one line in that close's status paragraph.
 | **Proper fix** | `DROP POLICY` one of each pair after a `pg_policies` read names which migration created the second; re-baseline the ACL fingerprint (`rls_policies 80` → 78). |
 | **Home** | Tracker §2.2 band BS. |
 | **Status** | **OPEN — operator DDL.** |
+
+### TD-S104-NEW-1 (S3 priority) — the Marketview data path is about twice as slow per request as the old direct browser call, and the Board's first load went from about 3.1 s to about 6.5 s
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The price of closing the anon exposure (`docs/decisions/CASE-2026-11-03-marketview-anon-key-exposure.md`); accepted by the operator (S104-D: "We can circle back to improve the times"). Correct and complete; slower. |
+| **Filed** | 2026-11-03 (Session 104) |
+| **Component** | nginx `location ^~ /rest/v1/` on `marketview.meridianalpha.in` (browser → box → Supabase, `ap-southeast-2` Sydney) |
+| **Measured** | Staging, browser Performance API: Board first load ≈ 6.5 s against ≈ 3.1 s on the direct path; per request ≈ 2×; slowest request on the promoted bundle 2.6 s. The self-hosted PostgREST (A2) was ≈ 1.16 s per request and was dropped. |
+| **Cause (first suspects, not isolated)** | HTTP/1.1 (6 parallel connections to one origin) now carries all 42 data requests; an extra hop; the project is in Sydney. |
+| **Proper fix** | (1) `http2` on the two `listen 443` lines of the server block (backup, hunk count, `nginx -t`, reload) and re-measure; (2) the region move to Mumbai `ap-south-1` as its own planned migration (ENH-148). |
+| **Home** | Tracker §2.2 band B6 (Marketview). |
+| **Status** | **OPEN.** |
+
+### TD-S104-NEW-2 (S3 priority) — the `marketview_ro` token expires on 2027-11-03, and the nginx snippet couples the anon key to it
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3, dated.** On 2027-11-03 the Board and Health go empty at HTTP 401 if nothing is done. |
+| **Filed** | 2026-11-03 (Session 104) |
+| **Component** | `/etc/nginx/snippets/marketview_supabase_auth.conf` (mode 600, root): `Authorization: Bearer <marketview_ro JWT>` (HS256, legacy JWT secret, `exp` = iat + 365 d) and `apikey: <project anon key>` |
+| **Consequence** | Rotating the anon key without editing the `apikey` line breaks the proxy; rotating the JWT secret invalidates the token. Both are one change in one file. |
+| **Proper fix** | A written re-mint procedure (the mint snippet and the S3 file hand-over, shred afterwards), a calendar reminder before 2027-10-20, and a Health tile or contract check that reads the token's `exp`. |
+| **Home** | Tracker §2.2 band BS. |
+| **Status** | **OPEN.** |
+
+### TD-S104-NEW-4 (S3 priority) — residual function surface on `anon`, and engine scripts that fall back to the anon key would now answer 401
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** No table grant remains for `anon` to exercise, so the invoker-rights functions are inert today; the design flaw (PUBLIC default for EXECUTE on new functions) is not changed. |
+| **Filed** | 2026-11-03 (Session 104) |
+| **Component** | 34 non-write functions in `public` executable by `anon` (invoker rights); the Supabase PUBLIC default EXECUTE; engine scripts using `SUPABASE_SERVICE_ROLE_KEY` first and `SUPABASE_ANON_KEY` only as a fallback |
+| **Proper fix** | `ALTER DEFAULT PRIVILEGES … REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` for `postgres` in `public`, then revoke the 34 after a caller check; remove the anon fallback from the scripts (fail loud instead). **Watch item:** a script that silently relied on the fallback now gets 401; read the first engine runs of 2026-11-04. |
+| **Home** | Tracker §2.2 band BS (with TD-S92-NEW-4, TD-S103-NEW-11, TD-S81-NEW-3). |
+| **Status** | **OPEN.** |
+
+### TD-S104-NEW-5 (S3 priority) — the 7-day API-log review for the two insert RPCs and `trigger_ingest*` was never reported, and the retired Edge Functions with their `x-cron-secret` are still deployed
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Closed to `anon` since 2026-11-03 18:58 IST; the question is whether anyone used the open window. |
+| **Filed** | 2026-11-03 (Session 104) |
+| **Component** | Supabase API logs (window ≈ 7 days) for `rpc/insert_option_chain_batch`, `rpc/insert_option_chain_run`, `rpc/trigger_ingest*`; the Edge Functions retired in S100-H whose deletion is deferred |
+| **Proper fix** | Operator: search the dashboard logs while the window still reaches back to the exposure (the oldest rows age out daily); delete the retired Edge Functions and rotate the `x-cron-secret` (tracker BS1). |
+| **Home** | Tracker §2.2 band BS1. |
+| **Status** | **OPEN — operator, time-boxed by the log window.** |
+
+### TD-S104-NEW-6 (S4 priority) — the unused PostgREST (`postgrest-mv`) is still installed on the production box
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** Bound to 127.0.0.1, no nginx route points at it; about 1 GB of the box's headroom was the reason to avoid it in the first place. |
+| **Filed** | 2026-11-03 (Session 104) |
+| **Component** | `/opt/postgrest/postgrest-13.0.4`, `/etc/postgrest/marketview.conf`, `/etc/systemd/system/postgrest-mv.service` (may be running) |
+| **Proper fix** | `systemctl disable --now postgrest-mv`, then remove the three paths after the Wednesday open. |
+| **Status** | **OPEN.** |
+
+### TD-S104-NEW-7 (S2 priority) — Session Manager was unreachable on the production box for about 5 hours: the SSM agent lost DNS and did not recover, and nothing alarmed
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** SSM is the only operator path onto the box (port 22 is closed to the operator by design, TD-S101-NEW-10 notwithstanding); an unreachable box during a session would have been unfixable from outside. |
+| **Filed** | 2026-11-04 (Session 104) |
+| **Component** | `meridian-server` (`i-0878c118835386ec2`, `172.31.35.90`, eu-north-1), SSM agent 3.3.4793.0, `systemd-resolved` stub 127.0.0.53 |
+| **Measured** | 2026-11-04 06:23 IST: instance running and status-check healthy, SSM Ping **Offline**, connection **Not connected**; last error (2026-11-03 20:11:03Z = 01:41 IST): `lookup ssm.eu-north-1.amazonaws.com on 127.0.0.53:53 … i/o timeout`, "Systems Manager default role not enabled". The operator reported being in arrears on AWS payments and had just paid. **Cause not established** (billing, resolver, agent back-off are all consistent with the text). Restored by an EC2 reboot at 06:25 IST (`uptime -s` 00:55:56 UTC); after it nginx and oauth2-proxy active, crontab intact, DNS resolving, `marketview.meridianalpha.in` 200. The second instance (retail / tape box, `ip-172-31-30-166`) was **not checked** at this close. |
+| **Proper fix** | An alarm on SSM ping status per instance and an AWS billing alarm (both to the operator's Telegram or email); decide whether the agent should have a DNS fallback; check the second box. |
+| **Home** | Tracker §2.2 band B6 (operations). |
+| **Status** | **OPEN.** |
+
+### TD-S104-NEW-8 (S4 priority) — five small Marketview and tooling oddities noted in S104, not re-measured at this close
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** Filed from the S104 session notes; each must be reproduced before it is fixed. |
+| **Filed** | 2026-11-04 (Session 104 close) |
+| **Items** | (a) the Health staleness test ignores the after-hours flag and weekends; (b) the Health token tile is tied to the Local refresh path, not the box's; (c) a stale "COMMENT not live" badge remains on a page; (d) a skew label reads "@ K98"; (e) a script's `--check` mode probably sends a real Telegram page. |
+| **Proper fix** | Reproduce each in a read-only session; (a)–(d) go into one Lovable round, (e) is a one-line fix in the script. |
+| **Home** | Tracker §2.2 band B6. |
+| **Status** | **OPEN.** |
+
+### S104 status changes to existing entries (doc-close run at the end of Session 104; v5 Rule 3: one paragraph, no body edits)
+
+Rulings S104-A…F (`docs/research/s92_parity/rulings_s104.md`). Ledger: `TDs_NEW=8` (TD-S104-NEW-1…8; **-3 closed at filing** as a duplicate of TD-S39-NEW-3, its block written straight to the end of `tech_debt_history.md`) · `TDs_CLOSED=6` (five blocks moved to the end of `tech_debt_history.md`, unedited, plus -3). **TD-S103-NEW-6 → CLOSED:** the first drop (`ix_gex_strike_snap_sym_ts`, Sun 2026-11-01 ~10:23 IST) was undone when its rollback statement, sent in the same message, was run; the final drop (Tue 2026-11-03 ~11:1x IST) removed the unused twin `idx_gss_symbol_ts` (0 scans, 28 MB) and kept `ix_gex_strike_snap_sym_ts` (62,319 scans, 15 MB); 8 → 7 indexes read back; `v_gex_max_pain` plans an Index Only Scan, 83.7 ms (`sql/2026-11-01_s104_td_s103_new_6_drop_dup_index.sql` with its correction note; `sql/2026-11-03_s104_td_s103_new_6_drop_idx_gss_symbol_ts.sql`). That final drop ran **on a weekday during market hours**, outside the S90-J window for live-table schema changes; it was fail-closed with a 5 s lock timeout and no effect was seen (AR §D.58.2). **TD-S72-NEW-4:** the duplicate pair is gone; its "third index redundant against the composite" claim is still open (`ix_gex_strike_snap_sym_ts` is a leading prefix of `idx_gss_symbol_ts_strike`, `idx_scan` 294; read before any drop). **TD-S103-NEW-9 → CLOSED:** `v_gex_greeks_l2_strike_1pct` gained `gross_gex_drift_iv_1pct` and `gross_gex_drift_time_1pct` (22 → 24 columns, append-only; `sql/2026-11-01_s104_td_s103_new_9_l2_strike_1pct_gross_pair.sql`), applied by the operator; **the registered md5 for the view is to be re-read live and entered (owed, next session)**. **TD-S81-NEW-2 → CLOSED:** `anon` SELECT first reduced to the 48 relations (Phase 1, 2026-11-03 18:58 IST) and then to none (final revoke 22:36 IST, `anon_select_remaining = 0`; outside check 401 on three relations); the "23 relations" figure in the entry was 43 + 5 = 48 by the S104 bundle audit. **TD-S84-NEW-5 → CLOSED:** `MAINTAIN` revoked with everything else in Phase 1 (`anon_maintain = 0`); non-`public` platform defaults remain and are not reachable through the REST API (probed). **TD-S89-NEW-5 → CLOSED:** its proper fix (1) audit every anon-readable relation against what the frontend reads (265 → 48 → 0), (2) `ALTER DEFAULT PRIVILEGES` for `postgres` in `public` (applied in Phase 1), and the bundle now holds no credential; its item (3), the standing check, is **TD-S81-NEW-3, still OPEN** and is now the next piece of work in this class. **TD-S39-NEW-3 stays OPEN** (the committed `.env` with the anon key and URL; the key now reads nothing, so its cost is the advertised project URL; replace the file, owner of the push undecided). **TD-S92-NEW-4, TD-S103-NEW-11, TD-S90-NEW-8 stay OPEN** (the duplicate anon policies are inert while `anon` has no grants). **TD-S81-NEW-1 / TD-S71-NEW-11:** the operator's Dhan TOTP + PIN rotation (BS-1) was done in S104; Telegram, Breeze, the AWS key, the Supabase service-role plan and the Edge Function / `x-cron-secret` deletion remain (TD-S104-NEW-5). **TD-S103-NEW-7:** the `pg_stat_statements` re-run (calls on `wcb_signal_validation_v2` / `latest_signal_snapshots`) was **not done** in S104; carried. **The Monday 2026-11-02 live-check closures** (TD-S101-NEW-1, -3, TD-S41-NEW-5, TD-S97-NEW-19, -13 and the S102 bundles) are **not evidenced in this close** (the readings were taken in the session chat and not written to a file); each keeps its S103 status "closes on …" until a read is recorded. **TD-S101-NEW-15 / S103-B** (board leg roll after the Tuesday 15:40 expiry-day close) was **not built**. **Tracker rows:** §2.2 updated (v2.21).
 
 ### S103 status changes to existing entries (doc-close run in Session 104; v5 Rule 3: one paragraph, no body edits)
 
@@ -934,25 +994,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **Proper fix** | Operator removes the Breeze lines from `.env` on the box and revokes the keys at the broker. Note: `.env` line 21 contains `$4`, so `set -u` breaks sourcing — use `set +u` around it. |
 | **Status** | **OPEN — operator action.** |
 
-### TD-S89-NEW-5 (S2 priority) — the Marketview bundle reached internet scanners while `:80` served it un-gated, so every anon-readable relation rested on RLS + GRANT alone, unwitnessed
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** Nothing is broken and **no credential needs rotating** — `service_role` appears **0** times in the bundle. The server-side exposure is **closed** (S89 `:80` hardening). What this records is that the `anon` boundary was load-bearing in public for at least two weeks with no audit of what was read through it. |
-| **Filed** | 2026-10-04 (Session 89) |
-| **Component** | `/var/www/marketview/assets/*.js` · `/var/log/nginx/marketview.access.log*` · Supabase `anon` role · `v_gex_max_pain`, `v_gex_pin_maxpain` (the two `anon=rm` views) |
-| **How it was measured** | **Full method and the figure table are in `CASE-2026-09-22-anon-privilege-exposure` §10.2–§10.3; they are cited, not restated here**, so the two cannot drift apart. In outline: the access log **cannot** answer "which Host?" (default `combined` omits it, and `:80`/`:443` share one file), so **response size discriminates** — and the sign-in page's size is **`8484 + len(path)`** (§10.2), which is why equal size does **not** imply equal content. |
-| **The headline, separated rather than totalled** | **31** un-gated asset serves, **23 external**, of which **16 from ONE IP** (operator's browser, raw-IP `Referer`) and **15 from 14 distinct IPs with NO Referer**. Per-IP detail and the 4 external `index.html` serves: **§10.3**. The separation matters more than the total — a single total would read as 31 unknown parties. |
-| **A first-pass figure of mine that was WRONG, recorded because the correction is the useful part** | My first classification reported **2,757** "un-gated index.html hits". That filter caught 46 responses of **200 / 496 B**, which is **neither** `index.html` (878 B) **nor** the sign-in page (8,485 B). **496 B could not be reproduced** — oauth2-proxy returns 403 / 8,485 B on both paths probed. The confirmed un-gated HTML serves are **4**, not 2,757, and **the 496 B responses remain unidentified.** No explanation is offered, because inventing one to make the data fit is the named anti-pattern. |
-| **What the bundle contains — presence only, no values read** | `supabase.co` ×2 · `supabase` ×72 · `anon` ×4 · `eyJ` ×2 (two JWTs) · **`service_role` ×0.** |
-| **Why this is NOT a rotation incident** | The Supabase **anon key is designed to be public**, and **D.21.2 records that trust model as VALIDATED**. `service_role` is absent. Proposing a rotation would be the wrong fix — the same shape as CASE-2026-09-22's *"supply the key, never restore the grant"*. |
-| **Why it is nevertheless S2** | **TD-S81-NEW-2 established that where RLS is OFF, the GRANT alone is the boundary** — there is no policy to filter, and ~100 tables are in that state. This TD records that the key to that boundary demonstrably left the building, so the GRANT's correctness is now the only control — **and it has no watcher.** CASE-2026-09-22 §7(e) already owes a standing `relations_with_anon_non_select = 0` check that does not exist. |
-| **Where to start** | The two views measured at **`anon=rm`** rather than `anon=r` — **`v_gex_max_pain`** and **`v_gex_pin_maxpain`** (S89, from `pg_class.relacl`; the other ten board views read `anon=r`). They carry **MAINTAIN**, the CASE-2026-09-22 default-privileges shape, and are the only known live instances. **`information_schema.role_table_grants` CANNOT see this** — run as `merdian_ro` it omits `anon`'s grants entirely and returns a clean-looking list. **Use `pg_class.relacl`.** |
-| **Proper fix** | (1) audit every anon-readable relation against what the frontend actually reads (CASE §7(c), TD-S81-NEW-2); (2) **`ALTER DEFAULT PRIVILEGES`, not `REVOKE` alone** — `REVOKE` alone reproduces S39; (3) the standing check from CASE §7(e). |
-| **Not this TD's job** | Closing TCP 80 at the security group — that is **TD-S89-NEW-4**. |
-| **Cross-ref** | **CASE-2026-09-22-anon-privilege-exposure** §7, §10 (the S89 forensic addendum) · **TD-S81-NEW-1 / -2 / -3** · **D.21.1 / D.21.2** · **TD-S89-NEW-4** · `docs/runbooks/runbook_nginx_port80_hardening.md`. |
-| **Status** | **OPEN.** |
-
 ### TD-S89-NEW-4 (S3 priority) — TCP 80 is still open to the world at the security group; the `:80` hardening makes the port answer only redirects, it does not close the port
 
 | Field | Value |
@@ -1063,18 +1104,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **Consequence** | Agreement on strike is **not** corroboration — it is two estimators over overlapping data landing on the same grid point on one session. A renderer must pick one and name it, and must never show both as though one validated the other. |
 | **Cross-ref** | contract §13 · §15 · **ENH-128** (retroactive registration of `v_max_pain_by_strike`, S81) · **TD-S80-NEW-10** (same view — its missing timestamp and unbounded `max(ts)`, RESOLVED S81 by the `latest_ts` retrofit; the `ts` this entry compares is that retrofit's output). |
 | **Status** | **OPEN — the canonical choice is a decision, not a measurement.** |
-
-### TD-S84-NEW-5 (S3 priority) — `anon` holds `MAINTAIN` beyond `SELECT` on three objects created before the S81 default-privileges fix
-
-| Field | Value |
-|---|---|
-| **Priority** | **S3.** `MAINTAIN` does not permit reads beyond `SELECT` or any write of row data, and all three objects are display-only. Filed because it is the S39 residual shape the S81 fix was meant to end, surviving on objects the fix did not sweep. |
-| **Filed** | 2026-09-25 (Session 84) |
-| **Component** | `v_gex_max_pain` · `v_gex_pin_maxpain` · `v_participant_oi_latest` · `anon` role · S81 `ALTER DEFAULT PRIVILEGES` |
-| **Measured** | `scratch/s84_contract/acl.out` shows `MAINTAIN,SELECT` for `anon` on **`v_gex_max_pain`** (`:15`), **`v_gex_pin_maxpain`** (`:16`) and **`v_participant_oi_latest`** (`:19`); every other object in the eighteen reads `SELECT` only. Contract §13, §14, §17. |
-| **Consequence** | S81 fixed the **mechanism** (`ALTER DEFAULT PRIVILEGES`) and did not sweep objects that already existed, so pre-S81 objects still carry the old grants. This is the exact failure S81 recorded: fixing every instance does not fix the mechanism, and fixing the mechanism does not sweep the instances. |
-| **Cross-ref** | contract §13 · §14 · §17 · **TD-S81-NEW-1** / **-2** / **-3** (the anon privilege exposure and its `ALTER DEFAULT PRIVILEGES` remedy) · **D.21.1** (Lovable auto-grant safety, REFUTED) · `CASE-2026-09-22-anon-privilege-exposure`. |
-| **Status** | **OPEN.** |
 
 ### TD-S84-NEW-4 (S2 priority) — the L13 rotation anchor is fabricated on stale vendor rows, and this contradicts TD-S83-NEW-5's "the open interest there is real"
 
@@ -1222,21 +1251,6 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **Blocked by** | nothing. |
 | **Cross-ref** | **`CASE-2026-09-22-anon-privilege-exposure.md`** (the incident) · **D.21.1** (reopened as a live regression, then closed at the mechanism) · **D.21.2** (trust model corrected) · TD-S81-NEW-2 / -3 (the other two residuals) · TD-080 · `pull_token_from_supabase.py:160/176`. |
 | **Status** | **OPEN — the grant is closed; (a) and (b) are the item.** |
-
-### TD-S81-NEW-2 (S2 priority) — anon SELECT is still far broader than the 23 relations the frontend consumes
-
-| Field | Value |
-|---|---|
-| **Priority** | **S2.** Least-privilege is not yet reached; the write surface is closed but the read surface is not scoped. |
-| **Filed** | 2026-09-23 (Session 81) |
-| **Component** | Supabase anon role · `public` schema · Marketview `src/lib/queries.ts` |
-| **Symptom** | The S81 revoke removed every non-SELECT privilege. **SELECT was left broad.** `capital_tracker`, `app_settings` and others remain anon-readable and are consumed by nothing. |
-| **Proper fix** | Enumerate the frontend's actual relations (**23**, measured this session), then `REVOKE SELECT ON ALL TABLES` and re-grant only those. Do it as one reviewable script, not incrementally. |
-| **Do not do this blind** | A too-tight grant empties a Marketview panel at HTTP 200 with no error — the **TD-S37-03** silent-empty-dataset shape. Verify each of the 23 through the anon path after the change, not just the count. |
-| **Cost to fix** | ~1 h including verification. |
-| **Blocked by** | nothing, but sequence it after TD-S81-NEW-3 so the standing check can witness it. |
-| **Cross-ref** | **`CASE-2026-09-22-anon-privilege-exposure.md`** item (c) · D.21.1 · TD-S37-03 · TD-S81-NEW-1. |
-| **Status** | **OPEN.** |
 
 ### TD-S81-NEW-3 (S2 priority) — nothing asserts that the anon revoke is still in force; item 3 of the S81 fix is trusted rather than verified
 

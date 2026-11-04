@@ -2161,3 +2161,42 @@ docs deleted from PK after it lands (their git homes: `docs/research/s103/`, `do
 
 **Observed, not changed.** Port 22 still open to `0.0.0.0/0` (TD-S101-NEW-10). Two duplicate `anon` SELECT policies on
 `gamma_metrics` and `gex_strike_snapshots` (TD-S103-NEW-11). `gex_strike_snapshots` carries a duplicate index pair (TD-S103-NEW-6).
+
+## §S104 — Session 104 (2026-10-31 → 11-04): the Marketview data path moved behind the box; `anon` holds no grant; the production box's SSM outage
+
+**Marketview data path (LIVE since ≈ 22:00 IST 2026-11-03).** Browser → `https://marketview.meridianalpha.in/rest/v1/…` (same origin,
+the oauth2-proxy Google session) → nginx on the production box → `https://kilmcowcikwdhvdxwofi.supabase.co/rest/v1/…`. The nginx
+location is `^~ /rest/v1/` with `limit_except GET HEAD { deny all; }`; `^~ /rest/v1/rpc/` returns 403; the browser Cookie is stripped;
+`resolver 127.0.0.53 valid=30s` with `proxy_pass $mv_upstream` (re-resolves); TLS verify on, `proxy_http_version 1.1`, connect 5 s, read
+20 s. Credentials are injected by `include snippets/marketview_supabase_auth.conf` (`/etc/nginx/snippets/`, mode 600, root): the
+`marketview_ro` role JWT as `Authorization: Bearer` and the project anon key as `apikey` (the Supabase gateway requires `apikey`; it only
+passes the gateway). Token payload `{"iss":"supabase","ref":"kilmcowcikwdhvdxwofi","role":"marketview_ro"}`, HS256 with the legacy JWT
+secret, **expires 2027-11-03**. `/etc/nginx/sites-available/marketview` backups: `.PRE_S104_PHASE2_20261103_1513`,
+`.PRE_S104_PHASE2B_20261103_1547`. **HTTP/1.1 only** (`http2` on the two `listen 443` lines is the first speed step, ENH-148).
+
+**Marketview bundle.** Live `index-DkX9XNeY.js` = `meridian-connect@6f14a92` built with `VITE_SUPABASE_URL=https://marketview.meridianalpha.in`
+and `VITE_SUPABASE_ANON_KEY=proxy` (the shell variable beats the committed `.env`); no Supabase URL, no JWT-shaped string. `/staging/`
+(`/var/www/marketview-staging`) carries the staging build. Rollback `sudo rsync -a --delete /var/www/marketview.bak-pre-proxy-20261103_1623/
+/var/www/marketview/`; the promote script is `~/mv_promote_s104_proxy.sh` (dry run unless the single argument `GO`; `set -eu`, no `pipefail`).
+
+**Database access (engine Supabase project).** `anon`: zero SELECT, no MAINTAIN, default privileges revoked for `postgres` in `public`;
+EXECUTE revoked from PUBLIC / anon / authenticated on `insert_option_chain_batch`, `insert_option_chain_run`, `trigger_ingest`,
+`trigger_ingest_nifty`, `trigger_ingest_sensex` (service_role only). `marketview_ro`: LOGIN, connection limit 8, `statement_timeout 8s`,
+SELECT on the 48 relations (43 the bundle names + 5 source views for the `security_invoker` `_1pct` wrappers). `merdian_ro` (box read role,
+pooler session mode `aws-1-ap-southeast-2.pooler.supabase.com:5432`) is unchanged. Retail has its own Supabase project and keys; the tape
+stream's `tape_*` tables have RLS on and no anon grant, and `marketview_ro` cannot read them (a `/tape` page needs its own role + token +
+an nginx location gated to the operator's email). Rule: CLAUDE.md 26. Record: `docs/decisions/CASE-2026-11-03-marketview-anon-key-exposure.md`.
+
+**Left on the box, unused.** `postgrest-mv` (`/opt/postgrest/postgrest-13.0.4`, `/etc/postgrest/marketview.conf`,
+`/etc/systemd/system/postgrest-mv.service`; 127.0.0.1:3000; HOME=/nonexistent, `db-channel-enabled=false` were needed to run it); no nginx
+route points at it (TD-S104-NEW-6).
+
+**Production box availability (2026-11-04).** `meridian-server` `i-0878c118835386ec2` (`172.31.35.90`, Elastic IP `13.63.27.85`, t3.small,
+eu-north-1, IAM role `meridian-ssm-ec2-role-v2`): status checks healthy but SSM Ping Offline from ≈ 01:41 IST (SSM agent 3.3.4793.0 could not
+resolve `ssm.eu-north-1.amazonaws.com` through the `127.0.0.53` stub; the operator was in arrears on AWS payments and had paid). EC2 **reboot**
+06:25 IST (`uptime -s` 00:55:56 UTC) restored it: nginx and oauth2-proxy active, crontab intact, DNS resolving, the site 200. SSM is the only
+operator path; no alarm exists (TD-S104-NEW-7). The retail / tape box `ip-172-31-30-166` was **not** checked at this close.
+
+**Observed, not changed.** Port 22 still open to `0.0.0.0/0` (TD-S101-NEW-10). The duplicate `anon` SELECT policies (TD-S103-NEW-11) are inert
+while `anon` has no grant. 34 invoker-rights functions remain executable by `anon` (TD-S104-NEW-4). The retired Edge Functions and their
+`x-cron-secret` are still deployed (TD-S104-NEW-5).

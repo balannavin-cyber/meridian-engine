@@ -5092,9 +5092,9 @@
       "truncated_each_run": false
     }
   },
-  "version": "v81",
-  "last_updated_session": "Session 103 (closed in Session 104)",
-  "last_updated_date": "2026-11-01",
+  "version": "v82",
+  "last_updated_session": "Session 104",
+  "last_updated_date": "2026-11-04",
   "change_log": [
     {
       "session": "S91 / AM-2",
@@ -6131,5 +6131,37 @@
           "adr_032_build": "after launch and the sweeps' operator items: S2a-S2c per the fallback plan; K3 after each stage; rule the emergency lever then (proposed: flag-off valid only at S2b-S2c; from S3 the SQL wrapper revert); dated unit-break row at S2c",
           "launch_date": "unknown (operator: maybe in 10 days from 2026-10-31)"
       }
+  },
+  "_s104_addendum": {
+    "session": "S104",
+    "date": "2026-10-31 -> 2026-11-04 (close 2026-11-04 06:30 IST)",
+    "scope": "Saturday: PK prune 186 -> 149, ADR-032 S1 re-applied, two read-only CC sweeps. Sunday: S103 doc-close (9d26281) and follow-up (d5a4600), eleven PK deletions, TD-S103-NEW-6 / -9 DDL. Sunday-Monday: BS-1 Dhan TOTP + PIN rotation, Marketview unit read. Tuesday 18:40-22:45: the Marketview anon-key exposure measured and closed. Wednesday 01:41-06:25 IST: the production box's SSM outage, restored by reboot.",
+    "engine_commits": "8f9d466 2b69506 232a3bc (PK-prune archives) 9d26281 (S103 close) d5a4600 (sweep records); then tape-stream merges 0b61672..9268b9a; this close on 9268b9a. No engine code changed.",
+    "anon_exposure": {
+      "case": "docs/decisions/CASE-2026-11-03-marketview-anon-key-exposure.md",
+      "before": "anon could SELECT 265 relations (116 public tables RLS off, ~30.8 GB incl. capital_tracker, trade_log, app_settings), MAINTAIN on ~190, EXECUTE on five SECURITY DEFINER write functions; key in the public bundle and the public repo .env",
+      "layers": "Phase 1 shrink 18:58 IST (265 -> 48); role marketview_ro (48 relations, statement_timeout 8s, conn limit 8); nginx same-origin /rest/v1/ -> Supabase REST (GET/HEAD, rpc 403, Google session, server-held token); final revoke 22:36 IST (anon_select_remaining = 0)",
+      "verified": "old anon key: 401 on gex_strike_snapshots, v_pin_board, capital_tracker (outside check from the box); Board renders, 42 data requests all to /rest/v1/ on own domain, 0 to supabase.co; bundle has 0 JWT-shaped strings and 0 refs to the project",
+      "marketview": "live index-DkX9XNeY.js = meridian-connect@6f14a92 built with VITE_SUPABASE_URL=https://marketview.meridianalpha.in, VITE_SUPABASE_ANON_KEY=proxy; rollback /var/www/marketview.bak-pre-proxy-20261103_1623 (previous index-BIJiXoC3.js)",
+      "secrets": "/etc/nginx/snippets/marketview_supabase_auth.conf (600, root): marketview_ro JWT (expires 2027-11-03) + anon apikey; rotating the anon key means editing it in the same step; /tmp/mvro.tok shredded and the S3 copy deleted 22:39",
+      "performance": "Board first load ~6.5 s vs ~3.1 s; per request ~2x; PostgREST on the box was ~1.16 s per request and was dropped; next: http2, then Mumbai ap-south-1 (ENH-148)",
+      "sql": "sql/2026-11-03_s104_anon_shrink.sql (+_ROLLBACK), sql/2026-11-03_s104_marketview_ro_role.sql (+_ROLLBACK), sql/2026-11-03_s104_anon_final_revoke.sql (+_ROLLBACK), sql/2026-11-01_s104_td_s103_new_6_drop_dup_index.sql (corrected), sql/2026-11-03_s104_td_s103_new_6_drop_idx_gss_symbol_ts.sql, sql/2026-11-01_s104_td_s103_new_9_l2_strike_1pct_gross_pair.sql"
+    },
+    "supabase": "gex_strike_snapshots 7 indexes (idx_gss_symbol_ts dropped 2026-11-03; ix_gex_strike_snap_sym_ts kept); v_gex_greeks_l2_strike_1pct 24 columns (registered md5 to be re-read live, not changed in this file)",
+    "operations": "meridian-server i-0878c118835386ec2 SSM Ping Offline from ~01:41 IST 2026-11-04 (agent DNS lookup timeout; AWS billing arrears paid); EC2 reboot 06:25 IST, uptime -s 2026-11-04 00:55:56 UTC; nginx, oauth2-proxy, cron, DNS and the site verified; second box ip-172-31-30-166 NOT checked",
+    "rulings": "docs/research/s92_parity/rulings_s104.md - S104-A..F",
+    "tech_debt": "TD-S104-NEW-1..8 filed (-3 closed at filing as a duplicate of TD-S39-NEW-3); closed TD-S103-NEW-6, TD-S103-NEW-9, TD-S81-NEW-2, TD-S84-NEW-5, TD-S89-NEW-5",
+    "enhancement_register": "ENH-148 minted PROPOSED (HTTP/2, then the Supabase project in Mumbai)",
+    "assumption_register": "D.58 (10 rows, all mine) - carry D.58.1 (a rollback is never in the same message as its forward step) and D.58.8 (a fix is shown working by its own trace)",
+    "claude_md": "v1.76: rule 26 added (no browser-side credential; a new relation is unreachable by default); rules 0-25 unchanged",
+    "decision_index": "no row added; next-free ADR-033+ (an ADR for the browser data-access path is a candidate)",
+    "tracker": "docs/registers/agentic_layer_roadmap_S90.md v2.21",
+    "open": {
+      "second_box": "check ip-172-31-30-166 SSM; reboot the instance if Offline",
+      "wednesday_2026_11_04": "08:20 IST Dhan refresh, 09:11 spot capture, 09:15 ingest; any engine script that fell back to the anon key now answers 401 (TD-S104-NEW-4)",
+      "marketview": "parity on Pin, Gamma, OI, Flows, IV, Settings through the proxy; http2 on the two listen 443 lines; re-measure",
+      "anon_class": "TD-S81-NEW-3 standing check; TD-S39-NEW-3 committed .env; TD-S104-NEW-5 API-log review (7-day window); TD-S104-NEW-6 stop postgrest-mv; TD-S104-NEW-2 token reminder",
+      "carried": "Monday/Tuesday live-check readings not recorded; S103-B board leg roll not built; pg_stat_statements re-run (TD-S103-NEW-7); S99-D gate question unanswered; ADR-032 S2 held until after launch; Mumbai migration plan offered, not drafted"
+    }
   }
 }

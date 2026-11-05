@@ -540,6 +540,73 @@ the doc-close that closes it, with one line in that close's status paragraph.
 | **Home** | Tracker §2.2 band B6. |
 | **Status** | **OPEN.** |
 
+### TD-S105-NEW-3 (S3 priority) — a CRLF checkout breaks the LF-defined hashes: the scorer's files are now pinned, the exploration tree's `SHA256SUMS` is not
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Both hash records are defined over LF bytes; a Windows checkout with `core.autocrlf=true` rewrites text files to CRLF in the working tree. |
+| **Filed** | 2026-11-05 (Session 105) |
+| **Component** | `services/tape_scoring/` (four hashed files); `docs/tape/exploration_2026-11-02_04/SHA256SUMS` (107 → 109 files) on `tape/exploration` |
+| **Measured** | `git ls-files --eol services/tape_scoring` → `i/lf w/lf attr/text eol=lf` on all four hashed files after `services/tape_scoring/.gitattributes` (`* text eol=lf`, `0ef8f71`; the root `.gitattributes` already carried `services/tape_scoring/** text eol=lf`). The exploration tree has no such rule: its `.md`, `.csv` and `.py` outputs would check out CRLF on Windows and fail `SHA256SUMS` (git printed "LF will be replaced by CRLF" on every one at commit). |
+| **Proper fix** | `docs/tape/.gitattributes` with `* text eol=lf` (or a root rule for `docs/tape/**`) on `tape/exploration`; then a fresh-clone check that `sha256sum -c` passes on the exploration outputs. |
+| **Home** | Tape stream. |
+| **Status** | **OPEN** (scorer half fixed in `0ef8f71`). |
+
+### TD-S105-NEW-4 (S2 priority) — the full `tests/run_offline.sh` was not run after the v0.4 scoring change, and Rule 23's `ulimit -v` half cannot be enforced on Windows
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** The two tape-scoring steps pass, but the 40-step suite as a whole was not run. |
+| **Filed** | 2026-11-05 (Session 105) |
+| **Component** | `tests/run_offline.sh` (40 steps, unchanged count; steps 39/40 relabelled `(25)` / `(40 x5`) |
+| **Measured** | On Local (Windows): `tests/test_tape_scoring.py` 25/25 guards, 21/21 unit checks; `tests/tape_scoring_mutants.py --repeat 5` 40/40 ×5, 5/5 controls — at `0ef8f71`, under `TAPE_RULE23_OVERRIDE_R1=1` (ruling R-1). Python's `resource` module is absent on Windows, so the `ulimit -v` refusal in both scripts is a no-op there. |
+| **Proper fix** | Run `( ulimit -v 700000; bash tests/run_offline.sh )` on Linux (the box), after 15:45 IST on a trading day (Rule 23), at the merged head. |
+| **Home** | Tape stream. |
+| **Status** | **OPEN — owed.** |
+
+### TD-S105-NEW-5 (S3 priority) — the optional `tape_minute_oi` extract is unmeasured against `roq.sh`'s 30 s timeout, and `run_extract.sh` has run only against a fake `roq.sh`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Fails soft by design: a failure is `OPTIONAL SKIP` and T4 reads `NOT COMPUTED`; no verdict depends on it. |
+| **Filed** | 2026-11-05 (Session 105) |
+| **Component** | `services/tape_scoring/scoring_extract.sql` (`-- @name tape_minute_oi`, last), `services/tape_scoring/run_extract.sh` (optional path, last in `RELS`) |
+| **Measured** | Not measured. `tape_minute` is 57–67 k rows a day on the exploration set; S89 measured an 85 k-row export at ≈ 10.5 s on another relation. The optional path was exercised only under Git Bash with a fake `roq.sh` in guard `sc-t4-optional` (optional failure → exit 0, `OPTIONAL SKIP`, no file; required failure → exit 1; control extracts). |
+| **Proper fix** | The first operator extract: read the `PRECHECK` / `EXTRACT ... tape_minute_oi` lines and the elapsed time; if it times out, bound the SELECT by `role = 'OPT'` or split by symbol (a v0.5 code-only change, re-hashed). |
+| **Home** | Tape stream. |
+| **Status** | **OPEN.** |
+
+### TD-S105-NEW-6 (S3 priority) — the recorder reported `n_subscribed` 186 at 09:01 against 148 expected; the per-symbol split is not yet read
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Reported by the operator at the S105 close; may be the SENSEX band ruling (v0.4 §6 "Recorder band") or a configuration drift. |
+| **Filed** | 2026-11-05 (Session 105 close; operator's reading) |
+| **Component** | the tape recorder on the retail / tape box (`daily_report.n_subscribed`) |
+| **Measured** | 186 at 09:01 IST 2026-11-05 (operator). Expected 148. Per-symbol split: **not read.** |
+| **Proper fix** | Read the per-symbol counts from that day's `subscriptions_*.json` and `daily_report`; reconcile with the band in force; record the band and its effective date in the ledger (v0.4 §6). |
+| **Home** | Tape stream. |
+| **Status** | **OPEN.** |
+
+### TD-S105-NEW-7 (S3 priority) — the weekday timer shows NEXT blank while its service runs
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Reported by the operator at the S105 close; harmless if NEXT returns after the run ends, a missed day if not. |
+| **Filed** | 2026-11-05 (Session 105 close; operator's reading) |
+| **Component** | the weekday recorder timer on the retail / tape box (`systemctl list-timers`) |
+| **Measured** | NEXT blank while the service was active (operator). Not yet checked after the run ends. |
+| **Proper fix** | After 15:52 IST 2026-11-05, `systemctl list-timers` must show NEXT = Fri 2026-11-06 03:20 UTC; if blank, inspect `OnCalendar` / `Persistent` and the unit's exit state. |
+| **Home** | Tape stream. |
+| **Status** | **OPEN — verify after 15:52 IST.** |
+
+### S105 status changes to existing entries (doc-close run at the end of Session 105; v5 Rule 3: one paragraph, no body edits)
+
+Rulings S105-A…F (`docs/research/s92_parity/rulings_s105.md`). Ledger: `TDs_NEW=7` (TD-S105-NEW-1…7; **-1 and -2 closed at
+filing**, their blocks written straight to the end of `tech_debt_history.md`'s entries) · `TDs_CLOSED=0` otherwise. No
+existing entry changed status: S105 was the tape stream only (offline scoring code and descriptive exploration on
+`meridian-tape-staging`); no engine code, no DDL, no box change.
+
 ### S104 status changes to existing entries (doc-close run at the end of Session 104; v5 Rule 3: one paragraph, no body edits)
 
 Rulings S104-A…F (`docs/research/s92_parity/rulings_s104.md`). Ledger: `TDs_NEW=8` (TD-S104-NEW-1…8; **-3 closed at filing** as a duplicate of TD-S39-NEW-3, its block written straight to the end of `tech_debt_history.md`) · `TDs_CLOSED=6` (five blocks moved to the end of `tech_debt_history.md`, unedited, plus -3). **TD-S103-NEW-6 → CLOSED:** the first drop (`ix_gex_strike_snap_sym_ts`, Sun 2026-11-01 ~10:23 IST) was undone when its rollback statement, sent in the same message, was run; the final drop (Tue 2026-11-03 ~11:1x IST) removed the unused twin `idx_gss_symbol_ts` (0 scans, 28 MB) and kept `ix_gex_strike_snap_sym_ts` (62,319 scans, 15 MB); 8 → 7 indexes read back; `v_gex_max_pain` plans an Index Only Scan, 83.7 ms (`sql/2026-11-01_s104_td_s103_new_6_drop_dup_index.sql` with its correction note; `sql/2026-11-03_s104_td_s103_new_6_drop_idx_gss_symbol_ts.sql`). That final drop ran **on a weekday during market hours**, outside the S90-J window for live-table schema changes; it was fail-closed with a 5 s lock timeout and no effect was seen (AR §D.58.2). **TD-S72-NEW-4:** the duplicate pair is gone; its "third index redundant against the composite" claim is still open (`ix_gex_strike_snap_sym_ts` is a leading prefix of `idx_gss_symbol_ts_strike`, `idx_scan` 294; read before any drop). **TD-S103-NEW-9 → CLOSED:** `v_gex_greeks_l2_strike_1pct` gained `gross_gex_drift_iv_1pct` and `gross_gex_drift_time_1pct` (22 → 24 columns, append-only; `sql/2026-11-01_s104_td_s103_new_9_l2_strike_1pct_gross_pair.sql`), applied by the operator; **the registered md5 for the view is to be re-read live and entered (owed, next session)**. **TD-S81-NEW-2 → CLOSED:** `anon` SELECT first reduced to the 48 relations (Phase 1, 2026-11-03 18:58 IST) and then to none (final revoke 22:36 IST, `anon_select_remaining = 0`; outside check 401 on three relations); the "23 relations" figure in the entry was 43 + 5 = 48 by the S104 bundle audit. **TD-S84-NEW-5 → CLOSED:** `MAINTAIN` revoked with everything else in Phase 1 (`anon_maintain = 0`); non-`public` platform defaults remain and are not reachable through the REST API (probed). **TD-S89-NEW-5 → CLOSED:** its proper fix (1) audit every anon-readable relation against what the frontend reads (265 → 48 → 0), (2) `ALTER DEFAULT PRIVILEGES` for `postgres` in `public` (applied in Phase 1), and the bundle now holds no credential; its item (3), the standing check, is **TD-S81-NEW-3, still OPEN** and is now the next piece of work in this class. **TD-S39-NEW-3 stays OPEN** (the committed `.env` with the anon key and URL; the key now reads nothing, so its cost is the advertised project URL; replace the file, owner of the push undecided). **TD-S92-NEW-4, TD-S103-NEW-11, TD-S90-NEW-8 stay OPEN** (the duplicate anon policies are inert while `anon` has no grants). **TD-S81-NEW-1 / TD-S71-NEW-11:** the operator's Dhan TOTP + PIN rotation (BS-1) was done in S104; Telegram, Breeze, the AWS key, the Supabase service-role plan and the Edge Function / `x-cron-secret` deletion remain (TD-S104-NEW-5). **TD-S103-NEW-7:** the `pg_stat_statements` re-run (calls on `wcb_signal_validation_v2` / `latest_signal_snapshots`) was **not done** in S104; carried. **The Monday 2026-11-02 live-check closures** (TD-S101-NEW-1, -3, TD-S41-NEW-5, TD-S97-NEW-19, -13 and the S102 bundles) are **not evidenced in this close** (the readings were taken in the session chat and not written to a file); each keeps its S103 status "closes on …" until a read is recorded. **TD-S101-NEW-15 / S103-B** (board leg roll after the Tuesday 15:40 expiry-day close) was **not built**. **Tracker rows:** §2.2 updated (v2.21).

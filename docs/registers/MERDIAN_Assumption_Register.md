@@ -1452,3 +1452,22 @@ Recorded at the S104 doc-close (2026-11-04).
 **The one to carry from §D.58: D.58.1 and D.58.8.** A rollback is never in the same message as its forward step, and a fix to a script is shown working by its own trace before it is called a fix.
 
 **Update log — Session 104 close (2026-11-04):** §D.58 added (**10 rows, all mine**). Sources: `docs/research/s92_parity/rulings_s104.md`, `docs/decisions/CASE-2026-11-03-marketview-anon-key-exposure.md`.
+
+## D.59 — Session 105: a plan built on a premise the code did not bear, a model switch that did not happen, and patches eaten by a shell (2026-11-04 → 11-05)
+
+Six rows, **all my own**. Rulings: `docs/research/s92_parity/rulings_s105.md`. Sources: `docs/tape/exploration_2026-11-02_04/`
+(`bc14f18`, `9cf1fcb`), `docs/tape/scoring_plan_v04.md` §§8–9 (`6b8bdf9`), the ledger v0.4 entry and note (`ea27c17`, `0ef8f71`).
+Recorded at the S105 doc-close (2026-11-05).
+
+| # | Assumption as held | Verdict on measurement |
+|---|---|---|
+| **D.59.1** | *(mine)* T4's Kite OI could come from widening the existing `tape_minute` SELECT, and `run_extract.sh` would not change. | **REFUTED** — The operator's optional-input condition could not hold that way: `tape_minute.minute_ist` feeds completeness (DEF-2), so an absent file quarantines every day; and `run_extract.sh` runs in its own `RELS` order and aborts on any failure, so "last in the file" changes nothing. Built as a separate optional relation with an `OPTIONAL SKIP` path; `run_extract.sh` changed and was re-hashed. Read the runner before planning around its order. |
+| **D.59.2** | *(mine)* The build would run on Sonnet after `/model`. | **REFUTED** — I cannot switch the session's model; the scoring build ran on Opus. Said at the start of the build, not before the plan was approved. |
+| **D.59.3** | *(mine)* Python patch text with backslashes can be passed through a bash heredoc in this tool. | **REFUTED** — `\n` arrived as a newline twice; both patch scripts aborted on their anchor asserts before writing, so no file was half-patched. Patch text goes through a file written by the editor, never a heredoc. |
+| **D.59.4** | *(mine)* The first `TAPE_LOCAL FAIL 2026-11-02` was a data mismatch. | **REFUTED** — It was my epoch helper: pandas 3 parsed the timestamps at second resolution and `// 10**9` collapsed them. Caught because the check compared rows one for one; fixed before any tape was read, then 3/3 OK. |
+| **D.59.5** | *(mine)* The fixed control rule (no overlap with any episode card span) would give 20 controls per symbol-day. | **REFUTED** — Stalls tile NIFTY days at a 50-point step: set A existed on 2 of 6 symbol-days. Set B (stalls allowed inside) was added from spot alone before any tape was read and labelled; NIFTY 2026-11-03 has no control in either set. |
+| **D.59.6** | *(mine)* "The three files are re-hashed" (v0.4 §6) matches the ledger. | **REFUTED** — four files are hashed and verified; the ledger note says so (TD-S105-NEW-2). |
+
+**The one to carry from §D.59: D.59.1.** Before planning around a runner's order or a file's optionality, read what consumes it and in what order it runs.
+
+**Update log — Session 105 close (2026-11-05):** §D.59 added (**6 rows, all mine**). Sources: `docs/research/s92_parity/rulings_s105.md`, `docs/tape/scoring_plan_v04.md`.

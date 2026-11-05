@@ -54,3 +54,10 @@ No tape-vs-outcome query has run on a confirmatory day before this hash. The sco
 From this entry on, `score.py` verifies against the **last** `## Entry` block of this file, which must name the v0.4
 sha256 above, and refuses on the v0.2 entry (guard `sc-hash-check`, mutant `M-SC-HASH-FIRST-ENTRY`). The operator copies
 this file beside `tape_preregistration_v0.4.md` on `meridian-tape-staging` `main`.
+
+### Note 2026-11-05
+
+Pre-registration v0.4 section 6 says "the three files are re-hashed" (`scoring_extract.sql`, `score.py`,
+`wilcoxon.py`). The scorer hashes and verifies **four** files: those three and `run_extract.sh` (`HASHED` in
+`score.py`), which changed in this version to carry the optional `tape_minute_oi` relation. All four are listed in the
+table above, and the check refuses on any of them. This note is appended; the entry text above it is unchanged.

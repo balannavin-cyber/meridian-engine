@@ -6,10 +6,17 @@ the generator can only write what the extract would emit; tests/test_tape_scorin
 score.py reads.
 
 A Plan is one symbol-day. The plan IS the truth: each guard states what it planted and what the scorer must report.
-  S sign   one designated strike-leg (first strike, CE) carries the net: S=+1 -> net sell (buy - sell = -1000, D > 0);
-           S=-1 -> net buy. Classified share is planted with the unclassified quantity on the same leg. Other legs are zero.
-  R        a spike of `rng` points at the label hm(T)+2, base elsewhere; straddle_atm is 100, so R = rng / 100.
+  S sign   (v0.4: trailing six 5-minute bins stamped G-25..G) one designated strike-leg (first strike, CE) carries the net
+           in the bin stamped G: S=+1 -> net sell (buy - sell = -1000, D30 > 0); S=-1 -> net buy. The window's classified
+           share is planted with the unclassified quantity on the same leg. Every other row of the window is present with
+           zero flow. `bins=` overrides that planting with explicit (stamp offset, strike, leg, buy, sell, uncl) entries.
+  S_cum    the buy_cum / sell_cum / uncl_cum columns carry an INDEPENDENT planted cumulative sign (default = S) and share
+           (default = the window share) on the designated leg at stamp G only. v0.4 never reads them for S.
+  partial  {strike: set of absolute stamps}: that strike's rows exist only at those stamps (both legs).
+  R        bars labelled hm(T) .. hm(T)+29 (v0.4); a spike of `rng` points at the label hm(T)+rng_at (default 2), base
+           elsewhere; straddle_atm is 100, so R = rng / 100 when the spike is inside the window.
            Cycles that carry a rng must be >= 30 minutes apart (their windows are then disjoint).
+  T4       add_oi(strike, leg, minute, oi) writes a tape_minute_oi row (Kite OI per strike-leg-minute).
   U / roles  gex_cr is U/100 at every strike, U/2 at the leader, U/4 at the runner-up (a 'pin' strike gets +3/10), so
            sum(gex_cr) has the sign U and a magnitude BELOW 1 (the sign-only guard scales it by 1000).
 Synthetic cumulative columns are not monotone across grid points: the scorer reads each grid point on its own.
@@ -29,7 +36,7 @@ IDS = {"NIFTY": "9992f600-51b3-4009-b487-f878692a0bc5", "SENSEX": "73a1390a-30c9
 FRONT = "2026-12-10"
 NONFRONT = "2026-12-17"
 RELS = ("tape_strike_cycle", "tape_events", "tape_chain_events", "tape_chain_runs", "tape_daily_report", "tape_minute",
-        "gex_strike_snapshots", "gamma_metrics", "hist_spot_bars_1m")
+        "gex_strike_snapshots", "gamma_metrics", "hist_spot_bars_1m", "tape_minute_oi")
 
 
 def ts_ist(day, secs):
@@ -56,7 +63,7 @@ def parse_layout(sql_path):
 class Plan:
     def __init__(self, sym, day, expiry=FRONT, minutes=375, late_share="70.0", restart_at=None, daily_report=True,
                  spot="ok", gex_scale=1, gamma_scale=1, nonfront=False, close_1529=None, base=22000, straddle=100,
-                 unsub=()):
+                 unsub=(), high_1529=None):
         self.sym, self.day, self.expiry = sym, day, expiry
         self.minutes, self.late_share, self.restart_at, self.daily_report = minutes, late_share, restart_at, daily_report
         self.spot, self.gex_scale, self.gamma_scale, self.nonfront = spot, gex_scale, gamma_scale, nonfront
@@ -65,16 +72,41 @@ class Plan:
         s = self.strikes
         self.roles = {"leader": s[3], "runner": s[7], "cw": s[8], "pw": s[4], "pin": None}
         self.runs, self.grid, self.chain, self.tape, self.drop = [], {}, [], [], set()
+        self.high_1529, self.partial, self.oi = high_1529, {}, []
 
-    def add_run(self, G, off=21, U=1, S=1, share=70, rng=None, tape=True, **roles):
-        self.runs.append({"G": G, "off": off, "U": U, "rng": rng, "roles": dict(self.roles, **roles)})
+    @staticmethod
+    def _planted(net, share):
+        """(buy, sell, uncl) with buy - sell = net and classified share exactly `share` %."""
+        b0, s0 = max(net, 0), max(-net, 0)
+        p = 0
+        while ((b0 + s0 + 2 * p) * (100 - share)) % share:
+            p += 1
+        cls = b0 + s0 + 2 * p
+        return b0 + p, s0 + p, cls * (100 - share) // share
+
+    def add_run(self, G, off=21, U=1, S=1, share=70, rng=None, tape=True, S_cum=None, share_cum=None, rng_at=2, bins=None,
+                **roles):
+        self.runs.append({"G": G, "off": off, "U": U, "rng": rng, "rng_at": rng_at, "roles": dict(self.roles, **roles)})
         if tape:
-            self.grid[G] = (-1000 if S == 1 else 1000, share)
+            k0 = [k for k in self.strikes if k not in self.unsub][0]
+            g = self.grid.setdefault(G, {"win": [], "cum": []})
+            if bins is None:
+                b, s_, u = self._planted(-1000 if S == 1 else 1000, share)
+                g["win"].append((0, k0, "CE", b, s_, u))
+            else:
+                g["win"] += [(o, Fraction(k), leg, b, s_, u) for (o, k, leg, b, s_, u) in bins]
+            sc = S if S_cum is None else S_cum
+            b, s_, u = self._planted(-1000 if sc == 1 else 1000, share if share_cum is None else share_cum)
+            g["cum"].append((k0, "CE", b, s_, u))
         return self
 
     def add_chain(self, G, off, kind, K, merged_n=1):
         self.chain.append({"G": G, "off": off, "kind": kind, "K": Fraction(K), "merged_n": merged_n})
-        self.grid.setdefault(G, (0, 100))
+        self.grid.setdefault(G, {"win": [], "cum": []})
+        return self
+
+    def add_oi(self, strike, leg, minute, oi):
+        self.oi.append((Fraction(strike), leg, minute, oi))
         return self
 
     def add_tape(self, secs, kind, strike, leg, side):
@@ -87,26 +119,43 @@ class Plan:
         sym, day, s = self.sym, self.day, self.strikes
         rid = "load-%s" % day
         sub = [k for k in s if k not in self.unsub]
+        # v0.4: every planted grid point G emits the six stamps G-25..G for every subscribed strike-leg (unless `partial`
+        # restricts a strike's stamps). Contributions are summed per (strike, leg, stamp), so overlapping windows add.
+        cell = {}
+        stamps = set()
         for G in sorted(self.grid):
-            net, share = self.grid[G]
-            b0, s0 = max(net, 0), max(-net, 0)
-            p = 0
-            while ((b0 + s0 + 2 * p) * (100 - share)) % share:
-                p += 1
-            cls = b0 + s0 + 2 * p
-            u = cls * (100 - share) // share
+            for i in range(6):
+                stamps.add(G - 5 * i)
+            for (o, k, leg, b, s_, u) in self.grid[G]["win"]:
+                c = cell.setdefault((k, leg, G - o), [0, 0, 0, 0, 0, 0, 0, 0])
+                c[0] += b
+                c[1] += s_
+                c[2] += u
+                c[3] += 7  # gap: excluded from both share terms, totalled
+            for (k, leg, b, s_, u) in self.grid[G]["cum"]:
+                c = cell.setdefault((k, leg, G), [0, 0, 0, 0, 0, 0, 0, 0])
+                c[4] += b
+                c[5] += s_
+                c[6] += u
+                c[7] += 7
+        for st in sorted(stamps):
             for k in sub:
+                if k in self.partial and st not in self.partial[k]:
+                    continue
                 for leg in ("CE", "PE"):
-                    des = (k == sub[0] and leg == "CE")
+                    c = cell.get((k, leg, st), [0] * 8)
                     R["tape_strike_cycle"].append({
                         "symbol": sym, "trading_day": day, "expiry": self.expiry, "strike": str(k), "leg": leg,
-                        "ts_ist": ts_ist(day, G * 60), "buy_cum": b0 + p if des else 0, "sell_cum": s0 + p if des else 0,
-                        "uncl_cum": u if des else 0, "gap_cum": 7 if des else 0,
+                        "ts_ist": ts_ist(day, st * 60), "buy_5": c[0], "sell_5": c[1], "uncl_5": c[2], "gap_5": c[3],
+                        "buy_cum": c[4], "sell_cum": c[5], "uncl_cum": c[6], "gap_cum": c[7],
                         "first_seen_ts_ist": ts_ist(day, 560 * 60), "run_id": rid})
-            R["tape_strike_cycle"].append({  # a FUT row at every grid point: must be ignored
-                "symbol": sym, "trading_day": day, "expiry": "", "strike": "", "leg": "FUT", "ts_ist": ts_ist(day, G * 60),
-                "buy_cum": 5, "sell_cum": 5, "uncl_cum": 0, "gap_cum": 0, "first_seen_ts_ist": ts_ist(day, 560 * 60),
-                "run_id": rid})
+            R["tape_strike_cycle"].append({  # a FUT row at every stamp: must be ignored
+                "symbol": sym, "trading_day": day, "expiry": "", "strike": "", "leg": "FUT", "ts_ist": ts_ist(day, st * 60),
+                "buy_5": 5000, "sell_5": 1, "uncl_5": 0, "gap_5": 0, "buy_cum": 5, "sell_cum": 5, "uncl_cum": 0, "gap_cum": 0,
+                "first_seen_ts_ist": ts_ist(day, 560 * 60), "run_id": rid})
+        for (k, leg, minute, oi) in self.oi:
+            R["tape_minute_oi"].append({"symbol": sym, "trading_day": day, "role": "OPT", "opt_type": leg, "strike": str(k),
+                                        "expiry": self.expiry, "minute_ist": ts_ist(day, minute * 60), "oi": oi, "run_id": rid})
         labels_needed = set()
         for i, run in enumerate(self.runs):
             T = run["G"] * 60 + run["off"]
@@ -160,12 +209,14 @@ class Plan:
             if run["rng"] is None:
                 continue
             m0 = (run["G"] * 60 + run["off"]) // 60
-            for m in range(m0 + 1, m0 + 31):
+            for m in range(m0, m0 + max(30, run["rng_at"] + 1)):
                 bars.setdefault(m, [self.base, self.base, self.base])
             if run["rng"]:
-                bars[m0 + 2][0] = self.base + run["rng"]
+                bars[m0 + run["rng_at"]][0] = self.base + run["rng"]
         if self.close_1529 is not None:
             bars.setdefault(929, [self.base, self.base, self.base])[2] = self.close_1529
+        if self.high_1529 is not None:
+            bars.setdefault(929, [self.base, self.base, self.base])[0] = self.base + self.high_1529
         if self.spot != "none":
             for m in sorted(bars):
                 if m in self.drop:
@@ -223,7 +274,8 @@ def omnibus(null=False, ndays=22):
         for sym in ("NIFTY", "SENSEX"):
             p = ds.add(Plan(sym, day, base=22000 if sym == "NIFTY" else 72000))
             for i, G in enumerate(range(600, 870, 30)):
-                p.add_run(G, 21, U=1, S=1 if i % 2 == 0 else -1, rng=30 if i % 2 == 0 else 45)
+                S = 1 if i % 2 == 0 else -1
+                p.add_run(G, 21, U=1, S=S, S_cum=-S if i % 3 == 0 else S, rng=30 if i % 2 == 0 else 45)
             for G in (560, 590, 890, 900):
                 p.add_run(G, 21, U=1, S=1, rng=40)
             r = p.roles

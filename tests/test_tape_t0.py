@@ -70,6 +70,12 @@ def kite_naive(day, hms):
 NIFTY_STRIKES = [22000 + 50 * i for i in range(121)]       # 22000 .. 28000
 SENSEX_STRIKES = [70000 + 100 * i for i in range(201)]     # 70000 .. 90000
 TOK = {}
+# Ruled half-widths (listed strikes either side of ATM): NIFTY 20; SENSEX 25 from 2026-11-06 (ruling 2026-11-05,
+# 15 before). Every window count below is derived from these, never written as a number.
+RULED_HALF = {"NIFTY": 20, "SENSEX": 25}
+WIN = {s: 2 * (2 * h + 1) for s, h in RULED_HALF.items()}     # option tokens at open: (2h+1) strikes x CE/PE
+N_OPT = sum(WIN.values())
+N_OPEN = 4 + N_OPT                                             # + index and future per symbol
 
 
 def _instruments():
@@ -458,7 +464,8 @@ def g_subs_grow_only():
     all_have_minute = all(re.fullmatch(r"\d\d:\d\d", r.get("added_minute") or "") for r in last["tokens"])
     grown = [r for r in last["tokens"] if r.get("reason") == "grow"]
     return [
-        (n_open == 4 + 82 + 62, "open: %d tokens subscribed (4 idx/fut + 82 NIFTY + 62 SENSEX expected 148)" % n_open),
+        (n_open == N_OPEN, "open: %d tokens subscribed (4 idx/fut + %d NIFTY + %d SENSEX expected %d)"
+         % (n_open, WIN["NIFTY"], WIN["SENSEX"], N_OPEN)),
         (original <= after and new_atm_ce in after and far_new in after,
          "after a 14-strike move: original window kept=%s, new ATM + far edge added=%s, total=%d"
          % (original <= after, new_atm_ce in after and far_new in after, len(after))),
@@ -468,6 +475,34 @@ def g_subs_grow_only():
          "%s: %d tokens, every one with added_minute=%s, %d added at 09:30 by grow"
          % (subs_objs[-1].split("/")[-1] if subs_objs else None, len(toks_in_json), all_have_minute, len(grown))),
     ]
+
+
+
+def g_subs_half_width():
+    """Fails if config.SYMBOLS does not hold SENSEX half_window 25 and NIFTY 20 (the ruling of 2026-11-05), or if the
+    recorder's 09:00 open subscribes any other number of option tokens per symbol than (2h+1) listed strikes x CE/PE
+    around ATM, or a token outside ATM +- h, or a strike inside ATM +- h without both legs."""
+    from services.tape_runner import config
+    cfg = {s: config.SYMBOLS[s]["half_window"] for s in ("NIFTY", "SENSEX")}
+    cells = [(cfg == RULED_HALF, "config half_window %s (ruled %s)" % (cfg, RULED_HALF))]
+    grid = {"NIFTY": (NIFTY_STRIKES, 25000), "SENSEX": (SENSEX_STRIKES, 80000)}
+    for s, (strikes, atm) in grid.items():                    # the fixture must be wide enough for the count to bind
+        i = strikes.index(atm)
+        cells.append((i >= RULED_HALF[s] and len(strikes) - 1 - i >= RULED_HALF[s],
+                      "fixture %s grid holds %d strikes below / %d above ATM %d (need >= %d each side)"
+                      % (s, i, len(strikes) - 1 - i, atm, RULED_HALF[s])))
+    rec, clock, tickers = make_recorder()
+    t = boot_open_day(rec, clock, tickers, nifty=25000.0, sensex=80000.0)
+    subs = set(t.subscribed)
+    for s, (strikes, atm) in grid.items():
+        i, h = strikes.index(atm), RULED_HALF[s]
+        want = {TOK[(s, k, ot)] for k in strikes[i - h:i + h + 1] for ot in ("CE", "PE")}
+        got = {tok for tok in subs if rec.universe.by_token[tok].sym == s and rec.universe.by_token[tok].role == "OPT"}
+        cells.append((got == want and len(got) == WIN[s],
+                      "%s open: %d option tokens (want %d = ATM %d +- %d listed strikes x CE/PE); missing %d, extra %d"
+                      % (s, len(got), WIN[s], atm, h, len(want - got), len(got - want))))
+    cells.append((len(subs) == N_OPEN, "open total %d (want %d = 4 idx/fut + %s)" % (len(subs), N_OPEN, WIN)))
+    return cells
 
 
 def g_ctl_records():
@@ -623,17 +658,17 @@ def g_closed_day():
     cells.append((not opts, "holiday: option tokens subscribed: %d" % len(opts)))
     # B. trading day, websocket stalled after the 08:55 snapshots: same stale witnesses, quote says today -> NOT closed
     code, at, opts, rec = _closed_case(FakeKite(quote=TODAY_QUOTE), _snap())
-    cells.append((code is None and closed_key not in rec.uploader.s3.objects and len(opts) == 144,
-                  "stalled feed on a trading day: exit %s, CLOSED uploaded=%s, options subscribed=%d (144 expected)"
-                  % (code, closed_key in rec.uploader.s3.objects, len(opts))))
+    cells.append((code is None and closed_key not in rec.uploader.s3.objects and len(opts) == N_OPT,
+                  "stalled feed on a trading day: exit %s, CLOSED uploaded=%s, options subscribed=%d (%d expected)"
+                  % (code, closed_key in rec.uploader.s3.objects, len(opts), N_OPT)))
     # C. only the index snapshots arrived (no future witness), quote stale -> NOT closed, keep recording
     code, at, opts, rec = _closed_case(FakeKite(quote=STALE_QUOTE), _snap(fut=False))
-    cells.append((code is None and closed_key not in rec.uploader.s3.objects and len(opts) == 144,
+    cells.append((code is None and closed_key not in rec.uploader.s3.objects and len(opts) == N_OPT,
                   "index witnesses only: exit %s, options subscribed=%d, verdict=%s"
                   % (code, len(opts), (rec.stats.closed_check or {}).get("source"))))
     # D. no packets at all and the quote fails -> NOT closed (absence is not a verdict)
     code, at, opts, rec = _closed_case(FakeKite(quote_fails=True), [])
-    cells.append((code is None and closed_key not in rec.uploader.s3.objects and len(opts) == 144,
+    cells.append((code is None and closed_key not in rec.uploader.s3.objects and len(opts) == N_OPT,
                   "no packets + quote fails: exit %s, options subscribed=%d" % (code, len(opts))))
     # E. start after 09:20 (boot / install on a closed day): judged only after 60 s connected, then CLOSED
     rec, clock, tk = make_recorder(kite=FakeKite(quote=STALE_QUOTE), start="11:00")
@@ -658,7 +693,7 @@ def g_closed_day():
     n_after = len(tk[0].subscribed)
     clock.set(ist_ns(DAY, "11:01:05"))
     c2 = rec.step(clock.now_ns())
-    cells.append((c1 is None and c2 is None and n_after == 148 and (rec.stats.closed_check or {}).get("verdict") == "OPEN",
+    cells.append((c1 is None and c2 is None and n_after == N_OPEN and (rec.stats.closed_check or {}).get("verdict") == "OPEN",
                   "restart on a trading day: %d tokens at 11:00:04, verdict %s" % (n_after, (rec.stats.closed_check or {}).get("verdict"))))
     return cells
 
@@ -1270,7 +1305,8 @@ def g_install_root_reads():
 
 GUARDS = [("classify-synthetic", g_classify_synthetic), ("classify-purity", g_classify_purity),
           ("segments-rotate", g_segments_rotate), ("upload-verify", g_upload_verify),
-          ("subs-grow-only", g_subs_grow_only), ("ctl-records", g_ctl_records), ("spool-cap", g_spool_cap),
+          ("subs-grow-only", g_subs_grow_only), ("subs-half-width", g_subs_half_width),
+          ("ctl-records", g_ctl_records), ("spool-cap", g_spool_cap),
           ("token-fail", g_token_fail), ("closed-day", g_closed_day), ("fence", g_fence),
           ("no-db-no-dhan", g_no_db_no_dhan), ("smoke-s3", g_smoke_s3), ("segment-race", g_segment_race),
           ("token-midsession", g_token_midsession), ("sigterm", g_sigterm),
@@ -1309,10 +1345,11 @@ def u_resolve():
     n, s = u.symbols["NIFTY"], u.symbols["SENSEX"]
     ok = (n.index.token == 256265 and s.index.token == 265 and n.future.token == TOK[("NIFTY", "FUT")]
           and all(i.expiry == "2026-11-04" for i in n.options.values()) and len(n.strikes) == 121
-          and len(n.window_tokens(n.atm_pos(25010))) == 82 and len(s.window_tokens(s.atm_pos(80000))) == 62)
+          and len(n.window_tokens(n.atm_pos(25010))) == WIN["NIFTY"]
+          and len(s.window_tokens(s.atm_pos(80000))) == WIN["SENSEX"])
     u2 = resolve(FakeKite(), date(2026, 11, 4))          # expiry day: front is today
     u3 = resolve(FakeKite(), date(2026, 11, 5))          # day after: next weekly
-    return [(ok, "front expiry 2026-11-04, front future, windows 82/62, decoy name excluded"),
+    return [(ok, "front expiry 2026-11-04, front future, windows %d/%d, decoy name excluded" % (WIN["NIFTY"], WIN["SENSEX"])),
             (u2.symbols["NIFTY"].options[(25000.0, "CE")].expiry == "2026-11-04"
              and u3.symbols["NIFTY"].options[(25000.0, "CE")].expiry == "2026-11-11", "expiry-day and day-after roll")]
 

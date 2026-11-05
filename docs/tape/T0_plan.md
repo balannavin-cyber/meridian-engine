@@ -144,7 +144,8 @@ exit 0 is not restarted. The original text below is kept for the record and is s
    on an open day must not stop the recorder with an exit 0 that systemd will not restart.
 
 **Window and grow-only.** At open: ATM = listed strike nearest the index LTP; window = ATM ± 20 listed strikes (NIFTY),
-± 15 (SENSEX), CE and PE → 82 + 62 option tokens + 4 index/future = 148 (Kite cap 3,000 per connection). Each minute,
+± 25 (SENSEX), CE and PE → 82 + 102 option tokens + 4 index/future = 188 (Kite cap 3,000 per connection).
+*(SENSEX ± 25 from Fri 2026-11-06, ruling of 2026-11-05; it was ± 15 → 62 tokens, 148 in all, through 2026-11-05.)* Each minute,
 ATM is recomputed from the latest index packet; when `|pos(ATM) − pos(centre)| > 12` the centre moves to ATM and
 the new window's tokens not yet subscribed are added. **Never unsubscribe**, including on reconnect (the full set is
 re-sent in `on_connect`). Every change uploads `session/<date>/subscriptions_<HHMMSS>.json`: every token with
@@ -289,6 +290,7 @@ prints the 5/5 lines for the evidence.
 | `segments-rotate` | packet at 09:19:59.9 not in `seg_0915`, or 09:20:00.0 not in `seg_0920`; across 10,000 packets over 4 boundaries, the multiset of packet ids read back from the gz files ≠ the ids sent | **M-T0-NO-ROTATE** (rotation check disabled → one file) |
 | `upload-verify` | local file gone without an ETag==md5 PutObject; a corrupted ETag leaves no file or no retry | **M-T0-DELETE-BEFORE-UPLOAD** (unlink before put); **M-T0-ETAG-IGNORED** (compare removed) |
 | `subs-grow-only` | after a > 12-strike move, an original-window token missing from the ticker's subscribed set, any `unsubscribe` call, or `subscriptions_*.json` lacking an `added_minute` for each token | **M-T0-SHRINK-SUBS** (grow replaces the set and unsubscribes the old window) |
+| `subs-half-width` | `config.SYMBOLS` half_window not SENSEX 25 / NIFTY 20, or the 09:00 open subscribing other than (2h+1) listed strikes × CE/PE around ATM per symbol (102 SENSEX, 82 NIFTY, 188 in all on the fixture) | **M-T0-SENSEX-HALF-15** (SENSEX back to 15); **M-T0-NIFTY-HALF-25** (NIFTY set to 25) |
 | `ctl-records` | forced `on_close` + `on_reconnect` not yielding `disconnect` and `reconnect` records, or packets after reconnect not recorded | **M-T0-DROP-CTL** (ctl writes for disconnect/reconnect removed) |
 | `spool-cap` | 50 MB cap + always-failing S3: exit ≠ 75, or any spool file deleted | **M-T0-CAP-DISABLED** (cap check returns False) |
 | `token-fail` | failing `profile()` exits ≠ 78, or the unit file's `RestartPreventExitStatus=` line lacks the token `78` | **M-T0-RESTART-ON-78** (unit line becomes `RestartPreventExitStatus=75`) |

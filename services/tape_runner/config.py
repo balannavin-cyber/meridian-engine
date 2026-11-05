@@ -27,9 +27,11 @@ def check_rehearsal_hooks(prefix, keep):
 ROOT = os.environ.get("TAPE_ROOT", "/var/lib/tape")
 
 # --- universe -------------------------------------------------------------------------------
+# half_window: listed strikes either side of ATM, CE and PE. SENSEX +-25 from 2026-11-06 (ruling 2026-11-05;
+# +-15 before); NIFTY +-20. Guard subs-half-width pins both.
 SYMBOLS = {
     "NIFTY": {"exchange": "NFO", "ltp_key": "NSE:NIFTY 50", "half_window": 20, "expected_index_token": 256265},
-    "SENSEX": {"exchange": "BFO", "ltp_key": "BSE:SENSEX", "half_window": 15, "expected_index_token": 265},
+    "SENSEX": {"exchange": "BFO", "ltp_key": "BSE:SENSEX", "half_window": 25, "expected_index_token": 265},
 }
 GROW_THRESHOLD = 12        # listed strikes between ATM and window centre before the window grows
 ATM_BAND = 3               # daily report: packets per minute at ATM +- 3 listed strikes

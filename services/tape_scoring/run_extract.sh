@@ -16,7 +16,12 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 SQL="$HERE/scoring_extract.sql"
 ROQ="${ROQ:-$HERE/../../bin/roq.sh}"
 D0=""; D1=""; OUT=""; S3=""
-RELS="tape_strike_cycle tape_events tape_chain_events tape_chain_runs tape_daily_report tape_minute gex_strike_snapshots gamma_metrics hist_spot_bars_1m"
+RELS="tape_strike_cycle tape_events tape_chain_events tape_chain_runs tape_daily_report tape_minute gex_strike_snapshots gamma_metrics hist_spot_bars_1m tape_minute_oi"
+# OPTIONAL relations (pre-registration v0.4 section 3; operator ruling 2026-11-05): last in RELS; a refused read, a missing count, a
+# zero count or a failed day is "OPTIONAL SKIP" (no file written), never an abort. The scorer then reports T4 as NOT COMPUTED.
+OPTIONAL_RELS="tape_minute_oi"
+is_optional() { case " $OPTIONAL_RELS " in *" $1 "*) return 0 ;; esac; return 1; }
+SKIPPED=""
 
 usage() { echo "usage: run_extract.sh --from YYYY-MM-DD --to YYYY-MM-DD --out DIR [--s3 BUCKET/PREFIX/] [--roq PATH]" >&2; exit 2; }
 while [ $# -gt 0 ]; do
@@ -48,6 +53,12 @@ FIRST=$(printf '%s\n' "$DAYS" | head -n 1)
 
 for r in $RELS; do
   q=$(stmt "$r" | tr '\n' ' ' | sed -E 's/SELECT .* FROM /SELECT count(*) FROM /')
+  if is_optional "$r"; then
+    n=$( { prelude "$FIRST"; printf '%s\n' "$q"; } | "$ROQ" | sed -n 2p ) || n=""
+    case "$n" in ''|*[!0-9]*|0) echo "PRECHECK OPTIONAL SKIP $r: count='$n' on $FIRST (T4 will be NOT COMPUTED)"; SKIPPED="$SKIPPED $r"; continue ;; esac
+    echo "PRECHECK PASS $r day=$FIRST count=$n (optional)"
+    continue
+  fi
   n=$( { prelude "$FIRST"; printf '%s\n' "$q"; } | "$ROQ" | sed -n 2p ) || { echo "PRECHECK FAIL $r: read refused or errored" >&2; exit 1; }
   case "$n" in ''|*[!0-9]*) echo "PRECHECK FAIL $r: no count returned" >&2; exit 1 ;; esac
   [ "$n" -gt 0 ] || { echo "PRECHECK FAIL $r: count=0 on $FIRST" >&2; exit 1; }
@@ -56,6 +67,17 @@ done
 
 for day in $DAYS; do
   for r in $RELS; do
+    if is_optional "$r"; then
+      case " $SKIPPED " in *" $r "*) continue ;; esac
+      mkdir -p "$OUT/$r"
+      f="$OUT/$r/$day.csv"; tmp="$f.part"
+      if { prelude "$day"; stmt "$r"; } | "$ROQ" > "$tmp" && [ "$(head -n 1 "$tmp")" = "$(expected_header "$r")" ]; then
+        mv "$tmp" "$f"; echo "EXTRACT PASS $r $day rows=$(( $(wc -l < "$f") - 1 )) (optional)"
+      else
+        rm -f "$tmp"; echo "EXTRACT OPTIONAL SKIP $r $day (no file; T4 NOT COMPUTED for this day)"
+      fi
+      continue
+    fi
     mkdir -p "$OUT/$r"
     f="$OUT/$r/$day.csv"; tmp="$f.part"
     { prelude "$day"; stmt "$r"; } | "$ROQ" > "$tmp" || { echo "EXTRACT FAIL $r $day: roq.sh rc=$?" >&2; exit 1; }

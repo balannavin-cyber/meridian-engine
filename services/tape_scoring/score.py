@@ -1,18 +1,23 @@
 """MERIDIAN tape scoring: H-A (agreement of the tape sign with the chain sign) and H-B (tape lead over chain events).
 
-Implements pre-registration v0.2 (sha256 71950f92eb1313f2e58a40772c8671a2beefce220d5222213d39e8a80dfa4800)
-literally; docs/tape/scoring_plan.md is the plan and carries every first definition (DEF-n) and override (OVR-n).
+Implements pre-registration v0.4 (sha256 b45477d36eba6930ab41171a3405c10cf6ecb0bd1fbb04b52d09a5c2129acd57)
+literally; docs/tape/scoring_plan.md (v0.2) and docs/tape/scoring_plan_v04.md (its diff) carry every first definition
+(DEF-n) and override (OVR-n).
 
   python -m services.tape_scoring.score --inputs <dir> --out <dir> [--fixture] [--rerun-defect "<text>"]
 
 Standard library only. No database, no network, no .env. Reads CSVs laid out as <inputs>/<relation>/<day>.csv
 (the extract's layout). Exact arithmetic (fractions) for every sign, argmax, median and threshold comparison.
-Sign only: no gex_cr / gamma magnitude, and no D value, reaches the output.
+Sign only: no gex_cr / gamma magnitude and no D value reaches the output; the one magnitude-derived figure is the
+scale-free share of |gex_cr| inside the subscribed window (descriptive, v0.4 section 1).
 
 Entry-time discipline (CLAUDE.md rule 0a), one sentence per quantity:
-  S at a cycle reads the tape row at grid point G = floor5(T) only (G <= T);
+  S at a cycle reads the tape rows stamped G-25 .. G only, G = floor5(T) (each covers [stamp-5, stamp), all < T);
   a tape event's wall / runner-up come from the latest run with ts <= the event's ts_ist;
-  a lead reads tape events with t <= T only;  R(T) reads spot bars with label > T only (the outcome, by design).
+  a lead reads tape events with t <= T only;  R(T) reads spot bars labelled hm(T) .. hm(T)+29 (the outcome, by design;
+  the bar labelled hm(T) starts at G:00, the instant the run's spot describes - v0.4 section 1).
+The descriptive block (window coverage, sign changes, per-label H-B, T4) is built by descriptive() and no decision
+function reads it.
 """
 import argparse
 import bisect
@@ -23,12 +28,13 @@ import os
 import random
 import re
 import sys
+from collections import namedtuple
 from datetime import datetime, timedelta, timezone
 from fractions import Fraction
 
 from services.tape_scoring import wilcoxon
 
-PREREG_SHA = "71950f92eb1313f2e58a40772c8671a2beefce220d5222213d39e8a80dfa4800"
+PREREG_SHA = "b45477d36eba6930ab41171a3405c10cf6ecb0bd1fbb04b52d09a5c2129acd57"
 IST = timezone(timedelta(hours=5, minutes=30))
 PKG = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(PKG))
@@ -66,7 +72,15 @@ PARAMS = {
     "wilcoxon_normal_above": 60,
     "spot_clock_min_pct": 95,
     "passive_side": {"CE": "ask", "PE": "ask"},
+    "s_window_min": 30,
+    "s_window_bins": 6,
+    "e2_oi_move_pct": 5,
 }
+NO_T4 = "NOT COMPUTED (no tape_minute input)"
+# one tape_strike_cycle row: expiry, strike, leg, the 5-minute bin columns (read for S) and the cumulative columns
+# (extracted, never read for S in v0.4)
+CycRow = namedtuple("CycRow", "exp k leg b5 s5 u5 g5 bc sc uc gc")
+OPTIONAL = frozenset(("tape_minute_oi",))
 
 MATCH = {
     "E1": frozenset(("T1", "T2")),
@@ -76,8 +90,8 @@ MATCH = {
 
 _TAPE = ("symbol", "trading_day")
 COLS = {
-    "tape_strike_cycle": _TAPE + ("expiry", "strike", "leg", "ts_ist", "buy_cum", "sell_cum", "uncl_cum", "gap_cum",
-                                  "first_seen_ts_ist", "run_id"),
+    "tape_strike_cycle": _TAPE + ("expiry", "strike", "leg", "ts_ist", "buy_5", "sell_5", "uncl_5", "gap_5", "buy_cum",
+                                  "sell_cum", "uncl_cum", "gap_cum", "first_seen_ts_ist", "run_id"),
     "tape_events": _TAPE + ("expiry", "strike", "leg", "kind", "ts_ist", "side", "magnitude", "run_id"),
     "tape_chain_events": _TAPE + ("expiry", "kind", "ts_ist", "strike", "merged_n", "run_id"),
     "tape_chain_runs": _TAPE + ("expiry", "ts_ist", "chain_run_id", "leader_strike", "call_wall", "put_wall",
@@ -88,6 +102,8 @@ COLS = {
                              "oi_put", "gex_cr"),
     "gamma_metrics": ("run_id", "symbol", "ts", "expiry_date", "straddle_atm"),
     "hist_spot_bars_1m": ("instrument_id", "trade_date", "bar_ts", "open", "high", "low", "close"),
+    # OPTIONAL input (operator ruling, 2026-11-05): Kite OI per strike-leg-minute for the descriptive T4 only
+    "tape_minute_oi": _TAPE + ("role", "opt_type", "strike", "expiry", "minute_ist", "oi", "run_id"),
 }
 INSTRUMENT_SYMBOL = {"9992f600-51b3-4009-b487-f878692a0bc5": "NIFTY", "73a1390a-30c9-46d6-9d3f-5f03c3f5ad71": "SENSEX"}
 
@@ -248,30 +264,42 @@ def quarantine_reasons(sym, minutes, daily_rows):
     return reasons  # quarantine verdict
 
 
-def tape_sign(rows, expiry, strikes, only=None):
-    """-> (S or None, why, info). D = -sum(gamma * (buy_cum - sell_cum)) over window strike-legs; S = sign(D)."""
-    b = s = u = g = 0
+def window_stamps(G):
+    """v0.4 section 1: the six tape_strike_cycle stamps G-25, G-20, ..., G; stamp t covers [t-5, t), so [G-30, G)."""
+    return [G - 5 * i for i in range(PARAMS["s_window_bins"])]
+
+
+def tape_sign(cyc, G, expiry, window, strikes, only=None):
+    """-> (S or None, why, info). v0.4: D30 = -sum over window strike-legs of gamma * (sum buy_5 - sum sell_5) over the
+    six bins stamped G-25..G; share over the same bins; S = sign(D30). cyc: {stamp: [CycRow]}; window: strikes at G.
+    A strike-leg missing some of the six rows contributes the rows present."""
+    src = [r for st in window_stamps(G) for r in cyc.get(st, ())]
+    share_src = src
+    win = set(window)
+    keep = lambda r: r.exp == expiry and r.leg in ("CE", "PE") and r.k in win and (only is None or r.k == only)  # noqa: E731
+    net, legs, g = {}, set(), 0
+    for r in src:
+        if keep(r):
+            net[(r.k, r.leg)] = net.get((r.k, r.leg), 0) + (r.b5 - r.s5)
+            legs.add((r.k, r.leg))
+            g += r.g5
+    b = s = u = 0
+    for r in share_src:
+        if keep(r):
+            b, s, u = b + r.b5, s + r.s5, u + r.u5
     d_sum = Fraction(0)
     missing = 0
-    n_legs = 0
-    for (exp, k, leg, buy, sell, uncl, gap) in rows:
-        if exp != expiry or leg not in ("CE", "PE") or (only is not None and k != only):
-            continue
-        n_legs += 1
-        b += buy
-        s += sell
-        u += uncl
-        g += gap
+    for (k, leg), nv in net.items():
         gam = strikes.get(k)
         gv = None if gam is None else (gam[0] if leg == "CE" else gam[1])
         if gv is None:
             missing += 1
             continue
-        d_sum += gv * (buy - sell)
+        d_sum += gv * nv
     cls = b + s
     tot = cls + u
-    info = {"gap": g, "missing_gamma_legs": missing}
-    if n_legs == 0 or tot == 0:
+    info = {"gap": g, "missing_gamma_legs": missing, "legs": len(legs)}
+    if not legs or tot == 0:
         return None, "zero_denominator", info
     if 100 * cls < PARAMS["cycle_share_min_pct"] * tot:
         return None, "share_below_min", info
@@ -282,9 +310,13 @@ def tape_sign(rows, expiry, strikes, only=None):
     return S, "", info
 
 
+CLOSE_AUCTION_BAR = 929  # 15:29, the closing-auction bar: excluded from every range (v0.4 section 1)
+
+
 def spot_range(bars, t_dt):
-    m0 = hm(t_dt) + 1
-    present = [bars[m] for m in range(m0, m0 + PARAMS["r_horizon_min"]) if m in bars]
+    """v0.4 section 1 / section 6: bars labelled hm(T) .. hm(T)+29 (minute-start labels), 15:29 never selected."""
+    m0 = hm(t_dt)
+    present = [bars[m] for m in range(m0, m0 + PARAMS["r_horizon_min"]) if m in bars and m != CLOSE_AUCTION_BAR]
     if len(present) < PARAMS["r_min_bars"]:
         return None, len(present)
     return max(p[0] for p in present) - min(p[1] for p in present), len(present)
@@ -371,13 +403,14 @@ def score_day_symbol(day, sym, T, spot_bars, spot_ok, minutes, daily_rows):
         if (r["leg"] or "").strip() not in ("CE", "PE"):
             bump("tape_rows_fut_or_other_ignored")
             continue
-        cyc.setdefault(hm(dt), []).append((r["expiry"].strip(), Fraction(r["strike"]), r["leg"].strip(),
-                                           to_int(r["buy_cum"]), to_int(r["sell_cum"]), to_int(r["uncl_cum"]),
-                                           to_int(r["gap_cum"])))
+        cyc.setdefault(hm(dt), []).append(CycRow(
+            r["expiry"].strip(), Fraction(r["strike"]), r["leg"].strip(), to_int(r["buy_5"]), to_int(r["sell_5"]),
+            to_int(r["uncl_5"]), to_int(r["gap_5"]), to_int(r["buy_cum"]), to_int(r["sell_cum"]), to_int(r["uncl_cum"]),
+            to_int(r["gap_cum"])))
     windows = {}
     for G, rows in cyc.items():
-        for exp in {r[0] for r in rows}:
-            windows[(G, exp)] = sorted({r[1] for r in rows if r[0] == exp})
+        for exp in {r.exp for r in rows}:
+            windows[(G, exp)] = sorted({r.k for r in rows if r.exp == exp})
     # -- chain runs (walls) and straddle
     cruns = {}
     for r in T["tape_chain_runs"] or []:
@@ -427,16 +460,22 @@ def score_day_symbol(day, sym, T, spot_bars, spot_ok, minutes, daily_rows):
         G = run["G"]
         offsets.append(run["dt"].hour * 3600 + run["dt"].minute * 60 + run["dt"].second - G * 60)
         rec = {"G": G, "U": run["U"], "S": None, "R": None, "t": run["us"], "run": run}
-        rows = cyc.get(G)
-        if rows is None:
+        win = windows.get((G, run["expiry"]))
+        if cyc.get(G) is None or win is None:
             bump("cycle_no_tape_row_at_G")
         else:
-            S, why, info = tape_sign(rows, run["expiry"], run["strikes"])
+            S, why, info = tape_sign(cyc, G, run["expiry"], win, run["strikes"])
             rec["S"] = S
             bump("legs_missing_gamma", info["missing_gamma_legs"])
-            bump("gap_cum_total", info["gap"])
+            bump("gap_window_total", info["gap"])
             if S is None:
                 bump("cycle_s_undefined_" + why)
+            # descriptive only (v0.4 section 1): wall membership and the share of |gex_cr| inside the window
+            ws = set(win)
+            tot = sum((abs(v[2]) for v in run["strikes"].values()), Fraction(0))
+            ins = sum((abs(v[2]) for k, v in run["strikes"].items() if k in ws), Fraction(0))
+            rec["cov"] = {"call_wall_in_window": run["call_wall"] in ws, "put_wall_in_window": run["put_wall"] in ws,
+                          "gexabs_share_in_window": (ins / tot) if tot else None}
         if run["U"] == 0:
             bump("cycle_u_zero")
         if not spot_ok.get(sym):
@@ -458,13 +497,12 @@ def score_day_symbol(day, sym, T, spot_bars, spot_ok, minutes, daily_rows):
     out["pin"] = None
     if runs and runs[0]["expiry"] == day:
         r1415 = next((r for r in runs if r["G"] == 855), None)
-        if r1415 is not None and cyc.get(855):
-            rows = cyc[855]
+        if r1415 is not None and cyc.get(855) and windows.get((855, r1415["expiry"])):
             pin = r1415["pin"]
             if pin is None:
                 bump("pin_none")
             else:
-                S, why, _ = tape_sign(rows, r1415["expiry"], r1415["strikes"], only=pin)
+                S, why, _ = tape_sign(cyc, 855, r1415["expiry"], windows[(855, r1415["expiry"])], r1415["strikes"], only=pin)
                 close = (spot_bars[sym].get(929) or (None, None, None))[2]
                 st = straddle.get(r1415["run_id"])
                 if close is None or st is None or st <= 0:
@@ -521,7 +559,53 @@ def score_day_symbol(day, sym, T, spot_bars, spot_ok, minutes, daily_rows):
     counted = events
     out["events"] = counted
     out["idx"] = idx
+    out["t4"] = t4_events(day, sym, T.get("tape_minute_oi"), runs)  # descriptive only: its own index, never idx
     out["counts"] = c
+    return out
+
+
+def t4_events(day, sym, rows, runs):
+    """v0.4 section 3 (descriptive): T4 OI_MOVE. None when the optional tape_minute_oi input is absent.
+    Per front-expiry CE/PE strike-leg and 5-minute cycle [G, G+5): base = OI of the latest minute row labelled < G; the first
+    minute m in [G, G+5) with 100*|oi_m - base| >= e2_oi_move_pct*base (base > 0) fires one T4 stamped (m+1):00 (the
+    minute's OI is known at its close). Kept only at the reference run's call wall (CE) / put wall (PE), stamps >= 10:00.
+    Returns {strike: [(us, leg)]}."""
+    if rows is None:
+        return None
+    if not runs:
+        return {}
+    expiry = runs[0]["expiry"]
+    series = {}
+    for r in rows:
+        if r["symbol"] != sym or (r["opt_type"] or "").strip() not in ("CE", "PE") or r["expiry"].strip() != expiry:
+            continue
+        if not (r["oi"] or "").strip() or not (r["strike"] or "").strip():
+            continue
+        m = hm(parse_ts(r["minute_ist"]))
+        series.setdefault((Fraction(r["strike"]), r["opt_type"].strip()), {})[m] = to_int(r["oi"])
+    d0 = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=IST)
+    run_us = [x["us"] for x in runs]
+    out = {}
+    for (k, leg), s in sorted(series.items()):
+        ms = sorted(s)
+        for G in range(555, 930, 5):
+            prior = [m for m in ms if m < G]
+            if not prior:
+                continue
+            base = s[prior[-1]]
+            if base <= 0:
+                continue
+            hit = next((m for m in ms if G <= m < G + 5
+                        and 100 * abs(s[m] - base) >= PARAMS["e2_oi_move_pct"] * base), None)
+            if hit is None or hit + 1 < PARAMS["ha_first_G_min"]:
+                continue
+            us = us_of(d0 + timedelta(minutes=hit + 1))
+            i = bisect.bisect_right(run_us, us) - 1
+            if i < 0:
+                continue
+            wall = runs[i]["call_wall"] if leg == "CE" else runs[i]["put_wall"]
+            if wall == k:
+                out.setdefault(k, []).append((us, leg))
     return out
 
 
@@ -602,14 +686,15 @@ def hb_symbol(sym, day_data, nonq_days):
     real, per_day, draws_evaluated = [], {}, 0
     for day in nonq_days:
         d = day_data[day]
+        idx = d["idx"]  # T1/T2/T3 candidates only; T4 lives in d["t4"] and never reaches this index (v0.4 section 3)
         for e in d["events"]:
-            lead = _lead_us(d["idx"], e["K"], e["us"], lambda x, k=e["kind"]: bool(set(x[1]) & MATCH[k]))
+            lead = _lead_us(idx, e["K"], e["us"], lambda x, k=e["kind"]: bool(set(x[1]) & MATCH[k]))
             real.append((lead, e["kind"]))
             pred = _null_pred(e["kind"])
             dr = []
             for _ in range(PARAMS["null_draws"]):
                 k2 = e["window"][rng.randrange(len(e["window"]))]
-                l2 = _lead_us(d["idx"], k2, e["us"], pred)
+                l2 = _lead_us(idx, k2, e["us"], pred)
                 dr.append((l2 is not None, l2))
                 draws_evaluated += 1
             per_day.setdefault(day, []).append(dr)
@@ -640,6 +725,84 @@ def hb_symbol(sym, day_data, nonq_days):
             "median_lead_min": lead, "null95_coverage": null_cov, "null95_lead_min": null_lead,
             "null_draws_per_event": PARAMS["null_draws"], "null_draws_evaluated": draws_evaluated,
             "bootstrap_B": B, "by_kind": {k: sum(1 for _, kk in real if kk == k) for k in sorted(MATCH)}}
+
+
+def _nearest(idx, K, T_us, pred):
+    """the tape event that sets the pooled lead (same selection as _lead_us), or None."""
+    lo = T_us - PARAMS["match_window_min"] * US_MIN
+    cands = [e for e in idx.get(K, ()) if lo < e[0] <= T_us and pred(e)]
+    return max(cands, key=lambda e: e[0]) if cands else None
+
+
+def _lead_summary(leads):
+    return {"covered": len(leads), "median_lead_min": Fraction(_median(leads), US_MIN) if leads else None}
+
+
+def descriptive(acc):
+    """v0.4 reporting additions. Reads the per-day work; returns a block no decision function receives."""
+    out = {}
+    for s in SYMS:
+        days = sorted(acc[s])
+        cov_days, per_cycle, sign_changes = {}, {}, {}
+        attr, any_l = {}, {L: {"events": 0, "leads": []} for L in ("T1", "T2", "T3")}
+        t4_ev, t4_leads, t4_days_missing, t4_any = 0, [], [], False
+        n_events = 0
+        for day in days:
+            d = acc[s][day]
+            cs = sorted(d["cycles"], key=lambda c: c["G"])
+            cov = [dict(c["cov"], G=c["G"]) for c in cs if c.get("cov")]
+            per_cycle[day] = cov
+            if cov:
+                n = len(cov)
+                shares = [x["gexabs_share_in_window"] for x in cov if x["gexabs_share_in_window"] is not None]
+                cov_days[day] = {"cycles": n,
+                                 "call_wall_in_window_frac": Fraction(sum(1 for x in cov if x["call_wall_in_window"]), n),
+                                 "put_wall_in_window_frac": Fraction(sum(1 for x in cov if x["put_wall_in_window"]), n),
+                                 "gexabs_share_in_window_median": _median(shares) if shares else None}
+            seq = [c["S"] for c in cs if _ha_in_clock(c["G"]) and c["S"] is not None]
+            sign_changes[day] = sum(1 for a, b in zip(seq, seq[1:]) if a != b)
+            for e in d["events"]:
+                n_events += 1
+                kind = e["kind"]
+                best = _nearest(d["idx"], e["K"], e["us"], lambda x, k=kind: bool(set(x[1]) & MATCH[k]))
+                if best is not None:
+                    cls = "+".join(sorted(set(best[1]) & MATCH[kind]))
+                    attr.setdefault(cls, []).append(e["us"] - best[0])
+                for L in ("T1", "T2", "T3"):
+                    if L in MATCH[kind]:
+                        any_l[L]["events"] += 1
+                        b2 = _nearest(d["idx"], e["K"], e["us"], lambda x, L=L: L in x[1])
+                        if b2 is not None:
+                            any_l[L]["leads"].append(e["us"] - b2[0])
+            if d["t4"] is None:
+                t4_days_missing.append(day)
+                continue
+            t4_any = True
+            for e in d["events"]:
+                if e["kind"] not in ("E2-call", "E2-put"):
+                    continue
+                t4_ev += 1
+                leg = "CE" if e["kind"] == "E2-call" else "PE"
+                lo = e["us"] - PARAMS["match_window_min"] * US_MIN
+                c = [u for u, lg in d["t4"].get(e["K"], ()) if lg == leg and lo < u <= e["us"]]
+                if c:
+                    t4_leads.append(e["us"] - max(c))
+        hb_attr = {k: _lead_summary(v) for k, v in sorted(attr.items())}
+        hb_any = {L: dict(_lead_summary(v["leads"]), events=v["events"],
+                          coverage=Fraction(len(v["leads"]), v["events"]) if v["events"] else None) for L, v in any_l.items()}
+        if not t4_any:
+            t4 = NO_T4
+        else:
+            t4 = dict(_lead_summary(t4_leads), e2_events=t4_ev, days_without_input=t4_days_missing,
+                      coverage=Fraction(len(t4_leads), t4_ev) if t4_ev else None,
+                      note="descriptive only; T4 never enters the T1/T2/T3 match set (v0.4 section 3)")
+        out[s] = {"window_coverage_per_day": cov_days, "window_coverage_per_cycle": per_cycle,
+                  "s_sign_changes_1000_1445": sign_changes, "s_sign_changes_exploration_median": Fraction(5, 2),
+                  "hb_by_label": {"events": n_events, "attribution": hb_attr,
+                                  "attribution_covered_total": sum(v["covered"] for v in hb_attr.values()),
+                                  "any_label": hb_any},
+                  "t4": t4}
+    return out
 
 
 def _ha_in_clock(G):
@@ -714,7 +877,7 @@ def run(inputs, _keep=None):
     for day in days:
         T = load_day(inputs, day)
         for rel in COLS:
-            if T[rel] is None:
+            if T[rel] is None and rel not in OPTIONAL:
                 counts.setdefault("_files", {}).setdefault("missing_" + rel, []).append(day)
         if T["tape_daily_report"]:
             recorded_days.append(day)
@@ -751,6 +914,7 @@ def run(inputs, _keep=None):
               "params": PARAMS, "days": days, "recorded_days": recorded_days, "load_runs": load_runs,
               "quarantine": quarantined, "expiry_days": expiry_days, "symbols": {}}
     ha_v, hb_v = {}, {}
+    desc = descriptive(acc)
     for s in SYMS:
         nonq = sorted(acc[s])
         ha = ha_symbol(acc[s], nonq)
@@ -764,13 +928,14 @@ def run(inputs, _keep=None):
             "non_quarantined_days": nonq, "H_A": ha, "H_B": hb}
         ha_v[s], hb_v[s] = ha["verdict"], hb["verdict"]
     result["files_missing"] = counts.get("_files", {})
+    result["descriptive"] = desc
     result["H_A"] = dict(ha_v, overall=combine(*[ha_v[s] for s in SYMS]))
     result["H_B"] = dict(hb_v, overall=combine(*[hb_v[s] for s in SYMS]))
     return result
 
 
 def render_report(res):
-    L = ["MERIDIAN tape scoring (pre-registration v0.2 %s)" % PREREG_SHA, "seed_int %d" % res["seed_int"],
+    L = ["MERIDIAN tape scoring (pre-registration v0.4 %s)" % PREREG_SHA, "seed_int %d" % res["seed_int"],
          "days %d, recorded %d" % (len(res["days"]), len(res["recorded_days"])), ""]
     L.append("H-A: " + json.dumps(res["H_A"], sort_keys=True))
     L.append("H-B: " + json.dumps(res["H_B"], sort_keys=True))
@@ -783,6 +948,9 @@ def render_report(res):
         for h in ("H_A", "H_B"):
             L.append("%s: %s" % (h, json.dumps({k: v for k, v in S[h].items() if k != "secondary"}, sort_keys=True)))
         L.append("H-A secondary: " + json.dumps(S["H_A"]["secondary"], sort_keys=True))
+        dd = res.get("descriptive", {}).get(s, {})
+        L.append("descriptive (no decision input): " + json.dumps(
+            {k: v for k, v in dd.items() if k != "window_coverage_per_cycle"}, sort_keys=True))
     return "\n".join(L) + "\n"
 
 
@@ -800,13 +968,18 @@ def file_hashes():
 
 
 def check_hashes():
-    """Recompute the four sha256 values and compare with docs/tape/scoring_hashes.md. -> list of differences."""
+    """Recompute the four sha256 values and compare with the LAST entry of docs/tape/scoring_hashes.md (v0.4: the ledger
+    is append-only and each entry begins '## Entry'). That entry must name this file's PREREG_SHA. -> differences."""
     diffs = []
     try:
         with open(LEDGER, encoding="utf-8") as fh:
             text = fh.read()
     except OSError:
         return ["ledger file absent: " + LEDGER]
+    blocks = text.split("\n## Entry")
+    text = blocks[-1]
+    if len(blocks) < 2 or PREREG_SHA not in text:
+        diffs.append("the last ledger entry does not name pre-registration %s" % PREREG_SHA)
     for n, h in file_hashes().items():
         m = re.search(r"services/tape_scoring/%s[^0-9a-f\n]*([0-9a-f]{64})" % re.escape(n), text)
         if not m:

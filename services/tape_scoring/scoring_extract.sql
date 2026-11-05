@@ -9,7 +9,7 @@
 SELECT trading_day, symbol FROM public.tape_daily_report WHERE trading_day >= :'d0' AND trading_day <= :'d1';
 
 -- @name tape_strike_cycle
-SELECT symbol, trading_day, expiry, strike, leg, ts_ist, buy_cum, sell_cum, uncl_cum, gap_cum, first_seen_ts_ist, run_id
+SELECT symbol, trading_day, expiry, strike, leg, ts_ist, buy_5, sell_5, uncl_5, gap_5, buy_cum, sell_cum, uncl_cum, gap_cum, first_seen_ts_ist, run_id
 FROM public.tape_strike_cycle
 WHERE trading_day = :'d' AND symbol IN ('NIFTY', 'SENSEX');
 
@@ -52,3 +52,10 @@ WHERE ts >= :'t0' AND ts < :'t1' AND symbol IN ('NIFTY', 'SENSEX');
 SELECT instrument_id, trade_date, bar_ts, open, high, low, close
 FROM public.hist_spot_bars_1m
 WHERE bar_ts >= :'t0' AND bar_ts < :'t1' AND instrument_id IN ('9992f600-51b3-4009-b487-f878692a0bc5', '73a1390a-30c9-46d6-9d3f-5f03c3f5ad71');
+
+-- OPTIONAL (pre-registration v0.4 section 3, operator ruling 2026-11-05): Kite OI per strike-leg-minute, for the descriptive T4
+-- only. Last in this file and last in run_extract.sh RELS; its failure or an empty result is OPTIONAL SKIP, never an abort.
+-- @name tape_minute_oi
+SELECT symbol, trading_day, role, opt_type, strike, expiry, minute_ist, oi, run_id
+FROM public.tape_minute
+WHERE trading_day = :'d' AND symbol IN ('NIFTY', 'SENSEX');

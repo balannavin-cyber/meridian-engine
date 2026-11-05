@@ -9,7 +9,8 @@ a catch). The control (the unpatched copy, whole suite) must PASS.
   python tests/tape_scoring_mutants.py [--repeat N] [--only M-SC-...] [--jobs K]
   (Local, inside 08:30-15:45 IST on a weekday: set TAPE_RULE23_OVERRIDE_R1=1, operator ruling R-1, 2026-11-03)
 
-Last line: "TAPE SCORING MUTANTS PASS (29/29 caught xN, N/N controls)" or FAIL. Exit 0 / 1.
+Last line: "TAPE SCORING MUTANTS PASS (40/40 caught xN, N/N controls)" or FAIL. Exit 0 / 1.
+v0.4 (2026-11-05): 29 -> 40 mutants; sc-params is now sc-params-v04.
 """
 import argparse
 import os
@@ -20,7 +21,8 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-COPY = ["services/__init__.py", "services/tape_scoring", "services/tape_runner", "tests/test_tape_scoring.py", "tests/tape_scoring"]
+COPY = ["services/__init__.py", "services/tape_scoring", "services/tape_runner", "tests/test_tape_scoring.py", "tests/tape_scoring",
+        "merdian_compute/tape/chain_events.py"]  # read by ast for the OI_PCT unit check; never imported
 SC, WX, SQL = "services/tape_scoring/score.py", "services/tape_scoring/wilcoxon.py", "services/tape_scoring/scoring_extract.sql"
 
 REMERGE = ('    counted, anchor = [], {}\n    for e in events:\n        a = anchor.get((e["kind"], e["K"]))\n'
@@ -64,7 +66,27 @@ M = [
      "FROM public.gamma_metrics g JOIN public.gex_strike_snapshots s ON s.run_id = g.run_id\n"),
     ("M-SC-IMPORTS-SUPABASE", "sc-isolated", SC, "import hashlib\n", "import hashlib\nfrom supabase import create_client\n"),
     ("M-SC-RUNS-JOIN-MICROSECOND", "hb-labels", SC, "        cr = cruns.get(us // 10 ** 6)\n", "        cr = cruns.get(us)\n"),
-    ("M-SC-PARAM-CHANGED", "sc-params", SC, '    "bootstrap_B": 1000,\n', '    "bootstrap_B": 500,\n'),
+    ("M-SC-PARAM-CHANGED", "sc-params-v04", SC, '    "bootstrap_B": 1000,\n', '    "bootstrap_B": 500,\n'),
+    # ---- v0.4 (scoring_plan_v04.md section 4 and the 2026-11-05 rulings)
+    ("M-SC-R-ONE-BAR-LATE", "ha-r-window", SC, "    m0 = hm(t_dt)\n", "    m0 = hm(t_dt) + 1\n"),
+    ("M-SC-R-INCLUDES-1529", "ha-r-window", SC, " if m in bars and m != CLOSE_AUCTION_BAR]\n", " if m in bars]\n"),
+    ("M-SC-S-CUMULATIVE", "ha-s-window", SC, "    src = [r for st in window_stamps(G) for r in cyc.get(st, ())]\n",
+     "    src = [r._replace(b5=r.bc, s5=r.sc, u5=r.uc, g5=r.gc) for r in cyc.get(G, ())]\n"),
+    ("M-SC-S-FIVE-BINS", "ha-s-window", SC, '    return [G - 5 * i for i in range(PARAMS["s_window_bins"])]\n',
+     '    return [G - 5 * i for i in range(PARAMS["s_window_bins"] - 1)]\n'),
+    ("M-SC-S-SHARE-CUMULATIVE", "ha-s-window", SC, "    share_src = src\n",
+     "    share_src = [r._replace(b5=r.bc, s5=r.sc, u5=r.uc) for r in cyc.get(G, ())]\n"),
+    ("M-SC-LABELS-POOLED-ONLY", "hb-per-label", SC, '                    cls = "+".join(sorted(set(best[1]) & MATCH[kind]))\n',
+     '                    cls = "pooled"\n'),
+    ("M-SC-T4-IN-MATCH-SET", "hb-t4-separate", SC,
+     '        idx = d["idx"]  # T1/T2/T3 candidates only; T4 lives in d["t4"] and never reaches this index (v0.4 section 3)\n',
+     '        idx = {k: d["idx"].get(k, []) + [(u, ("T1",), "CONC", lg, "buy") for u, lg in (d["t4"] or {}).get(k, [])] '
+     'for k in set(d["idx"]) | set(d["t4"] or {})}\n'),
+    ("M-SC-VERDICT-READS-DESCRIPTIVE", "sc-descriptive-isolated", SC, "        hb = hb_symbol(s, acc[s], nonq)\n",
+     "        hb = hb_symbol(s, acc[s], nonq if desc.get(s) else [])\n"),
+    ("M-SC-DELTA-009", "sc-params-v04", SC, '    "ha_min_median_delta": Fraction(1, 10),\n', '    "ha_min_median_delta": Fraction(9, 100),\n'),
+    ("M-SC-T4-ABSENT-AS-ZERO", "sc-t4-optional", SC, "    if rows is None:\n        return None\n", "    if rows is None:\n        rows = []\n"),
+    ("M-SC-HASH-FIRST-ENTRY", "sc-hash-check", SC, "    text = blocks[-1]\n", "    text = blocks[0]\n"),
 ]
 
 

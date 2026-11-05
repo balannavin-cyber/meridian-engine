@@ -207,9 +207,10 @@ echo "== 36/40 tape T1b mutants (21, each must be caught)"; python3 tests/tape_t
 echo "== 37/40 tape T1-db guards (9) + unit checks (docs/tape/T1_db_plan.md)"; python3 tests/test_tape_t1db.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 echo "== 38/40 tape T1-db mutants (10 x5, each must be caught)"; python3 tests/tape_t1db_mutants.py --repeat 5 | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # Tape scoring (docs/tape/scoring_plan.md): planted-truth guards for the H-A / H-B scoring code, and the mutants that each guard
-# must catch (29 x5). No database, no network, no .env; the scorer runs only on fixtures. Same rule-23 refusal as T1b / T1-db; Local-only
+# must catch (40 x5; 29 before v0.4). No database, no network, no .env; the scorer runs only on fixtures. Same rule-23 refusal as T1b / T1-db; Local-only
 # override TAPE_RULE23_OVERRIDE_R1=1 (operator ruling R-1) lives in tests/test_tape_scoring.py. Appended AFTER step 38.
-echo "== 39/40 tape scoring guards (19) + unit checks (docs/tape/scoring_plan.md)"; python3 tests/test_tape_scoring.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 40/40 tape scoring mutants (29 x5, each must be caught)"; python3 tests/tape_scoring_mutants.py --repeat 5 | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+# v0.4 (2026-11-05): guards 19 -> 25, mutants 29 -> 40; still two steps (39, 40), so the suite stays at 40 steps.
+echo "== 39/40 tape scoring guards (25) + unit checks (docs/tape/scoring_plan.md, scoring_plan_v04.md)"; python3 tests/test_tape_scoring.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 40/40 tape scoring mutants (40 x5, each must be caught)"; python3 tests/tape_scoring_mutants.py --repeat 5 | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 echo "OFFLINE $([ $rc -eq 0 ] && echo PASS || echo FAIL)"
 exit $rc

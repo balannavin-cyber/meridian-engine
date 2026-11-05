@@ -391,7 +391,15 @@ def _sha(p):
         return hashlib.sha256(fh.read()).hexdigest()
 
 
-def make_tree():
+V02_SHA = "71950f92eb1313f2e58a40772c8671a2beefce220d5222213d39e8a80dfa4800"
+V04_SHA = "b45477d36eba6930ab41171a3405c10cf6ecb0bd1fbb04b52d09a5c2129acd57"
+HASHED4 = ("scoring_extract.sql", "run_extract.sh", "score.py", "wilcoxon.py")
+
+
+def make_tree(ledger="v04"):
+    """ledger: 'v04' (one v0.4 entry for the current files), 'both' (a v0.2-style block with stale hashes, then the v0.4
+    entry, as the real append-only ledger is), 'v02only' (only the stale v0.2 block), 'stale' (a v0.4 entry with stale
+    hashes)."""
     t = tmpdir()
     os.makedirs(os.path.join(t, "services", "tape_scoring"))
     os.makedirs(os.path.join(t, "docs", "tape"))
@@ -399,9 +407,15 @@ def make_tree():
     names = ("__init__.py", "scoring_extract.sql", "run_extract.sh", "score.py", "wilcoxon.py")
     for n in names:
         shutil.copy(os.path.join(ROOT, "services", "tape_scoring", n), os.path.join(t, "services", "tape_scoring", n))
+    cur = {n: _sha(os.path.join(t, "services", "tape_scoring", n)) for n in HASHED4}
+    old = {n: "%064x" % (i + 1) for i, n in enumerate(HASHED4)}
+    v02 = "# Tape scoring hash ledger (pre-registration v0.2)\n\nPre-registration v0.2 sha256: `%s`\n\n" % V02_SHA
+    v02 += "".join("| services/tape_scoring/%s | %s |\n" % (n, old[n]) for n in HASHED4)
+    v04 = lambda h: "\n## Entry test - pre-registration v0.4\nPre-registration v0.4 sha256: `%s`\n\n%s" % (  # noqa: E731
+        V04_SHA, "".join("| services/tape_scoring/%s | %s |\n" % (n, h[n]) for n in HASHED4))
+    text = {"v04": "# ledger\n" + v04(cur), "both": v02 + v04(cur), "v02only": v02, "stale": "# ledger\n" + v04(old)}[ledger]
     with open(os.path.join(t, "docs", "tape", "scoring_hashes.md"), "w", encoding="utf-8", newline="\n") as fh:
-        for n in ("scoring_extract.sql", "run_extract.sh", "score.py", "wilcoxon.py"):
-            fh.write("| services/tape_scoring/%s | %s |\n" % (n, _sha(os.path.join(t, "services", "tape_scoring", n))))
+        fh.write(text)
     return t
 
 
@@ -448,6 +462,12 @@ def g_hash_check():
     t = make_tree()
     rc, out = score_cli(t, inp, tmpdir())
     cells.append(ok(rc == 0, "control: untouched tree passes the hash check (rc %s)" % rc))
+    rc, out = score_cli(make_tree("both"), inp, tmpdir())
+    cells.append(ok(rc == 0, "ledger with BOTH entries (stale v0.2 first, current v0.4 last): verified against the last, passes (rc %s)" % rc))
+    rc, out = score_cli(make_tree("v02only"), inp, tmpdir())
+    cells.append(ok(rc == 3 and "HASH MISMATCH" in out, "ledger with only the v0.2 entry: refused (rc %s)" % rc))
+    rc, out = score_cli(make_tree("stale"), inp, tmpdir())
+    cells.append(ok(rc == 3 and "HASH MISMATCH" in out, "a v0.4 entry listing stale hashes: refused (rc %s)" % rc))
     for n in ("score.py", "wilcoxon.py", "scoring_extract.sql", "run_extract.sh"):
         t = make_tree()
         with open(os.path.join(t, "services", "tape_scoring", n), "ab") as fh:
@@ -460,30 +480,37 @@ def g_hash_check():
 def g_extract_pure():
     cells = []
     text = src(PKG + "/scoring_extract.sql")
-    body = "\n".join(ln for ln in text.splitlines() if not ln.strip().startswith("--"))
-    stmts = [" ".join(s.split()) for s in body.split(";") if s.strip()]
+    # v0.4: one relation can be read by two named statements (tape_minute and the optional tape_minute_oi), so each
+    # statement is identified by its "-- @name" tag, not by its FROM.
+    tagged = re.findall(r"--\s*@name\s+(\w+)\s*\n(.*?);", text, re.S)
+    stmts = [(n, " ".join("\n".join(ln for ln in b.splitlines() if not ln.strip().startswith("--")).split())) for n, b in tagged]
     rx = re.compile(r"^SELECT ([a-z0-9_]+(?:, [a-z0-9_]+)*) FROM public\.([a-z0-9_]+) WHERE (.+)$")
     bad_kw = re.compile(r"\b(JOIN|UNION|GROUP|HAVING|OVER|WITH|DISTINCT|LIMIT|ORDER|SUM|COUNT|AVG|MIN|MAX|CASE|FILTER|INTO|EXCEPT|"
                         r"INTERSECT|LATERAL|COALESCE|CAST|EXTRACT|DATE_TRUNC)\b", re.I)
     rels, problems = [], []
-    for s in stmts:
+    for name, s in stmts:
         m = rx.match(s)
         if not m:
             problems.append("not a plain SELECT ... FROM public.x WHERE ...: " + s[:80])
             continue
-        cols, rel, where = m.groups()
+        cols, table, where = m.groups()
+        rel = name
+        if table != (name if name != "tape_minute_oi" else "tape_minute") and name != "days_list":
+            problems.append("%s reads public.%s" % (name, table))
         if bad_kw.search(s) or s.upper().count("SELECT") != 1:
             problems.append("forbidden construct in " + rel)
         w = re.sub(r"'[^']*'", "''", where)
         if re.search(r"[+*/%|]|\s-\s|\w\(", w):
             problems.append("arithmetic or a function call in the WHERE of " + rel)
         rels.append((rel, [c.strip() for c in cols.split(",")]))
-    cells.append(ok(not problems, "every statement is a plain SELECT with fixed filters (%s)" % (problems or "10 statements")))
+    cells.append(ok(not problems and len(stmts) == 11, "every statement is a plain SELECT with fixed filters (%s; %d statements)" % (
+        problems or "ok", len(stmts))))
     named = sorted(r for r, _ in rels)
-    cells.append(ok(named == sorted(list(score.COLS) + ["tape_daily_report"]),
-                    "relations named = the nine in the plan (+ the day list from tape_daily_report): %s" % named))
+    cells.append(ok(named == sorted(list(score.COLS) + ["days_list"]),
+                    "statements named = the nine relations + the optional tape_minute_oi + the day list: %s" % named))
+    cells.append(ok(stmts and stmts[-1][0] == "tape_minute_oi", "the optional tape_minute_oi statement is last in the file"))
     for rel, cols in rels:
-        if (rel, cols) == ("tape_daily_report", ["trading_day", "symbol"]):
+        if rel == "days_list":
             continue
         cells.append(ok(cols == list(score.COLS[rel]), "%s: select list == the columns score.py reads" % rel))
     sh = "\n".join(ln for ln in src(PKG + "/run_extract.sh").splitlines() if not ln.strip().startswith("#"))
@@ -532,7 +559,9 @@ EXPECTED_PARAMS = {
     "hb_min_events": 300, "hb_min_days": 15, "hb_cov_min": Fraction(1, 2), "hb_lead_yes_min": 10, "hb_lead_no_max": 5,
     "match_window_min": 60, "null_draws": 100, "bootstrap_B": 1000, "null_pctile": 95, "completeness_min_pct": 95,
     "completeness_minutes": 375, "late_share_min_pct": 50, "trigger_expiries": 6, "trigger_days": 30,
-    "wilcoxon_normal_above": 60, "spot_clock_min_pct": 95, "passive_side": {"CE": "ask", "PE": "ask"}}
+    "wilcoxon_normal_above": 60, "spot_clock_min_pct": 95, "passive_side": {"CE": "ask", "PE": "ask"},
+    # v0.4 section 1 definitions (not section 5 thresholds) and the section 5 E2 OI literal the T4 descriptive reuses
+    "s_window_min": 30, "s_window_bins": 6, "e2_oi_move_pct": 5}
 
 
 def g_params():
@@ -541,7 +570,224 @@ def g_params():
     return [ok(not diff and not extra, "every pre-registered parameter has its pre-registered value (differ: %s; unlisted: %s)" % (diff, extra)),
             ok(wilcoxon.NORMAL_ABOVE == EXPECTED_PARAMS["wilcoxon_normal_above"], "the Wilcoxon switch point equals the listed parameter"),
             ok(score.MATCH == {"E1": frozenset(("T1", "T2")), "E2-call": frozenset(("T1", "T3")), "E2-put": frozenset(("T1", "T3"))},
-               "matching kinds: E1 <- T1/T2, E2 <- T1/T3")]
+               "matching kinds: E1 <- T1/T2, E2 <- T1/T3 (no T4)"),
+            ok(score.PARAMS["s_window_min"] == 5 * score.PARAMS["s_window_bins"] and score.window_stamps(700) == [700, 695, 690, 685, 680, 675],
+               "the S window is six 5-minute stamps G..G-25 = 30 minutes"),
+            ok(score.PREREG_SHA == V04_SHA, "score.py names pre-registration v0.4")]
+
+
+def g_r_window():
+    """v0.4 section 1 / 6: R over bars labelled hm(T)..hm(T)+29, the 15:29 bar never in a range. Beliefs (computed here from
+    the planted spikes, straddle 100): G=600 spike at T -> 40/100; G=640 spike at T+30 -> 0; G=700 spike at T+29 -> 25/100;
+    G=900 spike 10 at T+5 and 500 on the 15:29 bar -> 10/100; day 2 G=900: 24 regular bars + 15:29 -> excluded."""
+    p = G.Plan("NIFTY", D1, high_1529=500)
+    plant = {600: (40, 0), 640: (50, 30), 700: (25, 29), 900: (10, 5)}
+    for g, (rng, at) in plant.items():
+        p.add_run(g, 21, U=1, S=1, rng=rng, rng_at=at)
+    want = {g: (Fraction(rng, 100) if at <= 29 else Fraction(0)) for g, (rng, at) in plant.items()}
+    q = G.Plan("NIFTY", D2)
+    q.add_run(900, 21, U=1, S=1, rng=10, rng_at=10)
+    q.drop.update(range(900, 905))            # 905..928 = 24 regular bars, plus the 15:29 bar
+    res, keep = run1(p, q)
+    got = {c["G"]: c["R"] for c in keep["acc"]["NIFTY"][D1]["cycles"]}
+    got2 = {c["G"]: c["R"] for c in keep["acc"]["NIFTY"][D2]["cycles"]}
+    return [ok(got[600] == want[600], "extreme in the bar labelled T is included: R = %s (got %s)" % (want[600], got[600])),
+            ok(got[640] == want[640], "extreme in the bar labelled T+30 is excluded: R = 0 (got %s)" % got[640]),
+            ok(got[700] == want[700], "extreme in the bar labelled T+29 is included: R = %s (got %s)" % (want[700], got[700])),
+            ok(got[900] == want[900], "the 15:29 extreme is excluded: R = %s, not %s (got %s)" % (want[900], Fraction(510, 100), got[900])),
+            ok(got2[900] is None and nifty(res)["counts"].get("cycle_r_bars_lt_min") == 1,
+               "24 regular bars + the 15:29 bar: excluded and counted (got R %s, counts %s)" % (got2[900], nifty(res)["counts"].get("cycle_r_bars_lt_min")))]
+
+
+def g_s_window():
+    """v0.4 section 1: S = sign of D30 over the six bins stamped G-25..G. Planted (U = 1 everywhere, gamma equal at every strike,
+    so S = -sign(sum of buy - sell)): 600 S=+1 with S_cum=-1; 630 S=-1 with S_cum=+1; 660 +1; 690 six bins net -2000 (S +1)
+    but the last five net +1000 (S -1); 720 a strike present at 4 of 6 stamps carries net -1500, the designated leg +500 ->
+    S +1 (dropping the partial strike would give -1); 750 window share 49 % (cum 60 %) -> undefined; 780 window 51 % (cum 40 %)
+    -> +1; 810 window net 0 -> undefined, d_zero."""
+    p = G.Plan("NIFTY", D1)
+    k0, k1 = p.strikes[0], p.strikes[1]
+    p.add_run(600, 21, U=1, S=1, S_cum=-1)
+    p.add_run(630, 21, U=1, S=-1, S_cum=1)
+    p.add_run(660, 21, U=1, S=1)
+    p.add_run(690, 21, U=1, bins=[(25, k0, "CE", 0, 3000, 0), (0, k0, "CE", 1000, 0, 0)])
+    p.partial[k1] = {705, 710, 715, 720}
+    p.add_run(720, 21, U=1, bins=[(0, k0, "CE", 500, 0, 0), (10, k1, "CE", 0, 1500, 0)])
+    p.add_run(750, 21, U=1, S=1, share=49, share_cum=60)
+    p.add_run(780, 21, U=1, S=1, share=51, share_cum=40)
+    p.add_run(810, 21, U=1, bins=[(0, k0, "CE", 500, 500, 0)])
+    nets = {690: 1000 - 3000, 720: 500 - 1500}
+    want = {600: 1, 630: -1, 660: 1, 690: -(nets[690] > 0) + (nets[690] < 0), 720: -(nets[720] > 0) + (nets[720] < 0),
+            750: None, 780: 1, 810: None}
+    cum = {600: -1, 630: 1}
+    res, keep = run1(p)
+    got = {c["G"]: c["S"] for c in keep["acc"]["NIFTY"][D1]["cycles"]}
+    c = nifty(res)["counts"]
+    seq = [want[g] for g in sorted(want) if want[g] is not None]
+    changes = sum(1 for a, b in zip(seq, seq[1:]) if a != b)
+    dsc = res["descriptive"]["NIFTY"]["s_sign_changes_1000_1445"].get(D1)
+    return [ok(got == want, "S equals the planted trailing-30 sign on every cycle (got %s want %s)" % (got, want)),
+            ok(all(got[g] != cum[g] for g in cum), "and differs from the planted cumulative sign on the chosen cycles %s" % sorted(cum)),
+            ok(got[690] == 1, "six bins, not five: the bin stamped G-25 decides 690 (got %s)" % got[690]),
+            ok(got[720] == 1, "a strike with 4 of 6 bins contributes the bins present (got %s)" % got[720]),
+            ok(got[750] is None and got[780] == 1, "share on the six-bin window volume: 49 %% undefined, 51 %% defined (got %s, %s)" % (got[750], got[780])),
+            ok(c.get("cycle_s_undefined_d_zero") == 1 and c.get("cycle_s_undefined_share_below_min") == 1,
+               "d_zero and share-below-min counted once each (%s)" % {k: v for k, v in c.items() if "undefined" in k}),
+            ok(dsc == changes, "descriptive sign changes in 10:00-14:45 = %d (got %s)" % (changes, dsc))]
+
+
+def _label_plan():
+    p = _ev_plan()
+    r = p.roles
+    p.add_chain(660, 0, "E1", r["runner"])          # 11:00 <- T2 (CONC CE at the runner-up) at 10:50: lead 10
+    p.add_tape(650 * 60, "CONC", r["runner"], "CE", "buy")
+    p.add_chain(720, 0, "E2-call", r["cw"])         # 12:00 <- T1 (CONC CE at the call wall) at 11:50: lead 10
+    p.add_tape(710 * 60, "CONC", r["cw"], "CE", "buy")
+    p.add_chain(780, 0, "E2-put", r["pw"])          # 13:00 <- T3 (THIN ask PE at the put wall) at 12:40: lead 20
+    p.add_tape(760 * 60, "THIN", r["pw"], "PE", "ask")
+    p.add_chain(840, 0, "E2-call", r["cw"])         # 14:00 uncovered
+    return p
+
+
+def g_hb_per_label():
+    res, _ = run1(_label_plan())
+    h = nifty(res)["H_B"]
+    d = res["descriptive"]["NIFTY"]["hb_by_label"]
+    att = d["attribution"]
+    covered = round(h["coverage"] * h["n_events"])
+    want = {"T1": (1, 10), "T2": (1, 10), "T3": (1, 20)}
+    gotc = {k: (v["covered"], v["median_lead_min"]) for k, v in att.items()}
+    return [ok(h["n_events"] == 4 and covered == 3, "pooled: 4 events, 3 covered (got %s, %s)" % (h["n_events"], covered)),
+            ok(d["attribution_covered_total"] == covered and sum(v["covered"] for v in att.values()) == covered,
+               "per-label attribution sums to the pooled covered count %d (got %s)" % (covered, d["attribution_covered_total"])),
+            ok(gotc == want, "each covered event is attributed to its planted label with its planted lead %s (got %s)" % (want, gotc)),
+            ok(d["any_label"]["T3"]["events"] == 3 and d["any_label"]["T3"]["covered"] == 1,
+               "any-label T3: admitted by the 3 E2 events, covers 1 (got %s)" % d["any_label"]["T3"])]
+
+
+def _t4_plan():
+    p = _ev_plan()
+    r = p.roles
+    p.add_chain(720, 0, "E2-call", r["cw"])         # 12:00:00
+    p.add_tape(710 * 60, "CONC", r["cw"], "CE", "buy")   # T1 at 11:50 -> H-B lead 10
+    p.add_oi(r["cw"], "CE", 713, 1000)              # base: the latest minute labelled < 11:55
+    p.add_oi(r["cw"], "CE", 718, 1060)              # +6 % in minute 11:58 -> T4 stamped 11:59:00 -> lead 1
+    return p
+
+
+def g_hb_t4_separate():
+    res, _ = run1(_t4_plan())
+    h = nifty(res)["H_B"]
+    t4 = res["descriptive"]["NIFTY"]["t4"]
+    return [ok(h["coverage"] == 1 and h["median_lead_min"] == 10, "H-B lead is the T1's 10 min, not the T4's 1 (got %s)" % h["median_lead_min"]),
+            ok(isinstance(t4, dict) and t4["coverage"] == 1 and t4["median_lead_min"] == 1 and t4["e2_events"] == 1,
+               "T4 lead 1 min, coverage 1/1, reported under descriptive only (got %s)" % t4),
+            ok(all("T4" not in v for v in score.MATCH.values()), "T4 is in no matching set")]
+
+
+def _strip_desc(res):
+    r = json.loads(dump(res))
+    r.pop("descriptive", None)
+    return json.dumps(r, sort_keys=True)
+
+
+def g_descriptive_isolated():
+    d = build(_build_ds(_label_plan(), _t4_plan_day2()))
+    a = score.run(d)
+    real = score.descriptive
+    try:
+        score.descriptive = lambda acc: {}
+        b = score.run(d)
+    finally:
+        score.descriptive = real
+    # walls outside the window (v0.4 section 1, reporting only): the call wall strike unsubscribed on day 3. Belief, computed
+    # from the generator's planted gex_cr (U/100 per strike, U/2 leader, U/4 runner-up; 12 strikes): share inside =
+    # (total - |gex at cw|) / total.
+    w = G.Plan("NIFTY", "2026-10-07", unsub=())
+    w.unsub.add(w.roles["cw"])
+    for g in (600, 630):
+        w.add_run(g, 21, U=1, S=1)
+    tot = Fraction(10, 100) + Fraction(1, 2) + Fraction(1, 4)
+    want_share = (tot - Fraction(1, 100)) / tot
+    rw, _ = run1(w)
+    cov = rw["descriptive"]["NIFTY"]["window_coverage_per_day"]["2026-10-07"]
+    return [ok(a["descriptive"] and b["descriptive"] == {}, "control: the descriptive block was built, and the patched run built none"),
+            ok(_strip_desc(a) == _strip_desc(b), "with the descriptive block replaced by {}, every verdict and figure is byte-identical"),
+            ok(cov["call_wall_in_window_frac"] == 0 and cov["put_wall_in_window_frac"] == 1 and cov["gexabs_share_in_window_median"] == want_share,
+               "call wall outside the window: in-window fraction 0, put wall 1, |gex| share %s (got %s)" % (want_share, cov))]
+
+
+def _build_ds(*plans):
+    ds = G.Dataset()
+    for p in plans:
+        ds.add(p)
+    return ds
+
+
+def _t4_plan_day2():
+    p = _t4_plan()
+    p.day = D2
+    return p
+
+
+def _fake_roq(d):
+    py = os.path.join(d, "fake_roq.py")
+    with open(py, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(
+            "import os, re, sys\n"
+            "q = [ln for ln in sys.stdin.read().splitlines() if ln.strip() and not ln.startswith(chr(92))]\n"
+            "sql = ' '.join(q)\n"
+            "fail = os.environ.get('FAKE_FAIL', '')\n"
+            "m = re.search(r'SELECT (.*?) FROM public\\.(\\w+)', sql)\n"
+            "cols, rel = m.group(1), m.group(2)\n"
+            "names = [c.strip() for c in cols.split(',')]\n"
+            "if fail == 'events' and rel == 'tape_events': sys.exit(1)\n"
+            "if fail == 'oi' and 'oi' in names: sys.exit(1)\n"
+            "if cols == 'count(*)': print('count'); print(3); sys.exit(0)\n"
+            "if rel == 'tape_daily_report' and names == ['trading_day', 'symbol']: print('trading_day,symbol'); print('2026-11-05,NIFTY'); sys.exit(0)\n"
+            "print(','.join(names)); print(','.join('x' for _ in names))\n")
+    sh = os.path.join(d, "fake_roq.sh")
+    with open(sh, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write('#!/usr/bin/env bash\nexec "%s" "%s"\n' % (sys.executable.replace("\\", "/"), py.replace("\\", "/")))
+    os.chmod(sh, 0o755)
+    return sh
+
+
+def _run_extract(fail):
+    bash = shutil.which("bash")
+    if bash is None:
+        return None, "bash not found", None
+    d = tmpdir()
+    roq = _fake_roq(d)
+    out = os.path.join(d, "out")
+    env = dict(os.environ, FAKE_FAIL=fail)
+    p = subprocess.run([bash, os.path.join(ROOT, PKG, "run_extract.sh").replace("\\", "/"), "--from", "2026-11-05", "--to", "2026-11-05",
+                        "--out", out.replace("\\", "/"), "--roq", roq.replace("\\", "/")], capture_output=True, text=True, env=env, timeout=300)
+    return p.returncode, p.stdout + p.stderr, out
+
+
+def g_t4_optional():
+    """operator ruling 2026-11-05: tape_minute_oi is OPTIONAL. Absent -> descriptive t4 = NO_T4 and every verdict
+    byte-identical; run_extract.sh skips a failed optional relation and still aborts on a failed required one."""
+    d = build(_build_ds(_t4_plan()))
+    a = score.run(d)
+    shutil.rmtree(os.path.join(d, "tape_minute_oi"))
+    b = score.run(d)
+    cells = [ok(isinstance(a["descriptive"]["NIFTY"]["t4"], dict), "control: with the input present, T4 is computed"),
+             ok(b["descriptive"]["NIFTY"]["t4"] == score.NO_T4, "input absent: t4 = %r (got %r)" % (score.NO_T4, b["descriptive"]["NIFTY"]["t4"])),
+             ok(_strip_desc(a) == _strip_desc(b), "input absent: every verdict and non-descriptive figure byte-identical"),
+             ok("missing_tape_minute_oi" not in json.dumps(b["files_missing"]), "an absent optional input is not listed as a missing file")]
+    rc, txt, out = _run_extract("oi")
+    f = os.path.join(out, "tape_minute_oi", "2026-11-05.csv") if out else ""
+    cells.append(ok(rc == 0 and "OPTIONAL SKIP tape_minute_oi" in txt and not os.path.exists(f)
+                    and os.path.exists(os.path.join(out, "tape_minute", "2026-11-05.csv")),
+                    "run_extract.sh: the optional statement fails -> OPTIONAL SKIP, no file, the rest extracted, exit 0 (rc %s)" % rc))
+    rc2, txt2, _ = _run_extract("events")
+    cells.append(ok(rc2 == 1 and "PRECHECK FAIL tape_events" in txt2, "run_extract.sh: a required relation fails -> abort, exit 1 (rc %s)" % rc2))
+    rc3, txt3, out3 = _run_extract("")
+    cells.append(ok(rc3 == 0 and os.path.exists(os.path.join(out3, "tape_minute_oi", "2026-11-05.csv")),
+                    "run_extract.sh: control, the optional relation is extracted when it reads (rc %s)" % rc3))
+    return cells
 
 
 GUARDS = [("sc-sign-only", g_sign_only), ("ha-s-definition", g_s_definition), ("ha-clock", g_clock), ("ha-delta", g_delta),
@@ -549,7 +795,10 @@ GUARDS = [("sc-sign-only", g_sign_only), ("ha-s-definition", g_s_definition), ("
           ("hb-match-kinds", g_hb_match_kinds), ("hb-lead-nearest", g_hb_lead_nearest), ("hb-window", g_hb_window),
           ("hb-null", g_hb_null), ("hb-decision", g_hb_decision), ("sc-quarantine", g_quarantine),
           ("sc-no-remerge", g_no_remerge), ("sc-run-once", g_run_once), ("sc-hash-check", g_hash_check),
-          ("sc-extract-pure", g_extract_pure), ("sc-isolated", g_isolated), ("sc-params", g_params)]
+          ("sc-extract-pure", g_extract_pure), ("sc-isolated", g_isolated), ("sc-params-v04", g_params),
+          ("ha-r-window", g_r_window), ("ha-s-window", g_s_window), ("hb-per-label", g_hb_per_label),
+          ("hb-t4-separate", g_hb_t4_separate), ("sc-descriptive-isolated", g_descriptive_isolated),
+          ("sc-t4-optional", g_t4_optional)]
 
 
 # ====================================================================== unit checks (no mutant)
@@ -570,17 +819,40 @@ def u_ts_parse():
 def u_lookahead():
     T = score.parse_ts("2026-11-03T10:05:21+05:30")
     m = 10 * 60 + 5
-    bars = {k: (Fraction(100), Fraction(100), Fraction(100)) for k in range(m + 1, m + 31)}
-    bars[m] = (Fraction(9999), Fraction(1), Fraction(1))        # the minute that contains T: label <= T, excluded
-    bars[m + 31] = (Fraction(9999), Fraction(1), Fraction(1))   # past the horizon: excluded
-    bars[m + 2] = (Fraction(130), Fraction(100), Fraction(100))
+    bars = {k: (Fraction(100), Fraction(100), Fraction(100)) for k in range(m, m + 30)}
+    bars[m - 1] = (Fraction(9999), Fraction(1), Fraction(1))    # the bar before T's minute: excluded
+    bars[m + 30] = (Fraction(9999), Fraction(1), Fraction(1))   # past the horizon: excluded
+    bars[m] = (Fraction(130), Fraction(100), Fraction(100))     # the bar labelled hm(T): included (v0.4)
     r, n = score.spot_range(bars, T)
-    short = {k: v for k, v in bars.items() if k <= m + 24}
+    short = {k: v for k, v in bars.items() if k <= m + 23}
     r2, n2 = score.spot_range(short, T)
-    short25 = {k: v for k, v in bars.items() if k <= m + 25}
+    short25 = {k: v for k, v in bars.items() if k <= m + 24}
     r3, _ = score.spot_range(short25, T)
-    return [ok(r == 30 and n == 30, "R reads labels (T, T+30] only: range 30 over 30 bars (got %s over %s)" % (r, n)),
+    return [ok(r == 30 and n == 30, "R reads labels hm(T)..hm(T)+29 only: range 30 over 30 bars (got %s over %s)" % (r, n)),
             ok(r2 is None and n2 == 24, "24 of 30 bars -> excluded"), ok(r3 == 30, "25 of 30 bars -> kept")]
+
+
+def u_oi_pct():
+    """the T4 threshold equals the chain side's E2 literal; read by ast (score.py imports nothing from merdian_compute)."""
+    tree = ast.parse(src("merdian_compute/tape/chain_events.py"))
+    v = [n.value.value for n in tree.body if isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "OI_PCT" for t in n.targets)]
+    bad = [m for m in _imports(PKG + "/score.py") if m.startswith("merdian_compute")]
+    return [ok(v == [score.PARAMS["e2_oi_move_pct"]], "e2_oi_move_pct %s == chain_events.OI_PCT %s" % (score.PARAMS["e2_oi_move_pct"], v)),
+            ok(not bad, "score.py imports nothing from merdian_compute (%s)" % bad)]
+
+
+def u_t4_stamp():
+    """T4 is stamped at the CLOSE of its minute, never its start (Rule 0a)."""
+    day = "2026-11-05"
+    t0 = datetime(2026, 11, 5, 10, 30, 21, tzinfo=IST)
+    runs = [{"us": score.us_of(t0), "expiry": "2026-11-10", "call_wall": Fraction(23000), "put_wall": Fraction(22000)}]
+    row = lambda m, oi: {"symbol": "NIFTY", "opt_type": "CE", "expiry": "2026-11-10", "strike": "23000", "oi": str(oi),  # noqa: E731
+                         "minute_ist": "%sT%02d:%02d:00+05:30" % (day, m // 60, m % 60)}
+    ev = score.t4_events(day, "NIFTY", [row(713, 1000), row(718, 1060), row(719, 1100)], runs)
+    want = score.us_of(datetime(2026, 11, 5, 11, 59, 0, tzinfo=IST))
+    none = score.t4_events(day, "NIFTY", None, runs)
+    return [ok(ev == {Fraction(23000): [(want, "CE")]}, "one T4 per cycle, stamped 11:59:00 for the 11:58 minute (got %s)" % ev),
+            ok(none is None, "absent input -> None (T4 not computed)")]
 
 
 def u_label_runs():
@@ -642,7 +914,8 @@ def u_median_switch():
             ok(r60["method"] == "exact" and r61["method"] == "normal" and r61["normal_above"] == 60, "exact at n=60, normal at n=61; switch point reported")]
 
 
-UNITS = [u_ts_parse, u_lookahead, u_label_runs, u_lead_after_T, u_spot_clock, u_gates_fixture, u_manifest, u_median_switch]
+UNITS = [u_ts_parse, u_lookahead, u_label_runs, u_lead_after_T, u_spot_clock, u_gates_fixture, u_manifest, u_median_switch,
+         u_oi_pct, u_t4_stamp]
 
 
 def main():

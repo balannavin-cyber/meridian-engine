@@ -5092,9 +5092,9 @@
       "truncated_each_run": false
     }
   },
-  "version": "v82",
-  "last_updated_session": "Session 104",
-  "last_updated_date": "2026-11-04",
+  "version": "v83",
+  "last_updated_session": "Session 105",
+  "last_updated_date": "2026-11-05",
   "change_log": [
     {
       "session": "S91 / AM-2",
@@ -6163,5 +6163,36 @@
       "anon_class": "TD-S81-NEW-3 standing check; TD-S39-NEW-3 committed .env; TD-S104-NEW-5 API-log review (7-day window); TD-S104-NEW-6 stop postgrest-mv; TD-S104-NEW-2 token reminder",
       "carried": "Monday/Tuesday live-check readings not recorded; S103-B board leg roll not built; pg_stat_statements re-run (TD-S103-NEW-7); S99-D gate question unanswered; ADR-032 S2 held until after launch; Mumbai migration plan offered, not drafted"
     }
+  },
+  "_s105_addendum": {
+    "session": "S105",
+    "date": "2026-11-04 -> 2026-11-05 (tape stream)",
+    "scope": "Tape exploration of 2026-11-02..04 under pre-registration v0.3 (descriptive, never scored) and the v0.4 scoring build; all on meridian-tape-staging, engine main unchanged at be197b3.",
+    "tape_commits": {
+      "tape/exploration": [
+        "bc14f18",
+        "9cf1fcb"
+      ],
+      "tape/scoring-v04": [
+        "6b8bdf9",
+        "ea27c17",
+        "0ef8f71"
+      ],
+      "staging main (operator)": [
+        "f481d9c prereg v0.4",
+        "07a8a53 ledger v0.4"
+      ]
+    },
+    "files": {
+      "services/tape_scoring/score.py": "v0.4: trailing-30 S over buy_5/sell_5 (stamps G-25..G); R(T) bars hm(T)..hm(T)+29, 15:29 excluded (defect fix); descriptive() block; T4 from optional tape_minute_oi; check_hashes reads the last ledger entry. sha256 9011aba0...",
+      "services/tape_scoring/scoring_extract.sql": "tape_strike_cycle + buy_5, sell_5, uncl_5, gap_5; OPTIONAL @name tape_minute_oi last. sha256 8f3db643...",
+      "services/tape_scoring/run_extract.sh": "tape_minute_oi last in RELS on an OPTIONAL SKIP path. sha256 01bff874...",
+      "services/tape_scoring/.gitattributes": "* text eol=lf (0ef8f71)",
+      "docs/tape/scoring_plan_v04.md": "plan, rulings (section 8), build record (section 9)",
+      "docs/tape/exploration_2026-11-02_04/": "REPORT.md, 44 cards, 42 tables, 7 plots, run_all.py, SHA256SUMS (tape/exploration)"
+    },
+    "tests": "tests/test_tape_scoring.py 25 guards + 21 unit checks; tests/tape_scoring_mutants.py 40 mutants x5; run_offline.sh 40 steps (unchanged count)",
+    "tds": "TD-S105-NEW-1..7 (-1 R(T) one bar late, -2 three vs four files: closed at filing); open -3 CRLF exposure (exploration SHA256SUMS), -4 run_offline.sh not run / Windows ulimit, -5 tape_minute_oi timeout + real roq.sh, -6 n_subscribed 186 vs 148, -7 timer NEXT blank",
+    "process": "AR D.59 (6 rows, all mine); scoring build ran on Opus, the /model switch to Sonnet did not happen"
   }
 }

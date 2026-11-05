@@ -5822,3 +5822,25 @@ All four verification conditions met. **(a)** The daily layer accumulates — 38
 | **Proper fix** | Replace the committed `.env` with a placeholder file; the history keeps the old key, so only rotation removes it (optional now; update the nginx snippet's `apikey` in the same step, TD-S104-NEW-2). Open: who owns the push (Lovable or the operator). |
 | **Home** | — (closed); the open item is TD-S39-NEW-3, tracker §2.2 band BS. |
 | **Status** | **CLOSED at filing (duplicate).** The work stays under **TD-S39-NEW-3**, whose cost is now smaller: the key reads nothing (S104). |
+
+### TD-S105-NEW-1 (S2 priority) — the hashed v0.2 scorer computed R(T) one bar late
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** A definition defect in pre-registered scoring code; would have shifted every R(T) by one bar. |
+| **Filed** | 2026-11-05 (Session 105) |
+| **Component** | `services/tape_scoring/score.py` `spot_range` (lines 285–290 at the v0.2-hashed version `7a1267d6…`) |
+| **Measured** | `m0 = hm(t_dt) + 1` read bars labelled T+1…T+30; the exploration (REPORT.md B.2, `bc14f18`) established that `hist_spot_bars_1m` labels are minute-start, so the intended window [T, T+30) is bars T…T+29. |
+| **Fix** | `m0 = hm(t_dt)`, the 15:29 bar excluded from every range; guard `ha-r-window` with mutants `M-SC-R-ONE-BAR-LATE`, `M-SC-R-INCLUDES-1529` (5/5 each). Recorded in pre-registration v0.4 §6 and the ledger's v0.4 entry. |
+| **Status** | **CLOSED at filing** — fixed in `6b8bdf9` (`tape/scoring-v04`), re-hashed (`score.py` `9011aba0…`). **No scoring run had used the code; no result is affected.** |
+
+### TD-S105-NEW-2 (S4 priority) — pre-registration v0.4 §6 says "the three files are re-hashed"; the scorer hashes four
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** Wording in a hashed document; no behaviour affected. |
+| **Filed** | 2026-11-05 (Session 105) |
+| **Component** | `docs/tape/tape_preregistration_v0.4.md` §6 (hashed `b45477d3…`); `docs/tape/scoring_hashes.md` |
+| **Measured** | `score.HASHED` lists four files; `run_extract.sh` also changed in v0.4 (the optional `tape_minute_oi` path) and is listed and verified in the ledger's v0.4 table. |
+| **Fix** | A `### Note 2026-11-05` appended inside the ledger's v0.4 entry (original text an unchanged prefix, asserted); the pre-registration itself is not edited (hashed). |
+| **Status** | **CLOSED at filing** — `0ef8f71`. |

@@ -7,7 +7,7 @@ with tests/test_tape_t0.py --root, and require FAIL. The control (unpatched copy
 
   python3 tests/tape_mutants.py [--repeat N] [--only M-T0-...]
 
-Last line: "TAPE T0 MUTANTS PASS (37/37 caught xN, 21/21 controls xN)" or FAIL. Exit 0 / 1.
+Last line: "TAPE T0 MUTANTS PASS (39/39 caught xN, 22/22 controls xN)" or FAIL. Exit 0 / 1.
 """
 import argparse
 import os
@@ -42,6 +42,10 @@ M = [
      '                for t in old:\n'
      '                    del self.subscribed[t]\n'
      '                self._subscribe(sym, su.window_tokens(pos), "grow", now,'),
+    ("M-T0-SENSEX-HALF-15", "subs-half-width", "services/tape_runner/config.py",
+     '"BSE:SENSEX", "half_window": 25,', '"BSE:SENSEX", "half_window": 15,'),
+    ("M-T0-NIFTY-HALF-25", "subs-half-width", "services/tape_runner/config.py",
+     '"NSE:NIFTY 50", "half_window": 20,', '"NSE:NIFTY 50", "half_window": 25,'),
     ("M-T0-DROP-CTL", "ctl-records", "services/tape_runner/recorder.py",
      '            self._ctl_all("disconnect", now, code=code, reason=self._clean(reason))\n',
      "            pass\n"),

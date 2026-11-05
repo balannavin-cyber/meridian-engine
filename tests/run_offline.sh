@@ -183,8 +183,8 @@ echo "== 30/40 gamma prior-row read: raw selected, same-IST-session bound (S103 
 # TAPE_T0: the tape raw recorder (services/tape_runner) and the classification library (merdian_compute/tape):
 # 21 guards with fakes (no network, no credentials, no kiteconnect/boto3), then 37 mutants each of which must be
 # caught by its guard. Pure Python, no fixtures, no golden day. Appended AFTER step 30, never inside a pair (TD-S93-NEW-1).
-echo "== 31/40 tape T0 guards (21) + unit checks (docs/tape/T0_plan.md §8)"; python3 tests/test_tape_t0.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 32/40 tape T0 mutants (37, each must be caught)"; python3 tests/tape_mutants.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 31/40 tape T0 guards (22) + unit checks (docs/tape/T0_plan.md §8)"; python3 tests/test_tape_t0.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 32/40 tape T0 mutants (39, each must be caught)"; python3 tests/tape_mutants.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 # TAPE_T1A: the tape offline processor (services/tape_offline + merdian_compute/tape/{replay,minute}.py): 12 guards on
 # synthetic segment-days with planted answers (docs/tape/T1a_plan.md section 2) + 9 unit checks, then 15 mutants each of
 # which must be caught. Pure Python, generated fixtures under a temp dir, no golden day. The test refuses 08:30-15:45 IST

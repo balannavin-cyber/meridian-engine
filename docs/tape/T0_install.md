@@ -71,7 +71,8 @@ The smoke test prints, in order:
    `PutObject`, made with the runner's own parameters (ContentMD5, SSE-S3), so the key, bucket and region are proven
    today rather than at Monday's first upload. It never reads anything back (the key is write-only).
 2. `SMOKE profile OK`, then `RESOLVED …` per symbol.
-3. `subscription list size=148` (4 index/future tokens + 82 NIFTY + 62 SENSEX).
+3. `subscription list size=188` (4 index/future tokens + 82 NIFTY + 102 SENSEX; SENSEX ± 25 from 2026-11-06 —
+   148 with 62 SENSEX before).
 4. `connected=True subscribed=True packets=N`.
 5. One `CLOCK_SKEW` line per symbol.
 6. `SMOKE PASS` (exit 0).

@@ -1,0 +1,313 @@
+{
+ "note": "Rules v1 label vectors (docs/tape/tape_live_flow_vs_book_spec_v0.1.md s4). Ids 1-11 are the spec table; 12-17 were added in L0 to separate the order and evaluability mutants. Shared by the page and tests/test_tape_live.py.",
+ "rule_version": "v1",
+ "schema": "tape_live_label_vectors_v1",
+ "vectors": [
+  {
+   "expected": {
+    "label": "HIT",
+    "partial": false,
+    "reason": ""
+   },
+   "flags": {
+    "C": true,
+    "N": true,
+    "conc_evaluable": true,
+    "in_window": true,
+    "thin_evaluable": true,
+    "untraded": false,
+    "wall_known": true
+   },
+   "id": 1,
+   "source": "spec"
+  },
+  {
+   "expected": {
+    "label": "ABSORBED",
+    "partial": false,
+    "reason": ""
+   },
+   "flags": {
+    "C": true,
+    "N": false,
+    "conc_evaluable": true,
+    "in_window": true,
+    "thin_evaluable": true,
+    "untraded": false,
+    "wall_known": true
+   },
+   "id": 2,
+   "source": "spec"
+  },
+  {
+   "expected": {
+    "label": "THINNING",
+    "partial": false,
+    "reason": ""
+   },
+   "flags": {
+    "C": false,
+    "N": true,
+    "conc_evaluable": true,
+    "in_window": true,
+    "thin_evaluable": true,
+    "untraded": false,
+    "wall_known": true
+   },
+   "id": 3,
+   "source": "spec"
+  },
+  {
+   "expected": {
+    "label": "QUIET",
+    "partial": false,
+    "reason": ""
+   },
+   "flags": {
+    "C": false,
+    "N": false,
+    "conc_evaluable": true,
+    "in_window": true,
+    "thin_evaluable": true,
+    "untraded": false,
+    "wall_known": true
+   },
+   "id": 4,
+   "source": "spec"
+  },
+  {
+   "expected": {
+    "label": "NO_READ",
+    "partial": false,
+    "reason": "no chain run"
+   },
+   "flags": {
+    "C": true,
+    "N": true,
+    "conc_evaluable": true,
+    "in_window": true,
+    "thin_evaluable": true,
+    "untraded": false,
+    "wall_known": false
+   },
+   "id": 5,
+   "source": "spec"
+  },
+  {
+   "expected": {
+    "label": "NO_READ",
+    "partial": false,
+    "reason": "wall outside subscribed window"
+   },
+   "flags": {
+    "C": true,
+    "N": true,
+    "conc_evaluable": true,
+    "in_window": false,
+    "thin_evaluable": true,
+    "untraded": false,
+    "wall_known": true
+   },
+   "id": 6,
+   "source": "spec"
+  },
+  {
+   "expected": {
+    "label": "NO_READ",
+    "partial": false,
+    "reason": "untraded wall (vendor OI)"
+   },
+   "flags": {
+    "C": true,
+    "N": true,
+    "conc_evaluable": true,
+    "in_window": true,
+    "thin_evaluable": true,
+    "untraded": true,
+    "wall_known": true
+   },
+   "id": 7,
+   "source": "spec"
+  },
+  {
+   "expected": {
+    "label": "THINNING",
+    "partial": true,
+    "reason": "flow n/a"
+   },
+   "flags": {
+    "C": false,
+    "N": true,
+    "conc_evaluable": false,
+    "in_window": true,
+    "thin_evaluable": true,
+    "untraded": false,
+    "wall_known": true
+   },
+   "id": 8,
+   "source": "spec"
+  },
+  {
+   "expected": {
+    "label": "NO_READ",
+    "partial": false,
+    "reason": "flow not yet evaluable"
+   },
+   "flags": {
+    "C": false,
+    "N": false,
+    "conc_evaluable": false,
+    "in_window": true,
+    "thin_evaluable": true,
+    "untraded": false,
+    "wall_known": true
+   },
+   "id": 9,
+   "source": "spec"
+  },
+  {
+   "expected": {
+    "label": "NO_READ",
+    "partial": false,
+    "reason": "insufficient history"
+   },
+   "flags": {
+    "C": true,
+    "N": false,
+    "conc_evaluable": true,
+    "in_window": true,
+    "thin_evaluable": false,
+    "untraded": false,
+    "wall_known": true
+   },
+   "id": 10,
+   "source": "spec"
+  },
+  {
+   "expected": {
+    "label": "NO_READ",
+    "partial": false,
+    "reason": "insufficient history"
+   },
+   "flags": {
+    "C": false,
+    "N": false,
+    "conc_evaluable": false,
+    "in_window": true,
+    "thin_evaluable": false,
+    "untraded": false,
+    "wall_known": true
+   },
+   "id": 11,
+   "source": "spec"
+  },
+  {
+   "expected": {
+    "label": "NO_READ",
+    "partial": false,
+    "reason": "flow not yet evaluable"
+   },
+   "flags": {
+    "C": true,
+    "N": false,
+    "conc_evaluable": false,
+    "in_window": true,
+    "thin_evaluable": true,
+    "untraded": false,
+    "wall_known": true
+   },
+   "id": 12,
+   "source": "L0"
+  },
+  {
+   "expected": {
+    "label": "THINNING",
+    "partial": true,
+    "reason": "flow n/a"
+   },
+   "flags": {
+    "C": true,
+    "N": true,
+    "conc_evaluable": false,
+    "in_window": true,
+    "thin_evaluable": true,
+    "untraded": false,
+    "wall_known": true
+   },
+   "id": 13,
+   "source": "L0"
+  },
+  {
+   "expected": {
+    "label": "NO_READ",
+    "partial": false,
+    "reason": "insufficient history"
+   },
+   "flags": {
+    "C": true,
+    "N": true,
+    "conc_evaluable": false,
+    "in_window": true,
+    "thin_evaluable": false,
+    "untraded": false,
+    "wall_known": true
+   },
+   "id": 14,
+   "source": "L0"
+  },
+  {
+   "expected": {
+    "label": "NO_READ",
+    "partial": false,
+    "reason": "untraded wall (vendor OI)"
+   },
+   "flags": {
+    "C": false,
+    "N": false,
+    "conc_evaluable": false,
+    "in_window": true,
+    "thin_evaluable": false,
+    "untraded": true,
+    "wall_known": true
+   },
+   "id": 15,
+   "source": "L0"
+  },
+  {
+   "expected": {
+    "label": "NO_READ",
+    "partial": false,
+    "reason": "wall outside subscribed window"
+   },
+   "flags": {
+    "C": true,
+    "N": true,
+    "conc_evaluable": true,
+    "in_window": false,
+    "thin_evaluable": true,
+    "untraded": true,
+    "wall_known": true
+   },
+   "id": 16,
+   "source": "L0"
+  },
+  {
+   "expected": {
+    "label": "NO_READ",
+    "partial": false,
+    "reason": "no chain run"
+   },
+   "flags": {
+    "C": true,
+    "N": true,
+    "conc_evaluable": true,
+    "in_window": false,
+    "thin_evaluable": true,
+    "untraded": true,
+    "wall_known": false
+   },
+   "id": 17,
+   "source": "L0"
+  }
+ ]
+}

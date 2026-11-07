@@ -288,3 +288,13 @@ No page, S3 poller, Supabase client, production install, or market-hours run (L1
   t3.small it may exceed one. Options for L2 (not built): extend the token map in place (needs a `replay.py` change and its own
   equality guard) or label from the pre-rebuild state for that one cycle. Per-cycle cost and ~450 MB peak are measured here, not on
   the production box.
+
+## 11. Addendum 2026-11-07: snapshot ts width (built on Sonnet; plan `docs/tape/L0_ts_width_plan.md`)
+
+- Defect: Postgres trims trailing zeros from `timestamptz`, so a `gex_strike_snapshots` ts has a 1-6 digit fraction; Python 3.10
+  `fromisoformat` takes only 0, 3 or 6. The box's 11-06 replay exited 2 in `chain_events.parse_ts`. Fixed at the writer boundary:
+  `wall_source.norm_snapshot_ts` + `wall_source.build_runs` (the only call of `chain_events.build_runs` in `services/tape_live/`).
+  Strict grammar `YYYY-MM-DDTHH:MM:SS[.f]+HH:MM`; pads right to 6, never truncates; a fraction wider than 6 raises.
+- Guard `live-ts-width` (13th) fails on Python 3.12 against the unfixed code (cell 2, width 5 reached `build_runs`). Mutants
+  `M-L-TS-NOT-NORMALISED`, `M-L-TS-TRUNCATES`: suite now 13 guards, 24 mutants; `run_offline.sh` stays at 42 steps.
+- **Not verified on Python 3.10** (only the box has it). The operator's re-run of the 11-06 replay on the box is the first 3.10 check.

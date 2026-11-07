@@ -9,7 +9,7 @@ which must PASS (exit 0).
   python tests/tape_live_mutants.py [--repeat N] [--only M-L-...]
   (Local, inside 08:30-15:45 IST on a weekday: set TAPE_RULE23_OVERRIDE_R1=1, operator ruling R-1, 2026-11-03)
 
-Last line: "TAPE LIVE MUTANTS PASS (22/22 caught xN, 12/12 controls xN)" or FAIL. Exit 0 / 1.
+Last line: "TAPE LIVE MUTANTS PASS (24/24 caught xN, 13/13 controls xN)" or FAIL. Exit 0 / 1.
 """
 import argparse
 import os
@@ -62,6 +62,9 @@ M = [
     ("M-L-IMPORTS-SUPABASE", "live-isolated", CLI, "def code_info():\n",
      "def code_info():\n    if False:\n        import supabase  # noqa: F401\n"),
     ("M-L-SQL-ANON-GRANT", "live-sql", SQL, GRANT_L, GRANT_L + "GRANT SELECT ON public.tape_live_label TO anon;\n"),
+    ("M-L-TS-NOT-NORMALISED", "live-ts-width", WS, '    return "%s.%s%s" % (m.group(1), frac.ljust(6, "0"), m.group(3))\n',
+     "    return s\n"),
+    ("M-L-TS-TRUNCATES", "live-ts-width", WS, 'frac.ljust(6, "0")', 'frac[:3].ljust(3, "0")'),
 ]
 
 

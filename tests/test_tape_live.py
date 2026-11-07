@@ -10,7 +10,7 @@ Rule 23 (CLAUDE.md): refuses an unlimited `ulimit -v` where the `resource` modul
 OPERATOR RULING R-1 (2026-11-03): the time-window refusal is a retail-box rule; this machine is Local. The window is lifted ONLY
 when TAPE_RULE23_OVERRIDE_R1=1 is set, and every such run says so on its first line.
 
-Last line: "TAPE LIVE GUARDS PASS (12/12)" or "TAPE LIVE GUARDS FAIL (...)". Exit 0 / 1; 2 = refused.
+Last line: "TAPE LIVE GUARDS PASS (13/13)" or "TAPE LIVE GUARDS FAIL (...)". Exit 0 / 1; 2 = refused.
 """
 import argparse
 import ast
@@ -653,10 +653,145 @@ def g_sql():
     return not bad, "; ".join(bad) or "4 tables, RLS, 2 SELECT policies each, no anon grant, columns from tape_schema"
 
 
+# ------------------------------------------------------------------------------------------- snapshot ts width
+# Python 3.10 fromisoformat accepts a fraction of 0, 3 or 6 digits only; Postgres trims trailing zeros, so a gex_strike_snapshots
+# ts arrives with 1-6. The property asserted here is about the STRINGS handed to chain_events.build_runs, so it fails on 3.12 too.
+TSW_STRIKES = ("23500.0", "23550.0", "23600.0")
+TSW = [   # UTC h, m, s | fraction text as planted | that fraction in microseconds (chosen, not derived) | oi_call | oi_put
+    (3, 10, 6, "43966", 439660, (100, 300, 200), (500, 100, 150)),       # the string that failed on the box (width 5)
+    (4, 30, 21, None, 0, (100, 200, 400), (50, 600, 150)),               # width 0, must pass through byte-identical
+    (4, 35, 21, "5", 500000, (900, 200, 400), (50, 60, 700)),            # 1
+    (4, 40, 21, "25", 250000, (100, 800, 400), (650, 60, 70)),           # 2
+    (4, 45, 21, "125", 125000, (100, 200, 1000), (50, 660, 70)),         # 3
+    (4, 50, 21, "4396", 439600, (1100, 200, 400), (50, 60, 670)),        # 4: stored .439600, trailing zeros dropped
+    (4, 55, 21, "43966", 439660, (100, 1200, 400), (680, 60, 70)),       # 5
+    (5, 0, 21, "439660", 439660, (100, 200, 1300), (50, 690, 70))]       # 6
+# Hand-computed from the table above (argmax of each OI column, strikes in the order TSW_STRIKES; the back-expiry row is ignored):
+# grid HH:MM -> (run time IST hh:mm:ss, call wall, its oi_call, put wall, its oi_put); None = no run yet
+TSW_WALLS = {"08:35": None, "08:40": ("08:40:06", "23550", "300", "23500", "500"),
+             "10:00": ("10:00:21", "23600", "400", "23550", "600"), "10:02": ("10:00:21", "23600", "400", "23550", "600"),
+             "10:05": ("10:05:21", "23500", "900", "23600", "700"), "10:10": ("10:10:21", "23550", "800", "23500", "650"),
+             "10:15": ("10:15:21", "23600", "1000", "23550", "660"), "10:20": ("10:20:21", "23500", "1100", "23600", "670"),
+             "10:25": ("10:25:21", "23550", "1200", "23500", "680"), "10:30": ("10:30:21", "23600", "1300", "23550", "690")}
+TSW_TS_RE = re.compile(r"^2026-11-06T(\d\d):(\d\d):(\d\d)(?:\.(\d+))?\+00:00$")
+
+
+def _tsw_csv(name, ts_list_rows):
+    d = os.path.join(_TMP, "tsw")
+    os.makedirs(d, exist_ok=True)
+    p = os.path.join(d, name)
+    with open(p, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("run_id,symbol,ts,expiry_date,strike,oi_call,oi_put,gex_cr\n")
+        for r in ts_list_rows:
+            fh.write(",".join(r) + "\n")
+    return p
+
+
+def _tsw_rows(ts_of_run):
+    rows = []
+    for i, (_h, _m, _s, _f, _us, calls, puts) in enumerate(TSW):
+        ts_ = ts_of_run(i)
+        for k, oc, op in zip(TSW_STRIKES, calls, puts):
+            rows.append(["run%d" % i, "NIFTY", ts_, "2026-11-10", k, str(oc), str(op), "0.100000"])
+        rows.append(["run%d" % i, "NIFTY", ts_, "2026-11-17", TSW_STRIKES[1], "9000000", "9100000", "0.500000"])   # back expiry
+    return rows
+
+
+def g_ts_width():
+    ws = mods()[4]
+    bad = []
+    planted = [("2026-11-06T%02d:%02d:%02d%s+00:00" % (h, m, s, "" if f is None else "." + f)) for h, m, s, f, _u, _c, _p in TSW]
+    want_us = [((h * 60 + m) * 60 + s) * 1000000 + u for h, m, s, _f, u, _c, _p in TSW]
+    p = _tsw_csv("planted.csv", _tsw_rows(lambda i: planted[i]))
+    seen = []
+    orig = chain_events.build_runs
+
+    def spy(rows, day=None):
+        rows = list(rows)
+        seen.extend(r["ts"] for r in rows)
+        return orig(rows, day)
+
+    chain_events.build_runs = spy
+    try:
+        runs = ws.runs_from_snapshot_csv([p], DAY)
+    finally:
+        chain_events.build_runs = orig
+    # 1 the rows really went through chain_events.build_runs (8 runs x (3 front strikes + 1 back-expiry row))
+    if len(seen) != 32:
+        bad.append("cell1: build_runs saw %d rows, expected exactly 32" % len(seen))
+    # 2 width is a property of the string, not of the interpreter
+    for s in seen:
+        m = re.search(r"\.(\d+)", s)
+        w = 0 if m is None else len(m.group(1))
+        if w not in (0, 3, 6):
+            bad.append("cell2: ts %r reached build_runs with fraction width %d" % (s, w))
+            break
+    # 3 same instant, from the generator's integers (a test-local integer reader; no datetime, no code under test)
+    for j, s in enumerate(seen[:32]):
+        m = TSW_TS_RE.match(s)
+        if m is None:
+            bad.append("cell3: ts %r no longer has the planted shape" % s)
+            break
+        f = m.group(4) or ""
+        us = ((int(m.group(1)) * 60 + int(m.group(2))) * 60 + int(m.group(3))) * 1000000 + (int(f) * 10 ** (6 - len(f)) if f else 0)
+        if us != want_us[j // 4]:
+            bad.append("cell3: row %d ts %r is %d us, the planted instant is %d us" % (j, s, us, want_us[j // 4]))
+            break
+    # 4 a ts with no fraction passes through byte-identical
+    if 4 < len(seen) and seen[4:8] != [planted[1]] * 4:
+        bad.append("cell4: the no-fraction ts did not pass through unchanged: %r" % seen[4:8])
+    # 5 runs, walls and wall OI equal the hand-computed table
+    for hhmm, want in TSW_WALLS.items():
+        w = ws.wall_row(runs.get("NIFTY", []), DAY, hhmm)
+        got = None if w is None else (w["chain_run_ts"][11:19], w["call_wall"], w["call_wall_oi_call"], w["put_wall"],
+                                      w["put_wall_oi_put"])
+        if got != want:
+            bad.append("cell5: %s got %r want %r" % (hhmm, got, want))
+    if len(runs.get("NIFTY", [])) != 8:
+        bad.append("cell5: %d runs, expected 8" % len(runs.get("NIFTY", [])))
+    # 6 a fraction wider than 6 raises (never rounds); the strict grammar rejects forms never seen in the exports
+    p7 = _tsw_csv("wide.csv", _tsw_rows(lambda i: "2026-11-06T03:10:06.4396601+00:00" if i == 0 else planted[i]))
+    try:
+        ws.runs_from_snapshot_csv([p7], DAY)
+        bad.append("cell6: a 7-digit fraction did not raise")
+    except ValueError as exc:
+        if "wider than 6" not in str(exc):
+            bad.append("cell6: ValueError without 'wider than 6': %s" % exc)
+    norm = getattr(ws, "norm_snapshot_ts", None)
+    if norm is None:
+        bad.append("cell6: wall_source.norm_snapshot_ts does not exist")
+    else:
+        for s in ("2026-11-06T03:10:06.43966Z", "2026-11-06T03:10:06.43966+00", "2026-11-06 03:10:06.43966+00:00",
+                  " 2026-11-06T03:10:06+00:00"):
+            try:
+                norm(s)
+                bad.append("cell6: %r did not raise" % s)
+            except ValueError:
+                pass
+    # 7 one entry point: the only reference to chain_events.build_runs in services/tape_live is inside wall_source.build_runs
+    refs = []
+    for path in _live_py():
+        with open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        owner = {}
+        for fn in ast.walk(tree):
+            if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for n in ast.walk(fn):
+                    owner[id(n)] = fn.name
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Attribute) and n.attr == "build_runs" and isinstance(n.value, ast.Name) \
+                    and n.value.id == "chain_events":
+                refs.append((os.path.basename(path), owner.get(id(n), "<module>")))
+    if refs != [("wall_source.py", "build_runs")]:
+        bad.append("cell7: chain_events.build_runs referenced at %r, expected only wall_source.py build_runs" % (refs,))
+    return not bad, "; ".join(bad[:6]) or "widths 0-6 -> {0,3,6}, same instants, hand-computed walls + OI, 7 digits raise, one entry point"
+
+
 GUARDS = [("live-vectors", g_vectors), ("live-derive", g_derive), ("live-rule-inputs", g_rule_inputs),
           ("live-wall-floor", g_wall_floor), ("live-first-wins", g_first_wins), ("live-equal-offline", g_equal_offline),
           ("live-causal", g_causal), ("live-verify", g_verify), ("live-deterministic", g_deterministic),
-          ("live-no-outcomes", g_no_outcomes), ("live-isolated", g_isolated), ("live-sql", g_sql)]
+          ("live-no-outcomes", g_no_outcomes), ("live-isolated", g_isolated), ("live-sql", g_sql),
+          ("live-ts-width", g_ts_width)]
 
 
 def main():

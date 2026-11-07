@@ -10,16 +10,49 @@ wall and the scored wall cannot be defined twice.
       runs_from_chain_runs_csv: the final chain_runs.csv of the offline chain step (walls only; verify_day uses it).
   L2  one SELECT on gex_strike_snapshots, front expiry, behind the same function shape (not built).
 
+Timestamp width (docs/tape/L0_ts_width_plan.md). Postgres drops trailing zeros from a timestamptz, so a snapshot ts arrives with a
+fraction of 0 to 6 digits; Python 3.10 fromisoformat accepts only 0, 3 or 6 (3.11+ accept all). chain_events.parse_ts is shared with
+the scoring chain and is not edited here: every snapshot row goes through norm_snapshot_ts first, via the one build_runs below,
+which is the ONLY call of chain_events.build_runs in services/tape_live/ (asserted by guard live-ts-width). A later live reader
+(L2) builds its rows and calls this build_runs, so it inherits the normaliser.
+
 Grid rule (the scorer's reconciliation): the run used for grid point T is the latest run whose timestamp, floored to the
 5-minute grid, is <= T.
 """
 import csv
+import re
 
 from merdian_compute.tape import chain_events
+
+# The only shape seen in 130,954 exported values (2026-11-02..06): T separator, UTC offset written +00:00, fraction optional.
+# Anything else (Z, +00, a space separator, surrounding whitespace) is refused: it would crash Python 3.10 or hide a new wire.
+SNAP_TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?([+-]\d{2}:\d{2})$")
 
 
 def _k(v):
     return "" if v is None else chain_events._k(v)
+
+
+def norm_snapshot_ts(s):
+    """One gex_strike_snapshots ts -> the same instant with a fraction of 0 or 6 digits.
+
+    Pads the fraction on the right with zeros (.4396 -> .439600); never truncates, never rounds. Pure string work, so the
+    result does not depend on the interpreter. Raises ValueError on a fraction wider than 6 digits and on any other shape.
+    """
+    m = SNAP_TS_RE.match(s)
+    if m is None:
+        raise ValueError("snapshot ts %r: not YYYY-MM-DDTHH:MM:SS[.f]+HH:MM" % (s,))
+    frac = m.group(2)
+    if frac is None:
+        return s
+    if len(frac) > 6:
+        raise ValueError("snapshot ts %r: fraction wider than 6 digits (never rounded)" % (s,))
+    return "%s.%s%s" % (m.group(1), frac.ljust(6, "0"), m.group(3))
+
+
+def build_runs(rows, day):
+    """The ONLY call of chain_events.build_runs in services/tape_live/: normalises every row's ts first. -> (by symbol, counters)."""
+    return chain_events.build_runs([dict(r, ts=norm_snapshot_ts(r["ts"])) for r in rows], day)
 
 
 def runs_from_snapshot_csv(paths, day):
@@ -28,7 +61,7 @@ def runs_from_snapshot_csv(paths, day):
     for p in paths:
         with open(p, encoding="utf-8", newline="") as fh:
             rows += list(csv.DictReader(fh))
-    by_sym, _cnt = chain_events.build_runs(rows, day)
+    by_sym, _cnt = build_runs(rows, day)
     out = {}
     for sym in sorted(by_sym):
         lst = []

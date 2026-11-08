@@ -216,7 +216,7 @@ echo "== 40/42 tape scoring mutants (40 x5, each must be caught)"; python3 tests
 # 13 guards on a generated segment day + chain export with planted labels, then 24 mutants x5 each with its control. No database, no
 # network, no .env, no golden day. The real-day byte gate (tests/tape_live_equal_offline.py) reads recorded days and is NOT a step here.
 # Same rule-23 refusal as T1b; Local-only override TAPE_RULE23_OVERRIDE_R1=1 (ruling R-1). Appended AFTER step 40.
-echo "== 41/42 tape live L0 guards (13) (docs/tape/L0_plan.md, L0_ts_width_plan.md)"; python3 tests/test_tape_live.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 42/42 tape live L0 mutants (24 x5, each must be caught)"; python3 tests/tape_live_mutants.py --repeat 5 | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 41/42 tape live L0 guards (14) (docs/tape/L0_plan.md, L0_ts_width_plan.md, L2_rebuild_scope_plan.md)"; python3 tests/test_tape_live.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 42/42 tape live L0 mutants (28 x5, each must be caught)"; python3 tests/tape_live_mutants.py --repeat 5 | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 echo "OFFLINE $([ $rc -eq 0 ] && echo PASS || echo FAIL)"
 exit $rc

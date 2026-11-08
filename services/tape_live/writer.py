@@ -11,7 +11,10 @@ Processing (plan decision 1, option B with a rebuild path):
   * T1b is re-run on the day so far through the same CSV string round trip as cycle_day (minute.render_csv ->
     csv.DictReader -> cycle.build_cycle -> events.candidates); cycle rows are kept for T' <= T and events for ts_ist <= T.
   * REBUILD (the batch path, once) when a segment arrives that sorts before the last one fed for its symbol (a late segment
-    or a collision variant of a closed group), or when a new subscriptions file changes the token map.
+    or a collision variant of a closed group): that symbol, at once. Or when a new subscriptions file changes the token map:
+    ruling R-F step one (docs/tape/L2_rebuild_scope_plan.md), ONLY the symbols whose own filtered map changed (the map
+    SymbolReplay keeps, replay.py:171), at the start of the next cycle; a dirty symbol's segments are absorbed until then, so a
+    symbol dirty from both triggers in one cycle is rebuilt once.
 Outputs per cycle: upserts and deletes against the previously emitted state (so a provisional row or event that later
 changes or disappears is corrected), the wall rows, and labels. Labels are insert-only, first label wins (spec s3).
 """
@@ -114,7 +117,7 @@ class LiveDay:
         self.subs, self.meta, self.conflicts, self.added = [], {}, [], {}
         self.known = {s: [] for s in SYMBOLS}
         self.rp, self.cur, self.last = {}, {}, {}
-        self.dirty = None
+        self.dirty = {}                    # {symbol: why}: rebuilt at the start of the next cycle
         self.bad_files, self.rebuilds, self.late = [], [], []
         self.state_c, self.state_e = {}, {}
         self.labels, self.walls = {}, {}
@@ -125,9 +128,15 @@ class LiveDay:
         meta, self.conflicts = replay.build_token_map(self.subs)
         self.added = added_minutes(self.subs)
         if meta != self.meta:
-            self.meta = meta
-            if self.rp:
-                self.dirty = {"trigger": "subscriptions", "at": at, "file": name}
+            old, self.meta = self.meta, meta
+            for sym in SYMBOLS:
+                if sym in self.rp and self._filtered(meta, sym) != self._filtered(old, sym):
+                    self.dirty[sym] = {"trigger": "subscriptions", "at": at, "file": name}
+
+    def _filtered(self, meta, sym):
+        """The token map a replay of sym keeps: read off SymbolReplay itself (replay.py:171), never a second copy of the filter.
+        Equal filtered maps <=> a rebuild would give an identical replay (strikes and sidx derive from it)."""
+        return replay.SymbolReplay(sym, self.day, meta, self.win).meta
 
     def add_segment(self, sym, name, at):
         """at: the cycle minute at which the segment became available."""
@@ -138,8 +147,7 @@ class LiveDay:
         if at > hhmm_min + 5:
             self.late.append({"symbol": sym, "segment": name, "hhmm": "%s:%s" % (key[0][:2], key[0][2:]), "arrived": at})
         self.known[sym].append(name)
-        if self.dirty:
-            self._rebuild_all()
+        if sym in self.dirty:
             return
         if sym in self.last and (key, name) < self.last[sym]:
             self._rebuild_sym(sym, {"trigger": "late_segment", "at": at, "file": "%s/%s" % (sym, name)})
@@ -176,11 +184,11 @@ class LiveDay:
         for name in replay.order_segments(self.known[sym]):
             self._feed(sym, name)
 
-    def _rebuild_all(self):
-        why, self.dirty = self.dirty, None
+    def _rebuild_dirty(self):
+        dirty, self.dirty = self.dirty, {}
         for sym in SYMBOLS:
-            if self.known[sym]:
-                self._rebuild_sym(sym, why)
+            if sym in dirty:
+                self._rebuild_sym(sym, dirty[sym])
 
     # -- labels ----------------------------------------------------------------------------------------
     def load_labels(self, rows):
@@ -197,7 +205,7 @@ class LiveDay:
         """tm: grid minute of this cycle (labels only for GRID_FIRST <= tm <= GRID_LAST), or None for the final cycle (no
         truncation, no labels). walls: {symbol: wall row or None} from wall_source. Returns the two delta texts (or None)."""
         if self.dirty:
-            self._rebuild_all()
+            self._rebuild_dirty()
         rows = []
         for sym in SYMBOLS:
             if sym in self.rp:

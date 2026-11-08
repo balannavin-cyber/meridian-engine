@@ -62,6 +62,14 @@ TOKENS = [
     (20290, "SENSEX", "FUT", None, None, "08:55", "08:56"),
 ]
 LATE_TOKEN = (10107, "NIFTY", "OPT", 23650, "CE", "11:33", "11:34")
+# Rebuild-scope day only (build(root, scope=True), docs/tape/L2_rebuild_scope_plan.md section 4).
+SCOPE_TOKENS = [(20205, "SENSEX", "OPT", 77200, "CE", "12:03", "12:04"),
+                (10108, "NIFTY", "OPT", 23750, "CE", "12:33", "12:34"),
+                (20206, "SENSEX", "OPT", 77200, "PE", "12:33", "12:34"),
+                (20207, "SENSEX", "OPT", 77300, "CE", "14:03", "14:04")]
+SCOPE_META_TOKEN = 20203                      # its tradingsymbol differs in the late-arriving, earlier-sorting 085500 file
+# arrivals: the 085500 file at 13:35 (case e); SENSEX seg_1350 at 14:05, after seg_1355 (case f)
+SCOPE_ARRIVAL = {"session/subscriptions_085500.json": "13:35", "SENSEX/seg_1350.ndjson.gz": "14:05"}
 UNTRADED = {20204}
 BURST = {10103: range(655, 665), 10102: range(715, 725)}          # minutes with 40 lots
 ASK_DROP = {10103: (661, 662), 10102: (841, 842)}
@@ -137,11 +145,11 @@ def dumps(rec):
     return json.dumps(rec, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
 
-def write_raw(root):
+def write_raw(root, scope=False):
     base = os.path.join(root, "raw", DAY)
     segs = {}
     first_ctl = {"NIFTY": False, "SENSEX": False}
-    for tok in TOKENS + [LATE_TOKEN]:
+    for tok in TOKENS + [LATE_TOKEN] + (SCOPE_TOKENS if scope else []):
         for rec in packets(tok):
             ns = rec["recv_ns"]
             slot = int((ns // 1000000000 - epoch(0, 0)) // 300) * 5
@@ -158,8 +166,11 @@ def write_raw(root):
             fh.write(gzip.compress(b"".join(l + b"\n" for _, l in lines), mtime=0))
     sd = os.path.join(base, "session", DAY)
     os.makedirs(sd, exist_ok=True)
-    for name, toks in (("subscriptions_085501.json", TOKENS), ("subscriptions_113300.json", TOKENS + [LATE_TOKEN])):
-        doc = {"day": DAY, "n": len(toks), "tokens": [meta_row(t) for t in toks]}
+    files = [("subscriptions_085501.json", TOKENS), ("subscriptions_113300.json", TOKENS + [LATE_TOKEN])]
+    if scope:
+        files += scope_sub_files()
+    for name, toks in files:
+        doc = {"day": DAY, "n": len(toks), "tokens": [t if isinstance(t, dict) else meta_row(t) for t in toks]}
         with open(os.path.join(sd, name), "w", encoding="utf-8", newline="\n") as fh:
             fh.write(json.dumps(doc, indent=1, sort_keys=True) + "\n")
     return base
@@ -243,8 +254,22 @@ LATE_LABEL = (("NIFTY", "11:05", "call"), ("QUIET", False, ""))
 WALL_CHANGE = ("NIFTY", "11:10", "call_wall", "23600", ("NIFTY", "11:10", "call"))
 
 
-def build(root):
-    raw = write_raw(root)
+def scope_sub_files():
+    """The scope day's extra subscription files (docs/tape/L2_rebuild_scope_plan.md section 4), cumulative like the recorder."""
+    base = TOKENS + [LATE_TOKEN]
+    s1, n2, s2, s3 = SCOPE_TOKENS
+    meta_chg = dict(meta_row(next(t for t in TOKENS if t[0] == SCOPE_META_TOKEN)))
+    meta_chg["tradingsymbol"] += "X"
+    return [("subscriptions_120300.json", base + [s1]),                 # case a: SENSEX only
+            ("subscriptions_123300.json", base + [s1, n2, s2]),         # case c: both
+            ("subscriptions_130300.json", base + [s1, n2, s2]),         # case d: nothing new
+            ("subscriptions_085500.json", [meta_chg]),                  # case e: sorts first, arrives late
+            ("subscriptions_140300.json", base + [s1, n2, s2, s3])]     # case f: SENSEX, with a late SENSEX segment
+
+
+def build(root, scope=False):
+    """scope=True: the rebuild-scope day (live-rebuild-scope guard); the default day is byte-unchanged."""
+    raw = write_raw(root, scope)
     chain = write_chain(root)
     return {"raw": raw, "chain": chain, "day": DAY}
 

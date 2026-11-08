@@ -9,7 +9,7 @@ which must PASS (exit 0).
   python tests/tape_live_mutants.py [--repeat N] [--only M-L-...]
   (Local, inside 08:30-15:45 IST on a weekday: set TAPE_RULE23_OVERRIDE_R1=1, operator ruling R-1, 2026-11-03)
 
-Last line: "TAPE LIVE MUTANTS PASS (24/24 caught xN, 13/13 controls xN)" or FAIL. Exit 0 / 1.
+Last line: "TAPE LIVE MUTANTS PASS (28/28 caught xN, 14/14 controls xN)" or FAIL. Exit 0 / 1.
 """
 import argparse
 import os
@@ -65,6 +65,17 @@ M = [
     ("M-L-TS-NOT-NORMALISED", "live-ts-width", WS, '    return "%s.%s%s" % (m.group(1), frac.ljust(6, "0"), m.group(3))\n',
      "    return s\n"),
     ("M-L-TS-TRUNCATES", "live-ts-width", WS, 'frac.ljust(6, "0")', 'frac[:3].ljust(3, "0")'),
+    # R-F step one (docs/tape/L2_rebuild_scope_plan.md section 4)
+    ("M-L-REBUILD-BOTH", "live-rebuild-scope", W,
+     "            if sym in self.rp and self._filtered(meta, sym) != self._filtered(old, sym):\n",
+     "            if sym in self.rp:\n"),
+    ("M-L-REBUILD-NONE", "live-rebuild-scope", W,
+     '                self.dirty[sym] = {"trigger": "subscriptions", "at": at, "file": name}\n', "                pass\n"),
+    ("M-L-FILTER-FULL-MAP", "live-rebuild-scope", W,
+     "        return replay.SymbolReplay(sym, self.day, meta, self.win).meta\n", "        return meta\n"),
+    ("M-L-DIRTY-REBUILDS-AT-SEGMENT", "live-rebuild-scope", W,
+     "        if sym in self.dirty:\n            return\n",
+     "        if sym in self.dirty:\n            self._rebuild_dirty()\n            return\n"),
 ]
 
 

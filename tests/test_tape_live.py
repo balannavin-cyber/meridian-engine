@@ -10,7 +10,7 @@ Rule 23 (CLAUDE.md): refuses an unlimited `ulimit -v` where the `resource` modul
 OPERATOR RULING R-1 (2026-11-03): the time-window refusal is a retail-box rule; this machine is Local. The window is lifted ONLY
 when TAPE_RULE23_OVERRIDE_R1=1 is set, and every such run says so on its first line.
 
-Last line: "TAPE LIVE GUARDS PASS (13/13)" or "TAPE LIVE GUARDS FAIL (...)". Exit 0 / 1; 2 = refused.
+Last line: "TAPE LIVE GUARDS PASS (14/14)" or "TAPE LIVE GUARDS FAIL (...)". Exit 0 / 1; 2 = refused.
 """
 import argparse
 import ast
@@ -787,11 +787,123 @@ def g_ts_width():
     return not bad, "; ".join(bad[:6]) or "widths 0-6 -> {0,3,6}, same instants, hand-computed walls + OI, 7 digits raise, one entry point"
 
 
+# --------------------------------------------------------------------- R-F step one (docs/tape/L2_rebuild_scope_plan.md section 4)
+# The rebuilds the scope day must produce, as (trigger, at minute, symbol), written by hand from the plan table -- never by running
+# the writer. 695 = 11:35 (b: NIFTY only), 725 = 12:05 (a: SENSEX only), 755 = 12:35 (c: both, once each), 785 = 13:05 (d: no
+# change, no entry), 815 = 13:35 (e: one SENSEX token's metadata), 845 = 14:05 (f: SENSEX subscriptions + a late SENSEX segment).
+SCOPE_REBUILDS = [("subscriptions", 695, "NIFTY"), ("subscriptions", 725, "SENSEX"), ("subscriptions", 755, "NIFTY"),
+                  ("subscriptions", 755, "SENSEX"), ("subscriptions", 815, "SENSEX"), ("subscriptions", 845, "SENSEX")]
+# The default fixture's raw + chain files, (file count, digest of the sorted "relpath sha256" lines), measured on the generator at
+# 276e221 BEFORE the scope variant was added: the scope variant must leave the default day byte-unchanged.
+DEFAULT_FIXTURE = (164, "d9335e6b784af9e7c5eea965dff1a0dd028b475d0fa951cda46b3fa371888c55")
+
+
+def _tree_digest(root):
+    items = sorted((os.path.relpath(os.path.join(dp, n), root).replace(os.sep, "/"), sha(os.path.join(dp, n)))
+                   for sub in ("raw", "chain") for dp, _ds, ns in os.walk(os.path.join(root, sub)) for n in ns)
+    return len(items), hashlib.sha256("".join("%s %s\n" % i for i in items).encode("utf-8")).hexdigest()
+
+
+def scope_fixture():
+    if "scope" not in _CACHE:
+        root = os.path.join(_TMP, "scope")
+        f = gen_live.build(root, scope=True)
+        from services.tape_offline import cycle_day, process_day
+        out, cyc = os.path.join(root, "batch_out"), os.path.join(root, "batch_cyc")
+        rc1, log1 = quiet(process_day.main, [f["raw"], "--day", DAY, "--out", out])
+        rc2, log2 = quiet(cycle_day.main, ["--in", out, "--session", os.path.join(f["raw"], "session"), "--out", cyc])
+        if rc1 != 0 or rc2 != 0:
+            raise AssertionError("scope batch failed: %s %s\n%s\n%s" % (rc1, rc2, log1[-2000:], log2[-2000:]))
+        f.update(cyc=cyc)
+        _CACHE["scope"] = f
+    return _CACHE["scope"]
+
+
+def _scope_inprocess(f, swap):
+    """Drive LiveDay as cli replay does (same events, same order, same grid), except that with swap=True the two SENSEX segments
+    available at 14:05 are added in the order seg_1400, seg_1350 -- the order cli's sort can never produce."""
+    import gzip
+    cli, writer = mods()[0], mods()[5]
+    segs, subs, _files = cli.plan_inputs(f["raw"], DAY, dict(gen_live.SCOPE_ARRIVAL))
+    segs.sort(key=lambda e: (e[0], e[1], e[2], e[3]))
+    subs.sort(key=lambda e: (e[0], e[1]))
+    if swap:
+        i = next(k for k, e in enumerate(segs) if e[4] == "SENSEX" and e[3] == "seg_1350.ndjson.gz")
+        j = next(k for k, e in enumerate(segs) if e[4] == "SENSEX" and e[3] == "seg_1400.ndjson.gz")
+        if not (segs[i][0] == segs[j][0] == 845 and i < j):
+            raise AssertionError("scope day: seg_1350 / seg_1400 not both available at 14:05 in that order")
+        segs[i], segs[j] = segs[j], segs[i]
+
+    def reader(sym, name):
+        with gzip.open(os.path.join(f["raw"], sym, DAY, name), "rb") as fh:
+            for line in fh:
+                yield line
+
+    w = cli.special.special_window(DAY, None)
+    ld = writer.LiveDay(DAY, reader, (w["open"], w["close"]) if w else None)
+    grid = sorted(set(range(min(e[0] for e in segs + subs), max(e[0] for e in segs + subs) + 1, 5))
+                  | set(range(writer.GRID_FIRST, writer.GRID_LAST + 1, 5)))
+    si = ui = 0
+    for t in grid:
+        while ui < len(subs) and subs[ui][0] <= t:
+            ld.add_subscriptions(subs[ui][2], subs[ui][3], t)
+            ui += 1
+        while si < len(segs) and segs[si][0] <= t:
+            ld.add_segment(segs[si][4], segs[si][3], t)
+            si += 1
+        if t >= writer.GRID_FIRST:
+            ld.cycle(t, {}, "")
+    ld.cycle(None, {}, "")
+    return ld
+
+
+def g_rebuild_scope():
+    bad = []
+    ctl_root = os.path.join(_TMP, "scope_ctl")
+    gen_live.build(ctl_root)
+    if _tree_digest(ctl_root) != DEFAULT_FIXTURE:
+        bad.append("control: default fixture changed %r != %r" % (_tree_digest(ctl_root), DEFAULT_FIXTURE))
+    f = scope_fixture()
+    want_c = rd(os.path.join(f["cyc"], "tape_strike_cycle.csv"))
+    want_e = rd(os.path.join(f["cyc"], "tape_events.csv"))
+    cli = mods()[0]
+    d = os.path.join(_TMP, "rp_scope")
+    argv = ["replay", "--day", DAY, "--raw", f["raw"], "--out", d, "--arrival", arrival_file("scope", gen_live.SCOPE_ARRIVAL)]
+    for p in f["chain"]:
+        argv += ["--chain-runs", p]
+    rc, log = quiet(cli.main, argv)
+    if rc != 0:
+        raise AssertionError("scope replay rc=%s\n%s" % (rc, log[-3000:]))
+    with open(os.path.join(d, "run_manifest.json"), encoding="utf-8") as fh:
+        man = json.load(fh)
+    got = [(r["trigger"], r["at"], r["symbol"]) for r in man["rebuilds"]]
+    if got != SCOPE_REBUILDS:
+        bad.append("(1) rebuilds %s != expected %s" % (got, SCOPE_REBUILDS))
+    lates = [x["symbol"] + "/" + x["segment"] for x in man["late_segments"]]
+    if lates != ["SENSEX/seg_1350.ndjson.gz"]:
+        bad.append("(1) late_segments %r != ['SENSEX/seg_1350.ndjson.gz']" % lates)
+    if rd(os.path.join(d, "tape_live_cycle.csv")) != want_c:
+        bad.append("(2) tape_live_cycle.csv != batch")
+    if rd(os.path.join(d, "tape_live_events.csv")) != want_e:
+        bad.append("(2) tape_live_events.csv != batch")
+    rc_, re_ = _reconstruct(d)
+    if rc_.encode("utf-8") != want_c or re_.encode("utf-8") != want_e:
+        bad.append("(2) state rebuilt from the per-cycle deltas != batch")
+    ld = _scope_inprocess(f, swap=True)
+    got2 = [(r["trigger"], r["at"], r["symbol"]) for r in ld.rebuilds if r["at"] == 845]
+    if got2 != [("subscriptions", 845, "SENSEX")]:
+        bad.append("(3) f2 (seg_1400 before seg_1350 at 14:05): rebuilds at 845 = %s, want one SENSEX" % got2)
+    if ld.state_cycle_csv().encode("utf-8") != want_c or ld.state_events_csv().encode("utf-8") != want_e:
+        bad.append("(3) f2 final state != batch")
+    n = want_c.count(b"\n") - 1
+    return not bad, "; ".join(bad[:6]) or "6 rebuilds as written by hand (b,a,c,c,e,f; d none), live == batch byte for byte (%d cycle rows), f2 once, default fixture unchanged" % n
+
+
 GUARDS = [("live-vectors", g_vectors), ("live-derive", g_derive), ("live-rule-inputs", g_rule_inputs),
           ("live-wall-floor", g_wall_floor), ("live-first-wins", g_first_wins), ("live-equal-offline", g_equal_offline),
           ("live-causal", g_causal), ("live-verify", g_verify), ("live-deterministic", g_deterministic),
           ("live-no-outcomes", g_no_outcomes), ("live-isolated", g_isolated), ("live-sql", g_sql),
-          ("live-ts-width", g_ts_width)]
+          ("live-ts-width", g_ts_width), ("live-rebuild-scope", g_rebuild_scope)]
 
 
 def main():

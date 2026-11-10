@@ -16,6 +16,7 @@ import argparse
 import ast
 import contextlib
 import csv
+import gzip
 import hashlib
 import io
 import json
@@ -793,15 +794,28 @@ def g_ts_width():
 # change, no entry), 815 = 13:35 (e: one SENSEX token's metadata), 845 = 14:05 (f: SENSEX subscriptions + a late SENSEX segment).
 SCOPE_REBUILDS = [("subscriptions", 695, "NIFTY"), ("subscriptions", 725, "SENSEX"), ("subscriptions", 755, "NIFTY"),
                   ("subscriptions", 755, "SENSEX"), ("subscriptions", 815, "SENSEX"), ("subscriptions", 845, "SENSEX")]
-# The default fixture's raw + chain files, (file count, digest of the sorted "relpath sha256" lines), measured on the generator at
-# 276e221 BEFORE the scope variant was added: the scope variant must leave the default day byte-unchanged.
-DEFAULT_FIXTURE = (164, "d9335e6b784af9e7c5eea965dff1a0dd028b475d0fa951cda46b3fa371888c55")
+# The default fixture's raw + chain files, pinned by CONTENT: (file count, digest of the sorted "relpath sha256" lines with every
+# .gz file gunzipped before hashing). Measured on the generator at 276e221 BEFORE the scope variant was added: the scope variant
+# must leave the default day unchanged. The raw-byte digest of the compressed segments (Windows d9335e6b...) did NOT travel to
+# Linux (box, Python 3.10: afd2f121..., same decompressed content), so it is reported for diagnosis and never compared.
+DEFAULT_FIXTURE_CONTENT = (164, "a83d2adbaffe9b620a695d3d072f4c3a983ec59c39d2511a16e0f70df58494a8")
 
 
 def _tree_digest(root):
-    items = sorted((os.path.relpath(os.path.join(dp, n), root).replace(os.sep, "/"), sha(os.path.join(dp, n)))
-                   for sub in ("raw", "chain") for dp, _ds, ns in os.walk(os.path.join(root, sub)) for n in ns)
-    return len(items), hashlib.sha256("".join("%s %s\n" % i for i in items).encode("utf-8")).hexdigest()
+    """-> (file count, content digest, raw-byte digest) over raw/ and chain/; the content digest gunzips .gz files first."""
+    raw_items, con_items = [], []
+    for sub in ("raw", "chain"):
+        for dp, _ds, ns in os.walk(os.path.join(root, sub)):
+            for n in ns:
+                p = os.path.join(dp, n)
+                rel = os.path.relpath(p, root).replace(os.sep, "/")
+                b = rd(p)
+                raw_items.append((rel, hashlib.sha256(b).hexdigest()))
+                con_items.append((rel, hashlib.sha256(gzip.decompress(b) if n.endswith(".gz") else b).hexdigest()))
+
+    def d(items):
+        return hashlib.sha256("".join("%s %s\n" % i for i in sorted(items)).encode("utf-8")).hexdigest()
+    return len(raw_items), d(con_items), d(raw_items)
 
 
 def scope_fixture():
@@ -861,8 +875,10 @@ def g_rebuild_scope():
     bad = []
     ctl_root = os.path.join(_TMP, "scope_ctl")
     gen_live.build(ctl_root)
-    if _tree_digest(ctl_root) != DEFAULT_FIXTURE:
-        bad.append("control: default fixture changed %r != %r" % (_tree_digest(ctl_root), DEFAULT_FIXTURE))
+    n_f, content, raw_digest = _tree_digest(ctl_root)
+    if (n_f, content) != DEFAULT_FIXTURE_CONTENT:
+        bad.append("control: default fixture changed: (files, content digest) %r != %r (raw-byte digest %s, diagnosis only)" % (
+            (n_f, content), DEFAULT_FIXTURE_CONTENT, raw_digest))
     f = scope_fixture()
     want_c = rd(os.path.join(f["cyc"], "tape_strike_cycle.csv"))
     want_e = rd(os.path.join(f["cyc"], "tape_events.csv"))

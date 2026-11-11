@@ -26,6 +26,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -37,7 +38,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from merdian_compute.tape import replay, special  # noqa: E402
-from services.tape_live import ddl, verify_day, wall_source, writer  # noqa: E402
+from services.tape_live import ddl, live_runner, live_sources, verify_day, wall_source, writer  # noqa: E402
 from services.tape_offline.cycle_day import peak_mb  # noqa: E402
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -130,7 +131,7 @@ def plan_inputs(raw, day, arrival):
             subs.append((_min(at) if at is not None else m, replay.sub_sort_key(n), n, doc))
             files.append(("session/%s/%s" % (day, n), p))
     if arrival:
-        raise InputError("--arrival names files that do not exist: %s" % sorted(arrival))
+        raise InputError("--arrival names files that are not present: %s" % sorted(arrival))
     for e in segs + subs:
         if e[0] % 5:
             raise InputError("availability %s is not on the 5-minute grid" % _hm(e[0]))
@@ -239,6 +240,103 @@ def cmd_replay(a):
     return 0
 
 
+def local_schedule(raw, day, arrival):
+    """{object key: epoch seconds it becomes visible}: cli replay's availability rule (segment seg_HHMM* at HHMM + 5 minutes,
+    subscriptions at the first grid point at or after HHMMSS, --arrival overrides) plus 2 s, for the runner's simulated clock."""
+    segs, subs, _files = plan_inputs(raw, day, dict(arrival))
+    base = live_runner.day_epoch(day)
+    vis = {}
+    for m, _si, _k, n, sym in segs:
+        vis["%s/%s/%s" % (sym, day, n)] = base + m * 60 + 2
+    for m, _sk, n, _doc in subs:
+        vis["session/%s/%s" % (day, n)] = base + m * 60 + 2
+    return vis
+
+
+AWS_KEY_VARS = ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")
+RO_CONN_ENV = "TAPE_LIVE_RO_DSN"
+
+
+def _code_sha():
+    sha = code_info()["git_sha"]
+    if sha == "unknown":
+        try:
+            with open(os.path.join(_ROOT, "CODE_SHA"), encoding="ascii") as fh:
+                sha = fh.read().strip() or "unknown"
+        except OSError:
+            pass
+    return sha
+
+
+def cmd_live(a):
+    """The live runner (docs/tape/L2_live_runner_plan.md). Read-only on S3 and the database; writes files under --out only."""
+    dsn = os.environ.pop(RO_CONN_ENV, None)                       # read once, then gone from this process's environment
+    for k in AWS_KEY_VARS:
+        if os.environ.get(k):
+            print("refused: AWS key variables are set; the runner signs with the instance role only", file=sys.stderr)
+            return 2
+    sha = _code_sha()
+    if sha == "unknown" or not re.match(r"^[0-9a-f]{7,40}$", sha):
+        print("refused: no code sha (git or CODE_SHA file)", file=sys.stderr)
+        return 2
+    day, out = a.day, os.path.abspath(a.out)
+    if not HM_RE.match(a.start):
+        print("--start must be HH:MM", file=sys.stderr)
+        return 2
+    if a.clock == "sim":
+        clock = live_runner.SimClock(live_runner.day_epoch(day) + _min(a.start) * 60)
+    else:
+        clock = live_runner.RealClock()
+    redact = []
+    if a.chain == "psql":
+        if not dsn:
+            print("refused: %s is not set" % RO_CONN_ENV, file=sys.stderr)
+            return 2
+        try:
+            parts = live_sources.parse_dsn(dsn)
+        except ValueError as exc:
+            print("refused: %s" % exc, file=sys.stderr)
+            return 2
+        redact = [parts["PGPASSWORD"], dsn]
+        chain = live_sources.PsqlChainSource(parts, day)
+        try:
+            role, ro, priv = chain.check()
+        except live_sources.SourceError as exc:
+            print("refused: the database start-up check failed (%s)" % exc.category, file=sys.stderr)
+            return 2
+        if ro != "on" or priv != "f":
+            print("refused: the database role is not read-only on the snapshot relation", file=sys.stderr)
+            return 2
+    else:
+        chain = wall_source.LocalChainSource(a.chain_csv or [], day)
+    if a.source == "s3":
+        objs = live_sources.S3Source(a.bucket, clock=clock, filter_future=(a.clock == "sim"))
+    else:
+        if not a.raw:
+            print("--source local needs --raw", file=sys.stderr)
+            return 2
+        arrival = {}
+        if a.arrival:
+            with open(a.arrival, encoding="utf-8") as fh:
+                arrival = json.load(fh)
+        objs = live_sources.LocalDirSource(os.path.abspath(a.raw), day, local_schedule(os.path.abspath(a.raw), day, arrival), clock)
+    if a.check:
+        print("CHECK PASS (environment, code sha, database role)")
+        return 0
+    cfg = live_runner.Config(day=day, out=out, code_sha=sha, kill_file=a.kill_file, lag=a.lag, rss_cap_mb=a.rss_cap_mb,
+                             disk_floor_mb=a.disk_floor_mb, disk_stop_mb=a.disk_floor_mb / 5.0)
+    if a.clock == "real":
+        term = {"hit": False}
+
+        def on_term(_signum, _frame):
+            term["hit"] = True
+        signal.signal(signal.SIGTERM, on_term)
+        cfg.term = term
+    rc = live_runner.run_day(cfg, objs, chain, clock, redact=redact)
+    print("TAPE LIVE RUNNER exit %d (state in %s)" % (rc, os.path.join(out, day)))
+    return rc
+
+
 def _write_delta(cdir, name, d):
     for part in ("cycle", "events"):
         if d[part]:
@@ -265,6 +363,22 @@ def main(argv=None):
     v.add_argument("--report", required=True)
     g = sub.add_parser("ddl")
     g.add_argument("--out", required=True)
+    lv = sub.add_parser("live")
+    lv.add_argument("--day", required=True)
+    lv.add_argument("--out", required=True)
+    lv.add_argument("--source", choices=("s3", "local"), default="s3")
+    lv.add_argument("--chain", choices=("psql", "local"), default="psql")
+    lv.add_argument("--clock", choices=("real", "sim"), default="real")
+    lv.add_argument("--start", default="08:50")
+    lv.add_argument("--bucket", default="meridian-tape-raw")
+    lv.add_argument("--lag", type=float, default=20.0)
+    lv.add_argument("--kill-file", default=None)
+    lv.add_argument("--rss-cap-mb", type=float, default=600.0)
+    lv.add_argument("--disk-floor-mb", type=float, default=1024.0)
+    lv.add_argument("--raw", default=None)
+    lv.add_argument("--arrival", default=None)
+    lv.add_argument("--chain-csv", action="append", default=None)
+    lv.add_argument("--check", action="store_true")
     a = ap.parse_args(argv)
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", getattr(a, "day", "2000-01-01")):
         print("--day must be YYYY-MM-DD", file=sys.stderr)
@@ -275,6 +389,8 @@ def main(argv=None):
                 print("--until must be HH:MM", file=sys.stderr)
                 return 2
             return cmd_replay(a)
+        if a.cmd == "live":
+            return cmd_live(a)
         if a.cmd == "verify":
             return verify_day.run(a.day, a.live, a.final_cycle, a.final_events, a.final_chain_runs, a.report)
         _w(a.out, ddl.render())

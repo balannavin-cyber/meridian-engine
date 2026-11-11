@@ -1,0 +1,59 @@
+# /etc/systemd/system/tape-live.service   (TEMPLATE: docs/tape/L2_live_runner_install.md; nothing here is installed by this repo)
+#
+# One trading day of the tape live runner (stage 2a, FILE-ONLY): reads s3://meridian-tape-raw and the chain snapshots, writes
+# files under /var/lib/tape-live and nowhere else. No database write, no S3 write.
+# Replace @CODE_SHA@ (the 40-hex commit the code was exported from) before installing.
+
+[Unit]
+Description=MERIDIAN tape live runner (stage 2a, file-only, read-only on S3 and the database)
+After=network-online.target
+Wants=network-online.target
+# Manual start for the first runs; see the install note. The timer is installed but NOT enabled.
+
+[Service]
+Type=simple
+User=tapelive
+Group=tapelive
+# Holds one variable (TAPE_LIVE_RO_DSN), a read-only database role. Mode 600, owner tapelive. Never in this file.
+EnvironmentFile=/etc/tape-live/tape-live.env
+Environment=AWS_DEFAULT_REGION=eu-north-1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/opt/tape-live/@CODE_SHA@
+# --day is today in IST; the wrapper keeps the unit file free of a date.
+ExecStart=/bin/sh -c 'exec /usr/bin/python3 -m services.tape_live.cli live --day "$(TZ=Asia/Kolkata date +%%F)" --out /var/lib/tape-live --source s3 --chain psql --clock real --kill-file /var/lib/tape-live/KILL'
+# SIGTERM: the runner finishes its cycle at the next check and exits 0 (state "stopped").
+KillSignal=SIGTERM
+TimeoutStopSec=150
+
+# Resource caps: the runner must lose to the trading engine, never the other way round.
+Nice=10
+CPUQuota=50%
+MemoryMax=700M
+MemorySwapMax=0
+OOMPolicy=stop
+OOMScoreAdjust=500
+
+# Sandbox: one writable directory, no privileges, private /tmp.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ReadWritePaths=/var/lib/tape-live
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+UMask=0077
+
+# Exit 2 = refused at start (bad environment, AWS key variables set, role can write); 3 = memory or disk; neither is retried.
+Restart=on-failure
+RestartSec=30
+RestartPreventExitStatus=2 3
+StartLimitIntervalSec=600
+StartLimitBurst=3

@@ -21,6 +21,7 @@ Grid rule (the scorer's reconciliation): the run used for grid point T is the la
 """
 import csv
 import re
+from datetime import datetime, timedelta, timezone
 
 from merdian_compute.tape import chain_events
 
@@ -61,6 +62,11 @@ def runs_from_snapshot_csv(paths, day):
     for p in paths:
         with open(p, encoding="utf-8", newline="") as fh:
             rows += list(csv.DictReader(fh))
+    return runs_from_rows(rows, day)
+
+
+def runs_from_rows(rows, day):
+    """rows: dicts with the export columns. -> {symbol: [run dicts of strings, in time order]} (the L0 and L2 shared tail)."""
     by_sym, _cnt = build_runs(rows, day)
     out = {}
     for sym in sorted(by_sym):
@@ -106,3 +112,200 @@ def wall_row(runs, day, hhmm):
             "chain_run_id": best["run_id"], "chain_run_ts": best["ts_ist"], "call_wall": best["call_wall"],
             "put_wall": best["put_wall"], "call_wall_oi_call": best["call_wall_oi_call"],
             "put_wall_oi_put": best["put_wall_oi_put"]}
+
+
+# ===================================================================== L2 live runner, Phase A (docs/tape/L2_live_runner_plan.md s6)
+# The three queries the runner may send. Each is ONE read-only transaction with an 8 s statement timeout, an explicit column
+# list (the count query selects count(*) and nothing else), the IST day bounds, an `until` bound and a strict keyset predicate on
+# the full sort tuple (ts, expiry_date, strike, run_id): the table's unique key is (run_id, strike, expiry_date), so the tuple is
+# unique and the order total; a strict `>` neither repeats a row nor skips one at a page boundary. Values arrive as psql
+# variables (-v), never interpolated into the text. tests/test_tape_live.py (live-runner-bounded-sql) parses these constants.
+PAGE_LIMIT = 5000
+SNAP_COLS = ("run_id", "symbol", "ts", "expiry_date", "strike", "oi_call", "oi_put", "gex_cr")
+WRITE_PRIVS_PROBE = "INSERT,UPDATE,DELETE,TRUNCATE"
+
+SNAPSHOT_SQL = (
+    "BEGIN TRANSACTION READ ONLY;\n"
+    "SET LOCAL statement_timeout = '8s';\n"
+    "SET LOCAL TIME ZONE 'UTC';\n"
+    "SELECT run_id, symbol, ts, expiry_date, strike, oi_call, oi_put, gex_cr\n"
+    "FROM public.gex_strike_snapshots\n"
+    "WHERE symbol = :'sym'\n"
+    "  AND ts >= (:'day')::date::timestamp AT TIME ZONE 'Asia/Kolkata'\n"
+    "  AND ts < ((:'day')::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata'\n"
+    "  AND ts <= (:'until')::timestamptz\n"
+    "  AND (ts, expiry_date, strike, run_id::text) > ((:'k_ts')::timestamptz, (:'k_exp')::date, (:'k_strike')::numeric, :'k_run')\n"
+    "ORDER BY ts, expiry_date, strike, run_id::text\n"
+    "LIMIT 5000;\n"
+    "COMMIT;\n")
+
+COUNT_SQL = (
+    "BEGIN TRANSACTION READ ONLY;\n"
+    "SET LOCAL statement_timeout = '8s';\n"
+    "SET LOCAL TIME ZONE 'UTC';\n"
+    "SELECT count(*)\n"
+    "FROM public.gex_strike_snapshots\n"
+    "WHERE symbol = :'sym'\n"
+    "  AND ts >= (:'day')::date::timestamp AT TIME ZONE 'Asia/Kolkata'\n"
+    "  AND ts < ((:'day')::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata'\n"
+    "  AND ts <= (:'until')::timestamptz\n"
+    "  AND (ts, expiry_date, strike, run_id::text) <= ((:'k_ts')::timestamptz, (:'k_exp')::date, (:'k_strike')::numeric, :'k_run')\n"
+    ";\n"
+    "COMMIT;\n")
+
+# Start-up refusal: who am I, is the session read-only, can this role write the table. Reads no relation.
+CHECK_SQL = (
+    "BEGIN TRANSACTION READ ONLY;\n"
+    "SET LOCAL statement_timeout = '8s';\n"
+    "SELECT current_user, current_setting('default_transaction_read_only'),\n"
+    "  has_table_privilege(current_user, 'public.gex_strike_snapshots', :'privs');\n"
+    "COMMIT;\n")
+
+PSQL_TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?\+00$")
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def psql_ts(s):
+    """psql text of a timestamptz under TIME ZONE 'UTC' ('2026-11-06 03:00:21.4396+00') -> the export shape
+    ('2026-11-06T03:00:21.4396+00:00'). Strict: any other shape raises, nothing is guessed."""
+    m = PSQL_TS_RE.match(s)
+    if m is None:
+        raise ValueError("database timestamp has an unexpected shape")
+    return "%sT%s%s+00:00" % (m.group(1), m.group(2), "" if m.group(3) is None else "." + m.group(3))
+
+
+def rows_from_psql_csv(text):
+    """psql --csv -t output of SNAPSHOT_SQL -> [row dicts keyed by SNAP_COLS, ts in the export shape]."""
+    out = []
+    for r in csv.reader(text.splitlines()):
+        if not r:
+            continue
+        if len(r) != len(SNAP_COLS):
+            raise ValueError("database row has %d fields, expected %d" % (len(r), len(SNAP_COLS)))
+        d = dict(zip(SNAP_COLS, r))
+        d["ts"] = psql_ts(d["ts"])
+        out.append(d)
+    return out
+
+
+def _dt(ts):
+    return datetime.fromisoformat(norm_snapshot_ts(ts))
+
+
+def row_key(r):
+    """The sort tuple of a row (the keyset order)."""
+    return (_dt(r["ts"]), r["expiry_date"], float(r["strike"]), r["run_id"])
+
+
+def cursor_of(r):
+    """A row's keyset cursor: the four strings the next page is asked to be strictly after."""
+    return (r["ts"], r["expiry_date"], r["strike"], r["run_id"])
+
+
+def cursor_key(c):
+    return (_dt(c[0]), c[1], float(c[2]), c[3])
+
+
+def day_start_cursor(day):
+    return ("%sT00:00:00+05:30" % day, "0001-01-01", "-1", "")
+
+
+def _slot(r):
+    d = _dt(r["ts"]).astimezone(IST)
+    m = d.hour * 60 + d.minute
+    return m - m % 5
+
+
+class RunAccumulator:
+    """Every chain row read so far, deduplicated on the table's unique key (run_id, strike, expiry_date)."""
+
+    def __init__(self, day):
+        self.day = day
+        self.rows = {}
+        self.by_sym = {}
+        self.slots = {}
+        self.new_runs = {}
+        self.seen_runs = set()
+        self.row_changed = 0
+        self.version = 0
+        self._runs = (None, None)
+
+    def add(self, sym, page):
+        n = 0
+        for r in page:
+            k = (r["run_id"], r["expiry_date"], float(r["strike"]))
+            old = self.rows.get(k)
+            if old is not None:
+                if old != r:
+                    self.row_changed += 1
+                    self.rows[k] = dict(r)
+                    self.version += 1
+                continue
+            self.rows[k] = dict(r)
+            self.by_sym.setdefault(sym, []).append(self.rows[k])
+            self.slots.setdefault(sym, set()).add(_slot(r))
+            rk = (sym, r["run_id"])
+            if rk not in self.seen_runs:
+                self.seen_runs.add(rk)
+                self.new_runs.setdefault(sym, []).append((r["run_id"], r["ts"]))
+            n += 1
+        if n:
+            self.version += 1
+        return n
+
+    def rows_of(self, sym):
+        return list(self.by_sym.get(sym, []))
+
+    def count_upto(self, sym, cursor):
+        ck = cursor_key(cursor)
+        return sum(1 for r in self.by_sym.get(sym, []) if row_key(r) <= ck)
+
+    def has_slot(self, sym, minute):
+        return minute in self.slots.get(sym, ())
+
+    def pop_new_runs(self, sym):
+        out, self.new_runs[sym] = self.new_runs.get(sym, []), []
+        return out
+
+    def runs(self):
+        """{symbol: [run dicts]} through the one build_runs; rebuilt only when rows arrived."""
+        if self._runs[0] != self.version:
+            self._runs = (self.version, runs_from_rows([r for rs in self.by_sym.values() for r in rs], self.day))
+        return self._runs[1]
+
+
+class LocalChainSource:
+    """Test and rehearsal source: the export CSVs, each row visible at its ts plus delay_fn(row) seconds (or visible_from(row) plus
+    delay_fn(row) when given). read_page and count_upto have the semantics of SNAPSHOT_SQL and COUNT_SQL."""
+
+    def __init__(self, paths, day, delay_fn=None, visible_from=None):
+        self.delay_fn, self.visible_from = delay_fn, visible_from
+        self.by_sym = {}
+        for p in paths:
+            with open(p, encoding="utf-8", newline="") as fh:
+                for r in csv.DictReader(fh):
+                    if _dt(r["ts"]).astimezone(IST).strftime("%Y-%m-%d") != day:
+                        continue
+                    self.by_sym.setdefault(r["symbol"], []).append(dict((c, r[c]) for c in SNAP_COLS))
+        self.keyed = {}
+        for sym, rows in self.by_sym.items():
+            ks = sorted(((row_key(r), r) for r in rows), key=lambda kr: kr[0])
+            self.keyed[sym] = [(k, r, self._avail(k, r)) for k, r in ks]
+
+    def _avail(self, k, r):
+        base = k[0].timestamp() if self.visible_from is None else self.visible_from(r)
+        return base + (self.delay_fn(r) if self.delay_fn else 0)
+
+    def read_page(self, sym, cursor, until, limit):
+        ck = cursor_key(cursor)
+        out = []
+        for k, r, av in self.keyed.get(sym, []):
+            if k > ck and av <= until:
+                out.append(dict(r))
+                if len(out) >= limit:
+                    break
+        return out
+
+    def count_upto(self, sym, cursor, until):
+        ck = cursor_key(cursor)
+        return sum(1 for k, _r, av in self.keyed.get(sym, []) if k <= ck and av <= until)

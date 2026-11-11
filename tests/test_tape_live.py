@@ -10,7 +10,7 @@ Rule 23 (CLAUDE.md): refuses an unlimited `ulimit -v` where the `resource` modul
 OPERATOR RULING R-1 (2026-11-03): the time-window refusal is a retail-box rule; this machine is Local. The window is lifted ONLY
 when TAPE_RULE23_OVERRIDE_R1=1 is set, and every such run says so on its first line.
 
-Last line: "TAPE LIVE GUARDS PASS (14/14)" or "TAPE LIVE GUARDS FAIL (...)". Exit 0 / 1; 2 = refused.
+Last line: "TAPE LIVE GUARDS PASS (21/21)" or "TAPE LIVE GUARDS FAIL (...)". Exit 0 / 1; 2 = refused.
 """
 import argparse
 import ast
@@ -63,6 +63,12 @@ if rule23():
 
 import gen_live  # noqa: E402
 from merdian_compute.tape import chain_events, cycle, events  # noqa: E402
+from services.tape_live import cli as _cli0  # noqa: E402
+
+# A mutant copy and a `git archive` export have no .git, so code_info() would read "unknown" and `cli live` refuses without a sha.
+# One fixed test sha for the whole process, for cli replay and the runner alike, so their code_sha columns compare equal anywhere.
+TEST_SHA = "0123456789abcdef0123456789abcdef01234567"
+_cli0.code_info = lambda: {"git_sha": TEST_SHA, "dirty": False}
 
 LIVE = os.path.join(ROOT, "services", "tape_live")
 SQL = os.path.join(ROOT, "sql", "2026-11-06_tape_live_tables.sql")
@@ -915,11 +921,895 @@ def g_rebuild_scope():
     return not bad, "; ".join(bad[:6]) or "6 rebuilds as written by hand (b,a,c,c,e,f; d none), live == batch byte for byte (%d cycle rows), f2 once, default fixture unchanged" % n
 
 
+# =================================================================================== L2 live runner, Phase A
+# docs/tape/L2_live_runner_plan.md sections 3, 5, 6, 7, 9, 12. Seven guards: equal, readonly, secrets, bounded-sql, keyset,
+# lifecycle, restart. Everything runs on the generated fixture with a simulated clock; no network, no database, no S3.
+RUN_MODS = ("services/tape_live/live_sources.py", "services/tape_live/live_runner.py", "services/tape_live/wall_source.py",
+            "services/tape_live/cli.py")
+NEW_FILES = RUN_MODS + ("tests/test_tape_live.py", "tests/tape_live_mutants.py", "tests/tape_live_runner_equal.py",
+                        "tests/run_offline.sh", "docs/tape/L2_live_runner_plan.md", "docs/tape/L2_live_runner_install.md",
+                        "docs/tape/L2_live_runner.service.template", "docs/tape/L2_live_runner.timer.template")
+# A test credential, assembled so that no file carries it (or a URI with userinfo) as one literal.
+TEST_PW = "Tq" + "7-x" + "Lp2v9-Rk"
+TEST_DSN = "postgres" + "ql:" + "//" + "merdian_ro:" + TEST_PW + "@" + "db.example.invalid:5432/postgres?sslmode=require"
+STDERR_MARK = "STDERR-" + "MARK-7731"
+TIMING_FILES = ("heartbeat.json", "live_metrics.csv", "runner.log")
+
+
+def rmods():
+    from services.tape_live import live_runner, live_sources, wall_source
+    return live_runner, live_sources, wall_source
+
+
+def ist_epoch(m, secs=0, day=DAY):
+    d = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=IST) + timedelta(minutes=m, seconds=secs)
+    return d.timestamp()
+
+
+def _hm_min(hhmm):
+    return int(hhmm[:2]) * 60 + int(hhmm[3:5])
+
+
+def code_sha_t():
+    return mods()[0].code_info()["git_sha"]
+
+
+def live_dir(root):
+    return os.path.join(root, DAY, "live")
+
+
+def _arr(spec):
+    sym, seg, at = spec
+    return {"%s/%s" % (sym, seg): at}
+
+
+def runner_sim(name, arrival=None, out=None, start="08:50", events=(), hooks=None, rss_fn=None, chain_delay=None,
+               objects_wrap=None, chain_wrap=None, fix=None, disk_floor=20.0):
+    """The runner on the fixture day: LocalDirSource (cli's availability rule, + 2 s) + LocalChainSource + SimClock."""
+    if out is None and name in _CACHE:
+        return _CACHE[name]
+    lr, ls, ws = rmods()
+    f = fix or fixture()
+    d = out or os.path.join(_TMP, "run_" + name)
+    clock = lr.SimClock(ist_epoch(_hm_min(start)), list(events))
+    vis = mods()[0].local_schedule(f["raw"], DAY, dict(arrival or {}))
+    obj = ls.LocalDirSource(f["raw"], DAY, vis, clock)
+    ch = ws.LocalChainSource(f["chain"], DAY, delay_fn=chain_delay)
+    if objects_wrap:
+        obj = objects_wrap(obj)
+    if chain_wrap:
+        ch = chain_wrap(ch)
+    cfg = lr.Config(day=DAY, out=d, code_sha=code_sha_t(), kill_file=os.path.join(d, "KILL"),
+                    disk_floor_mb=disk_floor, disk_stop_mb=disk_floor / 5.0)
+    rc, log = quiet(lr.run_day, cfg, obj, ch, clock, hooks or {}, rss_fn or (lambda: 100.0))
+    res = (rc, d, log)
+    if out is None:
+        _CACHE[name] = res
+    return res
+
+
+def _files(d):
+    return sorted(os.path.relpath(os.path.join(dp, n), d).replace(os.sep, "/") for dp, _, ns in os.walk(d) for n in ns)
+
+
+def _strip_col(b, col):
+    rows = list(csv.reader(io.StringIO(b.decode("utf-8"))))
+    if not rows or rows[0].count(col) != 1:
+        raise AssertionError("column %s not exactly once in header %r" % (col, rows[:1]))
+    i = rows[0].index(col)
+    out = [r[:i] + r[i + 1:] for r in rows]
+    if any(len(o) != len(r) - 1 for o, r in zip(out, rows)):
+        raise AssertionError("strip of %s did not remove exactly one column" % col)
+    buf = io.StringIO()
+    csv.writer(buf, lineterminator="\n").writerows(out)
+    return buf.getvalue().encode("utf-8")
+
+
+def compare_live(cdir, ldir):
+    """cli replay out dir vs the runner's live dir: every file byte-equal except run_manifest.json (fields compared) and the
+    live_run_id column of the wall and label files (Phase A interim id, plan section 12)."""
+    bad = []
+    fa = [x for x in _files(cdir) if x != "run_manifest.json"]
+    fb = [x for x in _files(ldir) if x != "run_manifest.json"]
+    if fa != fb:
+        bad.append("file sets differ: only cli %s, only runner %s" % (sorted(set(fa) - set(fb))[:5], sorted(set(fb) - set(fa))[:5]))
+    for rel in sorted(set(fa) & set(fb)):
+        x, y = rd(os.path.join(cdir, rel)), rd(os.path.join(ldir, rel))
+        if rel in ("tape_live_wall.csv", "tape_live_label.csv"):
+            x, y = _strip_col(x, "live_run_id"), _strip_col(y, "live_run_id")
+        if x != y:
+            bad.append("differs: " + rel)
+    try:
+        with open(os.path.join(cdir, "run_manifest.json"), encoding="utf-8") as fh:
+            ma = json.load(fh)
+        with open(os.path.join(ldir, "run_manifest.json"), encoding="utf-8") as fh:
+            mb = json.load(fh)
+        for k in ("rebuilds", "late_segments", "bad_files", "token_map_conflicts", "label_counts", "rule_version"):
+            if ma.get(k) != mb.get(k):
+                bad.append("manifest %s: cli %r runner %r" % (k, ma.get(k), mb.get(k)))
+    except (OSError, ValueError) as exc:
+        bad.append("manifest: %s" % exc)
+    return bad
+
+
+class FakeShell:
+    """Stands in for the aws CLI and psql (live_sources.RUN). Its keyset, LIMIT and psql text shape are written here, not taken
+    from services/tape_live. Records every call (argv, env, stdin) for the read-only and secrets checks."""
+
+    def __init__(self, raw, chain_paths, schedule, psql_fail=None):
+        self.calls = []
+        self.vis = dict(schedule)
+        self.files = {}
+        for dp, _, ns in os.walk(raw):
+            for n in ns:
+                p = os.path.join(dp, n)
+                rel = os.path.relpath(p, raw).replace(os.sep, "/")
+                self.files[rel] = p
+        self.rows = {}
+        for p in chain_paths:
+            with open(p, encoding="utf-8", newline="") as fh:
+                for r in csv.DictReader(fh):
+                    self.rows.setdefault(r["symbol"], []).append(r)
+        for s in self.rows:
+            self.rows[s].sort(key=self.key)
+        self.psql_fail = psql_fail
+        self.md5 = {}
+
+    def _md5(self, rel):
+        if rel not in self.md5:
+            self.md5[rel] = hashlib.md5(rd(self.files[rel])).hexdigest()
+        return self.md5[rel]
+
+    @staticmethod
+    def key(r):
+        return (datetime.fromisoformat(r["ts"]), r["expiry_date"], float(r["strike"]), r["run_id"])
+
+    @staticmethod
+    def psql_shape(ts):
+        d, rest = ts.split("T")
+        clock, off = rest[:-6], rest[-6:]
+        if off != "+00:00":
+            raise AssertionError("fixture ts not UTC: %s" % ts)
+        if "." in clock:
+            clock = clock.rstrip("0").rstrip(".")
+        return "%s %s+00" % (d, clock)
+
+    def __call__(self, argv, env, stdin, timeout):
+        self.calls.append((list(argv), dict(env), stdin, timeout))
+        if argv[:3] == ["aws", "s3api", "list-objects-v2"]:
+            pre = argv[argv.index("--prefix") + 1]
+            cont = []
+            for rel, p in sorted(self.files.items()):
+                if rel.startswith(pre):
+                    vis = self.vis.get(rel, ist_epoch(16 * 60))
+                    cont.append({"Key": rel, "Size": os.path.getsize(p), "ETag": '"%s"' % self._md5(rel),
+                                 "LastModified": datetime.fromtimestamp(vis, timezone.utc).isoformat()})
+            return 0, (json.dumps({"Contents": cont}) if cont else "").encode(), b""
+        if argv[:3] == ["aws", "s3api", "get-object"]:
+            key, dest = argv[argv.index("--key") + 1], argv[-1]
+            shutil.copyfile(self.files[key], dest)
+            return 0, json.dumps({"ETag": '"%s"' % self._md5(key)}).encode(), b""
+        if argv and argv[0] == "psql":
+            v = dict(argv[i + 1].split("=", 1) for i in range(len(argv) - 1) if argv[i] == "-v")
+            sql = stdin.decode("utf-8")
+            if self.psql_fail is not None:
+                r = self.psql_fail(v, sql)
+                if r is not None:
+                    return r
+            if "has_table_privilege" in sql:
+                return 0, b"merdian_ro,on,f\n", b""
+            until = datetime.fromisoformat(v["until"])
+            cur = (datetime.fromisoformat(v["k_ts"]), v["k_exp"], float(v["k_strike"]), v["k_run"])
+            rows = [r for r in self.rows.get(v["sym"], []) if datetime.fromisoformat(r["ts"]) <= until]
+            if "count(*)" in sql:
+                return 0, ("%d\n" % sum(1 for r in rows if self.key(r) <= cur)).encode(), b""
+            rows = [r for r in rows if self.key(r) > cur][:5000]
+            buf = io.StringIO()
+            wr = csv.writer(buf, lineterminator="\n")
+            for r in rows:
+                wr.writerow([r["run_id"], r["symbol"], self.psql_shape(r["ts"]), r["expiry_date"], r["strike"], r["oi_call"],
+                             r["oi_put"], r["gex_cr"]])
+            return 0, buf.getvalue().encode(), b""
+        raise AssertionError("FakeShell: unexpected argv %r" % (argv[:4],))
+
+
+@contextlib.contextmanager
+def _env(set_=None, drop=()):
+    saved = dict(os.environ)
+    try:
+        for k in drop:
+            os.environ.pop(k, None)
+        os.environ.update(set_ or {})
+        yield
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+
+
+def cli_live_fake(name, psql_fail=None, extra_env=None):
+    """cli live --source s3 --chain psql --clock sim on the fixture, through FakeShell. Cached by name."""
+    if name in _CACHE:
+        return _CACHE[name]
+    cli = mods()[0]
+    ls = rmods()[1]
+    f = fixture()
+    d = os.path.join(_TMP, "cli_" + name)
+    fake = FakeShell(f["raw"], f["chain"], cli.local_schedule(f["raw"], DAY, {}), psql_fail)
+    saved_run = ls.RUN
+    ls.RUN = fake
+    env = {"TAPE_LIVE_RO_DSN": TEST_DSN}
+    env.update(extra_env or {})
+    try:
+        with _env(env, drop=("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")):
+            rc, log = quiet(cli.main, ["live", "--day", DAY, "--out", d, "--source", "s3", "--chain", "psql", "--clock", "sim",
+                                       "--start", "08:50", "--bucket", "meridian-tape-raw", "--disk-floor-mb", "20",
+                                       "--rss-cap-mb", "100000"])
+            dsn_left = "TAPE_LIVE_RO_DSN" in os.environ
+    finally:
+        ls.RUN = saved_run
+    res = (rc, d, fake, log, dsn_left)
+    _CACHE[name] = res
+    return res
+
+
+def _scope_cli():
+    if "scope_cli" not in _CACHE:
+        cli = mods()[0]
+        f = scope_fixture()
+        d = os.path.join(_TMP, "rp_scope_runner_eq")
+        argv = ["replay", "--day", DAY, "--raw", f["raw"], "--out", d, "--arrival", arrival_file("scope_eq", gen_live.SCOPE_ARRIVAL)]
+        for p in f["chain"]:
+            argv += ["--chain-runs", p]
+        rc, log = quiet(cli.main, argv)
+        if rc != 0:
+            raise AssertionError("scope replay rc=%s\n%s" % (rc, log[-2000:]))
+        _CACHE["scope_cli"] = d
+    return _CACHE["scope_cli"]
+
+
+def g_runner_equal():
+    bad, notes = [], []
+    variants = (("clean", None, replay("clean"), None), ("late", _arr(gen_live.LATE_SEG), late_replay(), None),
+                ("out-of-order", _arr(gen_live.LATE_SEG_OOO), ooo_replay(), None),
+                ("scope", gen_live.SCOPE_ARRIVAL, _scope_cli(), scope_fixture()))
+    for name, arr, cdir, fix in variants:
+        rc, root, log = runner_sim("eq_" + name, arr, fix=fix)
+        if rc != 0:
+            bad.append("%s: runner rc=%s %s" % (name, rc, log[-800:]))
+            continue
+        diff = compare_live(cdir, live_dir(root))
+        bad += ["%s: %s" % (name, x) for x in diff]
+        notes.append("%s %d files" % (name, len(_files(live_dir(root)))))
+    rc, root, fake, log, _left = cli_live_fake("eq_psql")
+    if rc != 0:
+        bad.append("psql path: cli live rc=%s %s" % (rc, log[-800:]))
+    else:
+        bad += ["psql path: %s" % x for x in compare_live(replay("clean"), live_dir(root))]
+        kinds = {tuple(c[0][:3]) if c[0][0] == "aws" else ("psql",) for c in fake.calls}
+        if not {("aws", "s3api", "list-objects-v2"), ("aws", "s3api", "get-object"), ("psql",)} <= kinds:
+            bad.append("psql path did not exercise list, get and psql: %r" % sorted(kinds))
+        notes.append("psql/S3 path %d shell calls" % len(fake.calls))
+    return not bad, "; ".join(bad[:8]) or "runner == cli replay (live_run_id column stripped, plan s12): " + ", ".join(notes)
+
+
+def _consts(path):
+    """Non-docstring string constants of a module, with line numbers."""
+    with open(path, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    docs = set()
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.Module, ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)) and n.body:
+            b = n.body[0]
+            if isinstance(b, ast.Expr) and isinstance(b.value, ast.Constant) and isinstance(b.value.value, str):
+                docs.add(id(b.value))
+    return tree, [(n.lineno, n.value) for n in ast.walk(tree)
+                  if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in docs]
+
+
+S3_WRITE = {"cp", "sync", "mv", "rm", "put", "put-object", "delete-object", "delete-objects", "copy-object", "upload-part",
+            "create-multipart-upload", "complete-multipart-upload", "presign", "restore-object"}
+SQL_WRITE = re.compile(r"(?i)\b(INSERT|UPDATE|DELETE|COPY|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE|MERGE|CALL|VACUUM|"
+                       r"REINDEX|CLUSTER|LOCK|NOTIFY|DO)\b")
+CRED_NAME = re.compile(r"(?i)(pass|pwd|secret|token|dsn|credential|api_?key|access_key)")
+NET_MODS = ("socket", "http", "urllib.request", "ssl", "ftplib", "smtplib", "telnetlib", "xmlrpc", "asyncio", "requests")
+
+
+def _names_in(node):
+    out = []
+    for n in ast.walk(node):
+        if isinstance(n, ast.Name):
+            out.append(n.id)
+        elif isinstance(n, ast.Attribute):
+            out.append(n.attr)
+    return out
+
+
+def _probe_const(tree):
+    """The one exempted constant: the privilege list of the start-up refusal query (wall_source.WRITE_PRIVS_PROBE)."""
+    for n in tree.body:
+        if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "WRITE_PRIVS_PROBE" for t in n.targets):
+            if isinstance(n.value, ast.Constant):
+                return n.value.value
+    return None
+
+
+def argv_shape_ok(a):
+    t = ["--cli-read-timeout", "10", "--cli-connect-timeout", "5"]
+    if a[:3] == ["aws", "s3api", "list-objects-v2"]:
+        return (len(a) == 13 and a[3] == "--bucket" and a[5] == "--prefix" and a[7:9] == ["--output", "json"] and a[9:] == t
+                and re.match(r"^(NIFTY|SENSEX|session)/\d{4}-\d{2}-\d{2}/$", a[6]) is not None)
+    if a[:3] == ["aws", "s3api", "get-object"]:
+        return (len(a) == 12 and a[3] == "--bucket" and a[5] == "--key" and a[7:11] == t
+                and re.match(r"^(NIFTY|SENSEX|session)/\d{4}-\d{2}-\d{2}/[A-Za-z0-9_.]+$", a[6]) is not None)
+    if a and a[0] == "psql":
+        if a[1:7] != ["-X", "-q", "-t", "--csv", "-v", "ON_ERROR_STOP=1"] or a[-2:] != ["-f", "-"]:
+            return False
+        mid = a[7:-2]
+        if len(mid) % 2:
+            return False
+        for i in range(0, len(mid), 2):
+            if mid[i] != "-v" or mid[i + 1].split("=", 1)[0] not in ("sym", "day", "until", "k_ts", "k_exp", "k_strike",
+                                                                       "k_run", "privs"):
+                return False
+        return True
+    return False
+
+
+def g_runner_readonly():
+    bad = []
+    for rel in RUN_MODS:
+        p = os.path.join(ROOT, rel)
+        tree, consts = _consts(p)
+        probe = _probe_const(tree)
+        for ln, s in consts:
+            if s.strip().lower() in S3_WRITE:
+                bad.append("%s:%d S3 write verb %r" % (rel, ln, s))
+            if s != probe and SQL_WRITE.search(s):
+                bad.append("%s:%d SQL write keyword in %r" % (rel, ln, s[:60]))
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Call):
+                fn = n.func
+                fname = fn.attr if isinstance(fn, ast.Attribute) else (fn.id if isinstance(fn, ast.Name) else "")
+                owner = fn.value.id if isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name) else ""
+                for kw in n.keywords:
+                    if kw.arg == "shell" and not (isinstance(kw.value, ast.Constant) and kw.value.value is False):
+                        bad.append("%s:%d shell= is not False" % (rel, n.lineno))
+                if owner == "os" and fname in ("system", "popen", "execv", "execve", "execvp", "spawnv", "spawnl"):
+                    bad.append("%s:%d os.%s" % (rel, n.lineno, fname))
+                if owner == "subprocess" and fname != "run":
+                    bad.append("%s:%d subprocess.%s (only subprocess.run is allowed)" % (rel, n.lineno, fname))
+                if owner == "subprocess" and fname == "run" and not any(k.arg == "timeout" for k in n.keywords):
+                    bad.append("%s:%d subprocess.run without timeout=" % (rel, n.lineno))
+                if isinstance(fn, ast.Attribute) and fn.attr == "format":
+                    for w in _names_in(ast.Tuple(elts=list(n.args) + [k.value for k in n.keywords], ctx=ast.Load())):
+                        if CRED_NAME.search(w):
+                            bad.append("%s:%d .format of %r" % (rel, n.lineno, w))
+            if isinstance(n, ast.JoinedStr):
+                for w in _names_in(n):
+                    if CRED_NAME.search(w):
+                        bad.append("%s:%d f-string of %r" % (rel, n.lineno, w))
+            if isinstance(n, ast.BinOp) and isinstance(n.op, ast.Mod) and isinstance(n.left, ast.Constant) \
+                    and isinstance(n.left.value, str):
+                for w in _names_in(n.right):
+                    if CRED_NAME.search(w):
+                        bad.append("%s:%d %%-format of %r" % (rel, n.lineno, w))
+            if isinstance(n, (ast.Import, ast.ImportFrom)):
+                ms = [a.name for a in n.names] if isinstance(n, ast.Import) else [n.module or ""]
+                for m in ms:
+                    if any(m == x or m.startswith(x + ".") for x in NET_MODS):
+                        bad.append("%s:%d imports network module %r" % (rel, n.lineno, m))
+    # runtime: every argv the runner built on the fixture day (S3 + psql path)
+    rc, root, fake, log, _left = cli_live_fake("eq_psql")
+    if rc != 0:
+        bad.append("runtime run rc=%s" % rc)
+    nbad = 0
+    for argv, env, stdin, timeout in fake.calls:
+        if not argv_shape_ok(argv):
+            nbad += 1
+            if nbad <= 3:
+                bad.append("argv shape not allowed: %r" % (argv[:8],))
+        if any(TEST_PW in x or "PGPASSWORD" in x for x in argv):
+            bad.append("credential in argv: %r" % (argv[:3],))
+        if not isinstance(timeout, (int, float)) or timeout <= 0 or timeout > 60:
+            bad.append("call without a bounded timeout: %r" % (argv[:3],))
+    return not bad, "; ".join(bad[:8]) or "%d modules scanned; %d runtime calls, all of the 3 allowed shapes, no credential" % (
+        len(RUN_MODS), len(fake.calls))
+
+
+def _secret_patterns():
+    j = "".join
+    return [("uri-userinfo", re.compile(j([r"[a-z][a-z0-9+.-]*", ":", "//", r"[^\s/:@'\"<>]+:[^\s/@'\"<>]+@"]))),
+            ("password-assign", re.compile(j([r"(?i)\bpass", r"(word|wd)?\s*[:=]\s*['\"][^'\"\s]{3,}['\"]"]))),
+            ("env-password", re.compile(j([r"(?im)^\s*[A-Z_]*PASS", r"(WORD)?\s*=\s*\S+"]))),
+            ("jwt", re.compile(j(["ey", r"J[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"]))),
+            ("aws-key-id", re.compile(j([r"\b(AK", r"IA|AS", r"IA)[0-9A-Z]{16}\b"]))),
+            ("aws-secret", re.compile(j([r"(?i)aws_secret_", r"access_key\s*[=:]\s*\S{8,}"]))),
+            ("supabase-key", re.compile(j([r"\bsb_(sec", r"ret|publishable)_[A-Za-z0-9_-]{10,}|\bsb", r"p_[0-9a-f]{20,}"]))),
+            ("privileged-role-name", re.compile(j(["(?i)service", "[_ -]", "role"]))),
+            ("private-key", re.compile(j(["-----BEGIN ", "[A-Z ]*PRIVATE", " KEY-----"]))),
+            ("test-credential", re.compile(re.escape(TEST_PW)))]
+
+
+def g_runner_secrets():
+    bad = []
+    pats = _secret_patterns()
+    for rel in NEW_FILES:
+        p = os.path.join(ROOT, rel)
+        if not os.path.isfile(p):
+            bad.append("missing %s" % rel)
+            continue
+        with open(p, encoding="utf-8") as fh:
+            text = fh.read()
+        for name, rx in pats:
+            for m in rx.finditer(text):
+                bad.append("%s:%d %s" % (rel, text.count("\n", 0, m.start()) + 1, name))
+    # runtime 1: psql fails with the credential and a marker in stderr, and once by raising with the credential in the message
+    def fail(v, sql):
+        if "count(*)" in sql and v.get("sym") == "NIFTY":
+            return 2, b"", ("FATAL: %s %s %s" % (TEST_PW, TEST_DSN, STDERR_MARK)).encode()    # (rc, stdout, STDERR)
+        if "count(*)" in sql and v.get("sym") == "SENSEX" and v.get("until", "") > "2026-11-06T05":
+            raise OSError("exec failed near " + TEST_PW + " " + STDERR_MARK)
+        return None
+    rc, root, fake, log, dsn_left = cli_live_fake("sec_fail", psql_fail=fail)
+    if rc != 0:
+        bad.append("failing-psql run rc=%s (a failed read must not end the day)" % rc)
+    blobs = [("log", log.encode("utf-8"))]
+    for rel in _files(os.path.join(root, DAY)):
+        if not rel.startswith("raw/"):
+            blobs.append((rel, rd(os.path.join(root, DAY, rel))))
+    for name, b in blobs:
+        for needle in (TEST_PW, STDERR_MARK, TEST_DSN):
+            if needle.encode() in b:
+                bad.append("%s contains %s" % (name, "the credential" if needle == TEST_PW else
+                                               ("raw stderr" if needle == STDERR_MARK else "the DSN")))
+    with open(os.path.join(root, DAY, "heartbeat.json"), encoding="utf-8") as fh:
+        hb = json.load(fh)
+    if not hb.get("errors", {}).get("db"):
+        bad.append("the failing psql was not counted in heartbeat errors.db (the check would be vacuous)")
+    if dsn_left:
+        bad.append("TAPE_LIVE_RO_DSN still in os.environ after start")
+    for argv, env, _stdin, _t in fake.calls:
+        if argv[0] == "aws" and any(k.startswith("PG") or TEST_PW in str(v) for k, v in env.items()):
+            bad.append("aws child env carries PG* / the credential")
+            break
+    for argv, env, _stdin, _t in fake.calls:
+        if argv[0] == "psql" and any(k.startswith("AWS_ACCESS") or k.startswith("AWS_SECRET") or k == "TAPE_LIVE_RO_DSN"
+                                     for k in env):
+            bad.append("psql child env carries AWS keys or the DSN variable")
+            break
+    if not any(argv[0] == "psql" and env.get("PGPASSWORD") == TEST_PW for argv, env, _s, _t in fake.calls):
+        bad.append("psql never received the credential through its environment (wiring broken; check vacuous)")
+    # runtime 2: refuses AWS keys in its environment, without echoing the value
+    keyval = "AK" + "IA" + "TESTONLY0000ZZZZ"
+    cli = mods()[0]
+    d = os.path.join(_TMP, "cli_awskey")
+    with _env({"TAPE_LIVE_RO_DSN": TEST_DSN, "AWS_ACCESS_KEY_ID": keyval}):
+        rc2, log2 = quiet(cli.main, ["live", "--day", DAY, "--out", d, "--source", "s3", "--chain", "psql", "--clock", "sim",
+                                     "--start", "08:50"])
+    if rc2 != 2:
+        bad.append("AWS_ACCESS_KEY_ID set: rc=%s, want 2 (refused)" % rc2)
+    if keyval in log2 or TEST_PW in log2:
+        bad.append("refusal message echoes a credential")
+    return not bad, "; ".join(bad[:8]) or "%d files clean of %d patterns; stderr and exceptions scrubbed; env allowlists hold; AWS keys refused" % (
+        len(NEW_FILES), len(pats))
+
+
+SNAP_COLS = ("run_id", "symbol", "ts", "expiry_date", "strike", "oi_call", "oi_put", "gex_cr")
+
+
+def g_runner_bounded_sql():
+    bad = []
+    ws, ls = rmods()[2], rmods()[1]
+    named = {"SNAPSHOT_SQL": ws.SNAPSHOT_SQL, "COUNT_SQL": ws.COUNT_SQL, "CHECK_SQL": ws.CHECK_SQL}
+    # the runner's modules only: ddl.py renders the offline SQL file and is not a path the runner can reach
+    for rel in RUN_MODS + ("services/tape_live/live_sources.py",):
+        tree, consts = _consts(os.path.join(ROOT, rel))
+        for ln, s in consts:
+            if re.search(r"(?i)\bselect\b", s) and s not in named.values():
+                bad.append("%s:%d SQL text outside the named queries: %r" % (rel, ln, s[:60]))
+    for name, sql in named.items():
+        if re.search(r"(?i)\bselect\s+\*", sql) or re.search(r"(?i)\.\*", sql):
+            bad.append("%s selects *" % name)
+        if "SET LOCAL statement_timeout = '8s';" not in sql:
+            bad.append("%s: no 8 s statement_timeout" % name)
+        if not re.search(r"(?i)^BEGIN TRANSACTION READ ONLY;", sql.strip()) or not sql.strip().endswith("COMMIT;"):
+            bad.append("%s: not one READ ONLY transaction" % name)
+    for name in ("SNAPSHOT_SQL", "COUNT_SQL"):
+        sql = named[name]
+        for need in ("FROM public.gex_strike_snapshots", "symbol = :'sym'",
+                     "ts >= (:'day')::date::timestamp AT TIME ZONE 'Asia/Kolkata'",
+                     "ts < ((:'day')::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata'", "ts <= (:'until')::timestamptz"):
+            if need not in sql:
+                bad.append("%s lacks %r" % (name, need))
+    tup = "(ts, expiry_date, strike, run_id::text)"
+    cur = "((:'k_ts')::timestamptz, (:'k_exp')::date, (:'k_strike')::numeric, :'k_run')"
+    s = ws.SNAPSHOT_SQL
+    m = re.search(r"(?is)SELECT\s+(.*?)\s+FROM", s)
+    if not m or tuple(c.strip() for c in m.group(1).split(",")) != SNAP_COLS:
+        bad.append("SNAPSHOT_SQL column list is not exactly %s" % (SNAP_COLS,))
+    if "AND %s > %s" % (tup, cur) not in s:
+        bad.append("SNAPSHOT_SQL keyset predicate is not the strict tuple %s > cursor" % tup)
+    if "ORDER BY ts, expiry_date, strike, run_id::text" not in s:
+        bad.append("SNAPSHOT_SQL ORDER BY is not the keyset tuple")
+    lim = re.findall(r"(?i)\bLIMIT\s+(\d+)\s*;", s)
+    if len(lim) != 1 or not 1 <= int(lim[0]) <= 5000 or int(lim[0]) != ws.PAGE_LIMIT:
+        bad.append("SNAPSHOT_SQL LIMIT %r (want one LIMIT == PAGE_LIMIT <= 5000)" % (lim,))
+    c = ws.COUNT_SQL
+    m = re.search(r"(?is)SELECT\s+(.*?)\s+FROM", c)
+    if not m or m.group(1).strip() != "count(*)":
+        bad.append("COUNT_SQL does not select exactly count(*)")
+    if "AND %s <= %s" % (tup, cur) not in c:
+        bad.append("COUNT_SQL keyset predicate is not tuple <= cursor")
+    if "FROM" in ws.CHECK_SQL.upper():
+        bad.append("CHECK_SQL reads a relation")
+    env = ls.pg_env({"PATH": "x"}, ls.parse_dsn(TEST_DSN))
+    if env.get("PGOPTIONS") != "-c default_transaction_read_only=on -c statement_timeout=8000":
+        bad.append("PGOPTIONS %r" % env.get("PGOPTIONS"))
+    if env.get("PGCONNECT_TIMEOUT") != "5":
+        bad.append("PGCONNECT_TIMEOUT %r" % env.get("PGCONNECT_TIMEOUT"))
+    if not 0 < ls.PSQL_TIMEOUT_S <= 15 or not 0 < ls.LIST_TIMEOUT_S <= 30 or not 0 < ls.GET_TIMEOUT_S <= 60:
+        bad.append("timeouts %s/%s/%s" % (ls.PSQL_TIMEOUT_S, ls.LIST_TIMEOUT_S, ls.GET_TIMEOUT_S))
+    return not bad, "; ".join(bad[:8]) or "3 named queries: explicit columns (count(*) only in the count query), day/until/keyset bounds, LIMIT %d, 8 s timeout, read-only" % ws.PAGE_LIMIT
+
+
+# ---------------------------------------------------------------- keyset
+def _keyset_rows():
+    """Planted chain rows for one symbol: ts ties across two expiries and many strikes, so 7-row pages split inside a tie."""
+    rows = []
+    for i, m in enumerate((600, 605, 610, 615, 620)):
+        ts = datetime.fromtimestamp(ist_epoch(m, 21.5), timezone.utc).isoformat()
+        for exp in ("2026-11-09", "2026-11-16"):
+            for k in (23400, 23450, 23500, 23550, 23600, 23650, 23700):
+                rows.append({"run_id": "%08d-0000-4000-8000-000000000000" % i, "symbol": "NIFTY", "ts": ts, "expiry_date": exp,
+                             "strike": "%.1f" % k, "oi_call": str(1000 + k), "oi_put": str(2000 + k), "gex_cr": "0.1"})
+    return rows
+
+
+class KeysetTable:
+    """Test-side table: visibility by a per-row commit time, strict tuple >, LIMIT. Written here, independently."""
+
+    def __init__(self, rows, commit):
+        self.rows, self.commit = rows, commit
+        self.pages = []
+
+    @staticmethod
+    def key(r):
+        return (datetime.fromisoformat(r["ts"]), r["expiry_date"], float(r["strike"]), r["run_id"])
+
+    def _cur(self, c):
+        return (datetime.fromisoformat(c[0]), c[1], float(c[2]), c[3])
+
+    def read_page(self, sym, cursor, until, limit):
+        cur = self._cur(cursor)
+        out = sorted((r for r in self.rows if r["symbol"] == sym and self.commit(r) <= until and self.key(r) > cur), key=self.key)
+        page = [dict(r) for r in out[:limit]]
+        self.pages.append(page)
+        return page
+
+    def count_upto(self, sym, cursor, until):
+        cur = self._cur(cursor)
+        return sum(1 for r in self.rows if r["symbol"] == sym and self.commit(r) <= until and self.key(r) <= cur)
+
+
+class RecordingChain:
+    def __init__(self, inner):
+        self.inner, self.pages = inner, []
+
+    def read_page(self, sym, cursor, until, limit):
+        page = self.inner.read_page(sym, cursor, until, limit)
+        self.pages.append([dict(r) for r in page])
+        return page
+
+    def count_upto(self, sym, cursor, until):
+        return self.inner.count_upto(sym, cursor, until)
+
+
+def _keyset_case(make_src, label):
+    lr, ls, ws = rmods()
+    bad = []
+    rows = _keyset_rows()                                           # 70 rows
+    late = rows[5]                                                  # sorts low (first run), committed late
+    t_all = ist_epoch(700)
+
+    def commit(r):
+        return t_all + 600 if r is late else ist_epoch(600)
+    src = RecordingChain(make_src(rows, commit))
+    counters = {}
+    poller = lr.ChainPoller(src, DAY, limit=7, max_pages=8, counters=counters)
+    k = KeysetTable.key
+
+    def raw(pages):
+        return [k(r) for p in pages for r in p]
+    want = sorted(k(r) for r in rows if r is not late)
+    # poll 1: 69 visible rows, 8 pages x 7 = 56, stops at max_pages
+    poller.poll("NIFTY", t_all)
+    got1 = raw(src.pages)
+    if got1 != want[:56]:
+        bad.append("%s poll 1: %d rows, want the first 56 in order" % (label, len(got1)))
+    if len(src.pages) != 8:
+        bad.append("%s poll 1: %d pages, want 8 (max_pages)" % (label, len(src.pages)))
+    n1 = len(src.pages)
+    poller.poll("NIFTY", t_all)                                     # resumes: 7, 6 (short page ends the poll)
+    got2 = raw(src.pages[n1:])
+    if got1 + got2 != want:
+        bad.append("%s polls 1+2: concatenation != the full ordered set (dups %d, missing %d)" % (
+            label, len(got1 + got2) - len(set(got1 + got2)), len(set(want) - set(got1 + got2))))
+    if poller.cursor["NIFTY"] != ws.cursor_of(max(rows, key=k) if True else None):
+        bad.append("%s cursor %r != last row" % (label, poller.cursor["NIFTY"]))
+    if counters.get("chain_skipped"):
+        bad.append("%s count check fired with nothing skipped" % label)
+    # the late commit below the cursor: the count check must fire once, reset, and recover it with no duplicate kept
+    poller.poll("NIFTY", t_all + 700)
+    if counters.get("chain_skipped") != 1:
+        bad.append("%s late commit below the cursor: chain_skipped=%r, want 1" % (label, counters.get("chain_skipped")))
+    poller.poll("NIFTY", t_all + 700)
+    held = sorted(k(r) for r in poller.acc.rows_of("NIFTY"))
+    if held != sorted(k(r) for r in rows):
+        bad.append("%s after recovery: %d rows held, want %d distinct" % (label, len(held), len(rows)))
+    return bad
+
+
+def g_runner_keyset():
+    ws = rmods()[2]
+    bad = _keyset_case(lambda rows, commit: KeysetTable(rows, commit), "table")
+
+    def local(rows, commit):
+        d = os.path.join(_TMP, "keyset_csv")
+        os.makedirs(d, exist_ok=True)
+        p = os.path.join(d, "rows.csv")
+        with open(p, "w", encoding="utf-8", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=list(SNAP_COLS), lineterminator="\n")
+            w.writeheader()
+            w.writerows(rows)
+        late_key = KeysetTable.key(rows[5])
+        return ws.LocalChainSource([p], DAY, delay_fn=lambda r: 6300 if KeysetTable.key(r) == late_key else 0,
+                                   visible_from=lambda r: ist_epoch(600) - 1)
+    bad += _keyset_case(local, "LocalChainSource")
+    return not bad, "; ".join(bad[:8]) or "7-row pages through ts ties: no overlap, no gap, 8-page cap resumes, late commit below cursor recovered once (in-test table and LocalChainSource)"
+
+
+# ---------------------------------------------------------------- lifecycle
+def _hb(root):
+    with open(os.path.join(root, DAY, "heartbeat.json"), encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _state(root):
+    with open(os.path.join(root, DAY, "state.json"), encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _delta_names(root):
+    d = os.path.join(live_dir(root), "cycles")
+    return sorted(os.listdir(d)) if os.path.isdir(d) else []
+
+
+HB_FIELDS = ("state", "day", "last_cycle", "last_cycle_wall_s", "lag_s", "peak_rss_mb", "rss_mb", "errors", "last_error", "pid",
+             "code_sha", "updated_utc")
+
+
+def g_runner_lifecycle():
+    lr, ls, ws = rmods()
+    bad = []
+    # (1) full day: heartbeat after every cycle, self-exit after 15:45, nothing later
+    seen = []
+
+    def after_cycle(t, runner):
+        seen.append((t, _hb(runner.cfg.out)))
+    rc, root, log = runner_sim("lc_full", out=os.path.join(_TMP, "lc_full"), hooks={"after_cycle": after_cycle})
+    if rc != 0:
+        bad.append("full day rc=%s" % rc)
+    for t, hb in seen:
+        miss = [k for k in HB_FIELDS if k not in hb]
+        if miss or hb["last_cycle"] != "%02d:%02d" % (t // 60, t % 60):
+            bad.append("heartbeat after %d: missing %s, last_cycle %r" % (t, miss, hb.get("last_cycle")))
+            break
+    ts = [t for t, _ in seen]
+    if not ts or ts[-1] != 15 * 60 + 45 or any(b - a != 5 for a, b in zip(ts, ts[1:])):
+        bad.append("cycles %s..%s, want every 5 min ending 15:45" % (ts[:1], ts[-1:]))
+    hb = _hb(root)
+    if hb["state"] != "done":
+        bad.append("end state %r, want done" % hb["state"])
+    if lr.SimClock.last_now is not None and lr.SimClock.last_now >= ist_epoch(15 * 60 + 50):
+        bad.append("the runner was still awake at or after 15:50")
+    # (2) kill switch at 10:02 -> exit 0 at the next check, nothing after 10:00
+    dk = os.path.join(_TMP, "lc_kill")
+
+    def kill():
+        with open(os.path.join(dk, "KILL"), "w") as fh:
+            fh.write("")
+    rc, root, log = runner_sim("lc_kill", out=dk, events=[(ist_epoch(10 * 60 + 2), kill)])
+    if rc != 0 or _hb(root)["state"] != "killed":
+        bad.append("kill switch: rc=%s state=%r" % (rc, _hb(root).get("state")))
+    late = [n for n in _delta_names(root) if n[:4].isdigit() and n[:4] > "1000"]
+    if late or _state(root).get("committed") != 600:
+        bad.append("kill switch: cycles after 10:00 %s, committed %r" % (late[:3], _state(root).get("committed")))
+    # (3) MemoryError -> exit 3, state memory_error
+    def boom(t, runner):
+        if t == 660:
+            raise MemoryError()
+    rc, root, log = runner_sim("lc_mem", out=os.path.join(_TMP, "lc_mem"), hooks={"before_cycle": boom})
+    if rc != 3 or _hb(root)["state"] != "memory_error":
+        bad.append("MemoryError: rc=%s state=%r, want 3 memory_error" % (rc, _hb(root).get("state")))
+    # (4) RSS over the soft cap -> exit 3, state memory_cap
+    clk = {}
+
+    def rss():
+        return 700.0 if clk.get("t", 0) >= 660 else 100.0
+
+    def mark(t, runner):
+        clk["t"] = t
+    rc, root, log = runner_sim("lc_rss", out=os.path.join(_TMP, "lc_rss"), hooks={"before_cycle": mark}, rss_fn=rss)
+    if rc != 3 or _hb(root)["state"] != "memory_cap":
+        bad.append("RSS cap: rc=%s state=%r, want 3 memory_cap" % (rc, _hb(root).get("state")))
+    # (5) one failed S3 list at 10:00: counted, the cycle still runs, the next wake recovers, no tight retry
+    calls = {"n": 0, "failed": 0}
+
+    class FlakyList:
+        def __init__(self, inner):
+            self.inner = inner
+
+        def list(self, prefix):
+            calls["n"] += 1
+            if prefix.startswith("NIFTY/") and not calls["failed"] and self.inner.clock.now() >= ist_epoch(600):
+                calls["failed"] = 1
+                raise ls.SourceError("connect")
+            return self.inner.list(prefix)
+
+        def get(self, key, dest):
+            return self.inner.get(key, dest)
+    wakes = []
+    rc, root, log = runner_sim("lc_flaky", out=os.path.join(_TMP, "lc_flaky"), objects_wrap=FlakyList,
+                               hooks={"after_wake": lambda t, r: wakes.append(t)})
+    hb = _hb(root)
+    if rc != 0 or hb["errors"].get("s3_list") != 1:
+        bad.append("flaky list: rc=%s errors.s3_list=%r, want 1" % (rc, hb["errors"].get("s3_list")))
+    if calls["n"] != 3 * len(wakes):
+        bad.append("flaky list: %d list calls for %d wakes (want exactly 3 per wake: no retry loop)" % (calls["n"], len(wakes)))
+    if "1000_cycle.csv" not in _delta_names(root) and "1000_events.csv" not in _delta_names(root):
+        rows = rd(os.path.join(root, DAY, "live_metrics.csv")).decode()
+        if "\n%s,10:00," % DAY not in rows:
+            bad.append("flaky list: no cycle recorded at 10:00")
+    # (5b) free disk below the floor at start -> refused with exit 3 and state disk_floor, before any object is fetched
+    rc, root, log = runner_sim("lc_disk", out=os.path.join(_TMP, "lc_disk"), disk_floor=10 ** 9)
+    if rc != 3 or _hb(root)["state"] != "disk_floor" or os.path.exists(os.path.join(root, DAY, "arrival_log.csv")):
+        bad.append("disk floor: rc=%s state=%r (want 3 disk_floor, nothing fetched)" % (rc, _hb(root).get("state")))
+    # (6) chain wait: at most 8 polls; a run delayed past the deadline -> the older run's id, empty readiness lag
+    polls = {}
+
+    class CountPolls:
+        def __init__(self, inner):
+            self.inner = inner
+
+        def read_page(self, sym, cursor, until, limit):
+            return self.inner.read_page(sym, cursor, until, limit)
+
+        def count_upto(self, sym, cursor, until):
+            polls.setdefault(until // 300, set()).add(until)
+            return self.inner.count_upto(sym, cursor, until)
+    late_run = ist_epoch(630, 21.5)
+
+    def delay(r):
+        return 400 if r["symbol"] == "NIFTY" and abs(datetime.fromisoformat(r["ts"]).timestamp() - late_run) < 1 else 0
+    rc, root, log = runner_sim("lc_chain", out=os.path.join(_TMP, "lc_chain"), chain_delay=delay, chain_wrap=CountPolls)
+    per_cycle = {}
+    for slot, us in polls.items():
+        per_cycle[slot] = len(us)
+    if rc != 0 or max(per_cycle.values() or [0]) > 8:
+        bad.append("chain wait: rc=%s, max polls in one cycle %s (want <= 8)" % (rc, max(per_cycle.values() or [0])))
+    with open(os.path.join(live_dir(root), "tape_live_wall.csv"), encoding="utf-8", newline="") as fh:
+        wr = {(r["symbol"], r["ts_ist"][11:16]): r for r in csv.DictReader(fh)}
+    w1030, w1025 = wr.get(("NIFTY", "10:30")), wr.get(("NIFTY", "10:25"))
+    if not w1030 or not w1025 or w1030["chain_run_id"] != w1025["chain_run_id"]:
+        bad.append("delayed run: wall 10:30 should fall back to the 10:25 run")
+    with open(os.path.join(root, DAY, "live_metrics.csv"), encoding="utf-8", newline="") as fh:
+        mrows = {r["T"]: r for r in csv.DictReader(fh)}
+    if mrows.get("10:30", {}).get("ready_lag_s_NIFTY", "x") != "" or not mrows.get("10:25", {}).get("ready_lag_s_NIFTY"):
+        bad.append("delayed run: ready_lag_s_NIFTY at 10:30 %r (want empty), 10:25 %r (want a value)" % (
+            mrows.get("10:30", {}).get("ready_lag_s_NIFTY"), mrows.get("10:25", {}).get("ready_lag_s_NIFTY")))
+    return not bad, "; ".join(bad[:8]) or "heartbeat every cycle; self-exit 15:45; kill -> 0; MemoryError / RSS cap -> 3; one failed list counted, 3 lists per wake; chain wait <= 8 polls, deadline falls back"
+
+
+# ---------------------------------------------------------------- restart
+def compare_day(a, b, mask_chain_seen=False):
+    bad = []
+    da, db = os.path.join(a, DAY), os.path.join(b, DAY)
+    fa = [x for x in _files(da) if x not in TIMING_FILES]
+    fb = [x for x in _files(db) if x not in TIMING_FILES]
+    if fa != fb:
+        bad.append("file sets differ: %s / %s" % (sorted(set(fa) - set(fb))[:4], sorted(set(fb) - set(fa))[:4]))
+    for rel in sorted(set(fa) & set(fb)):
+        x, y = rd(os.path.join(da, rel)), rd(os.path.join(db, rel))
+        if rel == "arrival_log.csv" and mask_chain_seen:
+            x, y = _mask_chain(x), _mask_chain(y)
+        if x != y:
+            bad.append("differs: " + rel)
+    return bad
+
+
+def _mask_chain(b):
+    out = []
+    for r in csv.reader(io.StringIO(b.decode())):
+        if r and r[0] == "chain_run":
+            r = [("" if i == 5 else v) for i, v in enumerate(r)]
+        out.append(r)
+    buf = io.StringIO()
+    csv.writer(buf, lineterminator="\n").writerows(out)
+    return buf.getvalue().encode()
+
+
+def g_runner_restart():
+    bad = []
+    rc, A, _ = runner_sim("eq_clean")
+    if rc != 0:
+        return False, "reference run rc=%s" % rc
+
+    def killer(d, hhmm):
+        def k():
+            with open(os.path.join(d, "KILL"), "w") as fh:
+                fh.write("")
+        return [(ist_epoch(_hm_min(hhmm)), k)]
+    # B: kill after 11:00, restart before 11:05
+    dB = os.path.join(_TMP, "rs_B")
+    rc1, _, _ = runner_sim("rs_B1", out=dB, events=killer(dB, "11:01"))
+    os.remove(os.path.join(dB, "KILL"))
+    rc2, _, _ = runner_sim("rs_B2", out=dB, start="11:03")
+    if (rc1, rc2) != (0, 0):
+        bad.append("B rc %s/%s" % (rc1, rc2))
+    bad += ["B: " + x for x in compare_day(A, dB)]
+    # C: crash after the journal append in cycle 12:10, restart at 12:11
+    dC = os.path.join(_TMP, "rs_C")
+
+    def crash(t, runner):
+        if t == 730:
+            raise RuntimeError("injected crash")
+    rc1, _, _ = runner_sim("rs_C1", out=dC, hooks={"after_journal": crash})
+    rc2, _, _ = runner_sim("rs_C2", out=dC, start="12:11")
+    if rc1 != 1 or rc2 != 0:
+        bad.append("C rc %s/%s (want 1 then 0)" % (rc1, rc2))
+    bad += ["C: " + x for x in compare_day(A, dC, mask_chain_seen=True)]
+    # D: kill at 11:01, restart at 12:01: 11:05..11:55 missed, never back-filled
+    dD = os.path.join(_TMP, "rs_D")
+    runner_sim("rs_D1", out=dD, events=killer(dD, "11:01"))
+    os.remove(os.path.join(dD, "KILL"))
+    rc2, _, _ = runner_sim("rs_D2", out=dD, start="12:01")
+    missed = ["%02d:%02d" % (m // 60, m % 60) for m in range(665, 720, 5)]
+    if rc2 != 0 or _state(dD).get("missed") != [_hm_min(x) for x in missed]:
+        bad.append("D: rc=%s missed %r, want %s" % (rc2, _state(dD).get("missed"), missed))
+    for n in ("tape_live_cycle.csv", "tape_live_events.csv"):
+        if rd(os.path.join(live_dir(A), n)) != rd(os.path.join(live_dir(dD), n)):
+            bad.append("D: %s != uninterrupted" % n)
+    for n, per in (("tape_live_label.csv", 4), ("tape_live_wall.csv", 2)):
+        la = rd(os.path.join(live_dir(A), n)).decode().splitlines()
+        lb = rd(os.path.join(live_dir(dD), n)).decode().splitlines()
+        gone = [l for l in la if l not in lb]
+        extra = [l for l in lb if l not in la]
+        want_gone = [l for l in la if any("T%s:00+05:30" % x in l for x in missed)]
+        if extra or sorted(gone) != sorted(want_gone) or len(gone) != per * len(missed):
+            bad.append("D: %s %d rows gone (want exactly %d, those of the missed points), %d extra" % (
+                n, len(gone), per * len(missed), len(extra)))
+    # E: the day twice -> identical; a restart of a finished day changes nothing
+    dE = os.path.join(_TMP, "rs_E")
+    rc, _, _ = runner_sim("rs_E", out=dE)
+    bad += ["E: " + x for x in compare_day(A, dE)]
+    before = {rel: rd(os.path.join(dE, DAY, rel)) for rel in _files(os.path.join(dE, DAY)) if rel not in TIMING_FILES}
+    rc, _, _ = runner_sim("rs_E2", out=dE, start="15:50")
+    after = {rel: rd(os.path.join(dE, DAY, rel)) for rel in _files(os.path.join(dE, DAY)) if rel not in TIMING_FILES}
+    if rc != 0 or before != after:
+        bad.append("E: restart of a finished day rc=%s, changed %d files" % (rc, sum(1 for k in set(before) | set(after)
+                                                                                     if before.get(k) != after.get(k))))
+    return not bad, "; ".join(bad[:8]) or "B kill/restart, C crash mid-cycle, E twice: byte-identical; D: 11 missed points absent (44 labels, 22 walls), finals equal; finished day untouched"
+
+
 GUARDS = [("live-vectors", g_vectors), ("live-derive", g_derive), ("live-rule-inputs", g_rule_inputs),
           ("live-wall-floor", g_wall_floor), ("live-first-wins", g_first_wins), ("live-equal-offline", g_equal_offline),
           ("live-causal", g_causal), ("live-verify", g_verify), ("live-deterministic", g_deterministic),
           ("live-no-outcomes", g_no_outcomes), ("live-isolated", g_isolated), ("live-sql", g_sql),
-          ("live-ts-width", g_ts_width), ("live-rebuild-scope", g_rebuild_scope)]
+          ("live-ts-width", g_ts_width), ("live-rebuild-scope", g_rebuild_scope),
+          ("live-runner-equal", g_runner_equal), ("live-runner-readonly", g_runner_readonly),
+          ("live-runner-secrets", g_runner_secrets), ("live-runner-bounded-sql", g_runner_bounded_sql),
+          ("live-runner-keyset", g_runner_keyset), ("live-runner-lifecycle", g_runner_lifecycle),
+          ("live-runner-restart", g_runner_restart)]
 
 
 def main():

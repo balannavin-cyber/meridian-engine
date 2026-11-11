@@ -9,7 +9,7 @@ which must PASS (exit 0).
   python tests/tape_live_mutants.py [--repeat N] [--only M-L-...]
   (Local, inside 08:30-15:45 IST on a weekday: set TAPE_RULE23_OVERRIDE_R1=1, operator ruling R-1, 2026-11-03)
 
-Last line: "TAPE LIVE MUTANTS PASS (28/28 caught xN, 14/14 controls xN)" or FAIL. Exit 0 / 1.
+Last line: "TAPE LIVE MUTANTS PASS (47/47 caught xN, 21/21 controls xN)" or FAIL. Exit 0 / 1.
 """
 import argparse
 import os
@@ -19,8 +19,11 @@ import sys
 import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-COPY = ["merdian_compute", "services", "sql/2026-11-06_tape_live_tables.sql", "tests/test_tape_live.py", "tests/tape_live"]
+COPY = ["merdian_compute", "services", "sql/2026-11-06_tape_live_tables.sql", "tests/test_tape_live.py", "tests/tape_live",
+        "tests/tape_live_mutants.py", "tests/tape_live_runner_equal.py", "tests/run_offline.sh", "docs/tape/L2_live_runner_plan.md",
+        "docs/tape/L2_live_runner_install.md", "docs/tape/L2_live_runner.service.template", "docs/tape/L2_live_runner.timer.template"]
 R, W, WS = "services/tape_live/rules.py", "services/tape_live/writer.py", "services/tape_live/wall_source.py"
+LS, LR = "services/tape_live/live_sources.py", "services/tape_live/live_runner.py"
 V, CLI, SQL = "services/tape_live/verify_day.py", "services/tape_live/cli.py", "sql/2026-11-06_tape_live_tables.sql"
 UNTR = '    if f["untraded"]:\n        return ("NO_READ", False, "untraded wall (vendor OI)")\n'
 INWIN = '    if not f["in_window"]:\n        return ("NO_READ", False, "wall outside subscribed window")\n'
@@ -76,6 +79,42 @@ M = [
     ("M-L-DIRTY-REBUILDS-AT-SEGMENT", "live-rebuild-scope", W,
      "        if sym in self.dirty:\n            return\n",
      "        if sym in self.dirty:\n            self._rebuild_dirty()\n            return\n"),
+    # L2 live runner, Phase A (docs/tape/L2_live_runner_plan.md section 9)
+    ("M-R-S3-WRITE", "live-runner-readonly", LS,
+     '"s3api", "get-object", "--bucket", self.bucket, "--key", key]', '"s3api", "put-object", "--bucket", self.bucket, "--key", key]'),
+    ("M-R-SQL-WRITE", "live-runner-readonly", WS, '    "LIMIT 5000;\\n"\n',
+     '    "LIMIT 5000;\\n"\n    "DELETE FROM public.gex_strike_snapshots;\\n"\n'),
+    ("M-R-SHELL-TRUE", "live-runner-readonly", LS, "shell=False, check=False", "shell=True, check=False"),
+    ("M-R-CRED-IN-ARGV", "live-runner-readonly", LS, '"-v", "ON_ERROR_STOP=1"]\n',
+     '"-v", "ON_ERROR_STOP=1", "-v", "privs=" + self.env["PGPASSWORD"]]\n'),
+    ("M-R-STDERR-RAW", "live-runner-secrets", LS, "        raise SourceError(classify(rc, err, other))\n",
+     '        raise SourceError(classify(rc, err, other) + " " + (err or b"").decode("utf-8", "replace"))\n'),
+    ("M-R-DSN-LEFT-IN-ENV", "live-runner-secrets", CLI, "dsn = os.environ.pop(RO_CONN_ENV, None)",
+     "dsn = os.environ.get(RO_CONN_ENV, None)"),
+    ("M-R-NO-LIMIT", "live-runner-bounded-sql", WS, '    "LIMIT 5000;\\n"\n', '    ";\\n"\n'),
+    ("M-R-NO-TIMEOUT", "live-runner-bounded-sql", WS,
+     "    \"SET LOCAL statement_timeout = '8s';\\n\"\n    \"SET LOCAL TIME ZONE 'UTC';\\n\"\n    \"SELECT run_id, symbol",
+     "    \"SET LOCAL TIME ZONE 'UTC';\\n\"\n    \"SELECT run_id, symbol"),
+    ("M-R-SELECT-STAR", "live-runner-bounded-sql", WS, '    "SELECT run_id, symbol, ts, expiry_date, strike, oi_call, oi_put, gex_cr\\n"\n',
+     '    "SELECT *\\n"\n'),
+    ("M-R-KEYSET-GE", "live-runner-keyset", WS, "            if k > ck and av <= until:\n", "            if k >= ck and av <= until:\n"),
+    ("M-R-KEYSET-TS-ONLY", "live-runner-keyset", LR, "cur = self.cursor[sym] = wall_source.cursor_of(page[-1])",
+     'cur = self.cursor[sym] = (page[-1]["ts"], "0001-01-01", "-1", "")'),
+    ("M-R-NO-COUNT-CHECK", "live-runner-keyset", LR,
+     "            if self.src.count_upto(sym, cur, until) != self.acc.count_upto(sym, cur):\n", "            if False:\n"),
+    ("M-R-SUBS-AFTER-SEGS", "live-runner-equal", LR, "order.append(((0, replay.sub_sort_key(", "order.append(((2, replay.sub_sort_key("),
+    ("M-R-NO-CHAIN-WAIT", "live-runner-equal", LR,
+     "            if all(v is not None for v in lag.values()) or now + self.cfg.poll_s > deadline or polls >= 8 or self._stopped():\n",
+     "            if True:\n"),
+    ("M-R-KILL-IGNORED", "live-runner-lifecycle", LR, '        return self.cfg.term["hit"] or os.path.exists(self.cfg.kill_file)\n',
+     '        return self.cfg.term["hit"]\n'),
+    ("M-R-NO-SELF-EXIT", "live-runner-lifecycle", LR, "for T in range(T0, self.cfg.end_t + 1, 5):",
+     "for T in range(T0, self.cfg.end_t + 61, 5):"),
+    ("M-R-TIGHT-RETRY", "live-runner-lifecycle", LR, '                self._err("s3_list", exc.category)\n                infos = []\n',
+     '                self._err("s3_list", exc.category)\n                infos = self.objs.list(prefix)\n'),
+    ("M-R-MEMERR-EXIT-0", "live-runner-lifecycle", LR, '            self._hb("memory_error")\n            return 3\n',
+     '            self._hb("memory_error")\n            return 0\n'),
+    ("M-R-RESTART-IGNORES-JOURNAL", "live-runner-restart", LR, "        self._journal_load()\n        objs = ", "        objs = "),
 ]
 
 

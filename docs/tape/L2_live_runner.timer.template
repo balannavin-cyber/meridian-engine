@@ -1,0 +1,15 @@
+# /etc/systemd/system/tape-live.timer   (TEMPLATE: docs/tape/L2_live_runner_install.md)
+#
+# INSTALLED BUT NOT ENABLED. The install note copies this file and runs `systemctl daemon-reload` only. The first run is a manual
+# `sudo systemctl start tape-live.service`; enabling this timer is a separate, later decision of the operator.
+
+[Unit]
+Description=Start the MERIDIAN tape live runner on trading weekdays
+
+[Timer]
+OnCalendar=Mon..Fri 08:50 Asia/Kolkata
+Persistent=no
+Unit=tape-live.service
+
+[Install]
+WantedBy=timers.target

@@ -1032,6 +1032,47 @@ def compare_live(cdir, ldir):
     return bad
 
 
+_REAL_DT = datetime
+
+
+class _Strict310(_REAL_DT):
+    """datetime whose fromisoformat has Python 3.10's limit: a fraction of 0, 3 or 6 digits and no other width (3.11+ accept any).
+    cli_live_fake runs the fake under it (strict_iso), so a fake that hands an unpadded fraction to the parser fails on any
+    interpreter as it did on the production box (3.10.12: 1028 of 1046 fake psql calls raised at 670ea84)."""
+
+    @classmethod
+    def fromisoformat(cls, s):
+        m = re.search(r"\.(\d+)", s)
+        if m is not None and len(m.group(1)) not in (3, 6):
+            raise ValueError("Invalid isoformat string: %r (strict 3.10 stand-in)" % (s,))
+        return _REAL_DT.fromisoformat(s)
+
+
+@contextlib.contextmanager
+def strict_iso():
+    """While the block runs, every `datetime` looked up in this module (the fakes) is the strict 3.10 stand-in."""
+    g = globals()
+    saved = g["datetime"]
+    g["datetime"] = _Strict310
+    try:
+        yield
+    finally:
+        g["datetime"] = saved
+
+
+FAKE_TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?([+-]\d{2}:\d{2})$")
+
+
+def fake_pg_ts(s):
+    """FakeShell's ONE timestamp parse. Postgres accepts a fraction of any width 0..6, so the fake pads it on the right to 6 digits
+    (.5 -> .500000; never truncated, never rounded) before datetime parses it: Python 3.10 parses only 0, 3 or 6 digits."""
+    m = FAKE_TS_RE.match(s)
+    if m is None:
+        raise ValueError("fake: timestamp %r is not YYYY-MM-DDTHH:MM:SS[.f]+HH:MM" % (s,))
+    frac = "" if m.group(2) is None else "." + m.group(2).ljust(6, "0")
+    return datetime.fromisoformat(m.group(1) + frac + m.group(3))
+
+
 class FakeShell:
     """Stands in for the aws CLI and psql (live_sources.RUN). Its keyset, LIMIT and psql text shape are written here, not taken
     from services/tape_live. Records every call (argv, env, stdin) for the read-only and secrets checks."""
@@ -1054,6 +1095,7 @@ class FakeShell:
             self.rows[s].sort(key=self.key)
         self.psql_fail = psql_fail
         self.md5 = {}
+        self.raised = 0
 
     def _md5(self, rel):
         if rel not in self.md5:
@@ -1062,7 +1104,7 @@ class FakeShell:
 
     @staticmethod
     def key(r):
-        return (datetime.fromisoformat(r["ts"]), r["expiry_date"], float(r["strike"]), r["run_id"])
+        return (fake_pg_ts(r["ts"]), r["expiry_date"], float(r["strike"]), r["run_id"])
 
     @staticmethod
     def psql_shape(ts):
@@ -1075,6 +1117,13 @@ class FakeShell:
         return "%s %s+00" % (d, clock)
 
     def __call__(self, argv, env, stdin, timeout):
+        try:
+            return self._call(argv, env, stdin, timeout)
+        except Exception:
+            self.raised += 1
+            raise
+
+    def _call(self, argv, env, stdin, timeout):
         self.calls.append((list(argv), dict(env), stdin, timeout))
         if argv[:3] == ["aws", "s3api", "list-objects-v2"]:
             pre = argv[argv.index("--prefix") + 1]
@@ -1098,9 +1147,9 @@ class FakeShell:
                     return r
             if "has_table_privilege" in sql:
                 return 0, b"merdian_ro,on,f\n", b""
-            until = datetime.fromisoformat(v["until"])
-            cur = (datetime.fromisoformat(v["k_ts"]), v["k_exp"], float(v["k_strike"]), v["k_run"])
-            rows = [r for r in self.rows.get(v["sym"], []) if datetime.fromisoformat(r["ts"]) <= until]
+            until = fake_pg_ts(v["until"])
+            cur = (fake_pg_ts(v["k_ts"]), v["k_exp"], float(v["k_strike"]), v["k_run"])
+            rows = [r for r in self.rows.get(v["sym"], []) if fake_pg_ts(r["ts"]) <= until]
             if "count(*)" in sql:
                 return 0, ("%d\n" % sum(1 for r in rows if self.key(r) <= cur)).encode(), b""
             rows = [r for r in rows if self.key(r) > cur][:5000]
@@ -1140,7 +1189,7 @@ def cli_live_fake(name, psql_fail=None, extra_env=None):
     env = {"TAPE_LIVE_RO_DSN": TEST_DSN}
     env.update(extra_env or {})
     try:
-        with _env(env, drop=("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")):
+        with _env(env, drop=("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")), strict_iso():
             rc, log = quiet(cli.main, ["live", "--day", DAY, "--out", d, "--source", "s3", "--chain", "psql", "--clock", "sim",
                                        "--start", "08:50", "--bucket", "meridian-tape-raw", "--disk-floor-mb", "20",
                                        "--rss-cap-mb", "100000"])
@@ -1167,6 +1216,51 @@ def _scope_cli():
     return _CACHE["scope_cli"]
 
 
+def _fake_ts_width():
+    """Rule 0 on any interpreter for the fake's timestamp parsing (operator, 2026-11-11). Postgres accepts and emits a fraction of any
+    width 0..6 (it trims trailing zeros), so the fake must parse every width. Under the strict 3.10 stand-in, seven rows whose ts
+    carry fractions of width 0..6 are counted and paged with each row in turn as the cursor. By hand: '', .1, .12, .123, .1234,
+    .12345, .123456 are 0, 100000, 120000, 123000, 123400, 123450, 123456 microseconds, strictly increasing, so with cursor = row w,
+    count(*) = w + 1 and the page is rows w+1..6. Fails if the stand-in is not strict, if any call raises, or if a count or page is
+    off."""
+    bad = []
+    try:
+        _Strict310.fromisoformat("2026-11-06T03:45:21.5+00:00")
+        bad.append("the strict stand-in accepted a 1-digit fraction (the check would be vacuous)")
+    except ValueError:
+        pass
+    for ok in ("2026-11-06T03:45:21+00:00", "2026-11-06T03:45:21.500+00:00", "2026-11-06T03:45:21.500000+00:00"):
+        try:
+            _Strict310.fromisoformat(ok)
+        except ValueError:
+            bad.append("the strict stand-in refused %s" % ok)
+    fr = ("", ".1", ".12", ".123", ".1234", ".12345", ".123456")
+    rows = [{"run_id": "r%d" % w, "symbol": "NIFTY", "ts": "2026-11-06T03:45:21%s+00:00" % f, "expiry_date": "2026-11-10",
+             "strike": "23500.0", "oi_call": "1", "oi_put": "1", "gex_cr": "0.000000"} for w, f in enumerate(fr)]
+    fake = FakeShell.__new__(FakeShell)
+    fake.calls, fake.psql_fail, fake.raised, fake.md5, fake.files, fake.vis = [], None, 0, {}, {}, {}
+    with strict_iso():
+        try:
+            fake.rows = {"NIFTY": sorted(rows, key=fake.key)}
+        except ValueError as exc:
+            return bad + ["the fake's sort key raised: %s" % exc]
+        for w, r in enumerate(rows):
+            argv = ["psql"]
+            for k, v in (("sym", "NIFTY"), ("until", "2026-11-06T10:00:00+00:00"), ("k_ts", r["ts"]), ("k_exp", r["expiry_date"]),
+                         ("k_strike", r["strike"]), ("k_run", r["run_id"])):
+                argv += ["-v", "%s=%s" % (k, v)]
+            try:
+                n = int(fake(argv, {}, b"SELECT count(*)", 15)[1].decode().strip())
+                got = [ln.split(",")[0] for ln in fake(argv, {}, b"SELECT run_id", 15)[1].decode().splitlines() if ln]
+            except Exception as exc:  # noqa: BLE001 - a raise is the finding
+                bad.append("width %d: the fake raised %s: %s" % (w, type(exc).__name__, exc))
+                continue
+            want = ["r%d" % j for j in range(w + 1, len(fr))]
+            if n != w + 1 or got != want:
+                bad.append("width %d: count %d page %s, by hand %d %s" % (w, n, got, w + 1, want))
+    return bad
+
+
 def g_runner_equal():
     bad, notes = [], []
     variants = (("clean", None, replay("clean"), None), ("late", _arr(gen_live.LATE_SEG), late_replay(), None),
@@ -1180,15 +1274,28 @@ def g_runner_equal():
         diff = compare_live(cdir, live_dir(root))
         bad += ["%s: %s" % (name, x) for x in diff]
         notes.append("%s %d files" % (name, len(_files(live_dir(root)))))
+    bad += ["fake ts width: %s" % x for x in _fake_ts_width()]
     rc, root, fake, log, _left = cli_live_fake("eq_psql")
     if rc != 0:
         bad.append("psql path: cli live rc=%s %s" % (rc, log[-800:]))
     else:
+        n_psql = sum(1 for c in fake.calls if c[0][:1] == ["psql"])
+        if fake.raised != 0:
+            bad.append("psql path: the fake raised %d calls (%d psql calls), want 0" % (fake.raised, n_psql))
+        with open(os.path.join(root, DAY, "heartbeat.json"), encoding="utf-8") as fh:
+            hb_db = json.load(fh)["errors"]["db"]
+        if hb_db != 0:
+            bad.append("psql path: heartbeat errors.db = %d, want 0" % hb_db)
+        with open(os.path.join(root, DAY, "live_metrics.csv"), encoding="utf-8", newline="") as fh:
+            m_err = sum(int(r["errors"]) for r in csv.DictReader(fh))
+        if m_err != 0:
+            bad.append("psql path: live_metrics.csv errors over all cycles = %d, want 0 (no per-kind column; db is one kind)" % m_err)
         bad += ["psql path: %s" % x for x in compare_live(replay("clean"), live_dir(root))]
         kinds = {tuple(c[0][:3]) if c[0][0] == "aws" else ("psql",) for c in fake.calls}
         if not {("aws", "s3api", "list-objects-v2"), ("aws", "s3api", "get-object"), ("psql",)} <= kinds:
             bad.append("psql path did not exercise list, get and psql: %r" % sorted(kinds))
-        notes.append("psql/S3 path %d shell calls" % len(fake.calls))
+        notes.append("psql/S3 path %d shell calls, fake raised 0, heartbeat errors.db 0, metrics errors 0" % len(fake.calls))
+    notes.append("fake parses ts fractions of width 0-6 under the strict 3.10 stand-in")
     return not bad, "; ".join(bad[:8]) or "runner == cli replay (live_run_id column stripped, plan s12): " + ", ".join(notes)
 
 

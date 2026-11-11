@@ -9,7 +9,7 @@ which must PASS (exit 0).
   python tests/tape_live_mutants.py [--repeat N] [--only M-L-...]
   (Local, inside 08:30-15:45 IST on a weekday: set TAPE_RULE23_OVERRIDE_R1=1, operator ruling R-1, 2026-11-03)
 
-Last line: "TAPE LIVE MUTANTS PASS (47/47 caught xN, 21/21 controls xN)" or FAIL. Exit 0 / 1.
+Last line: "TAPE LIVE MUTANTS PASS (48/48 caught xN, 21/21 controls xN)" or FAIL. Exit 0 / 1.
 """
 import argparse
 import os
@@ -106,6 +106,7 @@ M = [
     ("M-R-NO-CHAIN-WAIT", "live-runner-equal", LR,
      "            if all(v is not None for v in lag.values()) or now + self.cfg.poll_s > deadline or polls >= 8 or self._stopped():\n",
      "            if True:\n"),
+    ("M-R-FAKE-TS-UNPADDED", "live-runner-equal", "tests/test_tape_live.py", '"." + m.group(2).ljust(6, "0")', '"." + m.group(2)'),
     ("M-R-KILL-IGNORED", "live-runner-lifecycle", LR, '        return self.cfg.term["hit"] or os.path.exists(self.cfg.kill_file)\n',
      '        return self.cfg.term["hit"]\n'),
     ("M-R-NO-SELF-EXIT", "live-runner-lifecycle", LR, "for T in range(T0, self.cfg.end_t + 1, 5):",

@@ -9,6 +9,9 @@ Description=MERIDIAN tape live runner (stage 2a, file-only, read-only on S3 and 
 After=network-online.target
 Wants=network-online.target
 # Manual start for the first runs; see the install note. The timer is installed but NOT enabled.
+# Restart rate limit: these two belong in [Unit] (systemd ignores them in [Service]). At most 3 starts in 600 s.
+StartLimitIntervalSec=600
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -55,5 +58,3 @@ UMask=0077
 Restart=on-failure
 RestartSec=30
 RestartPreventExitStatus=2 3
-StartLimitIntervalSec=600
-StartLimitBurst=3

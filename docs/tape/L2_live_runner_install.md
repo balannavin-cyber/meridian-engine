@@ -41,13 +41,17 @@ full 40-hex commit the operator has verified equals the reviewed commit.
 ```bash
 SHA=<40-hex commit>
 sudo mkdir -p /opt/tape-live/$SHA
-git archive $SHA merdian_compute/__init__.py merdian_compute/tape services/__init__.py services/tape_live \
+git archive $SHA merdian_compute/__init__.py merdian_compute/cycle.py merdian_compute/gamma.py merdian_compute/pin.py \
+    merdian_compute/volatility.py merdian_compute/tape services/__init__.py services/tape_live \
     services/tape_offline services/tape_db services/tape_runner/special_sessions.json | sudo tar -x -C /opt/tape-live/$SHA
 echo $SHA | sudo tee /opt/tape-live/$SHA/CODE_SHA > /dev/null
 sudo chown -R root:root /opt/tape-live && sudo chmod -R go-w /opt/tape-live
 sudo -u tapelive python3 -I -c "import sys; sys.path.insert(0,'/opt/tape-live/$SHA'); import services.tape_live.cli" \
     && echo IMPORT OK
 ```
+
+`merdian_compute/__init__.py` imports `cycle`, `gamma`, `pin` and `volatility`, so those four files must be in the archive: without
+them `import merdian_compute.tape` fails and the import check above does not print `IMPORT OK`.
 
 `services/tape_live/__init__.py` is not tracked (`.gitignore` pattern `_*.py`); `services.tape_live` loads as a namespace package, as
 it does in the offline suite.
@@ -115,6 +119,29 @@ sudo systemd-run --pipe --wait --collect --uid=tapelive --gid=tapelive \
     /usr/bin/python3 -m services.tape_live.cli live --day <a recent trading day> --out /var/lib/tape-live/check \
     --source s3 --chain psql --clock sim --check
 ```
+
+The check refuses unless the role's `default_transaction_read_only` is `on` and the role holds no write privilege on
+`public.gex_strike_snapshots` (`CHECK_SQL` and `WRITE_PRIVS_PROBE` in `services/tape_live/wall_source.py`; the refusal is
+`ro != "on" or priv != "f"` in `services/tape_live/cli.py`). The setting must be on the **role**: a session option sent at connect
+time does not reach the backend through a pooler.
+
+Database side, as postgres in the SQL editor (one line):
+
+```sql
+SELECT rolname, rolconfig FROM pg_roles WHERE rolname = 'merdian_ro';
+```
+
+Expect `rolconfig` to contain `default_transaction_read_only=on`. If it is absent, stop: the engine stream authors the `ALTER ROLE`
+and the operator applies it.
+
+Box side, what the runner's check actually tests (prints the role name and two flags, never a value from the environment file):
+
+```bash
+SHA=<40-hex commit>; sudo systemd-run --pipe --wait --collect --uid=tapelive --gid=tapelive -p EnvironmentFile=/etc/tape-live/tape-live.env -p WorkingDirectory=/opt/tape-live/$SHA -p NoNewPrivileges=yes -p PrivateTmp=yes /usr/bin/python3 -I -c "import os,sys; sys.path.insert(0,'.'); from services.tape_live import live_sources as L; print(L.PsqlChainSource(L.parse_dsn(os.environ['TAPE_LIVE_RO_DSN']), '<recent trading day>').check())"
+```
+
+PASS: `('merdian_ro', 'on', 'f')`. `'off'` means the role setting is missing (the check refuses on it); `'t'` means the role holds
+a write privilege on `public.gex_strike_snapshots`. A pooled backend opened before an `ALTER ROLE` can still report `'off'`.
 
 ## 6. What the runner writes
 

@@ -1038,10 +1038,14 @@ _REAL_DT = datetime
 class _Strict310(_REAL_DT):
     """datetime whose fromisoformat has Python 3.10's limit: a fraction of 0, 3 or 6 digits and no other width (3.11+ accept any).
     cli_live_fake runs the fake under it (strict_iso), so a fake that hands an unpadded fraction to the parser fails on any
-    interpreter as it did on the production box (3.10.12: 1028 of 1046 fake psql calls raised at 670ea84)."""
+    interpreter as it did on the production box (3.10.12: 1028 of 1046 fake psql calls raised at 670ea84).
+    A trailing Z is refused too: 3.10 rejects it (3.11+ accept it), and the real `aws s3api list-objects-v2` prints LastModified as
+    '2026-11-06T03:25:03.000Z' (the production rehearsal of 2026-11-06 died on it at live_sources.py:191 under 3.10.12)."""
 
     @classmethod
     def fromisoformat(cls, s):
+        if s.endswith(("Z", "z")):
+            raise ValueError("Invalid isoformat string: %r (strict 3.10 stand-in: trailing Z)" % (s,))
         m = re.search(r"\.(\d+)", s)
         if m is not None and len(m.group(1)) not in (3, 6):
             raise ValueError("Invalid isoformat string: %r (strict 3.10 stand-in)" % (s,))
@@ -1050,14 +1054,16 @@ class _Strict310(_REAL_DT):
 
 @contextlib.contextmanager
 def strict_iso():
-    """While the block runs, every `datetime` looked up in this module (the fakes) is the strict 3.10 stand-in."""
+    """While the block runs, every `datetime` looked up in this module (the fakes) AND in the runner's source modules
+    (services/tape_live/live_sources.py, wall_source.py) is the strict 3.10 stand-in, so the code under test parses as 3.10 does."""
     g = globals()
-    saved = g["datetime"]
-    g["datetime"] = _Strict310
+    _lr, ls, ws = rmods()
+    saved = g["datetime"], ls.datetime, ws.datetime
+    g["datetime"] = ls.datetime = ws.datetime = _Strict310
     try:
         yield
     finally:
-        g["datetime"] = saved
+        g["datetime"], ls.datetime, ws.datetime = saved
 
 
 FAKE_TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?([+-]\d{2}:\d{2})$")
@@ -1096,6 +1102,7 @@ class FakeShell:
         self.psql_fail = psql_fail
         self.md5 = {}
         self.raised = 0
+        self.lm_shapes = {"Z": 0, "+00:00": 0}
 
     def _md5(self, rel):
         if rel not in self.md5:
@@ -1128,11 +1135,16 @@ class FakeShell:
         if argv[:3] == ["aws", "s3api", "list-objects-v2"]:
             pre = argv[argv.index("--prefix") + 1]
             cont = []
-            for rel, p in sorted(self.files.items()):
-                if rel.startswith(pre):
-                    vis = self.vis.get(rel, ist_epoch(16 * 60))
-                    cont.append({"Key": rel, "Size": os.path.getsize(p), "ETag": '"%s"' % self._md5(rel),
-                                 "LastModified": datetime.fromtimestamp(vis, timezone.utc).isoformat()})
+            for i, (rel, p) in enumerate(sorted((r, q) for r, q in self.files.items() if r.startswith(pre))):
+                vis = self.vis.get(rel, ist_epoch(16 * 60))
+                if vis != int(vis):
+                    raise AssertionError("fake: visibility %r is not whole seconds; the LastModified shapes below would drop it" % vis)
+                # The two shapes the real CLI prints (production box, 2026-11-06): '2026-11-06T03:25:03.000Z' (millisecond
+                # fraction, Z) and '2026-11-06T10:10:06+00:00'. Alternating, so every prefix listing carries both.
+                clock = datetime.fromtimestamp(vis, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+                lm = clock + (".000Z" if i % 2 == 0 else "+00:00")
+                self.lm_shapes["Z" if lm.endswith("Z") else "+00:00"] += 1
+                cont.append({"Key": rel, "Size": os.path.getsize(p), "ETag": '"%s"' % self._md5(rel), "LastModified": lm})
             return 0, (json.dumps({"Contents": cont}) if cont else "").encode(), b""
         if argv[:3] == ["aws", "s3api", "get-object"]:
             key, dest = argv[argv.index("--key") + 1], argv[-1]
@@ -1261,6 +1273,62 @@ def _fake_ts_width():
     return bad
 
 
+# By hand (operator finding, production box 3.10.12, 2026-11-06): the real CLI prints these; Z becomes +00:00, the fraction is kept
+# digit for digit, the instant is the one written. Expected instants are constructed here, not obtained by running the parser.
+S3_LM_OK = (("2026-11-06T03:25:03.000Z", "2026-11-06T03:25:03.000+00:00", (2026, 11, 6, 3, 25, 3, 0)),
+            ("2026-11-06T10:10:06.000Z", "2026-11-06T10:10:06.000+00:00", (2026, 11, 6, 10, 10, 6, 0)),
+            ("2026-11-06T10:10:06+00:00", "2026-11-06T10:10:06+00:00", (2026, 11, 6, 10, 10, 6, 0)),
+            ("2026-11-06T10:10:06Z", "2026-11-06T10:10:06+00:00", (2026, 11, 6, 10, 10, 6, 0)),
+            ("2026-11-06T10:10:06.123Z", "2026-11-06T10:10:06.123+00:00", (2026, 11, 6, 10, 10, 6, 123000)),
+            ("2026-11-06T10:10:06.999999+00:00", "2026-11-06T10:10:06.999999+00:00", (2026, 11, 6, 10, 10, 6, 999999)))
+S3_LM_BAD = ("2026-11-06T10:10:06", "2026-11-06T10:10:06+05:30", "2026-11-06T10:10:06+00", "2026-11-06 10:10:06+00:00",
+             "2026-11-06T10:10:06.5Z", "2026-11-06T10:10:06.1234Z", "2026-11-06T10:10:06z", " 2026-11-06T10:10:06Z",
+             "2026-11-06T10:10:06Z\n", "", None)
+
+
+def _s3_lm_vectors():
+    """Rule 0 for the S3 LastModified normaliser: each accepted shape -> the exact string by hand and, through the strict 3.10
+    stand-in, the instant by hand; each refused shape -> SourceError('other') and nothing else. Fails if the normaliser is
+    removed, rounds or truncates a fraction, keeps a Z, or lets an unexpected shape through."""
+    ls = rmods()[1]
+    bad = []
+    for raw, want, parts in S3_LM_OK:
+        try:
+            got = ls.s3_last_modified_iso(raw)
+        except Exception as exc:  # noqa: BLE001
+            bad.append("%r raised %s" % (raw, type(exc).__name__))
+            continue
+        if got != want:
+            bad.append("%r -> %r, want %r" % (raw, got, want))
+            continue
+        try:
+            inst = _Strict310.fromisoformat(got)
+        except ValueError:
+            bad.append("%r -> %r does not parse under the strict 3.10 stand-in" % (raw, got))
+            continue
+        if inst != _REAL_DT(*parts, tzinfo=timezone.utc):
+            bad.append("%r -> instant %s, want %r" % (raw, inst, parts))
+    for raw in S3_LM_BAD:
+        try:
+            got = ls.s3_last_modified_iso(raw)
+            bad.append("%r accepted as %r (want SourceError other)" % (raw, got))
+        except ls.SourceError as exc:
+            if exc.category != "other":
+                bad.append("%r refused with category %r, want 'other'" % (raw, exc.category))
+        except Exception as exc:  # noqa: BLE001
+            bad.append("%r raised %s, want SourceError" % (raw, type(exc).__name__))
+    return bad
+
+
+def _hb_last_error(root):
+    """heartbeat.json last_error of a cli live run (the runner records a fatal as 'Type at file:line'); '' when absent."""
+    try:
+        with open(os.path.join(root, DAY, "heartbeat.json"), encoding="utf-8") as fh:
+            return json.load(fh).get("last_error", "")
+    except (OSError, ValueError):
+        return ""
+
+
 def g_runner_equal():
     bad, notes = [], []
     variants = (("clean", None, replay("clean"), None), ("late", _arr(gen_live.LATE_SEG), late_replay(), None),
@@ -1277,7 +1345,7 @@ def g_runner_equal():
     bad += ["fake ts width: %s" % x for x in _fake_ts_width()]
     rc, root, fake, log, _left = cli_live_fake("eq_psql")
     if rc != 0:
-        bad.append("psql path: cli live rc=%s %s" % (rc, log[-800:]))
+        bad.append("psql path: cli live rc=%s last_error=%r %s" % (rc, _hb_last_error(root), log[-800:]))
     else:
         n_psql = sum(1 for c in fake.calls if c[0][:1] == ["psql"])
         if fake.raised != 0:
@@ -1295,6 +1363,16 @@ def g_runner_equal():
         if not {("aws", "s3api", "list-objects-v2"), ("aws", "s3api", "get-object"), ("psql",)} <= kinds:
             bad.append("psql path did not exercise list, get and psql: %r" % sorted(kinds))
         notes.append("psql/S3 path %d shell calls, fake raised 0, heartbeat errors.db 0, metrics errors 0" % len(fake.calls))
+        if fake.lm_shapes["Z"] == 0 or fake.lm_shapes["+00:00"] == 0:
+            bad.append("S3 LastModified: the fake listed %r; both real shapes must occur (the check would be vacuous)" % fake.lm_shapes)
+        notes.append("S3 LastModified listed as .000Z x%d and +00:00 x%d" % (fake.lm_shapes["Z"], fake.lm_shapes["+00:00"]))
+    try:
+        _Strict310.fromisoformat("2026-11-06T03:25:03.000Z")
+        bad.append("the strict stand-in accepted a trailing Z (the S3 LastModified check would be vacuous)")
+    except ValueError:
+        pass
+    bad += ["S3 LastModified: %s" % x for x in _s3_lm_vectors()]
+    notes.append("S3 LastModified normaliser: %d hand vectors under the strict stand-in" % (len(S3_LM_OK) + len(S3_LM_BAD)))
     notes.append("fake parses ts fractions of width 0-6 under the strict 3.10 stand-in")
     return not bad, "; ".join(bad[:8]) or "runner == cli replay (live_run_id column stripped, plan s12): " + ", ".join(notes)
 

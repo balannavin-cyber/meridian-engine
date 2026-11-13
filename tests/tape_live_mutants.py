@@ -9,7 +9,7 @@ which must PASS (exit 0).
   python tests/tape_live_mutants.py [--repeat N] [--only M-L-...]
   (Local, inside 08:30-15:45 IST on a weekday: set TAPE_RULE23_OVERRIDE_R1=1, operator ruling R-1, 2026-11-03)
 
-Last line: "TAPE LIVE MUTANTS PASS (47/47 caught xN, 21/21 controls xN)" or FAIL. Exit 0 / 1.
+Last line: "TAPE LIVE MUTANTS PASS (61/61 caught xN, 23/23 controls xN)" or FAIL. Exit 0 / 1.
 """
 import argparse
 import os
@@ -24,6 +24,7 @@ COPY = ["merdian_compute", "services", "sql/2026-11-06_tape_live_tables.sql", "t
         "docs/tape/L2_live_runner_install.md", "docs/tape/L2_live_runner.service.template", "docs/tape/L2_live_runner.timer.template"]
 R, W, WS = "services/tape_live/rules.py", "services/tape_live/writer.py", "services/tape_live/wall_source.py"
 LS, LR = "services/tape_live/live_sources.py", "services/tape_live/live_runner.py"
+DBS = "services/tape_live/dbshape.py"
 V, CLI, SQL = "services/tape_live/verify_day.py", "services/tape_live/cli.py", "sql/2026-11-06_tape_live_tables.sql"
 UNTR = '    if f["untraded"]:\n        return ("NO_READ", False, "untraded wall (vendor OI)")\n'
 INWIN = '    if not f["in_window"]:\n        return ("NO_READ", False, "wall outside subscribed window")\n'
@@ -57,8 +58,8 @@ M = [
     ("M-L-USES-FUTURE-BIN", "live-causal", R, '        if lo < _min(e["ts_ist"]) <= tm:\n',
      '        if lo < _min(e["ts_ist"]) <= tm + 5:\n'),
     ("M-L-VERIFY-IGNORES-DIFF", "live-verify", V, "                if got == fl:\n", "                if True:\n"),
-    ("M-L-NONDETERMINISTIC", "live-deterministic", CLI, "    live_run_id = str(uuid.uuid5(",
-     "    live_run_id = str(uuid.uuid4()) or str(uuid.uuid5("),
+    ("M-L-NONDETERMINISTIC", "live-deterministic", W, "    return str(uuid.uuid5(uuid.NAMESPACE_URL, \"meridian-tape-live:%s:%s:%s:%d\"",
+     "    return str(uuid.uuid4()) or str(uuid.uuid5(uuid.NAMESPACE_URL, \"meridian-tape-live:%s:%s:%s:%d\""),
     ("M-L-JOINS-OUTCOMES", "live-no-outcomes", V, "CAUSES = (", 'OUTCOME_COLS = ("spot_close", "straddle_atm")\nCAUSES = ('),
     ("M-L-WRITES-SIX-TABLES", "live-isolated", W, 'SYMBOLS = ("NIFTY", "SENSEX")\n',
      'SYMBOLS = ("NIFTY", "SENSEX")\nTARGET_TABLE = "tape_strike_cycle"\n'),
@@ -106,6 +107,9 @@ M = [
     ("M-R-NO-CHAIN-WAIT", "live-runner-equal", LR,
      "            if all(v is not None for v in lag.values()) or now + self.cfg.poll_s > deadline or polls >= 8 or self._stopped():\n",
      "            if True:\n"),
+    ("M-R-FAKE-TS-UNPADDED", "live-runner-equal", "tests/test_tape_live.py", '"." + m.group(2).ljust(6, "0")', '"." + m.group(2)'),
+    ("M-R-S3-LM-NOT-NORMALISED", "live-runner-equal", LS, "datetime.fromisoformat(s3_last_modified_iso(o.last_modified))",
+     "datetime.fromisoformat(o.last_modified)"),
     ("M-R-KILL-IGNORED", "live-runner-lifecycle", LR, '        return self.cfg.term["hit"] or os.path.exists(self.cfg.kill_file)\n',
      '        return self.cfg.term["hit"]\n'),
     ("M-R-NO-SELF-EXIT", "live-runner-lifecycle", LR, "for T in range(T0, self.cfg.end_t + 1, 5):",
@@ -115,6 +119,36 @@ M = [
     ("M-R-MEMERR-EXIT-0", "live-runner-lifecycle", LR, '            self._hb("memory_error")\n            return 3\n',
      '            self._hb("memory_error")\n            return 0\n'),
     ("M-R-RESTART-IGNORES-JOURNAL", "live-runner-restart", LR, "        self._journal_load()\n        objs = ", "        objs = "),
+    ("M-R-METRICS-SNAPSHOT-LATE", "live-runner-lifecycle", LR, "        n_late = len(self.ld.late)\n",
+     "        n_reb = len(self.ld.rebuilds)\n        n_late = len(self.ld.late)\n"),
+    # Phase B (docs/tape/L2_live_runner_plan.md sections 4 and 9): epochs and the DB shape
+    ("M-L-ID-EVERY-CYCLE", "live-epoch", W, '        out["db"] = self._db_cycle(as_of)\n',
+     '        for s_ in SYMBOLS:\n            self.epoch[s_] += 1\n        out["db"] = self._db_cycle(as_of)\n'),
+    ("M-L-OLD-ROWS-KEPT", "live-epoch", W,
+     '            for k in sorted(set(old) - set(cur)):\n                lines.append("D," + dbshape.line(old[k]))\n',
+     '            for k in sorted(set(old) - set(cur)):\n'
+     '                s_ = old[k][1] if t != "tape_live_wall" else old[k][0]\n'
+     '                if s_ in self._bumped:\n'
+     '                    cur[k] = old[k][:-2] + [self.live_run_id(s_), self.code_sha]\n'
+     '                    lines.append("U," + dbshape.line(cur[k]))\n'
+     '                    continue\n'
+     '                lines.append("D," + dbshape.line(old[k]))\n'),
+    ("M-L-ID-NOT-BUMPED", "live-epoch", W, "        self.epoch[sym] += 1\n", "        self.epoch[sym] += 0\n"),
+    ("M-L-ID-GLOBAL", "live-epoch", W, "        self.epoch[sym] += 1\n",
+     "        for s_ in SYMBOLS:\n            self.epoch[s_] += 1\n"),
+    ("M-L-LABELS-FILTERED", "live-epoch", W, '        if t == "tape_live_label":\n            out[t] = list(rows)\n            continue\n', ""),
+    ("M-L-NEWEST-PER-TABLE", "live-epoch", W, "    return (trading_day, symbol)\n", "    return (table, trading_day, symbol)\n"),
+    ("M-L-TIE-NOT-ASSERTED", "live-epoch", "tests/test_tape_live.py",
+     "    return dict((k, v) for k, v in ids.items() if len(v) > 1)\n", "    return {}\n"),
+    ("M-L-DROP-NO-BUMP", "live-epoch", W, '                self._bump(sym, "drop", tm if tm is not None else "final")\n',
+     "                pass\n"),
+    ("M-R-DBSHAPE-DROPS-ASOF", "live-dbshape", DBS, '    return ",".join((("op",) if delta else ()) + COLUMNS[table])\n',
+     '    return ",".join((("op",) if delta else ()) + tuple(c for c in COLUMNS[table] if c != "as_of"))\n'),
+    ("M-R-DBSHAPE-UTC-DATE", "live-dbshape", DBS, '    return datetime.fromisoformat(ts).astimezone(IST).strftime("%Y-%m-%d")\n',
+     '    return datetime.fromisoformat(ts).astimezone(timezone.utc).strftime("%Y-%m-%d")\n'),
+    ("M-R-DBSHAPE-ASOF-WALLCLOCK", "live-dbshape", W, "                cur[k] = dbshape.full(data, as_of, rid, self.code_sha)\n",
+     '                cur[k] = dbshape.full(data, __import__("datetime").datetime.now(__import__("datetime").timezone.utc)'
+     '.isoformat(timespec="seconds"), rid, self.code_sha)\n'),
 ]
 
 

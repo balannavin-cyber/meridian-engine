@@ -403,7 +403,7 @@ def g_first_wins():
 
 def _reconstruct(d):
     writer = mods()[5]
-    names = sorted(n for n in os.listdir(os.path.join(d, "cycles")))
+    names = sorted(n for n in os.listdir(os.path.join(d, "cycles")) if not n.endswith(".db.csv"))
     texts = []
     for n in names:
         with open(os.path.join(d, "cycles", n), encoding="utf-8", newline="") as fh:
@@ -992,22 +992,9 @@ def _files(d):
     return sorted(os.path.relpath(os.path.join(dp, n), d).replace(os.sep, "/") for dp, _, ns in os.walk(d) for n in ns)
 
 
-def _strip_col(b, col):
-    rows = list(csv.reader(io.StringIO(b.decode("utf-8"))))
-    if not rows or rows[0].count(col) != 1:
-        raise AssertionError("column %s not exactly once in header %r" % (col, rows[:1]))
-    i = rows[0].index(col)
-    out = [r[:i] + r[i + 1:] for r in rows]
-    if any(len(o) != len(r) - 1 for o, r in zip(out, rows)):
-        raise AssertionError("strip of %s did not remove exactly one column" % col)
-    buf = io.StringIO()
-    csv.writer(buf, lineterminator="\n").writerows(out)
-    return buf.getvalue().encode("utf-8")
-
-
 def compare_live(cdir, ldir):
-    """cli replay out dir vs the runner's live dir: every file byte-equal except run_manifest.json (fields compared) and the
-    live_run_id column of the wall and label files (Phase A interim id, plan section 12)."""
+    """cli replay out dir vs the runner's live dir: every file byte-equal (both shapes, live_run_id included: the epoch ids of
+    plan section 4), except run_manifest.json, whose fields are compared."""
     bad = []
     fa = [x for x in _files(cdir) if x != "run_manifest.json"]
     fb = [x for x in _files(ldir) if x != "run_manifest.json"]
@@ -1015,8 +1002,6 @@ def compare_live(cdir, ldir):
         bad.append("file sets differ: only cli %s, only runner %s" % (sorted(set(fa) - set(fb))[:5], sorted(set(fb) - set(fa))[:5]))
     for rel in sorted(set(fa) & set(fb)):
         x, y = rd(os.path.join(cdir, rel)), rd(os.path.join(ldir, rel))
-        if rel in ("tape_live_wall.csv", "tape_live_label.csv"):
-            x, y = _strip_col(x, "live_run_id"), _strip_col(y, "live_run_id")
         if x != y:
             bad.append("differs: " + rel)
     try:
@@ -1024,12 +1009,60 @@ def compare_live(cdir, ldir):
             ma = json.load(fh)
         with open(os.path.join(ldir, "run_manifest.json"), encoding="utf-8") as fh:
             mb = json.load(fh)
-        for k in ("rebuilds", "late_segments", "bad_files", "token_map_conflicts", "label_counts", "rule_version"):
-            if ma.get(k) != mb.get(k):
+        for k in ("rebuilds", "late_segments", "bad_files", "token_map_conflicts", "label_counts", "rule_version", "epochs",
+                  "epoch_log"):
+            if k not in ma or ma.get(k) != mb.get(k):
                 bad.append("manifest %s: cli %r runner %r" % (k, ma.get(k), mb.get(k)))
     except (OSError, ValueError) as exc:
         bad.append("manifest: %s" % exc)
     return bad
+
+
+_REAL_DT = datetime
+
+
+class _Strict310(_REAL_DT):
+    """datetime whose fromisoformat has Python 3.10's limit: a fraction of 0, 3 or 6 digits and no other width (3.11+ accept any).
+    cli_live_fake runs the fake under it (strict_iso), so a fake that hands an unpadded fraction to the parser fails on any
+    interpreter as it did on the production box (3.10.12: 1028 of 1046 fake psql calls raised at 670ea84).
+    A trailing Z is refused too: 3.10 rejects it (3.11+ accept it), and the real `aws s3api list-objects-v2` prints LastModified as
+    '2026-11-06T03:25:03.000Z' (the production rehearsal of 2026-11-06 died on it at live_sources.py:191 under 3.10.12)."""
+
+    @classmethod
+    def fromisoformat(cls, s):
+        if s.endswith(("Z", "z")):
+            raise ValueError("Invalid isoformat string: %r (strict 3.10 stand-in: trailing Z)" % (s,))
+        m = re.search(r"\.(\d+)", s)
+        if m is not None and len(m.group(1)) not in (3, 6):
+            raise ValueError("Invalid isoformat string: %r (strict 3.10 stand-in)" % (s,))
+        return _REAL_DT.fromisoformat(s)
+
+
+@contextlib.contextmanager
+def strict_iso():
+    """While the block runs, every `datetime` looked up in this module (the fakes) AND in the runner's source modules
+    (services/tape_live/live_sources.py, wall_source.py) is the strict 3.10 stand-in, so the code under test parses as 3.10 does."""
+    g = globals()
+    _lr, ls, ws = rmods()
+    saved = g["datetime"], ls.datetime, ws.datetime
+    g["datetime"] = ls.datetime = ws.datetime = _Strict310
+    try:
+        yield
+    finally:
+        g["datetime"], ls.datetime, ws.datetime = saved
+
+
+FAKE_TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?([+-]\d{2}:\d{2})$")
+
+
+def fake_pg_ts(s):
+    """FakeShell's ONE timestamp parse. Postgres accepts a fraction of any width 0..6, so the fake pads it on the right to 6 digits
+    (.5 -> .500000; never truncated, never rounded) before datetime parses it: Python 3.10 parses only 0, 3 or 6 digits."""
+    m = FAKE_TS_RE.match(s)
+    if m is None:
+        raise ValueError("fake: timestamp %r is not YYYY-MM-DDTHH:MM:SS[.f]+HH:MM" % (s,))
+    frac = "" if m.group(2) is None else "." + m.group(2).ljust(6, "0")
+    return datetime.fromisoformat(m.group(1) + frac + m.group(3))
 
 
 class FakeShell:
@@ -1054,6 +1087,8 @@ class FakeShell:
             self.rows[s].sort(key=self.key)
         self.psql_fail = psql_fail
         self.md5 = {}
+        self.raised = 0
+        self.lm_shapes = {"Z": 0, "+00:00": 0}
 
     def _md5(self, rel):
         if rel not in self.md5:
@@ -1062,7 +1097,7 @@ class FakeShell:
 
     @staticmethod
     def key(r):
-        return (datetime.fromisoformat(r["ts"]), r["expiry_date"], float(r["strike"]), r["run_id"])
+        return (fake_pg_ts(r["ts"]), r["expiry_date"], float(r["strike"]), r["run_id"])
 
     @staticmethod
     def psql_shape(ts):
@@ -1075,15 +1110,27 @@ class FakeShell:
         return "%s %s+00" % (d, clock)
 
     def __call__(self, argv, env, stdin, timeout):
+        try:
+            return self._call(argv, env, stdin, timeout)
+        except Exception:
+            self.raised += 1
+            raise
+
+    def _call(self, argv, env, stdin, timeout):
         self.calls.append((list(argv), dict(env), stdin, timeout))
         if argv[:3] == ["aws", "s3api", "list-objects-v2"]:
             pre = argv[argv.index("--prefix") + 1]
             cont = []
-            for rel, p in sorted(self.files.items()):
-                if rel.startswith(pre):
-                    vis = self.vis.get(rel, ist_epoch(16 * 60))
-                    cont.append({"Key": rel, "Size": os.path.getsize(p), "ETag": '"%s"' % self._md5(rel),
-                                 "LastModified": datetime.fromtimestamp(vis, timezone.utc).isoformat()})
+            for i, (rel, p) in enumerate(sorted((r, q) for r, q in self.files.items() if r.startswith(pre))):
+                vis = self.vis.get(rel, ist_epoch(16 * 60))
+                if vis != int(vis):
+                    raise AssertionError("fake: visibility %r is not whole seconds; the LastModified shapes below would drop it" % vis)
+                # The two shapes the real CLI prints (production box, 2026-11-06): '2026-11-06T03:25:03.000Z' (millisecond
+                # fraction, Z) and '2026-11-06T10:10:06+00:00'. Alternating, so every prefix listing carries both.
+                clock = datetime.fromtimestamp(vis, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+                lm = clock + (".000Z" if i % 2 == 0 else "+00:00")
+                self.lm_shapes["Z" if lm.endswith("Z") else "+00:00"] += 1
+                cont.append({"Key": rel, "Size": os.path.getsize(p), "ETag": '"%s"' % self._md5(rel), "LastModified": lm})
             return 0, (json.dumps({"Contents": cont}) if cont else "").encode(), b""
         if argv[:3] == ["aws", "s3api", "get-object"]:
             key, dest = argv[argv.index("--key") + 1], argv[-1]
@@ -1098,9 +1145,9 @@ class FakeShell:
                     return r
             if "has_table_privilege" in sql:
                 return 0, b"merdian_ro,on,f\n", b""
-            until = datetime.fromisoformat(v["until"])
-            cur = (datetime.fromisoformat(v["k_ts"]), v["k_exp"], float(v["k_strike"]), v["k_run"])
-            rows = [r for r in self.rows.get(v["sym"], []) if datetime.fromisoformat(r["ts"]) <= until]
+            until = fake_pg_ts(v["until"])
+            cur = (fake_pg_ts(v["k_ts"]), v["k_exp"], float(v["k_strike"]), v["k_run"])
+            rows = [r for r in self.rows.get(v["sym"], []) if fake_pg_ts(r["ts"]) <= until]
             if "count(*)" in sql:
                 return 0, ("%d\n" % sum(1 for r in rows if self.key(r) <= cur)).encode(), b""
             rows = [r for r in rows if self.key(r) > cur][:5000]
@@ -1140,7 +1187,7 @@ def cli_live_fake(name, psql_fail=None, extra_env=None):
     env = {"TAPE_LIVE_RO_DSN": TEST_DSN}
     env.update(extra_env or {})
     try:
-        with _env(env, drop=("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")):
+        with _env(env, drop=("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")), strict_iso():
             rc, log = quiet(cli.main, ["live", "--day", DAY, "--out", d, "--source", "s3", "--chain", "psql", "--clock", "sim",
                                        "--start", "08:50", "--bucket", "meridian-tape-raw", "--disk-floor-mb", "20",
                                        "--rss-cap-mb", "100000"])
@@ -1167,6 +1214,107 @@ def _scope_cli():
     return _CACHE["scope_cli"]
 
 
+def _fake_ts_width():
+    """Rule 0 on any interpreter for the fake's timestamp parsing (operator, 2026-11-11). Postgres accepts and emits a fraction of any
+    width 0..6 (it trims trailing zeros), so the fake must parse every width. Under the strict 3.10 stand-in, seven rows whose ts
+    carry fractions of width 0..6 are counted and paged with each row in turn as the cursor. By hand: '', .1, .12, .123, .1234,
+    .12345, .123456 are 0, 100000, 120000, 123000, 123400, 123450, 123456 microseconds, strictly increasing, so with cursor = row w,
+    count(*) = w + 1 and the page is rows w+1..6. Fails if the stand-in is not strict, if any call raises, or if a count or page is
+    off."""
+    bad = []
+    try:
+        _Strict310.fromisoformat("2026-11-06T03:45:21.5+00:00")
+        bad.append("the strict stand-in accepted a 1-digit fraction (the check would be vacuous)")
+    except ValueError:
+        pass
+    for ok in ("2026-11-06T03:45:21+00:00", "2026-11-06T03:45:21.500+00:00", "2026-11-06T03:45:21.500000+00:00"):
+        try:
+            _Strict310.fromisoformat(ok)
+        except ValueError:
+            bad.append("the strict stand-in refused %s" % ok)
+    fr = ("", ".1", ".12", ".123", ".1234", ".12345", ".123456")
+    rows = [{"run_id": "r%d" % w, "symbol": "NIFTY", "ts": "2026-11-06T03:45:21%s+00:00" % f, "expiry_date": "2026-11-10",
+             "strike": "23500.0", "oi_call": "1", "oi_put": "1", "gex_cr": "0.000000"} for w, f in enumerate(fr)]
+    fake = FakeShell.__new__(FakeShell)
+    fake.calls, fake.psql_fail, fake.raised, fake.md5, fake.files, fake.vis = [], None, 0, {}, {}, {}
+    with strict_iso():
+        try:
+            fake.rows = {"NIFTY": sorted(rows, key=fake.key)}
+        except ValueError as exc:
+            return bad + ["the fake's sort key raised: %s" % exc]
+        for w, r in enumerate(rows):
+            argv = ["psql"]
+            for k, v in (("sym", "NIFTY"), ("until", "2026-11-06T10:00:00+00:00"), ("k_ts", r["ts"]), ("k_exp", r["expiry_date"]),
+                         ("k_strike", r["strike"]), ("k_run", r["run_id"])):
+                argv += ["-v", "%s=%s" % (k, v)]
+            try:
+                n = int(fake(argv, {}, b"SELECT count(*)", 15)[1].decode().strip())
+                got = [ln.split(",")[0] for ln in fake(argv, {}, b"SELECT run_id", 15)[1].decode().splitlines() if ln]
+            except Exception as exc:  # noqa: BLE001 - a raise is the finding
+                bad.append("width %d: the fake raised %s: %s" % (w, type(exc).__name__, exc))
+                continue
+            want = ["r%d" % j for j in range(w + 1, len(fr))]
+            if n != w + 1 or got != want:
+                bad.append("width %d: count %d page %s, by hand %d %s" % (w, n, got, w + 1, want))
+    return bad
+
+
+# By hand (operator finding, production box 3.10.12, 2026-11-06): the real CLI prints these; Z becomes +00:00, the fraction is kept
+# digit for digit, the instant is the one written. Expected instants are constructed here, not obtained by running the parser.
+S3_LM_OK = (("2026-11-06T03:25:03.000Z", "2026-11-06T03:25:03.000+00:00", (2026, 11, 6, 3, 25, 3, 0)),
+            ("2026-11-06T10:10:06.000Z", "2026-11-06T10:10:06.000+00:00", (2026, 11, 6, 10, 10, 6, 0)),
+            ("2026-11-06T10:10:06+00:00", "2026-11-06T10:10:06+00:00", (2026, 11, 6, 10, 10, 6, 0)),
+            ("2026-11-06T10:10:06Z", "2026-11-06T10:10:06+00:00", (2026, 11, 6, 10, 10, 6, 0)),
+            ("2026-11-06T10:10:06.123Z", "2026-11-06T10:10:06.123+00:00", (2026, 11, 6, 10, 10, 6, 123000)),
+            ("2026-11-06T10:10:06.999999+00:00", "2026-11-06T10:10:06.999999+00:00", (2026, 11, 6, 10, 10, 6, 999999)))
+S3_LM_BAD = ("2026-11-06T10:10:06", "2026-11-06T10:10:06+05:30", "2026-11-06T10:10:06+00", "2026-11-06 10:10:06+00:00",
+             "2026-11-06T10:10:06.5Z", "2026-11-06T10:10:06.1234Z", "2026-11-06T10:10:06z", " 2026-11-06T10:10:06Z",
+             "2026-11-06T10:10:06Z\n", "", None)
+
+
+def _s3_lm_vectors():
+    """Rule 0 for the S3 LastModified normaliser: each accepted shape -> the exact string by hand and, through the strict 3.10
+    stand-in, the instant by hand; each refused shape -> SourceError('other') and nothing else. Fails if the normaliser is
+    removed, rounds or truncates a fraction, keeps a Z, or lets an unexpected shape through."""
+    ls = rmods()[1]
+    bad = []
+    for raw, want, parts in S3_LM_OK:
+        try:
+            got = ls.s3_last_modified_iso(raw)
+        except Exception as exc:  # noqa: BLE001
+            bad.append("%r raised %s" % (raw, type(exc).__name__))
+            continue
+        if got != want:
+            bad.append("%r -> %r, want %r" % (raw, got, want))
+            continue
+        try:
+            inst = _Strict310.fromisoformat(got)
+        except ValueError:
+            bad.append("%r -> %r does not parse under the strict 3.10 stand-in" % (raw, got))
+            continue
+        if inst != _REAL_DT(*parts, tzinfo=timezone.utc):
+            bad.append("%r -> instant %s, want %r" % (raw, inst, parts))
+    for raw in S3_LM_BAD:
+        try:
+            got = ls.s3_last_modified_iso(raw)
+            bad.append("%r accepted as %r (want SourceError other)" % (raw, got))
+        except ls.SourceError as exc:
+            if exc.category != "other":
+                bad.append("%r refused with category %r, want 'other'" % (raw, exc.category))
+        except Exception as exc:  # noqa: BLE001
+            bad.append("%r raised %s, want SourceError" % (raw, type(exc).__name__))
+    return bad
+
+
+def _hb_last_error(root):
+    """heartbeat.json last_error of a cli live run (the runner records a fatal as 'Type at file:line'); '' when absent."""
+    try:
+        with open(os.path.join(root, DAY, "heartbeat.json"), encoding="utf-8") as fh:
+            return json.load(fh).get("last_error", "")
+    except (OSError, ValueError):
+        return ""
+
+
 def g_runner_equal():
     bad, notes = [], []
     variants = (("clean", None, replay("clean"), None), ("late", _arr(gen_live.LATE_SEG), late_replay(), None),
@@ -1180,16 +1328,39 @@ def g_runner_equal():
         diff = compare_live(cdir, live_dir(root))
         bad += ["%s: %s" % (name, x) for x in diff]
         notes.append("%s %d files" % (name, len(_files(live_dir(root)))))
+    bad += ["fake ts width: %s" % x for x in _fake_ts_width()]
     rc, root, fake, log, _left = cli_live_fake("eq_psql")
     if rc != 0:
-        bad.append("psql path: cli live rc=%s %s" % (rc, log[-800:]))
+        bad.append("psql path: cli live rc=%s last_error=%r %s" % (rc, _hb_last_error(root), log[-800:]))
     else:
+        n_psql = sum(1 for c in fake.calls if c[0][:1] == ["psql"])
+        if fake.raised != 0:
+            bad.append("psql path: the fake raised %d calls (%d psql calls), want 0" % (fake.raised, n_psql))
+        with open(os.path.join(root, DAY, "heartbeat.json"), encoding="utf-8") as fh:
+            hb_db = json.load(fh)["errors"]["db"]
+        if hb_db != 0:
+            bad.append("psql path: heartbeat errors.db = %d, want 0" % hb_db)
+        with open(os.path.join(root, DAY, "live_metrics.csv"), encoding="utf-8", newline="") as fh:
+            m_err = sum(int(r["errors"]) for r in csv.DictReader(fh))
+        if m_err != 0:
+            bad.append("psql path: live_metrics.csv errors over all cycles = %d, want 0 (no per-kind column; db is one kind)" % m_err)
         bad += ["psql path: %s" % x for x in compare_live(replay("clean"), live_dir(root))]
         kinds = {tuple(c[0][:3]) if c[0][0] == "aws" else ("psql",) for c in fake.calls}
         if not {("aws", "s3api", "list-objects-v2"), ("aws", "s3api", "get-object"), ("psql",)} <= kinds:
             bad.append("psql path did not exercise list, get and psql: %r" % sorted(kinds))
-        notes.append("psql/S3 path %d shell calls" % len(fake.calls))
-    return not bad, "; ".join(bad[:8]) or "runner == cli replay (live_run_id column stripped, plan s12): " + ", ".join(notes)
+        notes.append("psql/S3 path %d shell calls, fake raised 0, heartbeat errors.db 0, metrics errors 0" % len(fake.calls))
+        if fake.lm_shapes["Z"] == 0 or fake.lm_shapes["+00:00"] == 0:
+            bad.append("S3 LastModified: the fake listed %r; both real shapes must occur (the check would be vacuous)" % fake.lm_shapes)
+        notes.append("S3 LastModified listed as .000Z x%d and +00:00 x%d" % (fake.lm_shapes["Z"], fake.lm_shapes["+00:00"]))
+    try:
+        _Strict310.fromisoformat("2026-11-06T03:25:03.000Z")
+        bad.append("the strict stand-in accepted a trailing Z (the S3 LastModified check would be vacuous)")
+    except ValueError:
+        pass
+    bad += ["S3 LastModified: %s" % x for x in _s3_lm_vectors()]
+    notes.append("S3 LastModified normaliser: %d hand vectors under the strict stand-in" % (len(S3_LM_OK) + len(S3_LM_BAD)))
+    notes.append("fake parses ts fractions of width 0-6 under the strict 3.10 stand-in")
+    return not bad, "; ".join(bad[:8]) or "runner == cli replay byte for byte, both shapes, epoch ids included: " + ", ".join(notes)
 
 
 def _consts(path):
@@ -1707,7 +1878,25 @@ def g_runner_lifecycle():
     if mrows.get("10:30", {}).get("ready_lag_s_NIFTY", "x") != "" or not mrows.get("10:25", {}).get("ready_lag_s_NIFTY"):
         bad.append("delayed run: ready_lag_s_NIFTY at 10:30 %r (want empty), 10:25 %r (want a value)" % (
             mrows.get("10:30", {}).get("ready_lag_s_NIFTY"), mrows.get("10:25", {}).get("ready_lag_s_NIFTY")))
-    return not bad, "; ".join(bad[:8]) or "heartbeat every cycle; self-exit 15:45; kill -> 0; MemoryError / RSS cap -> 3; one failed list counted, 3 lists per wake; chain wait <= 8 polls, deadline falls back"
+    # metrics rebuilds: per cycle, live_metrics.csv's rebuilds == the rebuilds the manifest records at that grid point, and
+    # rebuild_s > 0 there; on the out-of-order day (late_segment at 12:20, by hand gen_live.LATE_SEG_OOO; subscriptions at 11:35)
+    rc_o, root_o, _log = runner_sim("eq_out-of-order", _arr(gen_live.LATE_SEG_OOO))
+    with open(os.path.join(live_dir(root_o), "run_manifest.json"), encoding="utf-8") as fh:
+        man_o = json.load(fh)
+    want_reb = {}
+    for r in man_o["rebuilds"]:
+        hm = "%02d:%02d" % (r["at"] // 60, r["at"] % 60)
+        want_reb[hm] = want_reb.get(hm, []) + [r["trigger"]]
+    if sorted(want_reb) != ["11:35", "12:20"]:
+        bad.append("metrics precondition: manifest rebuilds at %s, want 11:35 and 12:20" % sorted(want_reb))
+    with open(os.path.join(root_o, DAY, "live_metrics.csv"), encoding="utf-8", newline="") as fh:
+        mo = list(csv.DictReader(fh))
+    for r in mo:
+        want_n = len(want_reb.get(r["T"], []))
+        if int(r["rebuilds"]) != want_n or (want_n and not float(r["rebuild_s"]) > 0):
+            bad.append("metrics rebuilds at %s: %s (rebuild_s %s), manifest %d %s" % (
+                r["T"], r["rebuilds"], r["rebuild_s"], want_n, want_reb.get(r["T"], [])))
+    return not bad, "; ".join(bad[:8]) or "heartbeat every cycle; self-exit 15:45; kill -> 0; MemoryError / RSS cap -> 3; one failed list counted, 3 lists per wake; chain wait <= 8 polls, deadline falls back; metrics rebuilds == manifest per cycle (late_segment 12:20, subscriptions 11:35)"
 
 
 # ---------------------------------------------------------------- restart
@@ -1736,6 +1925,34 @@ def _mask_chain(b):
     buf = io.StringIO()
     csv.writer(buf, lineterminator="\n").writerows(out)
     return buf.getvalue().encode()
+
+
+def _asof_rule(ta, tb, missed_min, restart_min, drop_ts=()):
+    """A (uninterrupted) vs D (restarted after missed points), one CSV with an as_of column. Rows of the missed grid points
+    (drop_ts) are absent from D. Every other row is equal except as_of, and as_of may differ only where A's as_of is the grid
+    time of a MISSED cycle; D's is then the first cycle after the restart (re-sent there, never back-filled)."""
+    cli = mods()[0]
+    ra, rb = list(csv.reader(io.StringIO(ta))), list(csv.reader(io.StringIO(tb)))
+    h = ra[0]
+    if rb[0] != h:
+        return ["header differs"]
+    ia, its = h.index("as_of"), h.index("ts_ist")
+    keep = [r for r in ra[1:] if r[its][11:16] not in drop_ts]
+    if len(keep) != len(rb) - 1:
+        return ["%d rows, want %d (the missed points' rows absent)" % (len(rb) - 1, len(keep))]
+    missed_asof = {cli.as_of(DAY, m) for m in missed_min}
+    first = cli.as_of(DAY, restart_min)
+    bad, n_moved = [], 0
+    for x, y in zip(sorted(keep, key=lambda r: r[:ia] + r[ia + 1:]), sorted(rb[1:], key=lambda r: r[:ia] + r[ia + 1:])):
+        if x[:ia] + x[ia + 1:] != y[:ia] + y[ia + 1:]:
+            bad.append("row differs beyond as_of: %s" % x[:5])
+        elif x[ia] != y[ia]:
+            n_moved += 1
+            if x[ia] not in missed_asof or y[ia] != first:
+                bad.append("as_of %s -> %s for %s (A's must be a missed cycle, D's %s)" % (x[ia], y[ia], x[:4], first))
+        if len(bad) > 3:
+            break
+    return bad or n_moved
 
 
 def g_runner_restart():
@@ -1779,7 +1996,44 @@ def g_runner_restart():
     for n in ("tape_live_cycle.csv", "tape_live_events.csv"):
         if rd(os.path.join(live_dir(A), n)) != rd(os.path.join(live_dir(dD), n)):
             bad.append("D: %s != uninterrupted" % n)
-    for n, per in (("tape_live_label.csv", 4), ("tape_live_wall.csv", 2)):
+    missed_min = [_hm_min(x) for x in missed]
+    moved = {}
+    for n, drop in (("tape_live_cycle.db.csv", ()), ("tape_live_events.db.csv", ()), ("tape_live_wall.db.csv", missed),
+                    ("tape_live_wall.csv", missed)):
+        r = _asof_rule(rd(os.path.join(live_dir(A), n)).decode(), rd(os.path.join(live_dir(dD), n)).decode(), missed_min,
+                       _hm_min("12:00"), set(drop))
+        if isinstance(r, list):
+            bad += ["D: %s: %s" % (n, x) for x in r]
+        else:
+            moved[n] = r
+    # epochs: ids and count equal; epoch_log equal except, by hand, the one bump the default day has (NIFTY subscriptions, file
+    # subscriptions_113300.json): uninterrupted at 11:35 (695); in D that file is first seen after the restart, so its bump is at
+    # 12:00 (720), and its reemit_rows (rows re-sent only for the new id) count the rows present then, so it may differ too.
+    with open(os.path.join(live_dir(A), "run_manifest.json"), encoding="utf-8") as fh:
+        man_a = json.load(fh)
+    with open(os.path.join(live_dir(dD), "run_manifest.json"), encoding="utf-8") as fh:
+        man_d = json.load(fh)
+    if man_a.get("epochs") != man_d.get("epochs") or not man_a.get("epochs"):
+        bad.append("D: manifest epochs differ: %r / %r" % (man_a.get("epochs"), man_d.get("epochs")))
+    la_ = [(e["symbol"], e["trigger"], e["at"]) for e in man_a.get("epoch_log", [])]
+    ld_ = [(e["symbol"], e["trigger"], e["at"]) for e in man_d.get("epoch_log", [])]
+    if la_ != [("NIFTY", "subscriptions", 695)] or ld_ != [("NIFTY", "subscriptions", 720)]:
+        bad.append("D: epoch_log uninterrupted %s, restarted %s; want exactly NIFTY/subscriptions at 695 and at 720" % (la_, ld_))
+    # reemit_rows, by hand: at the bump every NIFTY row of the last emitted state is re-sent only for its new id (the 11:33 file
+    # changes no row's data). Those rows: one cycle row per NIFTY leg (OPT and FUT tokens of gen_live.TOKENS; the 11:33 token is
+    # not in that state) per grid point 09:20..last, one wall per grid point, and the events stamped by then (THIN 11:03 and
+    # CONC 11:05 of the plan; none by 11:00). Uninterrupted: last state 11:30, 27 points, 2 events. D: last state 11:00 (the
+    # restart skipped 11:05-11:55), 21 points, 0 events. (First stated as 219 / 147: the FUT leg was left out and 09:20..11:30
+    # was counted as 31 points; corrected from the code, see _l2_logs/phaseB_reemit_why.log.)
+    legs = sum(1 for t in gen_live.TOKENS if t[1] == "NIFTY" and t[2] in ("OPT", "FUT"))
+    want_re = (legs * 27 + 27 + 2, legs * 21 + 21 + 0)
+    got_re = tuple(m.get("epoch_log", [{}])[0].get("reemit_rows") if m.get("epoch_log") else None for m in (man_a, man_d))
+    if got_re != want_re:
+        bad.append("D: reemit_rows of the NIFTY subscriptions bump %s (uninterrupted, restarted), by hand %s" % (got_re, want_re))
+    for ea, ed in zip(man_a.get("epoch_log", []), man_d.get("epoch_log", [])):
+        if dict(ea, at=0, reemit_rows=0) != dict(ed, at=0, reemit_rows=0):
+            bad.append("D: epoch_log entries differ beyond at / reemit_rows: %r / %r" % (ea, ed))
+    for n, per in (("tape_live_label.csv", 4), ("tape_live_label.db.csv", 4)):
         la = rd(os.path.join(live_dir(A), n)).decode().splitlines()
         lb = rd(os.path.join(live_dir(dD), n)).decode().splitlines()
         gone = [l for l in la if l not in lb]
@@ -1798,7 +2052,423 @@ def g_runner_restart():
     if rc != 0 or before != after:
         bad.append("E: restart of a finished day rc=%s, changed %d files" % (rc, sum(1 for k in set(before) | set(after)
                                                                                      if before.get(k) != after.get(k))))
-    return not bad, "; ".join(bad[:8]) or "B kill/restart, C crash mid-cycle, E twice: byte-identical; D: 11 missed points absent (44 labels, 22 walls), finals equal; finished day untouched"
+    return not bad, "; ".join(bad[:8]) or (
+        "B kill/restart, C crash mid-cycle, E twice: byte-identical (both shapes); D: 11 missed points absent (44 labels, 22 walls), "
+        "L0 finals equal, DB rows equal but as_of, which moved only from a missed cycle to the first cycle after the restart "
+        "(%s); D epochs equal (ids and count); D epoch_log = NIFTY/subscriptions at 695 vs 720, reemit_rows %d vs %d by hand, "
+        "else equal; D tape_live_label.db.csv = the missed points' rows absent; finished day untouched" % (
+            ", ".join("%s %d" % (k, v) for k, v in sorted(moved.items())), want_re[0], want_re[1]))
+
+
+# ------------------------------------------------------------------------------------------- epoch + DB shape (Phase B)
+# docs/tape/L2_live_runner_plan.md section 4. Everything here reads the files; the expected epochs, the dropped and added events
+# and the drop case are written by hand in tests/tape_live/gen_live.py (EPOCH_*), never taken from a run.
+DB_TABLES = ("tape_live_cycle", "tape_live_events", "tape_live_wall", "tape_live_label")
+DELTA_TABLES = ("tape_live_cycle", "tape_live_events", "tape_live_wall")
+DB_PART = {"tape_live_cycle": "cycle", "tape_live_events": "events", "tape_live_wall": "wall"}
+
+
+def sql_columns():
+    """{table: [columns in DDL order]} parsed from the committed SQL file (not from ddl.py)."""
+    with open(SQL, encoding="utf-8") as fh:
+        text = fh.read()
+    out = {}
+    for t in DB_TABLES:
+        body = re.search(r"CREATE TABLE IF NOT EXISTS public\.%s \((.*?)\n\);" % t, text, re.S).group(1)
+        out[t] = [ln.split()[0] for ln in body.strip().split("\n") if not ln.strip().startswith("CONSTRAINT")]
+    return out
+
+
+def sql_key(t):
+    """The upsert key of a table from the SQL file: the PK, else the grain UNIQUE (tape_live_events has no PK)."""
+    with open(SQL, encoding="utf-8") as fh:
+        text = fh.read()
+    m = re.search(r"CONSTRAINT %s_pk PRIMARY KEY \(([^)]*)\)" % t, text) or \
+        re.search(r"CONSTRAINT %s_grain_uq UNIQUE NULLS NOT DISTINCT \(([^)]*)\)" % t, text)
+    return [c.strip() for c in m.group(1).split(",")]
+
+
+def epoch_fixture():
+    if "epoch" not in _CACHE:
+        root = os.path.join(_TMP, "epoch")
+        f = gen_live.build(root, epoch=True)
+        from services.tape_offline import cycle_day, process_day
+        out, cyc = os.path.join(root, "batch_out"), os.path.join(root, "batch_cyc")
+        rc1, log1 = quiet(process_day.main, [f["raw"], "--day", DAY, "--out", out])
+        rc2, log2 = quiet(cycle_day.main, ["--in", out, "--session", os.path.join(f["raw"], "session"), "--out", cyc])
+        if rc1 != 0 or rc2 != 0:
+            raise AssertionError("epoch batch failed: %s %s\n%s\n%s" % (rc1, rc2, log1[-2000:], log2[-2000:]))
+        f.update(cyc=cyc)
+        _CACHE["epoch"] = f
+    return _CACHE["epoch"]
+
+
+def epoch_replay():
+    if "rp_epoch" not in _CACHE:
+        cli = mods()[0]
+        f = epoch_fixture()
+        d = os.path.join(_TMP, "rp_epoch")
+        argv = ["replay", "--day", DAY, "--raw", f["raw"], "--out", d,
+                "--arrival", arrival_file("epoch", gen_live.EPOCH_ARRIVAL)]
+        for p in f["chain"]:
+            argv += ["--chain-runs", p]
+        rc, log = quiet(cli.main, argv)
+        if rc != 0:
+            raise AssertionError("epoch replay rc=%s\n%s" % (rc, log[-3000:]))
+        _CACHE["rp_epoch"] = d
+    return _CACHE["rp_epoch"]
+
+
+def _db_read(path):
+    with open(path, encoding="utf-8", newline="") as fh:
+        rows = list(csv.reader(fh))
+    return rows[0], rows[1:]
+
+
+def db_deltas(d):
+    """[(cycle name, grid minute or None for final, {table: (header, rows)})] in cycle order, from cycles/*.db.csv."""
+    by = {}
+    for n in os.listdir(os.path.join(d, "cycles")):
+        m = re.match(r"^(\d{4}|final)_(cycle|events|wall)\.db\.csv$", n)
+        if m:
+            t = [k for k, v in DB_PART.items() if v == m.group(2)][0]
+            by.setdefault(m.group(1), {})[t] = _db_read(os.path.join(d, "cycles", n))
+    names = sorted(k for k in by if k != "final") + (["final"] if "final" in by else [])
+    return [(k, None if k == "final" else int(k[:2]) * 60 + int(k[2:]), by[k]) for k in names]
+
+
+def _keyf(t, header):
+    idx = [header.index(c) for c in sql_key(t)]
+    return lambda r: tuple(r[i] for i in idx)
+
+
+def apply_db(deltas, upto=None, u_only=False):
+    """{table: {key: row}}: the delta files applied in order (D removes), or U lines only (the 2b writer: D is a no-op)."""
+    st = {t: {} for t in DELTA_TABLES}
+    for name, _m, parts in deltas:
+        for t, (h, rows) in parts.items():
+            kf = _keyf(t, h[1:])
+            for r in rows:
+                if r[0] == "U":
+                    st[t][kf(r[1:])] = r[1:]
+                elif not u_only:
+                    st[t].pop(kf(r[1:]), None)
+        if name == upto:
+            break
+    return st
+
+
+def newest_view(state):
+    """The newest-run filter of ruling R6-H, written here independently of writer.newest_epoch_view. state: {table: [rows]} of
+    the three state tables (columns as in the SQL file). Per (trading_day, symbol), one newest id: that of the row with the
+    latest as_of across cycle, events and wall together; every table keeps only rows with it. -> {table: [rows]}."""
+    cols = sql_columns()
+    pos = dict((t, dict((c, cols[t].index(c)) for c in ("trading_day", "symbol", "as_of", "live_run_id"))) for t in state)
+    best = {}
+    for t, rows in state.items():
+        p = pos[t]
+        for r in rows:
+            k = (r[p["trading_day"]], r[p["symbol"]])
+            if k not in best or r[p["as_of"]] > best[k][0]:
+                best[k] = (r[p["as_of"]], r[p["live_run_id"]])
+    return dict((t, [r for r in rows if r[pos[t]["live_run_id"]] == best[(r[pos[t]["trading_day"]], r[pos[t]["symbol"]])][1]])
+                for t, rows in state.items())
+
+
+def _first_diff(t, got, want):
+    """The first differing row between two row lists, named by symbol: 'extra <symbol> <row>' or 'missing <symbol> <row>'."""
+    h = sql_columns()[t]
+    a, b = set(map(tuple, got)), set(map(tuple, want))
+    for kind, rows in (("extra", sorted(a - b)), ("missing", sorted(b - a))):
+        if rows:
+            r = dict(zip(h, rows[0]))
+            return "%s %s row (%d %s): %s" % (kind, r.get("symbol"), len(rows), kind,
+                                             ",".join(str(r.get(c, "")) for c in ("strike", "leg", "kind", "ts_ist", "as_of",
+                                                                                   "live_run_id") if c in r))
+    return "same rows, different multiplicity"
+
+
+def tie_ids(state):
+    """{table: [rows]} of the three state tables -> {(trading_day, symbol): ids} for every key whose rows at the latest as_of,
+    taken across cycle, events and wall together, carry more than one live_run_id (ruling R6-H: must never happen)."""
+    cols = sql_columns()
+    top = {}
+    for t, rows in state.items():
+        h = cols[t]
+        i_d, i_s, i_a, i_r = (h.index(c) for c in ("trading_day", "symbol", "as_of", "live_run_id"))
+        for r in rows:
+            k = (r[i_d], r[i_s])
+            if k not in top or r[i_a] > top[k][0]:
+                top[k] = (r[i_a], {r[i_r]})
+            elif r[i_a] == top[k][0]:
+                top[k][1].add(r[i_r])
+    ids = dict((k, v[1]) for k, v in top.items())
+    return dict((k, v) for k, v in ids.items() if len(v) > 1)
+
+
+def _planted_tie():
+    """A state that holds a tie by construction: two wall rows of one (day, symbol) at the same latest as_of, two ids."""
+    h = sql_columns()["tape_live_wall"]
+    row = dict((c, "") for c in h)
+    row.update(symbol="NIFTY", trading_day=DAY, ts_ist=DAY + "T10:00:00+05:30", as_of=DAY + "T05:00:00+00:00", code_sha=TEST_SHA)
+    a = [dict(row, live_run_id="00000000-0000-5000-8000-000000000001")[c] for c in h]
+    b = [dict(row, ts_ist=DAY + "T10:05:00+05:30", live_run_id="00000000-0000-5000-8000-000000000002")[c] for c in h]
+    return {"tape_live_cycle": [], "tape_live_events": [], "tape_live_wall": [a, b]}
+
+
+def _ist_date(ts):
+    return datetime.fromisoformat(ts).astimezone(IST).strftime("%Y-%m-%d")
+
+
+def g_dbshape():
+    from services.tape_live import dbshape
+    cols = sql_columns()
+    bad, n_rows, n_files = [], 0, 0
+    # (b) unit: a grid time at 00:30 IST is the previous UTC date; trading_day must be the IST date
+    for ts, want in (("2026-11-06T00:30:00+05:30", "2026-11-06"), ("2026-11-05T19:00:00+00:00", "2026-11-06"),
+                     ("2026-11-06T23:59:00+05:30", "2026-11-06"), ("2026-11-06T18:31:00+00:00", "2026-11-07")):
+        got = dbshape.trading_day_of(ts)
+        if got != want:
+            bad.append("trading_day_of(%s) = %r, want the IST date %r" % (ts, got, want))
+    for name, d in (("clean", replay("clean")), ("epoch", epoch_replay())):
+        deltas = db_deltas(d)
+        if not deltas:
+            bad.append("%s: no cycles/*.db.csv delta files" % name)
+            continue
+        files = []
+        for cname, m, parts in deltas:
+            limit = None if m is None else mods()[0].as_of(DAY, m)
+            for t, (h, rows) in parts.items():
+                files.append(("cycles/%s_%s.db.csv" % (cname, DB_PART[t]), t, h, rows, True, limit))
+        last_m = max(m for _c, m, _p in deltas if m is not None)
+        last = mods()[0].as_of(DAY, last_m)
+        files = [(a, b, c, e, f_, g if g is not None else last) for a, b, c, e, f_, g in files]
+        for t in DB_TABLES:
+            p = os.path.join(d, "%s.db.csv" % t)
+            if not os.path.exists(p):
+                bad.append("%s: %s.db.csv missing" % (name, t))
+                continue
+            h, rows = _db_read(p)
+            files.append(("%s.db.csv" % t, t, h, rows, False, last))
+        for rel, t, h, rows, is_delta, limit in files:
+            n_files += 1
+            want_h = (["op"] if is_delta else []) + cols[t]
+            if h != want_h:                                                              # (a)
+                bad.append("%s %s: header %s != DDL %s" % (name, rel, h, want_h))
+                continue
+            data_h = h[1:] if is_delta else h
+            i_td, i_ts, i_as = data_h.index("trading_day"), data_h.index("ts_ist"), data_h.index("as_of")
+            i_cs, i_id = data_h.index("code_sha"), data_h.index("live_run_id")
+            for r in rows:
+                n_rows += 1
+                op, r = (r[0], r[1:]) if is_delta else ("", r)
+                if is_delta and op not in ("U", "D"):
+                    bad.append("%s %s: op %r" % (name, rel, op))
+                if len(r) != len(data_h):
+                    bad.append("%s %s: %d fields, header %d" % (name, rel, len(r), len(data_h)))
+                    continue
+                if any(v in ("None", "null", "NULL", "nan") for v in r):                 # (a) empty = NULL
+                    bad.append("%s %s: a NULL written as text: %r" % (name, rel, r[:6]))
+                if r[i_td] != DAY or r[i_td] != _ist_date(r[i_ts]):                       # (b)
+                    bad.append("%s %s: trading_day %s, ts_ist %s (IST date %s)" % (name, rel, r[i_td], r[i_ts],
+                                                                                 _ist_date(r[i_ts])))
+                if not re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00$", r[i_as]) or r[i_as] > limit:   # (c)
+                    bad.append("%s %s: as_of %s (limit %s, UTC +00:00 required)" % (name, rel, r[i_as], limit))
+                if not r[i_cs] or not r[i_id]:
+                    bad.append("%s %s: empty provenance" % (name, rel))
+                if len(bad) > 12:
+                    break
+    # (d) D lines are file-only: no state file carries an op column (the headers above); no statement path reads an op:
+    # outside the two file-to-memory appliers no code compares anything with the D op; and the SQL grants SELECT only.
+    allowed = {"apply_deltas", "apply_db_deltas"}
+    for path in [os.path.join(LIVE, n) for n in sorted(os.listdir(LIVE)) if n.endswith(".py")]:
+        tree = ast.parse(rd(path).decode("utf-8"))
+        for fn in [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]:
+            if fn.name in allowed:
+                continue
+            for node in ast.walk(fn):
+                if isinstance(node, ast.Compare):
+                    for c in [node.left] + list(node.comparators):
+                        if isinstance(c, ast.Constant) and c.value in ("D", "D,"):
+                            bad.append("%s:%d %s() compares with the D op outside the file appliers" % (
+                                os.path.basename(path), node.lineno, fn.name))
+    with open(SQL, encoding="utf-8") as fh:
+        grants = re.findall(r"GRANT ([^;]+?) ON", fh.read())
+    if not grants or any(g.strip() != "SELECT" for g in grants):
+        bad.append("SQL grants other than SELECT: %r" % grants)
+    return not bad, "; ".join(bad[:8]) or (
+        "%d files, %d rows: headers == DDL, trading_day == IST date of ts_ist (+4 planted UTC/IST edges), as_of <= cycle grid "
+        "time, UTC; D ops only in delta files, read only by the file appliers; SQL grants SELECT only" % (n_files, n_rows))
+
+
+def g_epoch():
+    writer = mods()[5]
+    from services.tape_live import dbshape
+    f = epoch_fixture()
+    d = epoch_replay()
+    cols = sql_columns()
+    bad = []
+    with open(os.path.join(d, "run_manifest.json"), encoding="utf-8") as fh:
+        man = json.load(fh)
+    got = [(e["symbol"], e["trigger"], e["at"]) for e in man.get("epoch_log", [])]
+    if got != gen_live.EPOCH_BUMPS:
+        bad.append("epoch bumps %s != by hand %s" % (got, gen_live.EPOCH_BUMPS))
+    if [(r["symbol"], r["trigger"], r["at"]) for r in man["rebuilds"]] != [b for b in gen_live.EPOCH_BUMPS if b[1] != "drop"]:
+        bad.append("rebuilds %s are not the two rebuilds (a drop is never a rebuild)" % man["rebuilds"])
+    n_by = {s: sum(1 for b in gen_live.EPOCH_BUMPS if b[0] == s) for s in writer.SYMBOLS}
+    want_ids = {s: [writer.epoch_id(DAY, s, TEST_SHA, n) for n in range(1 + n_by[s])] for s in writer.SYMBOLS}
+    if man.get("epochs") != want_ids:
+        bad.append("manifest epochs %s != %s" % (man.get("epochs"), want_ids))
+    if len({i for v in want_ids.values() for i in v}) != sum(len(v) for v in want_ids.values()):
+        bad.append("epoch ids are not distinct")
+    deltas = db_deltas(d)
+    names = [n for n, _m, _p in deltas]
+    ev_h = cols["tape_live_events"]
+    ix = [ev_h.index(c) for c in ("symbol", "strike", "leg", "kind", "ts_ist")]
+    i_id = ev_h.index("live_run_id")
+
+    def ev_ids(state, key):
+        return [r[i_id] for r in state["tape_live_events"].values() if tuple(r[i] for i in ix) == key]
+
+    nifty = want_ids["NIFTY"]
+    # (0) preconditions: the planted events exist before they are dropped, else this guard would pass vacuously
+    st1345, st1350 = apply_db(deltas, "1345"), apply_db(deltas, "1350")
+    if ev_ids(st1345, gen_live.EPOCH_DROPPED) != [nifty[1]]:
+        bad.append("(0) precondition: %s not in the 13:45 state under epoch 1: %r" % (
+            gen_live.EPOCH_DROPPED, ev_ids(st1345, gen_live.EPOCH_DROPPED)))
+    if ev_ids(apply_db(deltas, "1430"), gen_live.EPOCH_THIN) != [nifty[2]]:
+        bad.append("(0) precondition: %s not in the 14:30 state under epoch 2" % (gen_live.EPOCH_THIN,))
+    sensex = want_ids["SENSEX"]
+    i_es = ev_h.index("symbol")
+
+    def sx_events(state):
+        return [r for r in state["tape_live_events"].values() if r[i_es] == "SENSEX"]
+    if ev_ids(apply_db(deltas, "1045"), gen_live.EPOCH_SX_DROPPED) != [sensex[0]] or len(sx_events(apply_db(deltas, "1045"))) != 1:
+        bad.append("(0) precondition: %s is not SENSEX's only event in the 10:45 state under epoch 0" % (gen_live.EPOCH_SX_DROPPED,))
+    sx_after = [n for n, _m, _p in deltas if (n == "final" or n >= "1050") and sx_events(apply_db(deltas, n))]
+    if sx_after:
+        bad.append("(0) SENSEX event rows in the D-applied state from 10:50 on, at %s; want none" % sx_after[:3])
+    # (1) the rebuild cycle: a D line for the dropped event; every surviving NIFTY row re-sent with the epoch-2 id
+    parts = [p for n, _m, p in deltas if n == "1350"]
+    parts = parts[0] if parts else {}
+    rows = parts.get("tape_live_events", (None, []))[1]
+    if len([r for r in rows if r[0] == "D" and tuple(r[1:][i] for i in ix) == gen_live.EPOCH_DROPPED]) != 1:
+        bad.append("(1) 13:50 delta: not exactly one D line for the dropped event")
+    for t in DELTA_TABLES:
+        hh = cols[t]
+        si, ri = hh.index("symbol"), hh.index("live_run_id")
+        sent = {_keyf(t, hh)(r[1:]): r[1:] for r in parts.get(t, (None, []))[1] if r[0] == "U"}
+        nn = [k for k, r in st1350[t].items() if r[si] == "NIFTY" and (r[ri] != nifty[2] or sent.get(k) != r)]
+        if nn or not any(r[si] == "NIFTY" for r in st1350[t].values()):
+            bad.append("(1) %s: %d NIFTY rows not re-sent at 13:50 with the epoch-2 id" % (t, len(nn)))
+    # (2) D applied: no NIFTY row of an older epoch survives, at 13:50 and at the end
+    for label, st, cur in (("13:50", st1350, nifty[2]), ("end", apply_db(deltas), nifty[3])):
+        for t in DELTA_TABLES:
+            hh = cols[t]
+            si, ri = hh.index("symbol"), hh.index("live_run_id")
+            old = [r for r in st[t].values() if r[si] == "NIFTY" and r[ri] != cur]
+            if old:
+                bad.append("(2) %s %s: %d NIFTY rows of an older epoch" % (label, t, len(old)))
+    # (2b) at EVERY cycle: U lines only (D a no-op, the 2b writer) + newest-run filter == D applied
+    n_checked = 0
+    for name in names:
+        full, uo = apply_db(deltas, name), apply_db(deltas, name, u_only=True)
+        view = newest_view(dict((t, list(uo[t].values())) for t in DELTA_TABLES))
+        for t in DELTA_TABLES:
+            if sorted(view[t]) != sorted(full[t].values()):
+                bad.append("(2b) cycle %s %s: U-only + newest-run filter != D applied: %s" % (name, t, _first_diff(t, view[t],
+                                                                                                          full[t].values())))
+            n_checked += 1
+    # (2c) the final state, asserted, not inferred: the day-end tape_live_{cycle,events,wall}.db.csv files through the newest
+    # view equal the D-applied state after the last delta; SENSEX has zero event rows in it
+    last = apply_db(deltas)
+    files = dict((t, _db_read(os.path.join(d, "%s.db.csv" % t))) for t in DELTA_TABLES)
+    fview = newest_view(dict((t, files[t][1]) for t in DELTA_TABLES))
+    for t in DELTA_TABLES:
+        if files[t][0] != cols[t] or sorted(fview[t]) != sorted(last[t].values()):
+            bad.append("(2c) day-end %s.db.csv through the newest view != D-applied state after the last delta: %s" % (
+                t, _first_diff(t, fview[t], last[t].values())))
+    if [r for r in fview["tape_live_events"] if r[cols["tape_live_events"].index("symbol")] == "SENSEX"]:
+        bad.append("(2c) day-end tape_live_events.db.csv holds SENSEX rows in the newest epoch; want zero")
+    # (3) the latest epoch's data columns == the batch output for the day, byte for byte (rendered through dbshape)
+    end = apply_db(deltas)
+    end_view = newest_view(dict((t, list(end[t].values())) for t in DELTA_TABLES))
+    for t, src in (("tape_live_cycle", "tape_strike_cycle.csv"), ("tape_live_events", "tape_events.csv")):
+        nd = len(cols[t]) - 3
+        live = sorted(r[:nd] for r in end_view[t])
+        with open(os.path.join(f["cyc"], src), encoding="utf-8", newline="") as fh:
+            batch = sorted(dbshape.data_row(t, DAY, r) for r in list(csv.reader(fh))[1:])
+        if live != batch:
+            bad.append("(3) %s: latest epoch (%d rows) != batch through dbshape (%d rows)" % (t, len(live), len(batch)))
+    if ev_ids(end, gen_live.EPOCH_ADDED) != [nifty[3]] or ev_ids(end, gen_live.EPOCH_DROPPED) or ev_ids(end, gen_live.EPOCH_THIN):
+        bad.append("(3) end state: added %r dropped %r thin %r" % (
+            ev_ids(end, gen_live.EPOCH_ADDED), ev_ids(end, gen_live.EPOCH_DROPPED), ev_ids(end, gen_live.EPOCH_THIN)))
+    # (4) every U row of every cycle carries its OWN symbol's epoch at that cycle (bumps by hand: n = bumps of that symbol with
+    # at <= the cycle); another symbol's bump never changes it
+    n_wrong = 0
+    first_wrong = None
+    for name, m, parts in deltas:
+        for t, (hh, rows) in parts.items():
+            si, ri = hh.index("symbol"), hh.index("live_run_id")
+            for r in rows:
+                if r[0] != "U":
+                    continue
+                n = sum(1 for b in gen_live.EPOCH_BUMPS if b[0] == r[si] and (m is None or b[2] <= m))
+                if r[ri] != want_ids[r[si]][n]:
+                    n_wrong += 1
+                    first_wrong = first_wrong or "%s %s %s" % (name, t, r[si])
+    if n_wrong:
+        bad.append("(4) %d U rows carry another epoch than their symbol's at that cycle (first: %s)" % (n_wrong, first_wrong))
+    # tie (ruling R6-H, step 3): per (trading_day, symbol), all rows at the latest as_of across the three tables carry one id,
+    # in the U-only state (what 2b holds) and the D-applied state, at every cycle; the check must fire on a planted tie
+    n_tie = 0
+    for name in names:
+        for st in (apply_db(deltas, name), apply_db(deltas, name, u_only=True)):
+            ties = tie_ids(dict((t, list(st[t].values())) for t in DELTA_TABLES))
+            if ties:
+                n_tie += 1
+                bad.append("tie at cycle %s: %s" % (name, sorted((k, sorted(v)) for k, v in ties.items())[:2]))
+    if not tie_ids(_planted_tie()):
+        bad.append("tie check did not fire on a planted tie (it cannot fail)")
+    # (5) a cycle with no bump re-sends no row whose data and id are unchanged
+    bump_cycles = {"%02d%02d" % (a // 60, a % 60) for _s, _t, a in gen_live.EPOCH_BUMPS}
+    prev = {t: {} for t in DELTA_TABLES}
+    n_same = n_u = 0
+    for name, _m, parts in deltas:
+        for t in DELTA_TABLES:
+            hh = cols[t]
+            kf, ai = _keyf(t, hh), hh.index("as_of")
+            for r in parts.get(t, (None, []))[1]:
+                if r[0] == "U" and name not in bump_cycles:
+                    n_u += 1
+                    old = prev[t].get(kf(r[1:]))
+                    if old is not None and old[:ai] + old[ai + 1:] == r[1:][:ai] + r[1:][ai + 1:]:
+                        n_same += 1
+        prev = apply_db(deltas, name)
+    if n_same:
+        bad.append("(5) %d of %d rows re-sent unchanged in cycles without a bump" % (n_same, n_u))
+    # (6) labels: written before the rebuild they keep their epoch-1 id; the reference view never filters labels
+    lh, lrows = _db_read(os.path.join(d, "tape_live_label.db.csv"))
+    li, ls_, lt = lh.index("live_run_id"), lh.index("symbol"), lh.index("ts_ist")
+    early = [r for r in lrows if r[ls_] == "NIFTY" and "11:35" <= r[lt][11:16] < "13:50"]
+    if not early or any(r[li] != nifty[1] for r in early):
+        bad.append("(6) NIFTY labels 11:35-13:45: %d rows, ids %s, want all epoch 1" % (len(early), sorted({r[li] for r in early})))
+    uo_end = apply_db(deltas, u_only=True)
+    tabs = dict((t, (cols[t], list(uo_end[t].values()))) for t in DELTA_TABLES)
+    tabs["tape_live_label"] = (lh, lrows)
+    wv = writer.newest_epoch_view(tabs)
+    if sorted(wv["tape_live_label"]) != sorted(lrows):
+        bad.append("(6) writer.newest_epoch_view filtered labels (%d -> %d rows)" % (len(lrows), len(wv["tape_live_label"])))
+    ref = newest_view(dict((t, tabs[t][1]) for t in DELTA_TABLES))
+    for t in DELTA_TABLES:
+        if sorted(wv[t]) != sorted(ref[t]):
+            bad.append("writer.newest_epoch_view(%s) != the independent filter (%d vs %d rows)" % (t, len(wv[t]), len(ref[t])))
+    return not bad, "; ".join(bad[:8]) or (
+        "bumps %s; CONC 13:45 D'd at 13:50 with every NIFTY row re-sent under epoch 2; THIN 14:30 drop bumped; SENSEX's only "
+        "event (CONC 10:45) gone in the 10:50 rebuild, zero SENSEX events after; U-only + newest view == D applied at %d (cycle, "
+        "table) points; (2c) day-end .db.csv state through the newest view == D-applied after the last delta, no SENSEX event; latest epoch == batch; every U row on its own symbol's epoch; no tie at the latest as_of (planted tie "
+        "detected); %d unbumped U rows all changed; %d early labels keep epoch 1" % (
+            ",".join("%s/%s@%d" % b for b in got), n_checked, n_u, len(early)))
 
 
 GUARDS = [("live-vectors", g_vectors), ("live-derive", g_derive), ("live-rule-inputs", g_rule_inputs),
@@ -1809,7 +2479,7 @@ GUARDS = [("live-vectors", g_vectors), ("live-derive", g_derive), ("live-rule-in
           ("live-runner-equal", g_runner_equal), ("live-runner-readonly", g_runner_readonly),
           ("live-runner-secrets", g_runner_secrets), ("live-runner-bounded-sql", g_runner_bounded_sql),
           ("live-runner-keyset", g_runner_keyset), ("live-runner-lifecycle", g_runner_lifecycle),
-          ("live-runner-restart", g_runner_restart)]
+          ("live-runner-restart", g_runner_restart), ("live-epoch", g_epoch), ("live-dbshape", g_dbshape)]
 
 
 def main():

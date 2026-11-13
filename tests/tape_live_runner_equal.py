@@ -7,10 +7,15 @@ One (day, variant) per process, so the runs can be started side by side. For the
 under <data>/chain_<day>) it runs
   1. cli replay (the L0 path, with the variant's arrival map), and
   2. the runner (cli live --source local --chain local --clock sim): the same recorded files, appearing on a schedule,
-and requires every output file byte-equal, except the live_run_id column of the wall and label files (Phase A interim id, plan
-section 12) and run_manifest.json, whose rebuild / late / bad-file / conflict / label-count fields are compared. It also requires
+and requires every output file byte-equal (both shapes, epoch ids included, plan section 4), except run_manifest.json,
+whose rebuild / late / bad-file / conflict / label-count / epoch fields are compared. It also requires
 the runner's final cycle and events to equal the offline cyc_<day>/tape_strike_cycle.csv and tape_events.csv byte for byte.
 Control: the comparison is run once on a copy with one byte changed and must report a difference; if it does not, the gate FAILS.
+Phase B (plan section 4): also (i) the newest epoch of the runner's DB-shaped cycle / events state equals the offline cyc_<day>
+rendered through dbshape; (ii) at EVERY cycle, the DB deltas applied with U lines only (D a no-op, the 2b writer) and then the
+newest-run filter equal the deltas applied with D. Reported, not gating: the grid point of the slowest cycle with its rebuild /
+db / s3 / re-emit figures, the epoch bumps per symbol and trigger with the rows each re-sent, and a FLAG when a bump cycle costs
+more than a typical cycle (bump wall_s - median > median). live_metrics.csv is kept as <work>/<day>_<variant>_metrics.csv.
 Variants: clean (no arrival map); late (NIFTY seg_1100 arrives 11:10); ooo (NIFTY seg_1200 arrives 12:20, after two later ones).
 Read-only on --data. Writes only under --work (deleted at the end unless --keep). Exit 0 PASS, 1 FAIL, 2 refused / bad input.
 Rule 23 window as tests/test_tape_live.py (Local override TAPE_RULE23_OVERRIDE_R1=1, ruling R-1).
@@ -28,11 +33,15 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 
+csv.field_size_limit(1 << 24)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 IST = timezone(timedelta(hours=5, minutes=30))
 print = functools.partial(print, flush=True)  # noqa: A001 - a stopped run must still leave its lines in the log
-ARRIVAL = {"clean": {}, "late": {"NIFTY/seg_1100.ndjson.gz": "11:10"}, "ooo": {"NIFTY/seg_1200.ndjson.gz": "12:20"}}
+ARRIVAL = {"clean": {}, "late": {"NIFTY/seg_1100.ndjson.gz": "11:10"}, "ooo": {"NIFTY/seg_1200.ndjson.gz": "12:20"},
+           # fixture only (tests/tape_live/gen_live.py EPOCH_ARRIVAL): the epoch day's two late segments (smoke test of Phase B)
+           "epoch": {"NIFTY/seg_1330.ndjson.gz": "13:50", "SENSEX/seg_1030.ndjson.gz": "10:50"}}
 
 
 def refused():
@@ -55,14 +64,6 @@ def files_of(d):
     return sorted(os.path.relpath(os.path.join(dp, n), d).replace(os.sep, "/") for dp, _, ns in os.walk(d) for n in ns)
 
 
-def strip_col(b, col):
-    rows = list(csv.reader(io.StringIO(b.decode("utf-8"))))
-    i = rows[0].index(col)
-    buf = io.StringIO()
-    csv.writer(buf, lineterminator="\n").writerows([r[:i] + r[i + 1:] for r in rows])
-    return buf.getvalue().encode("utf-8")
-
-
 def compare_dirs(cdir, ldir):
     """-> list of differences between the cli replay out dir and the runner's live dir."""
     bad = []
@@ -72,18 +73,101 @@ def compare_dirs(cdir, ldir):
         bad.append("file sets differ: only cli %s, only runner %s" % (sorted(set(fa) - set(fb))[:5], sorted(set(fb) - set(fa))[:5]))
     for rel in sorted(set(fa) & set(fb)):
         x, y = rd(os.path.join(cdir, rel)), rd(os.path.join(ldir, rel))
-        if rel in ("tape_live_wall.csv", "tape_live_label.csv"):
-            x, y = strip_col(x, "live_run_id"), strip_col(y, "live_run_id")
         if x != y:
             bad.append("differs: " + rel)
     with open(os.path.join(cdir, "run_manifest.json"), encoding="utf-8") as fh:
         ma = json.load(fh)
     with open(os.path.join(ldir, "run_manifest.json"), encoding="utf-8") as fh:
         mb = json.load(fh)
-    for k in ("rebuilds", "late_segments", "bad_files", "token_map_conflicts", "label_counts", "rule_version"):
-        if ma.get(k) != mb.get(k):
+    for k in ("rebuilds", "late_segments", "bad_files", "token_map_conflicts", "label_counts", "rule_version", "epochs",
+              "epoch_log"):
+        if k not in ma or ma.get(k) != mb.get(k):
             bad.append("manifest %s: cli %r runner %r" % (k, ma.get(k), mb.get(k)))
     return bad, len(fa), ma
+
+
+def _db_rows(path):
+    with open(path, encoding="utf-8", newline="") as fh:
+        rows = list(csv.reader(fh))
+    return rows[0], rows[1:]
+
+
+def _newest(state):
+    """Ruling R6-H: state {table: (header, rows)}; per (trading_day, symbol) one newest id, that of the row with the latest as_of
+    across the three tables together; keep only its rows in each. Also returns the ties: keys whose rows at the latest as_of
+    carry more than one id. -> ({table: rows}, {key: ids})."""
+    top = {}
+    for t, (h, rows) in state.items():
+        i_d, i_s, i_a, i_r = (h.index(c) for c in ("trading_day", "symbol", "as_of", "live_run_id"))
+        for r in rows:
+            k = (r[i_d], r[i_s])
+            if k not in top or r[i_a] > top[k][0]:
+                top[k] = [r[i_a], r[i_r], {r[i_r]}]
+            elif r[i_a] == top[k][0]:
+                top[k][2].add(r[i_r])
+    out = {}
+    for t, (h, rows) in state.items():
+        i_d, i_s, i_r = (h.index(c) for c in ("trading_day", "symbol", "live_run_id"))
+        out[t] = [r for r in rows if r[i_r] == top[(r[i_d], r[i_s])][1]]
+    return out, dict((k, v[2]) for k, v in top.items() if len(v[2]) > 1)
+
+
+def db_checks(ldir, cyc, day):
+    """(i) newest epoch == batch through dbshape; (ii) U-only + newest view == D applied at every cycle. -> list of failures."""
+    from services.tape_live import dbshape
+    bad = []
+    keys = {"tape_live_cycle": ("symbol", "instrument_token", "ts_ist"),
+            "tape_live_events": ("symbol", "expiry", "strike", "leg", "kind", "ts_ist", "side"),
+            "tape_live_wall": ("symbol", "expiry", "ts_ist")}
+    end = dict((t, _db_rows(os.path.join(ldir, t + ".db.csv"))) for t in keys)
+    end_view, ties = _newest(end)
+    if ties:
+        bad.append("tie at the day-end latest as_of: %s" % sorted((k, sorted(v)) for k, v in ties.items())[:2])
+    for t, src in (("tape_live_cycle", "tape_strike_cycle.csv"), ("tape_live_events", "tape_events.csv")):
+        nd = len(end[t][0]) - 3
+        live = sorted(r[:nd] for r in end_view[t])
+        with open(os.path.join(cyc, src), encoding="utf-8", newline="") as fh:
+            batch = sorted(dbshape.data_row(t, day, r) for r in list(csv.reader(fh))[1:])
+        if live != batch:
+            bad.append("(i) %s newest epoch (%d rows) != batch through dbshape (%d rows)" % (t, len(live), len(batch)))
+    cdir = os.path.join(ldir, "cycles")
+    names = sorted(n[:4] for n in os.listdir(cdir) if n.endswith(".db.csv") and n[:4] != "fina")
+    names = sorted(set(names)) + ["final"]
+    full = dict((t, {}) for t in keys)
+    uo = dict((t, {}) for t in keys)
+    n_pts = 0
+    for name in names:
+        for t, part in (("tape_live_cycle", "cycle"), ("tape_live_events", "events"), ("tape_live_wall", "wall")):
+            p = os.path.join(cdir, "%s_%s.db.csv" % (name, part))
+            if os.path.exists(p):
+                h, rows = _db_rows(p)
+                idx = [h.index(c) for c in keys[t]]
+                for r in rows:
+                    k = tuple(r[i] for i in idx)
+                    if r[0] == "U":
+                        full[t][k] = r[1:]
+                        uo[t][k] = r[1:]
+                    else:
+                        full[t].pop(k, None)
+        view, ties = _newest(dict((t, (dbshape.header(t).split(","), list(uo[t].values()))) for t in keys))
+        if ties:
+            bad.append("tie at cycle %s: %s" % (name, sorted((k, sorted(v)) for k, v in ties.items())[:2]))
+        for t in keys:
+            if sorted(view[t]) != sorted(full[t].values()):
+                bad.append("(ii) cycle %s %s: U-only + newest view != D applied" % (name, t))
+            n_pts += 1
+    print("GATE: DB checks: newest epoch vs batch (cycle, events); U-only == D-applied at %d (cycle, table) points" % n_pts)
+    return bad
+
+
+def tie_selftest():
+    """The tie check must be able to fire: a planted state with two wall rows of one (trading_day, symbol) at the same latest
+    as_of under two ids. -> True if _newest reports it."""
+    h = ["symbol", "trading_day", "ts_ist", "as_of", "live_run_id"]
+    rows = [["NIFTY", "2026-11-06", "2026-11-06T10:00:00+05:30", "2026-11-06T05:00:00+00:00", "id-a"],
+            ["NIFTY", "2026-11-06", "2026-11-06T10:05:00+05:30", "2026-11-06T05:00:00+00:00", "id-b"]]
+    _view, ties = _newest({"tape_live_wall": (h, rows)})
+    return ties == {("2026-11-06", "NIFTY"): {"id-a", "id-b"}}
 
 
 def main():
@@ -96,6 +180,10 @@ def main():
     a = ap.parse_args()
     if refused():
         return 2
+    if not tie_selftest():
+        print("TIE SELFTEST did NOT fire: the tie check cannot fail; gate FAIL")
+        return 1
+    print("TIE SELFTEST fired")
     raw = os.path.join(a.data, a.day)
     chain = [os.path.join(a.data, "chain_" + a.day, "gex_strike_snapshots_%s.csv" % s) for s in ("NIFTY", "SENSEX")]
     cyc = os.path.join(a.data, "cyc_" + a.day)
@@ -169,7 +257,30 @@ def main():
         with open(os.path.join(odir, a.day, "live_metrics.csv"), encoding="utf-8", newline="") as fh:
             ms = list(csv.DictReader(fh))
         walls = sorted(float(r["wall_s"]) for r in ms)
-        print("GATE %s: %d runner cycles, wall_s median %.2f max %.2f" % (tag, len(ms), walls[len(walls) // 2], walls[-1]))
+        med = walls[len(walls) // 2]
+        print("GATE %s: %d runner cycles, wall_s median %.2f max %.2f" % (tag, len(ms), med, walls[-1]))
+        top = max(ms, key=lambda r: float(r["wall_s"]))
+        print("GATE %s: slowest cycle T=%s wall_s %s rebuild_s %s db_s %s s3_list_s %s chain_wait_s %s reemit_rows %s rebuilds %s" % (
+            tag, top["T"], top["wall_s"], top["rebuild_s"], top["db_s"], top["s3_list_s"], top["chain_wait_s"],
+            top["reemit_rows"], top["rebuilds"]))
+        shutil.copyfile(os.path.join(odir, a.day, "live_metrics.csv"), os.path.join(a.work, "%s_metrics.csv" % tag))
+        by_t = dict((r["T"], r) for r in ms)
+        for e in man["epoch_log"]:
+            at = e["at"]
+            hm = "final" if at == "final" else "%02d:%02d" % (at // 60, at % 60)
+            r = by_t.get(hm)
+            cost = None if r is None else float(r["wall_s"])
+            flag = cost is not None and cost - med > med
+            print("GATE %s: epoch %s n=%d trigger=%s at=%s reemit_rows=%d cycle wall_s=%s rebuild_s=%s%s" % (
+                tag, e["symbol"], e["n"], e["trigger"], hm, e["reemit_rows"], "-" if r is None else r["wall_s"],
+                "-" if r is None else r["rebuild_s"], "  FLAG: bump cycle costs more than a typical cycle" if flag else ""))
+        cnt = {}
+        for e in man["epoch_log"]:
+            cnt.setdefault(e["symbol"], {}).setdefault(e["trigger"], 0)
+            cnt[e["symbol"]][e["trigger"]] += 1
+        print("GATE %s: epochs per symbol/trigger %s; re-sent rows total %d" % (
+            tag, json.dumps(cnt, sort_keys=True), sum(e["reemit_rows"] for e in man["epoch_log"])))
+        fails += db_checks(ldir, cyc, a.day)
     print("GATE %s %s%s" % (tag, "PASS" if not fails else "FAIL", "" if not fails else ": " + "; ".join(fails[:6])))
     if not a.keep:
         shutil.rmtree(work, ignore_errors=True)

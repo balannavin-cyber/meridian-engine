@@ -9,7 +9,7 @@ and a chain source; it never knows which it has. It never writes to S3 or the da
 Crash-safe restart: the journal and state.json (written last, atomically) are the only memory. A restart feeds the journalled objects
 of committed cycles back in their original cycle order, restores the emitted state from the committed delta files, redoes a cycle
 that was journalled but not committed, and continues at the current grid point; grid points that passed meanwhile are recorded as
-missed and never back-filled (L0 plan O-2). Phase A interim: live_run_id is constant for the day (plan section 12); the rebuild
+missed and never back-filled (L0 plan O-2). live_run_id is the per-symbol rebuild epoch of writer.py (plan section 4); the rebuild
 epochs are Phase B.
 
 Exit codes: 0 done / killed / stopped / no session; 1 unexpected error; 2 refused at start (cli); 3 memory (MemoryError or soft cap)
@@ -23,7 +23,6 @@ import os
 import re
 import shutil
 import time
-import uuid
 from datetime import datetime, timedelta, timezone
 
 from merdian_compute.tape import cycle, replay, special
@@ -39,7 +38,7 @@ SLICE_S = 5.0
 JCOLS = ("kind", "key", "size", "etag", "s3_last_modified", "first_seen_utc", "at", "cycle")
 METRIC_COLS = ("day", "T", "wake_utc", "cycle_end_utc", "wall_s", "cpu_self_s", "cpu_children_s", "peak_rss_mb", "rss_mb",
                "s3_list_s", "s3_list_calls", "s3_get_s", "s3_gets", "s3_bytes", "db_s", "db_calls", "db_rows", "chain_wait_s",
-               "ready_lag_s_NIFTY", "ready_lag_s_SENSEX", "rebuilds", "rebuild_s", "late_segments", "missed_grid_points",
+               "ready_lag_s_NIFTY", "ready_lag_s_SENSEX", "rebuilds", "rebuild_s", "reemit_rows", "late_segments", "missed_grid_points",
                "run_grew", "errors")
 ERR_KINDS = ("s3_list", "s3_get", "md5", "db", "chain_timeout", "other")
 
@@ -65,8 +64,25 @@ def iso_utc(t):
     return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def live_run_id(day, code_sha):
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, "meridian-tape-live-runner:%s:%s" % (day, code_sha)))
+DB_PARTS = (("tape_live_cycle", "cycle"), ("tape_live_events", "events"), ("tape_live_wall", "wall"))
+
+
+def state_texts(ld):
+    """{file name: text} of the state after a cycle, both shapes (cli replay writes the same files at its end)."""
+    texts = {"tape_live_cycle.csv": ld.state_cycle_csv(), "tape_live_events.csv": ld.state_events_csv(),
+             "tape_live_wall.csv": _rows_csv(writer.WALL_COLS, [ld.walls[k] for k in sorted(ld.walls)]),
+             "tape_live_label.csv": _rows_csv(writer.LABEL_COLS, [ld.labels[k] for k in sorted(ld.labels)])}
+    for t in ("tape_live_cycle", "tape_live_events", "tape_live_wall", "tape_live_label"):
+        texts[t + ".db.csv"] = ld.db_state_csv(t)
+    return texts
+
+
+def delta_texts(name, d):
+    """{file name: text or None} of one cycle's deltas, both shapes."""
+    out = dict(("%s_%s.csv" % (name, part), d[part]) for part in ("cycle", "events"))
+    for t, part in DB_PARTS:
+        out["%s_%s.db.csv" % (name, part)] = d["db"][t]
+    return out
 
 
 def _rows_csv(cols, rows):
@@ -191,6 +207,7 @@ class ChainPoller:
 SEG_KEY = re.compile(r"^(NIFTY|SENSEX)/(\d{4}-\d{2}-\d{2})/(seg_\d{4}(?:_c\d+)?(?:_r\d+)?\.ndjson\.gz)$")
 SUB_KEY = re.compile(r"^session/(\d{4}-\d{2}-\d{2})/(subscriptions_\d{6}(?:_\d+)?\.json)$")
 DELTA_NAME = re.compile(r"^(\d{4})_(cycle|events)\.csv$")
+DB_DELTA_NAME = re.compile(r"^(\d{4})_(cycle|events|wall)\.db\.csv$")
 
 
 class Runner:
@@ -288,23 +305,19 @@ class Runner:
 
     def _save_state(self, committed, done):
         st = {"committed": committed, "done": done, "missed": self.missed, "rebuilds": self.ld.rebuilds, "late": self.ld.late,
-              "bad_files": self.ld.bad_files}
+              "bad_files": self.ld.bad_files, "epoch": self.ld.epoch, "epoch_log": self.ld.epoch_log}
         _atomic(self._state_path(), (json.dumps(st, sort_keys=True, indent=1) + "\n").encode("utf-8"))
 
     def _write_state_files(self):
-        ld = self.ld
-        texts = {"tape_live_cycle.csv": ld.state_cycle_csv(), "tape_live_events.csv": ld.state_events_csv(),
-                 "tape_live_wall.csv": _rows_csv(writer.WALL_COLS, [ld.walls[k] for k in sorted(ld.walls)]),
-                 "tape_live_label.csv": _rows_csv(writer.LABEL_COLS, [ld.labels[k] for k in sorted(ld.labels)])}
-        for n, text in texts.items():
+        for n, text in state_texts(self.ld).items():
             _atomic(os.path.join(self.live, n), text.encode("utf-8"))
 
     def _emit(self, name, d):
         os.makedirs(self.cdir, exist_ok=True)
-        for part in ("cycle", "events"):
-            p = os.path.join(self.cdir, "%s_%s.csv" % (name, part))
-            if d[part]:
-                _atomic(p, d[part].encode("utf-8"))
+        for n, text in delta_texts(name, d).items():
+            p = os.path.join(self.cdir, n)
+            if text:
+                _atomic(p, text.encode("utf-8"))
             elif os.path.exists(p):
                 os.remove(p)
 
@@ -473,8 +486,10 @@ class Runner:
         w0, c0, k0 = time.perf_counter(), time.process_time(), _children_cpu()
         self._hook("before_cycle", T)
         self._hb("cycling")
+        n_reb = len(self.ld.rebuilds)          # before intake + feed: a late segment rebuilds inside the feed
         self._intake(T)
         self._hook("after_journal", T)
+        rb0 = time.perf_counter()              # feed + cycle(); this cycle's chain wait (stats reset per cycle) is subtracted
         self._feed_pending()
         if T >= GRID_FIRST and not any(e["kind"] == "subscriptions" for e in self.journal):
             self._hb("no_session")
@@ -482,24 +497,24 @@ class Runner:
         walls = {}
         if GRID_FIRST <= T <= GRID_LAST:
             walls = self._chain_wait(T)
-        n_reb, rb0 = len(self.ld.rebuilds), time.perf_counter()
         n_late = len(self.ld.late)
         if T >= GRID_FIRST:
             d = self.ld.cycle(T, walls, as_of_utc(self.day, T))
             self._emit(_hhmm(T), d)
             self.last_t = T
-        rebuild_s = time.perf_counter() - rb0
+        rebuild_s = time.perf_counter() - rb0 - self.stats["chain_wait_s"]
         self._check_rss()
         if T >= GRID_FIRST:
             self._write_state_files()
         self._save_state(T, False)
         self.last_cycle = _hm(T)
         self.last_wall = time.perf_counter() - w0
-        self._metrics(T, t_wake, w0, c0, k0, len(self.ld.rebuilds) - n_reb, rebuild_s, len(self.ld.late) - n_late)
+        self._metrics(T, t_wake, w0, c0, k0, len(self.ld.rebuilds) - n_reb, rebuild_s, len(self.ld.late) - n_late,
+                      self.ld.last_reemit if T >= GRID_FIRST else 0)
         self._hb("waiting")
         self._hook("after_cycle", T)
 
-    def _metrics(self, T, t_wake, w0, c0, k0, n_reb, rebuild_s, n_late):
+    def _metrics(self, T, t_wake, w0, c0, k0, n_reb, rebuild_s, n_late, reemit):
         s = self.stats
         p = os.path.join(self.ddir, "live_metrics.csv")
         new = not os.path.exists(p)
@@ -512,7 +527,7 @@ class Runner:
                "chain_wait_s": "%.3f" % s["chain_wait_s"],
                "ready_lag_s_NIFTY": "" if s["lag"]["NIFTY"] is None else "%.1f" % s["lag"]["NIFTY"],
                "ready_lag_s_SENSEX": "" if s["lag"]["SENSEX"] is None else "%.1f" % s["lag"]["SENSEX"],
-               "rebuilds": n_reb, "rebuild_s": "%.3f" % rebuild_s, "late_segments": n_late, "missed_grid_points": s["missed"],
+               "rebuilds": n_reb, "rebuild_s": "%.3f" % rebuild_s, "reemit_rows": reemit, "late_segments": n_late, "missed_grid_points": s["missed"],
                "run_grew": self.poller.acc.row_changed, "errors": s["errors"]}
         with open(p, "a", encoding="utf-8", newline="") as fh:
             wr = csv.writer(fh, lineterminator="\n")
@@ -528,8 +543,7 @@ class Runner:
 
     def _new_liveday(self):
         w = special.special_window(self.day, None)
-        return writer.LiveDay(self.day, self._reader, (w["open"], w["close"]) if w else None,
-                              live_run_id(self.day, self.cfg.code_sha), self.cfg.code_sha)
+        return writer.LiveDay(self.day, self._reader, (w["open"], w["close"]) if w else None, code_sha=self.cfg.code_sha)
 
     def _restore(self, st):
         """Rebuild the LiveDay as the previous process left it at its committed cycle. -> committed (or None)."""
@@ -546,31 +560,27 @@ class Runner:
                 for e in by_cycle.get(T, []):
                     self._feed_entry(e)
                 if T >= GRID_FIRST and self.ld.dirty:
-                    self.ld._rebuild_dirty()
+                    self.ld.rebuild_dirty()
         if committed is None:
             return None
-        texts = []
+        texts, db_texts = [], []
         if os.path.isdir(self.cdir):
             for n in sorted(os.listdir(self.cdir)):
-                m = DELTA_NAME.match(n)
-                if m and int(m.group(1)[:2]) * 60 + int(m.group(1)[2:]) <= committed:
-                    with open(os.path.join(self.cdir, n), encoding="utf-8", newline="") as fh:
-                        texts.append(fh.read())
+                for rx, out in ((DELTA_NAME, texts), (DB_DELTA_NAME, db_texts)):
+                    m = rx.match(n)
+                    if m and int(m.group(1)[:2]) * 60 + int(m.group(1)[2:]) <= committed:
+                        with open(os.path.join(self.cdir, n), encoding="utf-8", newline="") as fh:
+                            out.append(fh.read())
         c_text, e_text = writer.apply_deltas(texts)
-        self.ld.state_c, self.ld.state_e = writer._keyed(c_text, writer._ckey), writer._keyed(e_text, writer._ekey)
         limit = cycle.ts_of(self.day, committed)
-        for fname, store in (("tape_live_wall.csv", None), ("tape_live_label.csv", "labels")):
+        rows = {}
+        for fname in ("tape_live_wall.csv", "tape_live_label.csv"):
             p = os.path.join(self.live, fname)
-            if not os.path.exists(p):
-                continue
-            with open(p, encoding="utf-8", newline="") as fh:
-                rows = [r for r in csv.DictReader(fh) if r["ts_ist"] <= limit]
-            if store == "labels":
-                self.ld.load_labels(rows)
-            else:
-                for r in rows:
-                    self.ld.walls[(r["symbol"], r["ts_ist"])] = r
-        self.ld.rebuilds, self.ld.late, self.ld.bad_files = st["rebuilds"], st["late"], st["bad_files"]
+            rows[fname] = []
+            if os.path.exists(p):
+                with open(p, encoding="utf-8", newline="") as fh:
+                    rows[fname] = [r for r in csv.DictReader(fh) if r["ts_ist"] <= limit]
+        self.ld.restore(c_text, e_text, db_texts, rows["tape_live_wall.csv"], rows["tape_live_label.csv"], st)
         self.missed = list(st.get("missed", []))
         return committed
 
@@ -599,7 +609,7 @@ class Runner:
             if r["label"] == "NO_READ":
                 c["NO_READ: " + r["reason"]] = c.get("NO_READ: " + r["reason"], 0) + 1
         man = {"schema": "tape_live_runner_manifest_v1", "args": {"day": self.day}, "code": {"git_sha": self.cfg.code_sha},
-               "live_run_id": live_run_id(self.day, self.cfg.code_sha), "rule_version": rules.RULE_VERSION,
+               "epochs": self.ld.epochs(), "epoch_log": self.ld.epoch_log, "rule_version": rules.RULE_VERSION,
                "outputs": dict(sorted(outputs.items())), "rebuilds": self.ld.rebuilds, "late_segments": self.ld.late,
                "bad_files": self.ld.bad_files, "token_map_conflicts": self.ld.conflicts, "missed_grid_points": self.missed,
                "label_counts": dict((s, dict(sorted(v.items()))) for s, v in sorted(counts.items()))}

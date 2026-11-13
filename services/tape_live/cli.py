@@ -11,9 +11,11 @@
 replay feeds the day's recorded segments one at a time, in the order they would have become available live: segment
 seg_HHMM* at HHMM + 5 minutes (its receive window has closed), subscriptions_HHMMSS.json at the first 5-minute grid point at or
 after HHMMSS; --arrival {"SYMBOL/seg_name": "HH:MM"} overrides a file's availability (tests plant late segments with it). After
-each cycle it writes the per-cycle upserts / deletes under <out>/cycles/, and at the end the final state, the wall rows, the
-labels and run_manifest.json (input and output sha256). Deterministic: no writer clock in replay (as_of is the simulated cycle
-time, UTC) and live_run_id is a uuid5 of (day, code sha, input digest). Per-cycle timings go to stderr only.
+each cycle it writes the per-cycle upserts / deletes under <out>/cycles/ (the L0-shaped HHMM_{cycle,events}.csv and the
+DB-shaped HHMM_{cycle,events,wall}.db.csv), and at the end the final state (both shapes), the wall rows, the labels and
+run_manifest.json (input and output sha256, the epochs). Deterministic: no writer clock in replay (as_of is the simulated cycle
+time, UTC) and live_run_id is the per-symbol rebuild epoch writer.epoch_id(day, symbol, code sha, n) (docs/tape/
+L2_live_runner_plan.md section 4). Per-cycle timings go to stderr only.
 --resume keeps the label rows already in <out> (first label wins) and recomputes everything else.
 
 Read-only on --raw and the chain CSVs. Standard library only. No network, no database, no S3. Exit 0 written; 2 usage / input.
@@ -30,7 +32,6 @@ import signal
 import subprocess
 import sys
 import time
-import uuid
 from datetime import datetime, timedelta, timezone
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -158,8 +159,6 @@ def cmd_replay(a):
         files.append(("chain/%s" % os.path.basename(p), os.path.abspath(p)))
     inputs = [{"path": rel, "sha256": sha256_file(p), "bytes": os.path.getsize(p)} for rel, p in sorted(files)]
     code = code_info()
-    digest = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode("utf-8")).hexdigest()
-    live_run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "meridian-tape-live:%s:%s:%s" % (day, code["git_sha"], digest)))
     paths = {(sym, n): os.path.join(raw, sym, day, n) for _m, _si, _k, n, sym in segs}
 
     def reader(sym, name):
@@ -167,7 +166,7 @@ def cmd_replay(a):
             for line in fh:
                 yield line
 
-    ld = writer.LiveDay(day, reader, win, live_run_id, code["git_sha"])
+    ld = writer.LiveDay(day, reader, win, code_sha=code["git_sha"])
     os.makedirs(out, exist_ok=True)
     lab_path = os.path.join(out, "tape_live_label.csv")
     if a.resume and os.path.isfile(lab_path):
@@ -210,10 +209,7 @@ def cmd_replay(a):
         d = ld.cycle(None, {}, as_of(day, last_t))
         _write_delta(cdir, "final", d)
     outputs = {}
-    texts = {"tape_live_cycle.csv": ld.state_cycle_csv(), "tape_live_events.csv": ld.state_events_csv(),
-             "tape_live_wall.csv": _rows_csv(writer.WALL_COLS, [ld.walls[k] for k in sorted(ld.walls)]),
-             "tape_live_label.csv": _rows_csv(writer.LABEL_COLS, [ld.labels[k] for k in sorted(ld.labels)])}
-    for n, text in texts.items():
+    for n, text in live_runner.state_texts(ld).items():
         _w(os.path.join(out, n), text)
     for dp, _ds, ns in os.walk(out):
         for n in ns:
@@ -228,7 +224,8 @@ def cmd_replay(a):
             c["NO_READ: " + r["reason"]] = c.get("NO_READ: " + r["reason"], 0) + 1
     man = {"schema": "tape_live_replay_manifest_v1",
            "args": {"day": day, "until": a.until, "resume": bool(a.resume), "arrival": dict(sorted(arrival.items()))},
-           "code": code, "live_run_id": live_run_id, "rule_version": writer.rules.RULE_VERSION, "inputs": inputs,
+           "code": code, "epochs": ld.epochs(), "epoch_log": ld.epoch_log, "rule_version": writer.rules.RULE_VERSION,
+           "inputs": inputs,
            "outputs": dict(sorted(outputs.items())), "rebuilds": ld.rebuilds, "late_segments": ld.late,
            "bad_files": ld.bad_files, "token_map_conflicts": ld.conflicts, "stopped_at_until": stopped,
            "label_counts": {s: dict(sorted(v.items())) for s, v in sorted(counts.items())}}
@@ -338,9 +335,9 @@ def cmd_live(a):
 
 
 def _write_delta(cdir, name, d):
-    for part in ("cycle", "events"):
-        if d[part]:
-            _w(os.path.join(cdir, "%s_%s.csv" % (name, part)), d[part])
+    for n, text in live_runner.delta_texts(name, d).items():
+        if text:
+            _w(os.path.join(cdir, n), text)
 
 
 def main(argv=None):

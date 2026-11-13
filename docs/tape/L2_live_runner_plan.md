@@ -405,3 +405,77 @@ Each: what differs from the approved plan, and why.
 11. **The x5 mutant matrix was run by the operator outside the session** (`python tests/tape_live_mutants.py --repeat 5`, log
     `_l2_logs/mutants_x5_full.log`: 47/47 caught x5, 21/21 controls x5, EXIT=0). Why: two in-session attempts were killed by the
     host for low memory at rep 3 (same point both times), so the matrix could not be completed inside the session.
+
+## 15. Phase B rulings and deviations (recorded during the Phase B build; each with its reason)
+
+1. **Ruling R6-H, newest-epoch rule (approved by the operator, 2026-11-13, with the tie rule).** Per (trading_day, symbol), the newest epoch is the live_run_id of the row with the latest
+   as_of across tape_live_cycle, tape_live_events and tape_live_wall taken together; only rows with that id are kept, in all three
+   tables; tape_live_label is exempt. Reason: a per-table rule keeps a vanished row when the newest epoch has no row in that table
+   (planted case: SENSEX's only event, CONC 10:45, vanishes in the 10:50 rebuild; the per-table view kept it at all 57 cycles
+   10:50-15:30, `_l2_logs/phaseB_red_newest_per_table.log`, `phaseB_red_newest_detail.log`). Implemented in
+   `writer.newest_epoch_view(tables)`; the guard's reference (`newest_view` in tests/test_tape_live.py) is written independently.
+   Tie rule (same ruling): per (trading_day, symbol), every row at the latest as_of across the three tables carries one
+   live_run_id; asserted in live-epoch (U-only and D-applied state, every cycle, plus a planted tie that must be detected).
+2. **Restart: as_of moves for rows emitted in missed cycles.** After a restart that skipped grid points, a row whose uninterrupted
+   as_of is a missed cycle is re-sent at the first post-restart cycle (12:00 in case D), with that as_of. So restart finals are no
+   longer byte-equal to the uninterrupted run in as_of (case D only; B, C and E stay byte-identical). live-runner-restart D asserts
+   exactly that rule (only rows whose uninterrupted as_of is a missed point may move, and only to 12:00), equal epochs, an
+   epoch_log equal except the one bump of the default day (NIFTY subscriptions: 695 uninterrupted, 720 restarted; its reemit_rows
+   may differ), and tape_live_label.db.csv with exactly the missed points' rows absent.
+3. **M-L-NONDETERMINISTIC re-anchored** from cli.py's input-hash id (retired, P-3) to `writer.epoch_id`; the mutated id is now
+   random per call (before: once per replay). Still caught by live-deterministic.
+4. **Two mutants beyond the plan's seven:** M-L-NEWEST-PER-TABLE (restores per-table resolution; live-epoch) and
+   M-L-TIE-NOT-ASSERTED (removes the tie assertion; live-epoch, by the planted tie). With the two dbshape mutants
+   (M-R-DBSHAPE-UTC-DATE, M-R-DBSHAPE-ASOF-WALLCLOCK) the count is **58 mutants over 23 guards** (plan section 9 said 54).
+5. **DB-shaped files are added beside the L0 files** (operator ruling): `cycles/<HHMM>_{cycle,events,wall}.db.csv` and
+   `tape_live_{cycle,events,wall,label}.db.csv`; the L0 files are unchanged, so the cyc_<day> byte gate and apply_deltas hold.
+6. **`drop` bumps are recorded in `epoch_log`, never in `rebuilds`** (live-rebuild-scope and live-equal-offline assert the exact
+   rebuild list). run_manifest.json carries `epochs` and `epoch_log`; its `live_run_id` key is gone (no reader of it exists).
+7. **Phase A deviation 2 closed:** the runner restarts through public `LiveDay.restore()` and `rebuild_dirty()`.
+8. **Fixture re-derivation:** the first SENSEX plant (bursts at 10:00 / 10:10) produced no event, because cycle bins start at
+   09:20 and bin 10:15 had 11 bins of history (< MIN_PRIOR 12); the guard's precondition caught it
+   (`_l2_logs/phaseB_red_precondition_sx1015.log`). Moved by hand to 10:30 / 10:40 (16 and 17 bins).
+9. **Phase A defect found in Phase B: live_metrics.csv missed late-segment rebuilds.** `_cycle` took the rebuild counter and
+   timer after the intake had been fed, and a late segment rebuilds inside the feed, so `rebuilds` read 0 at such a cycle and
+   `rebuild_s` left the rebuild out (subscriptions rebuilds, done at the start of `cycle()`, were counted). The Phase A 727 s
+   cycles therefore cannot be split by these columns. Fixed: the counter is taken before the intake and feed; the timer starts
+   before the feed and this cycle's `chain_wait_s` (stats reset per cycle) is subtracted, so `rebuild_s` = feed + `cycle()`
+   and does not double-count the S3 and chain-wait columns (a deviation from "timer before the intake", for that reason).
+   live-runner-lifecycle asserts per cycle that `rebuilds` equals the manifest's rebuilds at that grid point and `rebuild_s` > 0
+   there (red `_l2_logs/phaseB_red_metrics_rebuilds.log`, green `phaseB_green_metrics_rebuilds.log`); mutant
+   M-R-METRICS-SNAPSHOT-LATE restores the old order. **59 mutants over 23 guards.**
+10. **Ruling Q-1 (operator, 2026-11-13): accepted as built, with a measured upsert-cost gate before stage 2b.** A within-epoch
+    drop bumps the symbol's epoch (trigger `drop`) and re-emits every cycle, events and wall row of that symbol under the new
+    id, as section 4 states. The real-day gate measured volume only, not DB write time. 2026-11-06 clean had 25 bumps: 24 `drop`
+    (NIFTY 8, SENSEX 16) plus 1 `subscriptions` (SENSEX 14:35, 7,044 rows re-sent). Total re-sent 104,822 rows over a base of
+    15,525 (14,262 cycle + 1,263 event rows); largest single re-emit 8,796 (SENSEX `drop` 15:35). Totals re-sent on the other
+    runs: 2026-11-04 24,996 (clean, late; ooo 27,884), 2026-11-05 74,631 (clean, late; ooo 77,555), 2026-11-06 late 104,822,
+    2026-11-06 ooo 107,770. A `D` line (op `D` in `cycles/<HHMM>_{cycle,events,wall}.db.csv`) records that a key present in the
+    previous cycle's state is absent from this one; the delta files carry it so that applying U and D in order reconstructs the
+    exact state (`writer.apply_db_deltas`, used by restart). It never becomes a statement: section 4, "**2b treats a `D` line as
+    a no-op**: no `DELETE` is ever issued, so 2b stays an upsert-only writer." The vanished key's old-epoch row stays in the
+    table and the newest-epoch rule (item 1) hides it. The gate before 2b is the upsert time of a re-emit of about 9,000 rows.
+11. **Merge of the Phase A fixes into the Phase B tree (2026-11-13).** `821f36a`, `d170a38` and `88912ef` (tape-staging
+    `tape/live-l2-fix`) were brought in by a per-file three-way `git merge-file` (base `670ea84`, ours = the Phase B working
+    file, theirs = `88912ef`), not by cherry-pick; the three commits are linear on `670ea84`, so the result equals cherry-picking
+    them in order. `live_sources.py`, `L2_live_runner_install.md` and `L2_live_runner.service.template`, which Phase B had not
+    changed, were taken whole from `88912ef`. Nothing was committed during the merge; Phase B was backed up first.
+12. **Three conflicts, all summary text, none in `services/` or `merdian_compute/`.** `tests/test_tape_live.py`
+    (`g_runner_equal`): every S3 / fake-timestamp check of the fix kept, with Phase B's summary line. `tests/tape_live_mutants.py`:
+    the docstring count set to 61/61 and 23/23. `tests/run_offline.sh`: step 41/42 labels set to 23 guards and 61 x5, and the
+    step comment above them (not a conflict hunk) updated to the same counts.
+13. **Mutant count 61, not 60.** 47 (Phase A) + 12 (Phase B: the seven of section 9, M-L-NEWEST-PER-TABLE, M-L-TIE-NOT-ASSERTED,
+    the two dbshape mutants of item 4, M-R-METRICS-SNAPSHOT-LATE) + 2 (fix branch: M-R-FAKE-TS-UNPADDED, M-R-S3-LM-NOT-NORMALISED)
+    = **61 mutants over 23 guards**. The 60 in the merge instruction omitted 821f36a's mutant. The counts in items 4 and 9 are
+    the counts at the time they were written. Phase B's count text had also drifted before the merge (docstring 59,
+    `run_offline.sh` 56 x5); both now read 61.
+14. **Real-day gate is 9 gate invocations; the "18" was an arithmetic slip** (accepted by the operator, 2026-11-11: "Matrix is
+    9 runs, accepted."). The figure came from the planning message "3 days x 3 arrival variants = 18"; sections 9, 10 (Q-2) and
+    12 enumerate the matrix as 3 days × {clean, late, out-of-order}, which is 9. The 9 were run by the operator outside the
+    session, all `GATE ... PASS`, EXIT=0 (`_l2_logs/merge_real_*_20261113_*.log`). Each invocation
+    (`tests/tape_live_runner_equal.py --day D --variant V`) runs `cli replay` and then the runner one after the other, so two
+    side by side is two processes, within the "at most 3 processes in parallel" of sections 9 and 12. The x5 mutant matrix was
+    also run by the operator outside the session, alone (61/61 caught x5, 23/23 controls x5), as in Phase A (section 14 item 11).
+15. **One memory-floor slip.** The LF-export job of the merge check (guards and 33 mutants on the export) started at 1,051 MB
+    free, under the 1,200 MB floor the operator set for it; the reading was printed in the same command as the run instead of
+    being checked first. The job completed and passed; it was not re-run.

@@ -17,15 +17,24 @@ Processing (plan decision 1, option B with a rebuild path):
     symbol dirty from both triggers in one cycle is rebuilt once.
 Outputs per cycle: upserts and deletes against the previously emitted state (so a provisional row or event that later
 changes or disappears is corrected), the wall rows, and labels. Labels are insert-only, first label wins (spec s3).
+
+Epochs (docs/tape/L2_live_runner_plan.md section 4, Phase B): live_run_id is a per-symbol REBUILD EPOCH,
+epoch_id(day, symbol, code_sha, n). n starts at 0 and is bumped by every rebuild of that symbol (late_segment, subscriptions)
+and, ruling Q-1, by a cycle whose delta would delete a row of that symbol without a rebuild (trigger "drop"). After a bump every
+cycle, events and wall row of the symbol is re-sent under the new id, so "U lines only + the newest-run filter" equals "U and D
+applied" at every cycle (newest_epoch_view). The DB-shaped deltas carry as_of = the grid time (UTC) of the cycle that last
+changed the row's data or id. Labels are never filtered: their id is the epoch they were written in, provenance only. D lines
+are file-only: no statement is ever built from them.
 """
 import copy
 import csv
 import io
 import json
+import uuid
 import zlib
 
 from merdian_compute.tape import cycle, events, minute, replay
-from services.tape_live import rules
+from services.tape_live import dbshape, rules
 
 SYMBOLS = ("NIFTY", "SENSEX")
 GRID_FIRST, GRID_LAST = cycle.FIRST_T, cycle.LAST_T
@@ -36,6 +45,72 @@ WALL_COLS = ("symbol", "trading_day", "expiry", "ts_ist", "chain_run_id", "chain
              "call_wall_oi_call", "put_wall_oi_put") + PROV
 LABEL_COLS = ("symbol", "trading_day", "ts_ist", "wall", "rule_version", "strike", "leg", "label", "partial", "reason",
               "flags") + PROV
+
+
+DB_DELTA = ("tape_live_cycle", "tape_live_events", "tape_live_wall")
+
+
+def epoch_id(day, sym, code_sha, n):
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, "meridian-tape-live:%s:%s:%s:%d" % (day, sym, code_sha, n)))
+
+
+def _nkey(table, trading_day, symbol):
+    return (trading_day, symbol)
+
+
+def newest_epoch_view(tables):
+    """The newest-run filter (operator ruling R6-H; 2b and the page implement the same rule). tables: {table: (header, rows)}.
+    Per (trading_day, symbol) the newest epoch is the live_run_id of the row with the latest as_of across tape_live_cycle,
+    tape_live_events and tape_live_wall TAKEN TOGETHER (a bump re-sends every row of the symbol at the bump cycle, so the latest
+    as_of carries the newest epoch even when one table has no row of it, e.g. every event vanished in the rebuild). Only rows
+    with that id are kept, in all three tables. tape_live_label is never filtered. -> {table: rows}."""
+    idx = dict((t, tuple(h.index(c) for c in ("trading_day", "symbol", "as_of", "live_run_id"))) for t, (h, _r) in tables.items())
+    newest = {}
+    for t in DB_DELTA:
+        if t not in tables:
+            continue
+        i_d, i_s, i_a, i_r = idx[t]
+        for r in tables[t][1]:
+            k = _nkey(t, r[i_d], r[i_s])
+            if k not in newest or r[i_a] > newest[k][0]:
+                newest[k] = (r[i_a], r[i_r])
+    out = {}
+    for t, (_h, rows) in tables.items():
+        if t == "tape_live_label":
+            out[t] = list(rows)
+            continue
+        i_d, i_s, i_a, i_r = idx[t]
+        out[t] = [r for r in rows if r[i_r] == newest[_nkey(t, r[i_d], r[i_s])][1]]
+    return out
+
+
+def _fields(text_line):
+    return next(csv.reader([text_line]))
+
+
+def _db_key(table, f):
+    """f: full DB fields. The key the writer keeps per table (the L0 key; the PK / grain of the DDL for each table)."""
+    if table == "tape_live_cycle":
+        return (f[1], f[5], f[7])                 # symbol, instrument_token, ts_ist (+ trading_day, constant per run)
+    if table == "tape_live_events":
+        return tuple(f[1:8])                      # symbol, expiry, strike, leg, kind, ts_ist, side
+    return (f[0], f[3])                           # wall: symbol, ts_ist (one front expiry per grid point)
+
+
+def apply_db_deltas(texts):
+    """DB-shaped delta files (cycles/*.db.csv), in cycle order -> {table: {key: full fields}} with D applied. File to memory
+    only (restart); nothing here or anywhere builds a statement from a D line."""
+    st = dict((t, {}) for t in DB_DELTA)
+    by_header = dict((dbshape.header(t, delta=True), t) for t in DB_DELTA)
+    for text in texts:
+        rows = list(csv.reader(io.StringIO(text)))
+        t = by_header[",".join(rows[0])]
+        for r in rows[1:]:
+            if r[0] == "U":
+                st[t][_db_key(t, r[1:])] = r[1:]
+            elif r[0] == "D":
+                st[t].pop(_db_key(t, r[1:]), None)
+    return st
 
 
 def added_minutes(items):
@@ -111,9 +186,14 @@ def apply_deltas(texts):
 
 
 class LiveDay:
-    def __init__(self, day, reader, win=None, live_run_id="", code_sha=""):
+    def __init__(self, day, reader, win=None, code_sha=""):
         self.day, self.reader, self.win = day, reader, win
-        self.live_run_id, self.code_sha = live_run_id, code_sha
+        self.code_sha = code_sha
+        self.epoch = dict((s, 0) for s in SYMBOLS)
+        self.epoch_log, self._bumped = [], set()
+        self.db = dict((t, {}) for t in DB_DELTA)        # {table: {key: full DB fields}}: the emitted DB state
+        self._parsed = dict((t, {}) for t in DB_DELTA[:2])
+        self.last_reemit = 0
         self.subs, self.meta, self.conflicts, self.added = [], {}, [], {}
         self.known = {s: [] for s in SYMBOLS}
         self.rp, self.cur, self.last = {}, {}, {}
@@ -175,8 +255,22 @@ class LiveDay:
         except (EOFError, OSError, zlib.error) as exc:
             self.bad_files.append({"file": "%s/%s" % (sym, name), "error": type(exc).__name__})
 
+    # -- epochs --------------------------------------------------------------------------------------
+    def live_run_id(self, sym):
+        return epoch_id(self.day, sym, self.code_sha, self.epoch[sym])
+
+    def epochs(self):
+        return dict((s, [epoch_id(self.day, s, self.code_sha, n) for n in range(self.epoch[s] + 1)]) for s in SYMBOLS)
+
+    def _bump(self, sym, trigger, at):
+        self.epoch[sym] += 1
+        self._bumped.add(sym)
+        self.epoch_log.append({"symbol": sym, "trigger": trigger, "at": at, "n": self.epoch[sym], "id": self.live_run_id(sym),
+                               "reemit_rows": 0})
+
     def _rebuild_sym(self, sym, why):
         self.rebuilds.append(dict(why, symbol=sym))
+        self._bump(sym, why["trigger"], why["at"])
         self.rp.pop(sym, None)
         self.cur.pop(sym, None)
         self.last.pop(sym, None)
@@ -189,6 +283,25 @@ class LiveDay:
         for sym in SYMBOLS:
             if sym in dirty:
                 self._rebuild_sym(sym, dirty[sym])
+
+    def rebuild_dirty(self):
+        """Public: rebuild the symbols whose token map changed (the start of a cycle; restart catch-up)."""
+        self._rebuild_dirty()
+
+    # -- restart ---------------------------------------------------------------------------------------
+    def restore(self, c_text, e_text, db_texts, wall_rows, label_rows, st):
+        """Put back the state emitted up to the committed cycle: L0 state texts, DB delta texts (cycles/*.db.csv in order),
+        wall and label rows (the files), and the counters of state.json. Rebuilds and bumps during catch-up are recovery: the
+        epochs, rebuilds, late and bad_files of the committed state replace them."""
+        self.state_c, self.state_e = _keyed(c_text, _ckey), _keyed(e_text, _ekey)
+        self.db = apply_db_deltas(db_texts)
+        self._parsed = dict((t, {}) for t in DB_DELTA[:2])
+        for r in wall_rows:
+            self.walls[(r["symbol"], r["ts_ist"])] = r
+        self.load_labels(label_rows)
+        self.rebuilds, self.late, self.bad_files = st["rebuilds"], st["late"], st["bad_files"]
+        self.epoch = dict((s, int(st["epoch"][s])) for s in SYMBOLS)
+        self.epoch_log, self._bumped = st["epoch_log"], set()
 
     # -- labels ----------------------------------------------------------------------------------------
     def load_labels(self, rows):
@@ -219,10 +332,63 @@ class LiveDay:
             ev = [e for e in ev if e[5] <= T]
         c_text, e_text = cycle.render_cycle_csv(crow), events.render_events_csv(ev)
         new_c, new_e = _keyed(c_text, _ckey), _keyed(e_text, _ekey)
+        for sym in SYMBOLS:                       # ruling Q-1: a deletion without a rebuild bumps the symbol's epoch
+            if sym in self._bumped:
+                continue
+            if any(k[0] == sym and k not in new_c for k in self.state_c) or \
+                    any(k[0] == sym and k not in new_e for k in self.state_e):
+                self._bump(sym, "drop", tm if tm is not None else "final")
         out = {"cycle": _delta(self.state_c, new_c, CYCLE_HEADER), "events": _delta(self.state_e, new_e, EVENT_HEADER)}
         self.state_c, self.state_e = new_c, new_e
         if T is not None and GRID_FIRST <= tm <= GRID_LAST:
             self._label(T, walls, c_text, e_text, as_of)
+        out["db"] = self._db_cycle(as_of)
+        self._bumped = set()
+        return out
+
+    def _db_rows(self, table, state):
+        cache, rows = self._parsed[table], {}
+        for line in state.values():
+            data = cache.get(line)
+            if data is None:
+                data = cache[line] = dbshape.data_row(table, self.day, _fields(line))
+            rows[_db_key(table, data + ["", "", ""])] = data
+        if len(cache) > 2 * len(state) + 1000:            # drop the parse cache of lines no longer in the state
+            live = set(state.values())
+            for line in [l for l in cache if l not in live]:
+                del cache[line]
+        return rows
+
+    def _db_cycle(self, as_of):
+        """The DB-shaped delta of this cycle per table (text or None); updates self.db and the re-emit counters."""
+        new = {"tape_live_cycle": self._db_rows("tape_live_cycle", self.state_c),
+               "tape_live_events": self._db_rows("tape_live_events", self.state_e),
+               "tape_live_wall": dict(((r["symbol"], r["ts_ist"]), dbshape.dict_row("tape_live_wall", self.day, r))
+                                      for r in self.walls.values())}
+        out, reemit = {}, dict((s, 0) for s in SYMBOLS)
+        for t in DB_DELTA:
+            old, cur, lines = self.db[t], {}, []
+            for k in sorted(new[t]):
+                data = new[t][k]
+                rid = self.live_run_id(data[1] if t != "tape_live_wall" else data[0])
+                prev = old.get(k)
+                if prev is not None and prev[:-3] == data and prev[-2] == rid:
+                    cur[k] = prev
+                    continue
+                if prev is not None and prev[:-3] == data:
+                    reemit[data[1] if t != "tape_live_wall" else data[0]] += 1
+                cur[k] = dbshape.full(data, as_of, rid, self.code_sha)
+                lines.append("U," + dbshape.line(cur[k]))
+            for k in sorted(set(old) - set(cur)):
+                lines.append("D," + dbshape.line(old[k]))
+            self.db[t] = cur
+            out[t] = (dbshape.header(t, delta=True) + "\n" + "\n".join(lines) + "\n") if lines else None
+        for k, f in self.db["tape_live_wall"].items():
+            self.walls[k] = dict(zip(WALL_COLS, f))
+        for e in self.epoch_log:
+            if e["symbol"] in self._bumped and e["n"] == self.epoch[e["symbol"]]:
+                e["reemit_rows"] += reemit[e["symbol"]]
+        self.last_reemit = sum(reemit.values())
         return out
 
     def _label(self, T, walls, c_text, e_text, as_of):
@@ -231,10 +397,10 @@ class LiveDay:
             by_c.setdefault(r["symbol"], []).append(r)
         for r in csv.DictReader(io.StringIO(e_text)):
             by_e.setdefault(r["symbol"], []).append(r)
-        prov = {"as_of": as_of, "live_run_id": self.live_run_id, "code_sha": self.code_sha}
         for sym in SYMBOLS:
             if not self.known[sym]:
                 continue
+            prov = {"as_of": as_of, "live_run_id": self.live_run_id(sym), "code_sha": self.code_sha}
             w = walls.get(sym)
             if w is not None:
                 self.walls[(sym, T)] = dict(w, **prov)
@@ -254,3 +420,12 @@ class LiveDay:
 
     def state_events_csv(self):
         return render_state(self.state_e, EVENT_HEADER, _esort)
+
+    def db_state_csv(self, table):
+        """The DB-shaped state of one table (header = the DDL columns), rows in key order."""
+        if table == "tape_live_label":
+            rows = [dbshape.full(dbshape.dict_row(table, self.day, self.labels[k]), *[self.labels[k][c] for c in PROV])
+                    for k in sorted(self.labels)]
+        else:
+            rows = [self.db[table][k] for k in sorted(self.db[table])]
+        return "\n".join([dbshape.header(table)] + [dbshape.line(r) for r in rows]) + "\n"

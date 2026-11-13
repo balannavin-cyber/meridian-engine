@@ -18,6 +18,7 @@ no exception text is ever kept, so no secret can travel in an error. RUN is the 
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import urllib.parse
@@ -34,6 +35,21 @@ PGOPTIONS = "-c default_transaction_read_only=on -c statement_timeout=8000"
 SSL_MODES = ("require", "verify-ca", "verify-full")
 
 ObjInfo = namedtuple("ObjInfo", "key size etag last_modified")
+
+# S3 LastModified as the aws CLI prints it: '2026-11-06T03:25:03.000Z' (seen on the production box, 2026-11-06) or
+# '2026-11-06T10:10:06+00:00'. Python 3.10's fromisoformat rejects the trailing Z (3.11+ accept it) and any fraction width but 0, 3
+# or 6, so only those widths are accepted here; anything else (no offset, a non-UTC offset, a space separator, another width,
+# surrounding whitespace) is refused rather than guessed.
+S3_LM_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3}|\.\d{6})?)(?:Z|\+00:00)\Z")
+
+
+def s3_last_modified_iso(s):
+    """An S3 LastModified string -> the same instant written with +00:00 (Z -> +00:00; the fraction kept digit for digit, never
+    rounded), which fromisoformat parses on 3.10. Pure string work. Any other shape raises SourceError("other")."""
+    m = S3_LM_RE.match(s) if isinstance(s, str) else None
+    if m is None:
+        raise SourceError("other")
+    return m.group(1) + "+00:00"
 
 
 class SourceError(Exception):
@@ -188,7 +204,7 @@ class S3Source:
             raise SourceError("other") from None
         if self.filter_future:
             now = self.clock.now()
-            res = [o for o in res if datetime.fromisoformat(o.last_modified).timestamp() <= now]
+            res = [o for o in res if datetime.fromisoformat(s3_last_modified_iso(o.last_modified)).timestamp() <= now]
         return res
 
     def get(self, key, dest):

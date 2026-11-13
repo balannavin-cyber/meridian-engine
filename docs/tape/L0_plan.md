@@ -190,8 +190,10 @@ calling `replay.build_token_map` and `cycle_day.read_added` rather than retyping
   (accumulated final state, rendered with `cycle.render_cycle_csv` / `events.render_events_csv` so they are comparable byte for byte
   with `cyc_<day>`), `tape_live_wall.csv`, `tape_live_label.csv`, `run_manifest.json` (inputs and outputs sha256, code sha, rebuilds
   with triggers, per-cycle elapsed only on stderr).
-- Deterministic: replay `as_of` = the simulated cycle time (no writer clock in replay); `live_run_id` = uuid5 of (day, code_sha,
-  sha of the input manifest). Two runs byte-identical (guard `live-deterministic`).
+- Deterministic: replay `as_of` = the simulated cycle time (no writer clock in replay). `live_run_id` is a per-symbol rebuild
+  epoch (L2 plan section 4, Phase B; the per-input-hash id first written here is retired): uuid5 of (day, symbol, code_sha, n),
+  where n counts that symbol's rebuilds (late segment, subscriptions change) and, ruling Q-1, its within-epoch drops; a NIFTY
+  rebuild leaves SENSEX's id alone. Two runs byte-identical (guard `live-deterministic`).
 - Real-day runtime estimate: ~200 s T1a + ~80 cycles × ~8 s ≈ 12 min per day on this machine; the three-day gate runs once,
   outside `run_offline.sh`, as `tests/tape_live_equal_offline.py --data C:\tape_data` (Tee-Object log), because `run_offline.sh`
   steps must be fixture-only.

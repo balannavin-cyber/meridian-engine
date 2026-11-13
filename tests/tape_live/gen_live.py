@@ -76,6 +76,34 @@ ASK_DROP = {10103: (661, 662), 10102: (841, 842)}
 BID_DROP = {10101: (751, 752)}
 
 FIRST_MIN, LAST_MIN = 8 * 60 + 56, 15 * 60 + 34
+# Epoch day only (build(root, epoch=True), docs/tape/L2_live_runner_plan.md section 4, guard live-epoch). By hand:
+#   NIFTY 23600 CE (10105) bursts 40 lots/min in minutes 13:30-13:44, i.e. bins 13:35, 13:40, 13:45; seg_1330 (minutes
+#   13:30-13:34) arrives at 13:50, after seg_1335 and seg_1340. While it is missing, the first 13:35 packet carries 13:30-13:35's
+#   volume (one dump into bin 13:40), bin 13:35 is empty, so bins 13:40 and 13:45 are the first two consecutive z >= 3 bins:
+#   a provisional CONC at 13:45. With seg_1330 the burst starts in bin 13:35: CONC at 13:40, and 13:45 is disarmed. So the 13:50
+#   rebuild (late_segment) drops CONC 13:45 and adds CONC 13:40.
+#   NIFTY 23600 PE (10106) ask drop in minutes 14:28, 14:29 -> THIN ask stamped 14:30 at the 14:30 cycle. One extra packet with
+#   exchange time 14:29:59 and normal depth is received at 14:30:00.25, so it is in seg_1430 (fed at 14:35, in order, no
+#   rebuild): minute 14:29's end depth becomes normal and THIN 14:30 vanishes within the epoch (the Q-1 "drop" bump at 14:35).
+#   SENSEX 77100 CE (20203) bursts in minutes 10:30-10:34 (bin 10:35) and 10:40-10:44 (bin 10:45); bin 10:40 is normal, so the
+#   true day has no two consecutive z >= 3 bins: no SENSEX event at all. seg_1030 arrives at 10:50, after seg_1035 and seg_1040:
+#   while it is missing, bin 10:35 is empty and the first 10:35 packet carries 10:30-10:35's volume into bin 10:40, so bins 10:40
+#   and 10:45 give a provisional CONC at 10:45 (the 10:45 cycle). Cycle bins start at 09:20 (cycle.FIRST_T), so bin T has
+#   (T - 09:20) / 5 bins of history: 16 at 10:40, 17 at 10:45, >= MIN_PRIOR 12. (A first plant at 10:05 / 10:15 had only 11 at
+#   10:15 and produced no event; the guard's precondition caught it.) At 10:50 seg_1030 sorts before seg_1040: rebuild
+#   (late_segment) and the CONC vanishes. SENSEX then has ZERO event rows in its newest epoch (the case ruling R6-H's newest-epoch rule covers).
+#   No other SENSEX token has a burst or a depth drop (plan above), so SENSEX has no other event on this day.
+EPOCH_BURST = {10105: range(810, 825), 20203: tuple(range(630, 635)) + tuple(range(640, 645))}
+EPOCH_ASK_DROP = {10106: (868, 869)}
+EPOCH_LATE_PKT = (10106, 869, 59, 1, 250000000)     # token, minute, exchange second, recv delay s, recv extra ns
+EPOCH_ARRIVAL = {"NIFTY/seg_1330.ndjson.gz": "13:50", "SENSEX/seg_1030.ndjson.gz": "10:50"}
+# (symbol, trigger, at) of every epoch bump on the epoch day, by hand from the plan above and the default day's 11:33 file.
+EPOCH_BUMPS = [("SENSEX", "late_segment", 650), ("NIFTY", "subscriptions", 695), ("NIFTY", "late_segment", 830),
+               ("NIFTY", "drop", 875)]
+EPOCH_DROPPED = ("NIFTY", "23600", "CE", "CONC", "2026-11-06T13:45:00+05:30")     # in the 13:45 state, gone at 13:50
+EPOCH_ADDED = ("NIFTY", "23600", "CE", "CONC", "2026-11-06T13:40:00+05:30")       # added by the 13:50 rebuild
+EPOCH_THIN = ("NIFTY", "23600", "PE", "THIN", "2026-11-06T14:30:00+05:30")        # in the 14:30 state, gone at 14:35
+EPOCH_SX_DROPPED = ("SENSEX", "77100", "CE", "CONC", "2026-11-06T10:45:00+05:30")  # SENSEX's only event: 10:45 state only
 
 
 def hm(m):
@@ -102,41 +130,49 @@ def meta_row(tok):
             "added_minute": added, "reason": "fixture"}
 
 
-def lots_per_min(tok, m):
+def lots_per_min(tok, m, epoch_day=False):
     t, sym = tok[0], tok[1]
     if t in UNTRADED:
         return 0
-    if m in BURST.get(t, ()):
+    if m in BURST.get(t, ()) or (epoch_day and m in EPOCH_BURST.get(t, ())):
         return 40
     b = (m - 555) // 5 if m >= 555 else 0
     return 2 if b % 2 == 0 else 3
 
 
-def packets(tok):
+def packets(tok, epoch_day=False):
     t, sym, role, k, ot, _added, first = tok
     m0 = int(first[:2]) * 60 + int(first[3:])
     vol, out = 1000 * LOT[sym], []
     oi = 250000 + 13 * LOT[sym] * (t % 7)
     for m in range(m0, LAST_MIN + 1):
-        q = lots_per_min(tok, m) * LOT[sym]
-        ask_l = LVL_THIN[sym] if m in ASK_DROP.get(t, ()) else LVL[sym]
+        q = lots_per_min(tok, m, epoch_day) * LOT[sym]
+        drop = m in ASK_DROP.get(t, ()) or (epoch_day and m in EPOCH_ASK_DROP.get(t, ()))
+        ask_l = LVL_THIN[sym] if drop else LVL[sym]
         bid_l = LVL_THIN[sym] if m in BID_DROP.get(t, ()) else LVL[sym]
         p = PRICE[sym] + (t % 5)
         bid, ask = p - 0.5, p + 0.5
         oi += LOT[sym] * (m % 3)
-        for sec, dq in ((15, q), (45, 0)):
+        secs = [(15, q, ask_l), (45, 0, ask_l)]
+        if epoch_day and (t, m) == EPOCH_LATE_PKT[:2]:
+            secs.append((EPOCH_LATE_PKT[2], 0, LVL[sym]))
+        for sec, dq, a_l in secs:
             vol += dq
             ltp = ask if m % 2 == 0 else bid
             ex = epoch(m, sec)
-            rec = {"k": "pkt", "sym": sym, "role": role, "recv_ns": int(ex) * 1000000000 + 250000000,
-                   "recv_ist": datetime.fromtimestamp(ex + 0.25, IST).isoformat(timespec="microseconds"),
+            rn, rs = int(ex) * 1000000000 + 250000000, ex + 0.25
+            if epoch_day and (t, m, sec) == EPOCH_LATE_PKT[:3]:
+                rn = (int(ex) + EPOCH_LATE_PKT[3]) * 1000000000 + EPOCH_LATE_PKT[4]
+                rs = ex + EPOCH_LATE_PKT[3] + EPOCH_LATE_PKT[4] / 1e9
+            rec = {"k": "pkt", "sym": sym, "role": role, "recv_ns": rn,
+                   "recv_ist": datetime.fromtimestamp(rs, IST).isoformat(timespec="microseconds"),
                    "instrument_token": t, "exchange_timestamp": datetime.fromtimestamp(ex, IST).isoformat()}
             if role == "IDX":
                 rec.update({"last_price": 23548.0 + (m % 4)})
             else:
                 rec.update({"last_price": ltp, "average_traded_price": p, "volume_traded": vol, "oi": oi,
                             "depth": {"buy": [{"quantity": bid_l, "price": bid - 0.05 * i, "orders": 2} for i in range(5)],
-                                      "sell": [{"quantity": ask_l, "price": ask + 0.05 * i, "orders": 2} for i in range(5)]}})
+                                      "sell": [{"quantity": a_l, "price": ask + 0.05 * i, "orders": 2} for i in range(5)]}})
             out.append(rec)
     return out
 
@@ -145,12 +181,12 @@ def dumps(rec):
     return json.dumps(rec, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
 
-def write_raw(root, scope=False):
+def write_raw(root, scope=False, epoch_day=False):
     base = os.path.join(root, "raw", DAY)
     segs = {}
     first_ctl = {"NIFTY": False, "SENSEX": False}
     for tok in TOKENS + [LATE_TOKEN] + (SCOPE_TOKENS if scope else []):
-        for rec in packets(tok):
+        for rec in packets(tok, epoch_day):
             ns = rec["recv_ns"]
             slot = int((ns // 1000000000 - epoch(0, 0)) // 300) * 5
             segs.setdefault((tok[1], slot), []).append((ns, dumps(rec)))
@@ -267,9 +303,10 @@ def scope_sub_files():
             ("subscriptions_140300.json", base + [s1, n2, s2, s3])]     # case f: SENSEX, with a late SENSEX segment
 
 
-def build(root, scope=False):
-    """scope=True: the rebuild-scope day (live-rebuild-scope guard); the default day is byte-unchanged."""
-    raw = write_raw(root, scope)
+def build(root, scope=False, epoch=False):
+    """scope=True: the rebuild-scope day (live-rebuild-scope guard); epoch=True: the epoch day (live-epoch guard).
+    The default day is byte-unchanged (DEFAULT_FIXTURE_CONTENT in tests/test_tape_live.py)."""
+    raw = write_raw(root, scope, epoch)
     chain = write_chain(root)
     return {"raw": raw, "chain": chain, "day": DAY}
 

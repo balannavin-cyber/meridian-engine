@@ -1,2 +1,3 @@
 # tape scoring: hashed files are defined over LF bytes on every checkout (docs/tape/scoring_plan.md section 1.2)
 services/tape_scoring/** text eol=lf
+docs/research/futoi/c1/data/*.csv -text

@@ -600,6 +600,243 @@ the doc-close that closes it, with one line in that close's status paragraph.
 | **Home** | Tape stream. |
 | **Status** | **OPEN — verify after 15:52 IST.** |
 
+### TD-S106-NEW-1 (S3 priority) — `tape_live_events` has no primary key; a single unique index is doing the job of one
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The grain is enforced, so no duplicate can land; what is missing is the declaration that this *is* the key, which every reader and every future FK depends on. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; engine lane, from the 2026-11-10 constraint read) |
+| **Component** | `public.tape_live_events` (Supabase), unique `tape_live_events_grain_uq` (`NULLS NOT DISTINCT`) |
+| **Measured** | Constraint read 2026-11-10: no primary key exists on `tape_live_events`; `tape_live_events_grain_uq` is the only unique rule and is the writer's conflict target. |
+| **Proper fix** | Add a primary key on the grain, or record the unique index as the key in an ADR note so the absence is a decision rather than an omission. |
+| **Home** | Order-flow (tape) lane; engine-owned object. Source: `docs/research/s106/rulings_s105_tape_w.md` §5 and its register items. |
+| **Status** | **OPEN.** |
+
+### TD-S106-NEW-2 (S3 priority) — `tape_live_cycle` has two unique rules, and a token remap makes the strike vanish from the tape page after the next epoch bump
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Needs no fix until a remap happens, and then it is silent: the row is simply not there. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; engine lane, from the 2b answer E-3) |
+| **Component** | `public.tape_live_cycle` — `tape_live_cycle_pk (symbol, trading_day, instrument_token, ts_ist)` and `tape_live_cycle_grain_uq` (the grain) |
+| **Symptom** | A token remap satisfies the PK (the token is part of it) and violates the grain rule. The writer counts and reports the violation rather than crashing, so the affected strike is absent from `/tape` from the next epoch bump onward, with no error surface. |
+| **Measured** | Two unique rules read 2026-11-10. Engine answer E-3 (option 2) is the agreed shape. |
+| **Proper fix** | Writer's second statement upserts on the grain — `ON CONFLICT ON CONSTRAINT tape_live_cycle_grain_uq` — proven by a deliberate remap row in the Saturday gate. Precondition: confirm no foreign key or trigger on the four tape tables (read 1). |
+| **Home** | Order-flow (tape) lane; engine-owned object. Source: `docs/research/s106/engine_answer_tape_2b_2026-11-14.md` E-3. |
+| **Status** | **OPEN.** |
+
+### TD-S106-NEW-3 (S2 priority) — the MALPHA token push reaches the engine `.env` with host-key checking off, through `/tmp`, by an in-place `sed`
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Four separate weaknesses on the path that carries a live broker token between two hosts every weekday morning. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; engine lane, from the MALPHA `crontab -l` read) |
+| **Component** | MALPHA crontab → engine `.env`; log `logs/token_sync_YYYYMM.log` |
+| **Measured** | Live line read 2026-11-21: `45 0 * * 1-5` (06:15 IST Mon–Fri). If the MALPHA `.env` changed in the last 300 min it opens `ssh ssm-user@172.31.35.90` with `StrictHostKeyChecking=no`, writes `ZERODHA_ACCESS_TOKEN` to `/tmp/ztoken` on the engine box, `sed -i`s it into `~/meridian-engine/.env`, then removes the file. So: host-key checking off (a MITM on that hop is unauthenticated), the token transits a world-readable directory, `.env` is edited in place, and an empty value would blank the line rather than refuse. |
+| **Proper fix** | `StrictHostKeyChecking=yes` with the engine host key pinned on MALPHA; pass the token on stdin to a forced-command writer so it never touches `/tmp`; refuse an empty token; write via temp file + rename. Ruling R8 (I001 §1). |
+| **Home** | Engine lane; MALPHA is the retail lane's host (STREAMS §3 X5). Source: I001 A/D6. |
+| **Status** | **OPEN.** |
+
+### TD-S106-NEW-4 (S2 priority) — the production box's IAM role still carries `AmazonS3FullAccess` where a bucket-scoped policy would do
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Standing over-grant on the instance profile of the live box; the blast radius is every bucket in the account. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; order-flow lane close inputs) |
+| **Component** | Production box (`i-0878c118835386ec2`) instance role; the tape S3 bucket |
+| **Measured** | Role carries the AWS managed `AmazonS3FullAccess`. The only S3 need is the tape bucket. |
+| **Proper fix** | Write a bucket-scoped policy, attach it, verify the tape upload still works, then detach the managed policy. |
+| **Home** | Engine lane (host), used by the order-flow lane. Source: `MR_OFL7_close_inputs.md` §2.8. |
+| **Status** | **OPEN.** |
+
+### TD-S106-NEW-5 (S3 priority) — a Marketview tab that was hidden shows data from before it was hidden until it refetches
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** Browsers throttle timers in hidden tabs, so this is the expected consequence of a polling refresh; the stale warning does clear on refocus. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; retail lane close inputs) |
+| **Component** | Marketview, all tabs |
+| **Symptom** | After a hidden tab returns to the foreground, the board shows the pre-hide data until the next fetch completes. The staleness warning clears on refocus, so the two disagree for a moment. |
+| **Measured** | Reported from two lane closes. A fix (background refetch, refetch on visibility change, a "Refreshing…" state until fresh) was drafted and sent; **whether it was applied and is working is unknown.** |
+| **Proper fix** | Confirm the fix shipped, then verify on Chrome and Safari with a tab hidden across at least two refresh intervals. |
+| **Home** | Engine lane (Board); raised by retail and futures-OI. Source: `MR_S11_close_inputs.md` §4; `MR_FOI2_close_inputs.md` §5.4. STREAMS §3 X7. |
+| **Status** | **OPEN.** |
+
+### TD-S106-NEW-6 (S2 priority) — the engine `.env` and three backups were world-readable; the modes are fixed, the old backup files are not deleted
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** Any local account on the box could read every secret. The modes were the acute half and are closed; what remains is that the backups exist at all. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; engine lane, from the E1/E3/E10 deploy) |
+| **Component** | `~/meridian-engine/.env` and its `.env.bak_*` / `.env.save*` siblings on the production box |
+| **Measured** | `.env` and three backups were mode 644/664. Set to **600 on 2026-11-21** — that part is **closed at filing**. The older `.env.bak_*` / `.env.save*` files are retained. |
+| **Proper fix** | The operator deletes the old backups (ruling R6, I001 §1 — explicitly not part of this close). Standing check thereafter: `stat -c '%a' .env*` reads 600 for every match. |
+| **Home** | Engine lane. Source: `docs/research/s106/engine_e1_e3_e10_deploy_and_first_live_drop_2026-11-21.md`. |
+| **Status** | **OPEN in part.** The file modes are **closed at filing** (600, 2026-11-21); the backup deletion (R6) and the standing mode check are open. Kept in this register rather than moved to `tech_debt_history.md` because its proper fix is not done — see the S106 status paragraph. |
+
+### TD-S106-NEW-7 (S3 priority) — `refresh_dhan_token.py` logged "Invalid TOTP" on 2026-11-17 and succeeded on 2026-11-21; one data point either way
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A recurrence of a known failure mode with a known recovery; the open question is whether the RECOVERED alert actually arrives. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; futures-OI lane close inputs) |
+| **Component** | AWS `refresh_dhan_token.py`, `cron.log`, the mint at 08:20 IST |
+| **Measured** | "Invalid TOTP" lines in `cron.log` on 2026-11-17 (**the lines themselves are undated**, so the attribution is the file's position, not a stamp). The 2026-11-21 08:20 IST run was a SUCCESS. Whether the RECOVERED alert was delivered is **unknown** — nobody read for it. |
+| **Proper fix** | Read the 2026-11-22 08:20 IST run for a second data point, and read whether the RECOVERED alert fired. Two consecutive successes with the alert evidenced closes this. |
+| **Home** | Engine lane (token path). Source: `MR_FOI1_close_inputs.md` §6. |
+| **Status** | **OPEN — closes on the 2026-11-22 08:20 IST run.** |
+
+### TD-S106-NEW-8 (S3 priority) — an admin push bypassed the protected-ref rule on `main`, because the rule does not include administrators
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The protection reads as enforced and is not, for the one account that pushes most often. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; engine lane) |
+| **Component** | GitHub branch protection on `meridian-engine` `main` |
+| **Measured** | The operator's push of `e4ef1b8` landed on `main` despite the protected-ref rule, which is the documented behaviour when "include administrators" is off. |
+| **Proper fix** | Set "include administrators" on the `main` rule (ruling R7, I001 §1). Merges stay the operator's. |
+| **Home** | Engine lane. Source: the E1/E3/E10 deploy doc. |
+| **Status** | **OPEN.** |
+
+### TD-S106-NEW-9 (S4 priority) — the reference product's name was in file names; the names are fixed, the name still occurs inside older documents
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** A naming-hygiene item carrying no functional impact; the operator's preference is that new and edited text does not carry the name. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; operator preference, I001 E2) |
+| **Component** | Tracked file names under `docs/registers/`; two project-knowledge documents |
+| **Measured** | **Closed at filing for file names:** the git spec file was renamed to `docs/registers/MERDIAN_Parity_Target_Spec.md` in this close by `git mv` (step 7, with every tracked referrer updated), and two project documents were renamed in `1d1dc09`. The name still occurs **inside** older tracked documents, which are history and are not rewritten. |
+| **Proper fix** | Name-free text in every new or edited document (Doc Protocol v5.1 Rule 15(d)): "the parity target". Older bodies are left as written. |
+| **Home** | Engine lane. Source: operator preference; I001 E2. |
+| **Status** | **OPEN in part.** File names are **closed at filing** (this close); the standing requirement on new and edited text is open. Kept in this register rather than moved to `tech_debt_history.md` because the standing half has no end date — see the S106 status paragraph. |
+
+### TD-S106-NEW-10 (S4 priority) — two ADR numbers have no file and one has two, so the series cannot be read as a record
+
+| Field | Value |
+|---|---|
+| **Priority** | **S4.** Nothing is broken; the series simply does not answer "what is ADR-013?" and silently answers ADR-010 twice. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; Phase 1 inventory F3) |
+| **Component** | `docs/decisions/` |
+| **Measured** | Phase 1 (`e4ef1b8`): **ADR-013 and ADR-027 have no file** in `docs/decisions/` — ADR-027 exists only as a draft at `docs/research/s85_rag/ADR-027-DRAFT-doc-close-drafting-and-verification.md`; **ADR-010 has two files** (`ADR-010-outcomes-magnitude-schema-extension.md` and `…-v2.md`). Highest N by filename is 32, which agrees with the Decision Index next-free marker `ADR-033+`. |
+| **Proper fix** | One Decision Index note per gap (what ADR-013 was, if anything; which ADR-010 file is current); file ADR-027 or mark its status as DRAFT in the index. |
+| **Home** | Engine lane. Source: Phase 1 F3 (`_docclose_phase1.txt`). |
+| **Status** | **OPEN.** |
+
+### TD-FOI1-NEW-1 (S1 priority) — the `fyers_loader` password was exposed in chat and has not been rotated
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** A live login role's password is in a chat transcript. The role's reach is narrow, which bounds the damage but does not remove it. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; origin MR-FOI1) |
+| **Component** | Supabase role `fyers_loader`; Local `$env:FYERS_LOADER_PW` |
+| **Measured** | Role read: LOGIN, SELECT + INSERT on the Fyers tables only, policy `loader_rw`, `rolconfig` null. The password was exposed in the MR-FOI1 chat and **has not been rotated.** |
+| **Proper fix** | Rotate the password (operator, SQL editor) and clear `$env:FYERS_LOADER_PW` on Local. Do not put the new value in chat. |
+| **Home** | Futures-OI lane; engine-owned role. Source: `MR_FOI1_close_inputs.md` §1; `MR_FOI2_close_inputs.md` §5.5. |
+| **Status** | **OPEN.** |
+
+### TD-FOI1-NEW-2 (S2 priority) — the Fyers loaders and their table DDL have no git home
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** The only copy of the code that writes three tables, and of the DDL that defines them, is one Windows directory. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; origin MR-FOI1) |
+| **Component** | `C:\fyers_test` — `fyers_pull_futures.py`, `fyers_pull_chain.py`, `fyers_load_tables.py` and the validators; the DDL for the three `fyers_*` tables |
+| **Measured** | No git home for any of them (STREAMS §1 records the same for the lane). |
+| **Proper fix** | Commit the scripts under `scripts/fyers/` and the DDL under `sql/`. |
+| **Home** | Futures-OI lane. Source: `MR_FOI1_close_inputs.md` §1, §5.7. |
+| **Status** | **OPEN.** |
+
+### TD-FOI1-NEW-3 (S3 priority) — `hist_future_bars_1m` carries no expiry date, and its SENSEX rows mix contracts so they cannot be used
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The NIFTY side is usable once the series convention is known; the SENSEX side is not usable at all, and nothing in the table says so. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; origin MR-FOI1, confirmed MR-PIN1) |
+| **Component** | `public.hist_future_bars_1m` |
+| **Measured** | `expiry_date` is **NULL on every row.** NIFTY `contract_series` 1/2/3 = 1st/2nd/3rd expiry, with the expiring contract staying series 1 through expiry day. SENSEX is **series 0 only, with duplicate bar timestamps on 101 of 101 sessions** — contracts are mixed, so the rows are unusable; SENSEX is also **missing on 7 of 12 sampled days**. One unexplained 05-06 expiry row (`MR_PIN1_close_inputs.md` §5.8). |
+| **Proper fix** | Use `fyers_futures_bars_1m` for SENSEX futures history; mark the SENSEX rows of this table unusable in the Data Inventory (done this close). |
+| **Home** | Futures-OI lane; engine-owned table. Source: `MR_FOI1_close_inputs.md` §2; `MR_PIN1_close_inputs.md` §2. |
+| **Status** | **OPEN.** |
+
+### TD-FOI2-NEW-1 (S2 priority) — `historical_index_futures_1m.open_interest` is null on every row because its source never stored OI
+
+| Field | Value |
+|---|---|
+| **Priority** | **S2.** A column that reads as a measurement and is empty everywhere; any futures-OI study that reaches for it gets nothing rather than an error. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; origin MR-FOI2) |
+| **Component** | `public.historical_index_futures_1m.open_interest`; `public.index_futures_snapshots`; `archive_market_tape_history.py:153`; `capture_index_futures_snapshot_local.py:370-390` |
+| **Measured** | Null on every row. The archiver reads OI from `index_futures_snapshots`, and that table's writer stores no OI at all — its `raw` payload has six keys, none of them OI. So the null is produced at capture, not in the archive step. |
+| **Proper fix** | Store OI at capture (the live futures-OI ingest design in MR-FOI3), or drop the column so nothing reads it. |
+| **Home** | Futures-OI lane; engine-owned tables. Source: `MR_FOI2_close_inputs.md` §2. |
+| **Status** | **OPEN.** |
+
+### TD-PIN1-NEW-1 (S1 priority) — a blank vendor gamma leg is treated as zero, so every downstream gamma figure is understated
+
+| Field | Value |
+|---|---|
+| **Priority** | **S1.** This is not an edge case: it affects a double-digit share of legs on every run, and every gamma number the engine publishes is computed from them. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; origin MR-PIN1) |
+| **Component** | `compute_gamma_metrics_local.py` |
+| **Measured** | A blank vendor gamma on one leg is summed as zero rather than skipped or solved. Incidence: on average one blank leg per strike across **69 legs/run NIFTY ≈ 13 %** and **138 SENSEX ≈ 28 %**. Every downstream gamma figure — net, gross, per-strike, concentration, the Board pin — is affected. |
+| **Proper fix** | The production gamma fix scoped by the pin lane from Part A/B: either G1 (own-solve the missing leg) or G2 (symmetrise from the paired leg). See the engine note 2026-11-18 §6. |
+| **Home** | Board-pin lane; engine-owned code. Source: `MR_PIN1_close_inputs.md` §1 Part A; `docs/research/s106/engine_note_pin_basis_and_vendor_greeks_2026-11-18.md` §5. |
+| **Status** | **OPEN.** |
+
+### TD-PIN1-NEW-2 (S3 priority) — `backfill_basis_context.py` documents one timezone convention and implements another
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A reader who trusts either the docstring or the DDL comment will be wrong half the time; the code is the only truth. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; origin MR-PIN1) |
+| **Component** | `backfill_basis_context.py`; the DDL comment on its target |
+| **Measured** | The docstring and the DDL state one convention; the code sets `IST_SHIFT = 0`. Which is intended was not established. |
+| **Proper fix** | Read the writer and reconcile the two, then state the convention in the DDL comment so the table carries its own answer. |
+| **Home** | Board-pin lane; engine-owned code. Source: `MR_PIN1_close_inputs.md` §5.8. |
+| **Status** | **OPEN.** |
+
+### TD-PIN1-NEW-3 (S3 priority) — `compute_gamma_metrics_local.py:582` floors `expected_writes` at 1, which is the shape CLAUDE.md rule 0 names
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** A contract that passes on one write and on a hundred and sixty-three cannot distinguish them — rule 0 clause 1 exactly. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; origin MR-PIN1) |
+| **Component** | `compute_gamma_metrics_local.py:582` (`expected_writes`) |
+| **Measured** | `expected_writes` is floored at 1. `_compute_contract_met` tests `actual < expected`, so any positive count passes. |
+| **Proper fix** | Read what the floor was for; either replace it with an exact count or a range, or document in the call site why a floor is the right assertion here. |
+| **Home** | Board-pin lane; engine-owned code. Source: `MR_PIN1_close_inputs.md` §5.8. Cross-ref: CLAUDE.md rule 0 clause 1; `core/execution_log.py:297-303`. |
+| **Status** | **OPEN.** |
+
+### TD-PIN1-NEW-4 (S3 priority) — the md5 of a view definition is not stable across PostgreSQL 17, so rule 25's registration can report a false mismatch
+
+| Field | Value |
+|---|---|
+| **Priority** | **S3.** The check still catches a real redefinition; what it also does is fire on a server upgrade, and a check that cries wolf gets ignored. |
+| **Filed** | 2026-11-21 (Session 106 doc-close; origin MR-PIN1) |
+| **Component** | CLAUDE.md rule 25 (view md5 registration); `docs/interfaces/retail_compute_contract.md` §8 |
+| **Measured** | `pg_get_viewdef` output — and therefore its md5 — is not stable across PG 17, so a registered hash can differ from live with no change to the view. |
+| **Proper fix** | Hash a normalised definition (a fixed pretty-print, or the parse tree), or record the PostgreSQL version alongside each hash so a mismatch across versions is readable as such. |
+| **Home** | Board-pin lane; engine-owned convention. Source: `MR_PIN1_close_inputs.md` §5.8. |
+| **Cross-ref** | **TD-S101-NEW-2**, whose open half is precisely that standing md5 check. This entry is a defect in the check's *method*, not a duplicate of it: the registration is done (C6, C7), the check is owed, and hashing raw `pg_get_viewdef` would make it fire on a server upgrade. Fix this before building that. |
+| **Status** | **OPEN.** |
+
+### S106 status changes to existing entries (doc-close run for Session 106; Doc Protocol v5.1 Rule 3: one paragraph, no body edits)
+
+Intake rulings R1–R9 (`docs/registers/intake/I001.md` §1); first close under **Doc Protocol v5.1**, so this is the first
+ledger carrying **lane-prefixed TD ids** (v5.1 Rule 14). Ledger: `TDs_NEW=18` — engine TD-S106-NEW-1…10, futures-OI
+TD-FOI1-NEW-1…3 and TD-FOI2-NEW-1, Board-pin TD-PIN1-NEW-1…4, all filed from intake I-001 §2 · `TDs_CLOSED=0`; **no block
+moved to `tech_debt_history.md` in this close.** **TD-S106-NEW-6 and TD-S106-NEW-9 are closed at filing only in part** —
+the `.env` file modes (600, 2026-11-21) and the file-name rename respectively — and each retains an open proper fix
+(ruling R6 backup deletion plus the standing mode check; the standing name-free-text requirement of v5.1 Rule 15(d)). The
+S104 and S105 precedent moves a closed-at-filing block **whole** to the end of `tech_debt_history.md`'s entries, which
+would have carried the open halves out of this register with it, and no precedent exists for a partial close; both blocks
+therefore stay here with `Status: OPEN in part` and this paragraph records the departure. **TD-S81-NEW-3** (the standing
+anon check) keeps its OPEN status and gains a dated **Update 2026-11-21 (S106)** row recording the expected state for
+`tape_w`, `merdian_ro` and `fyers_loader` (intake §3); no other field of that entry was touched, and no dated-footer row
+existed anywhere in this file before, so the row label is new. Nothing else changed status: between the S105 close
+(`eba1193`, 2026-11-05) and this close no engine register had been updated, which is the gap Doc Protocol v5.1 exists to
+shut — the 18 entries above are that backlog, not 18 new defects. **Tracker rows:** §2.2 unchanged; the tracker's Stage 4
+note and version move in this close (v2.22).
+
 ### S105 status changes to existing entries (doc-close run at the end of Session 105; v5 Rule 3: one paragraph, no body edits)
 
 Rulings S105-A…F (`docs/research/s92_parity/rulings_s105.md`). Ledger: `TDs_NEW=7` (TD-S105-NEW-1…7; **-1 and -2 closed at
@@ -1333,6 +1570,7 @@ execution (`v_dex_repriced_zero`, `v_oi_since_preopen`).
 | **Blocked by** | nothing. |
 | **Cross-ref** | **`CASE-2026-09-22-anon-privilege-exposure.md`** item (e) · D.21.1 · **D.37.8** · TD-S80-NEW-18 (the same remedy, built this session) · TD-S69-NEW-1. |
 | **Status** | **OPEN.** |
+| **Update 2026-11-21 (S106)** | **Expected state updated** (intake I-001 §3). `tape_w`: **10 policies** read 2026-11-21 — `tape_w_select` / `tape_w_insert` / `tape_w_update` on `tape_live_cycle`, `tape_live_events` and `tape_live_wall`, plus `tape_w_insert` on `tape_live_label`; `rolconfig` `statement_timeout=15s`, `idle_in_transaction_session_timeout=10s`. `merdian_ro`: `rolconfig` `default_transaction_read_only=on` (R-2 applied). **Temporary:** `merdian_ro` SELECT + policy `ro_select_merdian` on `fyers_futures_bars_1m` (granted 2026-11-20, undone at the MR-PIN2 close — ruling R4). `fyers_loader`: SELECT/INSERT on the Fyers tables only. Anything outside these sets fails the check. |
 
 ### TD-S81-NEW-4 (S2 priority) — `v_dealer_flow_sim` is the third ADR-021 sibling and was never scoped; it returns 57014 on any unfiltered read
 

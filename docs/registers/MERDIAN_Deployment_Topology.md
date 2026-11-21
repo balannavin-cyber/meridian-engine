@@ -218,7 +218,7 @@ These run on both Local and MERIDIAN AWS. The boundary is operational, not archi
 ### 5.1 Dhan token flow
 
 ```
-   Daily 08:35-ish IST
+   Daily 08:20-ish IST   [08:35 → 08:20 at S100-G; see §S106]
    ┌─────────────────────────────────────────────────────────┐
    │ Local Windows                                           │
    │   Task Scheduler triggers refresh_dhan_token.py         │
@@ -2200,3 +2200,51 @@ operator path; no alarm exists (TD-S104-NEW-7). The retail / tape box `ip-172-31
 **Observed, not changed.** Port 22 still open to `0.0.0.0/0` (TD-S101-NEW-10). The duplicate `anon` SELECT policies (TD-S103-NEW-11) are inert
 while `anon` has no grant. 34 invoker-rights functions remain executable by `anon` (TD-S104-NEW-4). The retired Edge Functions and their
 `x-cron-secret` are still deployed (TD-S104-NEW-5).
+
+## §S106 — Session 106 (2026-11-05 → 11-21): the one-login path to the retail box goes live, the tape writer unit lands on the production box, MALPHA's token push is found to be a cron, and the Dhan mint is recorded at 08:20
+
+Doc Protocol v5.1, first section under it: hosts, schedules and credential paths only, applied from each lane's
+"Engine intake" via `docs/registers/intake/I001.md` §6. Detail: `docs/research/s106/`;
+`docs/registers/STREAMS.md`. Recorded at the S106 doc-close (2026-11-21).
+
+**Dhan token mint — 08:20 IST.** The mint (`refresh_dhan_token.py`) runs on the AWS crontab at
+`50 2 * * 1-5` = 02:50 UTC = **08:20 IST**, moved from 08:35 at **S100-G** (`4769565`). The §5.1 diagram header
+and the System Map's two mint statements are corrected in this close. **Left as written:** the dated 08:35
+*measurements* in §S82's refresh/ingest-collision evidence (including two literal token-expiry readings), the
+2026-05-10 smoke-test record, the "was 08:35 →" change record, and every reference to the separate Supabase
+**pull** (`pull_token_from_supabase.py`, 03:05 UTC) — which is a different cron and which nothing in this intake
+changes. Rewriting a dated reading would falsify the evidence it is there to preserve.
+
+**One-login: engine → retail drop (E1/E3/E9/E10, live 2026-11-21).** `refresh_dhan_token.py` calls `dhan_drop.py`,
+which pushes the token to the retail box over ssh as **`retaildrop@16.4.29.153`** with `-F /dev/null` and
+**`StrictHostKeyChecking=yes`** (the host key pinned, i.e. the opposite of the MALPHA hop below). The engine `.env`
+gains `MERIDIAN_RETAIL_DROP_KEY`, `MERIDIAN_RETAIL_DROP_KNOWN_HOSTS` and `MERIDIAN_RETAIL_DROP_HOST`. **`.env*` is
+now mode 600** on the box (was 644/664 — TD-S106-NEW-6; the old `.env.bak_*` / `.env.save*` files are retained and
+the operator deletes them, ruling R6). E10 is the manual login `bin/dhan_login.sh` with a 300 s attempt stamp.
+E9 is the daily login cron at 08:20 IST. First live drop 2026-11-21, `feed_adopted`; **the Sunday 2026-11-22 08:20
+run is the owed second data point** (STREAMS §3 X4, TD-S106-NEW-7).
+
+**Production box also hosts the tape writer.** `meridian-server` (`i-0878c118835386ec2`, 172.31.35.90, t3.small,
+eu-north-1) now carries **`tape-live.service`** — user **`tapelive`**, config `/etc/tape-live/`, `CPUQuota=100%`,
+`Nice=10`, `MemoryMax=734003200` (700 MiB). The **timer is installed and NOT enabled**; Phase B is `56bf055`. The
+box's IAM role still carries `AmazonS3FullAccess` where the tape bucket needs a bucket-scoped policy —
+TD-S106-NEW-4.
+
+**Retail / tape box.** `i-0246c770d9d55685f`, **ap-south-1**, t4g.medium, Elastic IP **16.4.29.153**: runs
+`tape-runner.timer` at **08:50 IST**, the drop inbox, the gateways and the adopter. Shared with the order-flow
+lane: recorder 08:50–15:45, gateway blackout 08:45–15:45, heavy jobs outside those windows (STREAMS §3 X8).
+
+**MALPHA.** Elastic IP **16.192.223.197** since 2026-11-16. Its Kite token push into the engine `.env` is **a cron,
+not a manual step** (AR §D.60.6 REFUTED): `45 0 * * 1-5` = **06:15 IST Mon–Fri**, conditional on the MALPHA `.env`
+having changed in the last 300 min. It ssh-es to `ssm-user@172.31.35.90` with **`StrictHostKeyChecking=no`**, writes
+the token to **`/tmp/ztoken`** on the engine box, `sed -i`s it into `~/meridian-engine/.env`, then removes the file;
+log `logs/token_sync_YYYYMM.log`. Four weaknesses on one hop — host-key checking off, a world-readable transit
+path, an in-place `.env` edit, and no refusal on an empty value — all in **TD-S106-NEW-3** (S2), fix ruled R8.
+
+**Fyers.** A **research-only** data source (ruling R3): loaders on Local at `C:\fyers_test` (**no git home** —
+TD-FOI1-NEW-2), **manual daily browser login**, no live ingest, no box component. An ADR is written only if and
+when a live Fyers ingest is built.
+
+**Observed, not changed.** `main` branch protection does not include administrators, so the operator's push of
+`e4ef1b8` bypassed the protected-ref rule (TD-S106-NEW-8, ruling R7). Everything in the S104 "Observed, not
+changed" list above stands.

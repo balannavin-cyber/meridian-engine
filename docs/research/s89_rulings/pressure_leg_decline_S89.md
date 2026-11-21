@@ -237,3 +237,9 @@ dynamic range.
 *Evidence record, Session 89, 2026-10-03. Nothing here authorises a build. The decline is
 of two measured proxies, not of the parity target's undisclosed formula — §8 states what
 would re-open it.*
+
+---
+
+**Appended at the S106 doc-close (2026-11-21) — pointer only; nothing above is edited.**
+
+**2026-11-21 (S106).** D-5a — "do not re-propose a proximity-weighted-gamma pressure key" — **lifted for the MR-PIN look-back only** (ruling 2026-11-20, project `claude/pin/ruling_D5a_reopen_2026-11-20.md`; git copy lands at the MR-PIN2 close). **The Board decline stands.**

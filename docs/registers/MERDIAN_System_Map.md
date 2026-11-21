@@ -345,7 +345,7 @@ All 36 currently-tracked tables in `merdian_reference.json`. Grouped by domain.
 ### C.4 Pre-market
 
 ```
-   08:35 IST    Token pull  (refresh_dhan_token.py — AWS cron + Local Task Scheduler)
+   08:20 IST    Token pull  (refresh_dhan_token.py — AWS cron + Local Task Scheduler)   [08:35 → 08:20 at S100-G]
                 → .env writes new DHAN_ACCESS_TOKEN
                 → Local Supabase sync
    08:45 IST    build_ict_htf_zones.py (MERDIAN_ICT_HTF_Zones_0845)
@@ -383,7 +383,7 @@ Source: `merdian_reference.json` `aws_cron`. Install rule: NEVER use interactive
 
 | Label | Time IST | Script | Notes |
 |---|---|---|---|
-| `MERDIAN_Token_Refresh` | 09:05 | `refresh_dhan_token.py` | Daily token refresh; AWS pulls at 03:05 UTC = 08:35 IST |
+| `MERDIAN_Token_Refresh` | 09:05 | `refresh_dhan_token.py` | Daily token refresh. **The mint runs on the AWS crontab at `50 2 * * 1-5` = 02:50 UTC = 08:20 IST** (moved from 08:35 at S100-G, `4769565`; see §S106). The separate Supabase *pull* (`pull_token_from_supabase.py`) is unchanged at 03:05 UTC |
 | `MERDIAN_PreOpen` | 09:08 | `capture_market_spot_snapshot_local.py` | PreOpen spot capture |
 | `MERDIAN_Shadow_Runner` | 09:15 | `run_merdian_shadow_runner.py` | nohup, logs to `aws_shadow_runner.nohup.log` |
 | `MERDIAN_Postmarket` | 16:00 | `capture_postmarket_1600.py` | NOT YET PROVEN (A-02 open) |
@@ -2257,3 +2257,51 @@ Doc Protocol v5: a table of what changed, no narrative. Detail: `tech_debt.md` S
 | `v_gex_greeks_l2_strike_1pct` | view (`security_invoker`) | `v_gex_greeks_l2_strike` | Marketview | **24 columns** (`gross_gex_drift_iv_1pct`, `gross_gex_drift_time_1pct` appended; TD-S103-NEW-9 CLOSED); the registered md5 is to be re-read |
 | `docs/decisions/CASE-2026-11-03-marketview-anon-key-exposure.md` | CASE record | — | all streams | the anon exposure: measured, four layers, rules (CLAUDE.md 26) |
 | `meridian-server` (production box) | EC2 | — | everything | SSM offline 01:41 → 06:25 IST 2026-11-04, restored by reboot; TD-S104-NEW-7 |
+
+## §S106 — Session 106: three Fyers research tables and four live tape tables enter the map; two roles; the one-login helpers; the Dhan mint moves to 08:20 (2026-11-05 → 11-21)
+
+Doc Protocol v5.1: a table of what changed, no narrative. This is the first section filed under v5.1, so it
+carries facts from four lanes, each applied from the lane's "Engine intake" via `docs/registers/intake/I001.md`
+§6. Detail: `tech_debt.md` S106 paragraph; `docs/registers/STREAMS.md`; `docs/research/s106/`;
+`docs/research/s106/rulings_s105_tape_w.md`. Recorded at the S106 doc-close (2026-11-21).
+
+**§B — tables.**
+
+| Component | Kind | Reads | Read by | State |
+|---|---|---|---|---|
+| `fyers_futures_bars_1m` | table (RLS on, operator-only) | — | research; the Board-pin lane | **795,544 rows**, 2025-01-31 → 2026-10-29, 1-minute, **38 monthly contracts**; PK (`underlying`, `expiry_date`, `ts`); **`ts` is true UTC**. Written by the Local Fyers loader. **Research-only** (ruling R3). Temporary `merdian_ro` SELECT + policy `ro_select_merdian` from 2026-11-20, undone at the MR-PIN2 close (ruling R4) |
+| `fyers_chain_bars_3m` | table (RLS on, operator-only) | — | research | **3,039,415 rows**, 2026-06-01 → 08-28, 3-minute, nearest expiry, full chain; PK (`underlying`, `expiry_date`, `strike`, `option_type`, `ts`). **Research-only** (R3) |
+| `fyers_chain_bars_1m` | table (RLS on, operator-only) | — | research | **exists; row count not read.** Recorded as present, not as measured. **Research-only** (R3) |
+| `tape_live_cycle` | table (RLS, today only) | — | `/tape` | written by `services/tape_live` as `tape_w`. **Two unique rules:** `tape_live_cycle_pk` (`symbol`, `trading_day`, `instrument_token`, `ts_ist`) and `tape_live_cycle_grain_uq` (the grain). A token remap satisfies the PK and violates the grain rule — TD-S106-NEW-2 |
+| `tape_live_events` | table (RLS, today only) | — | `/tape` | written as `tape_w`. **No primary key**; `tape_live_events_grain_uq` (`NULLS NOT DISTINCT`) is the only unique rule and the writer's conflict target — TD-S106-NEW-1 |
+| `tape_live_wall` | table (RLS, today only) | — | `/tape` | written as `tape_w`; conflict target `tape_live_wall_pk` |
+| `tape_live_label` | table (RLS, today only) | — | `/tape` | written as `tape_w`, **INSERT only**, `ON CONFLICT DO NOTHING` (no target, no RETURNING); labels are first-wins. `wall` is lowercase `call` / `put` (CHECK) |
+| `historical_index_futures_1m` | table | `index_futures_snapshots` (via `archive_market_tape_history.py`) | futures-OI research | **`open_interest` is null on every row** — the source writer stores no OI at all (`raw` has six keys, none of them OI). TD-FOI2-NEW-1 |
+| `hist_future_bars_1m` | table | — | futures-OI research; the pin lane | **`expiry_date` NULL on every row.** NIFTY `contract_series` 1/2/3 = 1st/2nd/3rd expiry, the expiring contract staying series 1 through expiry day. **SENSEX rows are UNUSABLE** — series 0 only, duplicate bar timestamps on 101 of 101 sessions (contracts mixed), and missing on 7 of 12 sampled days. TD-FOI1-NEW-3 |
+
+**Roles.**
+
+| Role | Grants | Settings | State |
+|---|---|---|---|
+| `tape_w` | USAGE on `public`; SELECT/INSERT/UPDATE on `tape_live_cycle`, `tape_live_events`, `tape_live_wall`; INSERT only on `tape_live_label`. No DELETE/TRUNCATE/REFERENCES/TRIGGER/MAINTAIN, no sequences, no functions | `statement_timeout=15s`, `idle_in_transaction_session_timeout=10s`, CONNECTION LIMIT 2, VALID UNTIL 2027-12-10; never granted to `authenticator` | **grants and the 10 RLS policies APPLIED** (read 2026-11-21, AR §D.60.7 — the ruling file still says "NOT APPLIED"). **Owed:** the password step, V2/V3/V5 and the login proof, which block the first live 2b day (STREAMS §3 X3). Ruling: `docs/research/s106/rulings_s105_tape_w.md` |
+| `merdian_ro` | read-only; no INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER on any `public` relation | **`default_transaction_read_only = on`** (R-2) | applied; read 2026-11-21. A guard, not a boundary — the role can `SET` it back off; the boundary is the privilege state. Standing expectation recorded in TD-S81-NEW-3 |
+| `fyers_loader` | LOGIN; SELECT + INSERT on the three Fyers tables only; policy `loader_rw` | `rolconfig` null | **password exposed in chat and not rotated — TD-FOI1-NEW-1 (S1).** Rotation owed |
+
+**§A — scripts.**
+
+| Component | Kind | Reads | Read by | State |
+|---|---|---|---|---|
+| `dhan_drop.py` | engine code (E1/E3 helper) | the freshly minted Dhan token | called by `refresh_dhan_token.py` | pushes the token to the retail box over ssh and pushes login status. Live `e4ef1b8` (tests T1–T10) |
+| `bin/dhan_login.sh` | engine shell (E10) | — | the operator, manually | manual Dhan login; writes a **300 s attempt stamp** at `logs/dhan_login_attempt.stamp` so a second attempt inside the window is refused. Live `e4ef1b8` |
+
+**§D — orchestration.**
+
+| Component | Kind | Schedule | State |
+|---|---|---|---|
+| `refresh_dhan_token.py` (Dhan mint) | AWS crontab | **`50 2 * * 1-5` = 02:50 UTC = 08:20 IST**, weekdays | moved from 08:35 at S100-G (`4769565`). Every 08:35 statement of the *mint* elsewhere in this register and in the Topology is corrected in this close; the dated 08:35 **measurements** are left as written. "Invalid TOTP" on 2026-11-17, SUCCESS on 2026-11-21 — TD-S106-NEW-7 |
+| Dhan login (E9) | AWS crontab | **`50 2 * * *` = 08:20 IST, daily** (all seven days) | installed 2026-11-21 |
+
+**Not changed by this section.** No engine compute, no view, no DDL authored here: every row above is a fact
+recorded about an object that already existed, or a helper that shipped in `e4ef1b8`. The Board and Marketview
+are untouched by S106 — in particular **nothing changed on the Board** on the strength of the pin findings in
+AR §D.60.1 (STREAMS §3 X1).

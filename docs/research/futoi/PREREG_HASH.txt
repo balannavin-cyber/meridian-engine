@@ -1,0 +1,20 @@
+PREREG_HASH
+===========
+file:        docs/research/futoi/futoi_M1_M2_prereg_2026-11-17.md
+git hash-object: 7006391b52cbbaab451800428fc2205d5f97f6e1
+recorded_utc: 2026-11-17T14:53:14Z
+git HEAD at recording: 8fde9df3e2fc7613570206487fa012b786e8b4af
+bytes:       %s
+sha256:      4f012d5eb40e3976c0df09daab8dbd8726d8df552b604af2032001bb5b089b2d
+
+Recorded BEFORE the first outcome query. Part 0 steps 2-6 and controls C1-C4
+follow; no outcome in sections 3, 4 or 7 of the pre-registration has been
+computed at the time of this record.
+
+CORRECTION, appended 2026-11-17T14:55:28Z
+  The 'bytes:' field above was written with an unexpanded format specifier.
+  bytes (measured): 9262
+  Re-derived at correction time, unchanged from the record above:
+    git hash-object: 7006391b52cbbaab451800428fc2205d5f97f6e1
+    sha256:          4f012d5eb40e3976c0df09daab8dbd8726d8df552b604af2032001bb5b089b2d
+  The original lines are left as written; nothing above was edited.

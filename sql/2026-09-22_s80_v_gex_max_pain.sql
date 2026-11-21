@@ -42,7 +42,7 @@
 --
 -- PARITY STATUS
 --   NOT a parity layer. Max pain appears nowhere in the fourteen layers or the
---   build order of MERDIAN_Hedgewall_Parity_Spec.md. ADR-025 D5 files it as
+--   build order of MERDIAN_Parity_Target_Spec.md. ADR-025 D5 files it as
 --   L19, an extension under section 2.5. Parked: applied, unrendered, not
 --   counted toward parity.
 --

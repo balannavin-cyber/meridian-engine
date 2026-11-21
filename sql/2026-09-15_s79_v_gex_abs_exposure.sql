@@ -11,7 +11,7 @@
 --   distinguish them.
 --
 --   Parity: optionsflow.in carries "Total Abs GEX" as a named value. This is
---   L6 in docs/registers/MERDIAN_Hedgewall_Parity_Spec.md.
+--   L6 in docs/registers/MERDIAN_Parity_Target_Spec.md.
 --
 --   Sibling of v_gex_strike_walls (ENH-120) and the ENH-81 pin/accel views:
 --   same recursive skip scan for symbols, same bounded lateral for latest run

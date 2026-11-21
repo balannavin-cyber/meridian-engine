@@ -10,7 +10,7 @@
 --   Parity: Hedgewall carries HHI in the header beside net gamma and regime
 --   ("0.412 COMPRESSED"), plus HHI CALL, HHI PUT, PERCENTILE, d1D HHI and
 --   d vs MEAN in its "How sharp are the levels?" group. This is L12 in
---   docs/registers/MERDIAN_Hedgewall_Parity_Spec.md, which specs the net
+--   docs/registers/MERDIAN_Parity_Target_Spec.md, which specs the net
 --   leg only as max(abs(gex))/sum(abs(gex)). The call/put split is an
 --   ADDITION, and it is justified by measurement, not by copying -- see
 --   FINDING 1.

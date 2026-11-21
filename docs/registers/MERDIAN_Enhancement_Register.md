@@ -3999,7 +3999,7 @@ plus N≥30 live-cohort validation per D.13.1.
 and `n_contributing`. The signed sum says **which way** hedging pushes; the absolute sum says
 **how much** gamma is on the board at all. A net near zero on a huge gross book is a different
 market from a net near zero on an empty one, and the sign cannot distinguish them. L6 of
-`MERDIAN_Hedgewall_Parity_Spec.md`.
+`MERDIAN_Parity_Target_Spec.md`.
 
 **APPLIED 2026-09-15.** Section 1 run against the live database; verification 3a–3c clean;
 Section 2 grants applied and `anon` confirmed **SELECT-only** per the D.21.1 security-first
@@ -4167,7 +4167,7 @@ PostgREST OpenAPI document on 2026-09-08, including `oi_call`, `oi_put` and `dte
 ## Part 4 — ENH-123 + ENH-124 detail blocks (Session 80)
 
 > **Neither is a parity layer.** Max pain appears nowhere in the fourteen layers or the ten-row
-> build order of `MERDIAN_Hedgewall_Parity_Spec.md`. **ADR-025 D5** rules that a layer outside the
+> build order of `MERDIAN_Parity_Target_Spec.md`. **ADR-025 D5** rules that a layer outside the
 > fourteen does not count toward parity — otherwise the criterion is unfalsifiable, since a layer
 > can always be added and progress reported. Both file as **L19** under spec section 2.5 alongside
 > L15–L18, and are **parked**: applied to the live database, granted to `anon`, **unrendered**, and
@@ -4299,6 +4299,8 @@ TD-S80-NEW-7, TD-S80-NEW-8 · commit `85dfad2`.
 **Plan-shape note, recorded and deliberately not fixed.** The `volatility_snapshots` LEFT JOIN LATERAL in the `sig` CTE runs `loops=167` — once per ranked **row**, not once per run; the planner pushed it below the join. 0.019 ms/loop, 501 buffer hits: trivial at this grain, but **it scales with STRIKE count, not SYMBOL count.** Revisit if chains widen or a history object replays many runs.
 
 **Cross-ref.** ENH-122 (the HHI leg) · ADR-025 D2 / D5 / **Amendment B** · ADR-024 Amendment A · TD-S79-NEW-8 · TD-S81-NEW-5.
+
+**2026-11-21 (S106).** D-5a — "do not re-propose a proximity-weighted-gamma pressure key" — **lifted for the MR-PIN look-back only** (ruling 2026-11-20, project `claude/pin/ruling_D5a_reopen_2026-11-20.md`; git copy lands at the MR-PIN2 close). **The Board decline stands.**
 
 ### ENH-126 — L14 net-gamma river: `v_gex_net_gamma_river` (SHIPPED 2026-09-22, S81)
 

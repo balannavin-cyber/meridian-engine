@@ -5463,3 +5463,25 @@ unpublished, and ADR-032 D2–D5 ruled in form with F0 and S1 live (S2 held unti
 | **S103-M** | Lovable-hosted public copy: unpublished (404) |
 | **S103-N / O** | OTM OI velocity on; prior-row read bounded to the IST session (`c11b564`) |
 | **S103-P…T** | ADR-032 D2 additive · D3 dated break · D4 COMMENTs · Pine labels · legacy objects one retirement TD (S103-T amended: name the `service_role` reader first) |
+
+<!-- moved verbatim from CURRENT.md at the S106 doc-close (2026-11-21): the S104 pointer block with its OPERATOR RULINGS table (1020 B, sha256 b90a30d9bedac2e0e7c0262e9f1abd3407aea9f40fd1e7b2f51be45c5833a48c). The S104 "Last session" full block was moved here at the S105 close and is above. -->
+
+## Previous session S104
+
+**S104 — Saturday 2026-10-31 09:19 IST → Wednesday 2026-11-04 06:30 IST** (doc-close `be197b3`). The Marketview anon-key
+exposure measured and closed in four layers (`docs/decisions/CASE-2026-11-03-marketview-anon-key-exposure.md`), CLAUDE.md
+rule 26, two read-only sweeps, the S103 close applied, and the production box brought back from an SSM outage. The full block
+is in `docs/registers/CURRENT_history.md`.
+
+## OPERATOR RULINGS, S104
+
+**All rulings live in `docs/research/s92_parity/rulings_s104.md`**, the single source.
+
+| # | Topic |
+|---|---|
+| **S104-A** | Anon shrink Phase 1 approved (applied 18:58 IST) |
+| **S104-B** | Dedicated read role `marketview_ro` |
+| **S104-C** | Option B-nginx: same-origin `/rest/v1/` to Supabase REST with a server-held read-only token; A2 dropped |
+| **S104-D** | Promote the same-origin bundle first, speed afterwards |
+| **S104-E** | Final revoke of `anon` SELECT (22:36 IST) |
+| **S104-F** | End of session called by the operator; this close |

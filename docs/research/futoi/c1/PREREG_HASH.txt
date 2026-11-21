@@ -1,0 +1,13 @@
+PREREG_HASH
+===========
+file:             docs/research/futoi/c1/futoi_C1_oi_sign_prereg_2026-11-19.md
+git hash-object:  2afd3337a40ed4171503b7c59422f388d664d3d3
+recorded_utc:     2026-11-19T01:54:38Z
+recorded_ist:     2026-11-19T07:24:38+0530
+git HEAD:         ba505cf9246e7e89ff072a987036e271b7b55703
+bytes:            7169
+sha256:           a763e0f651b5a67ff40a8afa71025052eb5d3df8c1a017eea60e037260a077d9
+
+Recorded BEFORE any test-period outcome was computed. Part 0 (design-period
+values and controls K0-K4) follows; no figure from sections 4 or 7 of the
+pre-registration exists at the time of this record.

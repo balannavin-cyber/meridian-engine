@@ -8,6 +8,98 @@
 
 ## Last session
 
+**S106 — Thursday 2026-11-05 ≈ 11:30 IST → Saturday 2026-11-21 ≈ 10:00 IST** (engine lane; doc-close this pass).
+Sixteen days in which engine-lane work ran in chat under the name "S105" after that session's git close, and **no
+lane fact reached an engine register.** That gap is what **Doc Protocol v5.1** (in force 2026-11-21, ruled "as
+recommended") and **`docs/registers/STREAMS.md` v0.2** exist to shut: five lanes, one hub, each fact with one home.
+This close is the first run of the v5.1 intake: **`docs/registers/intake/I001.md`** (I-001), rulings **R1–R9**.
+
+**State at close.** Engine `origin/main` was **`e4ef1b8`** when this close opened; the archive of the engine-lane
+docs is **`c2fde5b`** (20 files, 1,588 insertions: `docs/research/s106/`, `docs/research/parity_eval/`, STREAMS.md,
+Doc Protocol v5.1, I-001). **This supersedes the S105 block's "engine `origin/main` = `be197b3`, unchanged"** —
+true on 2026-11-05, and seven commits stale since: `7c64e7d` (the S105 close merged), `ae2b10a`, `9107c79`,
+`79efb0b` (tape scoring v0.4), `8fde9df`, `ba505cf` (futures-OI pre-registrations) and `e4ef1b8`. No engine
+compute, no view and no DDL changed in this close; it is documentation only.
+
+**What closed.** **One-login is live** — E1/E3/E10 shipped in `e4ef1b8` (`dhan_drop.py`, `bin/dhan_login.sh`,
+tests T1–T10) and the **first live drop ran 2026-11-21** with `feed_adopted`; E9 is the daily 08:20 IST login cron.
+The **Dhan mint is recorded at 08:20 IST** (`50 2 * * 1-5`, moved at S100-G), correcting three stale 08:35
+statements. **18 TDs filed** under the new lane prefixes — TD-S106-NEW-1…10, TD-FOI1-NEW-1…3, TD-FOI2-NEW-1,
+TD-PIN1-NEW-1…4 — and `tech_debt.md` is no longer sixteen days behind.
+
+**What was refuted — and nothing shipped on it.** **Assumption Register §D.60** (7 rows). The **Board pin is not
+the dominant-gamma strike** (matches on 15–36 % of runs; pin gamma negative on 21–47 %; 6/6 verdicts FAIL) and
+**nothing on the Board changed**. The **vendor's call/put gammas at one strike disagree** (ratio 1.11–1.43, median
+1.22), which **amends D.19.2** — the schema decision stands, the IV-skew reading does not. **Futures OI predicts
+nothing** we tested (§D.60.4 NOT MET; §D.60.5 M1/M2/C1 all negative, the 2026-04→08 holdout spent). The **MALPHA
+token hop is a cron, not manual** (§D.60.6), and the **S105 `tape_w` grants and R-2 were applied all along**
+(§D.60.7) — three documents agreed they were not, because each was copied from the last rather than read.
+
+**Filed:** 18 TDs · **AR §D.60** (7 rows) · ENH-125 dated line (D-5a lifted for the MR-PIN look-back only; Board
+decline stands) · System Map and Topology **§S106** · Data Inventory **§12** (hand-written, flagged as outside the
+generator) · tracker **v2.22** · reference **v84** · CLAUDE.md **v1.78**. **No ADR** (ruling R3: Fyers is a
+research-only source; ADR-033 waits for a live ingest) and **no new ENH** (next-free stays ENH-149).
+**The old-spec-name referrer sweep is RULED, not open:** nine archive and checksum-pinned record files
+still carry the old spec file name and **stay as written** — operator ruling 2026-11-21, on CLAUDE.md rule 20 (history
+archives), the S104 sweep record's own `SHA256SUMS` pin, and I-001's two occurrences being the rename instruction.
+Six live referrers were updated; the standing requirement binds new and edited text only (TD-S106-NEW-9).
+
+## NEXT SESSION PICKS UP
+
+1. **`tape_w`: the password step, V2/V3/V5 and the login proof.** This is what blocks the order-flow lane's first
+   live 2b day (earliest Mon 2026-11-23). Grants and R-2 are already applied — read them, do not re-apply.
+2. **Sunday 2026-11-22, 08:20 IST:** the second data point on the retail drop and on the Dhan mint — did the drop
+   run and did the RECOVERED alert fire (TD-S106-NEW-7)?
+3. **At the MR-PIN2 close:** undo the `merdian_ro` SELECT + policy `ro_select_merdian` on `fyers_futures_bars_1m`
+   (ruling R4; undo SQL in `claude/pin/MR_PIN1_close_inputs.md` §3).
+4. **Rotate `fyers_loader`** — its password is in a chat transcript (TD-FOI1-NEW-1, the only S1 filed this close
+   besides the gamma leg) and clear `$env:FYERS_LOADER_PW` on Local.
+5. **MALPHA host-key fix** (TD-S106-NEW-3, ruling R8): `StrictHostKeyChecking=yes`, token on stdin not `/tmp`,
+   refuse an empty value, write via temp file + rename.
+6. **Bucket-scoped S3 policy** for the production box, then detach `AmazonS3FullAccess` (TD-S106-NEW-4).
+7. **The greeks / forward study** — one engine-lane study (ruling R9), fed by MR-FOI and MR-PIN. §D.60.3 leaves the
+   cause OPEN with three unexamined candidates: bar closes vs mids, no intraday decay, calendar-day T.
+8. **Operator, outside a session:** delete the old `.env.bak_*` / `.env.save*` files (ruling R6, TD-S106-NEW-6) and
+   set "include administrators" on `main` branch protection (ruling R7, TD-S106-NEW-8).
+9. **Every lane's next close inputs must carry the "Engine intake" section** (v5.1 Rule 13, STREAMS §4 R3) —
+   OFL9, MR-S13, FOI3, PIN2. Without it, the next engine close is as blind as this one was.
+10. **VERIFY: Topology L414 second 09:05 `refresh_dhan_token.py` schedule vs the single `50 2` crontab line** (E1 plan
+    read 2026-11-20: one Dhan login line). Operator ruling 2026-11-21: no TD until it is measured — read the live
+    crontab and the Windows Task Scheduler, then correct whichever register is wrong.
+
+## OPERATOR RULINGS, S106
+
+**All rulings live in `docs/registers/intake/I001.md` §1**, the single source (approved 2026-11-21 ~09:52 IST,
+"as recommended"). They are numbered R1–R9, not S106-A…F: this close's rulings came in with the intake rather
+than from a session's own ruling file, and renumbering them would break every citation already written.
+
+| # | Topic |
+|---|---|
+| **R1** | Doc Protocol v5.1 in force (Rules 12–17); `STREAMS.md` v0.2 in force |
+| **R2** | The 2026-11-05 → 11-21 engine work closes as **S106**; "S105" keeps meaning `eba1193` |
+| **R3** | Fyers is a **research-only** data source; ADR-033 waits for a live Fyers ingest |
+| **R4** | The `merdian_ro` grant on `fyers_futures_bars_1m` stays until MR-PIN2 closes, then is undone |
+| **R5** | Tracker S99-D line applied as "held, tested null" |
+| **R6** | Old engine `.env.bak_*` / `.env.save*` deleted by the operator (not in this close) |
+| **R7** | Branch protection on `main`: set "include administrators"; merges stay the operator's |
+| **R8** | MALPHA token push: host-key checking **on**, engine host key pinned on MALPHA |
+| **R9** | The greeks / forward question is **one engine-lane study**, fed by MR-FOI and MR-PIN |
+
+## LANES (Doc Protocol v5.1 Rule 7 — pointers only; the hub register is `docs/registers/STREAMS.md`)
+
+| Lane | Series / open session | Latest close inputs |
+|---|---|---|
+| Engine (hub) | S / **S106** (this close) | `claude/intake/engine_intake_I001_2026-11-21.md`; git `docs/registers/intake/I001.md` |
+| Order flow (tape) | MR-OFL / **OFL9** in session | `MR_OFL8_close_inputs.md` (OFL8, 2026-11-16) |
+| Retail | MR-S / **S13** in session | `MR_S12_close_inputs.md` (S12, 2026-11-18) + the S13 interim note |
+| Futures OI | MR-FOI / **FOI3** next | `MR_FOI2_close_inputs.md` (FOI2, 2026-11-19) |
+| Board pin | MR-PIN / **PIN2** in session | `MR_PIN1_close_inputs.md` (PIN1, 2026-11-20) |
+| Parity (reference) | none — build closed 2026-10-09 (ADR-025) | `docs/research/parity_eval/` |
+
+## Previous session S105
+
+> *The `NEXT SESSION PICKS UP` list inside this block is as written at the S105 close and is superseded by the S106 list above. Its items 1-4 are carried as TD-S105-NEW-7 / -6 / -4 / -5 and its item 5 is done: `ops/s105-close` merged as `7c64e7d` and `tape/scoring-v04` as `79efb0b`.*
+
 **S105 — Wednesday 2026-11-04 ≈ 18:30 IST → Thursday 2026-11-05 ≈ 11:30 IST** (tape stream; operator-called close). Two jobs,
 both offline and both on `meridian-tape-staging`, never `origin`: the **exploration** of the three declared exploration days
 under pre-registration v0.3, and the **v0.4 scoring build** that implements the definitions it fed. Rulings
@@ -70,22 +162,3 @@ R-1 override). Offline suite still **40 steps**.
 | **S105-E** | Close in a new worktree off `main`, branch pushed for merge |
 | **S105-F** | The eight close items, carried here and in TD-S105-NEW-1…7 |
 
-## Previous session S104
-
-**S104 — Saturday 2026-10-31 09:19 IST → Wednesday 2026-11-04 06:30 IST** (doc-close `be197b3`). The Marketview anon-key
-exposure measured and closed in four layers (`docs/decisions/CASE-2026-11-03-marketview-anon-key-exposure.md`), CLAUDE.md
-rule 26, two read-only sweeps, the S103 close applied, and the production box brought back from an SSM outage. The full block
-is in `docs/registers/CURRENT_history.md`.
-
-## OPERATOR RULINGS, S104
-
-**All rulings live in `docs/research/s92_parity/rulings_s104.md`**, the single source.
-
-| # | Topic |
-|---|---|
-| **S104-A** | Anon shrink Phase 1 approved (applied 18:58 IST) |
-| **S104-B** | Dedicated read role `marketview_ro` |
-| **S104-C** | Option B-nginx: same-origin `/rest/v1/` to Supabase REST with a server-held read-only token; A2 dropped |
-| **S104-D** | Promote the same-origin bundle first, speed afterwards |
-| **S104-E** | Final revoke of `anon` SELECT (22:36 IST) |
-| **S104-F** | End of session called by the operator; this close |

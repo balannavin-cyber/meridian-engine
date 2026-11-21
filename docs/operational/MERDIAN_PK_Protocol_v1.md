@@ -1,10 +1,10 @@
-# MERIDIAN Project Knowledge Protocol v1
+# MERIDIAN Project Knowledge Protocol v1.1
 
 <!-- pk: lane=engine; git=meridian-engine:docs/operational/MERDIAN_PK_Protocol_v1.md -->
 
 | Field | Value |
 |---|---|
-| Status | **IN FORCE.** Ruled by the operator 2026-11-21 ~16:43 IST ("accepted as recommended", D1–D5), engine session S106. It is the detailed form of Doc Protocol v5.1 Rule 15: Rule 15 stays in force, and this document says how to carry it out. P7 replaces the 90 % prune line in Rule 15(c), and P3.4 replaces the copy-time substitution in Rule 15(d) for new files. It takes effect for each lane at that lane's next close (v5.1 Rule 13(e)). |
+| Status | **IN FORCE.** Ruled by the operator 2026-11-21 ~16:43 IST ("accepted as recommended", D1–D5), engine session S106. It is the detailed form of Doc Protocol v5.1 Rule 15: Rule 15 stays in force, and this document says how to carry it out. P7 replaces the 90 % prune line in Rule 15(c), and P3.4 replaces the copy-time substitution in Rule 15(d) for new files. It takes effect for each lane at that lane's next close (v5.1 Rule 13(e)). **v1.1** (P9–P13) ruled 2026-11-21 ~18:05 IST (D6–D9). |
 | Git home | `meridian-engine` `docs/operational/MERDIAN_PK_Protocol_v1.md` |
 | Applies to | Every lane (engine, OFL, retail, FOI, PIN, parity), every box (Local, production, retail), every repo (`meridian-engine`, `meridian-tape-staging`, `retail-platform`, `retail-gateway`). There is **one** project knowledge (PK), "Meridian 0404". |
 | Companions | `MERDIAN_Documentation_Protocol_v5.1.md` (Rules 12–17), `STREAMS.md` (lanes, git homes) |
@@ -145,7 +145,7 @@ Each lane records `knowledge_size` at its close (P4 step 6), so the trend is vis
 - A lane commits only in its own git home (P2.1) and its own tree. One CC session per tree. The engine never commits into a lane's working tree (v5.1 Rule 13(e)). Lanes whose mirror is in `meridian-engine` commit the records on their own branch or worktree and merge to `main` at their close. Otherwise they hand the files to the next engine close through intake.
 - Production-box rules still apply: no box analysis 08:30–15:40 IST Mon–Fri. `git ls-files` and `git fetch` count as light checks, but confirm the box time first.
 
-## P9 — Opening a new lane (v1.1, PROPOSED 2026-11-21)
+## P9 — Opening a new lane (v1.1)
 
 A lane exists only once its row is in `STREAMS.md` §1 and in the P2.1 table. No lane writes to PK before that.
 
@@ -165,7 +165,7 @@ Work that started before the row was approved moves into `claude/<key>/` at once
 
 **A study inside a lane is not a lane.** It lives in a subfolder of its parent, `claude/<lane>/<study>/`, with the same subdirectory in the parent's git mirror. It becomes its own lane only by P9. Example: the greeks study (v5.1 ruling 4) sits in the engine lane.
 
-## P10 — Every session prompt carries the PK block (v1.1, PROPOSED)
+## P10 — Every session prompt carries the PK block (v1.1)
 
 Each lane passes its rules forward through its next session prompt. So every session prompt, in every lane, now and in future, includes this block under its standing rules. The closing session copies it forward unchanged:
 
@@ -178,13 +178,13 @@ At close: P4 steps 1–7 and the "PK delta" section. Open: P5.
 
 The engine checks this at intake (P6 step 1). A lane's close inputs that come without the block in the next session prompt become a request in STREAMS §3.
 
-## P11 — Chats that belong to no lane (v1.1, PROPOSED)
+## P11 — Chats that belong to no lane (v1.1)
 
 Any chat in this project that writes to PK must belong to a lane, and it writes only into that lane's folder. Ad hoc questions, one-off analysis and quick checks write nothing to PK unless the result is durable. If it is durable, the chat puts it in the folder of the lane it serves. If no lane fits, it goes into the engine's `claude/` root, and the next engine close handles it under P4.
 
 A paste that belongs to another lane (a CC prompt, a close input) is not acted on. Send it back to its own chat.
 
-## P12 — Dormant and retired lanes (v1.1, PROPOSED)
+## P12 — Dormant and retired lanes (v1.1)
 
 | State | When | PK holds | STREAMS §1 |
 |---|---|---|---|
@@ -192,6 +192,14 @@ A paste that belongs to another lane (a CC prompt, a close input) is not acted o
 | **Retired** | The operator ends the lane | Nothing. A final P4 runs, every file is in git, and the folder is deleted from PK. | status `retired`, final sha; the git home stays |
 
 A dormant lane wakes by its next session prompt. Its row and prefix remain reserved, and the prefix of a retired lane is never reused.
+
+## P13 — External systems (v1.1)
+
+A system with its own Claude project and knowledge base is **not a lane** here, even when Meridian depends on it. Today that is **MALPHA**: its own box, its own repo, its own project. This PK holds only the facts at the point where it meets Meridian:
+- Meridian takes the Kite token from the MALPHA box, and that token feeds market breadth and WCB.
+- Those facts live in the engine registers: Topology, `STREAMS.md` §2 and §3, and the engine TDs and rulings (for example R8, TD-S106-NEW-3).
+
+The external system's own documents stay in its own project. A lane's working document about such a point stays with that lane, under P4 (for example `claude/retail/malpha_cold_storage_brief_2026-11-17.md`). If the external system later moves its work into this project, it joins by P9.
 
 ---
 
@@ -235,13 +243,13 @@ Requests to other lanes (also in STREAMS.md §3): <none / list>
 | D4 | Executed prompts leave PK at the same close (P3.6) | Yes |
 | D5 | Adopt as v1 and point v5.1 Rule 15 to it | Yes. It takes effect for each lane at that lane's next close; no lane is retrofitted mid-session (v5.1 Rule 13(e)). |
 
-### v1.1 amendment (P9–P12): PROPOSED, ruling owed
+### v1.1 amendment (P9–P13): ruled 2026-11-21 ~18:05 IST
 
-| # | Question | Recommendation |
+| # | Question | Ruled |
 |---|---|---|
-| D6 | Adopt P9–P12 (new lanes, the PK block in every session prompt, chats with no lane, dormant and retired lanes) | Yes |
-| D7 | MALPHA: its own lane, or part of retail? It appears today only as a retail dependency (STREAMS X5) and in `claude/retail/malpha_cold_storage_brief_2026-11-17.md`. | If MALPHA runs its own chat series or repo, open it as a lane by P9 now (`claude/malpha/`, series MR-MA). Otherwise keep it in retail as `claude/retail/malpha/`. |
-| D8 | Engine root strays: `claude/board_accuracy_*` and `claude/marketview_user_manual_v04_DRAFT.md` | Board accuracy goes under PIN (`claude/pin/`) at the PIN2 close. The manual stays an engine Tier C file (engine owns Board/Marketview). |
+| D6 | Adopt P9–P12 (new lanes, the PK block in every session prompt, chats that belong to no lane, dormant and retired lanes) | Yes |
+| D7 | MALPHA: a lane, or part of retail? | **Neither.** It is an external system with its own box, repo and project. P13 added: only the facts where it meets Meridian (the Kite token for breadth and WCB) live here, in the engine registers. |
+| D8 | Engine-root files `claude/board_accuracy_*` and `claude/marketview_user_manual_v04_DRAFT.md` | **No move.** The Board is engine-owned and the accuracy list covers the whole Board (the pin is its first item), so all three stay engine Tier C files under `claude/`. PIN reads them. Each goes through the engine's P4 check at its next close and stays while the work is live. |
 | D9 | Dormant threshold | 30 days without a session |
 
-*MERIDIAN Project Knowledge Protocol v1 — in force 2026-11-21 — S106. v1.1 (P9–P12) proposed 2026-11-21.*
+*MERIDIAN Project Knowledge Protocol v1.1 — v1 in force 2026-11-21; v1.1 (P9–P13) in force 2026-11-21 — S106.*

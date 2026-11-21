@@ -4,6 +4,8 @@
 
 **What this file is for:** the one place that says which lanes exist, where each keeps its records, which engine-owned objects each touches, and what each is waiting on from another. Pointers and dependencies only; never a lane's results.
 
+**Project knowledge, all lanes:** `docs/operational/MERDIAN_PK_Protocol_v1.md` (PK copy `claude/MERDIAN_PK_Protocol_v1.md`). Read P5 at every session open; run P4 at every close. Lane PK folders and git mirrors are in its P2.1 table.
+
 ---
 
 ## 1. Lanes
@@ -47,9 +49,10 @@ A lane may read these. It changes none of them itself: it files the change in it
 | # | Item | Evidence that closes it | State |
 |---|---|---|---|
 | R1 | Operator rules STREAMS.md and Doc Protocol v5.1 | ruling 2026-11-21 ~09:52 IST, recorded in v5.1 | **done** |
-| R2 | S106 engine doc-close + intake I-001 applied | doc-close commit sha, three-way sha, PK re-upload | in progress (Phase 1, 1b done; archive commit next) |
+| R2 | S106 engine doc-close + intake I-001 applied | doc-close commit sha, three-way sha, PK re-upload | **done** (`7c6e18c`; PK re-upload 2026-11-21) |
 | R3 | Each lane's next close_inputs carries the "Engine intake" section | OFL9, MR-S13, FOI3, PIN2 close inputs | open (paste-in text given to the operator) |
 | R4 | FOI result folders committed; PIN after its seal | commit sha; `git status` clean for those paths | FOI in the S106 close; PIN open |
 | R5 | OFL records (PK-only) committed to `docs/research/tape/`; 2b code per its own gate | commit sha | open (OFL close) |
 | R6 | OFL docs moved to `claude/ofl/` in PK | project listing | open (OFL close) |
-| R7 | Reference-product name removed from file names (I-001 E2) | `git mv` sha; PK listing | in progress (two PK docs renamed in the S106 archive; the git spec file renamed in Phase 2) |
+| R7 | Reference-product name removed from file names (I-001 E2) | `git mv` sha; PK listing | **done** (git `7c6e18c`; PK copies deleted 2026-11-21) |
+| R8 | PK Protocol v1 in force (2026-11-21); pointers in project instructions, CLAUDE.md, STREAMS, v5.1, CURRENT | this commit sha; project-instructions line | in progress |

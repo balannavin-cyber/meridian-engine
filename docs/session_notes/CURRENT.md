@@ -96,6 +96,8 @@ than from a session's own ruling file, and renumbering them would break every ci
 | Board pin | MR-PIN / **PIN2** in session | `MR_PIN1_close_inputs.md` (PIN1, 2026-11-20) |
 | Parity (reference) | none — build closed 2026-10-09 (ADR-025) | `docs/research/parity_eval/` |
 
+**Project knowledge:** every lane follows `docs/operational/MERDIAN_PK_Protocol_v1.md` — P5 at open, P4 at close, PK delta in its close inputs; the engine runs P6 and records `knowledge_size` here at every close.
+
 ## Previous session S105
 
 > *The `NEXT SESSION PICKS UP` list inside this block is as written at the S105 close and is superseded by the S106 list above. Its items 1-4 are carried as TD-S105-NEW-7 / -6 / -4 / -5 and its item 5 is done: `ops/s105-close` merged as `7c64e7d` and `tape/scoring-v04` as `79efb0b`.*

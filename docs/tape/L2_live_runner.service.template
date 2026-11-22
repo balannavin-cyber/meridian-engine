@@ -31,7 +31,7 @@ TimeoutStopSec=150
 
 # Resource caps: the runner must lose to the trading engine, never the other way round.
 Nice=10
-CPUQuota=50%
+CPUQuota=100%
 MemoryMax=700M
 MemorySwapMax=0
 OOMPolicy=stop

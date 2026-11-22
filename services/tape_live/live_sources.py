@@ -30,6 +30,7 @@ from services.tape_live import wall_source
 LIST_TIMEOUT_S = 30
 GET_TIMEOUT_S = 60
 PSQL_TIMEOUT_S = 15
+WRITE_TIMEOUT_S = 60
 AWS_TIMEOUTS = ["--cli-read-timeout", "10", "--cli-connect-timeout", "5"]
 PGOPTIONS = "-c default_transaction_read_only=on -c statement_timeout=8000"
 SSL_MODES = ("require", "verify-ca", "verify-full")
@@ -119,6 +120,17 @@ def pg_env(base, parts):
     env["PGOPTIONS"] = PGOPTIONS
     env["PGCONNECT_TIMEOUT"] = "5"
     env["PGAPPNAME"] = "tape-live-runner"
+    return env
+
+
+def w_env(base, parts):
+    """The write psql child environment: an allowlist from base and the connection fields. No session option is set here: the
+    write role's limits (statement time, idle time, connection count) belong to the role, and the read-only option of pg_env
+    must never reach a write."""
+    env = dict((k, base[k]) for k in ("PATH", "LANG", "SystemRoot") if k in base)
+    env.update(parts)
+    env["PGCONNECT_TIMEOUT"] = "5"
+    env["PGAPPNAME"] = "tape-live-writer"
     return env
 
 
@@ -264,3 +276,28 @@ class PsqlChainSource:
         if len(parts) != 3:
             raise SourceError("other")
         return parts[0], parts[1], parts[2]
+
+
+# ------------------------------------------------------------------------------------------- write sink (stage 2b)
+class PsqlWriteSink:
+    """`psql` as the write role, the script on stdin, the connection fields in the child's environment only (nothing in an
+    argument list). Two argv shapes: a quiet csv query (the start-up check, the literal check) and a script run that prints command
+    tags and times. The caller supplies the classifier of a failed run (services/tape_live/dbwrite.classify); stderr is classified
+    here and dropped, never returned. RUN is the same seam as for the reads, so a process death raised through it is not caught."""
+
+    def __init__(self, parts, base_env=None):
+        self.env = w_env(os.environ if base_env is None else base_env, parts)
+
+    def query(self, sql):
+        argv = ["psql", "-X", "-q", "-t", "--csv", "-f", "-"]
+        return _call(argv, self.env, sql.encode("utf-8"), PSQL_TIMEOUT_S, "sql").decode("utf-8", "replace")
+
+    def run_script(self, script, classify):
+        """-> (return code, stdout text, category). category 'ok' for a clean run."""
+        argv = ["psql", "-X", "-f", "-"]
+        try:
+            rc, out, err = RUN(argv, self.env, script.encode("utf-8"), WRITE_TIMEOUT_S)
+        except Exception:  # noqa: BLE001 - a failed start of the child is a category, never its text
+            return -1, "", classify(-1, b"")
+        cat = classify(rc, err)
+        return rc, (out or b"").decode("utf-8", "replace"), cat

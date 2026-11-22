@@ -21,7 +21,7 @@ Rules that apply while doing this (CLAUDE.md):
 | Programs present | `command -v aws psql python3` | three paths; if `psql` is missing: `sudo apt-get install -y postgresql-client` |
 | Python | `python3 --version` | 3.10 or newer (the runner is written for 3.10; it has only been run on 3.12 by its author) |
 | Free disk | `df -h /var/lib` | at least 1 GB free (the runner refuses to start below 1 GB) |
-| Free memory | `free -m` | at least 700 MB available beyond the engine |
+| Free memory | `free -m` | at least 900 MB available beyond the engine |
 | Attached security group, if a rule ever needs editing | IMDSv2 query from CLAUDE.md (S39) | not needed for this install |
 
 ## 1. Dedicated OS user (no shell, no sudo, no groups)
@@ -158,7 +158,7 @@ Objects appear in the order of their S3 `LastModified`; chain rows by their `ts`
 ```bash
 sudo systemd-run --pipe --wait --collect --uid=tapelive --gid=tapelive \
     -p EnvironmentFile=/etc/tape-live/tape-live.env -E AWS_DEFAULT_REGION=eu-north-1 \
-    -p WorkingDirectory=/opt/tape-live/$SHA -p Nice=10 -p CPUQuota=50% -p MemoryMax=700M -p MemorySwapMax=0 \
+    -p WorkingDirectory=/opt/tape-live/$SHA -p Nice=10 -p CPUQuota=100% -p MemoryMax=700M -p MemorySwapMax=0 \
     -p OOMScoreAdjust=500 -p NoNewPrivileges=yes -p PrivateTmp=yes -p ProtectSystem=strict \
     -p ReadWritePaths=/var/lib/tape-live \
     /usr/bin/python3 -m services.tape_live.cli live --day <past trading day> --out /var/lib/tape-live/rehearsal \
@@ -208,3 +208,48 @@ sudo rm -rf /opt/tape-live
 # keep /var/lib/tape-live (the measurements) until they have been read; then:
 # sudo userdel tapelive && sudo rm -rf /var/lib/tape-live /etc/tape-live
 ```
+
+## 11. Stage 2b: the database writer, its stop latch and write-clear
+
+Stage 2b is the 2b unit (`docs/tape/L2_live_runner_2b.service.template`), used INSTEAD OF the 2a unit, never beside it. It adds
+`EnvironmentFile=/etc/tape-live/tape-w.env` (one variable, `TAPE_LIVE_W_DSN`, the `tape_w` role; mode 600, owner `tapelive`) and `--db-write`.
+Everything else in sections 1 to 10 applies unchanged. The writer only upserts; it never sends a removal statement.
+
+**The stop latch (rulings R8-D and R8-I).** When the writer stops (the immediate stops, the second skip, an overrun, a missed grid point after a restart,
+item 7a under ruling R9-B: a `drop` bump cycle whose `wall_s` exceeds the median of the cycles since 09:20 by more than that median and by more than
+30 s, once 6 such cycles exist) it writes the latch file `/var/lib/tape-live/WRITE_LATCH.json` (`reason`, `category`, `at`, `day`, `set_utc`), at the root of `--out`, never in a
+day directory. The unit's `--out` is `/var/lib/tape-live` on every day, so the latch is found on every later day:
+
+- a stop on day D keeps database writes stopped on D+1 and later, until the operator clears it by hand;
+- the runner keeps cycling and writing its files while stopped (`cycles/`, `live_metrics.csv`, heartbeat); only the database writes stop;
+- a start with a latch present makes no write-role connection at all and runs no start-up database check; `cli live --check` prints the latch;
+- the heartbeat `write` object shows `state "stopped"`, the `reason`, `latch_day` and `carried` (true when the latch is from an earlier day);
+- the day's `WRITE_STOPPED` file is informational; removing it changes nothing;
+- a latch file that cannot be parsed also stops writing (reason `latch_unreadable`) and can be cleared in the same way.
+
+**Clearing it (the only way).** Find the reason first: `cat /var/lib/tape-live/WRITE_LATCH.json` and the day's `live_metrics.csv`. Then, as the
+runner user and with the unit stopped:
+
+```bash
+sudo systemctl stop tape-live.service
+cd "$(systemctl show -p WorkingDirectory --value tape-live.service)"
+sudo -u tapelive /usr/bin/python3 -m services.tape_live.cli write-clear --out /var/lib/tape-live --note "<why it is safe to write again, no secrets>"
+```
+
+The `WorkingDirectory` is the unit's `/opt/tape-live/<CODE_SHA>` (the sha was substituted at install, section 4), `tapelive` and `/usr/bin/python3` are the
+unit's `User=` and `ExecStart` interpreter, and `--out` is the unit's. `write-clear` is in no unit template and nothing starts it.
+
+- It refuses (exit 2) while the runner may be running: it scans only `/var/lib/tape-live/<YYYY-MM-DD>/heartbeat.json` for days at or after the latch day,
+  and counts a runner as running if its process id is alive (POSIX) or its state is `starting`, `cycling` or `waiting` with `updated_utc` younger than 600 s
+  (twice the healthy gap of about 300 s). The message names the day, state, pid, the heartbeat age in seconds, the 600 s bound and how long to wait;
+  after the unit is stopped, wait that long (or until the heartbeat is older than 600 s) and run it again.
+- A stale heartbeat (older than 600 s) left by a runner that died does not block it.
+- On success it renames the latch to `WRITE_LATCH.cleared.<utc>.json`, resets `write_skips`, renames each day's `WRITE_STOPPED` to
+  `WRITE_STOPPED.cleared.<utc>`, and logs your note to `/var/lib/tape-live/write_clear.log` and each scanned day's `runner.log`.
+- With no latch it prints `nothing to clear` and exits 0.
+- Start the unit again only after this (`sudo systemctl start tape-live.service`); the next start runs the start-up database check and then writes.
+- If the heartbeat or the day's `WRITE_STOPPED` shows reason `latch_write_failed` (the latch file could not be written), fix the disk or the permission on `/var/lib/tape-live` before any restart: the stop is not on disk, so it is not remembered across a restart and will not carry to the next day. This limit is accepted (ruling R8-K): the unit has `Restart=on-failure`, `RestartSec=30` and `RestartPreventExitStatus=2 3`, so a later crash restarts the runner and it writes again.
+
+**Test only.** A re-dated Saturday or Sunday gate run (ruling R8-A) keeps its own latch, `WRITE_LATCH.redate.json`, which never blocks, and is never
+cleared by, the real one; it is cleared with the extra flag `--test-redate`. That flag and the re-dating flags are in no unit template and are not part of the
+operator path above.

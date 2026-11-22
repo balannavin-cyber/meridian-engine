@@ -162,6 +162,7 @@ class Config:
         self.rss_cap_mb, self.disk_floor_mb, self.disk_stop_mb = rss_cap_mb, disk_floor_mb, disk_stop_mb
         self.end_t, self.max_pages = end_t, max_pages
         self.term = {"hit": False}                      # set by the SIGTERM handler (real clock)
+        self.writer = None                              # stage 2b: a dbwrite.DbWriter, or None (the 2a runner, byte for byte)
 
 
 class _Stop(Exception):
@@ -237,6 +238,8 @@ class Runner:
         self.stats = None
         self.missed_now = 0
         self.cur_t = None
+        self.writer = cfg.writer
+        self.fresh_first = False
 
     # -- small helpers ---------------------------------------------------------------------------------
     def epoch(self, m):
@@ -264,6 +267,8 @@ class Runner:
               "errors": dict(self.errors), "last_error": scrub(self.last_error, self.redact), "pid": os.getpid(),
               "code_sha": self.cfg.code_sha,
               "updated_utc": iso_utc(self.clock.now())}
+        if self.writer is not None:
+            hb["write"] = self.writer.status()
         _atomic(os.path.join(self.ddir, "heartbeat.json"), json.dumps(hb, sort_keys=True).encode("utf-8"))
 
     def _stopped(self):
@@ -306,6 +311,8 @@ class Runner:
     def _save_state(self, committed, done):
         st = {"committed": committed, "done": done, "missed": self.missed, "rebuilds": self.ld.rebuilds, "late": self.ld.late,
               "bad_files": self.ld.bad_files, "epoch": self.ld.epoch, "epoch_log": self.ld.epoch_log}
+        if self.writer is not None:
+            st.update(self.writer.persist())
         _atomic(self._state_path(), (json.dumps(st, sort_keys=True, indent=1) + "\n").encode("utf-8"))
 
     def _write_state_files(self):
@@ -506,6 +513,10 @@ class Runner:
         self._check_rss()
         if T >= GRID_FIRST:
             self._write_state_files()
+        if self.writer is not None:
+            self.writer.cycle(T, self.ld if T >= GRID_FIRST else None, self.stats["missed"], self.fresh_first)
+            self.writer.end_cycle(T, time.perf_counter() - w0, self.last_lag, self.ld.epoch_log)
+            self.fresh_first = False
         self._save_state(T, False)
         self.last_cycle = _hm(T)
         self.last_wall = time.perf_counter() - w0
@@ -529,11 +540,15 @@ class Runner:
                "ready_lag_s_SENSEX": "" if s["lag"]["SENSEX"] is None else "%.1f" % s["lag"]["SENSEX"],
                "rebuilds": n_reb, "rebuild_s": "%.3f" % rebuild_s, "reemit_rows": reemit, "late_segments": n_late, "missed_grid_points": s["missed"],
                "run_grew": self.poller.acc.row_changed, "errors": s["errors"]}
+        cols = METRIC_COLS
+        if self.writer is not None:
+            row.update(self.writer.row())
+            cols = METRIC_COLS + tuple(self.writer.cols)
         with open(p, "a", encoding="utf-8", newline="") as fh:
             wr = csv.writer(fh, lineterminator="\n")
             if new:
-                wr.writerow(METRIC_COLS)
-            wr.writerow([row[c] for c in METRIC_COLS])
+                wr.writerow(cols)
+            wr.writerow([row[c] for c in cols])
 
     # -- start, restart --------------------------------------------------------------------------------
     def _reader(self, sym, name):
@@ -595,6 +610,8 @@ class Runner:
         d = self.ld.cycle(None, {}, as_of_utc(self.day, self.last_t if self.last_t is not None else GRID_LAST))
         self._emit("final", d)
         self._write_state_files()
+        if self.writer is not None:
+            self.writer.cycle("final", self.ld, 0, True)
         outputs = {}
         for dp, _ds, ns in os.walk(self.live):
             for n in ns:
@@ -632,6 +649,9 @@ class Runner:
         self._check_disk(self.cfg.disk_floor_mb)
         self.ld = self._new_liveday()
         committed = self._restore(st)
+        if self.writer is not None:
+            self.writer.start(st, self.live, committed is None)
+            self.fresh_first = committed is None
         T0 = self._first_grid_point(committed)
         prev = GRID_FIRST - 5 if committed is None else committed
         gone = set(t for t in range(prev + 5, T0, 5) if t >= GRID_FIRST)

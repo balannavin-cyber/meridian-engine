@@ -39,7 +39,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from merdian_compute.tape import replay, special  # noqa: E402
-from services.tape_live import ddl, live_runner, live_sources, verify_day, wall_source, writer  # noqa: E402
+from services.tape_live import dbwrite, ddl, live_runner, live_sources, verify_day, wall_source, writer  # noqa: E402
 from services.tape_offline.cycle_day import peak_mb  # noqa: E402
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -252,6 +252,7 @@ def local_schedule(raw, day, arrival):
 
 AWS_KEY_VARS = ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")
 RO_CONN_ENV = "TAPE_LIVE_RO_DSN"
+W_CONN_ENV = "TAPE_LIVE_W_DSN"
 
 
 def _code_sha():
@@ -268,10 +269,28 @@ def _code_sha():
 def cmd_live(a):
     """The live runner (docs/tape/L2_live_runner_plan.md). Read-only on S3 and the database; writes files under --out only."""
     dsn = os.environ.pop(RO_CONN_ENV, None)                       # read once, then gone from this process's environment
+    wdsn = os.environ.pop(W_CONN_ENV, None)                       # the write connection: the same, and only with the flag
     for k in AWS_KEY_VARS:
         if os.environ.get(k):
             print("refused: AWS key variables are set; the runner signs with the instance role only", file=sys.stderr)
             return 2
+    if wdsn and not a.db_write:
+        print("refused: the write connection variable is set without --db-write", file=sys.stderr)
+        return 2
+    if a.db_write and not wdsn:
+        print("refused: --db-write needs the write connection variable", file=sys.stderr)
+        return 2
+    if a.db_batch_rows < 1:
+        print("--db-batch-rows must be at least 1", file=sys.stderr)
+        return 2
+    shift = None
+    if a.test_redate_today:
+        today = dbwrite.now_ist().date()
+        why = dbwrite.redate_refusal(a.day, a.clock, a.db_write, os.environ.get(dbwrite.REDATE_ENV), today)
+        if why:
+            print("refused: %s" % why, file=sys.stderr)
+            return 2
+        shift = (today.isoformat(), (today - datetime.strptime(a.day, "%Y-%m-%d").date()).days)
     sha = _code_sha()
     if sha == "unknown" or not re.match(r"^[0-9a-f]{7,40}$", sha):
         print("refused: no code sha (git or CODE_SHA file)", file=sys.stderr)
@@ -285,6 +304,7 @@ def cmd_live(a):
     else:
         clock = live_runner.RealClock()
     redact = []
+    ro_user = None
     if a.chain == "psql":
         if not dsn:
             print("refused: %s is not set" % RO_CONN_ENV, file=sys.stderr)
@@ -295,6 +315,7 @@ def cmd_live(a):
             print("refused: %s" % exc, file=sys.stderr)
             return 2
         redact = [parts["PGPASSWORD"], dsn]
+        ro_user = parts["PGUSER"]
         chain = live_sources.PsqlChainSource(parts, day)
         try:
             role, ro, priv = chain.check()
@@ -317,11 +338,38 @@ def cmd_live(a):
             with open(a.arrival, encoding="utf-8") as fh:
                 arrival = json.load(fh)
         objs = live_sources.LocalDirSource(os.path.abspath(a.raw), day, local_schedule(os.path.abspath(a.raw), day, arrival), clock)
+    sink = None
+    if a.db_write:
+        try:
+            wparts = live_sources.parse_dsn(wdsn)
+        except ValueError as exc:
+            print("refused: %s" % exc, file=sys.stderr)
+            return 2
+        redact = list(redact) + [wparts["PGPASSWORD"], wdsn]
+        sink = live_sources.PsqlWriteSink(wparts)
+        latch = dbwrite.read_latch(out, shift is not None)
+        if latch is None:
+            try:
+                chk = dbwrite.parse_check(sink.query(dbwrite.CHECK_SQL))
+            except live_sources.SourceError as exc:
+                print("refused: the write start-up check failed (%s)" % exc.category, file=sys.stderr)
+                return 2
+            why = dbwrite.startup_verdict(chk, ro_user, a.day, dbwrite.now_ist().date().isoformat(), shift is not None)
+            if why:
+                print("refused: %s" % why, file=sys.stderr)
+                return 2
+        # a latched writer makes no write-role connection at all: no start-up check, no statement
     if a.check:
+        if sink is not None and latch is not None:
+            print("CHECK PASS (environment, code sha, database role not checked: the write latch is set: %s, day %s; run write-clear)" % (
+                latch.get("reason"), latch.get("day")))
+            return 0
         print("CHECK PASS (environment, code sha, database role)")
         return 0
     cfg = live_runner.Config(day=day, out=out, code_sha=sha, kill_file=a.kill_file, lag=a.lag, rss_cap_mb=a.rss_cap_mb,
                              disk_floor_mb=a.disk_floor_mb, disk_stop_mb=a.disk_floor_mb / 5.0)
+    if sink is not None:
+        cfg.writer = dbwrite.DbWriter(sink, day, a.db_batch_rows, os.path.join(out, day), shift)
     if a.clock == "real":
         term = {"hit": False}
 
@@ -332,6 +380,119 @@ def cmd_live(a):
     rc = live_runner.run_day(cfg, objs, chain, clock, redact=redact)
     print("TAPE LIVE RUNNER exit %d (state in %s)" % (rc, os.path.join(out, day)))
     return rc
+
+
+def _pid_alive(pid):
+    """Whether a process id is alive (only where a zero signal exists; elsewhere the heartbeat state decides)."""
+    if not isinstance(pid, int) or os.name != "posix":
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+ISO_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+ACTIVE_STATES = ("starting", "cycling", "waiting")
+
+
+def _hb_age_s(hb, now):
+    """Seconds since the heartbeat's updated_utc, or None when it cannot be read."""
+    try:
+        return (now - datetime.strptime(hb.get("updated_utc"), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)).total_seconds()
+    except (TypeError, ValueError):
+        return None
+
+
+def _running_days(out, first, now):
+    """The day directories at or after `first` whose runner may still be running: the process id is alive (POSIX), or the state is
+    starting / cycling / waiting with a heartbeat younger than CLEAR_STALE_S (the only test where there is no zero signal)."""
+    found, days = [], []
+    for name in sorted(os.listdir(out)):
+        if not ISO_DAY_RE.match(name) or (first and name < first) or not os.path.isdir(os.path.join(out, name)):
+            continue
+        days.append(name)
+        try:
+            with open(os.path.join(out, name, "heartbeat.json"), encoding="utf-8") as fh:
+                hb = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(hb, dict):
+            continue
+        age = _hb_age_s(hb, now)
+        if _pid_alive(hb.get("pid")) or (hb.get("state") in ACTIVE_STATES and (age is None or age < dbwrite.CLEAR_STALE_S)):
+            found.append((name, hb.get("pid"), age, hb.get("state")))
+    return found, days
+
+
+def cmd_write_clear(a):
+    """The only way a write latch is cleared (rulings R8-D, R8-I): by hand, with no runner of the latch day or later running."""
+    out = os.path.abspath(a.out)
+    pth = dbwrite.latch_path(out, a.test_redate)
+    if not os.path.exists(pth):
+        print("nothing to clear")
+        return 0
+    latch = dbwrite.read_latch(out, a.test_redate) or {}
+    first = a.day or latch.get("day") or ""                    # an unreadable latch names no day: every day is scanned
+    now = datetime.now(timezone.utc)
+    running, days = _running_days(out, first, now)
+    if running:
+        day, pid, age, state = running[0]
+        print("refused: the runner of %s may be running (state %s, pid %s, heartbeat %s s old; a heartbeat older than %d s counts as "
+              "not running): stop the unit, or wait %s s, then run write-clear again" % (
+                  day, state, pid, "unknown" if age is None else "%d" % age, dbwrite.CLEAR_STALE_S,
+                  "%d" % max(0, dbwrite.CLEAR_STALE_S - age) if age is not None else "%d" % dbwrite.CLEAR_STALE_S), file=sys.stderr)
+        return 2
+    stamp = now.strftime("%Y%m%dT%H%M%SZ")
+    base = os.path.basename(pth)[:-len(".json")]
+    os.replace(pth, os.path.join(out, "%s.cleared.%s.json" % (base, stamp)))
+    note = live_sources.scrub(a.note)
+    for name in days:
+        ddir = os.path.join(out, name)
+        sp = os.path.join(ddir, "state.json")
+        try:
+            with open(sp, encoding="utf-8") as fh:
+                st = json.load(fh)
+            if isinstance(st, dict) and st.get("write_skips"):
+                st["write_skips"] = 0
+                live_runner._atomic(sp, (json.dumps(st, sort_keys=True, indent=1) + "\n").encode("utf-8"))
+        except (OSError, ValueError):
+            pass
+        sent = os.path.join(ddir, "WRITE_STOPPED")
+        if os.path.exists(sent):
+            os.replace(sent, sent + ".cleared." + stamp)
+        with open(os.path.join(ddir, "runner.log"), "a", encoding="utf-8", newline="\n") as fh:
+            fh.write("%s write-clear %s\n" % (stamp, note))
+    with open(os.path.join(out, "write_clear.log"), "a", encoding="utf-8", newline="\n") as fh:
+        fh.write("%s write-clear %s (latch day %s, reason %s)\n" % (stamp, note, latch.get("day"), latch.get("reason")))
+    print("write latch cleared (day %s)" % latch.get("day"))
+    return 0
+
+
+def cmd_db_literal_check(a):
+    """Read only: the server's own reading of every literal form the writer renders, against the expected text."""
+    wdsn = os.environ.pop(W_CONN_ENV, None)
+    if not wdsn:
+        print("refused: the write connection variable is not set", file=sys.stderr)
+        return 2
+    try:
+        sink = live_sources.PsqlWriteSink(live_sources.parse_dsn(wdsn))
+        text = sink.query(dbwrite.literal_script())
+    except ValueError as exc:
+        print("refused: %s" % exc, file=sys.stderr)
+        return 2
+    except live_sources.SourceError as exc:
+        print("refused: the literal check failed to run (%s)" % exc.category, file=sys.stderr)
+        return 2
+    bad = dbwrite.check_literals(text)
+    if bad:
+        print("LITERAL CHECK FAIL (%d of %d cases read differently)" % (len(bad), len(dbwrite.LITERAL_CASES)))
+        return 1
+    print("LITERAL CHECK PASS (%d cases)" % len(dbwrite.LITERAL_CASES))
+    return 0
 
 
 def _write_delta(cdir, name, d):
@@ -376,8 +537,17 @@ def main(argv=None):
     lv.add_argument("--arrival", default=None)
     lv.add_argument("--chain-csv", action="append", default=None)
     lv.add_argument("--check", action="store_true")
+    lv.add_argument("--db-write", action="store_true")
+    lv.add_argument("--db-batch-rows", type=int, default=dbwrite.BATCH_ROWS)
+    lv.add_argument("--test-redate-today", action="store_true")
+    wc = sub.add_parser("write-clear")
+    wc.add_argument("--day", default=None)
+    wc.add_argument("--out", required=True)
+    wc.add_argument("--note", required=True)
+    wc.add_argument("--test-redate", action="store_true")
+    sub.add_parser("db-literal-check")
     a = ap.parse_args(argv)
-    if not re.match(r"^\d{4}-\d{2}-\d{2}$", getattr(a, "day", "2000-01-01")):
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", getattr(a, "day", None) or "2000-01-01"):
         print("--day must be YYYY-MM-DD", file=sys.stderr)
         return 2
     try:
@@ -388,6 +558,10 @@ def main(argv=None):
             return cmd_replay(a)
         if a.cmd == "live":
             return cmd_live(a)
+        if a.cmd == "write-clear":
+            return cmd_write_clear(a)
+        if a.cmd == "db-literal-check":
+            return cmd_db_literal_check(a)
         if a.cmd == "verify":
             return verify_day.run(a.day, a.live, a.final_cycle, a.final_events, a.final_chain_runs, a.report)
         _w(a.out, ddl.render())

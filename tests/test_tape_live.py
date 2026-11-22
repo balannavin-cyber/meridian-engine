@@ -15,18 +15,25 @@ Last line: "TAPE LIVE GUARDS PASS (21/21)" or "TAPE LIVE GUARDS FAIL (...)". Exi
 import argparse
 import ast
 import contextlib
+import errno
 import csv
+import decimal
 import gzip
 import hashlib
+import importlib
 import io
 import json
 import os
 import random
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
+import time
 import traceback
+import types
+import uuid
 from datetime import datetime, timedelta, timezone
 
 ap = argparse.ArgumentParser()
@@ -2471,6 +2478,2226 @@ def g_epoch():
             ",".join("%s/%s@%d" % b for b in got), n_checked, n_u, len(early)))
 
 
+# ------------------------------------------------------------------------------------------- stage 2b: the DB writer (live-2b-*)
+# Plan: _l2_logs/2b_writer_plan.md (revision 2). WRITTEN BEFORE services/tape_live/dbwrite.py EXISTS (red first): every guard here
+# must FAIL on the tree as it is, for the reason the plan names. The fakes below are written from the plan and the DDL, never from
+# the writer; a self-test (_w2b_selftest) proves they can fire without it.
+#
+# TEST-SIDE CONTRACTS the writer is built to (the plan leaves these open; each is a choice made here, to be ruled on):
+#   CLI      cli live --db-write [--db-batch-rows N] [--test-redate-today]; env TAPE_LIVE_W_DSN (popped at start) and
+#            TAPE_LIVE_TEST_REDATE; cli write-clear --day D --out DIR --note TEXT; cli db-literal-check (no arguments).
+#            --check with --db-write runs the write start-up check too and prints CHECK PASS only if it passes.
+#   SEAM     services.tape_live.dbwrite.now_ist() -> aware IST datetime: the writer's "local today". The guards replace it, so a
+#            sim-clock run on 2026-11-06 can be a trading day (Friday) or a Saturday.
+#   ROUTING  a write psql call is told apart by its environment: PGPASSWORD is the write role's. The script is on stdin; no value
+#            is ever in argv. A read psql call carries the read role's PGPASSWORD.
+#   SCRIPT   \set ON_ERROR_STOP 1, \set VERBOSITY sqlstate, \timing on; BEGIN; SET LOCAL standard_conforming_strings = on;
+#            SET LOCAL lock_timeout = '5s'; INSERT ... (each value '<text>'::<DDL type>, empty = NULL); COMMIT. Tables in the
+#            order cycle, events, wall, label; at most one write psql per cycle (plus the final).
+#   PSQL OUT per statement a command tag line and a "Time: x ms" line (what `psql` prints without -q under \timing); an error is
+#            "ERROR:  <SQLSTATE>" on stderr with rc 3; a failed connect is "psql: error: connection to server ..." with rc 2 (no
+#            SQLSTATE, so a connection-limit refusal there is recognised by its text); rc 124 = the 60 s process timeout.
+#   CHECK    start-up check output (psql --csv -t): role,<name> / super,t|f / bypassrls,t|f / scs,<setting> / ist_date,<date> /
+#            priv,<table>,<DELETE|TRUNCATE|INSERT|UPDATE>,t|f.
+#   LITCHECK db-literal-check: BEGIN READ ONLY; ... one SELECT '<literal>'::<type>::text per case ...; ROLLBACK; the server's text
+#            form of each value comes back one csv row per SELECT, under SET LOCAL TIME ZONE 'UTC'.
+#   STATE    heartbeat.json write {state: none|sent|skipped|stopped, reason, skips, db_written}; write.latch_day / write.carried when stopped;
+#            R8-I: the stop latch is <out>/WRITE_LATCH.json {reason, category, at, day, set_utc} (test-only runs: WRITE_LATCH.redate.json),
+#            carried across days; state.json keeps write_skips, db_written only; <day>/WRITE_STOPPED (json, informational);
+#            write-clear --out DIR --note TEXT [--day D] [--test-redate]: refused while a heartbeat of the latch day or later is alive
+#            (POSIX pid alive, or state starting/cycling/waiting and updated_utc younger than 600 s), the refusal prints each day, pid,
+#            heartbeat age in seconds and the 600 s bound; a clear renames the latch to WRITE_LATCH.cleared.<utc>.json (redate:
+#            WRITE_LATCH.redate.cleared.<utc>.json); a latch that cannot be parsed stops writes with reason latch_unreadable; <day>/live/db_withheld.csv, db_dupkeys.csv;
+#            live_metrics.csv gains the plan's columns. Reasons by hand: W_REASON below, plus dup_conflict_key,
+#            cycle_grain_uq_unpredicted, missed_grid_point, overrun, item_7a_drop_bump, second_skip.
+W_USER = "tape_w"
+W_PW = "Wz" + "4-q" + "Nm8y-Hd"
+W_DSN = "postgres" + "ql:" + "//" + W_USER + ":" + W_PW + "@" + "db.example.invalid:5432/postgres?sslmode=require"
+W_ENV = "TAPE_LIVE_W_DSN"
+REDATE_ENV = "TAPE_LIVE_TEST_REDATE"
+W_CONSTRAINT = {"tape_live_cycle": "tape_live_cycle_pk", "tape_live_events": "tape_live_events_grain_uq",
+                "tape_live_wall": "tape_live_wall_pk"}
+# conflict keys and the cycle grain, by hand from sql/2026-11-06_tape_live_tables.sql (_w2b_selftest compares them with the file)
+W_PK = {"tape_live_cycle": ("symbol", "trading_day", "instrument_token", "ts_ist"),
+        "tape_live_wall": ("symbol", "trading_day", "expiry", "ts_ist"),
+        "tape_live_label": ("symbol", "trading_day", "ts_ist", "wall", "rule_version")}
+W_GRAIN = {"tape_live_cycle": ("symbol", "trading_day", "expiry", "strike", "leg", "ts_ist"),
+           "tape_live_events": ("symbol", "trading_day", "expiry", "strike", "leg", "kind", "ts_ist", "side")}
+W_REASON = {"42501": "rls_refused", "53300": "connection_limit", "25P03": "idle_tx_timeout", "XX000": "other"}
+W_DUR_BASE = {"tape_live_cycle": 11.0, "tape_live_events": 22.0, "tape_live_wall": 33.0, "tape_live_label": 44.0}
+W_HOSTILE = ["it's", "back\\slash", "a,b;c", "line1\nline2", "ünï☃", "$$x$$ --c /*d*/", "'' ; DROP TABLE x; --",
+             "  lead and trail  ", "tab\there", "q\"uote"]
+W_HOSTILE_JSON = [json.dumps({"k": "it's \\ \"q\", ; -- $$"}), json.dumps({"note": "line1\nline2 ü", "b": [1, 2.5, None]})]
+W_METRIC_COLS = tuple("%s_%s" % (p, t) for t in ("cycle", "events", "wall", "label")
+                      for p in ("up_s", "up_max_stmt_s", "up_rows", "up_stmts")) + (
+    "up_label_skipped", "cycle_grain_uq_violations", "up_proc_s", "write_state", "werr_statement_timeout", "werr_lock",
+    "werr_idle_tx_timeout", "werr_rls_refused", "werr_connection_limit", "werr_connect", "werr_other")
+_AWS_KEYS = ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")
+
+
+def w_dur(table, k, ordn):
+    """The planted server time of the k-th INSERT of a table in the ordn-th write script, in ms. By hand."""
+    if ordn == 3 and table == "tape_live_cycle" and k == 0:
+        return 5300.0
+    return W_DUR_BASE[table] + 3.0 * k
+
+
+def pg_time(ms):
+    s = "Time: %.3f ms" % ms
+    if ms >= 1000.0:
+        t = ms / 1000.0
+        h, m = int(t // 3600), int((t % 3600) // 60)
+        s += (" (%02d:%06.3f)" % (m, t % 60)) if h == 0 else (" (%02d:%02d:%06.3f)" % (h, m, t % 60))
+    return s
+
+
+# ---- scanning and parsing a write script (the test's own, written from the plan)
+def sql_split(script):
+    """-> (psql meta lines, statements, unterminated tail). Quote-aware: ';' and newlines inside '...' ('' escapes) never split;
+    a line whose first non-blank character, at a statement start, is a backslash is a psql meta-command."""
+    metas, stmts, cur = [], [], []
+    i, n, in_q, at_start = 0, len(script), False, True
+    while i < n:
+        c = script[i]
+        if in_q:
+            cur.append(c)
+            if c == "'":
+                if i + 1 < n and script[i + 1] == "'":
+                    cur.append("'")
+                    i += 2
+                    continue
+                in_q = False
+        elif c == "'":
+            in_q, at_start = True, False
+            cur.append(c)
+        elif at_start and c == "\\":
+            j = script.find("\n", i)
+            j = n if j < 0 else j
+            metas.append(script[i:j].strip())
+            i = j
+        elif c == ";":
+            stmts.append("".join(cur).strip())
+            cur, at_start = [], True
+        else:
+            if not c.isspace():
+                at_start = False
+            cur.append(c)
+        i += 1
+    return metas, [s for s in stmts if s], "".join(cur).strip()
+
+
+_W_LIT = re.compile(r"\s*(?:(NULL)\b|'((?:[^']|'')*)')(?:\s*::\s*([A-Za-z_][A-Za-z0-9_]*(?: precision)?))?", re.S)
+_W_WS = re.compile(r"\s*")
+
+
+def parse_insert(stmt):
+    """INSERT INTO public.<t> (cols) VALUES (...),(...) <rest>  ->  {table, cols, rows (None | text), types (per row), conflict}."""
+    m = re.match(r"INSERT\s+INTO\s+public\.(\w+)\s*\(([^)]*)\)\s*VALUES\s*", stmt, re.S | re.I)
+    if m is None:
+        raise ValueError("not an INSERT into public.<table>")
+    cols = [c.strip() for c in m.group(2).split(",")]
+    pos, rows, tys = m.end(), [], []
+    while True:
+        pos = _W_WS.match(stmt, pos).end()
+        if stmt[pos:pos + 1] != "(":
+            raise ValueError("expected ( at %d" % pos)
+        pos += 1
+        row, ty = [], []
+        while True:
+            lm = _W_LIT.match(stmt, pos)
+            if lm is None:
+                raise ValueError("bad literal at %d" % pos)
+            row.append(None if lm.group(1) else lm.group(2).replace("''", "'"))
+            ty.append(lm.group(3))
+            pos = _W_WS.match(stmt, lm.end()).end()
+            if stmt[pos:pos + 1] == ",":
+                pos += 1
+                continue
+            if stmt[pos:pos + 1] == ")":
+                pos += 1
+                break
+            raise ValueError("unexpected %r at %d" % (stmt[pos:pos + 1], pos))
+        rows.append(row)
+        tys.append(ty)
+        pos = _W_WS.match(stmt, pos).end()
+        if stmt[pos:pos + 1] == ",":
+            pos += 1
+            continue
+        break
+    rest = " ".join(stmt[pos:].split())
+    cm = re.match(r"^ON CONFLICT ON CONSTRAINT (\w+) DO UPDATE SET (.+)$", rest, re.I)
+    if cm is not None:
+        sets = re.findall(r"(\w+)\s*=\s*(EXCLUDED\.\w+)", cm.group(2))
+        if ", ".join("%s = %s" % s for s in sets).lower() != cm.group(2).lower():
+            conflict = {"action": "other", "raw": rest}
+        else:
+            conflict = {"action": "update", "constraint": cm.group(1), "set": sets, "raw": rest}
+    elif re.match(r"^ON CONFLICT DO NOTHING$", rest, re.I):
+        conflict = {"action": "nothing", "constraint": None, "raw": rest}
+    else:
+        conflict = {"action": "other", "raw": rest}
+    return {"table": m.group(1), "cols": cols, "rows": rows, "types": tys, "conflict": conflict, "rest": rest}
+
+
+def parse_script(text):
+    metas, stmts, tail = sql_split(text)
+    out = []
+    for s in stmts:
+        d = {"text": s, "kind": s.split(None, 1)[0].upper() if s.split() else ""}
+        if d["kind"] == "INSERT":
+            d["insert"] = parse_insert(s)
+        out.append(d)
+    return {"metas": metas, "stmts": out, "tail": tail}
+
+
+def strip_literals(s):
+    return re.sub(r"'(?:[^']|'')*'", "''", s, flags=re.S)
+
+
+def sql_types():
+    """({table: {column: type}}, {table: {NOT NULL columns}}) parsed from the committed SQL file."""
+    if "sql_types" not in _CACHE:
+        with open(SQL, encoding="utf-8") as fh:
+            text = fh.read()
+        ty, nn = {}, {}
+        for t in DB_TABLES:
+            body = re.search(r"CREATE TABLE IF NOT EXISTS public\.%s \((.*?)\n\);" % t, text, re.S).group(1)
+            ty[t], nn[t] = {}, set()
+            for ln in body.strip().split("\n"):
+                ln = ln.strip().rstrip(",")
+                if not ln or ln.startswith("CONSTRAINT"):
+                    continue
+                parts = ln.split()
+                ty[t][parts[0]] = "double precision" if parts[1] == "double" else parts[1]
+                if "NOT NULL" in ln:
+                    nn[t].add(parts[0])
+        _CACHE["sql_types"] = (ty, nn)
+    return _CACHE["sql_types"]
+
+
+# ---- the fake database: typed values, the DDL's keys, RLS, atomic scripts
+class SqlError(Exception):
+    def __init__(self, state):
+        Exception.__init__(self, state)
+        self.state = state
+
+
+def pg_norm(ty, text):
+    """The typed value Postgres would hold for a literal of a type (hashable); an invalid one is SQLSTATE 22P02."""
+    if text is None:
+        return None
+    try:
+        if ty == "text":
+            return text
+        if ty == "numeric":
+            d = decimal.Decimal(text)
+            if not d.is_finite():
+                raise ValueError("nan")
+            return d.normalize()
+        if ty in ("bigint", "integer"):
+            return int(text)
+        if ty == "double precision":
+            return float(text)
+        if ty == "date":
+            return datetime.strptime(text, "%Y-%m-%d").date()
+        if ty == "timestamptz":
+            return fake_pg_ts(text).astimezone(timezone.utc)
+        if ty == "boolean":
+            v = text.strip().lower()
+            if v in ("true", "t", "yes", "y", "on", "1"):
+                return True
+            if v in ("false", "f", "no", "n", "off", "0"):
+                return False
+            raise ValueError("bool")
+        if ty == "uuid":
+            return str(uuid.UUID(text))
+        if ty == "jsonb":
+            return json.dumps(json.loads(text), sort_keys=True)
+    except (ValueError, decimal.InvalidOperation, TypeError):
+        raise SqlError("22P02")
+    raise SqlError("42704")
+
+
+def pg_jsonb(o):
+    if isinstance(o, dict):
+        ks = sorted(o, key=lambda k: (len(k.encode("utf-8")), k.encode("utf-8")))
+        return "{" + ", ".join("%s: %s" % (json.dumps(k, ensure_ascii=False), pg_jsonb(o[k])) for k in ks) + "}"
+    if isinstance(o, list):
+        return "[" + ", ".join(pg_jsonb(x) for x in o) + "]"
+    return json.dumps(o, ensure_ascii=False)
+
+
+def pg_text(ty, text):
+    """What `SELECT '<text>'::<ty>::text` prints under SET TIME ZONE 'UTC'."""
+    v = pg_norm(ty, text)
+    if ty == "numeric":
+        return format(decimal.Decimal(text), "f")
+    if ty == "timestamptz":
+        s = v.strftime("%Y-%m-%d %H:%M:%S")
+        if v.microsecond:
+            s += (".%06d" % v.microsecond).rstrip("0")
+        return s + "+00"
+    if ty == "boolean":
+        return "true" if v else "false"
+    if ty == "jsonb":
+        return pg_jsonb(json.loads(text))
+    if ty == "date":
+        return v.isoformat()
+    return str(v)
+
+
+class FakeTable:
+    """The four tape_live_* tables as Postgres holds them (types, NOT NULL, the primary keys, the cycle grain unique, events'
+    grain as its only key, RLS trading_day = today). A script is atomic: any error and nothing is applied."""
+
+    def __init__(self, today):
+        self.today = today
+        self.cols = sql_columns()
+        self.types, self.notnull = sql_types()
+        self.rows = dict((t, {}) for t in DB_TABLES)
+        self.grain = {}                                    # cycle only: grain key -> primary key
+
+    def _key(self, t, row):
+        if t == "tape_live_events":
+            return tuple(row[c] for c in W_GRAIN[t])
+        return tuple(row[c] for c in W_PK[t])
+
+    def typed(self, t, text_row):
+        """{column: typed value} of a text row (a dict column -> text | None)."""
+        return dict((c, pg_norm(self.types[t][c], text_row.get(c))) for c in self.cols[t])
+
+    def insert_foreign(self, t, text_row):
+        row = self.typed(t, text_row)
+        k = self._key(t, row)
+        self.rows[t][k] = row
+        if t == "tape_live_cycle":
+            self.grain[tuple(row[c] for c in W_GRAIN[t])] = k
+
+    def tuples(self, t):
+        return set(tuple(r[c] for c in self.cols[t]) for r in self.rows[t].values())
+
+    def text_tuple(self, t, text_row):
+        """The typed tuple of a text row given in DDL column order ('' = NULL), comparable with tuples()."""
+        return tuple(pg_norm(self.types[t][c], None if v == "" else v) for c, v in zip(self.cols[t], text_row))
+
+    def run(self, parsed):
+        """Apply a parsed script. -> [{kind, table, k, n, sent}] in statement order, or raises SqlError."""
+        rows = dict((t, dict(v)) for t, v in self.rows.items())
+        grain = dict(self.grain)
+        out, per_table = [], {}
+        today = datetime.strptime(self.today, "%Y-%m-%d").date()
+        for st in parsed["stmts"]:
+            kind = st["kind"]
+            if kind in ("BEGIN", "SET", "COMMIT", "ROLLBACK"):
+                out.append({"kind": kind})
+                continue
+            if kind != "INSERT":
+                raise SqlError("42601")
+            ins = st["insert"]
+            t = ins["table"]
+            if t not in rows:
+                raise SqlError("42P01")
+            cf, touched, n = ins["conflict"], set(), 0
+            for vals, tys in zip(ins["rows"], ins["types"]):
+                if len(vals) != len(ins["cols"]):
+                    raise SqlError("42601")
+                text_row = dict(zip(ins["cols"], vals))
+                for c, ty in zip(ins["cols"], tys):
+                    if c not in self.types[t]:
+                        raise SqlError("42703")
+                    if ty is not None and ty != self.types[t][c]:
+                        raise SqlError("42804")
+                row = self.typed(t, text_row)
+                if any(row[c] is None for c in self.notnull[t]):
+                    raise SqlError("23502")
+                if row["trading_day"] != today:
+                    raise SqlError("42501")
+                pk = self._key(t, row)
+                g = tuple(row[c] for c in W_GRAIN[t]) if t == "tape_live_cycle" else None
+                if cf["action"] == "nothing":
+                    if pk in rows[t]:
+                        continue
+                    rows[t][pk] = row
+                    n += 1
+                    continue
+                if cf["action"] != "update" or cf["constraint"] != W_CONSTRAINT.get(t):
+                    raise SqlError("42704")
+                if pk in touched:
+                    raise SqlError("21000")
+                touched.add(pk)
+                old = rows[t].get(pk)
+                if old is not None:
+                    for c, e in cf["set"]:
+                        if e != "EXCLUDED." + c:
+                            raise SqlError("42703")
+                    new = dict(old)
+                    for c, _e in cf["set"]:
+                        new[c] = row[c]
+                    row = new
+                    if t == "tape_live_cycle":
+                        g2 = tuple(row[c] for c in W_GRAIN[t])
+                        if grain.get(g2, pk) != pk:
+                            raise SqlError("23505")
+                        grain.pop(tuple(old[c] for c in W_GRAIN[t]), None)
+                        grain[g2] = pk
+                elif t == "tape_live_cycle":
+                    if g in grain:
+                        raise SqlError("23505")
+                    grain[g] = pk
+                rows[t][pk] = row
+                n += 1
+            k = per_table.get(t, 0)
+            per_table[t] = k + 1
+            out.append({"kind": "INSERT", "table": t, "k": k, "n": n, "sent": len(ins["rows"])})
+        self.rows, self.grain = rows, grain
+        return out
+
+
+def w_default_check():
+    priv = dict((t, {"DELETE": "f", "TRUNCATE": "f", "INSERT": "t", "UPDATE": "t"}) for t in DB_TABLES)
+    priv["tape_live_label"]["UPDATE"] = "f"
+    return {"role": W_USER, "super": "f", "bypassrls": "f", "scs": "on", "ist_date": None, "priv": priv}
+
+
+def w_check_csv(chk, today):
+    rows = [["role", chk["role"]], ["super", chk["super"]], ["bypassrls", chk["bypassrls"]], ["scs", chk["scs"]],
+            ["ist_date", chk.get("ist_date") or today]]
+    for t in DB_TABLES:
+        for p in ("DELETE", "TRUNCATE", "INSERT", "UPDATE"):
+            rows.append(["priv", t, p, chk["priv"][t][p]])
+    buf = io.StringIO()
+    csv.writer(buf, lineterminator="\n").writerows(rows)
+    return buf.getvalue()
+
+
+class _Crash(BaseException):
+    """A process death planted by the fake: not an Exception, so nothing in the runner can catch it."""
+
+
+def _committed_now(day_dir):
+    try:
+        with open(os.path.join(day_dir, "state.json"), encoding="utf-8") as fh:
+            return json.load(fh).get("committed")
+    except (OSError, ValueError):
+        return None
+
+
+class FakeWriteShell:
+    """live_sources.RUN for a run with the writer: read calls go to the unchanged FakeShell; calls carrying the write role's
+    password are the write sink's: a start-up check, a literal check or a script, applied to a FakeTable. Plants, keyed
+    ("n", k) = the k-th script or ("T", m) = the first script at grid minute m: err (an SQLSTATE | connect | conn_text | timeout
+    | stderr_secret), slow (seconds added to the runner's clock of cpu-free time), crash_before / crash_after (the process dies),
+    kill (the KILL file appears after the call), preload (a function(table, parsed))."""
+
+    def __init__(self, inner, table, day_dir, plants=None, check=None, dur=None, kill_path=None, *, day):
+        datetime.strptime(day, "%Y-%m-%d")            # the run's own trading day, required: no fallback to the fixture DAY
+        self.inner, self.table, self.day_dir, self.day = inner, table, day_dir, day
+        self.plants, self.dur, self.kill_path = dict(plants or {}), dur or w_dur, kill_path
+        self.check = check if check is not None else w_default_check()
+        self.wcalls, self.nwrite, self.perf_offset, self.misrouted = [], 0, 0.0, []
+        self.lit_corrupt, self._tfired = None, set()
+        self.calls = inner.calls
+
+    @property
+    def raised(self):
+        return self.inner.raised
+
+    def _T(self):
+        m = int((rmods()[0].SimClock.last_now - ist_epoch(0, day=self.day)) // 60)
+        return m - m % 5
+
+    def __call__(self, argv, env, stdin, timeout):
+        if argv and argv[0] == "psql":
+            if env.get("PGPASSWORD") == W_PW:
+                return self._w(argv, env, stdin, timeout)
+            if stdin is not None and b"INSERT INTO" in stdin:
+                self.misrouted.append((list(argv), dict(env)))
+                return 3, b"", b"ERROR:  XX000\n"
+        return self.inner(argv, env, stdin, timeout)
+
+    def _w(self, argv, env, stdin, timeout):
+        text = stdin.decode("utf-8")
+        up = text.upper()
+        kind = "write" if "INSERT INTO" in up else ("litcheck" if "READ ONLY" in up else "check")
+        T = self._T()
+        rec = {"kind": kind, "argv": list(argv), "env": dict(env), "stdin": stdin, "timeout": timeout, "T": T, "text": text,
+               "committed_at_call": _committed_now(self.day_dir)}
+        self.wcalls.append(rec)
+        if kind == "check":
+            return 0, w_check_csv(self.check, self.table.today).encode(), b""
+        if kind == "litcheck":
+            return self._lit(text)
+        self.nwrite += 1
+        ordn = rec["ord"] = self.nwrite
+        plant = dict(self.plants.get(("n", ordn)) or {})
+        if ("T", T) in self.plants and ("T", T) not in self._tfired:
+            self._tfired.add(("T", T))
+            plant.update(self.plants[("T", T)])
+        hhmm = "%02d%02d" % (T // 60, T % 60)
+        cdir = os.path.join(self.day_dir, "live", "cycles")
+        rec["files"] = {}
+        if os.path.isdir(cdir):
+            for n in sorted(os.listdir(cdir)):
+                if n.startswith(hhmm + "_") or n.startswith("final_"):
+                    rec["files"][n] = sha(os.path.join(cdir, n))
+        rec["parsed"] = parse_script(text)
+        res = self._apply(rec, plant, ordn)
+        if plant.get("kill") and self.kill_path:
+            with open(self.kill_path, "w") as fh:
+                fh.write("")
+        if plant.get("crash_after"):
+            raise _Crash()
+        return res
+
+    def _apply(self, rec, plant, ordn):
+        if plant.get("preload"):
+            plant["preload"](self.table, rec["parsed"])
+        if plant.get("slow"):
+            self.perf_offset += plant["slow"]
+        if plant.get("crash_before"):
+            raise _Crash()
+        err = plant.get("err")
+        if err == "connect":
+            return 2, b"", b'psql: error: connection to server at "db.example.invalid" (203.0.113.7), port 5432 failed: could not translate host name\n'
+        if err == "conn_text":
+            return 2, b"", b'psql: error: connection to server at "db.example.invalid" (203.0.113.7), port 5432 failed: FATAL:  too many connections for role "tape_w"\n'
+        if err == "pooler_text":
+            return 2, b"", b'psql: error: connection to server at "pooler.example.invalid" (203.0.113.9), port 5432 failed: FATAL:  (EMAXCONNSESSION) max clients reached in session mode\n'
+        if err == "timeout":
+            return 124, b"", b"timeout"
+        if err == "stderr_secret":
+            return 3, b"", ("ERROR:  XX000 %s %s\n" % (W_PW, STDERR_MARK)).encode()
+        if err:
+            return 3, b"", ("ERROR:  %s\n" % err).encode()
+        if "\x00" in rec["text"]:
+            return 3, b"", b"ERROR:  22021\n"
+        try:
+            res = self.table.run(rec["parsed"])
+        except SqlError as exc:
+            return 3, b"", ("ERROR:  %s\n" % exc.state).encode()
+        rec["tags"] = res
+        lines = ["Timing is on."]
+        for r in res:
+            if r["kind"] == "INSERT":
+                lines += ["INSERT 0 %d" % r["n"], pg_time(self.dur(r["table"], r["k"], ordn))]
+            else:
+                lines += [r["kind"], pg_time(0.2)]
+        return 0, ("\n".join(lines) + "\n").encode(), b""
+
+    def _lit(self, text):
+        metas, stmts, _tail = sql_split(text)
+        buf, i = io.StringIO(), 0
+        wr = csv.writer(buf, lineterminator="\n")
+        for s in stmts:
+            if s.split()[0].upper() != "SELECT":
+                continue
+            m = re.search(r"'((?:[^']|'')*)'\s*::\s*(\w+(?: precision)?)", s, re.S)
+            if m is None:
+                return 3, b"", b"ERROR:  42601\n"
+            try:
+                v = pg_text(m.group(2), m.group(1).replace("''", "'"))
+            except SqlError as exc:
+                return 3, b"", ("ERROR:  %s\n" % exc.state).encode()
+            wr.writerow([v + "X" if self.lit_corrupt == i else v])
+            i += 1
+        return 0, buf.getvalue().encode("utf-8"), b""
+
+
+# ---- plants on the writer's own rows (test side only; the files carry the same rows the writer is told to send)
+@contextlib.contextmanager
+def ld_plant(db_rows=None, before_db_cycle=None, after_label=None):
+    """Wrap LiveDay._db_rows / _db_cycle / _label for one run. db_rows(self, table, rows, as_of) edits `rows` (dict key -> data
+    list) by REPLACING entries; before_db_cycle(self, as_of) may edit self.walls; after_label(self, T, as_of) may edit
+    self.labels. The writer's own state (state_c, state_e) is never touched: only the DB-shaped rows are."""
+    LD = mods()[5].LiveDay
+    o_rows, o_cycle, o_label = LD._db_rows, LD._db_cycle, LD._label
+
+    def rows_w(self, table, state):
+        rows = o_rows(self, table, state)
+        if db_rows is not None:
+            db_rows(self, table, rows, getattr(self, "_plant_asof", ""))
+        return rows
+
+    def cycle_w(self, as_of):
+        self._plant_asof = as_of
+        if before_db_cycle is not None:
+            before_db_cycle(self, as_of)
+        return o_cycle(self, as_of)
+
+    def label_w(self, T, walls, c_text, e_text, as_of):
+        r = o_label(self, T, walls, c_text, e_text, as_of)
+        if after_label is not None:
+            after_label(self, T, as_of)
+        return r
+    LD._db_rows, LD._db_cycle, LD._label = rows_w, cycle_w, label_w
+    try:
+        yield
+    finally:
+        LD._db_rows, LD._db_cycle, LD._label = o_rows, o_cycle, o_label
+
+
+def _utc_text(ts):
+    return datetime.fromisoformat(ts).astimezone(timezone.utc).isoformat()
+
+
+def plant_hostile():
+    """Hostile text in rows of all four tables (cycle tradingsymbol, events detail_json, wall chain_run_id, label reason)."""
+    from services.tape_live import dbshape
+    cc, ec = dbshape.COLUMNS["tape_live_cycle"], dbshape.COLUMNS["tape_live_events"]
+    rules_ = mods()[2]
+    t10 = DAY + "T10:00:00+05:30"
+
+    def db_rows(self, table, rows, as_of):
+        if table == "tape_live_cycle":
+            ti = cc.index("ts_ist")
+            sel = sorted(k for k, d in rows.items() if d[ti] == t10)[:len(W_HOSTILE)]
+            for i, k in enumerate(sel):
+                d = list(rows[k])
+                d[cc.index("tradingsymbol")] = W_HOSTILE[i]
+                rows[k] = d
+        elif table == "tape_live_events":
+            si, ki, ti = ec.index("symbol"), ec.index("kind"), ec.index("ts_ist")
+            for k, d in list(rows.items()):
+                for j, hh in enumerate(("T11:05:00", "T12:05:00")):
+                    if d[si] == "NIFTY" and d[ki] == "CONC" and d[ti].startswith(DAY + hh):
+                        d = list(d)
+                        d[ec.index("detail")] = W_HOSTILE_JSON[j]
+                        rows[k] = d
+
+    def before(self, as_of):
+        w = self.walls.get(("NIFTY", t10))
+        if w is not None:
+            w["chain_run_id"] = W_HOSTILE[4]
+
+    def after(self, T, as_of):
+        r = self.labels.get(("NIFTY", DAY, t10, "call", rules_.RULE_VERSION))
+        if r is not None:
+            r["reason"] = W_HOSTILE[5]
+    return ld_plant(db_rows, before, after)
+
+
+def plant_dup(kind, at_first=True):
+    """A second row whose DB conflict key equals another row's, by VALUE (the same instant written in UTC, or a numeric written
+    with another scale), but whose writer key differs: the case the write set's uniqueness check exists for."""
+    from services.tape_live import dbshape
+    cc, ec = dbshape.COLUMNS["tape_live_cycle"], dbshape.COLUMNS["tape_live_events"]
+    done = {"n": 0}
+
+    def db_rows(self, table, rows, as_of):
+        if done["n"] or table != {"cycle": "tape_live_cycle", "events": "tape_live_events", "events_num": "tape_live_events",
+                                  "cycle_tok": "tape_live_cycle"}.get(kind):
+            return
+        if kind == "cycle_tok":                           # one bigint token in two texts: 12345 and 012345
+            k = sorted(rows)[0]
+            d = list(rows[k])
+            d[cc.index("instrument_token")] = "0" + d[cc.index("instrument_token")]
+            rows[(k[0], k[1], "tok" + str(k[2]))] = d
+            done["n"] = 1
+        elif kind == "events_num":                        # one numeric strike in two scales: 24000 and 24000.0, same instant text
+            if rows:
+                k = sorted(rows)[0]
+                d1 = list(rows.pop(k))
+                d1[ec.index("strike")] = "24000"
+                d2 = list(d1)
+                d2[ec.index("strike")] = "24000.0"
+                rows[tuple(d1[1:8])], rows[tuple(d2[1:8])] = d1, d2
+                done["n"] = 1
+        elif kind == "cycle":
+            k = sorted(rows)[0]
+            d = list(rows[k])
+            d[cc.index("ts_ist")] = _utc_text(d[cc.index("ts_ist")])
+            rows[(k[0], k[1], d[cc.index("ts_ist")])] = d
+            done["n"] = 1
+        elif kind == "events":
+            if rows:
+                k = sorted(rows)[0]                       # two rows, strike NULL in both (NULLS NOT DISTINCT), one instant in two texts
+                d1 = list(rows.pop(k))
+                d1[ec.index("strike")] = ""
+                d2 = list(d1)
+                d2[ec.index("ts_ist")] = _utc_text(d1[ec.index("ts_ist")])
+                rows[tuple(d1[1:8])], rows[tuple(d2[1:8])] = d1, d2
+                done["n"] = 1
+
+    def before(self, as_of):
+        if kind == "wall" and not done["n"] and self.walls:
+            k = sorted(self.walls)[-1]
+            alt = _utc_text(k[1])
+            self.walls[(k[0], alt)] = dict(self.walls[k], ts_ist=alt)
+            done["n"] = 1
+
+    def after(self, T, as_of):
+        if kind == "label" and not done["n"] and self.labels:
+            k = sorted(self.labels)[0]
+            alt = _utc_text(k[2])
+            self.labels[(k[0], k[1], alt, k[3], k[4])] = dict(self.labels[k], ts_ist=alt)
+            done["n"] = 1
+    return ld_plant(db_rows, before, after)
+
+
+def plant_nul():
+    from services.tape_live import dbshape
+    cc = dbshape.COLUMNS["tape_live_cycle"]
+    done = {"n": 0}
+
+    def db_rows(self, table, rows, as_of):
+        if table == "tape_live_cycle" and not done["n"] and rows:
+            k = sorted(rows)[0]
+            d = list(rows[k])
+            d[cc.index("tradingsymbol")] = "A\x00B"
+            rows[k] = d
+            done["n"] = 1
+    return ld_plant(db_rows)
+
+
+def plant_remap(mode, from_asof, old="10103", new="99103"):
+    """Token remap at the DB boundary (cycle.py:92 raises on two tokens for one strike-leg, so a remap cannot come through the
+    real pipeline; plan section 2's gen_live remap variant is replaced by this plant). mode 'all': from from_asof on every row of
+    NIFTY's old token is re-keyed to the new token (the old rows stay in the table: cross-cycle grain collisions). mode 'inset':
+    once, at the first cycle at or after from_asof, the old token's newest row is duplicated under the new token (the collision
+    is inside one write set, with different primary keys)."""
+    from services.tape_live import dbshape
+    cc = dbshape.COLUMNS["tape_live_cycle"]
+    si, ki, ti = cc.index("symbol"), cc.index("instrument_token"), cc.index("ts_ist")
+    key = mods()[5]._db_key
+    state = {"fired": False}
+
+    def db_rows(self, table, rows, as_of):
+        if table != "tape_live_cycle" or as_of < from_asof:
+            return
+        sel = [k for k, d in rows.items() if d[si] == "NIFTY" and d[ki] == old]
+        if mode == "all":
+            for k in sel:
+                d = list(rows.pop(k))
+                d[ki] = new
+                rows[key("tape_live_cycle", d + ["", "", ""])] = d
+        elif mode == "inset" and not state["fired"] and sel:
+            state["fired"] = True
+            k = max(sel, key=lambda x: x[2])
+            d = list(rows[k])
+            d[ki] = new
+            rows[key("tape_live_cycle", d + ["", "", ""])] = d
+    return ld_plant(db_rows)
+
+
+# ---- running the CLI against the fakes
+def quiet_exit(fn, *a):
+    buf_o, buf_e = io.StringIO(), io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf_o), contextlib.redirect_stderr(buf_e):
+            rc = fn(*a)
+    except SystemExit as exc:                      # argparse: an unknown flag is SystemExit(2)
+        rc = exc.code if isinstance(exc.code, int) else 2
+    return rc, buf_o.getvalue() + buf_e.getvalue()
+
+
+def _dbw():
+    """services.tape_live.dbwrite, or None while it does not exist (red first)."""
+    try:
+        return importlib.import_module("services.tape_live.dbwrite")
+    except ImportError:
+        return None
+
+
+def epoch_raw():
+    if "epoch_raw" not in _CACHE:
+        _CACHE["epoch_raw"] = gen_live.build(os.path.join(_TMP, "epoch_w"), epoch=True)
+    return _CACHE["epoch_raw"]
+
+
+_W_TABLE = {"t": None}
+
+
+def w_cli(name=None, out=None, fix=None, arrival=None, day=DAY, start="15:20", rows=7, plants=None, db_write=True, w_env=True,
+          flags=(), env=None, now_date=DAY, server_date=None, check=False, chk=None, plant=None, table=None, ro_dsn=None,
+          sha=None, clock="sim", dur=None):
+    """cli live on a fixture day through FakeWriteShell. Cached by name unless `out` is given (a restart of the same day)."""
+    if name is not None and out is None and name in _CACHE:
+        return _CACHE[name]
+    cli = mods()[0]
+    ls = rmods()[1]
+    f = fix or fixture()
+    d = out or os.path.join(_TMP, "w_" + name)
+    tbl = table or FakeTable(server_date or now_date or DAY)
+    _W_TABLE["t"] = tbl
+    inner = FakeShell(f["raw"], f["chain"], cli.local_schedule(f["raw"], DAY, dict(arrival or {})))
+    fake = FakeWriteShell(inner, tbl, os.path.join(d, DAY), plants, chk, dur, kill_path=os.path.join(d, "KILL"), day=DAY)
+    argv = ["live", "--day", day, "--out", d, "--source", "s3", "--chain", "psql", "--clock", clock, "--start", start,
+            "--bucket", "meridian-tape-raw", "--disk-floor-mb", "20", "--rss-cap-mb", "100000"]
+    if db_write:
+        argv += ["--db-write", "--db-batch-rows", str(rows)]
+    argv += list(flags)
+    if check:
+        argv.append("--check")
+    envv = {"TAPE_LIVE_RO_DSN": ro_dsn or TEST_DSN}
+    if w_env:
+        envv[W_ENV] = W_DSN
+    envv.update(env or {})
+    dbw, prev_now = _dbw(), None
+    saved_run, saved_info, perf = ls.RUN, _cli0.code_info, time.perf_counter
+    ls.RUN = fake
+    if dbw is not None and hasattr(dbw, "now_ist") and now_date:
+        prev_now = dbw.now_ist
+        y, mo, dd = (int(x) for x in now_date.split("-"))
+        dbw.now_ist = lambda: _REAL_DT(y, mo, dd, 10, 0, 0, tzinfo=IST)
+    time.perf_counter = lambda: perf() + fake.perf_offset
+    if sha:
+        _cli0.code_info = lambda: {"git_sha": sha, "dirty": False}
+    crashed, w_left = False, False
+    try:
+        with (plant() if plant else contextlib.nullcontext()), _env(envv, drop=_AWS_KEYS), strict_iso():
+            try:
+                rc, log = quiet_exit(cli.main, argv)
+            except _Crash:
+                rc, log, crashed = "CRASH", "", True
+            w_left = W_ENV in os.environ
+    finally:
+        time.perf_counter, ls.RUN, _cli0.code_info = perf, saved_run, saved_info
+        if prev_now is not None:
+            dbw.now_ist = prev_now
+    res = types.SimpleNamespace(rc=rc, out=d, root=os.path.join(d, DAY), fake=fake, table=tbl, log=log, w_left=w_left,
+                                crashed=crashed, argv=argv)
+    if name is not None and out is None:
+        _CACHE[name] = res
+    return res
+
+
+def w_phases(name, phases, **common):
+    """Run the same day several times on one out dir and one FakeTable (kill / crash then restart). -> [result per phase]."""
+    if name in _CACHE:
+        return _CACHE[name]
+    d = os.path.join(_TMP, "w_" + name)
+    tbl = FakeTable(common.get("now_date") or DAY)
+    out = []
+    for ph in phases:
+        ph = dict(ph)
+        pre = ph.pop("pre", None)
+        kp = os.path.join(d, "KILL")
+        if os.path.exists(kp):
+            os.remove(kp)
+        if pre is not None:
+            pre(os.path.join(d, DAY))
+        out.append(w_cli(None, out=d, table=tbl, **dict(common, **ph)))
+    _CACHE[name] = out
+    return out
+
+
+def plants_of(*ps):
+    return dict((("n", i + 1), p) for i, p in enumerate(ps) if p)
+
+
+def w_canon():
+    """The epoch day, the whole day, N = 7, hostile text in all four tables, one preloaded duplicate label (ordinal 5)."""
+    def pre_label(table, parsed):
+        ins = [s["insert"] for s in parsed["stmts"] if s.get("insert") and s["insert"]["table"] == "tape_live_label"][0]
+        table.insert_foreign("tape_live_label", dict(zip(ins["cols"], ins["rows"][0])))
+    # No timing plant (removed with ruling R9-B): item 7a needs an excess over the 09:20 window median above 30 s, which this
+    # fixture's sub-second cycles cannot reach, so the canon run also checks end to end that ordinary drop bumps do not stop it.
+    plants = {("n", 5): {"preload": pre_label}}
+    return w_cli("canon", fix=epoch_raw(), arrival=gen_live.EPOCH_ARRIVAL, start="08:50", rows=7,
+                 plants=plants, plant=plant_hostile, dur=w_dur)
+
+
+def w_off(name, start="15:20", **kw):
+    """The same short run with the flag off (no write environment): the reference for 'files unchanged'."""
+    return w_cli(name, start=start, db_write=False, w_env=False, **kw)
+
+
+# ---- reading what a run left
+def live_of(res):
+    return os.path.join(res.root, "live")
+
+
+def w_metrics(res):
+    with open(os.path.join(res.root, "live_metrics.csv"), encoding="utf-8", newline="") as fh:
+        return list(csv.DictReader(fh))
+
+
+def w_json(res, name):
+    try:
+        with open(os.path.join(res.root, name), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def w_scripts(res):
+    return [c for c in res.fake.wcalls if c["kind"] == "write"]
+
+
+def sent_rows(call):
+    """{table: [row tuples]} of a script, '' for NULL (the form of the .db.csv files)."""
+    out = {}
+    for s in call["parsed"]["stmts"]:
+        if s.get("insert"):
+            ins = s["insert"]
+            out.setdefault(ins["table"], []).extend(tuple("" if v is None else v for v in r) for r in ins["rows"])
+    return out
+
+
+def cycle_names(res):
+    cdir = os.path.join(live_of(res), "cycles")
+    return sorted({n.split("_")[0] for n in os.listdir(cdir) if n.endswith(".db.csv")}) if os.path.isdir(cdir) else []
+
+
+def u_rows(res, name, t):
+    p = os.path.join(live_of(res), "cycles", "%s_%s.db.csv" % (name, DB_PART[t]))
+    if not os.path.exists(p):
+        return []
+    _h, rows = _db_read(p)
+    return [tuple(r[1:]) for r in rows if r[0] == "U"]
+
+
+def label_rows(res):
+    h, rows = _db_read(os.path.join(live_of(res), "tape_live_label.db.csv"))
+    return h, [tuple(r) for r in rows]
+
+
+def ins_by_table(call):
+    out = {}
+    for s in call["parsed"]["stmts"]:
+        if s.get("insert"):
+            out.setdefault(s["insert"]["table"], []).append(s["insert"])
+    return out
+
+
+def need_run(res, what):
+    """None if the run completed, else the failure text (red first: the write flags are unknown to argparse)."""
+    if res.rc == 0:
+        return None
+    tail = " | ".join(res.log.strip().splitlines()[-2:])[:220]
+    return "%s: rc=%s%s %s" % (what, res.rc, " (argparse: unrecognized arguments, the write flags do not exist)"
+                               if "unrecognized arguments" in res.log else "", tail)
+
+
+def w_stmt_findings(t, ins, n_max):
+    """Findings on ONE parsed INSERT against the plan: column list, batch size, conflict clause, SET list."""
+    bad = []
+    cols = sql_columns()[t]
+    if ins["cols"] != cols:
+        bad.append("3g %s: column list != the DDL's" % t)
+    if len(ins["rows"]) > n_max:
+        bad.append("3e %s: %d rows in one statement, N = %d" % (t, len(ins["rows"]), n_max))
+    cf = ins["conflict"]
+    if t == "tape_live_label":
+        if cf["action"] != "nothing":
+            bad.append("3k label: not ON CONFLICT DO NOTHING (%r)" % cf.get("raw"))
+        elif cf.get("constraint") is not None:
+            bad.append("3l label: DO NOTHING with a target")
+    else:
+        tag = {"tape_live_cycle": "3h", "tape_live_events": "3i", "tape_live_wall": "3j"}[t]
+        if cf["action"] != "update" or cf.get("constraint") != W_CONSTRAINT[t]:
+            bad.append("%s %s: conflict clause %r, want ON CONFLICT ON CONSTRAINT %s DO UPDATE" % (tag, t, cf.get("raw"), W_CONSTRAINT[t]))
+        else:
+            want = [c for c in cols if c not in set(sql_key(t))]
+            got = [c for c, _e in cf["set"]]
+            if sorted(got) != sorted(want) or len(got) != len(set(got)):
+                bad.append("3n %s: SET list %s != every non-key column %s" % (t, got, want))
+    if re.search(r"\bRETURNING\b", strip_literals(ins_text(ins)), re.I):
+        bad.append("3m %s: RETURNING" % t)
+    return bad
+
+
+def ins_text(ins):
+    return ins["rest"]
+
+
+# ---- the fakes' own checks: they must be able to fire without any writer
+def _ref_literal(v, ty):
+    return "NULL" if v is None else "'%s'::%s" % (v.replace("'", "''"), ty)
+
+
+def w_ref_insert(t, text_rows, conflict=None):
+    """A reference INSERT, rendered here from the plan: the control the fake and the finders are proven against."""
+    cols, ty = sql_columns()[t], sql_types()[0][t]
+    vals = ",\n".join("(" + ", ".join(_ref_literal(r.get(c), ty[c]) for c in cols) + ")" for r in text_rows)
+    if conflict is None:
+        if t == "tape_live_label":
+            conflict = "ON CONFLICT DO NOTHING"
+        else:
+            keyset = set(sql_key(t))
+            conflict = "ON CONFLICT ON CONSTRAINT %s DO UPDATE SET %s" % (
+                W_CONSTRAINT[t], ", ".join("%s = EXCLUDED.%s" % (c, c) for c in cols if c not in keyset))
+    return "INSERT INTO public.%s (%s) VALUES\n%s\n%s;" % (t, ", ".join(cols), vals, conflict)
+
+
+def w_text_row(t, **over):
+    ty = sql_types()[0][t]
+    sample = {"text": "x", "numeric": "1", "bigint": "1", "date": DAY, "timestamptz": DAY + "T10:00:00+05:30", "boolean": "true",
+              "uuid": "00000000-0000-5000-8000-000000000001", "jsonb": "{}", "integer": "1", "double precision": "1.5"}
+    row = dict((c, sample[ty[c]]) for c in sql_columns()[t])
+    row.update(over)
+    return row
+
+
+def _w2b_selftest():
+    """Rule 0 for the fakes: each can fire. -> findings (empty = all fire as they must)."""
+    bad = []
+    cols = sql_columns()
+    for t, k in (("tape_live_cycle", W_PK["tape_live_cycle"]), ("tape_live_wall", W_PK["tape_live_wall"]),
+                 ("tape_live_label", W_PK["tape_live_label"])):
+        if tuple(sql_key(t)) != k:
+            bad.append("selftest: W_PK[%s] %s != the SQL file's %s" % (t, k, sql_key(t)))
+    if tuple(sql_key("tape_live_events")) != W_GRAIN["tape_live_events"]:
+        bad.append("selftest: events grain differs from the SQL file")
+    with open(SQL, encoding="utf-8") as fh:
+        m = re.search(r"CONSTRAINT tape_live_cycle_grain_uq UNIQUE NULLS NOT DISTINCT \(([^)]*)\)", fh.read())
+    if tuple(c.strip() for c in m.group(1).split(",")) != W_GRAIN["tape_live_cycle"]:
+        bad.append("selftest: cycle grain differs from the SQL file")
+    # the scanner and the parser: hostile values survive, a ';' inside a literal does not split
+    rows = [w_text_row("tape_live_cycle", tradingsymbol=v) for v in W_HOSTILE + [None, ""]]
+    script = "\\set ON_ERROR_STOP 1\n\\timing on\nBEGIN;\n" + w_ref_insert("tape_live_cycle", rows) + "\nCOMMIT;\n"
+    p = parse_script(script)
+    got = [r[cols["tape_live_cycle"].index("tradingsymbol")] for r in p["stmts"][1]["insert"]["rows"]]
+    if [s["kind"] for s in p["stmts"]] != ["BEGIN", "INSERT", "COMMIT"] or got != W_HOSTILE + [None, ""] or p["tail"]:
+        bad.append("selftest: parse round trip failed: %s" % ([s["kind"] for s in p["stmts"]], got[:3]))
+    if w_stmt_findings("tape_live_cycle", p["stmts"][1]["insert"], 12):
+        bad.append("selftest: the reference script has findings: %s" % w_stmt_findings("tape_live_cycle", p["stmts"][1]["insert"], 12))
+    broken = [("wrong target", w_ref_insert("tape_live_cycle", rows[:1]).replace("tape_live_cycle_pk", "tape_live_cycle_grain_uq")),
+              ("returning", w_ref_insert("tape_live_cycle", rows[:1])[:-1] + " RETURNING 1;"),
+              ("short set", w_ref_insert("tape_live_cycle", rows[:1]).replace("as_of = EXCLUDED.as_of, ", "")),
+              ("label update", w_ref_insert("tape_live_label", [w_text_row("tape_live_label")], "ON CONFLICT ON CONSTRAINT tape_live_label_pk DO UPDATE SET label = EXCLUDED.label"))]
+    for what, s in broken:
+        t = "tape_live_label" if what == "label update" else "tape_live_cycle"
+        if not w_stmt_findings(t, parse_script(s)["stmts"][0]["insert"], 12) and what != "returning":
+            bad.append("selftest: a %s statement raised no finding" % what)
+    if not w_stmt_findings("tape_live_cycle", parse_script(broken[1][1])["stmts"][0]["insert"], 12):
+        bad.append("selftest: RETURNING raised no finding")
+    # FakeTable
+    tb = FakeTable(DAY)
+    r1, r2 = w_text_row("tape_live_cycle", instrument_token="5", strike="1"), w_text_row("tape_live_cycle", instrument_token="6", strike="2")
+    res = tb.run(parse_script("BEGIN;\n" + w_ref_insert("tape_live_cycle", [r1, r2]) + "\nCOMMIT;"))
+    if [x.get("n") for x in res if x["kind"] == "INSERT"] != [2] or len(tb.rows["tape_live_cycle"]) != 2:
+        bad.append("selftest: FakeTable did not insert two rows")
+
+    def fires(label, state, script, t=None):
+        before = dict((k, dict(v)) for k, v in tb.rows.items())
+        try:
+            tb.run(parse_script(script))
+        except SqlError as exc:
+            if exc.state != state:
+                bad.append("selftest: %s raised %s, want %s" % (label, exc.state, state))
+            if dict((k, dict(v)) for k, v in tb.rows.items()) != before:
+                bad.append("selftest: %s changed the table (a script is atomic)" % label)
+            return
+        bad.append("selftest: %s raised nothing, want %s" % (label, state))
+    fires("a duplicate conflict key by value (token 5 and 05)", "21000", w_ref_insert(
+        "tape_live_cycle", [w_text_row("tape_live_cycle", instrument_token="5"), w_text_row("tape_live_cycle", instrument_token="05")]))
+    fires("an events grain duplicate (strike NULL in both, one instant in two texts)", "21000", w_ref_insert(
+        "tape_live_events", [w_text_row("tape_live_events", strike=None), w_text_row("tape_live_events", strike=None, ts_ist=DAY + "T04:30:00+00:00")]))
+    fires("a grain collision with another primary key", "23505", w_ref_insert(
+        "tape_live_cycle", [w_text_row("tape_live_cycle", instrument_token="7", strike="1")]))
+    fires("a row of another trading day (RLS)", "42501", w_ref_insert("tape_live_cycle", [w_text_row("tape_live_cycle", instrument_token="8", trading_day="2026-11-05")]))
+    fires("a NULL in a NOT NULL column", "23502", w_ref_insert("tape_live_cycle", [w_text_row("tape_live_cycle", instrument_token="9", symbol=None)]))
+    fires("a non-number in a numeric column", "22P02", w_ref_insert("tape_live_cycle", [w_text_row("tape_live_cycle", instrument_token="9", strike="abc")]))
+    lab = w_text_row("tape_live_label")
+    a = tb.run(parse_script("BEGIN;\n" + w_ref_insert("tape_live_label", [lab]) + "\nCOMMIT;"))
+    b = tb.run(parse_script("BEGIN;\n" + w_ref_insert("tape_live_label", [lab]) + "\nCOMMIT;"))
+    if [x["n"] for x in a if x["kind"] == "INSERT"] != [1] or [x["n"] for x in b if x["kind"] == "INSERT"] != [0]:
+        bad.append("selftest: DO NOTHING did not report 1 then 0 inserted rows")
+    upd = tb.run(parse_script("BEGIN;\n" + w_ref_insert("tape_live_cycle", [dict(r1, buy_5="9")]) + "\nCOMMIT;"))
+    if [x["n"] for x in upd if x["kind"] == "INSERT"] != [1] or len(tb.rows["tape_live_cycle"]) != 2:
+        bad.append("selftest: an upsert on an existing key did not update in place")
+    for ty, v, want in (("timestamptz", DAY + "T10:00:00+05:30", DAY + " 04:30:00+00"), ("numeric", "24000.0", "24000.0"),
+                        ("jsonb", '{"b":1,"aa":2}', '{"b": 1, "aa": 2}'), ("boolean", "true", "true")):
+        if pg_text(ty, v) != want:
+            bad.append("selftest: pg_text(%s, %s) = %r, want %r" % (ty, v, pg_text(ty, v), want))
+    if pg_time(5300.0) != "Time: 5300.000 ms (00:05.300)" or pg_time(12.0) != "Time: 12.000 ms":
+        bad.append("selftest: pg_time format")
+    return bad
+
+
+# ---- the ten guards
+GOLDEN = os.path.join(ROOT, "tests", "tape_live", "off_golden_56bf055.json")
+W_ORDER = ("tape_live_cycle", "tape_live_events", "tape_live_wall", "tape_live_label")
+
+
+def _hh(m):
+    return "%02d:%02d" % (m // 60, m % 60)
+
+
+def _nm(m):
+    return "%02d%02d" % (m // 60, m % 60)
+
+
+def g_2b_off():
+    """Plan 9 guard 1: with the flag absent the runner is what it was at 56bf055. Red first: --db-write is unknown to argparse."""
+    bad = []
+    if not os.path.isfile(GOLDEN):
+        return False, "tests/tape_live/off_golden_56bf055.json missing (tests/tape_live/make_off_golden.py writes it from a git archive of 56bf055)"
+    with open(GOLDEN, encoding="utf-8") as fh:
+        gold = json.load(fh)
+    rc, root, fake, log, _left = cli_live_fake("eq_psql")
+    dd = os.path.join(root, DAY)
+    if rc != 0:
+        return False, "1a flag-off run rc=%s %s" % (rc, log[-300:])
+    got = dict((rel, sha(os.path.join(dd, rel))) for rel in _files(dd) if rel not in TIMING_FILES)
+    if got != gold["files"]:
+        diff = sorted(k for k in set(got) | set(gold["files"]) if got.get(k) != gold["files"].get(k))
+        bad.append("1a %d of %d output files differ from 56bf055 (first: %s)" % (len(diff), len(got), diff[:3]))
+    with open(os.path.join(dd, "heartbeat.json"), encoding="utf-8") as fh:
+        hb = json.load(fh)
+    with open(os.path.join(dd, "state.json"), encoding="utf-8") as fh:
+        st = json.load(fh)
+    with open(os.path.join(dd, "live_metrics.csv"), encoding="utf-8", newline="") as fh:
+        header = next(csv.reader(fh))
+    if sorted(hb) != gold["heartbeat_keys"]:
+        bad.append("1b heartbeat keys %s != 56bf055's" % sorted(set(hb) ^ set(gold["heartbeat_keys"])))
+    if sorted(st) != gold["state_keys"]:
+        bad.append("1c state.json keys %s != 56bf055's" % sorted(set(st) ^ set(gold["state_keys"])))
+    if header != gold["metrics_header"] or len(header) != 27:
+        bad.append("1d live_metrics.csv header is not the 27 columns of 56bf055 (%d columns)" % len(header))
+    for argv, env, stdin, _t in fake.calls:
+        if argv[0] == "psql" and (env.get("PGPASSWORD") == W_PW or re.search(r"(?i)\b(INSERT|UPDATE|DELETE|TRUNCATE)\b", (stdin or b"").decode("utf-8", "replace"))):
+            bad.append("1e a write-shaped psql call with the flag off")
+            break
+    res = w_cli("off_wdsn", db_write=False, check=True, start="08:50")
+    if res.rc != 2 or "unrecognized arguments" in res.log or res.fake.wcalls:
+        bad.append("1f the write DSN without --db-write: rc=%s, %d write calls (want rc 2 before any connection)" % (res.rc, len(res.fake.wcalls)))
+    on = w_cli("on_short", start="15:25")
+    why = need_run(on, "1g flag on")
+    if why:
+        bad.append(why)
+    else:
+        miss = [c for c in W_METRIC_COLS if c not in w_metrics(on)[0]]
+        if miss:
+            bad.append("1g flag on: live_metrics.csv lacks %s" % miss[:4])
+    stray = _latch_files(root, "WRITE_LATCH") + _latch_files(os.path.join(on.out), "WRITE_LATCH")
+    if stray:
+        bad.append("1h a latch file with the flag off or on a clean run: %s" % stray)
+    return not bad, "; ".join(bad[:8]) or "flag off: %d files == 56bf055 (sha256), heartbeat / state / 27-column header equal, no write call; the write DSN alone refused; flag on adds the %d write columns" % (len(got), len(W_METRIC_COLS))
+
+
+def g_2b_upsert_only():
+    """Plan guard 2. Red first: services/tape_live/dbwrite.py does not exist."""
+    bad = []
+    dbw = _dbw()
+    if dbw is None:
+        return False, "ImportError: services.tape_live.dbwrite does not exist"
+    path = os.path.join(LIVE, "dbwrite.py")
+    tree, consts = _consts(path)
+    skip = set()
+    for n in tree.body:
+        if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "PRIV_PROBE" for t in n.targets):
+            skip = set(id(c) for c in ast.walk(n.value))
+    verbs = re.compile(r"(?i)\b(DELETE|TRUNCATE|DROP|ALTER|CREATE|GRANT|REVOKE|COPY|MERGE|CALL|VACUUM|REINDEX|CLUSTER|NOTIFY)\b")
+    tables = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in skip:
+            if verbs.search(n.value):
+                bad.append("2a dbwrite.py:%d names a write verb outside PRIV_PROBE: %r" % (n.lineno, n.value[:50]))
+            if re.search(r"\bINSERT\b", n.value, re.I):
+                m = re.search(r"INSERT INTO public\.(tape_live_(?:cycle|events|wall|label))\b", n.value)
+                if m is None:
+                    bad.append("2b dbwrite.py:%d INSERT that is not one of the four templates: %r" % (n.lineno, n.value[:50]))
+                else:
+                    tables.add(m.group(1))
+    if tables != set(W_ORDER):
+        bad.append("2b INSERT templates found for %s, want all four tables" % sorted(tables))
+    res = w_canon()
+    why = need_run(res, "canon run")
+    if why:
+        return False, "; ".join(bad[:4] + [why])
+    calls = w_scripts(res)
+    ld = live_of(res)
+    names = cycle_names(res)
+    n_d = _count_d(ld)
+    if not calls or not n_d:
+        bad.append("precondition: %d write scripts, %d D lines in the files (the guard would be vacuous)" % (len(calls), n_d))
+    for c in calls:
+        if re.search(r"(?i)\b(DELETE|TRUNCATE)\b", strip_literals(c["text"])):
+            bad.append("2c a DELETE or TRUNCATE in the script of cycle %s" % _hh(c["T"]))
+            break
+    matched = set()
+    lh, lrows = label_rows(res)
+    ai = lh.index("as_of")
+    for c in calls:
+        sent = sent_rows(c)
+        cands = [_nm(c["T"])] + (["final"] if "final" in names else [])
+        ok = None
+        for nm in cands:
+            if all(sorted(sent.get(t, [])) == sorted(u_rows(res, nm, t)) for t in DELTA_TABLES):
+                ok = nm
+                break
+        if ok is None:
+            bad.append("2d the script of %s != the U lines of its cycle's .db.csv files" % _hh(c["T"]))
+            continue
+        matched.add(ok)
+        if ok != "final":
+            want = sorted(r[:len(lh)] for r in lrows if r[ai] == mods()[0].as_of(DAY, _hm_min(ok[:2] + ":" + ok[2:])))
+            if sorted(sent.get("tape_live_label", [])) != want:
+                bad.append("2e cycle %s: %d label rows sent, %d new labels in tape_live_label.db.csv" % (_hh(c["T"]), len(sent.get("tape_live_label", [])), len(want)))
+        for fn, h in c["files"].items():
+            if sha(os.path.join(ld, "cycles", fn)) != h:
+                bad.append("2f %s changed after the write call" % fn)
+        if c["committed_at_call"] is not None and c["committed_at_call"] >= c["T"]:
+            bad.append("2f state.json already committed %s when the script of %s was sent (write after commit)" % (c["committed_at_call"], _hh(c["T"])))
+        for t in DELTA_TABLES:
+            if sent.get(t) and ok != "final" and not any(fn.startswith(_nm(c["T"]) + "_") and fn.endswith(".db.csv") for fn in c["files"]):
+                bad.append("2f the .db.csv files of %s did not exist at the write call" % _hh(c["T"]))
+                break
+    for nm in names:
+        if any(u_rows(res, nm, t) for t in DELTA_TABLES) and nm not in matched:
+            bad.append("2d cycle %s has U lines and no write" % nm)
+            break
+    return not bad, "; ".join(bad[:8]) or "%d scripts: no DELETE/TRUNCATE (%d D lines in the files), rows == the U lines and labels == the new labels of their cycles, files written first" % (len(calls), n_d)
+
+
+def _count_d(ld):
+    n = 0
+    for fn in os.listdir(os.path.join(ld, "cycles")):
+        if fn.endswith(".db.csv"):
+            with open(os.path.join(ld, "cycles", fn), encoding="utf-8", newline="") as fh:
+                n += sum(1 for line in fh if line.startswith("D,"))
+    return n
+
+
+def _calls_by_t(calls):
+    out = {}
+    for c in calls:
+        out.setdefault(c["T"], []).append(c)
+    return out
+
+
+def g_2b_statements():
+    """Plan guard 3. Red first: no renderer (the write flags are unknown)."""
+    bad = _w2b_selftest()
+    if bad:
+        return False, "; ".join(bad[:6])
+    res = w_canon()
+    why = need_run(res, "canon run")
+    if why:
+        return False, why
+    calls = w_scripts(res)
+    unparsed = [c for c in calls if "parsed" not in c]
+    if unparsed:
+        return False, "3p %d of %d scripts did not parse with the test's own parser (a hostile value broke out of its quotes), first at %s" % (
+            len(unparsed), len(calls), _hh(unparsed[0]["T"]))
+    N = 7
+    n_rows = n_stmt = 0
+    for c in calls:
+        p = c["parsed"]
+        kinds = [s["kind"] for s in p["stmts"]]
+        if p["tail"] or kinds[0] != "BEGIN" or kinds[-1] != "COMMIT" or kinds.count("COMMIT") != 1 or kinds.count("BEGIN") != 1:
+            bad.append("3b %s: not exactly BEGIN ... COMMIT (%s)" % (_hh(c["T"]), kinds[:3] + kinds[-2:]))
+        if "\\set ON_ERROR_STOP 1" not in [" ".join(m.split()) for m in p["metas"]]:
+            bad.append("3b %s: no \\set ON_ERROR_STOP 1" % _hh(c["T"]))
+        firsti = kinds.index("INSERT") if "INSERT" in kinds else len(kinds)
+        pre = [" ".join(s["text"].split()).lower() for s in p["stmts"][:firsti]]
+        if not any(re.match(r"^set local lock_timeout (=|to) '?(5s|5000|5000ms)'?$", x) for x in pre):
+            bad.append("3c %s: no SET LOCAL lock_timeout = '5s' before the first INSERT" % _hh(c["T"]))
+        if not any(re.match(r"^set local standard_conforming_strings (=|to) '?on'?$", x) for x in pre):
+            bad.append("3d %s: no SET LOCAL standard_conforming_strings = on before the first INSERT" % _hh(c["T"]))
+        by = ins_by_table(c)
+        order = [s["insert"]["table"] for s in p["stmts"] if s.get("insert")]
+        if order != sorted(order, key=W_ORDER.index):
+            bad.append("3f %s: tables out of order %s" % (_hh(c["T"]), sorted(set(order), key=order.index)))
+        for t, stmts in by.items():
+            total = sum(len(i["rows"]) for i in stmts)
+            if len(stmts) != -(-total // N):
+                bad.append("3f %s %s: %d statements for %d rows at N = %d (want %d)" % (_hh(c["T"]), t, len(stmts), total, N, -(-total // N)))
+            for i in stmts:
+                bad += ["%s %s" % (_hh(c["T"]), f) for f in w_stmt_findings(t, i, N)]
+            n_rows += total
+            n_stmt += len(stmts)
+        if not isinstance(c["stdin"], bytes) or max(len(a) for a in c["argv"]) > 200:
+            bad.append("3t %s: the script is not whole on stdin / an argv element is long" % _hh(c["T"]))
+        if "\x00" in c["text"]:
+            bad.append("3r a NUL byte in a script")
+    for T, cs in _calls_by_t(calls).items():
+        if len(cs) > (2 if T == 15 * 60 + 45 else 1):
+            bad.append("3a %d write psql calls at %s" % (len(cs), _hh(T)))
+    vals = [v for c in calls for rs in sent_rows(c).values() for r in rs for v in r]
+    got_h = set(W_HOSTILE + [W_HOSTILE_JSON[0], W_HOSTILE_JSON[1]])
+    seen = set(v for v in vals if v in got_h)
+    if seen != got_h:
+        bad.append("3p hostile values never reached a script as themselves: %s" % sorted(got_h - seen)[:3])
+    if not any(r.get("tradingsymbol") in W_HOSTILE for r in res.table.rows["tape_live_cycle"].values()):
+        bad.append("3p the fake table did not store a hostile tradingsymbol")
+    nn = sql_types()[1]
+    if any(v == "" and col not in nn[s["insert"]["table"]] for c in calls for s in c["parsed"]["stmts"] if s.get("insert")
+           for r in s["insert"]["rows"] for col, v in zip(s["insert"]["cols"], r)):
+        bad.append("3q an empty string written as '' in a nullable column (want NULL; '' only where the column is NOT NULL)")
+    if not any(v == "" for c in calls for s in c["parsed"]["stmts"] if s.get("insert") for r in s["insert"]["rows"] for v in r):
+        bad.append("3q precondition: no '' in a NOT NULL column in any script (a label's empty reason must reach the table as '')")
+    if not any(v is None for c in calls for s in c["parsed"]["stmts"] if s.get("insert") for r in s["insert"]["rows"] for v in r):
+        bad.append("3q precondition: no NULL value in any script (the check would be vacuous)")
+    if bad:
+        return False, "; ".join(bad[:8])
+    # 3o: a duplicate conflict key by value in the write set: nothing is sent, the keys are listed, the writer stops
+    for kind in ("cycle", "events", "wall", "label", "events_num", "cycle_tok"):
+        tag = "3o-num" if kind in ("events_num", "cycle_tok") else "3o-ts"      # a number in two scales / an instant in two texts
+        r = w_cli("dup_" + kind, start="15:20", plant=lambda k=kind: plant_dup(k))
+        why = need_run(r, "dup %s run" % kind)
+        hb, stj = w_json(r, "heartbeat.json"), w_json(r, "state.json")
+        dk = os.path.join(live_of(r), "db_dupkeys.csv")
+        if why:
+            bad.append(tag + " " + why)
+        elif w_scripts(r) or hb.get("write", {}).get("state") != "stopped" or hb["write"].get("reason") != "dup_conflict_key" \
+                or _latch_of(r.out).get("reason") != "dup_conflict_key" or not os.path.exists(dk) or len(open(dk, encoding="utf-8").read().splitlines()) < 2:
+            bad.append("%s %s: %d scripts sent, write %s, db_dupkeys.csv %s (want 0, stopped / dup_conflict_key, keys listed)" % (
+                tag, kind, len(w_scripts(r)), hb.get("write"), os.path.exists(dk)))
+    r = w_cli("nul", start="15:20", plant=plant_nul)
+    hb = w_json(r, "heartbeat.json")
+    if need_run(r, "nul run") or any("\x00" in c["text"] for c in r.fake.wcalls) or hb.get("write", {}).get("state") != "stopped" or hb["write"].get("reason") != "other":
+        bad.append("3r NUL: rc %s, %d scripts, write %s (want 0 scripts with a NUL, stopped / other)" % (r.rc, len(w_scripts(r)), hb.get("write")))
+    # 3s: the literal check: read only, no INSERT, no table; the server's text must equal the expected, and it can fail
+    lit = w_literal_check(None)
+    bad += lit
+    return not bad, "; ".join(bad[:8]) or "%d scripts, %d INSERT statements, %d rows at N = %d: BEGIN..COMMIT, lock_timeout, scs on, exact clauses, SET lists, no RETURNING, hostile values and NULLs round trip; 4 duplicate plants + NUL stop the writer; literal check is read only and can fail" % (len(calls), n_stmt, n_rows, N)
+
+
+def w_literal_check(_unused):
+    cli = mods()[0]
+    ls = rmods()[1]
+    out = []
+    for corrupt, want_rc0 in ((None, True), (2, False)):
+        inner = FakeShell.__new__(FakeShell)
+        inner.calls, inner.raised, inner.psql_fail, inner.md5, inner.files, inner.vis, inner.rows = [], 0, None, {}, {}, {}, {}
+        fake = FakeWriteShell(inner, FakeTable(DAY), os.path.join(_TMP, "litcheck"), day=DAY)
+        fake.lit_corrupt = corrupt
+        saved = ls.RUN
+        ls.RUN = fake
+        try:
+            with _env({W_ENV: W_DSN}, drop=_AWS_KEYS), strict_iso():
+                rc, log = quiet_exit(cli.main, ["db-literal-check"])
+        finally:
+            ls.RUN = saved
+        if "unrecognized arguments" in log or "invalid choice" in log:
+            return ["3s db-literal-check does not exist (%s)" % log.strip().splitlines()[-1][:120]]
+        calls = [c for c in fake.wcalls if c["kind"] == "litcheck"]
+        if len(calls) != 1 or len(fake.wcalls) != 1:
+            return ["3s db-literal-check made %d write-role calls, want exactly 1 literal-check script" % len(fake.wcalls)]
+        metas, stmts, tail = sql_split(calls[0]["text"])
+        kinds = [s.split()[0].upper() for s in stmts]
+        if not stmts[0].upper().startswith("BEGIN READ ONLY") or kinds[-1] != "ROLLBACK" or "COMMIT" in kinds \
+                or re.search(r"(?i)\b(INSERT|UPDATE|DELETE|TRUNCATE)\b|tape_live_", strip_literals(calls[0]["text"])) \
+                or sum(1 for k in kinds if k == "SELECT") < len(W_HOSTILE):
+            out.append("3s the literal check is not BEGIN READ ONLY ... SELECTs ... ROLLBACK without a table (%s)" % kinds[:3])
+        if (rc == 0) != want_rc0:
+            out.append("3s literal check rc=%s with %s server text (want %s)" % (rc, "a corrupted" if corrupt is not None else "the right", "0" if want_rc0 else "non-zero"))
+    return out
+
+
+W_ERR_RUNS = {"err_to": [{"err": "57014"}, None], "err_lock_to": [{"err": "55P03"}, {"err": "57014"}],
+              "err_dead_to": [{"err": "40P01"}, {"err": "timeout"}], "err_conn2": [{"err": "connect"}, {"err": "connect"}],
+              "err_rls": [{"err": "42501"}], "err_cl": [{"err": "53300"}], "err_cl_text": [{"err": "conn_text"}],
+              "err_idle": [{"err": "25P03"}], "err_other": [{"err": "XX000"}],
+              "err_pooler": [{"err": "pooler_text"}, None]}
+# by hand: (grid minute, the one werr_ column that reads 1 there); the reason the run ends with (None = still writing)
+W_ERR_EXPECT = {"err_to": ([(920, "werr_statement_timeout")], None),
+                "err_lock_to": ([(920, "werr_lock"), (925, "werr_statement_timeout")], "second_skip"),
+                "err_dead_to": ([(920, "werr_lock"), (925, "werr_statement_timeout")], "second_skip"),
+                "err_conn2": ([(920, "werr_connect"), (925, "werr_connect")], "second_skip"),
+                "err_rls": ([(920, "werr_rls_refused")], "rls_refused"),
+                "err_cl": ([(920, "werr_connection_limit")], "connection_limit"),
+                "err_cl_text": ([(920, "werr_connection_limit")], "connection_limit"),
+                "err_idle": ([(920, "werr_idle_tx_timeout")], "idle_tx_timeout"),
+                "err_other": ([(920, "werr_other")], "other"),
+                "err_pooler": ([(920, "werr_connect")], None)}
+W_WERR = ("werr_statement_timeout", "werr_lock", "werr_idle_tx_timeout", "werr_rls_refused", "werr_connection_limit",
+          "werr_connect", "werr_other")
+
+
+def err_run(name):
+    return w_cli(name, start="15:20", plants=plants_of(*W_ERR_RUNS[name]))
+
+
+def _f(row, col):
+    try:
+        return float(row[col])
+    except (KeyError, ValueError):
+        return float("nan")
+
+
+def g_2b_metrics():
+    """Plan guard 4. Red first: no write columns (the write flags are unknown)."""
+    bad = _w2b_selftest()
+    if bad:
+        return False, "; ".join(bad[:6])
+    res = w_canon()
+    why = need_run(res, "canon run")
+    if why:
+        return False, why
+    rows = dict((r["T"], r) for r in w_metrics(res))
+    calls = [c for c in w_scripts(res) if 560 <= c["T"] <= 930]
+    n_skipped = 0
+    for c in calls:
+        row = rows.get(_hh(c["T"]))
+        if row is None or any(col not in row for col in W_METRIC_COLS):
+            bad.append("4 no metrics row with the write columns at %s" % _hh(c["T"]))
+            break
+        by = ins_by_table(c)
+        for t in W_ORDER:
+            sh = t.replace("tape_live_", "")
+            stm = by.get(t, [])
+            d = [w_dur(t, k, c["ord"]) for k in range(len(stm))]
+            want = {"up_stmts_" + sh: len(stm), "up_rows_" + sh: sum(len(i["rows"]) for i in stm),
+                    "up_s_" + sh: sum(d) / 1000.0, "up_max_stmt_s_" + sh: (max(d) if d else 0.0) / 1000.0}
+            for col, w in want.items():
+                if abs(_f(row, col) - w) > 0.0006:
+                    bad.append("4a-d %s %s = %s, by hand %s" % (_hh(c["T"]), col, row.get(col), w))
+        sent_l = sum(len(i["rows"]) for i in by.get("tape_live_label", []))
+        ins_l = sum(x["n"] for x in c["tags"] if x.get("table") == "tape_live_label")
+        if int(_f(row, "up_label_skipped")) != sent_l - ins_l:
+            bad.append("4e %s up_label_skipped = %s, rows sent - rows inserted = %d" % (_hh(c["T"]), row.get("up_label_skipped"), sent_l - ins_l))
+        n_skipped += sent_l - ins_l
+        if row["write_state"] != "sent" or not _f(row, "up_proc_s") > 0:
+            bad.append("4f %s write_state %r, up_proc_s %s (want sent, > 0)" % (_hh(c["T"]), row["write_state"], row.get("up_proc_s")))
+        if any(int(_f(row, w)) for w in W_WERR):
+            bad.append("4 %s: an error counter on a clean cycle" % _hh(c["T"]))
+    if n_skipped != 1:
+        bad.append("4e precondition: %d label rows skipped by DO NOTHING in the canon run, by hand 1 (the preloaded duplicate)" % n_skipped)
+    if not any(abs(_f(rows[_hh(c["T"])], "up_max_stmt_s_cycle") - 5.3) < 0.0006 for c in calls if c["ord"] == 3):
+        bad.append("4b the planted 5300 ms statement (Time: ... (00:05.300)) was not read as 5.300 s")
+    if bad:
+        return False, "; ".join(bad[:8])
+    sh = {"4g": "err_to", "4h": "err_lock_to", "4i": "err_dead_to", "4j": "err_idle", "4k": "err_rls", "4l": "err_cl",
+          "4l'": "err_cl_text", "4l2": "err_pooler", "4m": "err_conn2", "4n": "err_other", "4o": "err_dead_to"}
+    for tag, name in sh.items():
+        r = err_run(name)
+        why = need_run(r, "%s run %s" % (tag, name))
+        if why:
+            bad.append(why)
+            continue
+        mrows = dict((x["T"], x) for x in w_metrics(r))
+        for minute, col in W_ERR_EXPECT[name][0]:
+            x = mrows.get(_hh(minute), {})
+            got = dict((w, x.get(w)) for w in W_WERR)
+            if got != dict((w, "1" if w == col else "0") for w in W_WERR):
+                bad.append("%s %s at %s: error counters %s, by hand exactly %s = 1" % (tag, name, _hh(minute), got, col))
+    return not bad, "; ".join(bad[:8]) or "%d cycles: per-table seconds, longest statement (5.300 s from a 'Time: ... (00:05.300)' line), rows, statements and labels skipped equal the hand values; the categories 57014 / 55P03 / 40P01 / 25P03 / 42501 / 53300 (and its text form) / connect / XX000 / rc 124 each land in their column" % len(calls)
+
+
+LATCH_NAME, LATCH_REDATE = "WRITE_LATCH.json", "WRITE_LATCH.redate.json"
+LATCH_KEYS = {"reason", "category", "at", "day", "set_utc"}
+LATCH_HAND = {"reason": "rls_refused", "category": "rls_refused", "at": 920, "day": "2026-11-05", "set_utc": "2026-11-05T10:15:00Z"}
+CLEAR_STALE_S = 600
+
+
+def _latch_of(out, redate=False):
+    try:
+        with open(os.path.join(out, LATCH_REDATE if redate else LATCH_NAME), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def _plant_latch(out, redate=False, **kw):
+    """A latch written by hand in the contract's form (not by the writer): the carried-from-an-earlier-day case."""
+    os.makedirs(out, exist_ok=True)
+    pth = os.path.join(out, LATCH_REDATE if redate else LATCH_NAME)
+    with open(pth, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps(dict(LATCH_HAND, **kw), sort_keys=True) + "\n")
+    return pth
+
+
+def _bytes_of(pth):
+    """The file's bytes, or None when it is gone (a guard asserts on a vanished latch instead of crashing on it)."""
+    try:
+        with open(pth, "rb") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+class _OsShim:
+    """Stands in for `os` inside services.tape_live.dbwrite only: every attribute is the real one except the one planted to fail."""
+
+    def __init__(self, real, fail, err):
+        self._real, self._fail, self._err = real, fail, err
+
+    def __getattr__(self, name):
+        if name == self._fail:
+            def boom(*_a, **_k):
+                raise OSError(self._err, os.strerror(self._err))
+            return boom
+        return getattr(self._real, name)
+
+
+@contextlib.contextmanager
+def _latch_write_fails(fail, err):
+    """L-j plant: the latch's own write fails (fail = 'fsync' with ENOSPC: disk full; 'replace' with EACCES: permission)."""
+    dbw = _dbw()
+    real = dbw.os
+    dbw.os = _OsShim(real, fail, err)
+    try:
+        yield
+    finally:
+        dbw.os = real
+
+
+def _copy_latch(data, out):
+    """Byte copy of a latch the writer itself produced (None if it produced none: nothing is planted, and L-c then fails)."""
+    if data is not None:
+        with open(os.path.join(out, LATCH_NAME), "wb") as fh:
+            fh.write(data)
+
+
+def _plant_hb(out, day, state, pid, age_s):
+    dd = os.path.join(out, day)
+    os.makedirs(dd, exist_ok=True)
+    when = datetime.now(timezone.utc) - timedelta(seconds=age_s)
+    with open(os.path.join(dd, "heartbeat.json"), "w", encoding="utf-8") as fh:
+        json.dump({"state": state, "pid": pid, "day": day, "updated_utc": when.strftime("%Y-%m-%dT%H:%M:%SZ")}, fh)
+    with open(os.path.join(dd, "state.json"), "w", encoding="utf-8") as fh:
+        json.dump({"write_skips": 1}, fh)
+
+
+def _dead_pid():
+    pr = subprocess.Popen([sys.executable, "-c", "pass"])
+    pr.wait()
+    return pr.pid
+
+
+def _wc(out, *extra, note="t"):
+    return quiet_exit(mods()[0].main, ["write-clear", "--out", out, "--note", note] + list(extra))
+
+
+def _fresh_dir(name):
+    d = os.path.join(_TMP, "lt_" + name)
+    shutil.rmtree(d, ignore_errors=True)
+    os.makedirs(d)
+    return d
+
+
+def _latch_files(out, prefix):
+    return sorted(n for n in os.listdir(out) if n.startswith(prefix))
+
+
+def _stop_of(res):
+    return w_json(res, "heartbeat.json").get("write", {}), _latch_of(res.out), os.path.exists(os.path.join(res.root, "WRITE_STOPPED"))
+
+
+def _same_outputs(a, b):
+    """The files a run leaves besides the write-only ones: live/ (minus db_*.csv) and arrival_log.csv, byte for byte."""
+    def files(r):
+        out = {}
+        for rel in _files(r.root):
+            if rel == "arrival_log.csv" or (rel.startswith("live/") and not os.path.basename(rel).startswith("db_")):
+                out[rel] = sha(os.path.join(r.root, rel))
+        return out
+    fa, fb = files(a), files(b)
+    return [k for k in sorted(set(fa) | set(fb)) if fa.get(k) != fb.get(k)]
+
+
+def _hand_7a(dbw):
+    """Item 7a (ruling R9-B) on hand-fed numbers: no clock, no run, no planted cost. The rule: on a cycle whose epoch-log entry is a
+    drop bump, with the median of wall_s over the cycles from the 09:20 grid point on (the current one included) and at least 6 such
+    cycles, stop only if wall_s - median > median AND wall_s - median > 30 s. Every expected value below is by hand (median of the
+    window, current cycle included); cycles are 5 minutes apart, the last is the bump; start 560 = 09:20 unless 530 = 08:50.
+      a      6 x 0.05 (08:50-09:15), 5 x 40.0, bump 75.0: window 6, median 40.0, excess 35.0, not > 40.0 -> no stop
+      a2     the real 2026-11-05 walls 08:50-09:45: window 3.67 5.02 6.60 8.24 8.60 9.03, median 7.42, excess 1.61 -> no stop
+      b      6 x 1.0, bump 30.0: median 1.0, excess 29.0, not > 30 -> no stop
+      b2     6 x 1.0, bump 31.0: median 1.0, excess 30.0, not > 30 (strict) -> no stop
+      c      6 x 1.0, bump 32.0: median 1.0, excess 31.0 > 1.0 and > 30 -> stop
+      d      6 x 40.0, bump 75.0: median 40.0, excess 35.0 > 30 but not > 40.0 -> no stop
+      e      6 x 0.05 (08:50-09:15), 4 x 1.0, bump 40.0 at 09:40: window 5 < 6 -> no stop
+      steady 6 x 1.0, bump 1.9 -> no stop; non_drop / rebuild: 6 x 1.0 then 32.0 with no bump / a rebuild bump -> no stop;
+      sixth  5 x 1.0, bump 32.0: window 6, median 1.0, excess 31.0 -> stop; early 3 x 1.0, bump 32.0: window 4 -> no stop.
+    -> findings."""
+    def run(case, walls, last_log, start=560):
+        w = dbw.DbWriter(None, DAY, 7, os.path.join(_TMP, "hand7a_" + case))
+        for i, s in enumerate(walls):
+            T = start + 5 * i
+            w.end_cycle(T, s, 20.0, [dict(e, at=T) for e in last_log] if i == len(walls) - 1 else [])
+        return w.stopped
+    drop, rebuild = [{"trigger": "drop"}], [{"trigger": "late_segment"}]
+    stop = "item_7a_drop_bump"
+    real_1105 = [0.05, 0.01, 0.07, 0.07, 0.04, 0.04, 3.67, 5.02, 6.60, 8.24, 8.60, 9.03]
+    cases = (("a", [0.05] * 6 + [40.0] * 5 + [75.0], drop, None, 530), ("a2", real_1105, drop, None, 530),
+             ("b", [1.0] * 6 + [30.0], drop, None, 560), ("b2", [1.0] * 6 + [31.0], drop, None, 560),
+             ("c", [1.0] * 6 + [32.0], drop, stop, 560), ("d", [40.0] * 6 + [75.0], drop, None, 560),
+             ("e", [0.05] * 6 + [1.0] * 4 + [40.0], drop, None, 530), ("steady", [1.0] * 6 + [1.9], drop, None, 560),
+             ("non_drop", [1.0] * 6 + [32.0], [], None, 560), ("rebuild", [1.0] * 6 + [32.0], rebuild, None, 560),
+             ("sixth", [1.0] * 5 + [32.0], drop, stop, 560), ("early", [1.0] * 3 + [32.0], drop, None, 560))
+    bad = []
+    for case, walls, log, want, start in cases:
+        got = (run(case, walls, log, start) or {}).get("reason")
+        if got != want:
+            bad.append("5i0 hand-fed 7a, %s: %d cycles ending %.2f s -> %r, by hand %r" % (case, len(walls), walls[-1], got, want))
+    return bad
+
+
+def g_2b_stop():
+    """Plan guard 5. Red first: no DbWriter (the write flags are unknown)."""
+    dbw = _dbw()
+    if dbw is None:
+        return False, "ImportError: services.tape_live.dbwrite does not exist"
+    bad = _hand_7a(dbw)
+    if bad:
+        return False, "; ".join(bad[:6])
+    off = w_off("off_1520")
+    for name in ("err_rls", "err_cl", "err_cl_text", "err_idle", "err_other", "err_conn2", "err_to", "err_lock_to", "err_dead_to", "err_pooler"):
+        r = err_run(name)
+        why = need_run(r, "%s" % name)
+        if why:
+            return False, why
+        hb, ws, sent = _stop_of(r)
+        want_cols, reason = W_ERR_EXPECT[name]
+        n_sc = len(w_scripts(r))
+        if reason is None:
+            if hb.get("state") == "stopped" or ws:
+                bad.append("5p %s: stopped after one 57014 (want skipped, then writing)" % name)
+            if sum(1 for c in w_scripts(r) if c["T"] == 920) != 1:
+                bad.append("5p %s: the 15:20 cycle's write was retried in the same cycle" % name)
+            s2 = [c for c in w_scripts(r) if c["T"] == 925]
+            want = apply_db(_deltas_of(r), "1525", u_only=True)
+            for t in DELTA_TABLES:
+                got = sorted(sent_rows(s2[0]).get(t, [])) if s2 else None
+                exp = sorted(tuple("" if v is None else v for v in row) for row in want[t].values())
+                if got != exp:
+                    bad.append("5q %s: the 15:25 write did not carry every row the skipped 15:20 write held (%s)" % (name, t))
+                    break
+            continue
+        if hb.get("state") != "stopped" or hb.get("reason") != reason or ws.get("reason") != reason or not sent:
+            bad.append("5a-e %s: heartbeat %s, latch file %s, sentinel %s (want stopped / %s)" % (name, hb, ws, sent, reason))
+        if ws.get("day") != DAY or os.path.exists(os.path.join(r.root, LATCH_NAME)) or "write_stop" in w_json(r, "state.json"):
+            bad.append("5a-e %s: the latch is not the root file %s with day %s (day %r; in the day directory %s, in state.json %s)" % (
+                name, LATCH_NAME, DAY, ws.get("day"), os.path.exists(os.path.join(r.root, LATCH_NAME)), "write_stop" in w_json(r, "state.json")))
+        if n_sc != len(W_ERR_RUNS[name]):
+            bad.append("5a-e %s: %d write calls, by hand %d (no write after the stop, none retried)" % (name, n_sc, len(W_ERR_RUNS[name])))
+        if r.rc != 0 or w_json(r, "heartbeat.json").get("state") != "done" or _same_outputs(r, off):
+            bad.append("5k %s: rc %s, state %s, files that differ from the flag-off run: %s" % (
+                name, r.rc, w_json(r, "heartbeat.json").get("state"), _same_outputs(r, off)[:3]))
+        if not os.path.exists(os.path.join(r.root, "live_metrics.csv")):
+            bad.append("5k %s: no live_metrics.csv: the run ended at the stop instead of cycling on to the final" % name)
+            continue
+        m = w_metrics(r)
+        if [x["write_state"] for x in m if x["T"] == _hh(945)] not in (["stopped"], []):
+            bad.append("5 %s: write_state after the stop is not 'stopped'" % name)
+    if bad:
+        return False, "; ".join(bad[:8])
+    # 5f overrun: lag + wall_s over 300 s stops the writer after that cycle's write
+    r = w_cli("overrun", start="15:20", plants=plants_of(None, {"slow": 400}))
+    hb, ws, sent = _stop_of(r)
+    if need_run(r, "overrun") or len(w_scripts(r)) != 2 or hb.get("reason") != "overrun" or hb.get("state") != "stopped":
+        bad.append("5f overrun: %d scripts, write %s (want 2 scripts, stopped / overrun)" % (len(w_scripts(r)), hb))
+    # 5g: a grid point lost across a restart latches before that cycle's write
+    ph = w_phases("gap", [{"start": "15:20", "plants": plants_of(None, {"kill": True})}, {"start": "15:37"}])
+    hb, ws, sent = _stop_of(ph[1])
+    if ph[0].rc != 0 or ph[1].rc != 0 or w_scripts(ph[1]) or hb.get("reason") != "missed_grid_point" or not sent or len(w_scripts(ph[0])) != 2:
+        bad.append("5g restart gap: rc %s/%s, %d scripts after the restart, write %s (want 0, stopped / missed_grid_point)" % (
+            ph[0].rc, ph[1].rc, len(w_scripts(ph[1])), hb))
+    # 5h: the grid points before a fresh start's first cycle do not latch (2026-11-12: started 08:58, 83 rows, missed 0)
+    r = w_cli("fresh_1002", start="10:02")
+    why = need_run(r, "5h fresh start")
+    if why:
+        bad.append(why)
+    else:
+        m0 = [x for x in w_metrics(r) if x["T"] == "10:00"]
+        hb, ws, sent = _stop_of(r)
+        if not m0 or m0[0]["missed_grid_points"] != "8" or len(w_json(r, "state.json").get("missed", [])) != 8 or not w_scripts(r) or hb.get("state") == "stopped" or sent:
+            bad.append("5h fresh start 10:02: missed_grid_points %s (by hand 8: 09:20..09:55), %d scripts, write %s" % (
+                m0[0]["missed_grid_points"] if m0 else None, len(w_scripts(r)), hb))
+    # 5i / 5j: item 7a (R9-B) on a drop bump cycle. By hand: the window median from 09:20 is about 0.3 s on this fixture, so the planted
+    # 60 s at 14:35 exceeds it by about 60 s, above the median and above 30 s: stop. 5j starts at 14:20: 4 window cycles at 14:35, no stop.
+    slow = {("T", 600): {"slow": 60}, ("T", 650): {"slow": 60}, ("T", 875): {"slow": 60}}
+    r = w_cli("slow7a", fix=epoch_raw(), arrival=gen_live.EPOCH_ARRIVAL, start="08:50", plants=slow)
+    why = need_run(r, "5i slow run")
+    hb, ws, sent = _stop_of(r)
+    ts_ = sorted(c["T"] for c in w_scripts(r))
+    if why:
+        bad.append(why)
+    elif not ts_ or ts_[-1] != 875 or not any(650 < t < 875 for t in ts_) or hb.get("reason") != "item_7a_drop_bump":
+        bad.append("5i 7a: last write at %s, write %s (want the write at 14:35, the drop bump, then stopped / item_7a_drop_bump; the slow cycles at 10:00 and 10:50 are not drops)" % (
+            _hh(ts_[-1]) if ts_ else None, hb))
+    r = w_cli("slow7a_early", fix=epoch_raw(), arrival=gen_live.EPOCH_ARRIVAL, start="14:20", plants={("T", 875): {"slow": 60}})
+    why = need_run(r, "5j early run")
+    hb, ws, sent = _stop_of(r)
+    if why:
+        bad.append(why)
+    elif hb.get("state") == "stopped" or not any(c["T"] > 875 for c in w_scripts(r)):
+        bad.append("5j 7a before 6 cycles: write %s, last write %s (want writing on)" % (hb, max([c["T"] for c in w_scripts(r)] or [0])))
+    # 5l / 5o: the latch is the root file; a restart writes nothing, with the day sentinel and without it
+    stop1 = {"start": "15:20", "plants": plants_of({"err": "42501", "kill": True})}
+    ph = w_phases("stop_restart", [stop1, {"start": "15:28"}])
+    hb, ws, sent = _stop_of(ph[1])
+    if w_scripts(ph[1]) or hb.get("state") != "stopped" or not sent or ph[0].rc != 0 or ws.get("reason") != "rls_refused":
+        bad.append("5l restart after a stop: %d scripts, write %s, latch %s, sentinel %s (want none, stopped, root latch rls_refused, sentinel kept)" % (
+            len(w_scripts(ph[1])), hb, ws, sent))
+    ph = w_phases("stop_restart_nosent", [stop1, {"start": "15:28", "pre": lambda d: os.remove(os.path.join(d, "WRITE_STOPPED"))}])
+    hb, ws, sent = _stop_of(ph[1])
+    if w_scripts(ph[1]) or hb.get("state") != "stopped" or ws.get("reason") != "rls_refused":
+        bad.append("5o restart with the sentinel deleted wrote %d scripts, write %s, latch %s (the latch is the root file)" % (len(w_scripts(ph[1])), hb, ws))
+    # 5s: one skip, a restart, a second skip: the count survives the restart and latches
+    ph = w_phases("skip_restart_skip", [{"start": "15:20", "plants": plants_of({"err": "57014", "kill": True})},
+                                        {"start": "15:28", "plants": plants_of({"err": "55P03"})}])
+    hb, ws, sent = _stop_of(ph[1])
+    if len(w_scripts(ph[1])) != 1 or hb.get("reason") != "second_skip" or hb.get("state") != "stopped":
+        bad.append("5s skip, restart, skip: %d scripts, write %s (want 1, stopped / second_skip)" % (len(w_scripts(ph[1])), hb))
+    # 5t / 5u: write-clear on the root latch: refused while a runner of the latch day or later is alive, clears when it is not
+    cli = mods()[0]
+    base = err_run("err_rls")
+    c1, c2 = os.path.join(_TMP, "wc_run"), os.path.join(_TMP, "wc_stopped")
+    for dst in (c1, c2):
+        shutil.rmtree(dst, ignore_errors=True)
+        shutil.copytree(base.out, dst)
+        if not os.path.exists(os.path.join(dst, LATCH_NAME)):
+            bad.append("5t/5u the stop run left no %s at the out root" % LATCH_NAME)
+    dead = _dead_pid()
+    _plant_hb(c1, DAY, "waiting", os.getpid(), 5)
+    _plant_hb(c2, DAY, "done", dead, 7200)
+    rc1, log1 = _wc(c1)
+    rc2, log2 = _wc(c2, note="clear-note-9")
+    if "invalid choice" in log1 or "unrecognized arguments" in log1:
+        bad.append("5t/5u write-clear does not exist")
+    else:
+        if rc1 == 0 or not _latch_of(c1) or not os.path.exists(os.path.join(base.out, DAY, "WRITE_STOPPED")):
+            bad.append("5t write-clear on a running runner: rc=%s, latch kept %s (want refused, latch kept)" % (rc1, bool(_latch_of(c1))))
+        cleared = _latch_files(c2, "WRITE_LATCH.cleared.")
+        if rc2 != 0 or _latch_of(c2) or not cleared or os.path.exists(os.path.join(c2, DAY, "WRITE_STOPPED")) \
+                or "clear-note-9" not in open(os.path.join(c2, DAY, "runner.log"), encoding="utf-8").read() \
+                or json.load(open(os.path.join(c2, DAY, "state.json"), encoding="utf-8")).get("write_skips") != 0:
+            bad.append("5u write-clear on a stopped day: rc=%s, latch %s, latch renamed %s, note logged, write_skips reset (want cleared)" % (rc2, _latch_of(c2), bool(cleared)))
+    return not bad, "; ".join(bad[:8]) or "immediate stops (42501, 53300 both forms, 25P03, other), connect / lock / timeouts skip once and stop on the second, overrun, restart gap, fresh start 10:02 (8 missed points) keeps writing, 7a (R9-B) only on a drop bump, 6 cycles from 09:20, excess above the median and 30 s, latch survives restart with and without the sentinel, write-clear"
+
+
+def g_2b_latch():
+    """R8-I: the stop latch is the root file <out>/WRITE_LATCH.json and carries across days. Red first: the latch is in state.json."""
+    bad = []
+    off = w_off("off_1520")
+    # L-a: a stop writes the root latch (and not a day-directory copy)
+    r = err_run("err_rls")
+    why = need_run(r, "L-a stop run")
+    if why:
+        return False, why
+    lt, hbw = _latch_of(r.out), w_json(r, "heartbeat.json").get("write", {})
+    try:
+        with open(os.path.join(r.out, LATCH_NAME), "rb") as fh:
+            real_latch = fh.read()          # the bytes L-a's real stop produced: L-c plants exactly these
+    except OSError:
+        real_latch = None
+    if set(lt) != LATCH_KEYS or lt.get("reason") != "rls_refused" or lt.get("day") != DAY or lt.get("at") != 920 \
+            or not re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$", str(lt.get("set_utc", ""))):
+        bad.append("L-a stop on %s: latch %s (want keys %s, rls_refused, day %s, at 920)" % (DAY, lt, sorted(LATCH_KEYS), DAY))
+    if os.path.exists(os.path.join(r.root, LATCH_NAME)) or hbw.get("latch_day") != DAY or hbw.get("carried") is not False:
+        bad.append("L-a the latch is in the day directory %s, heartbeat latch_day %r carried %r (want root only, %s, False)" % (
+            os.path.exists(os.path.join(r.root, LATCH_NAME)), hbw.get("latch_day"), hbw.get("carried"), DAY))
+    # L-b: a run on a later day than the latch's writes nothing, makes no connection, and keeps producing files
+    d = _fresh_dir("carry")
+    pth = _plant_latch(d)
+    before = _bytes_of(pth)
+    r = w_cli(None, out=d, start="15:20")
+    hbw = w_json(r, "heartbeat.json").get("write", {})
+    if r.rc != 0 or r.fake.wcalls or hbw.get("state") != "stopped" or hbw.get("reason") != "rls_refused" \
+            or hbw.get("latch_day") != "2026-11-05" or hbw.get("carried") is not True:
+        bad.append("L-b carried latch: rc %s, %d write-role calls, write %s (want rc 0, none, stopped / rls_refused, latch_day 2026-11-05, carried)" % (
+            r.rc, len(r.fake.wcalls), hbw))
+    if _same_outputs(r, off) or not os.path.exists(os.path.join(r.root, "WRITE_STOPPED")) or _bytes_of(pth) != before \
+            or os.path.exists(os.path.join(r.root, LATCH_NAME)):
+        bad.append("L-b carried latch: files that differ from the flag-off run %s, sentinel %s, latch unchanged %s, latch copied into the day %s" % (
+            _same_outputs(r, off)[:3], os.path.exists(os.path.join(r.root, "WRITE_STOPPED")), _bytes_of(pth) == before,
+            os.path.exists(os.path.join(r.root, LATCH_NAME))))
+    if os.path.exists(os.path.join(r.root, "live_metrics.csv")) and any(x["write_state"] != "stopped" for x in w_metrics(r)):
+        bad.append("L-b write_state is not 'stopped' on every row of a carried-latch day")
+    # L-c: a restart in the middle of a day that began unlatched, then a latch appears at the root: nothing is written
+    ph = w_phases("latch_mid", [{"start": "15:20", "plants": plants_of({"kill": True})},
+                                {"start": "15:28", "pre": lambda dd: _copy_latch(real_latch, os.path.dirname(dd))}])
+    hbw = w_json(ph[1], "heartbeat.json").get("write", {})
+    if len(w_scripts(ph[0])) != 1 or w_scripts(ph[1]) or hbw.get("state") != "stopped" or ph[1].fake.wcalls:
+        bad.append("L-c restart under a root latch: %d scripts before, %d after, %d write-role calls, write %s (want 1, 0, 0, stopped)" % (
+            len(w_scripts(ph[0])), len(w_scripts(ph[1])), len(ph[1].fake.wcalls), hbw))
+    # L-d / L-h / L-i: what write-clear counts as alive: the latch day and later; fresh heartbeat or live pid; stale + dead pid is not alive
+    dead = _dead_pid()
+    d = _fresh_dir("clear_later")
+    pth = _plant_latch(d, day=DAY)
+    before = _bytes_of(pth)
+    _plant_hb(d, DAY, "done", dead, 7200)
+    _plant_hb(d, "2026-11-09", "cycling", dead, 30)
+    rc, log = _wc(d)
+    if rc != 2 or _bytes_of(pth) != before or "2026-11-09" not in log or str(dead) not in log or "600" not in log \
+            or not re.search(r"\b\d+(\.\d+)? ?s\b", log):
+        bad.append("L-d a later day with a fresh cycling heartbeat: rc=%s, latch kept %s, message %r (want rc 2, latch kept, the day, the pid, the age in s and 600)" % (
+            rc, _bytes_of(pth) == before, log[-200:]))
+    d = _fresh_dir("clear_stale")
+    _plant_latch(d, day=DAY)
+    _plant_hb(d, DAY, "cycling", dead, CLEAR_STALE_S * 6)
+    rc, log = _wc(d)
+    if rc != 0 or _latch_of(d) or not _latch_files(d, "WRITE_LATCH.cleared."):
+        bad.append("L-h a stale cycling heartbeat with a dead pid: rc=%s, latch %s (want cleared)" % (rc, _latch_of(d)))
+    d = _fresh_dir("clear_fresh")
+    _plant_latch(d, day=DAY)
+    _plant_hb(d, DAY, "cycling", dead, 30)
+    rc, log = _wc(d)
+    if rc != 2 or not _latch_of(d):
+        bad.append("L-h a fresh cycling heartbeat with a dead pid: rc=%s, latch kept %s (want refused: age decides when no pid is alive)" % (rc, bool(_latch_of(d))))
+    d = _fresh_dir("clear_earlier")
+    _plant_latch(d, day=DAY)
+    _plant_hb(d, DAY, "done", dead, 7200)
+    _plant_hb(d, "2026-11-05", "cycling", dead, 30)
+    rc, log = _wc(d)
+    if rc != 0 or _latch_of(d):
+        bad.append("L-i a fresh cycling heartbeat on a day before the latch day: rc=%s, latch %s (want cleared: earlier days are not scanned)" % (rc, _latch_of(d)))
+    # L-e: nothing to clear; L-f: after a clear the next run writes
+    d = _fresh_dir("clear_none")
+    rc, log = _wc(d)
+    if rc != 0 or "nothing to clear" not in log:
+        bad.append("L-e write-clear with no latch: rc=%s, %r (want rc 0, 'nothing to clear')" % (rc, log[-80:]))
+    d = _fresh_dir("clear_then_run")
+    _plant_latch(d)
+    rc, log = _wc(d)
+    r = w_cli(None, out=d, start="15:20")
+    if rc != 0 or need_run(r, "L-f run after a clear") or not w_scripts(r) or w_json(r, "heartbeat.json").get("write", {}).get("state") == "stopped" or _latch_of(d):
+        bad.append("L-f after write-clear: rc=%s, %d scripts, write %s, latch %s (want writing, no latch)" % (
+            rc, len(w_scripts(r)), w_json(r, "heartbeat.json").get("write"), _latch_of(d)))
+    # L-g: a latch that cannot be parsed stops writes (fail closed) and can still be cleared
+    d = _fresh_dir("corrupt")
+    with open(os.path.join(d, LATCH_NAME), "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("{not json\n")
+    r = w_cli(None, out=d, start="15:20")
+    hbw = w_json(r, "heartbeat.json").get("write", {})
+    if r.fake.wcalls or hbw.get("state") != "stopped" or hbw.get("reason") != "latch_unreadable":
+        bad.append("L-g a corrupt latch: %d write-role calls, write %s (want none, stopped / latch_unreadable)" % (len(r.fake.wcalls), hbw))
+    rc, log = _wc(d)
+    if rc != 0 or os.path.exists(os.path.join(d, LATCH_NAME)) or not _latch_files(d, "WRITE_LATCH.cleared."):
+        bad.append("L-g write-clear on a corrupt latch: rc=%s (want cleared)" % rc)
+    # L-j: the latch cannot be written (disk full, permission): the writer stays stopped in memory, the sentinel is written, the heartbeat says
+    # latch_write_failed, the runner does not exit, and no further write-role call is made
+    for tag, fail, err in (("disk full (fsync ENOSPC)", "fsync", errno.ENOSPC), ("permission (rename EACCES)", "replace", errno.EACCES)):
+        r = w_cli("latch_fail_" + fail, start="15:20", plants=plants_of({"err": "42501"}), plant=lambda f=fail, e=err: _latch_write_fails(f, e))
+        hbj = w_json(r, "heartbeat.json")
+        hbw = hbj.get("write", {})
+        n_sent = len(w_scripts(r))
+        if r.rc != 0 or hbj.get("state") != "done":
+            bad.append("L-j %s: the runner did not finish: rc=%s, state %r (want rc 0, done: a failed latch write must not end the run)" % (tag, r.rc, hbj.get("state")))
+        if hbw.get("state") != "stopped" or hbw.get("reason") != "latch_write_failed":
+            bad.append("L-j %s: heartbeat write %s (want stopped / latch_write_failed)" % (tag, hbw))
+        if not os.path.exists(os.path.join(r.root, "WRITE_STOPPED")):
+            bad.append("L-j %s: no day sentinel after a stop whose latch could not be written" % tag)
+        if n_sent != 1:
+            bad.append("L-j %s: %d write scripts (want 1: the stopping cycle's, then none)" % (tag, n_sent))
+        if os.path.exists(os.path.join(r.root, "live_metrics.csv")):
+            if any(x["write_state"] != "stopped" for x in w_metrics(r) if x["T"] > _hh(920)):
+                bad.append("L-j %s: write_state is not 'stopped' after the stop" % tag)
+        elif r.rc == 0:
+            bad.append("L-j %s: no live_metrics.csv" % tag)
+        if r.rc == 0 and _same_outputs(r, off):
+            bad.append("L-j %s: files that differ from the flag-off run: %s" % (tag, _same_outputs(r, off)[:3]))
+    return not bad, "; ".join(bad[:24]) or "the stop latch is the root file with day / at / reason; a later day makes no write-role call, keeps producing files and says carried; a mid-day restart under a latch writes nothing; write-clear counts a later day with a fresh heartbeat (and not an earlier day, nor a stale one with a dead pid) and prints day, pid, age and the 600 s bound; nothing to clear is rc 0; the next run after a clear writes; a corrupt latch fails closed and can be cleared; a latch that cannot be written (disk full, permission) leaves the writer stopped with reason latch_write_failed, the sentinel written and the run finishing"
+
+
+def _deltas_of(res):
+    return _db_deltas_dir(live_of(res))
+
+
+def _db_deltas_dir(ld):
+    by = {}
+    for n in os.listdir(os.path.join(ld, "cycles")):
+        m = re.match(r"^(\d{4}|final)_(cycle|events|wall)\.db\.csv$", n)
+        if m:
+            t = [k for k, v in DB_PART.items() if v == m.group(2)][0]
+            by.setdefault(m.group(1), {})[t] = _db_read(os.path.join(ld, "cycles", n))
+    names = sorted(k for k in by if k != "final") + (["final"] if "final" in by else [])
+    return [(k, None if k == "final" else int(k[:2]) * 60 + int(k[2:]), by[k]) for k in names]
+
+
+def _redate_variant(name, **kw):
+    base = dict(start="15:20", check=True, flags=["--test-redate-today"], env={REDATE_ENV: DAY}, now_date="2026-11-14")
+    base.update(kw)
+    return w_cli(name, **base)
+
+
+def _template_text(rel):
+    p = os.path.join(ROOT, rel)
+    return open(p, encoding="utf-8").read() if os.path.isfile(p) else None
+
+
+def g_2b_startup():
+    """Plan guard 6. Red first: no start-up check (the write flags are unknown)."""
+    bad = []
+    ok = w_cli("su_pass", check=True)
+    if ok.rc != 0:
+        return False, need_run(ok, "6 pass variant") or "6 pass variant refused"
+    mod = lambda **kw: dict(w_default_check(), **kw)
+
+    def priv(t, p, v):
+        c = w_default_check()
+        c["priv"][t][p] = v
+        return c
+    ro_dsn = TEST_DSN.replace("merdian_ro:", W_USER + ":")
+    variants = [("6a", dict(chk=mod(role="someone_else"))), ("6b", dict(ro_dsn=ro_dsn)), ("6c", dict(chk=mod(super="t"))),
+                ("6d", dict(chk=mod(bypassrls="t"))), ("6e", dict(chk=priv("tape_live_label", "DELETE", "t"))),
+                ("6f", dict(chk=priv("tape_live_events", "TRUNCATE", "t"))), ("6g", dict(chk=priv("tape_live_wall", "INSERT", "f"))),
+                ("6h", dict(chk=priv("tape_live_events", "UPDATE", "f"))), ("6i", dict(chk=mod(ist_date="2026-11-07"))),
+                ("6j", dict(now_date="2026-11-07", server_date=DAY)), ("6k", dict(chk=mod(scs="off")))]
+    for tag, kw in variants:
+        r = w_cli("su_" + tag, check=True, **kw)
+        if r.rc != 2 or "unrecognized arguments" in r.log or any(c["kind"] == "write" for c in r.fake.wcalls) \
+                or len(r.fake.wcalls) > 1 or (tag != "6j" and len(r.fake.wcalls) != 1) \
+                or any(x in r.log for x in (W_PW, W_DSN)):
+            bad.append("%s: rc=%s, %d write-role calls (%s), argparse %s (want rc 2 after exactly one check call, no INSERT, no credential)" % (
+                tag, r.rc, len(r.fake.wcalls), [c["kind"] for c in r.fake.wcalls], "unrecognized arguments" in r.log))
+    return not bad, "; ".join(bad[:8]) or "pass variant rc 0; 11 refusals (role, RO user, super, BYPASSRLS, DELETE, TRUNCATE, INSERT, UPDATE, server date, local date, scs) rc 2 after one check call, no INSERT"
+
+
+def g_2b_redate():
+    """Plan guard 7. Red first: the flag is unknown."""
+    bad = []
+    okr = _redate_variant("rd_ok")
+    if okr.rc != 0:
+        return False, need_run(okr, "7 all conditions met") or "7 refused with all conditions met: %s" % okr.log[-200:]
+    variants = [("7a", dict(clock="real")), ("7b", dict(db_write=False, w_env=False)), ("7c", dict(env={REDATE_ENV: "2026-11-05"})),
+                ("7d", dict(day="2026-11-14", env={REDATE_ENV: "2026-11-14"})), ("7e", dict(now_date="2026-11-16"))]
+    for tag, kw in variants:
+        r = _redate_variant("rd_" + tag, **kw)
+        if r.rc != 2 or "unrecognized arguments" in r.log or r.fake.wcalls:
+            bad.append("%s: rc=%s, %d write-role calls (want rc 2 before any connection)" % (tag, r.rc, len(r.fake.wcalls)))
+    res = w_cli("redate", start="15:20", flags=["--test-redate-today"], env={REDATE_ENV: DAY}, now_date="2026-11-14")
+    why = need_run(res, "7f run")
+    if why:
+        return False, "; ".join(bad[:4] + [why])
+    calls = w_scripts(res)
+    names = cycle_names(res)
+    ty, _nn = sql_types()
+    tbl = FakeTable("2026-11-14")
+    if not calls:
+        bad.append("7 no script sent")
+    for c in calls:
+        sent = sent_rows(c)
+        cands = [_nm(c["T"])] + (["final"] if "final" in names else [])
+        okc = False
+        for nm in cands:
+            good = True
+            for t in DELTA_TABLES:
+                exp = []
+                for row in u_rows(res, nm, t):
+                    r = dict(zip(sql_columns()[t], row))
+                    r["trading_day"] = "2026-11-14"
+                    for col, tyc in ty[t].items():
+                        if tyc == "timestamptz" and r[col] != "":
+                            r[col] = (datetime.fromisoformat(r[col]) + timedelta(days=8)).isoformat()
+                    exp.append(tuple(r[col] for col in sql_columns()[t]))
+                if set(tbl.text_tuple(t, x) for x in exp) != set(tbl.text_tuple(t, x) for x in sent.get(t, [])):
+                    good = False
+            okc = okc or good
+        if not okc:
+            bad.append("7f-h the script of %s is not its cycle's rows with trading_day = 2026-11-14 and every timestamptz + 8 days (expiry unchanged)" % _hh(c["T"]))
+            break
+    diff = _same_outputs(res, w_off("off_1520"))
+    if diff:
+        bad.append("7i the files of a re-dated run differ from the flag-off run: %s" % diff[:3])
+    for rel, tag in (("docs/tape/L2_live_runner_2b.service.template", "7k 2b"), ("docs/tape/L2_live_runner.service.template", "7l 2a")):
+        t = _template_text(rel)
+        if t is None:
+            bad.append("%s template %s missing" % (tag, rel))
+            continue
+        if "--clock real" not in t or re.search(r"(?i)redate", t) or "--clock sim" in t or "write-clear" in t:
+            bad.append("%s template: must run --clock real and carry no redate flag, --clock sim or write-clear" % tag)
+        if rel.endswith("2b.service.template") and ("--db-write" not in t or "tape-w.env" not in t):
+            bad.append("7k the 2b template lacks --db-write or EnvironmentFile tape-w.env")
+    # 7n-7p: a test-only run has its own latch: it is not blocked by, and never writes or clears, the real one
+    rdk = dict(start="15:20", flags=["--test-redate-today"], env={REDATE_ENV: DAY}, now_date="2026-11-14")
+    d7 = _fresh_dir("rd_real")
+    real = _plant_latch(d7)
+    before = open(real, "rb").read()
+    r7 = w_cli(None, out=d7, **rdk)
+    why = need_run(r7, "7n run with a real latch present")
+    if why:
+        bad.append(why)
+    elif not w_scripts(r7) or w_json(r7, "heartbeat.json").get("write", {}).get("state") == "stopped" or open(real, "rb").read() != before \
+            or _latch_of(d7, redate=True):
+        bad.append("7n a re-dated run with a real latch present: %d scripts, write %s, real latch unchanged %s (want it writing, the real latch byte-equal)" % (
+            len(w_scripts(r7)), w_json(r7, "heartbeat.json").get("write"), open(real, "rb").read() == before))
+    d7b = _fresh_dir("rd_stop")
+    r7b = w_cli(None, out=d7b, plants=plants_of({"err": "42501"}), **rdk)
+    if _latch_of(d7b, redate=True).get("reason") != "rls_refused" or os.path.exists(os.path.join(d7b, LATCH_NAME)):
+        bad.append("7o a re-dated stop: redate latch %s, real latch present %s (want only %s)" % (
+            _latch_of(d7b, redate=True), os.path.exists(os.path.join(d7b, LATCH_NAME)), LATCH_REDATE))
+    for tag, extra, gone, kept in (("plain", (), LATCH_NAME, LATCH_REDATE), ("redate", ("--test-redate",), LATCH_REDATE, LATCH_NAME)):
+        dd7 = _fresh_dir("rd_clear_" + tag)
+        _plant_latch(dd7)
+        _plant_latch(dd7, redate=True)
+        rcc, logc = _wc(dd7, *extra)
+        if rcc != 0 or os.path.exists(os.path.join(dd7, gone)) or not os.path.exists(os.path.join(dd7, kept)):
+            bad.append("7p write-clear %s: rc=%s, %s present %s, %s present %s (want only %s cleared)" % (
+                tag, rcc, gone, os.path.exists(os.path.join(dd7, gone)), kept, os.path.exists(os.path.join(dd7, kept)), gone))
+    return not bad, "; ".join(bad[:8]) or "5 refusals (clock, flag, env day, day < today, weekend) rc 2 before any connection; Saturday run: trading_day = today, every timestamptz + 8 days, expiry unchanged, files byte-equal to the flag-off run; both templates --clock real, no redate"
+
+
+def _typed_newest(tbl, t_view):
+    """{table: set of typed tuples} of the three state tables through the newest-epoch rule, on typed values."""
+    best = {}
+    for t in DELTA_TABLES:
+        for r in tbl.rows[t].values():
+            k = (r["trading_day"], r["symbol"])
+            if k not in best or r["as_of"] > best[k][0]:
+                best[k] = (r["as_of"], r["live_run_id"])
+    return dict((t, set(tuple(r[c] for c in tbl.cols[t]) for r in tbl.rows[t].values()
+                        if r["live_run_id"] == best[(r["trading_day"], r["symbol"])][1])) for t in DELTA_TABLES)
+
+
+def g_2b_restart():
+    """Plan guard 8. Red first: no db_written (the write flags are unknown)."""
+    bad = []
+    res = w_canon()
+    why = need_run(res, "8e canon run")
+    if why:
+        return False, why
+    deltas = _deltas_of(res)
+    dtbl = FakeTable(DAY)
+    full = apply_db(deltas)
+    want = dict((t, set(dtbl.text_tuple(t, r) for r in full[t].values())) for t in DELTA_TABLES)
+    got = _typed_newest(res.table, None)
+    for t in DELTA_TABLES:
+        if got[t] != want[t]:
+            bad.append("8e %s: U-only FakeTable through the newest-epoch rule != the D-applied state of the files (%d vs %d rows)" % (t, len(got[t]), len(want[t])))
+    cli = mods()[0]
+    for tag, plant, labels_skipped in (("A", {"crash_after": True}, True), ("A'", {"crash_before": True}, False)):
+        ph = w_phases("rs_" + tag.replace("'", "p"), [{"start": "15:20", "plants": plants_of(None, plant)}, {"start": "15:28"}])
+        if ph[0].rc != "CRASH" or ph[1].rc != 0:
+            bad.append("8%s rc %s/%s (want CRASH then 0)" % (tag, ph[0].rc, ph[1].rc))
+            continue
+        crashed, first = w_scripts(ph[0])[1], w_scripts(ph[1])[0]
+        if first["T"] != 925 or any(sorted(sent_rows(crashed).get(t, [])) != sorted(sent_rows(first).get(t, [])) for t in W_ORDER):
+            bad.append("8%s the restart did not resend exactly the cycle that died (T %s)" % (tag, first["T"]))
+        m = [x for x in w_metrics(ph[1]) if x["T"] == "15:25"]
+        n_lab = len(sent_rows(first).get("tape_live_label", []))
+        if not m or int(_f(m[0], "up_label_skipped")) != (n_lab if labels_skipped else 0) or n_lab == 0:
+            bad.append("8c %s up_label_skipped %s, want %d" % (tag, m[0].get("up_label_skipped") if m else None, n_lab if labels_skipped else 0))
+        st = apply_db(_deltas_of(ph[1]), u_only=True)
+        for t in DELTA_TABLES:
+            if ph[1].table.tuples(t) != set(ph[1].table.text_tuple(t, r) for r in st[t].values()):
+                bad.append("8%s %s: the table after the restart != the U-only state of the files" % (tag, t))
+        man = w_json_live(ph[1], "run_manifest.json")
+        by_hand = dict((s, [mods()[5].epoch_id(DAY, s, TEST_SHA, 0)]) for s in ("NIFTY", "SENSEX"))
+        if man.get("epochs") != by_hand or w_json(ph[1], "state.json").get("epoch") != {"NIFTY": 0, "SENSEX": 0}:
+            bad.append("8d %s epochs %s, by hand %s" % (tag, man.get("epochs"), by_hand))
+    # 8b: a skipped cycle, a kill, a restart: the first write is exactly the rows changed since db_written
+    ph = w_phases("skip_kill_restart", [{"start": "15:20", "plants": plants_of(None, {"err": "57014", "kill": True})}, {"start": "15:33"}])
+    first = w_scripts(ph[1])[0] if w_scripts(ph[1]) else None
+    if first is None or first["T"] != 930:
+        bad.append("8b no write at 15:30 after the restart")
+    else:
+        dl = _deltas_of(ph[1])
+        s930, s920 = apply_db(dl, "1530", u_only=True), apply_db(dl, "1520", u_only=True)
+        for t in DELTA_TABLES:
+            exp = sorted(tuple("" if v is None else v for v in r) for k, r in s930[t].items() if s920[t].get(k) != r)
+            if sorted(sent_rows(first).get(t, [])) != exp:
+                bad.append("8b %s: %d rows sent, %d changed since the last committed write" % (t, len(sent_rows(first).get(t, [])), len(exp)))
+    # 8f case D: another code sha re-emits every row under new ids
+    sha2 = "fedcba9876543210fedcba9876543210fedcba98"
+    ph = w_phases("sha_change", [{"start": "15:20", "plants": plants_of(None, {"kill": True})}, {"start": "15:33", "sha": sha2}])
+    m = [x for x in w_metrics(ph[1]) if x["T"] == "15:30"]
+    dl = _deltas_of(ph[1])
+    full = apply_db(dl, "1530")
+    for t in DELTA_TABLES:
+        n = len(full[t])
+        if not m or int(_f(m[0], "up_rows_" + t.replace("tape_live_", ""))) != n or len(u_rows(ph[1], "1530", t)) != n:
+            bad.append("8f %s: rows sent at the restart under another sha %s, state holds %d (want every row)" % (t, m[0].get("up_rows_" + t.replace("tape_live_", "")) if m else None, n))
+    v = _typed_newest(ph[1].table, None)
+    shas = set(r[-1] for t in DELTA_TABLES for r in v[t])
+    if shas != {sha2}:
+        bad.append("8f the newest epoch still carries code_sha %s" % sorted(shas))
+    return not bad, "; ".join(bad[:8]) or "U-only table through the newest-epoch rule == D-applied files; crash after commit and before commit both resend exactly the dead cycle (labels skipped / not), table == files; epochs by hand; skip + kill + restart resends exactly the rows changed since the last write; another sha re-emits every row"
+
+
+def w_json_live(res, name):
+    try:
+        with open(os.path.join(live_of(res), name), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def _naive(res_off):
+    """Every U line of every cycle, in order, as a plain upsert (a writer with no prediction). -> (SQLSTATE or None, cycle name)."""
+    tb = FakeTable(DAY)
+    for nm in cycle_names(res_off):
+        parts = []
+        for t in DELTA_TABLES:
+            rows = [dict((c, None if v == "" else v) for c, v in zip(sql_columns()[t], r)) for r in u_rows(res_off, nm, t)]
+            if rows:
+                parts.append(w_ref_insert(t, rows))
+        try:
+            tb.run(parse_script("BEGIN;\n" + "\n".join(parts) + "\nCOMMIT;"))
+        except SqlError as exc:
+            return exc.state, nm
+    return None, None
+
+
+def g_2b_grain_uq():
+    """Plan guard 9. Red first (plan: the fake raises 23505): here the write flags are unknown, so only the preconditions run."""
+    bad = []
+    # the plants really produce the collision: a naive upsert of the files' U lines raises 23505 (else the guard is vacuous)
+    for mode, frm in (("all", DAY + "T10:00:00+00:00"), ("inset", DAY + "T09:55:00+00:00")):
+        off = w_off("remap_off_" + mode, plant=lambda m=mode, f=frm: plant_remap(m, f))
+        if need_run(off, "remap %s flag-off" % mode):
+            return False, need_run(off, "remap %s flag-off" % mode)
+        st, nm = _naive(off)
+        if st != "23505":
+            bad.append("precondition %s: a naive upsert of the U lines gave %s at %s, want 23505" % (mode, st, nm))
+    if _naive(w_off("off_1520"))[0] is not None:
+        bad.append("precondition: the unplanted day collides in a naive upsert")
+    if bad:
+        return False, "; ".join(bad[:4])
+    r = w_cli("remap_all", start="15:20", plant=lambda: plant_remap("all", DAY + "T10:00:00+00:00"))
+    why = need_run(r, "9a remap run")
+    if why:
+        return False, why
+    old = [x for x in r.table.rows["tape_live_cycle"].values() if x["symbol"] == "NIFTY" and x["instrument_token"] == 10103]
+    new = [x for x in r.table.rows["tape_live_cycle"].values() if x["symbol"] == "NIFTY" and x["instrument_token"] == 99103]
+    m = w_metrics(r)
+    n_cnt = sum(int(_f(x, "cycle_grain_uq_violations")) for x in m)
+    hb, ws, sent = _stop_of(r)
+    wf = os.path.join(live_of(r), "db_withheld.csv")
+    lines = open(wf, encoding="utf-8").read().splitlines() if os.path.exists(wf) else []
+    if any(c["kind"] == "write" and "tags" not in c for c in r.fake.wcalls) or not old:
+        bad.append("9a a script raised in the fake (an unpredicted 23505?) or the old token has no rows")
+    if n_cnt != len(old):
+        bad.append("9c cycle_grain_uq_violations summed over the day = %d, by hand %d (one per distinct key, not per cycle)" % (n_cnt, len(old)))
+    if len(lines) != len(old) + 1:
+        bad.append("9d db_withheld.csv has %d lines for %d withheld keys (header + keys)" % (len(lines), len(old)))
+    if hb.get("state") == "stopped" or not new or not any(x["instrument_token"] != 99103 and x["ts_ist"] >= max(y["ts_ist"] for y in new) for x in r.table.rows["tape_live_cycle"].values()):
+        bad.append("9e writes did not continue after the withheld rows: write %s, %d rows under the new token" % (hb, len(new)))
+    # 9b: the collision is inside one write set (different primary keys, one grain)
+    r = w_cli("remap_inset", start="15:20", plant=lambda: plant_remap("inset", DAY + "T09:55:00+00:00"))
+    why = need_run(r, "9b run")
+    if why:
+        bad.append(why)
+    else:
+        dup_t = max(x["ts_ist"] for x in r.table.rows["tape_live_cycle"].values() if x["symbol"] == "NIFTY" and x["instrument_token"] in (10103, 99103))
+        held = [x for x in r.table.rows["tape_live_cycle"].values() if x["symbol"] == "NIFTY" and x["instrument_token"] in (10103, 99103) and x["ts_ist"] == dup_t]
+        n9 = sum(int(_f(x, "cycle_grain_uq_violations")) for x in w_metrics(r))
+        if len(held) != 1 or n9 != 1 or _stop_of(r)[0].get("state") == "stopped":
+            bad.append("9b in-set collision: %d rows hold the grain, %d counted, write %s (want 1, 1, writing)" % (len(held), n9, _stop_of(r)[0]))
+    # 9f: a row the writer does not know about: counted, the write stops, nothing of that cycle lands
+    def pre_foreign(table, parsed):
+        ins = [s["insert"] for s in parsed["stmts"] if s.get("insert") and s["insert"]["table"] == "tape_live_cycle"][0]
+        row = dict(zip(ins["cols"], ins["rows"][-1]))
+        row["instrument_token"] = "77777"
+        table.insert_foreign("tape_live_cycle", row)
+    r = w_cli("grain_foreign", start="15:20", plants=plants_of(None, {"preload": pre_foreign}))
+    hb, ws, sent = _stop_of(r)
+    m = dict((x["T"], x) for x in w_metrics(r))
+    at = [x for x in r.table.rows["tape_live_cycle"].values() if x["ts_ist"] == max(y["ts_ist"] for y in r.table.rows["tape_live_cycle"].values())]
+    if need_run(r, "9f run") or hb.get("reason") != "cycle_grain_uq_unpredicted" or hb.get("state") != "stopped" or m.get("15:25", {}).get("cycle_grain_uq_violations") != "1" \
+            or len(w_scripts(r)) != 2 or len(at) != 1:
+        bad.append("9f unpredicted 23505: write %s, counted %s, %d scripts, %d rows at the newest instant (want stopped / cycle_grain_uq_unpredicted, 1, 2, 1: the foreign row only)" % (
+            hb, m.get("15:25", {}).get("cycle_grain_uq_violations"), len(w_scripts(r)), len(at)))
+    return not bad, "; ".join(bad[:8]) or "naive upserts of the plants raise 23505; cross-cycle remap: %d keys withheld once each and listed, writing on; in-set: 1 withheld; an unknown holder: counted, stopped, nothing of the cycle landed" % len(old)
+
+
+def g_2b_confined():
+    """Plan guard 10. Red first: no sink."""
+    bad = []
+    res = w_cli("on_short", start="15:25")
+    why = need_run(res, "10 run")
+    if why:
+        return False, why
+    if res.w_left:
+        bad.append("10a %s is still in os.environ after start" % W_ENV)
+    allcalls = list(res.fake.calls) + [(c["argv"], c["env"], c["stdin"], c["timeout"]) for c in res.fake.wcalls]
+    for argv, _env, _stdin, _t in allcalls:
+        if any(W_PW in a or W_DSN in a or "PGPASSWORD" in a for a in argv):
+            bad.append("10b a secret or PGPASSWORD in an argv")
+            break
+    allowed = {"PATH", "LANG", "SystemRoot", "PGHOST", "PGPORT", "PGUSER", "PGPASSWORD", "PGDATABASE", "PGSSLMODE", "PGOPTIONS",
+               "PGCONNECT_TIMEOUT", "PGAPPNAME"}
+    if not res.fake.wcalls:
+        bad.append("10d no write-role call to inspect")
+    for c in res.fake.wcalls:
+        e = c["env"]
+        if e.get("PGUSER") != W_USER or TEST_PW in "".join(str(v) for v in e.values()) or set(e) - allowed or "default_transaction_read_only=on" in e.get("PGOPTIONS", ""):
+            bad.append("10d/e write env: user %r, keys beyond the allowlist %s, read-only option %s" % (e.get("PGUSER"), sorted(set(e) - allowed), "default_transaction_read_only=on" in e.get("PGOPTIONS", "")))
+            break
+    for argv, env, _s, _t in res.fake.calls:
+        if argv[0] == "psql" and (W_PW in "".join(str(v) for v in env.values()) or env.get("PGUSER") == W_USER):
+            bad.append("10d a read psql call carries the write role or its password")
+            break
+        if argv[0] == "aws" and any(k.startswith("PG") or W_PW in str(v) for k, v in env.items()):
+            bad.append("10e the aws child environment carries PG* or the write password")
+            break
+    if res.fake.misrouted:
+        bad.append("10d a write script was sent with the read role's environment (%d calls)" % len(res.fake.misrouted))
+    r = w_cli("stderr_secret", start="15:20", plants=plants_of({"err": "stderr_secret"}))
+    if need_run(r, "10c run") or w_json(r, "heartbeat.json").get("write", {}).get("state") != "stopped":
+        bad.append("10c the failing write did not stop the writer (the check would be vacuous)")
+    blobs = [("log", r.log.encode("utf-8"))] + [(rel, rd(os.path.join(r.root, rel))) for rel in _files(r.root) if not rel.startswith("raw/")]
+    for name, b in blobs:
+        for needle, what in ((W_PW, "the write password"), (W_DSN, "the write DSN"), (STDERR_MARK, "raw stderr")):
+            if needle.encode() in b:
+                bad.append("10c %s contains %s" % (name, what))
+    # static: dbwrite.py and the rest of services/tape_live
+    path = os.path.join(LIVE, "dbwrite.py")
+    if not os.path.isfile(path):
+        bad.append("10f/g dbwrite.py does not exist")
+    else:
+        tree = ast.parse(rd(path).decode("utf-8"))
+        for n in ast.walk(tree):
+            if isinstance(n, (ast.Import, ast.ImportFrom)):
+                for m_ in [a.name for a in n.names] if isinstance(n, ast.Import) else [n.module or ""]:
+                    if m_.split(".")[0] == "subprocess" or any(m_ == x or m_.startswith(x + ".") for x in NET_MODS):
+                        bad.append("10f dbwrite.py imports %s" % m_)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and isinstance(n.func.value, ast.Name) and n.func.value.id == "os" \
+                    and n.func.attr in ("system", "popen", "execv", "execve", "execvp", "spawnv", "spawnl"):
+                bad.append("10f dbwrite.py calls os.%s" % n.func.attr)
+        text = rd(path).decode("utf-8")
+        for pname, rx in _secret_patterns():
+            if pname != "test-credential" and rx.search(text):
+                bad.append("10g dbwrite.py matches the secret pattern %s" % pname)
+    write_words = re.compile(r"\b(INSERT|UPDATE|DELETE|TRUNCATE|DROP|ALTER|CREATE|GRANT|REVOKE|MERGE|COPY)\b")
+    for n in sorted(os.listdir(LIVE)):
+        if not n.endswith(".py") or n in ("dbwrite.py", "ddl.py"):
+            continue
+        _tree, consts = _consts(os.path.join(LIVE, n))
+        for ln, s in consts:
+            if write_words.search(s) and not (n == "wall_source.py" and s == "INSERT,UPDATE,DELETE,TRUNCATE"):
+                bad.append("10h %s:%d names write SQL outside dbwrite.py: %r" % (n, ln, s[:40]))
+    return not bad, "; ".join(bad[:8]) or "the write DSN leaves os.environ and argv, files and logs (also on a failing write whose stderr carries it); write and read environments never cross, the write one has no read-only option; dbwrite.py imports no subprocess or network module and matches no secret pattern; write SQL exists only in dbwrite.py"
+
+
+def g_2b_restart_withheld():
+    """Guard 34 (operator, 2026-11-14): a restart on a day that withheld rows rebuilds the writer's model WITHOUT them. A withheld
+    row never reached the table, so a model that holds it is wrong: it stops predicting the collision and hides the row's holder.
+    Remap plant from 15:30 (74 NIFTY rows withheld at 15:30), kill after that write, restart at 15:38: at the restart's start() the
+    model of the cycle table must equal what the table holds, exactly. Red first: the model is rebuilt from every U line."""
+    dbw = _dbw()
+    if dbw is None:
+        return False, "ImportError: services.tape_live.dbwrite does not exist"
+    ft = FakeTable(DAY)
+    snaps = []
+    orig = dbw.DbWriter.start
+
+    def start(self, st, live_dir, fresh):
+        orig(self, st, live_dir, fresh)
+        snaps.append((fresh, set(ft.text_tuple("tape_live_cycle", r) for r in self.model["tape_live_cycle"].values()),
+                      set(_W_TABLE["t"].tuples("tape_live_cycle"))))
+    dbw.DbWriter.start = start
+    try:
+        ph = w_phases("withheld_restart", [{"start": "15:20", "plants": plants_of(None, None, {"kill": True})}, {"start": "15:38"}],
+                      plant=lambda: plant_remap("all", DAY + "T10:00:00+00:00"))
+    finally:
+        dbw.DbWriter.start = orig
+    bad = []
+    for i, r in enumerate(ph):
+        why = need_run(r, "phase %d" % (i + 1))
+        if why:
+            return False, why
+    old = [x for x in ph[1].table.rows["tape_live_cycle"].values() if x["symbol"] == "NIFTY" and x["instrument_token"] == 10103]
+    wf = os.path.join(live_of(ph[1]), "db_withheld.csv")
+    n_lines = len(open(wf, encoding="utf-8").read().splitlines()) if os.path.exists(wf) else 0
+    if len(snaps) != 2 or snaps[1][0] or not old or n_lines != len(old) + 1:
+        return False, "precondition: %d start() calls (the second must be a restart), %d old-token rows, db_withheld.csv has %d lines (want header + %d)" % (
+            len(snaps), len(old), n_lines, len(old))
+    _fresh, model, held = snaps[1]
+    if model != held:
+        bad.append("8g the model rebuilt at the restart holds %d rows the table never received (the withheld rows) and lacks %d the table holds" % (
+            len(model - held), len(held - model)))
+    m2 = [x for x in w_metrics(ph[1]) if x["T"] >= "15:35"]
+    hb, _ws, _sent = _stop_of(ph[1])
+    if not m2 or sum(int(_f(x, "cycle_grain_uq_violations")) for x in m2) != 0 or hb.get("state") == "stopped":
+        bad.append("8g after the restart: %d new grain violations counted, write %s (want none counted, still writing)" % (
+            sum(int(_f(x, "cycle_grain_uq_violations")) for x in m2), hb))
+    return not bad, "; ".join(bad[:4]) or "after a kill and a restart on a day that withheld %d rows, the rebuilt model equals the table (withheld rows excluded, their holders kept); nothing is counted twice" % len(old)
+
+
+GUARDS_2B = [("live-2b-off", g_2b_off), ("live-2b-upsert-only", g_2b_upsert_only), ("live-2b-statements", g_2b_statements),
+             ("live-2b-metrics", g_2b_metrics), ("live-2b-stop", g_2b_stop), ("live-2b-latch", g_2b_latch), ("live-2b-startup", g_2b_startup),
+             ("live-2b-redate", g_2b_redate), ("live-2b-restart", g_2b_restart), ("live-2b-grain-uq", g_2b_grain_uq),
+             ("live-2b-confined", g_2b_confined),
+             ("live-2b-restart-withheld", g_2b_restart_withheld)]
+
+
 GUARDS = [("live-vectors", g_vectors), ("live-derive", g_derive), ("live-rule-inputs", g_rule_inputs),
           ("live-wall-floor", g_wall_floor), ("live-first-wins", g_first_wins), ("live-equal-offline", g_equal_offline),
           ("live-causal", g_causal), ("live-verify", g_verify), ("live-deterministic", g_deterministic),
@@ -2479,7 +4706,7 @@ GUARDS = [("live-vectors", g_vectors), ("live-derive", g_derive), ("live-rule-in
           ("live-runner-equal", g_runner_equal), ("live-runner-readonly", g_runner_readonly),
           ("live-runner-secrets", g_runner_secrets), ("live-runner-bounded-sql", g_runner_bounded_sql),
           ("live-runner-keyset", g_runner_keyset), ("live-runner-lifecycle", g_runner_lifecycle),
-          ("live-runner-restart", g_runner_restart), ("live-epoch", g_epoch), ("live-dbshape", g_dbshape)]
+          ("live-runner-restart", g_runner_restart), ("live-epoch", g_epoch), ("live-dbshape", g_dbshape)] + GUARDS_2B
 
 
 def main():

@@ -1,0 +1,21 @@
+Append  (cost=671.95..1341.86 rows=13 width=64)
+  CTE r
+    ->  Index Scan using uix_gm_run on gamma_metrics g  (cost=0.29..2.51 rows=1 width=38)
+          Index Cond: (run_id = 'd875b416-7b1d-4e34-bfc4-0ba077ac1af2'::uuid)
+  ->  Nested Loop  (cost=669.44..669.77 rows=1 width=64)
+        Join Filter: (r.run_id = r_1.run_id)
+        ->  CTE Scan on r  (cost=0.00..0.02 rows=1 width=64)
+        ->  GroupAggregate  (cost=669.44..669.69 rows=1 width=96)
+              Group Key: r_1.run_id
+              ->  Sort  (cost=669.44..669.47 rows=12 width=24)
+                    Sort Key: r_1.run_id, o.spot
+                    ->  Nested Loop  (cost=0.43..669.23 rows=12 width=24)
+                          ->  CTE Scan on r r_1  (cost=0.00..0.02 rows=1 width=20)
+                          ->  Index Scan using idx_ocs_run_id on option_chain_snapshots o  (cost=0.43..669.00 rows=21 width=28)
+                                Index Cond: (run_id = r_1.run_id)
+                                Filter: (r_1.expiry_date = expiry_date)
+  ->  Nested Loop  (cost=0.43..669.53 rows=12 width=64)
+        ->  CTE Scan on r r_2  (cost=0.00..0.02 rows=1 width=20)
+        ->  Index Scan using idx_ocs_run_id on option_chain_snapshots o_1  (cost=0.43..669.00 rows=21 width=37)
+              Index Cond: (run_id = r_2.run_id)
+              Filter: (r_2.expiry_date = expiry_date)

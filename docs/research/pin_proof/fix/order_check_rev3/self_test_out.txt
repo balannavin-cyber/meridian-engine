@@ -1,0 +1,71 @@
+========================================================================
+PART 1 - baseline: indep.measure() against the hand literals
+========================================================================
+  PASS  n_in_set: got 6 want 6
+  PASS  n_ranked: got 3 want 3
+  PASS  n_oi_no_gamma: got 1 want 1
+  PASS  n_call_only: got 1 want 1
+  PASS  n_put_only: got 1 want 1
+  PASS  sequence: got [1000.0, 1010.0, 980.0] want [1000.0, 1010.0, 980.0]
+  PASS  legs_map: got {960.0: 'none', 980.0: 'put_only', 1000.0: 'both', 1010.0: 'call_only', 1030.0: 'none', 1040.0: 'both'} want {960.0: 'none', 980.0: 'put_only', 1000.0: 'both', 1010.0: 'call_only', 1030.0: 'none', 1040.0: 'both'}
+  PASS  lead_rel: got 0.6000000000000001 want 0.6
+  PASS  gross[980]: got 0.004 want 0.004
+  PASS  gross[1000]: got 0.010000000000000002 want 0.01
+  PASS  gross[1010]: got 0.004 want 0.004
+  PASS  1010 ties 980 bit-identically: got True want True
+  PASS  n_gamma_zero_oi: got 1 want 1
+  PASS  1040 in-set and tagged both: got 'both' want 'both'
+  PASS  1040 NOT ranked (gross_cr = 0): got False want False
+  PASS  1055 excluded at 5 %: got False want False
+  PASS  band arithmetic for 1055: got True want True
+  PASS  1055 admitted at 6 %: got True want True
+
+========================================================================
+PART 2 - clause evaluator on a clean pair: all four must PASS
+========================================================================
+  PASS  baseline clause1: got True want True
+  PASS  baseline clause2: got True want True
+  PASS  baseline clause3: got True want True
+  PASS  baseline clause4: got True want True
+  PASS  baseline overall: got True want True
+    rows_compared=3 legs_rows_compared=6 gross_rows_compared=3 max_rel_gross_diff=1.7347234759768068e-16
+
+========================================================================
+PART 3 - the three named mutation controls
+  Each must make at least one clause FAIL, or the check is VOID.
+========================================================================
+
+-- M1 swap the tie-break  knob={'tiebreak': 'lower_then_nearer'}
+  PASS  M1 swap the tie-break: mutated sequence: got [1000.0, 980.0, 1010.0] want [1000.0, 980.0, 1010.0]
+   clauses FAILED by this mutant: ['clause1']
+  PASS  M1 swap the tie-break: at least one clause FAILS: got True want True
+  PASS  M1 swap the tie-break: overall FAILS: got False want False
+
+-- M2 drop the OI filter in n_oi_no_gamma  knob={'oi_filter': False}
+  PASS  M2 drop the OI filter in n_oi_no_gamma: mutated n_oi_no_gamma: got 2 want 2
+   clauses FAILED by this mutant: ['clause2']
+  PASS  M2 drop the OI filter in n_oi_no_gamma: at least one clause FAILS: got True want True
+  PASS  M2 drop the OI filter in n_oi_no_gamma: overall FAILS: got False want False
+
+-- M3 widen the band to 6 %  knob={'band': 0.06}
+  PASS  M3 widen the band to 6 %: mutated n_in_set: got 7 want 7
+  PASS  M3 widen the band to 6 %: mutated n_ranked: got 4 want 4
+  PASS  M3 widen the band to 6 %: mutated sequence: got [1055.0, 1000.0, 1010.0, 980.0] want [1055.0, 1000.0, 1010.0, 980.0]
+  PASS  M3 widen the band to 6 %: mutated lead_rel: got 0.95 want 0.95
+   clauses FAILED by this mutant: ['clause1', 'clause2', 'clause3']
+  PASS  M3 widen the band to 6 %: at least one clause FAILS: got True want True
+  PASS  M3 widen the band to 6 %: overall FAILS: got False want False
+
+========================================================================
+PART 4 - additional control (NOT one of the three named mutants)
+  Clause 4 is untouched by M1-M3, so it needs its own control.
+========================================================================
+  PASS  dropped pair on INDEP side: clause4 FAILS: got False want False
+  PASS  dropped pair on INDEP side: overall FAILS: got False want False
+  PASS  dropped pair on VIEW side: clause4 FAILS: got False want False
+
+========================================================================
+SELF-TEST ALL PASS: 38/38 checks
+All three named mutants made at least one clause FAIL.
+Clauses 1, 2, 3 shown failable by M1/M2/M3; clause 4 by PART 4.
+========================================================================

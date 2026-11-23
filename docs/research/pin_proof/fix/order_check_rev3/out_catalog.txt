@@ -1,0 +1,23 @@
+COL|1|run_id|uuid
+COL|2|symbol|text
+COL|3|expiry_date|date
+COL|4|ts|timestamp with time zone
+COL|5|dte|integer
+COL|6|spot|numeric
+COL|7|strike_rank|bigint
+COL|8|strike|numeric
+COL|9|oi_call|bigint
+COL|10|oi_put|bigint
+COL|11|gamma_call|double precision
+COL|12|gamma_put|double precision
+COL|13|gamma_strike|double precision
+COL|14|gross_cr|double precision
+COL|15|share_of_gross|double precision
+COL|16|gex_cr|numeric
+COL|17|side|text
+COL|18|lead_rel|double precision
+COL|19|n_ranked|bigint
+COL|20|gamma_legs|text
+COL|21|n_in_set|bigint
+COL|22|n_oi_no_gamma|bigint
+DEF|5281|aa4946064341c1d1ae835819d8cba858

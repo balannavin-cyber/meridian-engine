@@ -1,0 +1,28 @@
+source   : /home/ssm-user/meridian-engine/backfill_hist_greeks.py
+sha256   : b99e146b921e403a7f1d536061b45f2447937687b923903c7949ff9d19aca268
+bytes    : 19256
+
+kind|name|lines|chars|where|get_source_segment_vs_independent_slice
+import|np|37-37|18|module|EQUAL
+import|math|69-69|11|nested in _norm_cdf_np|EQUAL
+assign|R_FLAT|47-47|14|module|EQUAL
+assign|SQRT_2PI|48-48|31|module|EQUAL
+assign|IV_LO|51-51|50|module|EQUAL
+def|_norm_cdf_np|67-71|200|module|EQUAL
+try|norm_cdf|74-80|193|module|EQUAL
+def|norm_pdf|83-84|59|module|EQUAL
+def|bs_price_vec|87-101|622|module|EQUAL
+def|bs_gamma_vec|104-111|335|module|EQUAL
+def|implied_vol_vec|114-155|1612|module|EQUAL
+
+### NOTES
+# import math was NOT at module level: found nested in _norm_cdf_np at :69; statement copied verbatim as-is.
+
+written  : /home/ssm-user/meridian-cc/docs/research/pin_proof/gamma_inputs/sens/bs_backfill_copy.py
+out bytes: 4831
+out sha  : 83d56d20cfe21dcf472474ef56c606c59f48820ad8655589cfc30b3615db6428
+
+### check 2 -- free names in the written copy
+names loaded: 51, bound in file: 51
+unresolved: none
+ALL SEGMENTS EQUAL; COPY RESOLVES EVERY NAME IT LOADS

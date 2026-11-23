@@ -1,0 +1,74 @@
+k|table_name|ordinal_position|column_name|data_type|is_nullable
+COL|hist_basis_context|1|id|bigint|NO
+COL|hist_basis_context|2|ts|timestamp with time zone|NO
+COL|hist_basis_context|3|symbol|text|NO
+COL|hist_basis_context|4|contract_series|smallint|YES
+COL|hist_basis_context|5|expiry_date|date|YES
+COL|hist_basis_context|6|basis|numeric|YES
+COL|hist_basis_context|7|basis_pct_now|numeric|YES
+COL|hist_basis_context|8|basis_pct_prev|numeric|YES
+COL|hist_basis_context|9|basis_velocity_pp|numeric|YES
+COL|hist_basis_context|10|window_min|integer|YES
+COL|hist_basis_context|11|spot_now|numeric|YES
+COL|hist_basis_context|12|spot_delta|numeric|YES
+COL|hist_basis_context|13|context_label|text|YES
+COL|hist_basis_context|14|source|text|NO
+COL|hist_basis_context|15|created_at|timestamp with time zone|NO
+COL|hist_future_bars_1m|1|id|uuid|NO
+COL|hist_future_bars_1m|2|instrument_id|uuid|NO
+COL|hist_future_bars_1m|3|trade_date|date|NO
+COL|hist_future_bars_1m|4|bar_ts|timestamp with time zone|NO
+COL|hist_future_bars_1m|5|expiry_date|date|YES
+COL|hist_future_bars_1m|6|contract_series|smallint|NO
+COL|hist_future_bars_1m|7|open|numeric|NO
+COL|hist_future_bars_1m|8|high|numeric|NO
+COL|hist_future_bars_1m|9|low|numeric|NO
+COL|hist_future_bars_1m|10|close|numeric|NO
+COL|hist_future_bars_1m|11|volume|bigint|NO
+COL|hist_future_bars_1m|12|oi|bigint|NO
+COL|hist_future_bars_1m|13|ingest_batch_id|uuid|YES
+COL|hist_future_bars_1m|14|is_pre_market|boolean|NO
+COL|hist_future_bars_1m|15|is_leap|boolean|NO
+COL|historical_index_futures_1m|1|id|uuid|NO
+COL|historical_index_futures_1m|2|ts|timestamp with time zone|NO
+COL|historical_index_futures_1m|3|symbol|text|NO
+COL|historical_index_futures_1m|4|contract_code|text|YES
+COL|historical_index_futures_1m|5|security_id|text|YES
+COL|historical_index_futures_1m|6|expiry_date|date|YES
+COL|historical_index_futures_1m|7|ltp|numeric|YES
+COL|historical_index_futures_1m|8|open_interest|bigint|YES
+COL|historical_index_futures_1m|9|volume|bigint|YES
+COL|historical_index_futures_1m|10|basis|numeric|YES
+COL|historical_index_futures_1m|11|basis_pct|numeric|YES
+COL|historical_index_futures_1m|12|source|text|NO
+COL|historical_index_futures_1m|13|created_at|timestamp with time zone|NO
+COL|index_futures_snapshots|1|id|bigint|NO
+COL|index_futures_snapshots|2|ts|timestamp with time zone|NO
+COL|index_futures_snapshots|3|symbol|text|NO
+COL|index_futures_snapshots|4|contract_symbol|text|YES
+COL|index_futures_snapshots|5|expiry_date|date|YES
+COL|index_futures_snapshots|6|expiry_type|text|YES
+COL|index_futures_snapshots|7|spot_price|numeric|YES
+COL|index_futures_snapshots|8|futures_price|numeric|YES
+COL|index_futures_snapshots|9|basis|numeric|YES
+COL|index_futures_snapshots|10|basis_pct|numeric|YES
+COL|index_futures_snapshots|11|source|text|YES
+COL|index_futures_snapshots|12|raw|jsonb|YES
+COL|index_futures_snapshots|13|created_at|timestamp with time zone|NO
+(56 rows)
+k|tablename|indexdef
+IDX|fyers_futures_bars_1m|CREATE UNIQUE INDEX fyers_futures_bars_1m_pkey ON public.fyers_futures_bars_1m USING btree (underlying, expiry_date, ts)
+IDX|fyers_futures_bars_1m|CREATE INDEX fyers_futures_bars_1m_underlying_ts_idx ON public.fyers_futures_bars_1m USING btree (underlying, ts)
+IDX|hist_basis_context|CREATE UNIQUE INDEX hist_basis_context_pkey ON public.hist_basis_context USING btree (id)
+IDX|hist_basis_context|CREATE INDEX idx_hist_basis_context_symbol_ts ON public.hist_basis_context USING btree (symbol, ts DESC)
+IDX|hist_basis_context|CREATE UNIQUE INDEX uq_hist_basis_context_symbol_ts ON public.hist_basis_context USING btree (symbol, ts)
+IDX|hist_future_bars_1m|CREATE UNIQUE INDEX hist_future_bars_1m_pkey ON public.hist_future_bars_1m USING btree (id)
+IDX|hist_future_bars_1m|CREATE UNIQUE INDEX hist_future_bars_unique ON public.hist_future_bars_1m USING btree (instrument_id, bar_ts, contract_series, expiry_date)
+IDX|hist_future_bars_1m|CREATE INDEX idx_hist_future_ts ON public.hist_future_bars_1m USING btree (instrument_id, contract_series, bar_ts DESC)
+IDX|historical_index_futures_1m|CREATE UNIQUE INDEX historical_index_futures_1m_pkey ON public.historical_index_futures_1m USING btree (id)
+IDX|historical_index_futures_1m|CREATE UNIQUE INDEX historical_index_futures_1m_symbol_ts_key ON public.historical_index_futures_1m USING btree (symbol, ts)
+IDX|historical_index_futures_1m|CREATE INDEX idx_hist_fut_symbol_ts ON public.historical_index_futures_1m USING btree (symbol, ts DESC)
+IDX|index_futures_snapshots|CREATE INDEX idx_index_futures_snapshots_created_at ON public.index_futures_snapshots USING btree (created_at DESC)
+IDX|index_futures_snapshots|CREATE INDEX idx_index_futures_snapshots_symbol_ts ON public.index_futures_snapshots USING btree (symbol, ts DESC)
+IDX|index_futures_snapshots|CREATE UNIQUE INDEX index_futures_snapshots_pkey ON public.index_futures_snapshots USING btree (id)
+(14 rows)

@@ -1,0 +1,20 @@
+  role_now  | can_select_now | merdian_ro_select | can_select_basis_ctx 
+------------+----------------+-------------------+----------------------
+ merdian_ro | f              | f                 | t
+(1 row)
+
+ column_name |        data_type         | not_null | attnum 
+-------------+--------------------------+----------+--------
+ underlying  | text                     | t        |      1
+ symbol      | text                     | t        |      2
+ expiry_date | date                     | t        |      3
+ ts          | timestamp with time zone | t        |      4
+ open        | numeric                  | f        |      5
+ high        | numeric                  | f        |      6
+ low         | numeric                  | f        |      7
+ close       | numeric                  | f        |      8
+ volume      | bigint                   | f        |      9
+ oi          | bigint                   | f        |     10
+ source      | text                     | t        |     11
+(11 rows)
+

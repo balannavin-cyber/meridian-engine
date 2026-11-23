@@ -1,0 +1,58 @@
+### F2 coverage: does a futures bar exist at each sampled minute?
+sym|minutes|exact_hit|exact_miss|miss_with_nearest_hit|nearest_off_sec_nonzero
+NIFTY|36|36|0|0|0
+SENSEX|36|15|21|0|0
+
+# EXACT misses, listed individually (a zero here is NOT absence unless
+# nearest_off_sec is also null -- see the query header):
+sym|day|minute|nearest_off_sec|nearest_series|nearest_close
+SENSEX|2025-04-02|10:00|None|None|None
+SENSEX|2025-04-02|12:30|None|None|None
+SENSEX|2025-04-02|15:00|None|None|None
+SENSEX|2025-07-02|10:00|None|None|None
+SENSEX|2025-07-02|12:30|None|None|None
+SENSEX|2025-07-02|15:00|None|None|None
+SENSEX|2025-08-01|10:00|None|None|None
+SENSEX|2025-08-01|12:30|None|None|None
+SENSEX|2025-08-01|15:00|None|None|None
+SENSEX|2025-09-01|10:00|None|None|None
+SENSEX|2025-09-01|12:30|None|None|None
+SENSEX|2025-09-01|15:00|None|None|None
+SENSEX|2025-10-03|10:00|None|None|None
+SENSEX|2025-10-03|12:30|None|None|None
+SENSEX|2025-10-03|15:00|None|None|None
+SENSEX|2025-11-03|10:00|None|None|None
+SENSEX|2025-11-03|12:30|None|None|None
+SENSEX|2025-11-03|15:00|None|None|None
+SENSEX|2025-12-01|10:00|None|None|None
+SENSEX|2025-12-01|12:30|None|None|None
+SENSEX|2025-12-01|15:00|None|None|None
+
+### F1 contracts present at the exact sampled bar_ts
+sym|contract_series|rows|distinct_expiries|min_fut_dte|max_fut_dte
+NIFTY|1|36|1|n/a|n/a
+NIFTY|2|35|1|n/a|n/a
+NIFTY|3|33|1|n/a|n/a
+SENSEX|0|24|9|1|59
+
+### near contract per sampled minute: fut_dte and the basis it implies
+# fut_dte is the T that ln(F/S)/T must be divided by. A SMALL fut_dte makes r
+# explode, so these are the minutes a sensitivity run must flag, not average over.
+sym|day|minute|near_series|fut_dte|fut_close
+SENSEX|2025-05-02|10:00|0|4|81250
+SENSEX|2025-05-02|12:30|0|4|80211.45
+SENSEX|2025-05-02|15:00|0|4|80556.75
+SENSEX|2025-06-02|10:00|0|1|80828
+SENSEX|2025-06-02|12:30|0|1|81183.3
+SENSEX|2025-06-02|15:00|0|1|81414
+SENSEX|2026-01-02|10:00|0|27|86050
+SENSEX|2026-01-02|12:30|0|27|86146
+SENSEX|2026-01-02|15:00|0|27|86150
+SENSEX|2026-02-01|10:00|0|25|82842
+SENSEX|2026-02-01|12:30|0|25|81229.6
+SENSEX|2026-02-01|15:00|0|25|81542.25
+SENSEX|2026-03-02|10:00|0|23|80880.5
+SENSEX|2026-03-02|12:30|0|23|80217.4
+SENSEX|2026-03-02|15:00|0|23|80500
+# sampled minutes whose NEAR futures contract has fut_dte < 3 days: 3
+# near-contract fut_dte across all sampled minutes: min 1, median 23, max 27

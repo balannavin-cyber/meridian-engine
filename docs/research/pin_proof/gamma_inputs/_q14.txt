@@ -1,0 +1,6 @@
+ underlying | first_ts_stored_clock | last_ts_stored_clock | first_contract_symbol | first_expiry | last_expiry | visible_underlyings | catalog_est_rows_unfiltered 
+------------+-----------------------+----------------------+-----------------------+--------------+-------------+---------------------+-----------------------------
+ NIFTY      | 2025-01-31 03:45:00   | 2026-10-27 09:59:00  | NSE:NIFTY25APRFUT     | 2025-04-24   | 2026-10-27  |                   2 |                      795544
+ SENSEX     | 2025-02-10 05:53:00   | 2026-10-29 09:59:00  | BSE:SENSEX25APRFUT    | 2025-04-29   | 2026-10-29  |                   2 |                      795544
+(2 rows)
+

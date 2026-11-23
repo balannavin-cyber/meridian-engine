@@ -1,0 +1,8 @@
+Nested Loop Left Join  (cost=0.58..29.18 rows=14 width=64)
+  ->  Index Scan using uix_gamma_metrics_symbol_ts on gamma_metrics g  (cost=0.29..15.36 rows=14 width=24)
+        Index Cond: ((symbol = 'SENSEX'::text) AND (ts >= '2026-11-19 18:30:00+00'::timestamp with time zone) AND (ts < '2026-11-20 18:30:00+00'::timestamp with time zone))
+        Filter: (run_id IS NOT NULL)
+  ->  Limit  (cost=0.29..0.94 rows=1 width=52)
+        ->  Index Scan Backward using uq_volatility_snapshots_symbol_ts on volatility_snapshots vs  (cost=0.29..5676.96 rows=8770 width=52)
+              Index Cond: ((symbol = 'SENSEX'::text) AND (ts <= g.ts))
+              Filter: (atm_iv_avg IS NOT NULL)

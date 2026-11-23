@@ -1,0 +1,18 @@
+Append  (cost=0.46..3947.12 rows=6 width=64)
+  CTE tgt
+    ->  Values Scan on "*VALUES*"  (cost=0.00..0.04 rows=3 width=40)
+  ->  Nested Loop  (cost=0.42..8.07 rows=3 width=64)
+        ->  CTE Scan on tgt g  (cost=0.00..0.06 rows=3 width=40)
+        ->  Index Scan using hist_future_bars_unique on hist_future_bars_1m f  (cost=0.42..2.64 rows=1 width=38)
+              Index Cond: ((instrument_id = '9992f600-51b3-4009-b487-f878692a0bc5'::uuid) AND (bar_ts = g.tts))
+  ->  Nested Loop Left Join  (cost=1312.92..3938.98 rows=3 width=64)
+        ->  Nested Loop Left Join  (cost=2.65..8.05 rows=3 width=48)
+              ->  CTE Scan on tgt g_1  (cost=0.00..0.06 rows=3 width=40)
+              ->  Aggregate  (cost=2.65..2.65 rows=1 width=8)
+                    ->  Index Only Scan using hist_future_bars_unique on hist_future_bars_1m f_1  (cost=0.42..2.64 rows=1 width=0)
+                          Index Cond: ((instrument_id = '9992f600-51b3-4009-b487-f878692a0bc5'::uuid) AND (bar_ts = g_1.tts))
+        ->  Limit  (cost=1310.27..1310.28 rows=1 width=74)
+              ->  Sort  (cost=1310.27..1313.46 rows=1276 width=74)
+                    Sort Key: (abs(EXTRACT(epoch FROM (f_2.bar_ts - g_1.tts)))), f_2.contract_series
+                    ->  Index Scan using hist_future_bars_unique on hist_future_bars_1m f_2  (cost=0.43..1303.89 rows=1276 width=74)
+                          Index Cond: ((instrument_id = '9992f600-51b3-4009-b487-f878692a0bc5'::uuid) AND (bar_ts >= (g_1.tts - '00:02:00'::interval)) AND (bar_ts <= (g_1.tts + '00:02:00'::interval)))

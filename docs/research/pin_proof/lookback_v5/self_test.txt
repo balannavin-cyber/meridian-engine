@@ -1,0 +1,31 @@
+lookback_v5 SELF-TESTS (run before any data is read)
+==========================================================================
+
+ST1 -- solver round trips (tolerance 1e-5 on sigma)
+PASS  ST1a straddle S=K=25000 sigma=0.15  -- px=271.257764 recovered=0.14999986 status=OK
+PASS  ST1b B76 call F=25010 K=25500 sigma=0.18  -- px=23.647199 recovered=0.18000015 status=OK
+PASS  ST1c B76 put  F=25010 K=24500 sigma=0.18  -- px=19.905785 recovered=0.18000015 status=OK
+
+ST2 -- planted chain, pins known by construction
+PASS  ST2 run valid
+PASS  ST2 dte_cal == 3  -- got 3
+PASS  ST2 ATM == 25000  -- got 25000.0
+PASS  ST2 pin T == 25100 under g  -- got 25100.0
+PASS  ST2 pin N == 25200 under g  -- got 25200.0
+PASS  ST2 pin T == 25100 under g_flat  -- got 25100.0
+PASS  ST2 pin N == 25200 under g_flat  -- got 25200.0
+PASS  ST2 call_wall == 25100  -- got 25100.0
+PASS  ST2 put_wall == 25100  -- got 25100.0
+PASS  ST2 every sigma_K within 1e-4 of 0.15  -- worst deviation 1.353e-07
+PASS  ST2 no fallback  -- got 0
+
+ST3 -- tie at equal distance resolves to the LOWER strike
+PASS  ST3 tie -> 24950  -- got 24950.0, lead=0.0
+
+ST4 -- a zero OTM price takes the fallback and is counted
+PASS  ST4 run valid
+PASS  ST4 fallback counted == 1  -- got 1
+PASS  ST4 fallback strike used sigma_atm  -- sigma_K=0.14999986 sigma_atm=0.14999986
+
+==========================================================================
+SELF-TESTS ALL PASS (18 pass, 0 fail)

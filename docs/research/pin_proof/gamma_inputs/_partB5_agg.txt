@@ -1,0 +1,38 @@
+### B5 distinct trading days per month with a front-expiry greeks row
+# measured by day-existence probe (one row read per calendar day), NOT by aggregate
+sym|month|cal_days|days_with_rows|log_DONE_days|agrees_with_log
+NIFTY|2025-04|30|14|14|YES
+NIFTY|2025-05|31|17|17|YES
+NIFTY|2025-06|30|17|17|YES
+NIFTY|2025-07|31|18|18|YES
+NIFTY|2025-08|31|15|15|YES
+NIFTY|2025-09|30|17|17|YES
+NIFTY|2025-10|31|17|17|YES
+NIFTY|2025-11|30|15|15|YES
+NIFTY|2025-12|31|17|17|YES
+NIFTY|2026-01|31|16|16|YES
+NIFTY|2026-02|28|17|17|YES
+NIFTY|2026-03|31|14|14|YES
+# NIFTY: 194 days with rows across the window
+SENSEX|2025-04|30|13|13|YES
+SENSEX|2025-05|31|17|17|YES
+SENSEX|2025-06|30|16|16|YES
+SENSEX|2025-07|31|18|18|YES
+SENSEX|2025-08|31|15|15|YES
+SENSEX|2025-09|30|18|18|YES
+SENSEX|2025-10|31|16|16|YES
+SENSEX|2025-11|30|15|15|YES
+SENSEX|2025-12|31|18|18|YES
+SENSEX|2026-01|31|15|15|YES
+SENSEX|2026-02|28|17|17|YES
+SENSEX|2026-03|31|15|15|YES
+# SENSEX: 193 days with rows across the window
+
+### trade_date vs bar_ts clock date, on the first row of each day with rows
+# 0 disagreements -- the stored trade_date equals the clock date of bar_ts on
+# every probed row, so the TD-029-family labelling holds for this store and the
+# two columns are interchangeable for day identity in this window.
+
+### days present in the probe but absent from the log count, and vice versa
+sym|month|probe|log|delta
+# none -- probe and writer's log agree on every month, both symbols

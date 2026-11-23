@@ -1,0 +1,16 @@
+  role_now  | sel | ins | upd | del 
+------------+-----+-----+-----+-----
+ merdian_ro | t   | f   | f   | f
+(1 row)
+
+        relname        | rls_enabled | rls_forced 
+-----------------------+-------------+------------
+ fyers_futures_bars_1m | t           | f
+(1 row)
+
+    policyname     | permissive |     roles      |  cmd   | qual | with_check 
+-------------------+------------+----------------+--------+------+------------
+ loader_rw         | PERMISSIVE | {fyers_loader} | ALL    | true | true
+ ro_select_merdian | PERMISSIVE | {merdian_ro}   | SELECT | true | 
+(2 rows)
+

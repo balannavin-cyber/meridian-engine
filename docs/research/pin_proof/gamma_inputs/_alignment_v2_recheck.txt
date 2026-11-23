@@ -1,0 +1,125 @@
+================================================================================================================
+NIFTY 2026-03-04 -- ALIGNMENT RE-CHECK   hist_future_bars_1m vs fyers_futures_bars_1m (reading UTC)
+================================================================================================================
+
+-- minute 10:00 IST   hist rows: 3   fyers rows at offsets {-60, 0, +60}: 9
+   hist(series,expiry)        | hist_close | fyers_contract         | fyers_expiry | f(-60)     | f(0)       | f(+60)     | diff(0)
+   (1,None)                   |   24438.20 | NSE:NIFTY26APRFUT      | 2026-04-28   |   24609.90 |   24600.50 |   24605.00 |    162.30
+   (1,None)                   |   24438.20 | NSE:NIFTY26MARFUT      | 2026-03-30   |   24450.00 |   24438.20 |   24450.00 |      0.00
+   (1,None)                   |   24438.20 | NSE:NIFTY26MAYFUT      | 2026-05-26   |   24715.00 |   24703.60 |   24717.00 |    265.40
+   (2,None)                   |   24600.50 | NSE:NIFTY26APRFUT      | 2026-04-28   |   24609.90 |   24600.50 |   24605.00 |      0.00
+   (2,None)                   |   24600.50 | NSE:NIFTY26MARFUT      | 2026-03-30   |   24450.00 |   24438.20 |   24450.00 |    162.30
+   (2,None)                   |   24600.50 | NSE:NIFTY26MAYFUT      | 2026-05-26   |   24715.00 |   24703.60 |   24717.00 |    103.10
+   (3,None)                   |   24703.60 | NSE:NIFTY26APRFUT      | 2026-04-28   |   24609.90 |   24600.50 |   24605.00 |    103.10
+   (3,None)                   |   24703.60 | NSE:NIFTY26MARFUT      | 2026-03-30   |   24450.00 |   24438.20 |   24450.00 |    265.40
+   (3,None)                   |   24703.60 | NSE:NIFTY26MAYFUT      | 2026-05-26   |   24715.00 |   24703.60 |   24717.00 |      0.00
+
+   summary, one line per hist contract:
+   hist(series,expiry)        | hist_close | match@0          | match@-60        | match@+60        | verdict
+   (1,None)                   |   24438.20 | NSE:NIFTY26MARFUT 2026-03-30 | none             | none             | MATCH_AT_0
+   (2,None)                   |   24600.50 | NSE:NIFTY26APRFUT 2026-04-28 | none             | none             | MATCH_AT_0
+   (3,None)                   |   24703.60 | NSE:NIFTY26MAYFUT 2026-05-26 | none             | none             | MATCH_AT_0
+
+-- minute 12:30 IST   hist rows: 3   fyers rows at offsets {-60, 0, +60}: 9
+   hist(series,expiry)        | hist_close | fyers_contract         | fyers_expiry | f(-60)     | f(0)       | f(+60)     | diff(0)
+   (1,None)                   |   24495.00 | NSE:NIFTY26APRFUT      | 2026-04-28   |   24649.60 |   24649.00 |   24652.70 |    154.00
+   (1,None)                   |   24495.00 | NSE:NIFTY26MARFUT      | 2026-03-30   |   24490.00 |   24495.00 |   24497.40 |      0.00
+   (1,None)                   |   24495.00 | NSE:NIFTY26MAYFUT      | 2026-05-26   |   24750.00 |   24750.00 |   24764.40 |    255.00
+   (2,None)                   |   24649.00 | NSE:NIFTY26APRFUT      | 2026-04-28   |   24649.60 |   24649.00 |   24652.70 |      0.00
+   (2,None)                   |   24649.00 | NSE:NIFTY26MARFUT      | 2026-03-30   |   24490.00 |   24495.00 |   24497.40 |    154.00
+   (2,None)                   |   24649.00 | NSE:NIFTY26MAYFUT      | 2026-05-26   |   24750.00 |   24750.00 |   24764.40 |    101.00
+   (3,None)                   |   24750.00 | NSE:NIFTY26APRFUT      | 2026-04-28   |   24649.60 |   24649.00 |   24652.70 |    101.00
+   (3,None)                   |   24750.00 | NSE:NIFTY26MARFUT      | 2026-03-30   |   24490.00 |   24495.00 |   24497.40 |    255.00
+   (3,None)                   |   24750.00 | NSE:NIFTY26MAYFUT      | 2026-05-26   |   24750.00 |   24750.00 |   24764.40 |      0.00
+
+   summary, one line per hist contract:
+   hist(series,expiry)        | hist_close | match@0          | match@-60        | match@+60        | verdict
+   (1,None)                   |   24495.00 | NSE:NIFTY26MARFUT 2026-03-30 | none             | none             | MATCH_AT_0
+   (2,None)                   |   24649.00 | NSE:NIFTY26APRFUT 2026-04-28 | none             | none             | MATCH_AT_0
+   (3,None)                   |   24750.00 | NSE:NIFTY26MAYFUT 2026-05-26 | NSE:NIFTY26MAYFUT 2026-05-26 | none             | MATCH_AT_0
+
+-- minute 15:00 IST   hist rows: 3   fyers rows at offsets {-60, 0, +60}: 9
+   hist(series,expiry)        | hist_close | fyers_contract         | fyers_expiry | f(-60)     | f(0)       | f(+60)     | diff(0)
+   (1,None)                   |   24633.00 | NSE:NIFTY26APRFUT      | 2026-04-28   |   24835.80 |   24788.00 |   24775.00 |    155.00
+   (1,None)                   |   24633.00 | NSE:NIFTY26MARFUT      | 2026-03-30   |   24674.10 |   24633.00 |   24623.90 |      0.00
+   (1,None)                   |   24633.00 | NSE:NIFTY26MAYFUT      | 2026-05-26   |   24940.40 |   24900.00 |   24883.00 |    267.00
+   (2,None)                   |   24788.00 | NSE:NIFTY26APRFUT      | 2026-04-28   |   24835.80 |   24788.00 |   24775.00 |      0.00
+   (2,None)                   |   24788.00 | NSE:NIFTY26MARFUT      | 2026-03-30   |   24674.10 |   24633.00 |   24623.90 |    155.00
+   (2,None)                   |   24788.00 | NSE:NIFTY26MAYFUT      | 2026-05-26   |   24940.40 |   24900.00 |   24883.00 |    112.00
+   (3,None)                   |   24900.00 | NSE:NIFTY26APRFUT      | 2026-04-28   |   24835.80 |   24788.00 |   24775.00 |    112.00
+   (3,None)                   |   24900.00 | NSE:NIFTY26MARFUT      | 2026-03-30   |   24674.10 |   24633.00 |   24623.90 |    267.00
+   (3,None)                   |   24900.00 | NSE:NIFTY26MAYFUT      | 2026-05-26   |   24940.40 |   24900.00 |   24883.00 |      0.00
+
+   summary, one line per hist contract:
+   hist(series,expiry)        | hist_close | match@0          | match@-60        | match@+60        | verdict
+   (1,None)                   |   24633.00 | NSE:NIFTY26MARFUT 2026-03-30 | none             | none             | MATCH_AT_0
+   (2,None)                   |   24788.00 | NSE:NIFTY26APRFUT 2026-04-28 | none             | none             | MATCH_AT_0
+   (3,None)                   |   24900.00 | NSE:NIFTY26MAYFUT 2026-05-26 | none             | none             | MATCH_AT_0
+
+================================================================================================================
+SENSEX 2026-03-02 -- ALIGNMENT RE-CHECK   hist_future_bars_1m vs fyers_futures_bars_1m (reading UTC)
+================================================================================================================
+
+-- minute 10:00 IST   hist rows: 1   fyers rows at offsets {-60, 0, +60}: 9
+   hist(series,expiry)        | hist_close | fyers_contract         | fyers_expiry | f(-60)     | f(0)       | f(+60)     | diff(0)
+   (0,2026-03-25)             |   80880.50 | BSE:SENSEX26APRFUT     | 2026-04-30   |   81270.65 |   81270.65 |   81270.65 |    390.15
+   (0,2026-03-25)             |   80880.50 | BSE:SENSEX26MARFUT     | 2026-03-25   |   80948.00 |   80880.50 |   80880.50 |      0.00
+   (0,2026-03-25)             |   80880.50 | BSE:SENSEX26MAYFUT     | 2026-05-27   |   81600.00 |   81600.00 |   81600.00 |    719.50
+
+   summary, one line per hist contract:
+   hist(series,expiry)        | hist_close | match@0          | match@-60        | match@+60        | verdict
+   (0,2026-03-25)             |   80880.50 | BSE:SENSEX26MARFUT 2026-03-25 | none             | BSE:SENSEX26MARFUT 2026-03-25 | MATCH_AT_0
+
+-- minute 12:30 IST   hist rows: 1   fyers rows at offsets {-60, 0, +60}: 9
+   hist(series,expiry)        | hist_close | fyers_contract         | fyers_expiry | f(-60)     | f(0)       | f(+60)     | diff(0)
+   (0,2026-03-25)             |   80217.40 | BSE:SENSEX26APRFUT     | 2026-04-30   |   80820.00 |   80820.00 |   80820.00 |    602.60
+   (0,2026-03-25)             |   80217.40 | BSE:SENSEX26MARFUT     | 2026-03-25   |   80273.80 |   80217.40 |   80267.05 |      0.00
+   (0,2026-03-25)             |   80217.40 | BSE:SENSEX26MAYFUT     | 2026-05-27   |   81603.00 |   81603.00 |   81603.00 |   1385.60
+
+   summary, one line per hist contract:
+   hist(series,expiry)        | hist_close | match@0          | match@-60        | match@+60        | verdict
+   (0,2026-03-25)             |   80217.40 | BSE:SENSEX26MARFUT 2026-03-25 | none             | none             | MATCH_AT_0
+
+-- minute 15:00 IST   hist rows: 2   fyers rows at offsets {-60, 0, +60}: 9
+   hist(series,expiry)        | hist_close | fyers_contract         | fyers_expiry | f(-60)     | f(0)       | f(+60)     | diff(0)
+   (0,2026-03-25)             |   80500.00 | BSE:SENSEX26APRFUT     | 2026-04-30   |   81058.80 |   81032.20 |   81032.20 |    532.20
+   (0,2026-03-25)             |   80500.00 | BSE:SENSEX26MARFUT     | 2026-03-25   |   80451.40 |   80500.00 |   80468.30 |      0.00
+   (0,2026-03-25)             |   80500.00 | BSE:SENSEX26MAYFUT     | 2026-05-27   |   81440.00 |   81440.00 |   81440.00 |    940.00
+   (0,2026-04-30)             |   81032.20 | BSE:SENSEX26APRFUT     | 2026-04-30   |   81058.80 |   81032.20 |   81032.20 |      0.00
+   (0,2026-04-30)             |   81032.20 | BSE:SENSEX26MARFUT     | 2026-03-25   |   80451.40 |   80500.00 |   80468.30 |    532.20
+   (0,2026-04-30)             |   81032.20 | BSE:SENSEX26MAYFUT     | 2026-05-27   |   81440.00 |   81440.00 |   81440.00 |    407.80
+
+   summary, one line per hist contract:
+   hist(series,expiry)        | hist_close | match@0          | match@-60        | match@+60        | verdict
+   (0,2026-03-25)             |   80500.00 | BSE:SENSEX26MARFUT 2026-03-25 | none             | none             | MATCH_AT_0
+   (0,2026-04-30)             |   81032.20 | BSE:SENSEX26APRFUT 2026-04-30 | none             | BSE:SENSEX26APRFUT 2026-04-30 | MATCH_AT_0
+
+================================================================================================================
+### Verdict on the NEAREST hist contract
+# NEAREST = smallest contract_series for NIFTY (its expiry_date is NULL),
+# smallest expiry_date for SENSEX (its contract_series is always 0).
+# THREE outcomes:
+#   ALIGNMENT HOLDS        -- at all six minutes the nearest hist contract is
+#     MATCH_AT_0 to the NEAREST Fyers contract, AND its close matches NOTHING
+#     at -60 or +60. The second clause matters because a flat price makes an
+#     offset-0 match non-discriminating.
+#   ALIGNMENT VOID         -- any minute is not MATCH_AT_0, or matches only at
+#     -60 or +60, or is UNMATCHED, or has no record, or the matched Fyers
+#     contract is not the nearest. VOID takes priority over INCONCLUSIVE.
+#   ALIGNMENT INCONCLUSIVE -- no minute is void, but at least one also matches
+#     at -60 or +60, so offset 0 is not singled out at those minutes.
+sym|day|minute|nearest_hist|verdict|matched_fyers|nearest_fyers_in_window|also_matches_at_other_offsets|both_ok
+NIFTY|2026-03-04|10:00|(1,None)|MATCH_AT_0|NSE:NIFTY26MARFUT 2026-03-30|2026-03-30|none|YES
+NIFTY|2026-03-04|12:30|(1,None)|MATCH_AT_0|NSE:NIFTY26MARFUT 2026-03-30|2026-03-30|none|YES
+NIFTY|2026-03-04|15:00|(1,None)|MATCH_AT_0|NSE:NIFTY26MARFUT 2026-03-30|2026-03-30|none|YES
+SENSEX|2026-03-02|10:00|(0,2026-03-25)|MATCH_AT_0|BSE:SENSEX26MARFUT 2026-03-25|2026-03-25|+60|YES
+SENSEX|2026-03-02|12:30|(0,2026-03-25)|MATCH_AT_0|BSE:SENSEX26MARFUT 2026-03-25|2026-03-25|none|YES
+SENSEX|2026-03-02|15:00|(0,2026-03-25)|MATCH_AT_0|BSE:SENSEX26MARFUT 2026-03-25|2026-03-25|none|YES
+
+ALIGNMENT INCONCLUSIVE: SENSEX 2026-03-02 10:00 (also matches at +60)
+
+### Other hist contracts -- INFORMATION ONLY, does not decide the outcome
+sym|day|hist(series,expiry)|MATCH_AT_0|UNMATCHED|other
+NIFTY|2026-03-04|(2,None)|3|0|0
+NIFTY|2026-03-04|(3,None)|3|0|0
+SENSEX|2026-03-02|(0,2026-04-30)|1|0|0

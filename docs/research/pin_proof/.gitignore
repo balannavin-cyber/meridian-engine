@@ -1,0 +1,18 @@
+# Re-include the research records under this tree.
+#
+# These records are .txt (per-day chain and EXPLAIN output), .log (run logs) and
+# .csv (measure tables) by nature. The repository root .gitignore excludes those
+# globally -- lines 33 (*.log), 43 (*.csv) and 44 (*.txt) -- which silently drops
+# 1,255 of the 3,528 files intended for this commit: `git add` succeeds, `git
+# status` reports nothing untracked, and the records are simply absent.
+#
+# Fixed with a negation rule rather than `git add -f`, per
+# .claude/rules/data-access.md: the force flag works once and hides the same
+# problem from the next file added here.
+#
+# Scope is this directory and below only. The root patterns still apply
+# everywhere else in the repository.
+
+!*.txt
+!*.log
+!*.csv

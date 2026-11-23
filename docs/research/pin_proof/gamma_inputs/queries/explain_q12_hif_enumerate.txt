@@ -1,0 +1,11 @@
+                                            QUERY PLAN                                            
+--------------------------------------------------------------------------------------------------
+ Sort  (cost=327.67..327.68 rows=2 width=86)
+   Sort Key: (count(*)) DESC
+   ->  GroupAggregate  (cost=231.45..327.66 rows=2 width=86)
+         Group Key: symbol
+         ->  Sort  (cost=231.45..238.32 rows=2748 width=45)
+               Sort Key: symbol, expiry_date
+               ->  Seq Scan on historical_index_futures_1m  (cost=0.00..74.48 rows=2748 width=45)
+(7 rows)
+

@@ -1,0 +1,38 @@
+                                                                            QUERY PLAN                                                                             
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=160.26..160.51 rows=100 width=90)
+   Sort Key: uu.underlying
+   CTE u
+     ->  Recursive Union  (cost=0.44..48.03 rows=101 width=32)
+           ->  Result  (cost=0.44..0.45 rows=1 width=32)
+                 InitPlan 1
+                   ->  Limit  (cost=0.42..0.44 rows=1 width=6)
+                         ->  Index Only Scan using fyers_futures_bars_1m_underlying_ts_idx on fyers_futures_bars_1m f_2  (cost=0.42..14476.78 rows=795544 width=6)
+           ->  WorkTable Scan on u  (cost=0.00..4.66 rows=10 width=32)
+                 Filter: (underlying IS NOT NULL)
+   CTE uu
+     ->  CTE Scan on u u_1  (cost=0.00..2.02 rows=100 width=32)
+           Filter: (underlying IS NOT NULL)
+   InitPlan 5
+     ->  Aggregate  (cost=2.25..2.26 rows=1 width=8)
+           ->  CTE Scan on uu uu_1  (cost=0.00..2.00 rows=100 width=0)
+   InitPlan 6
+     ->  Nested Loop  (cost=0.42..4.87 rows=1 width=8)
+           Join Filter: (c.relnamespace = n.oid)
+           ->  Index Scan using pg_class_relname_nsp_index on pg_class c  (cost=0.28..2.50 rows=1 width=8)
+                 Index Cond: (relname = 'fyers_futures_bars_1m'::name)
+           ->  Index Scan using pg_namespace_nspname_index on pg_namespace n  (cost=0.14..2.36 rows=1 width=4)
+                 Index Cond: (nspname = 'public'::name)
+   ->  Nested Loop Left Join  (cost=0.85..99.75 rows=100 width=90)
+         ->  Nested Loop Left Join  (cost=0.42..51.13 rows=100 width=62)
+               ->  Nested Loop Left Join  (cost=0.00..3.01 rows=100 width=32)
+                     ->  Result  (cost=0.00..0.01 rows=1 width=0)
+                     ->  CTE Scan on uu  (cost=0.00..2.00 rows=100 width=32)
+               ->  Limit  (cost=0.42..0.47 rows=1 width=30)
+                     ->  Index Scan using fyers_futures_bars_1m_underlying_ts_idx on fyers_futures_bars_1m f  (cost=0.42..18383.01 rows=397772 width=30)
+                           Index Cond: (underlying = uu.underlying)
+         ->  Limit  (cost=0.42..0.47 rows=1 width=12)
+               ->  Index Scan Backward using fyers_futures_bars_1m_underlying_ts_idx on fyers_futures_bars_1m f_1  (cost=0.42..18383.01 rows=397772 width=12)
+                     Index Cond: (underlying = uu.underlying)
+(34 rows)
+

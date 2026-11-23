@@ -1,0 +1,19 @@
+symbol|field|decimal_places|legs
+NIFTY|gamma|0|341
+NIFTY|gamma|4|7
+NIFTY|gamma|5|200
+NIFTY|iv|0|190
+NIFTY|iv|13|11
+NIFTY|iv|14|127
+NIFTY|iv|15|198
+NIFTY|iv|16|22
+SENSEX|gamma|0|438
+SENSEX|gamma|4|1
+SENSEX|gamma|5|61
+SENSEX|iv|0|344
+SENSEX|iv|12|1
+SENSEX|iv|13|16
+SENSEX|iv|14|67
+SENSEX|iv|15|66
+SENSEX|iv|16|6
+(17 rows)

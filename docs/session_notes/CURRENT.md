@@ -50,7 +50,7 @@ Six live referrers were updated; the standing requirement binds new and edited t
    live 2b day (earliest Mon 2026-11-23). Grants and R-2 are already applied — read them, do not re-apply.
 2. **Sunday 2026-11-22, 08:20 IST:** the second data point on the retail drop and on the Dhan mint — did the drop
    run and did the RECOVERED alert fire (TD-S106-NEW-7)?
-3. **At the MR-PIN2 close:** undo the `merdian_ro` SELECT + policy `ro_select_merdian` on `fyers_futures_bars_1m`
+3. **DONE 2026-11-23 ~05:05 IST (operator; catalog read confirmed the same day; I-002 section 6).** Was: at the MR-PIN2 close, undo the `merdian_ro` SELECT + policy `ro_select_merdian` on `fyers_futures_bars_1m`
    (ruling R4; undo SQL in `claude/pin/MR_PIN1_close_inputs.md` §3).
 4. **Rotate `fyers_loader`** — its password is in a chat transcript (TD-FOI1-NEW-1, the only S1 filed this close
    besides the gamma leg) and clear `$env:FYERS_LOADER_PW` on Local.
@@ -93,7 +93,7 @@ than from a session's own ruling file, and renumbering them would break every ci
 | Order flow (tape) | MR-OFL / **OFL9** in session | `MR_OFL8_close_inputs.md` (OFL8, 2026-11-16) |
 | Retail | MR-S / **S13** in session | `MR_S12_close_inputs.md` (S12, 2026-11-18) + the S13 interim note |
 | Futures OI | MR-FOI / **FOI3** next | `MR_FOI2_close_inputs.md` (FOI2, 2026-11-19) |
-| Board pin | MR-PIN / **PIN2** in session | `MR_PIN1_close_inputs.md` (PIN1, 2026-11-20) |
+| Board pin | MR-PIN / **PIN3** in session | `docs/research/pin_proof/MR_PIN2_close_inputs.md` (PIN2, 2026-11-22) |
 | Parity (reference) | none — build closed 2026-10-09 (ADR-025) | `docs/research/parity_eval/` |
 
 **Project knowledge:** every lane follows `docs/operational/MERDIAN_PK_Protocol_v1.md` — P5 at open, P4 at close, PK delta in its close inputs; the engine runs P6 and records `knowledge_size` here at every close.

@@ -10,6 +10,9 @@ which must PASS (exit 0).
   (Local, inside 08:30-15:45 IST on a weekday: set TAPE_RULE23_OVERRIDE_R1=1, operator ruling R-1, 2026-11-03)
 
 Last line: "TAPE LIVE MUTANTS PASS (195/195 caught xN, 35/35 controls xN)" or FAIL (61 + 134; the 134 are the stage 2b mutants). Exit 0 / 1.
+A mutant named in SKIP is not run where its condition holds and is reported SKIPPED, never counted as caught: on Python < 3.11
+M-W-NUL-PASSES is skipped (csv rejects the NUL before the writer, operator ruling 3, 2026-11-22) and the line reads
+"PASS (194/194 caught xN, 1 skipped (M-W-NUL-PASSES), 35/35 controls xN)". Its guard still runs as a control.
 """
 import argparse
 import os
@@ -33,6 +36,10 @@ V, CLI, SQL = "services/tape_live/verify_day.py", "services/tape_live/cli.py", "
 UNTR = '    if f["untraded"]:\n        return ("NO_READ", False, "untraded wall (vendor OI)")\n'
 INWIN = '    if not f["in_window"]:\n        return ("NO_READ", False, "wall outside subscribed window")\n'
 GRANT_L = "GRANT SELECT ON public.tape_live_label TO tape_ro, merdian_ro;\n"
+
+# name -> (skip when this is true, why). Python < 3.11: csv.writer raises on a NUL in dbshape.line before the writer's own
+# refusal is reached, so removing that refusal changes nothing there; 3r asserts the fail-safe crash instead (operator ruling 3).
+SKIP = {"M-W-NUL-PASSES": (sys.version_info < (3, 11), "python < 3.11: asserted, not proven able to fail")}
 
 M = [
     ("M-L-HIT-ABSORBED-SWAPPED", "live-vectors", R,
@@ -435,6 +442,7 @@ def main():
     sel = [m for m in M if a.only in (None, m[0])]
     guards = sorted({m[1] for m in sel})
     caught, ctl_ok, fails = 0, 0, []
+    skipped = sorted(m[0] for m in sel if SKIP.get(m[0], (False, ""))[0])
     for rep in range(a.repeat):
         for g in guards:
             tmp = tempfile.mkdtemp(prefix="tlm_ctl_")
@@ -449,6 +457,9 @@ def main():
             if not ok:
                 fails.append("control %s rep %d" % (g, rep + 1))
         for name, guard, rel, old, new in sel:
+            if name in skipped:
+                print("rep %d %-26s %-20s SKIPPED (%s)" % (rep + 1, name, guard, SKIP[name][1]))
+                continue
             tmp = tempfile.mkdtemp(prefix="tlm_")
             try:
                 copy_tree(tmp)
@@ -465,12 +476,13 @@ def main():
             print("rep %d %-26s %-20s %s  %s" % (rep + 1, name, guard, "CAUGHT" if ok else "MISSED rc=%s" % rc, line[:160]))
             if not ok:
                 fails.append("%s rep %d" % (name, rep + 1))
-    n_m, n_g = len(sel), len(guards)
+    n_m, n_g = len(sel) - len(skipped), len(guards)
+    sk = ", %d skipped (%s)" % (len(skipped), ", ".join(skipped)) if skipped else ""
     if not fails:
-        print("TAPE LIVE MUTANTS PASS (%d/%d caught x%d, %d/%d controls x%d)" % (n_m, n_m, a.repeat, n_g, n_g, a.repeat))
+        print("TAPE LIVE MUTANTS PASS (%d/%d caught x%d%s, %d/%d controls x%d)" % (n_m, n_m, a.repeat, sk, n_g, n_g, a.repeat))
         return 0
-    print("TAPE LIVE MUTANTS FAIL (%d/%d caught, %d/%d controls; %s)" % (
-        caught, n_m * a.repeat, ctl_ok, n_g * a.repeat, "; ".join(fails[:10])))
+    print("TAPE LIVE MUTANTS FAIL (%d/%d caught%s, %d/%d controls; %s)" % (
+        caught, n_m * a.repeat, sk, ctl_ok, n_g * a.repeat, "; ".join(fails[:10])))
     return 1
 
 

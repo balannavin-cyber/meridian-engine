@@ -602,8 +602,13 @@ templates; the removal privilege names only in `PRIV_PROBE`), that the write and
 
 **Asserted, not proven able to fail (stage 2b).**
 - The POSIX pid-alive refusal of `write-clear` (`_pid_alive`, `os.kill(pid, 0)`): Local is Windows, where the test is skipped by construction; the
-  guard asserts the age-based refusal only. No mutant exercises the pid half. It is first exercised on the box.
+  guard asserts the age-based refusal only. No mutant exercises the pid half. It is first exercised on the box. (Cell L-g plants a dead pid's
+  stale `done` heartbeat before its write-clear, so on POSIX the corrupt-latch run's own live pid does not refuse the clear: ruling 2, 2026-11-22.)
 - Also (build plan section 10): 1g, 3t, 4f, 6l, 6m, 7j, 8c, 8d, 8e, 8f, 9e.
+- M-W-NUL-PASSES on Python < 3.11 (operator ruling 3, 2026-11-22): there `csv.writer` rejects the NUL in `dbshape.line` before the writer's own
+  refusal, so removing the refusal changes nothing; guard 3r asserts the fail-safe crash instead (rc 1, state `error`, no write script) and the
+  mutant harness reports the mutant SKIPPED, never caught. On Python >= 3.11 (Local, 3.12) it runs and must be caught by 3r. The 3.10 branch
+  of 3r runs only on the box (Python 3.10.12); Local has no Python 3.10.
 
 **Not tested.** Everything box-only of the build plan section 11 (timings, RLS, pooler, the real psql tag and Time line format, role limits,
 lock contention, the server's reading of the literals: `db-literal-check` is for that); item 7a's real-time behaviour on the box (the R9-B rule itself is checked on hand-fed numbers inside guard 5, `_hand_7a` cases a to e, and with planted costs in 5i and 5j);

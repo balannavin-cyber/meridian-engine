@@ -3519,6 +3519,59 @@ def _nm(m):
     return "%02d%02d" % (m // 60, m % 60)
 
 
+def _mog():
+    """tests/tape_live/make_off_golden.py: the one form-2 digest both the golden and this guard use."""
+    return importlib.import_module("make_off_golden")
+
+
+def _arrival_size_etag(dd, raw):
+    """1a, the two columns form 2 drops from arrival_log.csv: a segment or subscriptions row's size and etag are the size and md5
+    of the fixture's own file at that key (what the fake listed and served); a chain_run row carries neither. Findings, [] if none."""
+    bad, n = [], {"segment": 0, "subscriptions": 0, "chain_run": 0}
+    with open(os.path.join(dd, "arrival_log.csv"), encoding="utf-8", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    for r in rows:
+        k = r.get("kind")
+        if k not in n:
+            bad.append("1a arrival_log.csv: unknown kind %r at %s" % (k, r.get("key")))
+            continue
+        n[k] += 1
+        if k == "chain_run":
+            if r["size"] != "" or r["etag"] != "":
+                bad.append("1a arrival_log.csv chain_run %s: size %r etag %r (want both empty)" % (r["key"], r["size"], r["etag"]))
+            continue
+        p = os.path.join(raw, *r["key"].split("/"))
+        if not os.path.isfile(p):
+            bad.append("1a arrival_log.csv %s: no fixture file at that key" % r["key"])
+            continue
+        if r["size"] != str(os.path.getsize(p)):
+            bad.append("1a arrival_log.csv %s: size %s, the fixture file is %d bytes" % (r["key"], r["size"], os.path.getsize(p)))
+        want = hashlib.md5(rd(p)).hexdigest()
+        if r["etag"] != want:
+            bad.append("1a arrival_log.csv %s: etag %s, the fixture file's md5 is %s" % (r["key"], r["etag"], want))
+    if not n["segment"] or not n["subscriptions"] or not n["chain_run"]:
+        bad.append("1a arrival_log.csv precondition: rows by kind %s (want every kind present; the size/etag check would be vacuous)" % n)
+    return bad
+
+
+def _off_1a(dd, gold, raw):
+    """1a: every non-timing output file equals 56bf055's in form 2 (make_off_golden.py), and the dropped arrival_log.csv columns
+    match the fixture. Findings, [] if none."""
+    mog = _mog()
+    if gold.get("form") != mog.FORM:
+        return ["1a the golden is form %r, the guard compares form %r (regenerate it with tests/tape_live/make_off_golden.py)" % (
+            gold.get("form"), mog.FORM)]
+    try:
+        got = mog.file_digests(dd, TIMING_FILES)
+    except ValueError as exc:
+        return ["1a %s" % exc]
+    bad = []
+    if got != gold["files"]:
+        diff = sorted(k for k in set(got) | set(gold["files"]) if got.get(k) != gold["files"].get(k))
+        bad.append("1a %d of %d output files differ from 56bf055 (first: %s)" % (len(diff), len(got), diff[:3]))
+    return bad + _arrival_size_etag(dd, raw)
+
+
 def g_2b_off():
     """Plan 9 guard 1: with the flag absent the runner is what it was at 56bf055. Red first: --db-write is unknown to argparse."""
     bad = []
@@ -3530,10 +3583,7 @@ def g_2b_off():
     dd = os.path.join(root, DAY)
     if rc != 0:
         return False, "1a flag-off run rc=%s %s" % (rc, log[-300:])
-    got = dict((rel, sha(os.path.join(dd, rel))) for rel in _files(dd) if rel not in TIMING_FILES)
-    if got != gold["files"]:
-        diff = sorted(k for k in set(got) | set(gold["files"]) if got.get(k) != gold["files"].get(k))
-        bad.append("1a %d of %d output files differ from 56bf055 (first: %s)" % (len(diff), len(got), diff[:3]))
+    bad += _off_1a(dd, gold, fixture()["raw"])
     with open(os.path.join(dd, "heartbeat.json"), encoding="utf-8") as fh:
         hb = json.load(fh)
     with open(os.path.join(dd, "state.json"), encoding="utf-8") as fh:
@@ -3564,7 +3614,7 @@ def g_2b_off():
     stray = _latch_files(root, "WRITE_LATCH") + _latch_files(os.path.join(on.out), "WRITE_LATCH")
     if stray:
         bad.append("1h a latch file with the flag off or on a clean run: %s" % stray)
-    return not bad, "; ".join(bad[:8]) or "flag off: %d files == 56bf055 (sha256), heartbeat / state / 27-column header equal, no write call; the write DSN alone refused; flag on adds the %d write columns" % (len(got), len(W_METRIC_COLS))
+    return not bad, "; ".join(bad[:8]) or "flag off: %d files == 56bf055 (sha256, form 2: raw .gz unzipped, arrival_log.csv without size/etag; arrival size/etag checked against the fixture), heartbeat / state / 27-column header equal, no write call; the write DSN alone refused; flag on adds the %d write columns" % (len(gold["files"]), len(W_METRIC_COLS))
 
 
 def g_2b_upsert_only():
@@ -3736,14 +3786,40 @@ def g_2b_statements():
                 or _latch_of(r.out).get("reason") != "dup_conflict_key" or not os.path.exists(dk) or len(open(dk, encoding="utf-8").read().splitlines()) < 2:
             bad.append("%s %s: %d scripts sent, write %s, db_dupkeys.csv %s (want 0, stopped / dup_conflict_key, keys listed)" % (
                 tag, kind, len(w_scripts(r)), hb.get("write"), os.path.exists(dk)))
-    r = w_cli("nul", start="15:20", plant=plant_nul)
-    hb = w_json(r, "heartbeat.json")
-    if need_run(r, "nul run") or any("\x00" in c["text"] for c in r.fake.wcalls) or hb.get("write", {}).get("state") != "stopped" or hb["write"].get("reason") != "other":
-        bad.append("3r NUL: rc %s, %d scripts, write %s (want 0 scripts with a NUL, stopped / other)" % (r.rc, len(w_scripts(r)), hb.get("write")))
+    nul_bad, nul_branch = _nul_3r(w_cli("nul", start="15:20", plant=plant_nul))
+    bad += nul_bad
     # 3s: the literal check: read only, no INSERT, no table; the server's text must equal the expected, and it can fail
     lit = w_literal_check(None)
     bad += lit
-    return not bad, "; ".join(bad[:8]) or "%d scripts, %d INSERT statements, %d rows at N = %d: BEGIN..COMMIT, lock_timeout, scs on, exact clauses, SET lists, no RETURNING, hostile values and NULLs round trip; 4 duplicate plants + NUL stop the writer; literal check is read only and can fail" % (len(calls), n_stmt, n_rows, N)
+    return not bad, ("; ".join(bad[:8]) + " [3r branch: %s]" % nul_branch) if bad else "%d scripts, %d INSERT statements, %d rows at N = %d: BEGIN..COMMIT, lock_timeout, scs on, exact clauses, SET lists, no RETURNING, hostile values and NULLs round trip; 4 duplicate plants stop the writer; 3r branch: %s; literal check is read only and can fail" % (len(calls), n_stmt, n_rows, N, nul_branch)
+
+
+NUL_3R_BRANCH = {False: "python >= 3.11, NUL stops the writer (stopped / other, no NUL sent)",
+                 True: "python < 3.11, csv rejects the NUL first: asserted fail-safe crash (rc 1, state error, no write script)"}
+
+
+def _nul_3r(r, csv_rejects_nul=None):
+    """3r: a NUL in a data row never reaches a script. On Python >= 3.11 csv quotes the NUL, and the writer's own refusal must stop
+    it: rc 0, writer stopped / other, no script with a NUL. On Python < 3.11 csv.writer raises ('need to escape, but no escapechar
+    set') in dbshape.line before the writer sees the row (box, 3.10.12, 2026-11-22), so the safe outcome is asserted instead: rc 1,
+    heartbeat state error, no write script (the write role's start-up check, a non-write call, still runs), no script with a NUL,
+    writer state 'none' (operator ruling 3, 2026-11-22). That branch is asserted, not proven able to fail, on an interpreter >= 3.11;
+    the box suite is its only real run. -> (findings, branch text)."""
+    old_csv = sys.version_info < (3, 11) if csv_rejects_nul is None else csv_rejects_nul
+    branch = NUL_3R_BRANCH[old_csv]
+    hb = w_json(r, "heartbeat.json")
+    hbw = hb.get("write") or {}
+    nul_sent = any("\x00" in c["text"] for c in r.fake.wcalls)
+    if not old_csv:
+        if need_run(r, "nul run") or nul_sent or hbw.get("state") != "stopped" or hbw.get("reason") != "other":
+            return ["3r NUL (%s): rc %s, %d scripts, write %s (want 0 scripts with a NUL, stopped / other)" % (
+                branch, r.rc, len(w_scripts(r)), hb.get("write"))], branch
+        return [], branch
+    if r.rc != 1 or hb.get("state") != "error" or w_scripts(r) or nul_sent or hbw.get("state") != "none":
+        return ["3r NUL (%s): rc %s, state %s, last_error %r, %d write scripts (%d write-role calls: %s), NUL sent %s, write %s (want rc 1, "
+                "error, 0 write scripts, False, writer state 'none')" % (branch, r.rc, hb.get("state"), hb.get("last_error"), len(w_scripts(r)),
+                                                                        len(r.fake.wcalls), [c["kind"] for c in r.fake.wcalls], nul_sent, hb.get("write"))], branch
+    return [], branch
 
 
 def w_literal_check(_unused):
@@ -3947,6 +4023,26 @@ def _dead_pid():
     pr = subprocess.Popen([sys.executable, "-c", "pass"])
     pr.wait()
     return pr.pid
+
+
+def _lg_corrupt_latch():
+    """L-g: a latch that cannot be parsed stops writes (fail closed) and can still be cleared. The corrupt-latch run is in-process,
+    so its heartbeat carries THIS process's pid, which write-clear rightly counts as alive where a zero signal exists (posix): a
+    dead runner's stale 'done' heartbeat is planted in its place before write-clear, so the clear is decided by the latch alone
+    (operator ruling 2, 2026-11-22). Findings, [] if none."""
+    bad = []
+    d = _fresh_dir("corrupt")
+    with open(os.path.join(d, LATCH_NAME), "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("{not json\n")
+    r = w_cli(None, out=d, start="15:20")
+    hbw = w_json(r, "heartbeat.json").get("write", {})
+    if r.fake.wcalls or hbw.get("state") != "stopped" or hbw.get("reason") != "latch_unreadable":
+        bad.append("L-g a corrupt latch: %d write-role calls, write %s (want none, stopped / latch_unreadable)" % (len(r.fake.wcalls), hbw))
+    _plant_hb(d, DAY, "done", _dead_pid(), 7200)
+    rc, log = _wc(d)
+    if rc != 0 or os.path.exists(os.path.join(d, LATCH_NAME)) or not _latch_files(d, "WRITE_LATCH.cleared."):
+        bad.append("L-g write-clear on a corrupt latch, no runner alive: rc=%s %r (want cleared)" % (rc, log[-160:]))
+    return bad
 
 
 def _wc(out, *extra, note="t"):
@@ -4240,17 +4336,7 @@ def g_2b_latch():
     if rc != 0 or need_run(r, "L-f run after a clear") or not w_scripts(r) or w_json(r, "heartbeat.json").get("write", {}).get("state") == "stopped" or _latch_of(d):
         bad.append("L-f after write-clear: rc=%s, %d scripts, write %s, latch %s (want writing, no latch)" % (
             rc, len(w_scripts(r)), w_json(r, "heartbeat.json").get("write"), _latch_of(d)))
-    # L-g: a latch that cannot be parsed stops writes (fail closed) and can still be cleared
-    d = _fresh_dir("corrupt")
-    with open(os.path.join(d, LATCH_NAME), "w", encoding="utf-8", newline="\n") as fh:
-        fh.write("{not json\n")
-    r = w_cli(None, out=d, start="15:20")
-    hbw = w_json(r, "heartbeat.json").get("write", {})
-    if r.fake.wcalls or hbw.get("state") != "stopped" or hbw.get("reason") != "latch_unreadable":
-        bad.append("L-g a corrupt latch: %d write-role calls, write %s (want none, stopped / latch_unreadable)" % (len(r.fake.wcalls), hbw))
-    rc, log = _wc(d)
-    if rc != 0 or os.path.exists(os.path.join(d, LATCH_NAME)) or not _latch_files(d, "WRITE_LATCH.cleared."):
-        bad.append("L-g write-clear on a corrupt latch: rc=%s (want cleared)" % rc)
+    bad += _lg_corrupt_latch()
     # L-j: the latch cannot be written (disk full, permission): the writer stays stopped in memory, the sentinel is written, the heartbeat says
     # latch_write_failed, the runner does not exit, and no further write-role call is made
     for tag, fail, err in (("disk full (fsync ENOSPC)", "fsync", errno.ENOSPC), ("permission (rename EACCES)", "replace", errno.EACCES)):

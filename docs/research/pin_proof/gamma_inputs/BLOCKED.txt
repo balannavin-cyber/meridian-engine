@@ -1,0 +1,331 @@
+Relations merdian_ro could not read AT FIRST MEASUREMENT (2026-11-20):
+  public.fyers_futures_bars_1m -- NO SELECT privilege, measured via has_table_privilege
+    (q13, _q13.txt). Detail and the control that makes it meaningful are in the FUTURES
+    SOURCE SURVEY section below. Nothing was read from this relation at that point.
+    *** SUPERSEDED BY AN OPERATOR ACTION, 2026-11-20 -- see below. ***
+
+OPERATOR ACTION, 2026-11-20 -- read access granted on fyers_futures_bars_1m:
+  The operator ran, in ONE transaction in the SQL editor:
+      GRANT SELECT ON public.fyers_futures_bars_1m TO merdian_ro;
+      CREATE POLICY ro_select_merdian ON public.fyers_futures_bars_1m
+          FOR SELECT TO merdian_ro USING (true);
+  NOTHING was granted, created or attempted from this session. This session holds
+  merdian_ro, which cannot grant, and made only catalog reads on this relation before and
+  after.
+
+  State BEFORE the change -- note the two different provenances:
+    MEASURED BY THIS SESSION (q13, _q13.txt): merdian_ro had no SELECT privilege,
+      has_table_privilege = f.
+    REPORTED BY THE OPERATOR, from queries run in the SQL editor and pasted into the
+      chat, NOT measured by this session: row security was enabled (relrowsecurity true)
+      and not forced, and the only policy present was loader_rw (PERMISSIVE, role
+      fyers_loader, cmd ALL, qual true).
+    With RLS on and no policy naming merdian_ro, that role would have seen zero rows even
+    had a GRANT existed -- which is why both statements were needed.
+    loader_rw's with_check value was not part of the before-state; it was first observed
+    AFTER the change, in q13b.
+
+  State AFTER the change, verified by catalog read only (q13b, _q13b.txt):
+      has_table_privilege merdian_ro: SELECT t, INSERT f, UPDATE f, DELETE f
+      pg_class: relrowsecurity t, relforcerowsecurity f
+      pg_policies: loader_rw         PERMISSIVE {fyers_loader} ALL    qual true  wc true
+                   ro_select_merdian PERMISSIVE {merdian_ro}   SELECT qual true  wc null
+  Read-only is confirmed: the three write privileges are false. Both policies are
+  PERMISSIVE, so they combine by OR, and the merdian_ro policy's qual is `true`, so no
+  row is filtered from this role.
+
+  UNDO STATEMENTS (operator, SQL editor; not run from this session):
+      DROP POLICY ro_select_merdian ON public.fyers_futures_bars_1m;
+      REVOKE SELECT ON public.fyers_futures_bars_1m FROM merdian_ro;
+READ AND READABLE as merdian_ro (rows actually returned from each):
+  information_schema.columns, pg_indexes, pg_attribute, pg_class,
+  data_contamination_ranges, gamma_metrics, option_chain_snapshots (including the raw
+  jsonb column), gex_strike_snapshots, hist_greeks_backfill_log, instruments,
+  hist_option_bars_1m, hist_option_greeks_1m, hist_spot_bars_1m,
+  hist_future_bars_1m (read in qF) and historical_index_futures_1m (read in qG and q12).
+
+PRIVILEGE CONFIRMED BUT NOT READ:
+  hist_basis_context -- has_table_privilege SELECT = t (q13, _q13.txt), where it served
+  as the control that made the fyers_futures_bars_1m 'f' meaningful. No data row of it was
+  ever read, so this register says NOTHING about its contents, coverage or convention.
+
+NOT PROBED AT ALL, for privilege or for content:
+  index_futures_snapshots -- it appeared in the q09 relation list and the q10/q11 schema
+  and extent reads, but no privilege check and no data read was attempted. Its presence in
+  those catalog outputs is not evidence that merdian_ro can read it.
+
+PROVENANCE OF THE ANALYSIS SCRIPTS:
+  analyze_partG.py was RUN INLINE FIRST (as a heredoc to python3) and only afterwards
+  saved to a file, verbatim as it ran, then re-run from the file; the script executed
+  without error (rc=0) and the first six lines of its output -- the header, the column
+  line and the NIFTY and SENSEX exact-minute coverage rows -- were compared with the
+  figures reported from the inline run and matched. Nothing beyond those six lines was
+  compared. The inline run's output was never written to a file, so no full-output
+  comparison was made. The figures quoted for qG therefore came from the inline run.
+  analyze_partA.py, analyze_partB.py, analyze_partB5.py and analyze_partF.py were written
+  to a file before being run. The one-off inline check of the B4 100% cell and the B2
+  NULL-by-bucket table was NOT saved as a script; its numbers should be reproducible from
+  _partB_raw.txt; this has not been re-derived.
+
+No query timed out and no query errored. Counts and max elapsed, from the run logs:
+  qA_day.sql.tpl        8 queries   max 4.20 s   (_partA_run.log)
+  q05_quantisation.tpl  8 queries   max 3.67 s   (_q05_run.log)
+  qB_day.sql.tpl       24 queries   max 4.13 s   (_partB_run.log)
+  qB5_month.sql.tpl    24 queries   max 7.73 s   (_partB5_run.log)
+  single-shot queries   7 queries, one run each. Four were run under `time` and their
+                                     elapsed times are in their own .err files:
+                                       q03 2.753 s (_q03.err)   q04 2.962 s (_q04.err)
+                                       q06 2.787 s (_q06.err)   q07 3.171 s (_q07.err)
+                                     Three were not timed and no elapsed time is claimed
+                                     for them: q00, q01, q08 (their .err files are empty).
+  EXPLAIN (no ANALYZE)  4 plans kept under queries/ (qA; qB; qB5 v1 and v2)
+                        plus one information_schema probe of data_contamination_ranges.
+
+RULE 13 -- PART B RESULT (q08, _q08.txt):
+  Registered ranges naming hist_option_greeks_1m, hist_option_bars_1m or
+  hist_spot_bars_1m: 0 of 4. Of those, overlapping 2025-04-01..2026-03-30: 0. Range IDs:
+  none. Part B therefore excludes nothing.
+  BREADTH-STALE-REF-2026-03-27 is the only range overlapping the Part B window and it
+  names other hist_* relations (hist_market_state, hist_pattern_signals) plus breadth and
+  signal tables -- not the three Part B reads, and its field_scope is breadth fields.
+
+RULE 13 -- PART A SCOPE NOTE:
+  q08 was written for Part B and its window_scope column tests only the Part B window.
+  Two registered ranges DO name relations Part A reads:
+  SENSEX-CHAIN-OI-VOL0-2026-09-25 (option_chain_snapshots, gex_strike_snapshots) and
+  HOLIDAY-FROZEN-CHAIN-2026-10-02 (those two plus gamma_metrics). Neither overlaps Part
+  A's window of 2026-11-16..19: they end 2026-09-29 and 2026-10-02 respectively. That
+  clearance rests on reading those two end dates, not on a column computed for the Part A
+  window. Part A's queries were also run before any contamination check in this session;
+  the check came with Part B.
+
+  Do those two ranges fall inside the Stage 1 cohort, and did Stage 1 exclude them?
+  YES to both, read from stage1/preconditions.md C0, not assumed. The Stage 1 cohort is
+  2026-05-25 00:00 to 2026-11-20 06:13 IST, and C0 names exactly these two as the ranges
+  that both overlap the cohort and name a relation in scope. C0 excluded them:
+  SENSEX-CHAIN-OI-VOL0-2026-09-25 removed 248 runs (SENSEX only -- the range carries
+  symbols = {SENSEX} and the S100-J symbol-scope rule kept it off NIFTY) and
+  HOLIDAY-FROZEN-CHAIN-2026-10-02 removed 2 runs, total 250.
+  Consequence for this session: Part A's window sits inside the Stage 1 cohort window but
+  strictly AFTER both ranges end, so none of Part A's runs was ever among those 250.
+
+EXPLAIN-GATE EXCEPTION, one query, recorded per operator instruction 2026-11-20:
+  q12_hif_enumerate.sql runs a Seq Scan on historical_index_futures_1m (estimate 2,748
+  rows; plan in queries/explain_q12_hif_enumerate.txt, gate PASS). A sequential scan
+  would normally stop a query here. It was allowed ONLY because q11 independently
+  estimated that relation's FULL extent at ~2,748 rows / 856 kB from the catalog, so the
+  scan reads the whole table and the whole table is under the 20,000-row threshold --
+  there is no larger quantity hidden behind an index choice. The exception does NOT
+  extend to any other relation.
+
+FUTURES SOURCE SURVEY for a basis_implied_r sensitivity (q09-q13, qF, qG):
+  Asked: does a futures price F exist at the 72 Part B sampled minutes, with a maturity
+  to divide by. Answer: none of the three sources probed covers the sampled days; two
+  candidates remain unprobed. Detail --
+  hist_future_bars_1m (catalog estimate 304,937 rows): NIFTY has a bar at 36/36 sampled
+    minutes across 12/12 days, contract_series 1/2/3, prices present -- but expiry_date is
+    NULL on ALL 104 rows returned, so no T_fut and therefore no r. SENSEX has expiry_date
+    (9 distinct) and fut_dte 1..27, but a bar at only 15/36 minutes on 5/12 days; the 7
+    days with none are 2025-04-02, 07-02, 08-01, 09-01, 10-03, 11-03, 12-01. The two
+    symbols use DIFFERENT contract_series conventions (NIFTY 1/2/3, SENSEX 0), so code
+    selecting "series 1" silently returns nothing for SENSEX.
+  historical_index_futures_1m: 0 rows on all 24 sampled days, both symbols. CONFIRMED
+    real absence, not a wrong key: q12 shows the symbol spelling IS 'NIFTY'/'SENSEX' and
+    the relation's first day is 2026-03-19, AFTER the last sampled day (NIFTY 2026-03-04,
+    SENSEX 2026-03-02). q12 EXACT counts (distinct from the ~2,748 catalog estimate in
+    q11): SENSEX 1,437 rows of which 1,332 have NULL expiry_date, over 110 distinct days;
+    NIFTY 1,435 rows of which 1,332 have NULL expiry_date, over 108 distinct days; 2,872
+    rows in total, source run_market_tape_1m, first day 2026-03-19, last 2026-11-19. At
+    ~13 rows per day it is not a 1-minute series despite the name, and it could not cover
+    the Part B window even if dated into it: ~184,000 rows would be needed.
+  NOT PROBED: fyers_futures_bars_1m (catalog estimate 795,544 rows; carries underlying,
+    symbol, expiry_date, ts) and hist_basis_context (122,012; carries a precomputed
+    basis). A single-symbol, single-day probe on an indexed (symbol, ts) lookup is
+    gate-compatible, as qF showed on hist_future_bars_1m (304,937 rows). These two were
+    not probed in this pass. fyers_futures_bars_1m is the STRONGEST candidate -- it is the
+    largest futures source and its expiry_date is NOT NULL, which is the column NIFTY
+    lacks -- but it is UNREADABLE by merdian_ro (see the PRIVILEGE BLOCK below), so it
+    cannot be probed by this role at all. hist_basis_context is the next candidate that is
+    READABLE NOW (has_table_privilege = t, q13). It carries a precomputed basis rather
+    than a futures price, so its convention -- the formula, WHICH futures contract the
+    basis is taken against, and the day-count used -- must be established from its view
+    definition or its writer code BEFORE any value from it is used. Taking a precomputed
+    basis at face value would import an unknown forward convention into r, which is the
+    very quantity under test.
+  PRIVILEGE BLOCK on fyers_futures_bars_1m -- MEASURED, not inferred (q13, _q13.txt):
+    merdian_ro has NO SELECT on it. has_table_privilege returned can_select_now = f and
+    merdian_ro_select = f, with has_table_privilege on hist_basis_context = t in the same
+    result set as the control that makes the f meaningful rather than a broken call. This
+    is why q10 returned zero rows from information_schema.columns for that table while
+    pg_indexes returned its indexes: information_schema.columns is filtered to relations
+    the role holds a privilege on, pg_indexes is not. Its columns were therefore read from
+    pg_attribute, which is not privilege-filtered: underlying(text NOT NULL),
+    symbol(text NOT NULL), expiry_date(date NOT NULL), ts(timestamptz NOT NULL),
+    open/high/low/close(numeric), volume/oi(bigint), source(text NOT NULL). Note
+    expiry_date is NOT NULL here -- precisely the column NIFTY lacks in
+    hist_future_bars_1m -- so this table is the best remaining candidate AND is unreadable
+    by this role. A probe of it needs either a grant to merdian_ro or a different role.
+    Whether to grant read access on fyers_futures_bars_1m, or use another role, is an
+    operator decision; nothing was granted or attempted.
+  CONSEQUENCE: the proposed pass criterion "in-band days rise to >= 10 of 12 for each
+    symbol" is UNREACHABLE from the sources checked -- NIFTY cannot form r at all, and at
+    most 5 of 12 SENSEX days could be re-solved. The sensitivity was NOT run.
+  SCALE NOTE fixed in writing before any run: basis_implied_r(F, S, T) must take T_fut,
+    the futures' own time to expiry, NOT the option's T_opt. With SENSEX fut_dte median 23
+    against option dte 1..6, passing T_opt would inflate r by ~4x to ~23x (a 0.1% basis is
+    r ~ 1.5% at T_fut = 25/365 and r ~ 18% at T_opt = 2/365). Three SENSEX sampled minutes
+    have fut_dte < 3, where r is numerically unstable and must be flagged, not averaged.
+
+  ALIGNMENT TEST, hist_future_bars_1m close vs fyers_futures_bars_1m close
+  (analyze_alignment.py -> _alignment.txt; qH trials; DIFFERENCES ONLY, no conclusion
+  drawn here about which clock reading is correct):
+    NIFTY 2025-04-01 -- 9 of 9 comparisons at exactly 0.00, all at offset 0 under the
+      true-UTC reading, with hist contract_series 1/2/3 matching Fyers
+      NSE:NIFTY25APRFUT / 25MAYFUT / 25JUNFUT respectively, at all three sampled minutes.
+      For scale, the next-nearest alternatives at 10:00 series 1 were 16.35 and 9.35 at
+      the +/-60 s offsets of the same contract and 221.55 / 138.90 for the other two
+      contracts at offset 0.
+    SENSEX 2025-05-02 -- two of the three minutes are comparable, 10:00 and 15:00, and
+      both reach 0.00 at offset 0 for the hist row with expiry_date 2025-05-27 against
+      BSE:SENSEX25MAYFUT. 12:30 is NOT comparable: hist carried only a 2025-05-06 row at
+      that minute, whose smallest difference was 288.55.
+    UNEXPLAINED -- hist_future_bars_1m returns a SENSEX row with expiry_date 2025-05-06
+      at all three sampled minutes of 2025-05-02. No Fyers contract with that expiry
+      exists in any of the probed windows, so that row has no counterpart to match
+      against and its minimum differences stay in the hundreds (172.00 at 10:00, 288.55
+      at 12:30, 193.25 at 15:00). This row is NOT explained. Its presence means a
+      "front contract" chosen from hist by contract_series alone could select it.
+    TRIAL-DAY ROW COUNTS from qH H3, against 375 session minutes per contract. H3 returns
+      TOTAL rows and DISTINCT SYMBOLS only, so every per-contract figure below is an
+      average derived from those two numbers, not a measurement:
+      NIFTY  2025-04-01 -- 1,125 rows, 3 contracts (an average of 375 per contract,
+        exactly the session length; per-contract counts not measured)
+      SENSEX 2025-04-02 --   720 rows, 2 contracts (an average of 360 per contract,
+        15 short of 375; per-contract counts not measured)
+      SENSEX 2025-05-02 --   422 rows, 2 contracts (an average of 211 per contract,
+        well short of 375; per-contract counts not measured)
+    LIMITS OF THIS TEST: the alignment was tested on TWO days only, one per symbol, at
+      three minutes each. The first summary written (_alignment_v1_degenerate_key.txt)
+      keyed the best match on contract_series alone, which is degenerate for SENSEX
+      because every SENSEX contract carries contract_series = 0; it silently dropped one
+      hist contract per minute from the summary. _alignment.txt is keyed on
+      (contract_series, expiry_date) and both are kept.
+
+FUTURES CONTRACT RULE (fixed 2026-11-20, BEFORE any sensitivity run):
+  Recorded here before a single Fyers price is used in any computation, so the selection
+  cannot be adjusted after seeing a result.
+    F -- the close of the Fyers bar at the EXACT true-UTC instant: the sampled IST minute
+      minus 5h30m, at offset 0. NO neighbour fill: a bar at +/-60 s is not substituted.
+    CONTRACT -- among the contracts holding a bar at that instant, the one with the
+      smallest expiry_date greater than or equal to the IST trade date. Chosen by
+      measured expiry_date, never by contract_series, which is degenerate for SENSEX.
+      The contract used at each minute is recorded. A minute where the contract used is
+      not the one with the smallest expiry_date greater than or equal to the IST trade
+      date among that day's contracts (because the nearer contract has no bar at that
+      instant) is counted and reported as 'next contract used'; it is not excluded.
+    MISSING F -- if no bar exists at that instant, F is missing for that minute; the
+      minute is EXCLUDED and COUNTED. An excluded minute is reported, never silently
+      dropped and never filled.
+    T_fut = (expiry_date - IST trade date) / 365, in calendar days. This is the FUTURES'
+      own time to expiry and never the option's T_opt (see the SCALE NOTE above).
+    r = ln(F / S) / T_fut, with S the hist_spot_bars_1m close at the SAME IST-labelled
+      bar_ts the option solve used, so that r is the only quantity changed.
+    UNSTABLE -- a minute whose fut_dte is under 3 is flagged unstable, EXCLUDED and
+      COUNTED, because a small T_fut denominator makes r explode.
+    INTERPRETATION OF r -- it is a NET CARRY figure with dividends inside it
+      (core/bs_engine.py:77-84 states this: for an index future the basis-implied rate is
+      r - q, not r). It is not a risk-free rate and must not be described as one.
+    VOLUME -- the bar's volume is reported alongside F, and a zero-volume bar is FLAGGED,
+      because a stale print carries a stale basis.
+    ALIGNMENT BASIS -- this rule adopts offset 0 under the true-UTC reading on the
+      strength of the alignment test above, which covered two days only. It must be
+      re-checked on a later pair (NIFTY 2026-03-04 and SENSEX 2026-03-02) after the
+      24-day loop, and the rule is void if that re-check does not reproduce exact matches.
+    SCOPE -- this rule covers F, T_fut, r and the exclusions only. The replication gate,
+      the set of days and the pass criterion are not yet written and must be fixed in
+      writing before any sensitivity run.
+
+PART H AND ALIGNMENT RE-CHECK 2026-11-20:
+  1. COVERAGE RUN. 24 symbol-day runs of qH_day.sql.tpl: 24 OK, 0 FAIL, 0 STOP,
+     2.530 to 3.049 s each, 1,219 raw lines, 12 distinct days per symbol. The completion
+     marker ALL 24 DONE was written to the task stdout, not to _partH_run.log (bug in the
+     loop script). The fourth clause of the run precondition -- that the last log line is
+     the marker -- was WAIVED BY THE OPERATOR on that evidence; the log was not altered.
+
+  2. COVERAGE RESULT (analyze_partH.py -> _partH_analysis.txt).
+     72 of 72 sampled minutes have a Fyers bar at offset 0 (36 NIFTY, 36 SENSEX).
+     The selected contract is the near-month contract every time; fut_dte 22 to 30.
+     F missing 0, excluded as unstable 0, ties 0, next-contract-used 0.
+     LIMITS: the fut_dte < 3 exclusion NEVER FIRED and is untested by this data;
+     next-contract-used is judged only inside the six sampled windows, so its zero is
+     not independent evidence that the nearer contract always had a bar.
+     Zero-volume bars: 10, ALL SENSEX -- 7 at 12:30, 2 at 15:00, 1 at 10:00; NIFTY 0.
+     SENSEX volumes at the chosen expiry are small throughout.
+
+  3. ALIGNMENT RE-CHECK (analyze_alignment_v2.py -> _alignment_v2_recheck.txt).
+     Outcome printed: "ALIGNMENT INCONCLUSIVE: SENSEX 2026-03-02 10:00 (also matches at
+     +60)". Five of six minutes are exact and unique at offset 0 to the nearest-expiry
+     Fyers contract; NO minute is void.
+     NIFTY 2026-03-04: hist series 1, 2, 3 map to MAR, APR, MAY, one-to-one at all three
+     minutes.
+     SENSEX 2026-03-02 10:00: SENSEX26MARFUT is 80880.50 at BOTH offset 0 and +60, so
+     the F value is identical under either offset.
+     NIFTY 2026-03-04 12:30: hist series 3 also matched NIFTY26MAYFUT at -60 (flat
+     24750.00 at -60 and 0); series 3 is not the nearest contract, so the outcome is
+     unaffected; the flat-print pattern is not SENSEX-only.
+     The original ALIGNMENT BASIS wording had two outcomes (holds / void); the third
+     outcome INCONCLUSIVE and the flat-print clause were added BEFORE this run, after the
+     confound was identified.
+
+  4. OPERATOR DECISION 2026-11-20: the offset-0 rule STANDS. SENSEX 2026-03-02 10:00 is
+     flagged as not independently confirmed. Any SENSEX sensitivity result carries the
+     caveat that SENSEX alignment rests on the 2025-05-02 two-day test plus two
+     unambiguous minutes here.
+
+  5. STATUS. NO Fyers price has been used in any sensitivity. The sensitivity design
+     (replication gate, day set, pass criterion, zero-volume handling) is drafted in
+     MR-PIN2 and not yet frozen.
+
+  6. NEW FILES since the last manifest seal: every file the futures survey and this
+     re-check added (Parts F, G, H, alignment v1 and v2, q09-q14 and their outputs and
+     .err files, qF/qG/qH/qB5 templates, explain plans including the preserved FAIL/v1
+     plans, and this edit to BLOCKED.txt). The rebuild will use find over the whole
+     directory, not a hand list.
+     Reference list, NOT the rebuild input: analyze_partF.py, analyze_partG.py,
+     analyze_partH.py, analyze_alignment.py, analyze_alignment_v2.py, _alignment.txt,
+     _alignment_v1_degenerate_key.txt, _alignment_v2_recheck.txt, _partF_raw.txt,
+     _partF_run.log, _partF_agg.txt, _partG_raw.txt, _partG_run.log, _partH_raw.txt,
+     _partH_run.log, _partH_analysis.txt, _qH_trial_NIFTY_2025-04-01.txt and .err,
+     _qH_trial_SENSEX_2025-04-02.txt and .err, _qH_trial_SENSEX_2025-05-02.txt and .err,
+     _q09.txt through _q14.txt and their .err files, queries/q09_futures_discovery.sql,
+     queries/q10_futures_schema.sql, queries/q11_futures_extent.sql,
+     queries/q12_hif_enumerate.sql, queries/q13_fyers_columns_privs.sql,
+     queries/q13b_fyers_grant_verify.sql, queries/q14_fyers_visibility.sql,
+     queries/qB5_month.sql.tpl, queries/qF_day.sql.tpl, queries/qG_day.sql.tpl,
+     queries/qH_day.sql.tpl, queries/explain_qB5_NIFTY_2025-04_v1_outer_sort.txt,
+     queries/explain_qB5_NIFTY_2025-04_v2.txt, queries/explain_qF_NIFTY_2025-04-01.txt,
+     queries/explain_qG_NIFTY_2025-04-01.txt, queries/explain_q12_hif_enumerate.txt,
+     queries/explain_q14_fyers_visibility.txt,
+     queries/explain_qH_NIFTY_2025-04-01_v1_tgt_join_FAIL.txt,
+     queries/explain_qH_NIFTY_2025-04-01_v2_literal.txt,
+     queries/explain_qH_SENSEX_2025-04-02_v2_literal.txt.
+     MANIFEST IS NOT REBUILT HERE: it is rebuilt ONCE at the end of MR-PIN2, after the
+     sensitivity work, with find over the whole directory.
+
+UNMEASURED items (each named where it appears in the results files):
+  A4 population split is 10 runs of one day, not the full 4-day window.
+  Why the vendor blacks out a leg -- not visible in storage.
+  Ingest's NULL-gamma path -- never exercised by this data; read from code only.
+  signed_gamma_exposure vs signed_gex_vec equivalence -- read, not tested (Rule 0 cl.4).
+  Rounding-to-nearest vs truncation as the vendor's gamma floor -- the 1e-5 lattice
+    cannot separate them; the conclusion does not depend on which.
+  Which leg is correct where call and put gamma disagree -- B3 measures the spread only.
+  B5 agreement is per-month COUNTS, so offsetting day differences inside a month cancel.
+  The engine note's 13% / 28% leg figures -- not reproduced by any denominator measured.
+  No relation of any strike to later price, by instruction (no outcomes computed).
+
+NOT BLOCKED (resolved this session):
+  B5 was briefly blocked on an EXPLAIN-gate trip. The gate was ruled to read the Limit
+  node's estimate (rows=1, cost 1.37) rather than the unbounded Index Scan beneath it
+  (rows=42096) -- operator ruling (option 1), 2026-11-20. v1 and v2 plans are both kept
+  under queries/. B5 then ran and is measured.

@@ -1,0 +1,66 @@
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":1,"column_name":"id","data_type":"uuid","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":10,"column_name":"low","data_type":"numeric","numeric_precision":10,"numeric_scale":2,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":11,"column_name":"close","data_type":"numeric","numeric_precision":10,"numeric_scale":2,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":12,"column_name":"volume","data_type":"bigint","numeric_precision":64,"numeric_scale":0,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":13,"column_name":"oi","data_type":"bigint","numeric_precision":64,"numeric_scale":0,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":14,"column_name":"iv","data_type":"numeric","numeric_precision":10,"numeric_scale":6,"is_nullable":"YES"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":15,"column_name":"delta","data_type":"numeric","numeric_precision":10,"numeric_scale":6,"is_nullable":"YES"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":16,"column_name":"gamma","data_type":"numeric","numeric_precision":12,"numeric_scale":8,"is_nullable":"YES"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":17,"column_name":"theta","data_type":"numeric","numeric_precision":10,"numeric_scale":4,"is_nullable":"YES"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":18,"column_name":"vega","data_type":"numeric","numeric_precision":10,"numeric_scale":4,"is_nullable":"YES"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":19,"column_name":"heston_v0","data_type":"numeric","numeric_precision":12,"numeric_scale":8,"is_nullable":"YES"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":2,"column_name":"instrument_id","data_type":"uuid","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":20,"column_name":"heston_kappa","data_type":"numeric","numeric_precision":10,"numeric_scale":6,"is_nullable":"YES"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":21,"column_name":"heston_theta","data_type":"numeric","numeric_precision":12,"numeric_scale":8,"is_nullable":"YES"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":22,"column_name":"heston_xi","data_type":"numeric","numeric_precision":12,"numeric_scale":8,"is_nullable":"YES"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":23,"column_name":"heston_rho","data_type":"numeric","numeric_precision":8,"numeric_scale":6,"is_nullable":"YES"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":24,"column_name":"is_pre_market","data_type":"boolean","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":25,"column_name":"is_leap","data_type":"boolean","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":26,"column_name":"ingest_batch_id","data_type":"uuid","numeric_precision":null,"numeric_scale":null,"is_nullable":"YES"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":3,"column_name":"trade_date","data_type":"date","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":4,"column_name":"bar_ts","data_type":"timestamp with time zone","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":5,"column_name":"expiry_date","data_type":"date","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":6,"column_name":"strike","data_type":"numeric","numeric_precision":10,"numeric_scale":2,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":7,"column_name":"option_type","data_type":"text","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":8,"column_name":"open","data_type":"numeric","numeric_precision":10,"numeric_scale":2,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_bars_1m","ordinal_position":9,"column_name":"high","data_type":"numeric","numeric_precision":10,"numeric_scale":2,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_greeks_1m","ordinal_position":1,"column_name":"id","data_type":"bigint","numeric_precision":64,"numeric_scale":0,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_greeks_1m","ordinal_position":10,"column_name":"r_used","data_type":"numeric","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_greeks_1m","ordinal_position":11,"column_name":"source","data_type":"text","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_greeks_1m","ordinal_position":12,"column_name":"created_at","data_type":"timestamp with time zone","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_greeks_1m","ordinal_position":2,"column_name":"instrument_id","data_type":"uuid","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_greeks_1m","ordinal_position":3,"column_name":"bar_ts","data_type":"timestamp with time zone","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_greeks_1m","ordinal_position":4,"column_name":"trade_date","data_type":"date","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_greeks_1m","ordinal_position":5,"column_name":"strike","data_type":"numeric","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_greeks_1m","ordinal_position":6,"column_name":"option_type","data_type":"text","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_greeks_1m","ordinal_position":7,"column_name":"expiry_date","data_type":"date","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_option_greeks_1m","ordinal_position":8,"column_name":"iv","data_type":"numeric","numeric_precision":null,"numeric_scale":null,"is_nullable":"YES"}
+C0|{"table_name":"hist_option_greeks_1m","ordinal_position":9,"column_name":"gamma","data_type":"numeric","numeric_precision":null,"numeric_scale":null,"is_nullable":"YES"}
+C0|{"table_name":"hist_spot_bars_1m","ordinal_position":1,"column_name":"id","data_type":"uuid","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_spot_bars_1m","ordinal_position":10,"column_name":"ingest_batch_id","data_type":"uuid","numeric_precision":null,"numeric_scale":null,"is_nullable":"YES"}
+C0|{"table_name":"hist_spot_bars_1m","ordinal_position":2,"column_name":"instrument_id","data_type":"uuid","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_spot_bars_1m","ordinal_position":3,"column_name":"trade_date","data_type":"date","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_spot_bars_1m","ordinal_position":4,"column_name":"bar_ts","data_type":"timestamp with time zone","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C0|{"table_name":"hist_spot_bars_1m","ordinal_position":5,"column_name":"open","data_type":"numeric","numeric_precision":10,"numeric_scale":2,"is_nullable":"NO"}
+C0|{"table_name":"hist_spot_bars_1m","ordinal_position":6,"column_name":"high","data_type":"numeric","numeric_precision":10,"numeric_scale":2,"is_nullable":"NO"}
+C0|{"table_name":"hist_spot_bars_1m","ordinal_position":7,"column_name":"low","data_type":"numeric","numeric_precision":10,"numeric_scale":2,"is_nullable":"NO"}
+C0|{"table_name":"hist_spot_bars_1m","ordinal_position":8,"column_name":"close","data_type":"numeric","numeric_precision":10,"numeric_scale":2,"is_nullable":"NO"}
+C0|{"table_name":"hist_spot_bars_1m","ordinal_position":9,"column_name":"is_pre_market","data_type":"boolean","numeric_precision":null,"numeric_scale":null,"is_nullable":"NO"}
+C1|{"tablename":"hist_option_bars_1m","indexname":"hist_option_bars_1m_pkey","indexdef":"CREATE UNIQUE INDEX hist_option_bars_1m_pkey ON public.hist_option_bars_1m USING btree (id)"}
+C1|{"tablename":"hist_option_bars_1m","indexname":"hist_option_bars_unique","indexdef":"CREATE UNIQUE INDEX hist_option_bars_unique ON public.hist_option_bars_1m USING btree (instrument_id, bar_ts, expiry_date, strike, option_type)"}
+C1|{"tablename":"hist_option_bars_1m","indexname":"idx_hist_option_chain_snap","indexdef":"CREATE INDEX idx_hist_option_chain_snap ON public.hist_option_bars_1m USING btree (instrument_id, trade_date, bar_ts)"}
+C1|{"tablename":"hist_option_bars_1m","indexname":"ix_hist_option_bars_1m_bar_ts_strike","indexdef":"CREATE INDEX ix_hist_option_bars_1m_bar_ts_strike ON public.hist_option_bars_1m USING btree (bar_ts, strike, option_type)"}
+C1|{"tablename":"hist_option_greeks_1m","indexname":"hist_option_greeks_1m_pkey","indexdef":"CREATE UNIQUE INDEX hist_option_greeks_1m_pkey ON public.hist_option_greeks_1m USING btree (id)"}
+C1|{"tablename":"hist_option_greeks_1m","indexname":"idx_hist_greeks_instr_barts","indexdef":"CREATE INDEX idx_hist_greeks_instr_barts ON public.hist_option_greeks_1m USING btree (instrument_id, bar_ts)"}
+C1|{"tablename":"hist_option_greeks_1m","indexname":"idx_hist_greeks_trade_date","indexdef":"CREATE INDEX idx_hist_greeks_trade_date ON public.hist_option_greeks_1m USING btree (trade_date)"}
+C1|{"tablename":"hist_option_greeks_1m","indexname":"uniq_hist_greeks_row","indexdef":"CREATE UNIQUE INDEX uniq_hist_greeks_row ON public.hist_option_greeks_1m USING btree (instrument_id, bar_ts, strike, expiry_date, option_type)"}
+C1|{"tablename":"hist_spot_bars_1m","indexname":"hist_spot_bars_1m_pkey","indexdef":"CREATE UNIQUE INDEX hist_spot_bars_1m_pkey ON public.hist_spot_bars_1m USING btree (id)"}
+C1|{"tablename":"hist_spot_bars_1m","indexname":"hist_spot_bars_unique","indexdef":"CREATE UNIQUE INDEX hist_spot_bars_unique ON public.hist_spot_bars_1m USING btree (instrument_id, bar_ts)"}
+C1|{"tablename":"hist_spot_bars_1m","indexname":"idx_hist_spot_aging","indexdef":"CREATE INDEX idx_hist_spot_aging ON public.hist_spot_bars_1m USING btree (trade_date)"}
+C1|{"tablename":"hist_spot_bars_1m","indexname":"idx_hist_spot_ts","indexdef":"CREATE INDEX idx_hist_spot_ts ON public.hist_spot_bars_1m USING btree (instrument_id, bar_ts DESC)"}
+C2|{"id":"73a1390a-30c9-46d6-9d3f-5f03c3f5ad71","symbol":"SENSEX"}
+C2|{"id":"9992f600-51b3-4009-b487-f878692a0bc5","symbol":"NIFTY"}
+C3|{"contamination_id":"BREADTH-STALE-REF-2026-03-27","field_scope":"breadth_regime, breadth_score, advances, declines, breadth_features (JSONB), breadth_score_change, breadth_wcb_relationship","contamination_start":"2026-03-27T04:15:00+00:00","contamination_end":"2026-04-23T12:32:00+00:00","affected_tables":["market_breadth_intraday","breadth_intraday_history","signal_snapshots","signal_snapshots_shadow","market_state_snapshots","market_state_snapshots_shadow","gamma_metrics","gamma_metrics_shadow","hist_market_state","hist_pattern_signals","momentum_snapshots","momentum_snapshots_shadow","structural_alerts","signal_state_snapshots","shadow_state_signal_snapshots","signal_outcome_audit","signal_outcome_audit_dedup","signal_outcome_research_v1","signal_outcome_research_v2","signal_premium_outcomes","signal_regret_log","shadow_signal_snapshots","shadow_signal_snapshots_v3","shadow_signal_validation_v1","shadow_reconstruction_v1","shadow_reconstruction_v2","shadow_reconstruction_v3","wcb_signal_validation_v1","wcb_signal_validation_v2"],"symbols":null}
+C3|{"contamination_id":"HOLIDAY-FROZEN-CHAIN-2026-10-02","field_scope":"all fields; both symbols (NIFTY, SENSEX)","contamination_start":"2026-10-01T18:30:00+00:00","contamination_end":"2026-10-02T18:29:59+00:00","affected_tables":["option_chain_snapshots","gex_strike_snapshots","gamma_metrics"],"symbols":null}
+C3|{"contamination_id":"ORCH-LEDGER-FALSE-SUCCESS-2026-10-21","field_scope":"status, exit_code, exit_reason, contract_met of script_name = run_merdian_shadow_runner_aws.py (83 rows read SUCCESS / contract_met true with actual_writes {})","contamination_start":"2026-10-20T18:30:00+00:00","contamination_end":"2026-10-21T18:29:59+00:00","affected_tables":["script_execution_log"],"symbols":null}
+C3|{"contamination_id":"SENSEX-CHAIN-OI-VOL0-2026-09-25","field_scope":"oi (SENSEX only, front-expiry legs with zero session volume); oi_call, oi_put; any OI-weighted aggregate incl. DEX notional","contamination_start":"2026-09-24T18:30:00+00:00","contamination_end":"2026-09-29T18:29:59+00:00","affected_tables":["option_chain_snapshots","gex_strike_snapshots"],"symbols":["SENSEX"]}

@@ -1,0 +1,17 @@
+                run_id                | option_type | bucket | legs 
+--------------------------------------+-------------+--------+------
+ 612692d1-0ddf-45af-934d-0a8e0fd35501 | CE          | dp=4   |    3
+ 612692d1-0ddf-45af-934d-0a8e0fd35501 | CE          | dp=5   |   43
+ 612692d1-0ddf-45af-934d-0a8e0fd35501 | CE          | zero   |  230
+ 612692d1-0ddf-45af-934d-0a8e0fd35501 | PE          | dp=3   |    1
+ 612692d1-0ddf-45af-934d-0a8e0fd35501 | PE          | dp=4   |    3
+ 612692d1-0ddf-45af-934d-0a8e0fd35501 | PE          | dp=5   |  115
+ 612692d1-0ddf-45af-934d-0a8e0fd35501 | PE          | zero   |  157
+ e7793aef-4ed8-4bff-8a3c-ef21af5e2c03 | CE          | dp=4   |    3
+ e7793aef-4ed8-4bff-8a3c-ef21af5e2c03 | CE          | dp=5   |   55
+ e7793aef-4ed8-4bff-8a3c-ef21af5e2c03 | CE          | zero   |  197
+ e7793aef-4ed8-4bff-8a3c-ef21af5e2c03 | PE          | dp=4   |    9
+ e7793aef-4ed8-4bff-8a3c-ef21af5e2c03 | PE          | dp=5   |  142
+ e7793aef-4ed8-4bff-8a3c-ef21af5e2c03 | PE          | zero   |  104
+(13 rows)
+

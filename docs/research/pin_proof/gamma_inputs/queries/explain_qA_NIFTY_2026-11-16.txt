@@ -1,0 +1,78 @@
+Sort  (cost=16271.70..16272.71 rows=402 width=64)
+  Sort Key: ('R0'::text), ((row_to_json(ROW('NIFTY'::text, '2026-11-16'::text, (InitPlan 5).col1, (InitPlan 6).col1, (InitPlan 7).col1, (InitPlan 8).col1, (InitPlan 9).col1)))::text)
+  CTE r
+    ->  Index Scan using uix_gamma_metrics_symbol_ts on gamma_metrics  (cost=0.29..26.41 rows=25 width=20)
+          Index Cond: ((symbol = 'NIFTY'::text) AND (ts >= '2026-11-15 18:30:00+00'::timestamp with time zone) AND (ts < '2026-11-16 18:30:00+00'::timestamp with time zone))
+          Filter: (run_id IS NOT NULL)
+  CTE ck
+    ->  Nested Loop  (cost=0.43..15954.00 rows=278 width=154)
+          ->  CTE Scan on r  (cost=0.00..0.50 rows=25 width=20)
+          ->  Index Scan using idx_ocs_run_id on option_chain_snapshots o  (cost=0.43..635.91 rows=20 width=69)
+                Index Cond: (run_id = r.run_id)
+                Filter: ((spot > '0'::numeric) AND (strike > '0'::numeric) AND (r.expiry_date = expiry_date))
+  CTE g
+    ->  Nested Loop  (cost=0.43..186.31 rows=75 width=72)
+          ->  CTE Scan on r r_1  (cost=0.00..0.50 rows=25 width=20)
+          ->  Index Scan using uq_gss_run_strike_expiry on gex_strike_snapshots s  (cost=0.43..7.38 rows=3 width=76)
+                Index Cond: ((run_id = r_1.run_id) AND (expiry_date = r_1.expiry_date))
+  CTE x
+    ->  Hash Left Join  (cost=12.54..15.18 rows=75 width=170)
+          Hash Cond: ((g.run_id = pe.run_id) AND (g.strike = pe.strike))
+          ->  Hash Left Join  (cost=6.27..8.34 rows=75 width=128)
+                Hash Cond: ((g.run_id = ce.run_id) AND (g.strike = ce.strike))
+                ->  CTE Scan on g  (cost=0.00..1.50 rows=75 width=56)
+                ->  Hash  (cost=6.25..6.25 rows=1 width=80)
+                      ->  CTE Scan on ck ce  (cost=0.00..6.25 rows=1 width=80)
+                            Filter: (ot = 'CE'::text)
+          ->  Hash  (cost=6.25..6.25 rows=1 width=80)
+                ->  CTE Scan on ck pe  (cost=0.00..6.25 rows=1 width=80)
+                      Filter: (ot = 'PE'::text)
+  InitPlan 5
+    ->  Aggregate  (cost=0.56..0.57 rows=1 width=8)
+          ->  CTE Scan on r r_2  (cost=0.00..0.50 rows=25 width=0)
+  InitPlan 6
+    ->  Aggregate  (cost=1.21..1.22 rows=1 width=8)
+          ->  Sort  (cost=1.08..1.14 rows=25 width=4)
+                Sort Key: r_3.expiry_date
+                ->  CTE Scan on r r_3  (cost=0.00..0.50 rows=25 width=4)
+  InitPlan 7
+    ->  Aggregate  (cost=0.56..0.58 rows=1 width=32)
+          ->  CTE Scan on r r_4  (cost=0.00..0.50 rows=25 width=4)
+  InitPlan 8
+    ->  Aggregate  (cost=6.26..6.27 rows=1 width=8)
+          ->  CTE Scan on ck ck_2  (cost=0.00..5.56 rows=278 width=0)
+  InitPlan 9
+    ->  Aggregate  (cost=1.69..1.70 rows=1 width=8)
+          ->  CTE Scan on g g_1  (cost=0.00..1.50 rows=75 width=0)
+  ->  Append  (cost=0.00..62.08 rows=402 width=64)
+        ->  Result  (cost=0.00..0.01 rows=1 width=64)
+        ->  Subquery Scan on t  (cost=26.41..31.91 rows=200 width=64)
+              ->  HashAggregate  (cost=26.41..28.41 rows=200 width=216)
+                    Group Key: ck.ot, ck.bkt
+                    ->  CTE Scan on ck  (cost=0.00..5.56 rows=278 width=114)
+        ->  Subquery Scan on t_1  (cost=8.27..9.09 rows=30 width=64)
+              ->  HashAggregate  (cost=8.27..8.57 rows=30 width=192)
+                    Group Key: ck_1.ot, ck_1.bkt
+                    ->  CTE Scan on ck ck_1  (cost=0.00..6.95 rows=31 width=90)
+                          Filter: ((oi > '0'::double precision) AND (ltp > '0'::double precision))
+        ->  Subquery Scan on t_2  (cost=2.44..4.88 rows=75 width=64)
+              ->  HashAggregate  (cost=2.44..3.56 rows=75 width=168)
+                    Group Key: CASE WHEN x.ce_norow THEN 'NOROW'::text WHEN (x.ce_g IS NULL) THEN 'NULL'::text WHEN (x.ce_g = '0'::double precision) THEN 'ZERO'::text ELSE 'POS'::text END, CASE WHEN (x.gc IS NULL) THEN 'NULL'::text WHEN (x.gc = '0'::double precision) THEN 'ZERO'::text ELSE 'POS'::text END
+                    ->  CTE Scan on x  (cost=0.00..1.88 rows=75 width=64)
+        ->  Subquery Scan on t_3  (cost=2.44..4.88 rows=75 width=64)
+              ->  HashAggregate  (cost=2.44..3.56 rows=75 width=168)
+                    Group Key: CASE WHEN x_1.pe_norow THEN 'NOROW'::text WHEN (x_1.pe_g IS NULL) THEN 'NULL'::text WHEN (x_1.pe_g = '0'::double precision) THEN 'ZERO'::text ELSE 'POS'::text END, CASE WHEN (x_1.gp IS NULL) THEN 'NULL'::text WHEN (x_1.gp = '0'::double precision) THEN 'ZERO'::text ELSE 'POS'::text END
+                    ->  CTE Scan on x x_1  (cost=0.00..1.88 rows=75 width=64)
+        ->  Subquery Scan on "*SELECT* 1"  (cost=1.74..2.01 rows=10 width=64)
+              ->  HashAggregate  (cost=1.74..1.84 rows=10 width=136)
+                    Group Key: COALESCE(x_2.ce_bkt, 'NA'::text)
+                    ->  CTE Scan on x x_2  (cost=0.00..1.69 rows=10 width=32)
+                          Filter: ((gc IS NULL) AND (ce_g > '0'::double precision))
+        ->  Subquery Scan on "*SELECT* 2"  (cost=1.74..2.01 rows=10 width=64)
+              ->  HashAggregate  (cost=1.74..1.84 rows=10 width=136)
+                    Group Key: COALESCE(x_3.pe_bkt, 'NA'::text)
+                    ->  CTE Scan on x x_3  (cost=0.00..1.69 rows=10 width=32)
+                          Filter: ((gp IS NULL) AND (pe_g > '0'::double precision))
+        ->  Subquery Scan on t_4  (cost=5.25..5.28 rows=1 width=64)
+              ->  Aggregate  (cost=5.25..5.26 rows=1 width=112)
+                    ->  CTE Scan on x x_4  (cost=0.00..1.50 rows=75 width=40)

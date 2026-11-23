@@ -1,0 +1,1 @@
+R2|{"sym":"SENSEX","d":"2025-04-28","first_clock":null,"first_close":null,"last_clock":null,"last_close":null}

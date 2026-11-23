@@ -1,0 +1,15 @@
+symbol|bkt|blank_legs|raw_no_greeks_key|raw_no_gamma_key|raw_gamma_literal_zero|vendor_sent_nothing|gamma_only_zero|gamma_only_zero_iv_pos|oi_sum|oi_vendor_sent_nothing
+NIFTY|1_OTM|321|0|0|321|11|310|310|61737650|3074630
+NIFTY|3_ITM_1_2|2|0|0|2|2|0|0|3165305|3165305
+NIFTY|4_ITM_2_5|134|0|0|134|134|0|0|45193980|45193980
+NIFTY|5_ITM_5P|758|0|0|758|745|13|13|142764895|142173460
+SENSEX|1_OTM|1719|0|0|1719|1069|650|650|351424800|24967660
+SENSEX|2_ITM_0_1|61|0|0|61|61|0|0|41213940|41213940
+SENSEX|3_ITM_1_2|79|0|0|79|78|1|1|5699280|5683480
+SENSEX|4_ITM_2_5|137|0|0|137|134|3|3|858800|835460
+SENSEX|5_ITM_5P|459|0|0|459|459|0|0|346740|346740
+(9 rows)
+symbol|legs_gamma_pos|distinct_gamma|not_mult_of_1e5|min_pos_gamma|max_gamma
+NIFTY|207|61|0|0.00001|0.00121
+SENSEX|62|23|0|0.00001|0.0033
+(2 rows)

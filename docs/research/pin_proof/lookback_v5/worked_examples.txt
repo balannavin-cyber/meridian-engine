@@ -1,0 +1,107 @@
+lookback_v5 WORKED EXAMPLES
+==========================================================================
+
+--- NIFTY 2025-04-01 12:30 ----------------------------------------
+  S           = 23224.85
+  F           = 23248.2000
+  ATM         = 23200   (sigma_atm solved at K=23200)
+  sigma_atm   = 0.157425
+  T           = 3060 minutes  (0.00582192 yr)
+  sigma_rem   = 278.97  (points)
+  dte_cal     = 2    dte_sess = 2 (bucket 2)   expiry 2025-04-03
+  sigma_wall  = 325.72   band +/-488.58   eligible strikes 20
+  put_wall    = 23000.0   call_wall = 23500.0
+  strikes     = 46   fallback legs = 0 (0.0 %)
+
+  pin     g: strike    share     lead   g_flat: strike    share     lead
+  T           23500   0.1274   0.1012            23500   0.1315   0.0763
+  PW1         23300   0.1641   0.1713            23300   0.1619   0.1291
+  PW2         23300   0.2356   0.0869            23300   0.2291   0.0404
+  N           23500   0.1059   0.2757            23500   0.1161   0.1670
+
+  top 5 strikes by T score under the primary gamma:
+            K     oi_call      oi_put   sigma_K         g_K    g_flat_K  score_share
+        23500    14470725     5898825    0.1525  9.6588e-04  8.8948e-04       12.74%
+        23300     7762950     4351725    0.1514  1.4597e-03  1.3815e-03       11.45%
+        23200     4201725     5711550    0.1546  1.4312e-03  1.4236e-03        9.18%
+        23400     7006275     2660925    0.1502  1.2784e-03  1.1804e-03        8.00%
+        23250     3697500     2814000    0.1534  1.4663e-03  1.4250e-03        6.18%
+
+--- NIFTY 2025-04-03 14:30 ----------------------------------------
+  S           = 23257.05
+  F           = 23253.3500
+  ATM         = 23250   (sigma_atm solved at K=23250)
+  sigma_atm   = 0.055733
+  T           = 60 minutes  (0.00011416 yr)
+  sigma_rem   = 13.85  (points)
+  dte_cal     = 0    dte_sess = 0 (bucket 0)   expiry 2025-04-03
+  sigma_wall  = 81.65   band +/-122.48   eligible strikes 5
+  put_wall    = 23250.0   call_wall = 23300.0
+  strikes     = 47   fallback legs = 0 (0.0 %)
+
+  pin     g: strike    share     lead   g_flat: strike    share     lead
+  T           23250   0.8180   0.8794            23250   0.9938   0.9939
+  PW1         23250   0.9989   0.9989            23250   0.9999   0.9999
+  PW2         23250   1.0000   1.0000            23250   1.0000   1.0000
+  N           23250   0.7334   0.8221            23250   0.9909   0.9910
+
+  top 5 strikes by T score under the primary gamma:
+            K     oi_call      oi_put   sigma_K         g_K    g_flat_K  score_share
+        23250    34782750    66248625    0.0624  2.5150e-02  2.5301e-02       81.80%
+        23300    48182250    17857650    0.1386  4.6414e-03  2.3724e-04        9.87%
+        23200    10316025    34014825    0.1523  3.8881e-03  5.8204e-06        5.55%
+        23350     9563400     3782700    0.2244  1.6061e-03  5.2181e-12        0.69%
+        23150     2536650     8227275    0.2403  1.4802e-03  2.6543e-15        0.51%
+
+--- SENSEX 2026-03-02 12:30 ----------------------------------------
+  S           = 79792.03
+  F           = 79843.7000
+  ATM         = 79800   (sigma_atm solved at K=79800)
+  sigma_atm   = 0.202423
+  T           = 4500 minutes  (0.00856164 yr)
+  sigma_rem   = 1494.50  (points)
+  dte_cal     = 3    dte_sess = 2 (bucket 2)   expiry 2026-03-05
+  sigma_wall  = 1762.30   band +/-2643.44   eligible strikes 53
+  put_wall    = 80000.0   call_wall = 82000.0
+  strikes     = 79   fallback legs = 0 (0.0 %)
+
+  pin     g: strike    share     lead   g_flat: strike    share     lead
+  T           80000   0.0932   0.1557            80000   0.0959   0.1854
+  PW1         80000   0.1271   0.2380            80000   0.1265   0.2648
+  PW2         80000   0.1785   0.4397            80000   0.1762   0.4595
+  N           79000   0.0647   0.1962            79000   0.0755   0.2435
+
+  top 5 strikes by T score under the primary gamma:
+            K     oi_call      oi_put   sigma_K         g_K    g_flat_K  score_share
+        80000      500080      711220    0.1977  2.7187e-04  2.6471e-04        9.32%
+        80500      653460      435280    0.1906  2.5538e-04  2.3989e-04        7.87%
+        81000      606020      126760    0.1894  2.0509e-04  1.9494e-04        4.25%
+        80200      291960      227660    0.1945  2.6991e-04  2.5787e-04        3.97%
+        79000       33100      610660    0.2219  2.1173e-04  2.3048e-04        3.86%
+
+--- SENSEX 2025-04-08 14:30 ----------------------------------------
+  S           = 74652.05
+  F           = 74674.2500
+  ATM         = 74700   (sigma_atm solved at K=74700)
+  sigma_atm   = 0.443862
+  T           = 60 minutes  (0.00011416 yr)
+  sigma_rem   = 354.03  (points)
+  dte_cal     = 0    dte_sess = 0 (bucket 0)   expiry 2025-04-08
+  sigma_wall  = 2087.32   band +/-3130.98   eligible strikes 61
+  put_wall    = 74000.0   call_wall = 75000.0
+  strikes     = 71   fallback legs = 0 (0.0 %)
+
+  pin     g: strike    share     lead   g_flat: strike    share     lead
+  T           74500   0.1307   0.1129            74500   0.1580   0.2441
+  PW1         74500   0.1802   0.1573            74500   0.1968   0.2328
+  PW2         74700   0.2334   0.0751            74500   0.2314   0.0157
+  N           75000   0.2141   0.4811            75000   0.2434   0.4767
+
+  top 5 strikes by T score under the primary gamma:
+            K     oi_call      oi_put   sigma_K         g_K    g_flat_K  score_share
+        74500     1264060     1631920    0.4825  9.3415e-04  1.0263e-03       13.07%
+        75000     2934960      281920    0.4036  7.4598e-04  6.9839e-04       11.59%
+        74800     1502020      564120    0.4270  1.0949e-03  1.0338e-03       10.93%
+        74700     1046140      832720    0.4467  1.1167e-03  1.1169e-03       10.13%
+        74600      769980      911080    0.4686  1.0456e-03  1.1144e-03        8.49%
+

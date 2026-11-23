@@ -1,0 +1,6 @@
+ symbol | rows | distinct_expiries | null_expiry | null_ltp | first_day  |  last_day  | distinct_days |      sources       
+--------+------+-------------------+-------------+----------+------------+------------+---------------+--------------------
+ SENSEX | 1437 |                 7 |        1332 |        0 | 2026-03-19 | 2026-11-19 |           110 | run_market_tape_1m
+ NIFTY  | 1435 |                 7 |        1332 |        0 | 2026-03-19 | 2026-11-19 |           108 | run_market_tape_1m
+(2 rows)
+

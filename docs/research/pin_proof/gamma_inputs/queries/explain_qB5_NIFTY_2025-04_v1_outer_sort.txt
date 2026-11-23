@@ -1,0 +1,8 @@
+Sort  (cost=1460.31..1462.81 rows=1000 width=161)
+  Sort Key: (to_char(((generate_series('2025-04-01 00:00:00+00'::timestamp with time zone, ('2025-05-01 00:00:00+00'::timestamp with time zone - '1 day'::interval), '1 day'::interval)) AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD'::text))
+  ->  Nested Loop Left Join  (cost=0.44..1410.48 rows=1000 width=161)
+        ->  ProjectSet  (cost=0.00..5.02 rows=1000 width=8)
+              ->  Result  (cost=0.00..0.01 rows=1 width=0)
+        ->  Limit  (cost=0.44..1.37 rows=1 width=12)
+              ->  Index Scan using idx_hist_greeks_instr_barts on hist_option_greeks_1m g  (cost=0.44..38958.52 rows=42096 width=12)
+                    Index Cond: ((instrument_id = '9992f600-51b3-4009-b487-f878692a0bc5'::uuid) AND (bar_ts >= (generate_series('2025-04-01 00:00:00+00'::timestamp with time zone, ('2025-05-01 00:00:00+00'::timestamp with time zone - '1 day'::interval), '1 day'::interval))) AND (bar_ts < ((generate_series('2025-04-01 00:00:00+00'::timestamp with time zone, ('2025-05-01 00:00:00+00'::timestamp with time zone - '1 day'::interval), '1 day'::interval)) + '1 day'::interval)))

@@ -144,3 +144,9 @@ cron.log*
 !services/tape_db/__init__.py
 # tape scoring: same, for the scoring package marker
 !services/tape_scoring/__init__.py
+
+# Research records are tracked whatever their type (I-002 row 18, TD-PIN2-NEW-13).
+# Must stay below the *.log / *.csv / *.txt rules. Raw dumps over 40 KB stay out by PK Protocol P1.
+!docs/research/**/*.txt
+!docs/research/**/*.csv
+!docs/research/**/*.log

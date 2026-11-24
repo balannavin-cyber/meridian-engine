@@ -1,0 +1,51 @@
+== E tables holding both a symbol-like and an instrument-like column ==
+ table_name | cols 
+------------+------
+(0 rows)
+
+== F candidate instrument dimension tables ==
+          table_name           | table_type 
+-------------------------------+------------
+ bse_scripcode_isin_map        | BASE TABLE
+ dhan_scrip_map                | BASE TABLE
+ dhan_scripmaster              | BASE TABLE
+ dhan_scripmaster_staging      | BASE TABLE
+ eq_instrument_events          | BASE TABLE
+ eq_instruments                | BASE TABLE
+ instruments                   | BASE TABLE
+ script_execution_log          | BASE TABLE
+ script_execution_log_replay   | BASE TABLE
+ v_script_execution_health_30m | VIEW
+(10 rows)
+
+== G columns of public.instruments ==
+ ordinal_position |    column_name    |        data_type         
+------------------+-------------------+--------------------------
+                1 | id                | uuid
+                2 | symbol            | text
+                3 | exchange          | text
+                4 | strike_step       | integer
+                5 | lot_size          | integer
+                6 | weekly_expiry_dow | integer
+                7 | preopen_time      | time without time zone
+                8 | open_time         | time without time zone
+                9 | close_time        | time without time zone
+               10 | timezone          | text
+               11 | is_active         | boolean
+               12 | updated_at        | timestamp with time zone
+(12 rows)
+
+== H indexes on instruments ==
+       indexname        |                                       indexdef                                        
+------------------------+---------------------------------------------------------------------------------------
+ instruments_pkey       | CREATE UNIQUE INDEX instruments_pkey ON public.instruments USING btree (id)
+ instruments_symbol_key | CREATE UNIQUE INDEX instruments_symbol_key ON public.instruments USING btree (symbol)
+(2 rows)
+
+== I get_parameter_num signature ==
+      proname      |                     args                     | result  | can_execute 
+-------------------+----------------------------------------------+---------+-------------
+ get_parameter_num | p_key text                                   | numeric | t
+ get_parameter_num | p_key text, p_as_of timestamp with time zone | numeric | t
+(2 rows)
+

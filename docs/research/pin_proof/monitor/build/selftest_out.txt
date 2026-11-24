@@ -1,0 +1,240 @@
+TIME -- the two storage conventions (condition 6)
+------------------------------------------------------------------------
+PASS  T1 gex ts 09:00:00+00 (true timestamptz) -> 14:30 IST  -- 2026-11-25 14:30:00
+PASS  T2 bar_ts 09:59:00+00 (TRUE UTC, ruling R2) -> 15:29 IST  -- 2026-11-25 15:29:00
+PASS  T3 the 15:29 IST close bar is labelled 09:59:00+00  -- 2026-11-25 09:59:00+00:00
+PASS  T4 legacy replace(tzinfo=None) would give 09:59, not 15:29 -- conventions differ  -- legacy 2026-11-25 09:59:00 vs utc->ist 2026-11-25 15:29:00
+PASS  T5 _run_ts_ist refuses a naive datetime
+PASS  T5 _bar_ts_ist refuses a naive datetime
+
+BAND -- hand-computed walks against the live view's rule
+------------------------------------------------------------------------
+PASS  B1 day A R4 band = [25000, 25050] n 2, peak 25000, step 50  -- {'lo': 25000.0, 'hi': 25050.0, 'n': 2, 'peak': 25000.0, 'step': 50.0, 'tau': 0.3}
+PASS  B2 day A R3 band = [25000, 25000] n 1 (thr 2.7 stops both neighbours)  -- {'lo': 25000.0, 'hi': 25000.0, 'n': 1, 'peak': 25000.0, 'step': 50.0, 'tau': 0.3}
+PASS  B3 same run at tau 0.1 -> [24950, 25050] n 3 (thr 0.9 admits both)  -- {'lo': 24950.0, 'hi': 25050.0, 'n': 3, 'peak': 25000.0, 'step': 50.0, 'tau': 0.1}
+PASS  B4 a sparse run derives step 100 from its OWN strikes  -- {'lo': 25000.0, 'hi': 25000.0, 'n': 1, 'peak': 25000.0, 'step': 100.0, 'tau': 0.3}
+PASS  B5 one strike -> no strike_step row -> NO band
+PASS  B6 no strike with gex_cr > 0 -> empty peak -> NO band
+PASS  B7 a gap stops the walk -- 25150 (9.0) unreached  -- {'lo': 25000.0, 'hi': 25050.0, 'n': 2, 'peak': 25000.0, 'step': 50.0, 'tau': 0.3}
+PASS  B8 peak tie on gex_cr resolved by nearer to spot -> 25100  -- {'lo': 25100.0, 'hi': 25100.0, 'n': 1, 'peak': 25100.0, 'step': 100.0, 'tau': 0.3}
+
+DAY A -- NIFTY 2026-11-25 -- every field of the line
+------------------------------------------------------------------------
+PASS  A.date = '2026-11-25'  -- got '2026-11-25'
+PASS  A.symbol = 'NIFTY'  -- got 'NIFTY'
+PASS  A.expiry_date = '2026-11-27'  -- got '2026-11-27'
+PASS  A.dte = 2  -- got 2
+PASS  A.is_expiry_day = False  -- got False
+PASS  A.n_runs_market = 5  -- got 5
+PASS  A.n_runs_rankable = 4  -- got 4
+PASS  A.share_rankable = 0.8  -- got 0.8
+PASS  A.median_n_ranked = 3  -- got 3
+PASS  A.median_share_one_leg = 0.0  -- got 0.0
+PASS  A.median_n_oi_no_gamma = 0  -- got 0
+PASS  A.n_clear_lead = 2  -- got 2
+PASS  A.share_clear_lead = 0.5  -- got 0.5
+PASS  A.n_lead_undefined = 1  -- got 1
+PASS  A.n_pin_changes = 3  -- got 3
+PASS  A.n_runs_board_both = 3  -- got 3
+PASS  A.n_pin_eq_board = 1  -- got 1
+PASS  A.share_pin_eq_board = 0.3333333333333333  -- got 0.3333333333333333
+PASS  A.n_runs_band_and_pin = 4  -- got 4
+PASS  A.n_pin_outside_band = 2  -- got 2
+PASS  A.share_pin_outside_band = 0.5  -- got 0.5
+PASS  A.n_runs_band_no_pin = 1  -- got 1
+PASS  A.tau_used = 0.3  -- got 0.3
+PASS  A.has_ref_run = True  -- got True
+PASS  A.ref_ts_ist = '2026-11-25 14:30:00'  -- got '2026-11-25 14:30:00'
+PASS  A.ref_spot = 25000.0  -- got 25000.0
+PASS  A.pin_P = 25150.0  -- got 25150.0
+PASS  A.board_B = 25000.0  -- got 25000.0
+PASS  A.near_N = 25000.0  -- got 25000.0
+PASS  A.p_eq_n = False  -- got False
+PASS  A.close_1529 = 25080.0  -- got 25080.0
+PASS  A.close_read_at_ist = '2026-11-25 16:35:00'  -- got '2026-11-25 16:35:00'
+PASS  A.dist_P_pts = 70.0  -- got 70.0
+PASS  A.dist_P_steps = 1.4  -- got 1.4
+PASS  A.dist_B_pts = 80.0  -- got 80.0
+PASS  A.dist_B_steps = 1.6  -- got 1.6
+PASS  A.dist_N_pts = 80.0  -- got 80.0
+PASS  A.dist_N_steps = 1.6  -- got 1.6
+PASS  A.abs_close_minus_ref_spot = 80.0  -- got 80.0
+PASS  A.strike_step = 50.0  -- got 50.0
+PASS  A.stop_flag = True  -- got True
+PASS  A.stop_reason = 'no rankable pin at 11:00:00'  -- got 'no rankable pin at 11:00:00'
+
+DAY B -- SENSEX 2026-11-26 -- every field of the line
+------------------------------------------------------------------------
+PASS  B.date = '2026-11-26'  -- got '2026-11-26'
+PASS  B.symbol = 'SENSEX'  -- got 'SENSEX'
+PASS  B.expiry_date = None  -- got None
+PASS  B.dte = None  -- got None
+PASS  B.is_expiry_day = None  -- got None
+PASS  B.n_runs_market = 2  -- got 2
+PASS  B.n_runs_rankable = 2  -- got 2
+PASS  B.share_rankable = 1.0  -- got 1.0
+PASS  B.median_n_ranked = 3  -- got 3.0
+PASS  B.median_share_one_leg = 0.0  -- got 0.0
+PASS  B.median_n_oi_no_gamma = 0  -- got 0.0
+PASS  B.n_clear_lead = 2  -- got 2
+PASS  B.share_clear_lead = 1.0  -- got 1.0
+PASS  B.n_lead_undefined = 0  -- got 0
+PASS  B.n_pin_changes = 0  -- got 0
+PASS  B.n_runs_board_both = 2  -- got 2
+PASS  B.n_pin_eq_board = 2  -- got 2
+PASS  B.share_pin_eq_board = 1.0  -- got 1.0
+PASS  B.n_runs_band_and_pin = 2  -- got 2
+PASS  B.n_pin_outside_band = 0  -- got 0
+PASS  B.share_pin_outside_band = 0.0  -- got 0.0
+PASS  B.n_runs_band_no_pin = 0  -- got 0
+PASS  B.tau_used = 0.3  -- got 0.3
+PASS  B.has_ref_run = False  -- got False
+PASS  B.ref_ts_ist = None  -- got None
+PASS  B.ref_spot = None  -- got None
+PASS  B.pin_P = None  -- got None
+PASS  B.board_B = None  -- got None
+PASS  B.near_N = None  -- got None
+PASS  B.p_eq_n = None  -- got None
+PASS  B.close_1529 = 80050.0  -- got 80050.0
+PASS  B.close_read_at_ist = '2026-11-26 16:33:00'  -- got '2026-11-26 16:33:00'
+PASS  B.dist_P_pts = None  -- got None
+PASS  B.dist_P_steps = None  -- got None
+PASS  B.dist_B_pts = None  -- got None
+PASS  B.dist_B_steps = None  -- got None
+PASS  B.dist_N_pts = None  -- got None
+PASS  B.dist_N_steps = None  -- got None
+PASS  B.abs_close_minus_ref_spot = None  -- got None
+PASS  B.strike_step = 100.0  -- got 100.0
+PASS  B.stop_flag = False  -- got False
+PASS  B.stop_reason = None  -- got None
+
+DAY C -- NIFTY 2026-11-27 -- every field of the line
+------------------------------------------------------------------------
+PASS  C.date = '2026-11-27'  -- got '2026-11-27'
+PASS  C.symbol = 'NIFTY'  -- got 'NIFTY'
+PASS  C.expiry_date = '2026-11-27'  -- got '2026-11-27'
+PASS  C.dte = 0  -- got 0
+PASS  C.is_expiry_day = True  -- got True
+PASS  C.n_runs_market = 1  -- got 1
+PASS  C.n_runs_rankable = 1  -- got 1
+PASS  C.share_rankable = 1.0  -- got 1.0
+PASS  C.median_n_ranked = 2  -- got 2
+PASS  C.median_share_one_leg = 0.0  -- got 0.0
+PASS  C.median_n_oi_no_gamma = 0  -- got 0
+PASS  C.n_clear_lead = 1  -- got 1
+PASS  C.share_clear_lead = 1.0  -- got 1.0
+PASS  C.n_lead_undefined = 0  -- got 0
+PASS  C.n_pin_changes = 0  -- got 0
+PASS  C.n_runs_board_both = 1  -- got 1
+PASS  C.n_pin_eq_board = 0  -- got 0
+PASS  C.share_pin_eq_board = 0.0  -- got 0.0
+PASS  C.n_runs_band_and_pin = 1  -- got 1
+PASS  C.n_pin_outside_band = 0  -- got 0
+PASS  C.share_pin_outside_band = 0.0  -- got 0.0
+PASS  C.n_runs_band_no_pin = 0  -- got 0
+PASS  C.tau_used = 0.3  -- got 0.3
+PASS  C.has_ref_run = True  -- got True
+PASS  C.ref_ts_ist = '2026-11-27 14:30:00'  -- got '2026-11-27 14:30:00'
+PASS  C.ref_spot = 25025.0  -- got 25025.0
+PASS  C.pin_P = 25000.0  -- got 25000.0
+PASS  C.board_B = 25050.0  -- got 25050.0
+PASS  C.near_N = 25000.0  -- got 25000.0
+PASS  C.p_eq_n = True  -- got True
+PASS  C.close_1529 = 25010.0  -- got 25010.0
+PASS  C.close_read_at_ist = '2026-11-27 16:31:00'  -- got '2026-11-27 16:31:00'
+PASS  C.dist_P_pts = 10.0  -- got 10.0
+PASS  C.dist_P_steps = 0.2  -- got 0.2
+PASS  C.dist_B_pts = 40.0  -- got 40.0
+PASS  C.dist_B_steps = 0.8  -- got 0.8
+PASS  C.dist_N_pts = 10.0  -- got 10.0
+PASS  C.dist_N_steps = 0.2  -- got 0.2
+PASS  C.abs_close_minus_ref_spot = 15.0  -- got 15.0
+PASS  C.strike_step = 50.0  -- got 50.0
+PASS  C.stop_flag = False  -- got False
+PASS  C.stop_reason = None  -- got None
+
+LINE -- the formatted csv line (day A)
+------------------------------------------------------------------------
+PASS  L1 day A line is exactly the hand-written line  -- 
+  got  2026-11-25,NIFTY,2026-11-27,2,false,5,4,0.800000,3.0,0.000000,0.0,2,0.500000,1,3,3,1,0.333333,4,2,0.500000,1,0.3000,true,2026-11-25 14:30:00,25000.00,25150.00,25000.00,25000.00,false,25080.00,2026-11-25 16:35:00,70.00,1.4000,80.00,1.6000,80.00,1.6000,80.00,50.00,true,no rankable pin at 11:00:00
+  want 2026-11-25,NIFTY,2026-11-27,2,false,5,4,0.800000,3.0,0.000000,0.0,2,0.500000,1,3,3,1,0.333333,4,2,0.500000,1,0.3000,true,2026-11-25 14:30:00,25000.00,25150.00,25000.00,25000.00,false,25080.00,2026-11-25 16:35:00,70.00,1.4000,80.00,1.6000,80.00,1.6000,80.00,50.00,true,no rankable pin at 11:00:00
+PASS  L2 header has one name per column, and the count is the 42 named in the design (date..stop_reason)  -- 42 columns
+PASS  L3 the hand-written line has one field per column  -- 42 fields vs 42 columns
+
+MUTANTS -- each must make at least one check FAIL
+------------------------------------------------------------------------
+PASS  M(a  reference window [14:35, 14:40)) breaks at least one check  -- 34 broken: A.expiry_date '2026-11-27'->None; A.dte 2->None; A.is_expiry_day False->None; A.has_ref_run True->False; A.ref_ts_ist '2026-11-25 14:30:00'->None; A.ref_spot 25000.0->None ...
+PASS  M(b  close taken from the 15:28 bar) breaks at least one check  -- 16 broken: A.close_1529 25080.0->25010.0; A.dist_P_pts 70.0->140.0; A.dist_P_steps 1.4->2.8; A.dist_B_pts 80.0->10.0; A.dist_B_steps 1.6->0.2; A.dist_N_pts 80.0->10.0 ...
+PASS  M(c  nearest-to-spot tie resolved to the HIGHER strike) breaks at least one check  -- 4 broken: C.near_N 25000.0->25050.0; C.p_eq_n True->False; C.dist_N_pts 10.0->40.0; C.dist_N_steps 0.2->0.8
+PASS  M(d  distance taken to spot at reference, not to the close) breaks at least one check  -- 12 broken: A.dist_P_pts 70.0->150.0; A.dist_P_steps 1.4->3.0; A.dist_B_pts 80.0->0.0; A.dist_B_steps 1.6->0.0; A.dist_N_pts 80.0->0.0; A.dist_N_steps 1.6->0.0 ...
+PASS  M(e  gross_cr > 0 condition dropped) breaks at least one check  -- 12 broken: A.n_runs_rankable 4->5; A.share_rankable 0.8->1.0; A.n_clear_lead 2->3; A.share_clear_lead 0.5->0.6; A.n_runs_board_both 3->4; A.n_pin_eq_board 1->2 ...
+PASS  M(f  close label 15:29:00+00 instead of 09:59:00+00) breaks at least one check  -- 8 broken: A.close_1529 25080.0->25500.0; A.dist_P_pts 70.0->350.0; A.dist_P_steps 1.4->7.0; A.dist_B_pts 80.0->500.0; A.dist_B_steps 1.6->10.0; A.dist_N_pts 80.0->500.0 ...
+PASS  M(g  tau 0.1 instead of the resolved 0.3) breaks at least one check  -- 3 broken: A.n_pin_outside_band 2->1; A.share_pin_outside_band 0.5->0.25; A.tau_used 0.3->0.1
+
+GATE -- the EXPLAIN gate's own Seq Scan detector
+------------------------------------------------------------------------
+PASS  G1 a Seq Scan on a guarded table IS flagged  -- ['->  Seq Scan on gex_strike_snapshots  (cost=0.00..9.99 rows=1 width=1)']
+PASS  G2 a Seq Scan on instruments beside an index scan is NOT flagged  -- []
+PASS  G3 all three are flagged -- gex_cycle_history included (ruling R5)  -- ['Seq Scan on option_chain_snapshots', 'Seq Scan on hist_spot_bars_1m', 'Seq Scan on gex_cycle_history']
+
+CROSS -- _vs_rank against fix/order_check_rev3/indep.py measure()
+------------------------------------------------------------------------
+PASS  X0 indep.py imports read-only from fix/order_check_rev3  -- /home/ssm-user/meridian-cc/docs/research/pin_proof/fix/order_check_rev3
+PASS  X A/R0/2026-11-27 sequence  -- mine [24000.0, 25000.0] vs indep [24000.0, 25000.0]
+PASS  X A/R0/2026-11-27 n_in_set  -- mine 2 vs indep 2
+PASS  X A/R0/2026-11-27 n_ranked  -- mine 2 vs indep 2
+PASS  X A/R0/2026-11-27 n_oi_no_gamma  -- mine 0 vs indep 0
+PASS  X A/R0/2026-11-27 lead_rel  -- mine 0.9999 vs indep 0.9999
+PASS  X A/R1/2026-11-27 sequence  -- mine [25000.0, 24950.0, 25050.0] vs indep [25000.0, 24950.0, 25050.0]
+PASS  X A/R1/2026-11-27 n_in_set  -- mine 3 vs indep 3
+PASS  X A/R1/2026-11-27 n_ranked  -- mine 3 vs indep 3
+PASS  X A/R1/2026-11-27 n_oi_no_gamma  -- mine 0 vs indep 0
+PASS  X A/R1/2026-11-27 lead_rel  -- mine 0.5 vs indep 0.5
+PASS  X A/R2/2026-11-27 sequence  -- mine [] vs indep []
+PASS  X A/R2/2026-11-27 n_in_set  -- mine 2 vs indep 2
+PASS  X A/R2/2026-11-27 n_ranked  -- mine 0 vs indep 0
+PASS  X A/R2/2026-11-27 n_oi_no_gamma  -- mine 1 vs indep 1
+PASS  X A/R2/2026-11-27 lead_rel  -- mine None vs indep None
+PASS  X A/R3/2026-11-27 sequence  -- mine [24950.0, 25050.0, 25000.0] vs indep [24950.0, 25050.0, 25000.0]
+PASS  X A/R3/2026-11-27 n_in_set  -- mine 3 vs indep 3
+PASS  X A/R3/2026-11-27 n_ranked  -- mine 3 vs indep 3
+PASS  X A/R3/2026-11-27 n_oi_no_gamma  -- mine 0 vs indep 0
+PASS  X A/R3/2026-11-27 lead_rel  -- mine 0.0 vs indep 0.0
+PASS  X A/R4/2026-11-27 sequence  -- mine [25150.0, 25050.0, 25000.0, 24950.0, 24900.0] vs indep [25150.0, 25050.0, 25000.0, 24950.0, 24900.0]
+PASS  X A/R4/2026-11-27 n_in_set  -- mine 6 vs indep 6
+PASS  X A/R4/2026-11-27 n_ranked  -- mine 5 vs indep 5
+PASS  X A/R4/2026-11-27 n_oi_no_gamma  -- mine 1 vs indep 1
+PASS  X A/R4/2026-11-27 lead_rel  -- mine 0.55 vs indep 0.55
+PASS  X A/R4/2026-12-04 sequence  -- mine [25200.0, 25250.0] vs indep [25200.0, 25250.0]
+PASS  X A/R4/2026-12-04 n_in_set  -- mine 2 vs indep 2
+PASS  X A/R4/2026-12-04 n_ranked  -- mine 2 vs indep 2
+PASS  X A/R4/2026-12-04 n_oi_no_gamma  -- mine 0 vs indep 0
+PASS  X A/R4/2026-12-04 lead_rel  -- mine 0.995 vs indep 0.995
+PASS  X A/R5/2026-11-27 sequence  -- mine [25000.0] vs indep [25000.0]
+PASS  X A/R5/2026-11-27 n_in_set  -- mine 2 vs indep 2
+PASS  X A/R5/2026-11-27 n_ranked  -- mine 1 vs indep 1
+PASS  X A/R5/2026-11-27 n_oi_no_gamma  -- mine 0 vs indep 0
+PASS  X A/R5/2026-11-27 lead_rel  -- mine None vs indep None
+PASS  X A/R6/2026-11-27 sequence  -- mine [24000.0, 25000.0] vs indep [24000.0, 25000.0]
+PASS  X A/R6/2026-11-27 n_in_set  -- mine 2 vs indep 2
+PASS  X A/R6/2026-11-27 n_ranked  -- mine 2 vs indep 2
+PASS  X A/R6/2026-11-27 n_oi_no_gamma  -- mine 0 vs indep 0
+PASS  X A/R6/2026-11-27 lead_rel  -- mine 0.9999 vs indep 0.9999
+PASS  X B/S1/2026-11-27 sequence  -- mine [80000.0, 79900.0, 80100.0] vs indep [80000.0, 79900.0, 80100.0]
+PASS  X B/S1/2026-11-27 n_in_set  -- mine 3 vs indep 3
+PASS  X B/S1/2026-11-27 n_ranked  -- mine 3 vs indep 3
+PASS  X B/S1/2026-11-27 n_oi_no_gamma  -- mine 0 vs indep 0
+PASS  X B/S1/2026-11-27 lead_rel  -- mine 0.5 vs indep 0.5
+PASS  X B/S2/2026-11-27 sequence  -- mine [80000.0, 79900.0, 80100.0] vs indep [80000.0, 79900.0, 80100.0]
+PASS  X B/S2/2026-11-27 n_in_set  -- mine 3 vs indep 3
+PASS  X B/S2/2026-11-27 n_ranked  -- mine 3 vs indep 3
+PASS  X B/S2/2026-11-27 n_oi_no_gamma  -- mine 0 vs indep 0
+PASS  X B/S2/2026-11-27 lead_rel  -- mine 0.5 vs indep 0.5
+PASS  X C/C1/2026-11-27 sequence  -- mine [25000.0, 25050.0] vs indep [25000.0, 25050.0]
+PASS  X C/C1/2026-11-27 n_in_set  -- mine 2 vs indep 2
+PASS  X C/C1/2026-11-27 n_ranked  -- mine 2 vs indep 2
+PASS  X C/C1/2026-11-27 n_oi_no_gamma  -- mine 0 vs indep 0
+PASS  X C/C1/2026-11-27 lead_rel  -- mine 0.75 vs indep 0.75
+PASS  X* every fixture group was compared  -- 11 groups
+
+SELF-TEST ALL PASS  (210 pass, 0 fail)

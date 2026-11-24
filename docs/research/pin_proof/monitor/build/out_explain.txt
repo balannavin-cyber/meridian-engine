@@ -1,0 +1,95 @@
+== T0 instrument resolution (NIFTY) ==
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Seq Scan on instruments  (cost=0.00..1.02 rows=1 width=39)
+   Filter: (symbol = 'NIFTY'::text)
+(2 rows)
+
+== T1 strike rows, one symbol-day (NIFTY) ==
+                                                                   QUERY PLAN                                                                   
+------------------------------------------------------------------------------------------------------------------------------------------------
+ Incremental Sort  (cost=0.56..28.59 rows=172 width=88)
+   Sort Key: ts, expiry_date, strike
+   Presorted Key: ts
+   ->  Index Scan using idx_gss_ts on gex_strike_snapshots  (cost=0.43..20.88 rows=172 width=88)
+         Index Cond: ((ts >= '2026-11-22 18:30:00+00'::timestamp with time zone) AND (ts < '2026-11-23 18:30:00+00'::timestamp with time zone))
+         Filter: (symbol = 'NIFTY'::text)
+(6 rows)
+
+== T1 strike rows, one symbol-day (SENSEX) ==
+                                                                   QUERY PLAN                                                                   
+------------------------------------------------------------------------------------------------------------------------------------------------
+ Incremental Sort  (cost=0.52..32.33 rows=256 width=88)
+   Sort Key: ts, expiry_date, strike
+   Presorted Key: ts
+   ->  Index Scan using idx_gss_ts on gex_strike_snapshots  (cost=0.43..20.88 rows=256 width=88)
+         Index Cond: ((ts >= '2026-11-22 18:30:00+00'::timestamp with time zone) AND (ts < '2026-11-23 18:30:00+00'::timestamp with time zone))
+         Filter: (symbol = 'SENSEX'::text)
+(6 rows)
+
+== T2 Board rows, one symbol-day (NIFTY) ==
+                                                                                 QUERY PLAN                                                                                  
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=90.34..90.42 rows=32 width=51)
+   Sort Key: ts, expiry_date
+   ->  Index Scan using gex_cycle_history_pk on gex_cycle_history  (cost=0.28..89.54 rows=32 width=51)
+         Index Cond: ((symbol = 'NIFTY'::text) AND (ts >= '2026-11-22 18:30:00+00'::timestamp with time zone) AND (ts < '2026-11-23 18:30:00+00'::timestamp with time zone))
+(4 rows)
+
+== T2 Board rows, one symbol-day (SENSEX) ==
+                                                                                  QUERY PLAN                                                                                  
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=89.21..89.29 rows=32 width=51)
+   Sort Key: ts, expiry_date
+   ->  Index Scan using gex_cycle_history_pk on gex_cycle_history  (cost=0.28..88.41 rows=32 width=51)
+         Index Cond: ((symbol = 'SENSEX'::text) AND (ts >= '2026-11-22 18:30:00+00'::timestamp with time zone) AND (ts < '2026-11-23 18:30:00+00'::timestamp with time zone))
+(4 rows)
+
+== T3 the 15:29 IST one-minute close bar (NIFTY) ==
+                                                      QUERY PLAN                                                       
+-----------------------------------------------------------------------------------------------------------------------
+ Index Scan using idx_hist_spot_ts on hist_spot_bars_1m  (cost=1.45..3.67 rows=1 width=16)
+   Index Cond: ((instrument_id = (InitPlan 1).col1) AND (bar_ts = '2026-11-23 09:59:00+00'::timestamp with time zone))
+   InitPlan 1
+     ->  Seq Scan on instruments  (cost=0.00..1.02 rows=1 width=16)
+           Filter: (symbol = 'NIFTY'::text)
+(5 rows)
+
+== T3 the 15:29 IST one-minute close bar (SENSEX) ==
+                                                      QUERY PLAN                                                       
+-----------------------------------------------------------------------------------------------------------------------
+ Index Scan using idx_hist_spot_ts on hist_spot_bars_1m  (cost=1.45..3.67 rows=1 width=16)
+   Index Cond: ((instrument_id = (InitPlan 1).col1) AND (bar_ts = '2026-11-23 09:59:00+00'::timestamp with time zone))
+   InitPlan 1
+     ->  Seq Scan on instruments  (cost=0.00..1.02 rows=1 width=16)
+           Filter: (symbol = 'SENSEX'::text)
+(5 rows)
+
+== T4 bar-label convention guard, one symbol-day (NIFTY) ==
+                                                                                           QUERY PLAN                                                                                           
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=3.68..3.69 rows=1 width=24)
+   InitPlan 1
+     ->  Seq Scan on instruments  (cost=0.00..1.02 rows=1 width=16)
+           Filter: (symbol = 'NIFTY'::text)
+   ->  Index Only Scan using idx_hist_spot_ts on hist_spot_bars_1m  (cost=0.42..2.65 rows=1 width=8)
+         Index Cond: ((instrument_id = (InitPlan 1).col1) AND (bar_ts >= '2026-11-23 00:00:00+00'::timestamp with time zone) AND (bar_ts < '2026-11-24 00:00:00+00'::timestamp with time zone))
+(6 rows)
+
+== T4 bar-label convention guard, one symbol-day (SENSEX) ==
+                                                                                           QUERY PLAN                                                                                           
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=3.68..3.69 rows=1 width=24)
+   InitPlan 1
+     ->  Seq Scan on instruments  (cost=0.00..1.02 rows=1 width=16)
+           Filter: (symbol = 'SENSEX'::text)
+   ->  Index Only Scan using idx_hist_spot_ts on hist_spot_bars_1m  (cost=0.42..2.65 rows=1 width=8)
+         Index Cond: ((instrument_id = (InitPlan 1).col1) AND (bar_ts >= '2026-11-23 00:00:00+00'::timestamp with time zone) AND (bar_ts < '2026-11-24 00:00:00+00'::timestamp with time zone))
+(6 rows)
+
+== T5 tau, exactly as v_gex_strike_pin_zone resolves it ==
+                          QUERY PLAN                          
+--------------------------------------------------------------
+ Values Scan on "*VALUES*"  (cost=0.00..0.53 rows=2 width=32)
+(1 row)
+

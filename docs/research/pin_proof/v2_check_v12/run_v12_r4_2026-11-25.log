@@ -1,0 +1,30 @@
+V-2 comparison, rule v1.2
+python 3.10.20
+frozen v2_indep.py: 27acea7164c6032f10d790b991ebf26219ead6c027461226cde64e745c95ae16 OK
+frozen selftest_v2_indep.py: 0aa88ef6a441e54a79c89ffc5abb77781326272f0395d9c8288388b29b23b921 OK
+harness compare_v2.py: 08db6bf88f3730f09a634c7f39d7c5c588694ba31aa08d286bda0aa5ecbca5b2
+engine gamma_v2.py sha256: ba611363f28ed8c3d89ccc3c3f0bfb99c87fb077d16c081f36d40f298bac4e95
+worktree HEAD: 25747092c77c385e3e5d539a8a1829c1227b6bc6
+engine commit: 25747092c77c385e3e5d539a8a1829c1227b6bc6
+V-2a merdian_compute changes vs 934fe44: ['A\tmerdian_compute/gamma_v2.py']
+V-2a tests/golden changes vs 934fe44: none
+V-2a contract test exit 0: CONTRACT ALL PASS
+V-2a: PASS
+2026-08-27_NIFTY: manifest OK; chain runs 81, stored runs 78, in both 78
+2026-08-27_SENSEX: manifest OK; chain runs 81, stored runs 78, in both 78
+2026-09-29_NIFTY: manifest OK; chain runs 81, stored runs 78, in both 78
+2026-10-01_SENSEX: manifest OK; chain runs 81, stored runs 77, in both 77
+2026-10-02_NIFTY: manifest OK; chain runs 81, stored runs 1, in both 1
+2026-10-02_SENSEX: manifest OK; chain runs 81, stored runs 1, in both 1
+V-2b: 486 chain runs compared; mismatches 0; max |engine - independent| net_cr 0.000e+00, gross_cr 0.000e+00
+V-2b: PASS
+V-2c: 313 runs present in both files compared (engine pair and independent pair); mismatches 0
+V-2c: PASS
+COVERAGE over the chain runs (independent rows):
+  output rows 65721; gamma_legs both 20227, call_only 17424, put_only 6803, none in map (guard removed both) 282, none not in map 20985
+  one-leg strikes where the other leg's OI now counts 16695
+  legs removed by the guard 4289; in-map strikes with net exactly 0 363
+  legs with more than one row 0; strikes exactly on the 5% edge 0; error runs 0
+  branches with a count of zero (covered by the self-tests only): ['dup_legs', 'edge', 'err_runs']
+  fixtures: 3 of 6 are expiry days; 233 of the 313 V-2c runs are on an expiry day; no fixture has dte 1, 2 or 3
+OVERALL: PASS

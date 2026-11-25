@@ -1,0 +1,14 @@
+database rows returned: 166; fixture runs: 156; compared: 156
+largest relative difference in any sum: 4.513e-13
+runs in the database and not in the fixture: 10
+  NIFTY 08:35:05 6135687a-11af-490c-8dd3-6163f162be30
+  NIFTY 08:40:05 fe6bf43f-a95a-4057-88ff-c13e499d4cf4
+  NIFTY 08:45:04 367386aa-800d-4f36-a75f-63c98fce4544
+  NIFTY 08:50:05 e0e459d8-1de6-4aaf-bc1c-44363a120970
+  NIFTY 08:55:05 2b3e0618-8f26-4a18-94d8-396bd5dadd2f
+  SENSEX 08:35:05 172af190-a705-44dc-b639-5bdbe818622c
+  SENSEX 08:40:05 ef6e3fd3-f09e-496b-9e97-aaa74ee3fc39
+  SENSEX 08:45:05 00d45713-6dc4-4edf-be89-ccfef023b034
+  SENSEX 08:50:05 fbef2f8d-60e6-4c22-ae35-41efa9731371
+  SENSEX 08:55:04 30b46390-3856-4bef-8a0b-d5161ab896be
+B2: PASS

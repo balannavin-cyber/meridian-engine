@@ -94,6 +94,17 @@ GRANT SELECT ON TABLE public.gex_strike_v2 TO merdian_ro;
 
 GRANT SELECT ON TABLE public.gex_run_v2 TO merdian_ro;
 
+-- The writer and the backfill use the service key. service_role bypasses RLS but still needs table
+-- privileges, and default privileges in public were narrowed in S104, so they are granted here explicitly.
+-- No DELETE: rows are removed only by the operator as postgres.
+GRANT SELECT, INSERT, UPDATE ON TABLE public.gex_strike_v2 TO service_role;
+
+GRANT SELECT, INSERT, UPDATE ON TABLE public.gex_run_v2 TO service_role;
+
+GRANT USAGE, SELECT ON SEQUENCE public.gex_strike_v2_id_seq TO service_role;
+
+GRANT USAGE, SELECT ON SEQUENCE public.gex_run_v2_id_seq TO service_role;
+
 -- SECTION 4 of 4 -- verification. Read-only. Commented so pasting the file runs nothing extra.
 
 -- 4a -- expect two rows: rls t, policies 1, ro_select t, anon_select f, auth_select f, rows 0.

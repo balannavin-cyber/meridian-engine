@@ -182,6 +182,18 @@ def run_cases(m):
             errs.append(name)
         except m.V2InputError:
             pass
+    try:  # a bad spot errors the run even on a row that has no valid strike and no OI
+        m.build_v2_strike_rows_from_gss([gss_rows[0], {"strike": None, "spot": 0, "oi_call": 0, "oi_put": 0, "gamma_call": None, "gamma_put": None, "expiry_date": "2026-12-01"}])
+        errs.append("stored row with bad spot and no valid strike is an error")
+    except m.V2InputError:
+        pass
+    try:  # the same strike written two ways is a repeat (decimal value)
+        m.build_v2_strike_rows_from_gss([dict(gss_rows[0], strike="20000"), dict(gss_rows[0], strike="20000.0")])
+        errs.append("repeat judged on decimal value")
+    except m.V2InputError:
+        pass
+    ok_rows = m.build_v2_strike_rows_from_gss([gss_rows[0], {"strike": None, "spot": S, "oi_call": 5, "oi_put": 5, "expiry_date": "2026-12-01"}, {"strike": None, "spot": S, "oi_call": 5, "oi_put": 5, "expiry_date": "2026-12-01"}])
+    check("rows with no valid strike are skipped and are not repeats", len(ok_rows) == 1)
     try:
         m.build_v2_strike_rows_from_gss([gss_rows[0], dict(gss_rows[1], expiry_date="2026-12-08")])
         errs.append("stored rows with two expiries is an error")
@@ -216,7 +228,9 @@ MUTANTS = [
     ("M22 stored put gamma dropped", "_pos(r.get(\"gamma_call\")), _pos(r.get(\"gamma_put\")))", "_pos(r.get(\"gamma_call\")), None)"),
     ("M23 spot argument not checked against rows", "if row_spots and next(iter(row_spots)) != s:", "if False:"),
     ("M24 stored repeated strike not an error", "if k in seen:", "if False:"),
-    ("M26 stored bad spot not an error", "if s is None or s <= 0:\n            raise V2InputError(f\"stored row has bad spot at strike {k}\")", "if s is None or s <= 0:\n            continue"),
+    ("M26 stored bad spot not an error", "raise V2InputError(\"stored row has a missing or non-positive spot\")", "continue"),
+    ("M27 stored bad spot ignored on a row without a valid strike", "if s is None or s <= 0:  # rule v1.2 (e)", "if (s is None or s <= 0) and _d(r.get(\"strike\")) is not None:  # rule v1.2 (e)"),
+    ("M28 repeated strike judged on text, not value", "if k in seen:  # rule v1.2 (d)", "if str(r.get(\"strike\")) in {str(x) for x in seen}:  # rule v1.2 (d)"),
     ("M25 call guard skipped", "if gc is not None and gc > GUARD_GAMMA:\n            gc = None", "if gc is not None and gc > GUARD_GAMMA:\n            pass"),
 ]
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # mv_promote_s107_pin.sh -- promote meridian-connect origin/main (S107: Pin = gross pin, Net peak, legacy/experimental labels, manual v0.6) to live.
-# Modelled on docs/lovable_prompts/s103/mv_promote_s103.sh. BEFORE FIRST USE compare it with the most recent proven promote
+# Modelled on docs/lovable_prompts/s103/mv_promote_s103.sh, plus the S104 proxy build settings and bundle audit; deletes no backup.
+# REVISION 2 (2026-11-25 evening) = the script as actually run for the promote of d7642c2 at about 18:08 IST. Revision 1 (commit a9b38bc) built WITHOUT the proxy settings and would have emptied the live Board. Do not use revision 1.
+# BEFORE FIRST USE compare it with the most recent proven promote
 # script on the box (~/mv_promote_s105_tape.sh): if that one has a step this one lacks, stop and tell Claude.
 # REFUSING BLOCK: without GO it only checks and prints what it would do.
 #   bash ~/mv_promote_s107_pin.sh <WANT_SHA>        (checks + plan, nothing changed)
@@ -22,15 +24,17 @@ echo "== backups now:"; ls -dt /var/www/marketview.bak-* /var/www/marketview.PRE
 [ -e "$BAK" ] && { echo "REFUSED: $BAK already exists -- it must be created from live by this block"; exit 1; }
 echo "== build $WANT for live (base /):"
 npx tsc --noEmit -p tsconfig.json
-npx vite build --base=/ --outDir "$BUILD" --emptyOutDir 2>&1 | tail -2
+VITE_SUPABASE_URL=https://marketview.meridianalpha.in VITE_SUPABASE_ANON_KEY=proxy npx vite build --base=/ --outDir "$BUILD" --emptyOutDir 2>&1 | tail -2
 NEW_JS=$(ls "$BUILD/assets/" | grep -E '^index-.*\.js$'); echo "   new bundle $NEW_JS"
+if grep -rlqE "kilmcowcikwdhvdxwofi|eyJ[A-Za-z0-9_-]{20,}" "$BUILD/assets/"; then echo "REFUSED: bundle holds the project ref or a JWT-shaped string"; exit 1; else echo "   ok   bundle audit: no project ref, no JWT-shaped string"; fi
+grep -rlqF "marketview.meridianalpha.in" "$BUILD/assets/" && echo "   ok   bundle reads through our own domain" || { echo "REFUSED: own domain not in bundle"; exit 1; }
 grep -q "/assets/$NEW_JS" "$BUILD/index.html" && ! grep -q '/staging/' "$BUILD/index.html" && echo "   ok   index.html references /assets/ at root" || { echo "REFUSED: index.html base is wrong"; exit 1; }
 MV=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("manual_version",""))' "$BUILD/help/manual.json")
 case "$MV" in v0.6*) echo "   ok   manual.json $MV";; *) echo "REFUSED: manual.json is '$MV', expected v0.6"; exit 1;; esac
 for m in 'of band gross' 'Net peak' 'v_gex_pin_gross' 'legacy, unvalidated' 'experimental'; do
   grep -rlqF "$m" "$BUILD/assets/" --include='*.js' && echo "   ok   marker in built assets: $m" || { echo "REFUSED: marker not in any assets/*.js: $m"; exit 1; }
 done
-echo "== plan: cp -a $LIVE -> $BAK; diff -rq (must be identical); rsync $BUILD/ -> $LIVE/; keep newest 3 .bak-* + PRE_*"
+echo "== plan: cp -a $LIVE -> $BAK; diff -rq (must be identical); rsync $BUILD/ -> $LIVE/; no backup is deleted"
 [ "${2:-}" = "GO" ] || { echo "== DRY -- nothing changed. Re-run with GO as the second argument."; exit 0; }
 sudo cp -a "$LIVE" "$BAK"
 sudo diff -rq "$LIVE" "$BAK" && echo "   ok   $BAK = live (diff -rq clean)" || { echo "FAIL: backup differs from live -- NOT promoting"; exit 1; }
@@ -40,6 +44,5 @@ for m in 'of band gross' 'Net peak' 'v_gex_pin_gross' 'legacy, unvalidated' 'exp
   sudo grep -rlqF "$m" "$LIVE/assets/" --include='*.js' && echo "   ok   live marker: $m" || echo "   WARN: live marker missing: $m"
 done
 echo "== LIVE = $WANT · assets/$NEW_JS · rollback target $BAK (= $PREV_SHA, proven by diff -rq)"
-echo "== retention (S100-L): keep newest 3 .bak-* by mtime + every PRE_*"
-for d in $(ls -dt /var/www/marketview.bak-* | tail -n +4); do echo "   delete $d"; sudo rm -rf "$d"; done
+echo "== backups (nothing is deleted by this script; pruning under S100-L is the operator's separate decision):"
 ls -dt /var/www/marketview.bak-* /var/www/marketview.PRE_* 2>/dev/null | sed 's/^/   keep   /'

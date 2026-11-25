@@ -10,19 +10,23 @@ V2 tables exist and after the second check. Never 08:30-15:40 IST Mon-Fri (it re
         writes gex_strike_v2 and gex_run_v2 only.
 
 What it does, per IST day and symbol:
-  - lists the day's runs from gamma_metrics (one row per run);
+  - reads the day's gex_strike_snapshots rows, 1,000 per request, ordered by ts then id
+    (about a dozen requests), and groups them by run_id in memory;
   - skips a run that already has a gex_run_v2 row (live or backfilled): it never overwrites;
-  - reads that run's gex_strike_snapshots rows and builds V2 with
-    merdian_compute.gamma_v2.build_v2_strike_rows_from_gss (rule v1.2, stored-row form);
-  - inserts with ON CONFLICT DO NOTHING, stamped rule_version 'v2-1.2-gss', n_dup_legs NULL
-    (duplicate chain leg rows are not visible in stored rows).
+  - builds V2 per run with merdian_compute.gamma_v2.build_v2_strike_rows_from_gss
+    (rule v1.2, stored-row form);
+  - writes the day's strike rows 500 per request, pausing --pause seconds between requests,
+    then the day's run rows, all with ON CONFLICT DO NOTHING, stamped rule_version
+    'v2-1.2-gss', n_dup_legs NULL (duplicate chain leg rows are not visible in stored rows).
+Safe to interrupt and run again: a run row is written only after its strike rows, so a
+run without a run row is redone and its existing strike rows are left as they are.
 A run the rule calls an input error (repeated strike, bad spot, two expiries) gets no V2 rows
-and is counted. Reads: gamma_metrics, gex_strike_snapshots, gex_run_v2. Writes: the two V2 tables.
+is counted and is listed at the end under INPUT ERROR RUNS. Reads: gex_strike_snapshots, gex_run_v2. Writes: the two V2 tables.
 
 ROLLBACK (operator, SQL editor), for a day range:
   DELETE FROM public.gex_strike_v2 WHERE rule_version = 'v2-1.2-gss' AND ts >= '<from> 00:00+05:30' AND ts < '<to+1> 00:00+05:30';
   DELETE FROM public.gex_run_v2    WHERE rule_version = 'v2-1.2-gss' AND ts >= '<from> 00:00+05:30' AND ts < '<to+1> 00:00+05:30';
-VERIFY after a run (read-only): per day, backfilled runs = runs in gamma_metrics minus live runs minus input-error runs:
+VERIFY after a run (read-only): per day, backfilled runs = runs with stored rows minus live runs minus input-error runs:
   SELECT (ts AT TIME ZONE 'Asia/Kolkata')::date AS d, symbol, rule_version, count(*) AS runs FROM public.gex_run_v2 GROUP BY 1, 2, 3 ORDER BY 1, 2, 3;
 """
 from __future__ import annotations
@@ -62,52 +66,54 @@ def day_bounds(d: date) -> tuple[str, str]:
     return lo.isoformat(), (lo + timedelta(days=1)).isoformat()
 
 
-def backfill_day(client: Any, d: date, symbols: list[str], apply: bool, pause: float) -> dict[str, int]:
+def backfill_day(client: Any, d: date, symbols: list[str], apply: bool, pause: float, errors: list[str]) -> dict[str, int]:
+    """One IST day. Reads the day's stored rows page by page (about a dozen requests per symbol),
+    groups them by run in memory, builds V2 per run, writes the day's strike rows in chunks and
+    then the day's run rows. A run row is written only after its strike rows, so a run with a
+    gex_run_v2 row is complete; an interrupted day is simply redone (ON CONFLICT DO NOTHING)."""
     lo, hi = day_bounds(d)
-    c = {"runs": 0, "already": 0, "no_rows": 0, "input_error": 0, "built": 0, "strike_rows": 0, "written_runs": 0}
+    c = {"runs": 0, "already": 0, "input_error": 0, "built": 0, "strike_rows": 0, "written_runs": 0, "read_rows": 0}
     for sym in symbols:
-        runs = _page(lambda: client.table("gamma_metrics").select("run_id,symbol,ts,expiry_date")
-                     .eq("symbol", sym).gte("ts", lo).lt("ts", hi).order("ts").order("run_id"))
-        done = {r["run_id"] for r in _page(lambda: client.table("gex_run_v2").select("run_id")
-                                           .eq("symbol", sym).gte("ts", lo).lt("ts", hi).order("run_id"))}
-        seen: set[str] = set()
-        for run in runs:
-            rid = run["run_id"]
-            if not rid or rid in seen:
-                continue
-            seen.add(rid)
+        gss_day = _page(lambda: client.table("gex_strike_snapshots")
+                        .select("id,run_id,symbol,ts,expiry_date,dte,strike,spot,oi_call,oi_put,gamma_call,gamma_put")
+                        .eq("symbol", sym).gte("ts", lo).lt("ts", hi).order("ts").order("id"))
+        c["read_rows"] += len(gss_day)
+        done = {r["run_id"] for r in _page(lambda: client.table("gex_run_v2").select("run_id,id")
+                                           .eq("symbol", sym).gte("ts", lo).lt("ts", hi).order("id"))}
+        by_run: dict[str, list[dict[str, Any]]] = {}
+        for g in gss_day:
+            if g.get("run_id"):
+                by_run.setdefault(g["run_id"], []).append(g)
+        strike_payload: list[dict[str, Any]] = []
+        run_payload: list[dict[str, Any]] = []
+        for rid, gss in by_run.items():
             c["runs"] += 1
             if rid in done:
                 c["already"] += 1
-                continue
-            gss = _page(lambda: client.table("gex_strike_snapshots")
-                        .select("run_id,symbol,ts,expiry_date,dte,strike,spot,oi_call,oi_put,gamma_call,gamma_put")
-                        .eq("run_id", rid).eq("symbol", sym).order("strike").order("id"))
-            if not gss:
-                c["no_rows"] += 1
                 continue
             try:
                 srows = gamma_v2.build_v2_strike_rows_from_gss(gss)
             except gamma_v2.V2InputError as e:
                 c["input_error"] += 1
-                print(f"  input error, no V2 output: {d} {sym} run_id={rid}: {e}")
+                errors.append(f"{d} {sym} run_id={rid}: {e}")
                 continue
-            spot_by_strike = {float(g["strike"]): g["spot"] for g in gss}
+            spot_by_strike = {float(g["strike"]): g["spot"] for g in gss if g.get("strike") is not None}
             head = gss[0]
             ident = {"run_id": rid, "symbol": sym, "ts": head["ts"], "expiry_date": head["expiry_date"], "dte": head.get("dte")}
-            strike_payload = [{**ident, "spot": spot_by_strike[r["strike"]], **r, "rule_version": gamma_v2.RULE_VERSION_GSS} for r in srows]
-            run_payload = {**ident, "spot": head["spot"], **gamma_v2.summarise_v2_run(srows),
-                           "n_dup_legs": None, "rule_version": gamma_v2.RULE_VERSION_GSS}
+            strike_payload.extend({**ident, "spot": spot_by_strike[r["strike"]], **r, "rule_version": gamma_v2.RULE_VERSION_GSS} for r in srows)
+            run_payload.append({**ident, "spot": head["spot"], **gamma_v2.summarise_v2_run(srows),
+                                "n_dup_legs": None, "rule_version": gamma_v2.RULE_VERSION_GSS})
             c["built"] += 1
-            c["strike_rows"] += len(strike_payload)
-            if apply:
-                for i in range(0, len(strike_payload), CHUNK):
-                    client.table("gex_strike_v2").upsert(strike_payload[i:i + CHUNK], on_conflict="run_id,strike,expiry_date",
-                                                          ignore_duplicates=True).execute()
-                client.table("gex_run_v2").upsert(run_payload, on_conflict="run_id,symbol,expiry_date",
-                                                   ignore_duplicates=True).execute()
-                c["written_runs"] += 1
+            c["strike_rows"] += len(srows)
+        if apply and run_payload:
+            for i in range(0, len(strike_payload), CHUNK):
+                client.table("gex_strike_v2").upsert(strike_payload[i:i + CHUNK], on_conflict="run_id,strike,expiry_date",
+                                                      ignore_duplicates=True).execute()
                 time.sleep(pause)
+            for i in range(0, len(run_payload), CHUNK):
+                client.table("gex_run_v2").upsert(run_payload[i:i + CHUNK], on_conflict="run_id,symbol,expiry_date",
+                                                   ignore_duplicates=True).execute()
+            c["written_runs"] += len(run_payload)
     return c
 
 
@@ -118,7 +124,7 @@ def main(argv: list[str] | None = None, client: Any = None) -> int:
     ap.add_argument("--symbol", action="append", choices=["NIFTY", "SENSEX"])
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--pause", type=float, default=0.2, help="seconds between runs when writing")
-    ap.add_argument("--max-days", type=int, default=10, help="refuse a longer range in one invocation")
+    ap.add_argument("--max-days", type=int, default=10, help="refuse a longer range in one invocation (raise it on purpose for the full history)")
     a = ap.parse_args(argv)
     d0, d1 = date.fromisoformat(a.d_from), date.fromisoformat(a.d_to)
     if d1 < d0:
@@ -139,14 +145,22 @@ def main(argv: list[str] | None = None, client: Any = None) -> int:
     symbols = a.symbol or ["NIFTY", "SENSEX"]
     print(f"mode={'APPLY' if a.apply else 'DRY RUN (nothing is written)'} rule_version={gamma_v2.RULE_VERSION_GSS} symbols={symbols}")
     total: dict[str, int] = {}
+    errors: list[str] = []
+    t0 = time.time()
     d = d0
     while d <= d1:
-        c = backfill_day(client, d, symbols, a.apply, a.pause)
-        print(f"{d} " + " ".join(f"{k}={v}" for k, v in c.items()))
+        if market_hours_now():
+            print("STOPPED: 08:30 IST reached on a weekday. Run again later; finished days are skipped."); break
+        c = backfill_day(client, d, symbols, a.apply, a.pause, errors)
+        print(f"{d} " + " ".join(f"{k}={v}" for k, v in c.items()) + f" elapsed_s={int(time.time() - t0)}", flush=True)
         for k, v in c.items():
             total[k] = total.get(k, 0) + v
         d += timedelta(days=1)
-    print("TOTAL " + " ".join(f"{k}={v}" for k, v in total.items()))
+    print("TOTAL " + " ".join(f"{k}={v}" for k, v in total.items()) + f" elapsed_s={int(time.time() - t0)}")
+    print(f"INPUT ERROR RUNS: {len(errors)}")
+    for e in errors:
+        print("  " + e)
+    print("BACKFILL " + ("APPLY" if a.apply else "DRY RUN") + " FINISHED")
     return 0
 
 

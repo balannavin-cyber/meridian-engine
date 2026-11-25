@@ -2,8 +2,10 @@
 -- 2026-11-25_s107_v_gex_pin_gross.sql
 -- S107, operator rulings of 2026-11-25 (R2, R3): the Board's Pin tile shows the gross pin.
 --
--- AUTHORED, NOT APPLIED. The operator applies it in the SQL editor, one section at a time.
--- Not a capture-path change. Apply outside 08:30-15:40 IST.
+-- APPLIED Wed 2026-11-25 about 17:50 IST by the operator: SECTION 1 (the view), and from SECTION 3 the REVOKE from anon, the REVOKE from PUBLIC
+-- and the GRANT. 4f passed: authenticated 2 rows, marketview_ro 2 rows. The Board reads this view live from about 18:08 IST (Board d7642c2).
+-- STILL OWED: SECTION 2 (the COMMENT) and checks 4a to 4e. 4e (the plan) matters before 09:15: the Board polls this view in session.
+-- Not a capture-path change. Run anything here outside 08:30-15:40 IST.
 --
 -- WHAT. One row per symbol (per expiry of the latest run): rank 1 of
 -- public.v_gex_strike_rank_gross with its share, the rank 2 strike and share, and the
@@ -56,11 +58,17 @@ COMMENT ON VIEW public.v_gex_pin_gross IS
 'S107 2026-11-25, operator rulings R2/R3 -- Board Pin = gross pin. One row per symbol (per expiry of the latest run): rank 1 of v_gex_strike_rank_gross (pin_strike, pin_share), rank 2 (runnerup_strike, runnerup_share) and lead_share_pts = (pin_share - runnerup_share) * 100, NULL when one strike ranks. Shares are fractions of the sum of gross_cr over strikes within 5 % of spot with gross_cr > 0, same run/symbol/expiry; not comparable with v_gex_strike_rank.share_of_abs. No Crore column, so no _1pct form (ADR-032). Owner-rights view by design: Board roles have no grant on the gross view underneath. Net peak, pin state and conviction are NOT here; they stay in gex_cycle_history / v_pin_board.';
 
 
--- SECTION 3 of 4 -- grants (four statements, run one at a time)
+-- SECTION 3 of 4 -- grants (three statements, run one at a time)
+--
+-- There is NO revoke from authenticated here, on purpose (pin lane caution, 2026-11-25 18:45). The live Pin tile
+-- reads this view as a Board role; a REVOKE ALL FROM authenticated run on its own would make every Pin tile read
+-- "no run" until the GRANT was run again. If 4c shows authenticated holding more than r (for example rm, where m is
+-- MAINTAIN, which means nothing on a view and is not reachable through the REST path), leave it: it is harmless.
+-- If it must ever be narrowed, run these two together, in this order, outside market hours, then repeat 4f:
+--   REVOKE ALL ON public.v_gex_pin_gross FROM authenticated;
+--   GRANT SELECT ON public.v_gex_pin_gross TO authenticated;
 
 REVOKE ALL ON public.v_gex_pin_gross FROM anon;
-
-REVOKE ALL ON public.v_gex_pin_gross FROM authenticated;
 
 REVOKE ALL ON public.v_gex_pin_gross FROM PUBLIC;
 
@@ -82,7 +90,7 @@ GRANT SELECT ON public.v_gex_pin_gross TO authenticated, marketview_ro, merdian_
 --     ON g.symbol = w.symbol AND g.run_id = w.run_id AND g.expiry_date = w.expiry_date AND g.strike_rank = 1
 --  WHERE g.strike IS DISTINCT FROM w.pin_strike OR g.share_of_gross IS DISTINCT FROM w.pin_share;
 
--- 4c -- grants: expect authenticated=r, marketview_ro=r, merdian_ro=r, no anon entry, reloptions NULL.
+-- 4c -- grants: expect authenticated=r (or rm), marketview_ro=r, merdian_ro=r, no anon entry, reloptions NULL.
 -- SELECT relname, reloptions, relacl::text FROM pg_class WHERE oid = 'public.v_gex_pin_gross'::regclass;
 
 -- 4d -- registration read (rule 25): record all five values.

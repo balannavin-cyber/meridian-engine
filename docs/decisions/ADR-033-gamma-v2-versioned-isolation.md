@@ -25,7 +25,7 @@ The audit showed that per-strike exposure computed on each leg's own vendor gamm
 
 **D6 — Backfill: yes** (operator, 2026-11-25), after V-2c passes, from stored `gex_strike_snapshots` rows, into the V2 tables only. Backfilled rows carry `rule_version = 'v2-1.2-gss'`; live rows `'v2-1.2'`. Duplicate leg rows are not visible in stored rows.
 
-**D7 — The Board Pin switches to the gross pin as its own change** (R2, R3), through the wrapper `v_gex_pin_gross`. `v_gex_strike_rank` is not replaced; `gex_cycle_history.pin_leader_strike` is not redefined. Pin state, held cycles, conviction, HHI and top-5 appear under a line named "Net peak". Legacy outputs are labelled "legacy, unvalidated" on the Board (R4); removal is a later single release. Dealer wording is unchanged for now (R5).
+**D7 — The Board Pin switches to the gross pin as its own change** (R2, R3), through the wrapper `v_gex_pin_gross`. **Done: live Wed 2026-11-25 about 18:08 IST**, Board `d7642c2` (pin switch `caecef8` + `cba0695`, labels `457fc99`, manual v0.6), bundle `index-CHOS8H-T.js`, rollback `/var/www/marketview.bak-90cb618`. `v_gex_strike_rank` is not replaced; `gex_cycle_history.pin_leader_strike` is not redefined. Pin state, held cycles, conviction, HHI and top-5 appear under a line named "Net peak". Legacy outputs are labelled "legacy, unvalidated" on the Board (R4); removal is a later single release. Dealer wording is unchanged for now (R5).
 
 ## 3. Rule v1.2 (V2 per-strike exposure)
 
@@ -33,7 +33,7 @@ The audit showed that per-strike exposure computed on each leg's own vendor gamm
 
 **Spot.** S is the run's spot. From chain rows, S is the `spot` of the rows with `spot` > 0; all such rows of a run must carry the same value. If they carry more than one distinct value, the run is an error and has no V2 output. (V1 takes the first row with `spot` > 0 in read order, which is not a defined order.) From stored per-strike rows, S for each strike is that row's own `spot`.
 
-**Input errors, no V2 output.** (a) From chain rows: more than one expiry in the run. (b) From chain rows: more than one distinct positive spot in the run. (c) From stored rows: more than one expiry in the run's rows. (d) From stored rows: a strike that appears more than once in the run's rows. (e) From stored rows: a row with a missing or non-positive spot. (d) and (e) are new in v1.2; (a) to (c) restate v1.1.
+**Input errors, no V2 output.** (a) From chain rows: more than one expiry in the run. (b) From chain rows: more than one distinct positive spot in the run. (c) From stored rows: more than one expiry in the run's rows. (d) From stored rows: a strike that appears more than once in the run's rows. (e) From stored rows: a row with a missing or non-positive spot. (d) and (e) are new in v1.2; (a) and (b) restate v1.1; (c) was in the code and is accepted into the rule (pin lane, 2026-11-25 18:45). Readings fixed with the pin lane: (e) applies to any stored row, whatever its strike or OI; in (d) "the same strike" is judged on the decimal value, and a row with no valid strike is skipped and is never a repeat.
 
 **Row set.** One output row per strike K > 0 with OI_c + OI_p > 0.
 
@@ -82,7 +82,7 @@ The audit showed that per-strike exposure computed on each leg's own vendor gamm
 
 ## 7. Authored files (none applied)
 
-`sql/2026-11-25_s107_gex_v2_tables.sql`, `sql/2026-11-25_s107_p3b2_invariant_checks.sql`, `gamma_v2_writer.py`, `apply_v2_writer_hook.py`, `backfill_gamma_v2_from_gss.py`, `sql/2026-11-25_s107_v_gex_pin_gross.sql`. The seven `v_gex2_*` views are not authored; they wait for the second check.
+`sql/2026-11-25_s107_gex_v2_tables.sql`, `sql/2026-11-25_s107_p3b2_invariant_checks.sql`, `gamma_v2_writer.py`, `scripts/gamma_v2_writer_hook_patch.py` (first sent as `apply_v2_writer_hook.py`, a name the root `.gitignore` drops, so it was not in `a9b38bc`), `backfill_gamma_v2_from_gss.py`, `sql/2026-11-25_s107_v_gex_pin_gross.sql`. The seven `v_gex2_*` views are not authored; they wait for the second check.
 
 ## 8. Not approved by this ADR
 

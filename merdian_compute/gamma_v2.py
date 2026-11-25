@@ -168,15 +168,15 @@ def build_v2_strike_rows_from_gss(gss_rows: list[dict[str, Any]]) -> list[dict[s
     seen: set[Decimal] = set()
     out: list[tuple[Decimal, dict[str, Any]]] = []
     for r in gss_rows:
+        s = _d(r.get("spot"))
+        if s is None or s <= 0:  # rule v1.2 (e): any row, whatever its strike or OI
+            raise V2InputError("stored row has a missing or non-positive spot")
         k = _d(r.get("strike"))
-        if k is None or k <= 0:
+        if k is None or k <= 0:  # not a strike: skipped, and never counted as a repeat
             continue
-        if k in seen:
+        if k in seen:  # rule v1.2 (d): judged on the decimal value
             raise V2InputError(f"stored rows repeat strike {k}")
         seen.add(k)
-        s = _d(r.get("spot"))
-        if s is None or s <= 0:
-            raise V2InputError(f"stored row has bad spot at strike {k}")
         oc, op = _f(r.get("oi_call")), _f(r.get("oi_put"))
         oc = oc if oc is not None and oc > 0 else 0.0
         op = op if op is not None and op > 0 else 0.0

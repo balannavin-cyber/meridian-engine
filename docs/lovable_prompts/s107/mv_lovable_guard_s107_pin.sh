@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # mv_lovable_guard_s107_pin.sh -- S107 pin switch + labels (operator rulings R2/R3/R4, 2026-11-25; Board commits caecef8, cba0695, 457fc99): check origin/main since BASE, then build /staging/.
-# Modelled on docs/lovable_prompts/s103/mv_lovable_guard_s103r20.sh. Never pushes, never touches live.
+# Modelled on docs/lovable_prompts/s103/mv_lovable_guard_s103r20.sh, plus the S104 proxy build settings and bundle audit.
+# REVISION 2 (2026-11-25 evening). Revision 1 (commit a9b38bc) built WITHOUT the proxy settings: staging showed "no run" on every tile. Do not use revision 1.
+# Never pushes, never touches live.
 #   bash ~/mv_lovable_guard_s107_pin.sh 90cb618
 #   MV_GUARD_NOBUILD=1 bash ~/mv_lovable_guard_s107_pin.sh 90cb618      (checks only)
 # Run outside 08:30-15:40 IST on a trading day (it builds on the production box).
@@ -49,7 +51,10 @@ echo "== guard passed; fast-forward local tree and build /staging/"
 git status --porcelain | grep -v '^??' && { echo "FAIL: local tracked changes present"; exit 1; } || true
 git merge -q --ff-only origin/main
 npx tsc --noEmit -p tsconfig.json
-npx vite build --base=/staging/ --outDir /tmp/mv-staging-build --emptyOutDir 2>&1 | tail -3
+# S104 (CLAUDE.md rule 26): the bundle must read through our own domain. The shell variables beat the committed .env.
+VITE_SUPABASE_URL=https://marketview.meridianalpha.in VITE_SUPABASE_ANON_KEY=proxy npx vite build --base=/staging/ --outDir /tmp/mv-staging-build --emptyOutDir 2>&1 | tail -3
+if grep -rlqE "kilmcowcikwdhvdxwofi|eyJ[A-Za-z0-9_-]{20,}" "/tmp/mv-staging-build/assets/"; then echo "FAIL: bundle holds the project ref or a JWT-shaped string"; exit 1; else echo "   ok   bundle audit: no project ref, no JWT-shaped string"; fi
+grep -rlqF "marketview.meridianalpha.in" "/tmp/mv-staging-build/assets/" && echo "   ok   bundle reads through our own domain" || { echo "FAIL: own domain not in bundle"; exit 1; }
 for m in 'of band gross' 'Net peak' 'v_gex_pin_gross' 'legacy, unvalidated' 'experimental'; do
   grep -rlqF "$m" /tmp/mv-staging-build/assets/ --include='*.js' && echo "   ok   marker in built assets: $m" || { echo "FAIL: marker not in any assets/*.js: $m"; exit 1; }
 done

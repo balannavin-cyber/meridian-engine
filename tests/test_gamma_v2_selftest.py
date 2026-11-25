@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Self-test for merdian_compute/gamma_v2.py (rule v1.1). Synthetic cases only: reads no
+"""Self-test for merdian_compute/gamma_v2.py (rule v1.2). Synthetic cases only: reads no
 fixture, no database, no network. Expected values are hand-computed in this file.
 
   python3 -B tests/test_gamma_v2_selftest.py            -> cases, then mutants
@@ -176,7 +176,18 @@ def run_cases(m):
         errs.append("stored rows repeating a strike is an error")
     except m.V2InputError:
         pass
-    check("rule version stamps", m.RULE_VERSION == "v2-1.1" and m.RULE_VERSION_GSS == "v2-1.1-gss")
+    for name, bad_spot in (("stored row with missing spot is an error", None), ("stored row with non-positive spot is an error", 0)):
+        try:
+            m.build_v2_strike_rows_from_gss([dict(gss_rows[0], spot=bad_spot)])
+            errs.append(name)
+        except m.V2InputError:
+            pass
+    try:
+        m.build_v2_strike_rows_from_gss([gss_rows[0], dict(gss_rows[1], expiry_date="2026-12-08")])
+        errs.append("stored rows with two expiries is an error")
+    except m.V2InputError:
+        pass
+    check("rule version stamps", m.RULE_VERSION == "v2-1.2" and m.RULE_VERSION_GSS == "v2-1.2-gss")
     return errs
 
 
@@ -205,6 +216,7 @@ MUTANTS = [
     ("M22 stored put gamma dropped", "_pos(r.get(\"gamma_call\")), _pos(r.get(\"gamma_put\")))", "_pos(r.get(\"gamma_call\")), None)"),
     ("M23 spot argument not checked against rows", "if row_spots and next(iter(row_spots)) != s:", "if False:"),
     ("M24 stored repeated strike not an error", "if k in seen:", "if False:"),
+    ("M26 stored bad spot not an error", "if s is None or s <= 0:\n            raise V2InputError(f\"stored row has bad spot at strike {k}\")", "if s is None or s <= 0:\n            continue"),
     ("M25 call guard skipped", "if gc is not None and gc > GUARD_GAMMA:\n            gc = None", "if gc is not None and gc > GUARD_GAMMA:\n            pass"),
 ]
 

@@ -67,7 +67,7 @@ REVOKE ALL ON public.v_gex_pin_gross FROM PUBLIC;
 GRANT SELECT ON public.v_gex_pin_gross TO authenticated, marketview_ro, merdian_ro;
 
 
--- SECTION 4 of 4 -- verification. Read-only. Run separately, after 1-3.
+-- SECTION 4 of 4 -- verification (4a to 4f). Read-only. Run separately, after 1-3.
 -- They are commented so that pasting the whole file runs nothing extra.
 
 -- 4a -- rows: expect one row per symbol (NIFTY, SENSEX), pin_share in (0, 1],
@@ -94,3 +94,10 @@ GRANT SELECT ON public.v_gex_pin_gross TO authenticated, marketview_ro, merdian_
 
 -- 4e -- plan: expect index probes, no Seq Scan on gex_strike_snapshots.
 -- EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM public.v_gex_pin_gross;
+
+-- 4f -- each Board role can actually read through row-level security on the base table.
+--       A grant is not proof. Run as postgres, ONE BLOCK AT A TIME. Expect a count of at least 1 from each.
+--       If either returns 0 or an error: STOP, do not deploy the Board change, paste the output.
+-- SET ROLE authenticated; SELECT count(*) AS rows_as_authenticated FROM public.v_gex_pin_gross; RESET ROLE;
+
+-- SET ROLE marketview_ro; SELECT count(*) AS rows_as_marketview_ro FROM public.v_gex_pin_gross; RESET ROLE;

@@ -1,10 +1,10 @@
-"""merdian_compute.gamma_v2 -- V2 per-strike exposure, rule v1.1 (ADR-033, scope D).
+"""merdian_compute.gamma_v2 -- V2 per-strike exposure, rule v1.2 (ADR-033, scope D).
 
 Stdlib only. Pure: reads no environment, opens no client, touches no network.
 Imports nothing from merdian_compute.gamma; V1 is not edited and not called.
 Not exported from merdian_compute/__init__.py and not part of the Retail contract.
 
-Rule v1.1 in one paragraph (the ADR text is the authority): one map per symbol,
+Rule v1.2 in one paragraph (the ADR text is the authority): one map per symbol,
 expiry and run. Per leg: OI = sum of positive oi; gamma = largest vendor gamma > 0.
 Guard per leg before averaging: |K - S| > 0.05*S and gamma > 5e-5 -> no gamma.
 gamma_strike = mean of both, or the one, or none. net = gamma_strike*(OIc-OIp)*S^2/1e7,
@@ -12,14 +12,22 @@ gross = gamma_strike*(OIc+OIp)*S^2/1e7 (Crore; 0 when gamma_strike is none).
 in_map = a leg has gamma before the guard. in_band = |K - S| <= 0.05*S. The two
 distance tests are exact decimal arithmetic. Run figures: net over the map,
 gross figures over the band set (in_band and gross > 0).
+
+Input errors, no V2 output (V2InputError), rule v1.2:
+  chain rows  : more than one expiry in the run; more than one distinct positive spot.
+  stored rows : more than one expiry; a strike that appears more than once in the run's
+                rows; a row with a missing or non-positive spot.
+Code behaviour outside the rule (ADR-033 section 4): build_v2_strike_rows also raises when
+its spot argument is not positive or differs from the rows' spot; strike_gamma_v2 raises
+on a strike or spot it cannot read as a number or a spot <= 0.
 """
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-RULE_VERSION = "v2-1.1"
-RULE_VERSION_GSS = "v2-1.1-gss"
+RULE_VERSION = "v2-1.2"
+RULE_VERSION_GSS = "v2-1.2-gss"
 
 GUARD_DISTANCE = Decimal("0.05")   # of spot; guard acts strictly beyond, band is at or inside
 GUARD_GAMMA = 5e-5

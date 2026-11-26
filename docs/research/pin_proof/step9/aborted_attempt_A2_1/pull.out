@@ -1,0 +1,14 @@
+2026-11-26T12:45:10  pull start -- design PREREG.md + PREREG_A1.md, read-only, merdian_ro
+2026-11-26T12:45:10  plan: 247 symbol-days, 19050 runs, 988 queries
+Traceback (most recent call last):
+  File "/home/ssm-user/meridian-cc/docs/research/pin_proof/step9/step9_pull.py", line 686, in <module>
+    sys.exit(main(sys.argv[1:]))
+  File "/home/ssm-user/meridian-cc/docs/research/pin_proof/step9/step9_pull.py", line 641, in main
+    pull_symbol_day(p["symbol"], p["day"], p["n_runs"], out, state)
+  File "/home/ssm-user/meridian-cc/docs/research/pin_proof/step9/step9_pull.py", line 572, in pull_symbol_day
+    a = build_agg(q1[rid], q2[rid], q3[rid], q4.get(rid, {}))
+  File "/home/ssm-user/meridian-cc/docs/research/pin_proof/step9/step9_pull.py", line 511, in build_agg
+    a["ts"] = parse_ist(q1["v1_ts_ist"])
+  File "/home/ssm-user/meridian-cc/docs/research/pin_proof/step9/step9_pull.py", line 495, in parse_ist
+    return dt.datetime.fromisoformat(s)
+ValueError: Invalid isoformat string: '2026-08-27T14:40:06.50508'

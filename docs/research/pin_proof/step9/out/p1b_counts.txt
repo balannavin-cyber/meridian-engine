@@ -1,0 +1,15 @@
+    tbl     | n  
+ gex_run_v2 | 83
+   elapsed=2.57
+      tbl      |  n   
+ gex_strike_v2 | 8715
+   elapsed=2.71
+        tbl        | n 
+ gex_cycle_history | 0
+   elapsed=2.55
+         tbl          |  n   
+ gex_strike_snapshots | 8715
+   elapsed=2.62
+          tbl          |  n  
+ p3b2_invariant_checks | 498
+   elapsed=2.53

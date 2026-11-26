@@ -1,0 +1,12 @@
+                                                             pol                                                             
+-----------------------------------------------------------------------------------------------------------------------------
+ gex_run_v2 | gex_run_v2_ro_select | cmd=SELECT | roles=merdian_ro | permissive=PERMISSIVE | qual=true
+ gex_strike_snapshots | anon read | cmd=SELECT | roles=anon | permissive=PERMISSIVE | qual=true
+ gex_strike_snapshots | anon read gex_strike_snapshots | cmd=SELECT | roles=anon | permissive=PERMISSIVE | qual=true
+ gex_strike_snapshots | gex_strike_snapshots_anon_read | cmd=SELECT | roles=anon | permissive=PERMISSIVE | qual=true
+ gex_strike_snapshots | marketview_ro_select | cmd=SELECT | roles=marketview_ro | permissive=PERMISSIVE | qual=true
+ gex_strike_snapshots | merdian_ro_select | cmd=SELECT | roles=merdian_ro | permissive=PERMISSIVE | qual=true
+ gex_strike_v2 | gex_strike_v2_ro_select | cmd=SELECT | roles=merdian_ro | permissive=PERMISSIVE | qual=true
+ p3b2_invariant_checks | p3b2_invariant_checks_ro_select | cmd=SELECT | roles=merdian_ro | permissive=PERMISSIVE | qual=true
+(8 rows)
+

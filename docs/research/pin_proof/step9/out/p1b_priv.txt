@@ -1,0 +1,9 @@
+                                             priv                                              
+-----------------------------------------------------------------------------------------------
+ gex_cycle_history | select=true | rls=false | rls_forced=false | policies=0 | pol_for_ro=0
+ gex_run_v2 | select=true | rls=true | rls_forced=false | policies=1 | pol_for_ro=1
+ gex_strike_snapshots | select=true | rls=true | rls_forced=false | policies=5 | pol_for_ro=1
+ gex_strike_v2 | select=true | rls=true | rls_forced=false | policies=1 | pol_for_ro=1
+ p3b2_invariant_checks | select=true | rls=true | rls_forced=false | policies=1 | pol_for_ro=1
+(5 rows)
+

@@ -1,0 +1,53 @@
+                                   col                                    
+--------------------------------------------------------------------------
+ gamma_metrics | r | 1 | id | uuid | nn=true
+ gamma_metrics | r | 2 | ts | timestamp with time zone | nn=true
+ gamma_metrics | r | 3 | symbol | text | nn=true
+ gamma_metrics | r | 4 | expiry_date | date | nn=true
+ gamma_metrics | r | 5 | spot | numeric | nn=true
+ gamma_metrics | r | 6 | net_gex | numeric | nn=false
+ gamma_metrics | r | 7 | gamma_concentration | numeric | nn=false
+ gamma_metrics | r | 8 | flip_level | numeric | nn=false
+ gamma_metrics | r | 9 | flip_distance | numeric | nn=false
+ gamma_metrics | r | 10 | straddle_atm | numeric | nn=false
+ gamma_metrics | r | 11 | straddle_slope | numeric | nn=false
+ gamma_metrics | r | 12 | vix | numeric | nn=false
+ gamma_metrics | r | 13 | breadth_regime | text | nn=false
+ gamma_metrics | r | 14 | expansion_probability | numeric | nn=false
+ gamma_metrics | r | 15 | regime | text | nn=false
+ gamma_metrics | r | 16 | created_at | timestamp with time zone | nn=true
+ gamma_metrics | r | 17 | run_id | uuid | nn=false
+ gamma_metrics | r | 18 | flip_distance_pct | numeric | nn=false
+ gamma_metrics | r | 19 | gamma_zone | text | nn=false
+ gamma_metrics | r | 20 | raw | jsonb | nn=false
+ gamma_metrics | r | 21 | straddle_velocity | numeric | nn=false
+ gamma_metrics | r | 22 | otm_oi_velocity | numeric | nn=false
+ gamma_metrics | r | 23 | spot_vs_range | numeric | nn=false
+ gamma_metrics | r | 24 | run_type | text | nn=false
+ gamma_metrics | r | 25 | dte | integer | nn=false
+ gamma_metrics | r | 26 | max_gamma_strike | numeric | nn=false
+ gamma_metrics | r | 27 | pin_risk_score | numeric | nn=false
+(27 rows)
+
+                               idx                               
+-----------------------------------------------------------------
+ gamma_metrics_pkey :: btree (id)
+ idx_gm_ts_symbol_expiry :: btree (ts DESC, symbol, expiry_date)
+ uix_gamma_metrics_symbol_ts :: btree (symbol, ts)
+ uix_gm_run :: btree (run_id)
+(4 rows)
+
+                        priv                         
+-----------------------------------------------------
+ gamma_metrics | select=true | rls=true | policies=4
+(1 row)
+
+                                         pol                                         
+-------------------------------------------------------------------------------------
+ gamma_metrics | anon read gamma_metrics | cmd=SELECT | roles=anon | qual=true
+ gamma_metrics | gamma_metrics_anon_read | cmd=SELECT | roles=anon | qual=true
+ gamma_metrics | marketview_ro_select | cmd=SELECT | roles=marketview_ro | qual=true
+ gamma_metrics | merdian_ro_select | cmd=SELECT | roles=merdian_ro | qual=true
+(4 rows)
+
+elapsed=3.38

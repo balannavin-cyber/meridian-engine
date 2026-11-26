@@ -1,0 +1,64 @@
+                                                       d                                                        
+----------------------------------------------------------------------------------------------------------------
+ --- v_gex_concentration ---                                                                                   +
+  WITH RECURSIVE symbols AS (                                                                                  +
+          SELECT ( SELECT min(g.symbol) AS min                                                                 +
+                    FROM gex_strike_snapshots g) AS symbol                                                     +
+         UNION ALL                                                                                             +
+          SELECT ( SELECT min(g.symbol) AS min                                                                 +
+                    FROM gex_strike_snapshots g                                                                +
+                   WHERE g.symbol > s.symbol) AS min                                                           +
+            FROM symbols s                                                                                     +
+           WHERE s.symbol IS NOT NULL                                                                          +
+         ), latest_run AS (                                                                                    +
+          SELECT s.symbol,                                                                                     +
+             lr.run_id,                                                                                        +
+             lr.ts                                                                                             +
+            FROM symbols s                                                                                     +
+              CROSS JOIN LATERAL ( SELECT g.run_id,                                                            +
+                     g.ts                                                                                      +
+                    FROM gex_strike_snapshots g                                                                +
+                   WHERE g.symbol = s.symbol                                                                   +
+                   ORDER BY g.ts DESC                                                                          +
+                  LIMIT 1) lr                                                                                  +
+           WHERE s.symbol IS NOT NULL                                                                          +
+         ), scoped AS (                                                                                        +
+          SELECT g.run_id,                                                                                     +
+             g.symbol,                                                                                         +
+             g.ts,                                                                                             +
+             g.expiry_date,                                                                                    +
+             g.dte,                                                                                            +
+             g.spot,                                                                                           +
+             g.strike,                                                                                         +
+             g.gex_cr,                                                                                         +
+             abs(g.gamma_call * g.oi_call::double precision) AS leg_call,                                      +
+             abs(g.gamma_put * g.oi_put::double precision) AS leg_put                                          +
+            FROM gex_strike_snapshots g                                                                        +
+              JOIN latest_run lr ON g.symbol = lr.symbol AND g.run_id = lr.run_id                              +
+         )                                                                                                     +
+  SELECT run_id,                                                                                               +
+     symbol,                                                                                                   +
+     expiry_date,                                                                                              +
+     max(ts) AS ts,                                                                                            +
+     max(dte) AS dte,                                                                                          +
+     max(spot) AS spot,                                                                                        +
+         CASE                                                                                                  +
+             WHEN max(dte) IS NULL THEN NULL::text                                                             +
+             WHEN max(dte) < 0 THEN NULL::text                                                                 +
+             WHEN max(dte) = 0 THEN '0'::text                                                                  +
+             WHEN max(dte) <= 2 THEN '1-2'::text                                                               +
+             ELSE '3+'::text                                                                                   +
+         END AS dte_bucket,                                                                                    +
+     max(abs(gex_cr)) / NULLIF(sum(abs(gex_cr)), 0::numeric) AS hhi_net,                                       +
+     max(leg_call) / NULLIF(sum(leg_call), 0::double precision) AS hhi_call,                                   +
+     max(leg_put) / NULLIF(sum(leg_put), 0::double precision) AS hhi_put,                                      +
+         CASE                                                                                                  +
+             WHEN max(abs(gex_cr)) > 0::numeric THEN (array_agg(strike ORDER BY (abs(gex_cr)) DESC, strike))[1]+
+             ELSE NULL::numeric                                                                                +
+         END AS top_strike_net,                                                                                +
+     count(*) AS n_strikes,                                                                                    +
+     count(*) FILTER (WHERE gex_cr <> 0::numeric) AS n_contributing                                            +
+    FROM scoped                                                                                                +
+   GROUP BY run_id, symbol, expiry_date;
+(1 row)
+

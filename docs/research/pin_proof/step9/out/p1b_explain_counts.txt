@@ -1,0 +1,21 @@
+### gex_run_v2
+Aggregate  (cost=4.79..4.80 rows=1 width=8)
+  ->  Index Only Scan using gex_run_v2_symbol_ts_ix on gex_run_v2  (cost=0.29..4.56 rows=92 width=0)
+        Index Cond: ((symbol = 'NIFTY'::text) AND (ts >= '2026-08-26 18:30:00+00'::timestamp with time zone) AND (ts < '2026-08-27 18:30:00+00'::timestamp with time zone))
+### gex_strike_v2
+Aggregate  (cost=730.43..730.44 rows=1 width=8)
+  ->  Index Only Scan using gex_strike_v2_symbol_ts_ix on gex_strike_v2  (cost=0.43..708.62 rows=8722 width=0)
+        Index Cond: ((symbol = 'NIFTY'::text) AND (ts >= '2026-08-26 18:30:00+00'::timestamp with time zone) AND (ts < '2026-08-27 18:30:00+00'::timestamp with time zone))
+### gex_cycle_history
+Aggregate  (cost=61.03..61.04 rows=1 width=8)
+  ->  Index Only Scan using gex_cycle_history_pk on gex_cycle_history  (cost=0.28..61.03 rows=1 width=0)
+        Index Cond: ((symbol = 'NIFTY'::text) AND (ts >= '2026-08-26 18:30:00+00'::timestamp with time zone) AND (ts < '2026-08-27 18:30:00+00'::timestamp with time zone))
+### gex_strike_snapshots
+Aggregate  (cost=455.04..455.05 rows=1 width=8)
+  ->  Index Only Scan using ix_gex_strike_snap_sym_ts on gex_strike_snapshots  (cost=0.43..430.41 rows=9850 width=0)
+        Index Cond: ((symbol = 'NIFTY'::text) AND (ts >= '2026-08-26 18:30:00+00'::timestamp with time zone) AND (ts < '2026-08-27 18:30:00+00'::timestamp with time zone))
+### p3b2_invariant_checks
+Aggregate  (cost=666.38..666.39 rows=1 width=8)
+  ->  Index Scan using p3b2_invariant_checks_ts_ix on p3b2_invariant_checks  (cost=0.29..665.01 rows=547 width=0)
+        Index Cond: ((ts >= '2026-08-26 18:30:00+00'::timestamp with time zone) AND (ts < '2026-08-27 18:30:00+00'::timestamp with time zone))
+        Filter: (symbol = 'NIFTY'::text)

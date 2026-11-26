@@ -1,0 +1,16 @@
+pin monitor 2026-11-26 -- raw reads in 2026-11-26/
+  NIFTY
+    T0_instrument  rc=0  2.55s 1 rows
+    T5_tau         rc=0  2.53s 1 rows
+    T1_strikes     rc=0  4.70s 12963 rows
+    T2_board       rc=0  2.67s 87 rows
+    T3_close_bar   rc=0  2.55s 1 rows
+    T4_bar_guard   rc=0  2.57s 1 rows
+  SENSEX
+    T0_instrument  rc=0  2.62s 1 rows
+    T5_tau         rc=0  2.54s 1 rows
+    T1_strikes     rc=0  4.70s 19971 rows
+    T2_board       rc=0  2.53s 87 rows
+    T3_close_bar   rc=0  2.54s 1 rows
+    T4_bar_guard   rc=0  2.54s 1 rows
+  appended 2 line(s) to pin_monitor.csv

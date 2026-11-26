@@ -14,10 +14,10 @@
 == T1_strikes NIFTY ==
                                                                    QUERY PLAN                                                                   
 ------------------------------------------------------------------------------------------------------------------------------------------------
- Incremental Sort  (cost=0.61..38.05 rows=172 width=360)
+ Incremental Sort  (cost=0.62..26.30 rows=117 width=360)
    Sort Key: ts, ((expiry_date)::text), ((strike)::text)
    Presorted Key: ts
-   ->  Index Scan using idx_gss_ts on gex_strike_snapshots  (cost=0.43..30.34 rows=172 width=360)
+   ->  Index Scan using idx_gss_ts on gex_strike_snapshots  (cost=0.43..21.04 rows=117 width=360)
          Index Cond: ((ts >= '2026-11-22 18:30:00+00'::timestamp with time zone) AND (ts < '2026-11-23 18:30:00+00'::timestamp with time zone))
          Filter: (symbol = 'NIFTY'::text)
 (6 rows)
@@ -25,9 +25,9 @@
 == T2_board NIFTY ==
                                                                                  QUERY PLAN                                                                                  
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Sort  (cost=91.30..91.38 rows=32 width=205)
+ Sort  (cost=127.86..128.03 rows=68 width=205)
    Sort Key: ts, ((expiry_date)::text)
-   ->  Index Scan using gex_cycle_history_pk on gex_cycle_history  (cost=0.28..90.50 rows=32 width=205)
+   ->  Index Scan using gex_cycle_history_pk on gex_cycle_history  (cost=0.28..125.79 rows=68 width=205)
          Index Cond: ((symbol = 'NIFTY'::text) AND (ts >= '2026-11-22 18:30:00+00'::timestamp with time zone) AND (ts < '2026-11-23 18:30:00+00'::timestamp with time zone))
 (4 rows)
 
@@ -68,10 +68,10 @@
 == T1_strikes SENSEX ==
                                                                    QUERY PLAN                                                                   
 ------------------------------------------------------------------------------------------------------------------------------------------------
- Incremental Sort  (cost=0.58..46.41 rows=256 width=360)
+ Incremental Sort  (cost=0.58..31.97 rows=174 width=360)
    Sort Key: ts, ((expiry_date)::text), ((strike)::text)
    Presorted Key: ts
-   ->  Index Scan using idx_gss_ts on gex_strike_snapshots  (cost=0.43..34.96 rows=256 width=360)
+   ->  Index Scan using idx_gss_ts on gex_strike_snapshots  (cost=0.43..24.17 rows=174 width=360)
          Index Cond: ((ts >= '2026-11-22 18:30:00+00'::timestamp with time zone) AND (ts < '2026-11-23 18:30:00+00'::timestamp with time zone))
          Filter: (symbol = 'SENSEX'::text)
 (6 rows)
@@ -79,9 +79,9 @@
 == T2_board SENSEX ==
                                                                                   QUERY PLAN                                                                                  
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Sort  (cost=90.17..90.25 rows=32 width=205)
+ Sort  (cost=126.74..126.91 rows=68 width=205)
    Sort Key: ts, ((expiry_date)::text)
-   ->  Index Scan using gex_cycle_history_pk on gex_cycle_history  (cost=0.28..89.37 rows=32 width=205)
+   ->  Index Scan using gex_cycle_history_pk on gex_cycle_history  (cost=0.28..124.67 rows=68 width=205)
          Index Cond: ((symbol = 'SENSEX'::text) AND (ts >= '2026-11-22 18:30:00+00'::timestamp with time zone) AND (ts < '2026-11-23 18:30:00+00'::timestamp with time zone))
 (4 rows)
 

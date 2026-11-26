@@ -111,3 +111,10 @@ instead of to the close; (e) `gross_cr > 0` dropped; (f) close label taken as
    constant. The **band's** step stays the one derived per run, as the view derives it.
 6. **`N` is taken over all listed strikes** of the reference run and leg, not only
    the in-band ones.
+
+## 2026-11-26: Board pin switch recorded (MR-PIN4, on the operator's instruction)
+- On Wed 2026-11-25 at about 18:08 IST the operator promoted Board `d7642c2`. From then on the Board tile labelled "Pin" shows the gross pin (`v_gex_pin_gross`), and the former Board pin is shown as "Net peak".
+- The monitor's "B" (Board pin) is read from `gex_cycle_history.pin_leader_strike`. That column is unchanged, so from 2026-11-25 18:08 IST "B" is the Board's Net peak, not the tile labelled Pin. The tile labelled Pin follows the gross-pin rule, which is the monitor's "P" on the front expiry.
+- Day 2026-11-25: its 14:30 IST reference run and all its market-hours runs were before the switch.
+- No change to the monitor's design, code or columns. PREREG.md (frozen 2026-11-24) is not edited.
+- build/out_explain_final.txt (the query-plan check output) is written only by ./run_day.sh --explain (pin_monitor_day.py:194, reached from :291), not by a dated day run. The evening routine is the plan check and then the day run, so this file changes each evening and its line in monitor/SHA256SUMS is re-hashed after the run. Found 2026-11-26 at the pre-run manifest check: the manifest and origin/main held 10469a3310f2b107447dd8a520bf93240b47326c1a97536d62d8f19f73061bc2 (the build of 2026-11-24); the box held 5320dd3ca2f23c7d21ff5455a0d39f1cb58ef69db9f96deb2f9700897a4bd803 after the plan check at 16:33 IST on 2026-11-25; after the plan check of 2026-11-26 it holds 915a4511ddf4afb70ba5a03fb2a8831744bde0db0e67f4199600fc1daf076ba1. The file holds query plans, not results. No code was changed.

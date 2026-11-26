@@ -4,9 +4,9 @@
 
 | | |
 |---|---|
-| Manual version | v0.5 (draft) |
+| Manual version | v0.6 (draft) |
 | Board | meridian-connect `f964e40`, served bundle `index-BFOk56iL.js` (2026-10-24 18:48 IST) |
-| Status | All parts drafted from pass 1 (09:00–09:12), pass 2 (09:40–09:41) and the capture pass (09:52–10:21), 2026-10-12. Pass 3 (after the close) and an expiry-day read are owed. v0.4 (2026-10-24): updated for the S97 and S100 board changes, read on staging and live that day (a non-trading day); the passages marked **UNVERIFIED (trading day)** describe states that only appear during a session and are checked on 2026-10-26. v0.5 (2026-10-30, ADR-032 D1): every Γ size is restated in ₹ Cr per 1 % move. Figures quoted from earlier passes are divided by 100 and marked ≈ where the board had rounded them; **the screenshots still show the earlier scale** (100 × larger). |
+| Status | All parts drafted from pass 1 (09:00–09:12), pass 2 (09:40–09:41) and the capture pass (09:52–10:21), 2026-10-12. Pass 3 (after the close) and an expiry-day read are owed. v0.4 (2026-10-24): updated for the S97 and S100 board changes, read on staging and live that day (a non-trading day); the passages marked **UNVERIFIED (trading day)** describe states that only appear during a session and are checked on 2026-10-26. v0.5 (2026-10-30, ADR-032 D1): every Γ size is restated in ₹ Cr per 1 % move. Figures quoted from earlier passes are divided by 100 and marked ≈ where the board had rounded them; **the screenshots still show the earlier scale** (100 × larger). v0.6 (2026-11-25, ADR-033): the **Pin is the gross pin**, and pin state, conviction and concentration are shown under **Net peak**. Worked examples and screenshots read before 2026-11-25 show the earlier net-γ pin, labelled γ-conc, whose share the board then called "of gross"; they are marked where they appear. A gross-pin worked example is owed. |
 
 > **Read this first.** Marketview is a measuring board, not a signal service. No tile here tells you to buy or sell. Several tiles carry the board's own warnings: "band not measured", "not built", "declined on evidence". This manual repeats those warnings wherever they apply. Where the board says something is unmeasured, the manual says so too, and does not fill the gap with a guess.
 
@@ -241,7 +241,7 @@ The strip has ten cells in two rows. It appears on every Board sub-tab and summa
   - The size is not normalised for time to expiry (the parity target scales by √(τ / 5 d)), so compare sign and net/gross across days, not magnitude.
   - The strip/Overview drawer for this cell states the dealer reading as fact. The P2 caveat appears only on the Gamma-tab drawer (finding F-1).
   - The label uses a capital Γ (finding F-2).
-- **Read it with.** Pin (γ-conc), Flip, and on the Gamma tab, Gross |Γ|.
+- **Read it with.** Pin (gross γ), Flip, and on the Gamma tab, Gross |Γ|.
 - **Source.** `v_gex_abs_exposure_1pct.net_gex_cr_1pct` (= `net_gex_cr` × 0.01; the stored γ·OI·S²/1e7 is per 100 % move, ADR-032); net/gross = net ÷ gross. Rulings S94-F, ADR-015 Amendment A.
 
 ### 2.4 FLIP
@@ -278,12 +278,12 @@ The strip has ten cells in two rows. It appears on every Board sub-tab and summa
 - **Read it with.** Pin, Spot.
 - **Source.** `v_gex_strike_walls.put_wall, call_wall, corridor_state` (ENH-120). P1 wording per S94-D.
 
-### 2.6 PIN (γ-conc)
+### 2.6 PIN (gross γ)
 
-- **What it is.** The single strike holding the largest share of gross |γ|.
-- **How to read it.** The value is the strike. The sub-line gives its share of gross and the **lead** over the runner-up in share points. "≡ put OI wall" appears when the pin sits on the same strike as a wall.
+- **What it is.** The strike with the largest gross γ among strikes within 5 % of spot. Gross γ uses one gamma per strike (the mean of the two vendor gammas, or the one that exists) times call plus put open interest, so it has no sign. Until 2026-11-25 this tile showed the net-γ top strike instead; that strike is now the **Net peak** on the Pin tab (§3.2).
+- **How to read it.** The value is the strike. The sub-line gives its share **of band gross** (gross γ over the strikes within 5 % of spot), the **lead** over the runner-up in share points, and the time of the read. "≡ put OI wall" appears when the pin sits on the same strike as a wall. These shares are not comparable with the net shares on the Gamma tab or on the Pin tab's bars.
 - **Worked example.**
-  - NIFTY 09:41: `22,700 · 10.8 % of gross · lead 1.7 pts`.
+  - *(Both lines were read on 2026-10-12, when the tile showed the net-γ top strike and called its share "of gross".)* NIFTY 09:41: `22,700 · 10.8 % of gross · lead 1.7 pts`.
   - SENSEX 09:40: `72,000 · 6.6 % of gross · lead 0.7 pts · ≡ put OI wall`. A lead of 0.7 points means #1 and #2 are almost tied.
 - **Not telling you.**
   - Where price will settle. *"Concentration is not a forecast of the close"*; the pin renders, it does not predict (S74).
@@ -351,7 +351,7 @@ Each sub-tab has the same layout: a **list** of values on the left, the **strike
 
 ### 3.1 Overview: *What kind of day, and where are the edges?*
 
-**List rows.** Net Γ · Flip · Corridor · Pin (γ-conc) · Priced move · Spot · board hh:mm · Time to expiry. The first five repeat the strip (Part 2). The other two:
+**List rows.** Net Γ · Flip · Corridor · Pin (gross γ) · Priced move · Spot · board hh:mm · Time to expiry. The first five repeat the strip (Part 2). The other two:
 
 - **Priced move.** The ATM straddle as ± points and "± % to expiry". It lights the **left gutter** on the ladder.
   - *Example (SENSEX 09:40):* ±933, ±1.28 % to expiry.
@@ -363,7 +363,7 @@ Each sub-tab has the same layout: a **list** of values on the left, the **strike
 **The ladder: signed γ by strike.**
 
 - Bars run from a centre axis, **warm to the left (amplifying)** and **cool to the right (dampening)**. The right-hand column reads each bar's value.
-- Spot is the bright solid rule. The walls are thin solid rules with pills, the pin is a dotted γ-CONC rule, and the flip is a dashed rule when it exists.
+- Spot is the bright solid rule. The walls are thin solid rules with pills, the pin is a dotted PIN rule, and the flip is a dashed rule when it exists.
 - The faint fill behind the bars is the **terrain**.
 - **Example:** SENSEX 09:40, call OI wall 73,000 with +786 on its row (then shown as +78,596), put OI wall ≡ γ-conc at 72,000 with −880 (then −88,006). Row values are ₹ Cr per 1 % move.
 - **Not telling you:** each bar is OI × γ arithmetic. It is not a measure of which way hedgers will trade.
@@ -372,32 +372,33 @@ Each sub-tab has the same layout: a **list** of values on the left, the **strike
 
 ### 3.2 Pin: *How settled is the centre?*
 
-The header line says which session the tiles describe: **"pin state · this session · front leg"** in market hours, or **"pin state · previous session yyyy-mm-dd"** before the first cycle of the day.
+The header line says which session the tiles describe: **"net peak state · this session · front leg"** in market hours, or **"net peak state · previous session yyyy-mm-dd"** before the first cycle of the day.
 
 | Tile | What it is | Worked example (NIFTY 09:41) | Not telling you / caveats |
 |---|---|---|---|
-| **PIN (γ-conc)** | the strike with the largest share of gross \|γ\| | 22,700 · 10.8 % · dampening | Not a forecast of the close (S74). P1: high/low no closer to it than to random strikes (n = 85). |
-| **PIN STATE** | whether the leader has held through today's open 5-minute cycles: NO PIN · SHIFTING · STABLE · LOCKED | SHIFTING · held 3 cycles · 15 min · live · unreconciled | Thresholds are seeded parameters, *"not yet re-measured against outcomes (D-6)"* (Settings → PIN_STATE). Rows can be revised until reconciled after the close. |
-| **CONVICTION** | lead clarity scaled by time to expiry | 0.40 · stage 1 · no band (D-6) | A number only, never a word. Compare within one symbol. Stage 2 needs about six weeks of history. The formula deviates from the parity target's undisclosed one. |
-| **RUNNER-UP** | the #2 strike and #2 ÷ #1 | 22,650 · #2/#1 = 0.84 | Near 1 means two strikes share the centre. Ranking is by \|γ\| only; the "ranked pressure" variant was declined on evidence (D-5a). |
-| **LEAD** | #1 share − #2 share, in points | 1.7 pts | *"A number, not a state."* No LOCKED/CONTESTED wording (D-6). |
-| **LEADER TODAY** | each stretch with the same leader | 1 change: 22,500 → 22,700 · 4 cycles · 09:20–09:35 | Front leg only. Before the open it shows the previous session under this "today" label (finding F-3). |
-| **CONCENTRATION (HHI)** | the true Herfindahl index, Σ share², plus top-5 share | 0.060 · top-5 share 44.8 % | The only true HHI on the board. Its natural level moves with time of day and DTE; no percentile yet. |
+| **PIN (gross γ)** | the strike with the largest gross γ within 5 % of spot, with its share of that band | 22,700 · 10.8 % of band gross (illustrative) | Not a forecast of the close (S74). The P1 result (high/low no closer to it than to random strikes, n = 85) was measured on the earlier net-γ pin. "call γ only" or "put γ only" appears when the vendor gave a gamma for one leg only. |
+| **NET PEAK** | the strike with the largest net γ at the latest cycle, with "= Pin" or "≠ Pin" | 22,700 · = Pin (illustrative) | The earlier pin construction. Net γ depends on the two vendor leg gammas agreeing. The three tiles below are computed on this strike, not on the Pin. |
+| **NET PEAK STATE** | whether the net peak has held through today's open 5-minute cycles: NO PIN · SHIFTING · STABLE · LOCKED | SHIFTING · held 3 cycles · 15 min · live · unreconciled | Thresholds are seeded parameters, *"not yet re-measured against outcomes (D-6)"* (Settings → PIN_STATE). Rows can be revised until reconciled after the close. |
+| **NET PEAK CONVICTION** | the net peak's lead clarity (1 − net #2 ÷ #1) scaled by time to expiry | 0.40 · stage 1 · no band (D-6) | A number only, never a word. Compare within one symbol. Stage 2 needs about six weeks of history. The formula deviates from the parity target's undisclosed one. |
+| **RUNNER-UP** | the #2 strike by gross γ in the band, with its share | 22,650 · 9.1 % of band gross (illustrative) | The #2 ÷ #1 ratio is a net figure and now sits with Net peak conviction. Ranking is by gross γ only; the "ranked pressure" variant was declined on evidence (D-5a). |
+| **LEAD** | #1 share − #2 share of band gross, in points | 1.7 pts | *"A number, not a state."* No LOCKED/CONTESTED wording (D-6). |
+| **NET PEAK TODAY** | each stretch with the same net peak | 1 change: 22,500 → 22,700 · 4 cycles · 09:20–09:35 | Front leg only. Before the open it shows the previous session under this "today" label (finding F-3). |
+| **NET CONCENTRATION (HHI)** | the true Herfindahl index of net γ shares, Σ share², plus top-5 share | 0.060 · top-5 share 44.8 % | The only true HHI on the board. Its natural level moves with time of day and DTE; no percentile yet. |
 | **PIN BAND** | the τ-weighted pin zone | 22,600–22,800 | A different measure from the pin point; the two can disagree. Before the open, the NIFTY pin (22,400) sat outside its band (22,600–22,900), and SENSEX's band was the single strike 74,000 (finding F-13). *"Renders, does not predict"* (S74). |
 | **PIN DISTANCE** | signed % from spot to the pin | +0.72 % above spot | No σ distance until a canonical σ exists (E-2). |
 | **LEGACY PIN-RISK SCORE** | the older 0–100 score | 24/100 · number only · no band (E-D4) | Its old weak/moderate/strong words were never measured and were removed. Kept for continuity only; not part of the pin layer. |
 
-**The ladder: share of gross |γ|.**
+**The ladder: net γ share by strike (share of |net γ|).** The bars are on the net ranking, not the gross pin.
 
 - Each strike's bar runs from the left edge with a "#rank · share" readout. The top 10 are full strength; rank > 10 is faint. Colour is the strike's γ sign.
-- **"γ-CONC #1"** and **"#2"** are outlined.
+- **"PIN #1"** and **"#2"** (the gross pin and its runner-up) are outlined, and a **"NET PEAK"** rule is drawn when the net peak is a different strike.
 - *Example (NIFTY 09:41):* #3 22,600 and #4 22,400 both read 8.6 %. A tie shown as two ranks is a tie.
 
 ### 3.3 Gamma: *Can I trust single strikes?*
 
 | Tile | What it is | Worked example | Not telling you / caveats |
 |---|---|---|---|
-| **Top-strike share** | the largest strike's share of gross \|γ\| (max ÷ sum), with a DTE bucket (0 · 1-2 · 3+) and a call/put split in the drawer | NIFTY 09:41: 10.8 % · 1-2 DTE bucket · at 22,700. SENSEX 09:00: 10.9 %, calls 9.7 %, puts 12.9 %. | *"This is max/sum, not a Σshare² index — never call it HHI."* 0-DTE concentrates naturally. The call/put split matters: one side can be concentrated while the other is spread. |
+| **Top-strike share** | the largest strike's share of \|net γ\| (max ÷ sum), with a DTE bucket (0 · 1-2 · 3+) and a call/put split in the drawer | NIFTY 09:41: 10.8 % · 1-2 DTE bucket · at 22,700. SENSEX 09:00: 10.9 %, calls 9.7 %, puts 12.9 %. | *"This is max/sum, not a Σshare² index — never call it HHI."* 0-DTE concentrates naturally. The call/put split matters: one side can be concentrated while the other is spread. |
 | **Gross \|Γ\|** | the sum of absolute γ exposure | SENSEX 09:00: ≈ 10,500 Cr per 1 % move (then shown as 10.5L Cr) | Not normalised for time to expiry; compare within a day, not magnitudes across days. |
 | **Net Γ** | the same value as the strip, plus "Σ crosses zero n×" | SENSEX 09:00: ≈ −4,500 Cr (then −4.5L Cr) · amplifying · Σ crosses zero 3× | This drawer carries the P2 sentence: *"This reading assumes dealers are net long calls and short puts; NSE aggregate participant OI shows that only in some regimes (P2, S94)."* Where the white dots cross zero, the running sum changes sign; *"that is not the repriced flip."* |
 | **Contributing strikes** | strikes with non-zero γ out of all stored | SENSEX 09:00: 161 / 170 · 95 % | Unquoted strikes count as non-contributing. |
@@ -686,11 +687,11 @@ Neither the green/red nor the "good/bad" reading of cool/warm applies. Cool is n
 | Spot | solid, bright, glowing | **SPOT** |
 | Flip (the L3 repriced flip) | **dashed** | **FLIP** |
 | Call / put OI walls | solid, thin | **CALL OI WALL / PUT OI WALL** |
-| γ-conc (pin), Net-long γ, K98, **S\*** | **dotted** | γ-CONC, NET-LONG γ |
+| Pin (gross γ), Net peak, Net-long γ, K98, **S\*** | **dotted** | PIN, NET PEAK, NET-LONG γ |
 | Max pain | ink rule, with a faint "pain valley" curve | MAX PAIN |
 | γ ceiling / floor | not drawn | toggle reads *"pending measurement"* |
 
-When two levels fall on one strike, the rule is drawn once and the pill joins them with **≡**, for example *"PUT OI WALL ≡ γ-CONC"*. On NIFTY at 09:00 on 2026-10-12 it read *"CALL OI WALL ≡ PUT OI WALL"*, both walls on 22,500. No ring or highlight marks a coincidence. A coincidence is only two levels on one strike, not added confirmation.
+When two levels fall on one strike, the rule is drawn once and the pill joins them with **≡**, for example *"PUT OI WALL ≡ PIN"*. On NIFTY at 09:00 on 2026-10-12 it read *"CALL OI WALL ≡ PUT OI WALL"*, both walls on 22,500. No ring or highlight marks a coincidence. A coincidence is only two levels on one strike, not added confirmation.
 
 ### 4.3 Gutters and bands
 
@@ -786,7 +787,8 @@ It never shows **0**. A zero would state a fact that was never measured, for exa
 | **Flip** | the spot level at which repriced net γ would change sign (the "L3 repriced flip"). |
 | **Flow** | the change in a book since the pre-open, from ΔOI only. |
 | **Flow-vs-book** | whether flow and book have the same sign; see the Net DEX chip. |
-| **γ-conc / Pin** | the strike holding the largest share of gross \|γ\|. |
+| **Pin** | the strike with the largest gross γ among strikes within 5 % of spot (gross γ = one gamma per strike × call plus put OI). Until 2026-11-25 the Pin was the net-γ top strike, labelled γ-conc. |
+| **Net peak** | the strike with the largest net γ; pin state, conviction and net concentration are computed on it. |
 | **Gross \|γ\|** | the sum of absolute γ exposure across strikes. |
 | **House sign** | the convention that dealers are net long calls and short puts. The board's dampening / amplifying words and the hedge figures assume it; NSE's participant data shows it only in some regimes (P2). |
 | **HHI** | the Herfindahl concentration index, Σ share². Only the Pin tab's "Concentration (HHI)" is a true HHI. The Gamma tab's "Top-strike share" is not, and is never called HHI. |

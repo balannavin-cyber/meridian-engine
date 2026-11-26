@@ -1,0 +1,2 @@
+| ADR-033 | Gamma V2 alongside V1 — versioned isolation (`gamma_v2.py`, `gex_strike_v2`, `gex_run_v2`) | Navin / Claude | **PROPOSED S107 2026-11-25 — full row above in Index.** Carried out in part on step-by-step approvals: tables applied and history backfilled 2026-11-25/26, Board Pin on the gross pin 2026-11-25. Writer hook, `p3b2` job, `v_gex2_*` views and Board tiles not approved. |
+| ADR-034+ | Next-free | — | Available |

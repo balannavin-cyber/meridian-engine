@@ -1,0 +1,1 @@
+| **Retail** | MR-S / **S14** next | live (web `363d2b8`, gateways `1474e8a`; Upstox code-only, flag off) | `claude/retail/` | `retail-platform` (`docs/STATE.md`, phase docs; records → `docs/research/retail/`), `retail-gateway` | `TD-MR-n` in `tech_debt_retail.md` (own repo; next free 127) | S13 (2026-11-23) |

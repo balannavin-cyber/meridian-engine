@@ -1,0 +1,47 @@
+{
+  "session": "S107",
+  "date": "2026-11-21 -> 2026-11-26 (engine lane; operator-called close; Doc Protocol v5.1, PK Protocol v1.1)",
+  "scope": "The Board Pin moved from a net quantity to the gross pin; a second gamma calculation (V2, one gamma per strike) was built beside V1 instead of correcting V1, its tables created and filled from the stored history; the order-flow lane's database role tape_w was given its password and its login proved. Intakes I-002 (register bodies) and I-003 (MR-OFL9, MR-S13, MR-PIN3) applied. No V1 engine code and no cron line changed.",
+  "origin_main_at_open": "6a69dbe (merge of PR #6, the pin lane's MR-PIN3 records). Since the S106 close 7c6e18c: a71f232, 3bc81fa, 0b9aa10 (PK Protocol v1 and v1.1), 1d71970 and 80adf5c (pin records, PR #2 7eb3ba5), 99044ff (I-002, PR #3 ae1914d), a1f2444 (PR #4 5a96195), a421b8a (PR #5 934fe44), 673f1d3 (PR #6 6a69dbe).",
+  "close_branch": "engine/s107-close, cut from origin/main 6a69dbe. It brings the engine's S107 package from branch pin/v2-check at 2574709 to main BY PATH (git checkout origin/pin/v2-check -- <paths>); the pin lane's check files on that branch are not taken. The operator merges; the merge sha is recorded in the next session's CURRENT.",
+  "adr_033": "docs/decisions/ADR-033-gamma-v2-versioned-isolation.md. PROPOSED, carried out in part on the operator's step-by-step approvals (ADR section 9). V1 frozen and named legacy; V2 = rule v1.2 in merdian_compute/gamma_v2.py into gex_strike_v2 / gex_run_v2; no V2 flip, regime, zone, expansion probability or pin score. Not approved: live writer hook, p3b2 job, v_gex2_* views, any Board tile on V2. Rulings of 2026-11-26: Board to V2 by family in one release; an eight-check gate before the hook is put up.",
+  "supabase": {
+    "views_applied": "v_gex_strike_rank_gross revision 3, applied 2026-11-23 (sql/2026-11-23_s107_v_gex_strike_rank_gross.sql; rule 25 def_length 5281, md5 aa4946064341c1d1ae835819d8cba858, PG 17.6; SELECT to merdian_ro only). v_gex_pin_gross, applied 2026-11-25 (sql/2026-11-25_s107_v_gex_pin_gross.sql; owner rights; plain 823 / e622b8bb88f5850e777da33aeec68a9d, pretty 803 / 59d5f21b2d7768a042f69998eac6fb32, PG 17.6; relacl authenticated=rm, marketview_ro=r, merdian_ro=r, service_role full, no anon; EXPLAIN 2.261 ms, index scans only; COMMENT applied).",
+    "tables_applied": "gex_strike_v2, gex_run_v2, p3b2_invariant_checks and function p3b2_sweep, one transaction, 2026-11-25 about 19:15 IST (sql/2026-11-25_s107_stepA_apply_ALL.sql, md5 8a42bfd34edf2cee7d5e92f6bc475374). RLS on all three; merdian_ro SELECT; service_role SELECT/INSERT/UPDATE on the two V2 tables; anon and authenticated nothing. NO pg_cron job.",
+    "data_written": "V2 backfill from gex_strike_snapshots by backfill_gamma_v2_from_gss.py, run from ~/v2-backfill on the production box: 19,050 runs and 2,679,771 strike rows, 2026-05-25 -> 2026-11-25 (NIFTY 9,553 runs / 1,078,346 rows / 123 days; SENSEX 9,497 / 1,601,425 / 124), stamp v2-1.2-gss, 0 input errors; dry rerun: already=19050 built=0. p3b2 sweep by hand, 240 calls: V0, V2, V3, V4 OK on 19,050; V1 OK on 10,067 and NOT_COMPUTED on 8,983; no FAIL.",
+    "tape_w": "Password set on the box by tape_w_password.py 2026-11-24 06:18 IST (/etc/tape-live/tape-w.env, 600 tapelive); login proof PASS (statement timeout 15 s, idle-in-transaction 10 s, connection limit 2); V1-V5 read; E-1 probe PASS; E-6 as_of comments applied. No grant changed in S107.",
+    "observed_not_changed": "PUBLIC grants by supabase_admin on cron.job, cron.job_run_details, pg_stat_statements, net._http_response, net.http_request_queue (TD-S107-NEW-3). EXECUTE on legacy gamma functions open to anon/authenticated/merdian_ro (TD-S107-NEW-7)."
+  },
+  "marketview": "Live d7642c2 from 2026-11-25 about 18:08 IST (commits caecef8 pin switch, cba0695 corrections, 457fc99 labels, d7642c2 manual v0.6); bundle index-CHOS8H-T.js; previous bundle index-DcEq-HfE.js; the replaced build kept at /var/www/marketview.bak-90cb618. Pin tile = gross pin (v_gex_pin_gross); the earlier pin shown as 'Net peak'; legacy/unvalidated and experimental labels. Build settings required since 2026-11-03: VITE_SUPABASE_URL=https://marketview.meridianalpha.in VITE_SUPABASE_ANON_KEY=proxy; the first S107 guard/promote scripts omitted them (TD-S107-NEW-1).",
+  "files_added": {
+    "merdian_compute/gamma_v2.py": "rule v1.2; sha256 ba611363f28ed8c3d89ccc3c3f0bfb99c87fb077d16c081f36d40f298bac4e95; standard library only; not exported from the package; nothing imports it",
+    "tests/test_gamma_v2_selftest.py": "ends 'SELFTEST PASS -- 28 mutants'",
+    "backfill_gamma_v2_from_gss.py": "one-off; dry run by default; refuses market hours and a range that includes today",
+    "gamma_v2_writer.py": "writer hook module; off unless MERDIAN_GAMMA_V2=1; AUTHORED, NOT APPLIED, NOT APPROVED",
+    "scripts/gamma_v2_writer_hook_patch.py": "patcher for compute_gamma_metrics_local.py (3 insertions; dry/--apply/--revert); NOT RUN",
+    "sql/2026-11-25_s107_stepA_apply_ALL.sql": "applied 2026-11-25",
+    "sql/2026-11-25_s107_gex_v2_tables.sql": "sectioned form of the tables part",
+    "sql/2026-11-25_s107_p3b2_invariant_checks.sql": "sectioned form of the checker part; the job section NOT applied",
+    "sql/2026-11-25_s107_v_gex_pin_gross.sql": "applied 2026-11-25",
+    "docs/decisions/ADR-033-gamma-v2-versioned-isolation.md": "PROPOSED; section 9 added at this close",
+    "docs/lovable_prompts/s107/": "three Lovable prompts (pin gross, legacy labels, round 2 not run), guard and promote scripts rev 2, manual v0.6 build script",
+    "docs/registers/intake/I003.md": "engine intake I-003",
+    "docs/research/s107/": "rulings_s107.md, engine_to_pin_LATEST.md (B3 result and writer provenance), engine_note_board_pin_switch_for_ofl_2026-11-26.md, S107_close_inputs.md, S108_session_prompt.md"
+  },
+  "files_changed": {
+    "docs/marketview_manual/marketview_user_manual.md": "v0.6 source",
+    "sql/2026-10-05_s90_v_dealer_flow_sim_sign_fix.sql": "header comment corrected (three lines); no statement changed"
+  },
+  "tds": "TDs_NEW=31, TDs_CLOSED=1. Board pin TD-PIN2-NEW-1..13 (13 closed at filing, block in tech_debt_history.md) and TD-PIN3-NEW-1..3; order flow TD-OFL9-NEW-1..8; engine TD-S107-NEW-1..7. S2: TD-PIN2-NEW-12 (production box 1,910 MB, no swap) and TD-S107-NEW-1 (Board deploy scripts without the proxy build settings). TD-PIN1-NEW-1 (S1) stays OPEN: framing corrected by AR D.61.1, fix chosen is V2 beside V1, live writer not switched on.",
+  "assumption_register": "AR section D.61 (3 rows, from intake I-002: one gamma per strike beats production against an own-solve reference and the vendor gamma is never missing; G2 is a stopgap and an input to the greeks study; the regime gate is computed and stored and nothing found acts on it) and section D.62 (8 rows: six refuted or not met, two confirmed).",
+  "enhancement_register": "ENH-149 body written (gross pin and the Board Pin on it; LIVE). ENH-150 minted (gamma V2 beside V1; BUILT and BACKFILLED; live writer not approved). Next-free ENH-151.",
+  "decision_index": "ADR-033 row added; next-free ADR-034+.",
+  "corrections_to_stale_entries": "Not edited in place (change_log is frozen, Rule 17; prose rows are prepend-only). files['merdian_pipeline_alert_daemon.py'].status says 'RUNNING (PID 19636 as of 2026-04-26 14:17 IST)': box reads of 2026-11-24/25 found the daemon present, unscheduled and not running; it last ran 2026-06-11. files has no entry for merdian_order_placer.py (TD-PIN2-NEW-9). build_trade_signal_local.py still runs from the box crontab and writes trade_allowed; no scheduled or running consumer was found (AR D.61.3; TD-PIN2-NEW-10).",
+  "writer_provenance": "The code that builds a gex_strike_snapshots row is identical, compared as syntax trees, at all ten commits that touched the writer between 2026-05-25 and 2026-11-25 (a776d8a, 4044410, 963b062, dc63bb3, b094fa2, ca79717, 11f2cbe, 4ed5671, c11b564, origin/main). What production ran on each date, and the date the writer moved from the Windows machine to the box, are not recorded (TD-S107-NEW-6).",
+  "rulings": "S107-A..Q, docs/research/s107/rulings_s107.md.",
+  "claude_md": "v1.80; no rule changed.",
+  "tracker": "v2.23; no section 2.2 row moved.",
+  "project_knowledge": "knowledge_size 1,702,983 / 2,000,000 (85.1 %) when the close opened. PK delta in docs/research/s107/S107_close_inputs.md.",
+  "open": "script_execution_log read (TD-S107-NEW-6); the operator's market-hours look at the live Board; the pin lane's step 9 and the operator's decision on V2; order-flow /tape anchor (STREAMS X1); E-4 contract INSERTs and the '' confirmation (X3); next Board round (TD-PIN3-NEW-3); data_contracts rows (TD-S107-NEW-2); ADR-033 status; PUBLIC grants; the signal builder; box memory; everything carried from S106 item 8 of CURRENT.",
+  "process": "Close package built in a read-only clone and tested on a scratch tree: every edit applied by scripts/patch_s107_docclose.py with a count==1 assertion on every anchor, EOL preserved, line and byte deltas printed, the CURRENT roll asserted byte-identical with its sha256, json.loads re-verified. The operator applies it in a worktree on Local, commits by explicit path and pushes; the engine chat cannot push."
+}

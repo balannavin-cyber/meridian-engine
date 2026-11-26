@@ -3,6 +3,9 @@
 -- S90 MV-1 — v_dealer_flow_sim reports dealer hedge flow with the WRONG SIGN.
 --
 -- AUTHORED, NOT APPLIED. Apply in the SQL editor after 16:00 IST.
+-- CORRECTION 2026-11-25 (S107): the line above is stale. THIS WAS APPLIED. The live definition read on 2026-10-31
+-- (sql/snapshots/adr032_pre_defs_2026-10-31.sql, md5 166948d6c7429d5c8765bf48c8f58d3d) computes (- net_gex) * pct,
+-- and the live md5 read on 2026-11-25 is the same value. The apply date between 2026-10-05 and 2026-10-31 is not recorded.
 --
 -- WHY. The view's header cites ADR-014 §2.3, which states:
 --   positive gex_cr = dealer LONG gamma  -> dealer SELLS rallies / BUYS dips

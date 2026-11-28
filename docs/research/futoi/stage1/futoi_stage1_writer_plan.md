@@ -324,8 +324,8 @@ argued in §12.
 | `docs/futoi/futoi_1m_install.md` | ~200 | operator install note, modelled on `docs/tape/L2_live_runner_install.md` (sections 0–11) |
 | `docs/futoi/futoi-1m.service.template` | ~64 | from `L2_live_runner_2b.service.template` |
 | `docs/futoi/futoi-1m.timer.template` | ~15 | from `L2_live_runner.timer.template` |
-| `tests/test_futoi_1m.py` | ~1,950 | the 17 guards, the fakes, `_futoi_selftest` |
-| `tests/futoi_1m_mutants.py` | ~400 | the 138 mutants, `--repeat`, `--only`, `--anchor-check` |
+| `tests/test_futoi_1m.py` | ~2,000 | the 17 guards, the fakes, `_futoi_selftest` |
+| `tests/futoi_1m_mutants.py` | ~410 | the 143 mutants, `--repeat`, `--only`, `--anchor-check` |
 | `tests/futoi/fixtures.json` | ~400 | §11 fixtures (recorded Stage 0a responses + the fault variants) |
 | `tests/run_offline.sh` | +2 steps | 42 → **44** |
 
@@ -1167,33 +1167,102 @@ are inconsistent, which is worse than having none:
 
 1. the `attempted` bitmaps are **pairwise disjoint** — a grid point is attempted at most once per day,
    because a restart resumes at the next grid point and never back-fills (tape's rule,
-   `services/tape_live/live_runner.py:656-659`);
-2. `no_response ⊆ attempted`, per instance;
-3. `popcount(A) + M == G`;
-4. **at most one** instance has `l != 0`, since only the owner of the final grid point can set it.
+   `services/tape_live/live_runner.py:656-659`). **Two sides, two independent authors**: bitmaps
+   written by different processes at different times. This is the strongest of the three.
+2. `no_response ⊆ attempted`, per instance. **Two sides, one author**: both bitmaps belong to the same
+   instance and are written by the same code path, so this catches a code defect — a grid point
+   counted unusable that was never counted attempted — and not a cross-process accounting defect.
+   Weaker than 1, and said so rather than left to look equally strong.
+3. **at most one** instance has `l != 0`, since only the owner of the final grid point can set it.
+   Two sides, two independent authors. Change 2's orphan-recovery path is the thing most likely to
+   break it, which is why it stays.
 
-If any fails: no verdict is computed, `exit_with_reason("DATA_ERROR", exit_code=4)` with reason
-`counter_invariant_violated`.
+**Invariant 3 of the previous revision — `popcount(A) + M == G` — is REMOVED (operator, change 1).**
+`M` is *defined* as `G - popcount(A)`, so the identity is true by construction: there is no input that
+makes it false, and therefore nothing it can detect. It was documentation wearing a check's clothes
+(rule 0). Its removal costs nothing, because the defect it was supposed to witness —
+`COUNTERS-NOT-PERSISTED` — is caught by clause 1 instead, and caught better (below).
+
+If any surviving invariant fails: no verdict is computed,
+`exit_with_reason("DATA_ERROR", exit_code=4)` with reason `counter_invariant_violated`.
 
 **The verdict PASSES only if all seven hold:**
 
-| # | Clause | Reason name on failure |
+| # | Clause | Where each side comes from | Reason name on failure |
+|---|---|---|---|
+| 1 | `rows_written == rows_expected_final` | **the table** vs **`counters.json`** — two independent sources | `row_count_mismatch` |
+| 2 | `S_dhan <= 30` (`MAX_DHAN_SKIPPED_GRID_POINTS`, Q-OP-5) | a counter vs a pre-registered constant — a **bound**, not an agreement | `dhan_skips_over_bound` |
+| 3 | the writer never stopped: **no latch file on disk**, no `overrun`, no Dhan auth sentinel on disk | the **files** `<out>/FUTOI_WRITE_LATCH.json` and `<out>/<day>/DHAN_AUTH_STOPPED`, **not** the in-memory flag | `writer_stopped` |
+| 4 | `max consecutive S_db < 3` (`MAX_CONSECUTIVE_SKIPS_DB`) | the persisted counter vs the constant — the **independent witness** for clause 3's stop rule, not a duplicate of it | `db_skip_run` |
+| 5 | `contracts_resolved_NIFTY > 0 and contracts_resolved_SENSEX > 0` (Q-OP-7) | the resolver's persisted result — an existence check | `symbol_unresolved` |
+| 6 | `distinct_ltp(expiry_rank = 1) >= MIN_DISTINCT_LTP` for each symbol with `contracts_resolved > 0`, computed by **`SELECT count(DISTINCT ltp) … GROUP BY symbol` against the table**, never from what the writer sent | **the table** vs the constant | `ltp_frozen` |
+| 7 | **`M == 0`** (change 3) | `counters.json` vs the constant | **`missed_grid_points`**, naming the count and the first and last missed grid point, so a short day says *why* it is short instead of reporting a smaller expected count |
+
+Clause 1 is an **equality** on two figures derived from two different places. Clause 7 is what stops
+that equality being satisfiable by a day that simply did less.
+
+**Two clauses changed in this revision, both because of change 1's audit:**
+
+- **Clause 3 now reads the latch and sentinel FILES, not the in-memory flag — and that was a real
+  defect, not a tightening.** After a restart the in-memory stop flag is clear by construction (a new
+  process), so a day that latched at 11:00 and restarted at 11:07 would have **passed** clause 3 on
+  the old wording. The on-disk latch is the only record that survives the process, and §9.1a already
+  guarantees it is written before the sentinel. Mutant `STOP-CLAUSE-MEMORY-ONLY`.
+- **Clause 6 is specified as a table query.** Counting distinct `ltp` over what the writer *sent* would
+  pass on a frozen vendor the writer dutifully forwarded 377 times — the exact ADR-030 shape the
+  clause exists for. Two `futoi_w` queries now run at session end, both day-scoped by RLS: the
+  `count(*)` of clause 1 and this one. Mutant `DISTINCT-LTP-FROM-TALLY`.
+
+**Clause 4's description is corrected.** The previous revision called it "redundant with 3 by
+construction", which was wrong. The stop state and the consecutive counter are written by two
+different lines; a defect that removes only the threshold test leaves the counter correct, so clause 4
+fires while clause 3 does not. It is the independent witness, not a duplicate — and calling it
+redundant would have invited someone to delete it.
+
+### 10.1a Which of these are agreements and which are bounds (operator, change 1 audit)
+
+The audit the operator asked for, stated so it is not re-derived later. A check whose two sides come
+from the same input can only restate that input.
+
+| Check | Shape | Can it fail? |
 |---|---|---|
-| 1 | `rows_written == rows_expected_final` | `row_count_mismatch` |
-| 2 | `S_dhan <= 30` (`MAX_DHAN_SKIPPED_GRID_POINTS`, Q-OP-5) | `dhan_skips_over_bound` |
-| 3 | the writer never stopped (no DB latch, no `overrun`, no Dhan auth stop) | `writer_stopped` |
-| 4 | `max consecutive S_db < 3` (`MAX_CONSECUTIVE_SKIPS_DB`) — redundant with 3 by construction, asserted separately so a stop that failed to latch is still caught | `db_skip_run` |
-| 5 | `contracts_resolved_NIFTY > 0 and contracts_resolved_SENSEX > 0` (Q-OP-7) | `symbol_unresolved` |
-| 6 | `distinct_ltp(expiry_rank = 1) >= MIN_DISTINCT_LTP` for each symbol with `contracts_resolved > 0` | `ltp_frozen` |
-| 7 | **`M == 0`** (change 3) | **`missed_grid_points`**, naming the count and the first and last missed grid point, so a short day says *why* it is short instead of reporting a smaller expected count |
+| ~~`popcount(A) + M == G`~~ | **tautology** — `M` is defined as `G − popcount(A)` | **No. REMOVED.** |
+| Invariant 1 (bitmaps disjoint) | agreement, two independent authors | yes |
+| Invariant 2 (`no_response ⊆ attempted`) | agreement, **one** author — catches a code defect only | yes, but narrower than 1 |
+| Invariant 3 (at most one `l != 0`) | agreement, two independent authors | yes |
+| Clause 1 | agreement, **table vs file** | yes — the plan's strongest check |
+| Clause 3 | agreement, **files vs the run's own behaviour**, after this revision | yes |
+| Clause 4 | agreement, counter vs stop state, after the correction above | yes |
+| Clause 6 | **table** vs a pre-registered constant | yes |
+| Clauses 2, 5, 7 | **bounds** against pre-registered constants, not agreements | yes, and that is all they claim |
 
-Clause 1 is an **equality** on two figures the writer derived independently — one from the database,
-one from the persisted counters. Clause 7 is what stops that equality being satisfiable by a day that
-simply did less.
+**No other tautology was found.** The distinction that matters and is easy to lose: a *bound* asserts a
+pre-registered belief about a measured quantity (legitimate, and rule 0 clause 3 governs it — the
+number is fixed before measuring); an *agreement* asserts that two independently produced figures
+match (stronger, and the only kind that can catch a writer lying about itself). Clauses 2, 5 and 7 are
+bounds and are not to be re-described as agreements; clause 1 is the agreement the whole verdict rests
+on, which is why both of its sides moved to external sources in this revision.
 
-**Which process writes the verdict.** The process that **attempts the final grid point (15:40) and
-reaches session end**. Exactly one can, because grid points are never re-attempted. It sets
-`verdict_written: true` in the counter file and exits 0 or 4 per §3.3.
+**Which process writes the verdict (operator, change 2 — ownership is by STATE, not by identity).**
+The previous rule — "the process that attempts the final grid point and reaches session end" — left a
+hole: if that process dies after 15:40 but before writing, the restart would find nothing to do and
+the day would end unverdicted. So:
+
+| At start-up, the process finds… | It does |
+|---|---|
+| grid points remaining, `verdict_written: false` | runs the session normally; writes the verdict when it reaches the end of the grid |
+| **no grid point left** (now is past 15:40:30 IST for `--day`, or the grid is exhausted) **and `verdict_written: false`** | **computes the verdict from `counters.json` and the table, writes it, sets `verdict_written: true`, and exits 0 or 4** per §3.3. It appends its own instance entry with an all-zero `attempted` bitmap, `l = 0` and `wrote_verdict: true`, so the file records who wrote it. It makes **no Dhan call** — there is nothing left to capture |
+| **`verdict_written: true`** | **exits 0 immediately**, reason `SUCCESS` with `expected_writes={}` (so `contract_met` is true and the ledger `status` reads OK) and `notes: verdict_already_written`. **No Dhan call, no write connection, no start-up check** — it reads one file and stops |
+
+That makes the verdict's owner "the first process to find the grid exhausted with no verdict written",
+of which the normal 15:40 owner is simply the common case. The chain composes with §3.3: the dying
+owner exits 1 or by signal, which **is** in the restart set, so systemd starts the recovery process;
+that process exits 0 or 4, both of which are not, so it stops there. If the recovery process itself
+dies, `StartLimitBurst=3`/`StartLimitIntervalSec=600` allows two further attempts and then stops — and
+the carry-forward below catches what the start limit gives up on. Guard `futoi-restart`; mutants
+`VERDICT-ORPHANED` (the no-grid-left-and-no-verdict branch removed, so the restart does nothing) and
+`VERDICT-ALREADY-WRITTEN-RERUNS` (a process with `verdict_written: true` runs the whole session and
+makes Dhan calls).
 
 **What an earlier process's ledger row records.** Not a verdict. Its row carries its own
 `exit_reason`/`exit_code` (`CRASH`/1, or 3 for a cap), and its `notes` say
@@ -1202,16 +1271,62 @@ no_response=<n>; b=<n>`. `contract_met` on that row is whatever `ExecutionLog` c
 read by anything — stated so that nobody later mistakes a deferred row's `contract_met` for the day's
 verdict.
 
-**If no process reaches 15:40, no verdict is written** — and an absent verdict is exactly the silent
-hole this plan keeps citing. Closed without a new scheduled job: at start-up, **after** the calendar
-gate and **before** the first Dhan call, the writer reads the **previous** trading day's
-`counters.json`; if it exists with `verdict_written: false`, it logs a WARNING and writes one
-`log_child_run` row (`core/execution_log.py:442-463`) for that prior day, carrying the computed
-`rows_expected_final` from the persisted counters, the reason `no_verdict_written`, and the day it
-belongs to. It does **not** read the prior day's rows from the table — `futoi_w` is day-scoped and
-cannot (§7.5), so `rows_written` for that day is reported as unavailable rather than guessed. Mutant
-`PRIOR-DAY-VERDICT-SKIPPED`. **This carry-forward is beyond the operator's ruling and is flagged as
-Q-OP-13** so it can be cut.
+### 10.1b The carry-forward, and its idempotency marker (RULED Q-OP-13 — keep; operator, change 3)
+
+Change 2 closes the case where a *restart* happens. It does not close the case where the box is down,
+the unit is stopped, or the start limit gives up: then no process of that day ever writes a verdict,
+and an absent verdict looks exactly like a day nobody has got round to reading.
+
+So, at start-up, **after** the calendar gate and **before** the first Dhan call, the writer scans for
+unverdicted earlier days and reports each one **once**.
+
+**Which days are scanned.** Every directory directly under `<out>` whose name matches
+`^\d{4}-\d{2}-\d{2}$` and is **strictly earlier than today IST**, whose `counters.json` parses and has
+`verdict_written: false` **and** no `verdict_carried: true`. Today's own directory is excluded by the
+date comparison, not by a flag, so a mid-session restart can never report the day it is running.
+
+**The bound on how many, and why there is one.** Two bounds, both pre-registered:
+
+- **Lookback window: 30 calendar days.** Directories older than that are not examined at all. A
+  start-up that walked an unbounded history would grow without limit, and a day nobody noticed for six
+  weeks is an operator conversation, not a log line. If any directory older than the window is
+  unverdicted, one WARNING names the count — so the window is visible rather than silent.
+- **At most 10 reported per start-up**, newest-first. Ten is above any outage the operator would plausibly
+  not notice (two trading weeks); if more than 10 qualify inside the window, the 10 newest are reported
+  and a WARNING names the total. The remainder are reported on subsequent days, because the marker is
+  only written for the ones actually reported.
+
+Cost at start-up: at most 30 `stat` calls, 10 file reads, 10 ledger rows and 10 read-backs — a few
+seconds at 09:10, before the 09:15 grid begins.
+
+**What is written, and in what order.** For each day reported:
+
+1. A WARNING line naming the day, its `rows_expected_final` computed from the persisted counters, and
+   that `rows_written` is **unavailable** — `futoi_w` is day-scoped and cannot read another day
+   (§7.5), so the carried row names a shortfall it cannot quantify. A guessed figure would be worse.
+2. One child ledger row (`log_child_run`, `core/execution_log.py:442-463`) with a `run_id` **minted for
+   this purpose**, so the row is findable by `run_id=eq.<uuid>`, reason `no_verdict_written`, and the
+   day it belongs to in `notes`.
+3. **A read-back**, over the resolver's existing `merdian_ro` connection:
+   `SELECT count(*) FROM public.script_execution_log WHERE run_id = '<uuid>'`. Measured this session —
+   `merdian_ro` can read that relation (a bounded count over the last three days returned 5,920), so
+   the read-back needs **no new credential and no new connection**.
+4. **Only if the read-back returns 1**, `{"verdict_carried": true, "carried_by_day": "<today>",
+   "carried_ledger_run_id": "<uuid>"}` is merged into that day's `counters.json` and written
+   atomically (temp file + `fsync` + `os.replace`), the same way the file is written during a session.
+
+Step 3 exists because `log_child_run` **swallows every exception and returns `None`**
+(`core/execution_log.py:462-463`), and `_finalise` warns rather than raises on an unreachable ledger
+(`:415-416`) — so the write cannot be known to have landed from the call alone. Writing the marker
+without the read-back would mark a day reported on the one occasion the report was lost.
+
+**The idempotency guarantee is one-directional, deliberately.** If the ledger or the read-back is
+unreachable the marker stays false and the day is reported again tomorrow: **duplicate reports are
+possible, a lost report is not.** The cost of the failure mode that remains — a day reported on several
+successive days while the ledger is down — is a handful of rows saying the same true thing; the cost of
+the other direction is a day of missing data nobody is told about. Stated as a choice, not an accident.
+Mutants `PRIOR-DAY-VERDICT-SKIPPED` (the scan removed) and `CARRY-REPEATS` (the marker not written, or
+written without the read-back, so the same day is reported on every subsequent start-up).
 
 On any failure the writer uses `exit_with_reason(..., exit_code=4)` — **never `complete()`** — with the
 clause's reason name, the reason/`status` pairing of §3.3, and **one child row** carrying
@@ -1219,13 +1334,16 @@ clause's reason name, the reason/`status` pairing of §3.3, and **one child row*
 `error_message`, so the failure is legible without opening the out dir. On success it calls
 `exit_with_reason("SUCCESS", exit_code=0)`, so exactly one code path sets the exit code.
 
-Guard `futoi-heartbeat` asserts each clause at its boundary, the exit code of §3.3, and the formula on
-planted counter files; guard `futoi-restart` asserts the cross-process union, the four invariants and
-the verdict owner. Mutants `VERDICT-NOT-IN-EXIT`, `VERDICT-IGNORES-SDHAN`, `VERDICT-IGNORES-BLOCKS`,
-`VERDICT-IGNORES-L`, `VERDICT-IGNORES-M`, `VERDICT-M-CLAUSE-REMOVED`, `VERDICT-SDHAN-AT-31`,
-`VERDICT-ONE-SYMBOL-PASSES`, `VERDICT-USES-GE`, `EXPECTED-AS-FLOOR`, `VERDICT-EXIT-RESTARTS`,
-`VERDICT-EXIT-IS-ONE`, `ROWS-WRITTEN-FROM-COUNTER`, `PRIOR-DAY-VERDICT-SKIPPED`, `VERDICT-PER-PROCESS`,
-`MISSED-NOT-COUNTED`, `COUNTERS-NOT-PERSISTED`, `COUNTERS-OVERLAP-UNCHECKED`, `L-SUMMED-TWICE` (§13).
+Guard `futoi-heartbeat` asserts each clause at its boundary, the exit code of §3.3, the formula on
+planted counter files, and the carry-forward's scan, bounds and marker; guard `futoi-restart` asserts
+the cross-process union, the **three** invariants and the three verdict-ownership states. Mutants
+`VERDICT-NOT-IN-EXIT`, `VERDICT-IGNORES-SDHAN`, `VERDICT-IGNORES-BLOCKS`, `VERDICT-IGNORES-L`,
+`VERDICT-IGNORES-M`, `VERDICT-M-CLAUSE-REMOVED`, `VERDICT-SDHAN-AT-31`, `VERDICT-ONE-SYMBOL-PASSES`,
+`VERDICT-USES-GE`, `EXPECTED-AS-FLOOR`, `VERDICT-EXIT-RESTARTS`, `VERDICT-EXIT-IS-ONE`,
+`ROWS-WRITTEN-FROM-COUNTER`, `STOP-CLAUSE-MEMORY-ONLY`, `DISTINCT-LTP-FROM-TALLY`,
+`PRIOR-DAY-VERDICT-SKIPPED`, `CARRY-REPEATS`, `VERDICT-PER-PROCESS`, `VERDICT-ORPHANED`,
+`VERDICT-ALREADY-WRITTEN-RERUNS`, `MISSED-NOT-COUNTED`, `COUNTERS-NOT-PERSISTED`,
+`COUNTERS-OVERLAP-UNCHECKED`, `L-SUMMED-TWICE` (§13).
 
 **Rows per day under the chosen shape: 1 on a clean day, 2 on a failing one, +1 per restart, +1 for a
 carried-forward prior day.** Under (a) it would be 377. None of them is watched automatically
@@ -1260,8 +1378,10 @@ All in `tests/futoi/fixtures.json`; the two recorded responses are the Stage 0a 
 | X19 | **a `$HOME/.merdian_ro_env`-shaped file at mode 0644**, and one at 0600 | hand, via `MERDIAN_RO_ENV_FILE` | §6.2: the mode gate re-implemented from `bin/roq.sh:84-88` refuses the first and accepts the second |
 | X20 | **a live heartbeat of today** (fresh `updated_utc`, own pid) and a **stale one** (dead pid, 7200 s old) | hand | §8.1 / §9.4: `--check` and `write-clear` refused against the first, accepted against the second, at the 180 s bound |
 | X21 | **kill at 11:00, restart at 11:07** — a 7-grid-point gap — plus a variant with a **10:00 first start** (`M = 45`) and a variant with **two** restarts | the sim clock | §10.1: the union of `attempted`, `M` counted over the gap, the four invariants, the verdict written by the process that owns 15:40, the earlier rows reading `verdict=deferred`, and clause 7 failing with `missed_grid_points` naming 11:00 and 11:06 |
-| X22 | **a prior day's `counters.json` with `verdict_written: false`** in the out dir | hand | §10.1 carry-forward: one `log_child_run` row for that day with reason `no_verdict_written`, and `rows_written` reported **unavailable** rather than guessed (`futoi_w` cannot read another day) |
-| X23 | **planted counter files that violate each invariant** — overlapping `attempted`, a `no_response` bit outside `attempted`, two instances with `l != 0`, and `popcount(A) + M != G` | hand | §10.1: each one refuses with `counter_invariant_violated` and exit 4, and **no verdict is computed** |
+| X22 | **an out dir holding several earlier day directories**: one with `verdict_written: false`; one already carrying `verdict_carried: true`; one with an unparsable `counters.json`; **14** unverdicted days inside the 30-day window; and one unverdicted day **35** days old | hand | §10.1b: exactly one child row for the first, **none** for the already-carried one, the 10 newest of the 14 reported with a WARNING naming 14, the 35-day-old one not examined with a WARNING naming it, and the marker written **only** after the read-back returns 1 |
+| X23 | **planted counter files that violate each surviving invariant** — overlapping `attempted`, a `no_response` bit outside `attempted`, and two instances with `l != 0` | hand | §10.1: each one refuses with `counter_invariant_violated` and exit 4, and **no verdict is computed**. (The fourth planted case of the previous revision, `popcount(A) + M != G`, is **gone**: `M` is derived from `A`, so the file cannot express it — which is exactly why the invariant was removed.) |
+| X24 | **the orphan**: the owner attempts 15:40 and is killed before writing the verdict, then a restart; plus a start against a counter file with `verdict_written: true`; plus a start at 15:45 on a day whose grid is exhausted and unverdicted | the sim clock | §10.1 ownership: the restart writes the verdict and exits 0 or 4 with `wrote_verdict: true` on its own all-zero instance; the `verdict_written: true` start exits 0 at once with `verdict_already_written` and **zero Dhan calls**; the 15:45 start writes the verdict without making a call |
+| X25 | **a latch written at 11:00, then a restart at 11:07** | the sim clock | Clause 3's correction: the restarted process has a clear in-memory flag, so only the on-disk latch can fail the clause — the case the previous revision's wording passed |
 
 ---
 
@@ -1288,9 +1408,9 @@ fail makes every guard over it vacuous.
 | `futoi-errors-dhan` | the 8 outcome classes of §9.1 each reach their class, with `429` and a `DH-904` body reaching the **same** class `dhan_throttle`; **every transient class leaves the writer running and writes no latch**; 5 consecutive ⇒ WARNING + heartbeat reason and a 6th call still made; **auth: one re-read then a retry at the next grid point, a stop only on the second consecutive, the stop day-scoped with no latch, and the next day calling again with no `write-clear` (X17)**; a non-JSON body does not vanish into a filtered pipe | `ImportError` |
 | `futoi-errors-db` | the §9.2 split; `MAX_CONSECUTIVE_SKIPS_DB` at its exact boundary (2 continues, 3 stops and latches); a connect failure with no SQLSTATE is classified by text; a `53300` reaches the **stop** tier | `ImportError` |
 | `futoi-latch` | the latch is written atomically before the sentinel; survives a restart on the **same** day and on the **next** day; `latch_unreadable` fails closed and is still clearable; `latch_write_failed` does not end the run; **`write-clear` and `--check` are both refused against a live heartbeat and accepted against a dead pid's stale one, at the 180 s bound (X20)**; **no Dhan outcome of any class ever writes this latch** | `ImportError` |
-| `futoi-heartbeat` | the heartbeat's keys and states; `expected_writes` is an **exact** figure, not a floor; **`rows_expected_final` equals `(G − S_dhan − M)·C − B − L` on planted counter files**; each of the **seven** verdict clauses at its boundary, each with its own reason name; **`rows_written` is read from the table and not from a tally**; **a failing verdict exits 4, not 1**; and **the unit template's `RestartPreventExitStatus` line contains 2, 3 and 4** (a static read of `docs/futoi/futoi-1m.service.template`) | `ImportError`; the template assertion fails because the template does not exist |
+| `futoi-heartbeat` | the heartbeat's keys and states; `expected_writes` is an **exact** figure, not a floor; **`rows_expected_final` equals `(G − S_dhan − M)·C − B − L` on planted counter files**; each of the **seven** verdict clauses at its boundary, each with its own reason name; **`rows_written` and `distinct_ltp` are both read from the table, not from tallies**; **clause 3 reads the latch and sentinel files, so it still fails after a restart (X25)**; **a failing verdict exits 4, not 1**; **the unit template's `RestartPreventExitStatus` line contains 2, 3 and 4** (a static read of `docs/futoi/futoi-1m.service.template`); and the carry-forward's **scan predicate, both bounds, and the marker-only-after-read-back order (X22)** | `ImportError`; the template assertion fails because the template does not exist |
 | `futoi-confined` | the DSN leaves `os.environ` at start and appears in no argv, no file, no log — including on a failing write whose stderr carries it; the child env is the allowlist; `dbwrite.py` imports no `subprocess` and no network module and matches no secret pattern; write SQL exists only in `dbwrite.py` | `ImportError` |
-| `futoi-restart` | a restart mid-session rebuilds the upsert model **from the table**, not from the files; skip counters are **not** silently reset; and (change 2) on X21 **the verdict is computed over the union of every instance's persisted counters, not over the last process's own**: `A` is the union, `M` counts the gap, the four §10.1 invariants hold and each can fail (X23), **exactly one** process writes `verdict_written: true` — the owner of the 15:40 grid point — and every earlier process's ledger row reads `verdict=deferred` | `ImportError` |
+| `futoi-restart` | a restart mid-session rebuilds the upsert model **from the table**, not from the files; skip counters are **not** silently reset; on X21 **the verdict is computed over the union of every instance's persisted counters, not over the last process's own** — `A` is the union, `M` counts the gap, the **three** §10.1 invariants hold and each can fail (X23), **exactly one** process sets `verdict_written: true`, and every earlier process's ledger row reads `verdict=deferred`; and (change 2) on X24 **all three ownership states behave**: grid-left-and-no-verdict runs the session, **no-grid-left-and-no-verdict writes the verdict with zero Dhan calls**, and verdict-already-written exits 0 at once with zero Dhan calls | `ImportError` |
 | `futoi-unchanged` | every tracked file other than the new ones and `tests/run_offline.sh` is **byte-identical to `b24ff39`**, by sha256 over a `git -c core.autocrlf=false archive b24ff39` export, with `capture_index_futures_snapshot_local.py` named explicitly | FAIL: the guard itself does not exist; once written it PASSES immediately and must be shown able to fail by a deliberate one-byte edit in a scratch copy |
 
 **Guard count: 17.** Recomputed from the revised enumeration above, not aimed at: the previous 15 plus
@@ -1307,7 +1427,7 @@ Two steps appended **after** step 42, never between an existing step and its `${
 
 ```
 echo "== 43/44 futoi 1m guards (17) (docs/research/futoi/stage1/futoi_stage1_writer_plan.md)"; python3 tests/test_futoi_1m.py | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
-echo "== 44/44 futoi 1m mutants (137 x5: 138 less 1 skipped on python < 3.11, each must be caught)"; python3 tests/futoi_1m_mutants.py --repeat 5 | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+echo "== 44/44 futoi 1m mutants (142 x5: 143 less 1 skipped on python < 3.11, each must be caught)"; python3 tests/futoi_1m_mutants.py --repeat 5 | tail -1; [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
 ```
 
 Registering a suite in this file is six things, not one, and all six are house rules with stated
@@ -1348,8 +1468,8 @@ with `--root`, and require **exit 1** (`run_guard()` at `:430`; `ok = rc == 1` a
 rule-23 refusal is **exit 2 and is NOT a catch** (`tests/tape_live_mutants.py:5-7`) — otherwise every
 mutant would "pass" when the suite is run in-window. Every repeat also runs each guard's **control** —
 an unpatched copy, which must exit 0 (`:449-459`). Flags `--repeat N`, `--only M-F-…` (`:439-441`).
-Verdict line: `FUTOI MUTANTS PASS (138/138 caught xN, 17/17 controls xN)`, or with a skip,
-`PASS (137/137 caught xN, 1 skipped (M-F-NUL-PASSES), 17/17 controls xN)` — a skipped mutant is
+Verdict line: `FUTOI MUTANTS PASS (143/143 caught xN, 17/17 controls xN)`, or with a skip,
+`PASS (142/142 caught xN, 1 skipped (M-F-NUL-PASSES), 17/17 controls xN)` — a skipped mutant is
 **never counted as caught**, and its guard still runs as a control (`:12-15`, `:480-486`).
 
 `COPY` (the paths cloned into each temp tree, from `:25-28`): `services/futoi`, `core`,
@@ -1382,23 +1502,25 @@ in a plan.
 | `futoi-errors-dhan` | 15 | `THROTTLE-STOPS`, **`DH904-NOT-THROTTLE`** (DH-904 classed anywhere but with 429), `TIMEOUT-STOPS`, `NONJSON-AS-EMPTY`, `NODATA-AS-ZERO-ROWS`, **`TRANSIENT-LATCHES`**, **`WARN-AT-WRONG-N`** (the 5-consecutive WARNING off by one), **`WARN-IS-A-STOP`**, `401-SKIPS`, `403-SKIPS`, `DH901-SKIPS`, **`AUTH-NO-REREAD`**, **`AUTH-STOPS-ON-FIRST`**, **`AUTH-LATCHES`**, **`AUTH-CARRIES-TO-NEXT-DAY`** | per-outcome class; no latch on disk after any transient; the 5th grid point WARNs and the 6th call is still made; on X17 `401`→`401` stops that day only, `401`→`200` does not stop, and the next day's run calls with no `write-clear` |
 | `futoi-errors-db` | 6 | `SKIP-TIER-WIDENED` (42501 skipped), `SKIP-TIER-NARROWED` (57014 stops), `THRESHOLD-OFF-BY-ONE`, `SKIPS-CUMULATIVE-NOT-CONSECUTIVE`, `SQLSTATE-NOT-PARSED`, `CONNECT-NOT-CLASSIFIED` | the boundary pair (2 continues, 3 stops and latches) and the reason string |
 | `futoi-latch` | 8 | `LATCH-NOT-WRITTEN`, `LATCH-NOT-ATOMIC`, `LATCH-CORRUPT-OPENS`, `CLEAR-KEEPS-LATCH`, `CLEAR-WHILE-ALIVE`, `LATCH-DAY-SCOPED`, **`CLEAR-STALE-600`** (the bound left at tape's value), **`CHECK-DURING-SESSION`** (the `--check` refusal removed) | next-day run is still stopped; the corrupt latch gives `latch_unreadable`; on X20, `write-clear` and `--check` rc differ between the live and the stale heartbeat, and a 181 s-old heartbeat is clearable while a 179 s-old one is not |
-| `futoi-heartbeat` | 18 | `HB-NOT-WRITTEN`, `HB-NOT-UPDATED`, `VERDICT-NOT-IN-EXIT` (uses `complete()`), `EXPECTED-AS-FLOOR`, `LEDGER-ROW-PER-MINUTE`, `CONTRACT-ADJUSTED-TO-OBSERVED`, `VERDICT-IGNORES-SDHAN`, `VERDICT-IGNORES-BLOCKS`, `VERDICT-IGNORES-L`, `VERDICT-SDHAN-AT-31`, `VERDICT-ONE-SYMBOL-PASSES`, `VERDICT-USES-GE` (clause 1 becomes `>=`, i.e. a floor), **`VERDICT-IGNORES-M`** (the `− M` term dropped from the formula), **`VERDICT-M-CLAUSE-REMOVED`** (clause 7 deleted while the formula keeps `M`), **`VERDICT-EXIT-RESTARTS`** (the template's `RestartPreventExitStatus` drops the `4`), **`VERDICT-EXIT-IS-ONE`** (the verdict failure returns 1), **`ROWS-WRITTEN-FROM-COUNTER`** (the tally used instead of the table), **`PRIOR-DAY-VERDICT-SKIPPED`** (the carry-forward removed) | exit **4** on a short day; exactly 1 (or 2) ledger rows; `rows_expected_final` equals the hand-computed figure on planted counter files; each clause flips at its boundary with its own reason name. The two `M` mutants are distinct and each has its own witness: `VERDICT-IGNORES-M` is caught on X21's 10:00-start variant (`M = 45`), where dropping the term makes clause 1 pass on a 332-point day; `VERDICT-M-CLAUSE-REMOVED` is caught on the same fixture, where keeping the term makes clause 1 pass and only clause 7 can still fail. `ROWS-WRITTEN-FROM-COUNTER` is caught on X21: a tally reset by the restart cannot see the first process's rows |
+| `futoi-heartbeat` | 21 | `HB-NOT-WRITTEN`, `HB-NOT-UPDATED`, `VERDICT-NOT-IN-EXIT` (uses `complete()`), `EXPECTED-AS-FLOOR`, `LEDGER-ROW-PER-MINUTE`, `CONTRACT-ADJUSTED-TO-OBSERVED`, `VERDICT-IGNORES-SDHAN`, `VERDICT-IGNORES-BLOCKS`, `VERDICT-IGNORES-L`, `VERDICT-SDHAN-AT-31`, `VERDICT-ONE-SYMBOL-PASSES`, `VERDICT-USES-GE` (clause 1 becomes `>=`, i.e. a floor), `VERDICT-IGNORES-M`, `VERDICT-M-CLAUSE-REMOVED`, `VERDICT-EXIT-RESTARTS` (the template's `RestartPreventExitStatus` drops the `4`), `VERDICT-EXIT-IS-ONE` (the verdict failure returns 1), `ROWS-WRITTEN-FROM-COUNTER`, `PRIOR-DAY-VERDICT-SKIPPED`, **`STOP-CLAUSE-MEMORY-ONLY`** (clause 3 reads the in-memory flag instead of the files), **`DISTINCT-LTP-FROM-TALLY`** (clause 6 counts what the writer sent), **`CARRY-REPEATS`** (the marker not written, or written before the read-back) | exit **4** on a short day; exactly 1 (or 2) ledger rows; `rows_expected_final` equals the hand-computed figure on planted counter files; each clause flips at its boundary with its own reason name. The two `M` mutants are distinct and each has its own witness: `VERDICT-IGNORES-M` is caught on X21's 10:00-start variant (`M = 45`), where dropping the term makes clause 1 pass on a 332-point day; `VERDICT-M-CLAUSE-REMOVED` is caught on the same fixture, where keeping the term makes clause 1 pass and only clause 7 can still fail. `ROWS-WRITTEN-FROM-COUNTER` is caught on X21: a tally reset by the restart cannot see the first process's rows. `STOP-CLAUSE-MEMORY-ONLY` is caught on X25 and **only** on X25 — on an unrestarted day the flag and the file agree, which is why the fixture exists. `DISTINCT-LTP-FROM-TALLY` is caught on X15 extended to 377 identical sends. `CARRY-REPEATS` is caught on X22's already-carried day: the mutant reports it a second time |
 | `futoi-confined` | 6 | `PW-IN-ARGV`, `DSN-LEFT-IN-ENV`, `STDERR-RAW`, `SUBPROCESS-IMPORT`, `WRITE-SQL-OUTSIDE-MODULE`, `ENV-ALLOWLIST-WIDENED` | the secret needle in argv/files/log; `ast` import scan; the per-module constant scan |
-| `futoi-restart` | 10 | `MODEL-FROM-FILES`, `MISSED-NOT-RECORDED`, `DOUBLE-COUNT`, `RESUME-REWRITES-DAY`, `SKIPS-RESET`, **`VERDICT-PER-PROCESS`** (the verdict computed from this process's counters only), **`MISSED-NOT-COUNTED`** (the gap's grid points never enter `attempted`, so `M` reads 0), **`COUNTERS-NOT-PERSISTED`** (the counter file written at session end instead of every grid point, so a kill loses the instance), **`COUNTERS-OVERLAP-UNCHECKED`** (the pairwise-disjoint invariant removed), **`L-SUMMED-TWICE`** (the at-most-one-`l` invariant removed) | the model at the second `start()` equals what the fake table holds, exactly; on X21 the union is 377 − 7 and `M == 7`, which `VERDICT-PER-PROCESS` and `MISSED-NOT-COUNTED` each break differently — the first by scoping the sum, the second by scoping the set; `COUNTERS-NOT-PERSISTED` is caught because the killed instance's entry is absent, which trips invariant 3 (`popcount(A) + M != G`) rather than silently shrinking the expectation |
+| `futoi-restart` | 12 | `MODEL-FROM-FILES`, `MISSED-NOT-RECORDED`, `DOUBLE-COUNT`, `RESUME-REWRITES-DAY`, `SKIPS-RESET`, `VERDICT-PER-PROCESS` (the verdict computed from this process's counters only), `MISSED-NOT-COUNTED` (the gap's grid points never enter `attempted`, so `M` reads 0), **`COUNTERS-NOT-PERSISTED`** (the counter file written at session end instead of every grid point, so a kill loses the instance — **re-pointed, see below**), `COUNTERS-OVERLAP-UNCHECKED` (the pairwise-disjoint invariant removed), `L-SUMMED-TWICE` (the at-most-one-`l` invariant removed), **`VERDICT-ORPHANED`** (the no-grid-left-and-no-verdict branch removed, so the restart after the owner's death does nothing), **`VERDICT-ALREADY-WRITTEN-RERUNS`** (a process with `verdict_written: true` runs the whole session and makes Dhan calls) | the model at the second `start()` equals what the fake table holds, exactly; on X21 the union is 377 − 7 and `M == 7`, which `VERDICT-PER-PROCESS` and `MISSED-NOT-COUNTED` each break differently — the first by scoping the sum, the second by scoping the set. **`COUNTERS-NOT-PERSISTED` is now caught by clause 1, not by the removed invariant** (operator, change 1): the killed instance's rows are **in the table** while its `attempted` bits are **absent from the file**, so `rows_written` exceeds `rows_expected_final` by exactly that instance's row count and the equality fails. That is a strictly better witness than the tautology was — it names the discrepancy in rows rather than in bookkeeping. On X24, `VERDICT-ORPHANED` leaves `verdict_written: false` after the restart ends, and `VERDICT-ALREADY-WRITTEN-RERUNS` is caught by a non-zero Dhan call count |
 | `futoi-unchanged` | 2 | `TOUCH-EXISTING` (one byte in `capture_index_futures_snapshot_local.py`), `DIGEST-NOT-COMPARED` | the sha256 set difference names the file |
 | `futoi-monitor-gap` | 2 | **`MONITOR-SCOPE-UNCHECKED`** (the assertion on `:463` removed), **`MONITOR-ASSUMES-COVERED`** (the guard asserts coverage instead of the gap) | the first leaves the guard unable to notice a widened filter; the second makes it fail on the tree as it is, which is the whole point of pinning a measured fact rather than a hope |
 
-**Mutant count: 5+8+6+10+7+8+6+8+13+15+6+8+18+6+10+2+2 = 138**, over **17** guards. Recomputed from
+**Mutant count: 5+8+6+10+7+8+6+8+13+15+6+8+21+6+12+2+2 = 143**, over **17** guards. Recomputed from
 the revised enumeration, not aimed at. The trail, so the number is auditable rather than asserted:
-**102** at the first revision → **127** after the first round of operator changes (+25) → **138** now
-(+11), the 11 being 2 for change 1's exit codes (`VERDICT-EXIT-RESTARTS`, `VERDICT-EXIT-IS-ONE`), 5 for
-change 2's cross-process verdict (`VERDICT-PER-PROCESS`, `COUNTERS-NOT-PERSISTED`,
-`COUNTERS-OVERLAP-UNCHECKED`, `L-SUMMED-TWICE`, `ROWS-WRITTEN-FROM-COUNTER`), 3 for change 3's `M`
-(`VERDICT-IGNORES-M`, `VERDICT-M-CLAUSE-REMOVED`, `MISSED-NOT-COUNTED`) and 1 for the carry-forward
-(`PRIOR-DAY-VERDICT-SKIPPED`, which Q-OP-13 may cut — if it is cut the count is **137** and this line
-is corrected). Change 4 added no mutant: X6 was a wrong fixture description, and the behaviour it now
-describes is already asserted by `AUTH-STOPS-ON-FIRST` and `TRANSIENT-LATCHES`. **Guard count stays
-17** — both changed guards already existed. If the build finds a mutant that cannot be written as a
+**102** at the first revision → **127** (+25, first round of operator changes) → **138** (+11, second
+round) → **143** now (+5), the 5 being 1 for change 2's orphan branch (`VERDICT-ORPHANED`), 1 for its
+already-written branch (`VERDICT-ALREADY-WRITTEN-RERUNS`), 1 for change 3's idempotency marker
+(`CARRY-REPEATS`), and **2 the audit in change 1 turned up as defects rather than as additions** —
+`STOP-CLAUSE-MEMORY-ONLY` (clause 3 could not fail after a restart, because it read a flag the restart
+had cleared) and `DISTINCT-LTP-FROM-TALLY` (clause 6 had never been specified as a table query, so it
+could have been satisfied by a frozen source the writer faithfully forwarded).
+
+**Removing invariant 3 removed no mutant.** `COUNTERS-NOT-PERSISTED` is re-pointed to clause 1 and is
+caught better there. **Guard count stays 17** — every changed guard already existed; the three changes
+add fixtures and assertions, not new guards. If the build finds a mutant that cannot be written as a
 single exact-string patch, the count changes and this line is corrected, never the enumeration bent to
 keep the total. (Tape's comparable figure is 134 mutants over its 12 stage-2b guards,
 `docs/tape/L2_live_runner_plan.md:485-487`.)
@@ -1471,8 +1593,8 @@ Each step is named so a partial run is visible as a partial run (the S81 part-ru
 | G0 | Stage 0a artefacts committed with `git add -f` **at the lane close, on the operator's word** (RULED, Q-OP-9), so this plan's citations resolve | **operator's word, CC runs it** | the four cited files tracked at the branch head |
 | G1 | **Red first**: all 17 guards written, every one FAILS for the reason §12 names. `_futoi_selftest` passes with no writer present | CC | `GUARDS FAIL (0/17)` — except the two guards that are green from the first minute (`futoi-unchanged`, `futoi-monitor-gap`), whose red-first evidence is a scratch-copy edit recorded separately |
 | G2 | **Green**: `services/futoi/` written; 17/17 guards PASS | CC | `FUTOI GUARDS PASS (17/17)` |
-| G3 | `--anchor-check`: every mutant's anchor matches exactly once, every named guard exists | CC | `138 / 17 / 0 bad` |
-| G4 | Mutants **×1**: 138 caught, 17 controls PASS | CC | `MUTANTS PASS (137/137 caught x1, 1 skipped (…-NUL-…), 17/17 controls x1)` on 3.10; 138/138 on 3.12 |
+| G3 | `--anchor-check`: every mutant's anchor matches exactly once, every named guard exists | CC | `143 / 17 / 0 bad` |
+| G4 | Mutants **×1**: 143 caught, 17 controls PASS | CC | `MUTANTS PASS (142/142 caught x1, 1 skipped (…-NUL-…), 17/17 controls x1)` on 3.10; 143/143 on 3.12 |
 | G5 | **LF export check**: `git -c core.autocrlf=false archive <sha>` into a clean dir; G2 and G4 re-run there; record `CODE_SHA` | CC | identical results; `CODE_SHA` recorded |
 | G6 | **Replay**: the recorded Stage 0a responses driven through a whole simulated day (X1 for the morning, X4 for the contract set), 377 grid points, `--db-write` against the fake table; rows in the CSV == rows in the fake table == `rows_expected_final`. **This step also measures peak RSS** — reported with `/usr/bin/time -v` or `resource.getrusage`, under `( ulimit -v 700000 )` | CC | `REPLAY PASS`, the three counts equal and stated, **and the measured peak RSS printed** |
 | G6a | **Set the two memory numbers from G6's measurement** (RULED, Q-OP-1): `MemoryMax = 2 × peak`, floor `256M`; `--rss-cap-mb = 1.5 × peak`. Written into `docs/futoi/futoi-1m.service.template` and into §3 of this plan, with the measurement beside them | CC | both numbers present, each shown as the arithmetic on the G6 figure, never as a bare constant |
@@ -1484,7 +1606,7 @@ Each step is named so a partial run is visible as a partial run (the S81 part-ru
 | G12 | `--check` with `--db-write`, as `ssm-user`, **outside market hours and with no session running** | **operator** | `CHECK PASS`; a deliberate wrong-role attempt prints R1 and writes nothing; **a `--check` attempted against a live heartbeat is REFUSED, not run** (§8.1) |
 | G13 | **First live day**: manual `systemctl start`, operator watching | **operator** | heartbeat advances every minute; **`M == 0`**; the ledger row completes with **exit 0**; `rows_written == rows_expected_final`; `S_dhan ≤ 30`; `distinct_ltp ≥ 5` on rank 1 for both symbols; `counters.json` has one instance with `verdict_written: true`; **no `FUTOI_WRITE_LATCH.json` on disk** |
 | G13a | **The restart path, deliberately, on the first live day after 15:41** — `systemctl kill` the unit mid-session is NOT done on a live day; instead re-run the day under `--clock sim` from the real `counters.json` and confirm the union arithmetic against the table | **operator** | the re-run's `rows_expected_final` equals the live day's, computed from the same counter file |
-| G14 | **Second live day**, unwatched except for the two files | **operator** | the heartbeat and the ledger row for day 2 exist and the verdict passed, which is the only evidence that nothing from day 1 latched or carried. **Also: no `no_verdict_written` child row for day 1** (§10.1 carry-forward), which is the evidence that day 1's verdict was actually written rather than merely assumed |
+| G14 | **Second live day**, unwatched except for the two files | **operator** | the heartbeat and the ledger row for day 2 exist and the verdict passed, which is the only evidence that nothing from day 1 latched or carried. **Also: no `no_verdict_written` child row for day 1** (§10.1b), which is the evidence that day 1's verdict was actually written rather than merely assumed — and **day 1's `counters.json` carries no `verdict_carried` key**, which is the evidence the scan looked and found nothing to report rather than not looking |
 
 CC never applies DDL, never installs, never enables a timer, never runs G7 or G9, never opens
 `/home/ssm-user/meridian-engine/.env`, never edits `monitor_orchestrator_health.py` on the branch, and
@@ -1546,6 +1668,17 @@ runs in. Listing them is the point: a guard that cannot fail is documentation (r
     (`futoi_w` is day-scoped), so the carried row names a shortfall it cannot quantify. That is
     deliberate — a guessed figure would be worse — but it means the carried row is a flag, not a
     measurement.
+18. **Invariant 2 (`no_response ⊆ attempted`).** Both sides are written by the same instance in the
+    same code path, so it catches a code defect and not an accounting one (§10.1a). It has no mutant
+    of its own beyond `COUNTERS-OVERLAP-UNCHECKED`'s sibling, and nothing proves it would catch a real
+    one.
+19. **The orphan chain's exhaustion.** §10.1's recovery composes with `StartLimitBurst=3`: if the
+    recovery process itself dies three times inside 600 s, systemd stops trying and §10.1b's
+    carry-forward picks it up the next trading day. **Neither half of that hand-off is exercised** —
+    X24 tests one recovery, not three failures followed by a next-day carry.
+20. **The carry-forward's read-back under a failing ledger.** X22 plants a successful read-back; the
+    branch where the read-back returns 0 and the marker is deliberately left false is asserted, and the
+    duplicate-report behaviour it implies is not driven over successive simulated days.
 
 ## 17. Not tested
 
@@ -1598,19 +1731,23 @@ runs in. Listing them is the point: a guard that cannot fail is documentation (r
 | Q-OP-11 | `--check` **refused** during a live session; `CONNECTION LIMIT 1` **stays** | §8.1, §9.4, §12 `futoi-latch` |
 | Q-OP-12 | Out dir **`/home/ssm-user/futoi-1m`** | §3.2, §10.1, G11 |
 
+| Q-OP-13 | **Keep** the carry-forward, with the idempotency marker | §10.1b |
+| Q-OP-14 | **Accepted**: two exit mutants (`VERDICT-EXIT-RESTARTS` on the template, `VERDICT-EXIT-IS-ONE` on the code path) | §3.3, §13 |
+
 ### New, raised by this revision
 
-- **Q-OP-13** The **carry-forward verdict** (§10.1, last paragraph) is beyond the ruling. It closes a
-  hole the ruling exposed: if no process reaches 15:40, **no verdict is written at all**, and an absent
-  verdict looks exactly like a day nobody has got round to reading. The carry-forward makes the next
-  trading day's start-up read the previous day's `counters.json` and, if `verdict_written` is false,
-  write one `log_child_run` row with reason `no_verdict_written`. Cost: one extra file read at start-up
-  and at most one extra ledger row per gap. **Keep it, or cut it** — if cut, the mutant count drops to
-  137 and §17 item 10 becomes the whole of the mitigation.
-- **Q-OP-14** §3.3 adds **two** mutants where change 1 asked for one (`VERDICT-EXIT-RESTARTS` on the
-  unit template, `VERDICT-EXIT-IS-ONE` on the code path). They are different defects with different
-  witnesses and one exact-string patch cannot express both. Flagged only so the extra one is a choice
-  on the record rather than a quiet addition.
+- **Q-OP-15** Change 1's audit found **two live defects**, not just the tautology it was aimed at, and
+  both are now fixed in place rather than filed: **clause 3 could not fail after a restart** (it read
+  an in-memory flag the restart had cleared, so a day that latched at 11:00 and restarted at 11:07
+  would have passed it), and **clause 6 was never specified as a table query** (so it could have been
+  satisfied by a frozen vendor the writer faithfully forwarded 377 times). Both fixes add a table or
+  file read at session end. Flagged because they are changes to the *checks the operator has already
+  reviewed*, not new scope — if either fix is unwanted, the clause must be deleted rather than left in
+  its old form, because in its old form it asserts nothing on the day it matters.
+- **Q-OP-16** The carry-forward scan's two bounds — **30 calendar days** of lookback and **10 days
+  reported per start-up** — are pre-registered guesses, not measurements, and they sit in the start-up
+  path before the 09:15 grid. Confirm, or set them. The failure direction is deliberate: a day beyond
+  either bound is named in a WARNING rather than silently skipped.
 
 ### For the engine — unchanged, and to the engine intake (operator, 2026-11-28)
 
@@ -1653,17 +1790,17 @@ and replay a 75-cycle offline day; futoi has 377 grid points of ≤6 tiny rows a
 a few hundred kB. Scaling by the dominant term (fixture I/O and replay, which futoi does not have) and
 keeping interpreter start-up and tree copy, the estimate is **3 to 8 s per run**:
 
-- `(138 + 17) × 5 = 775` runs × 3–8 s ≈ **39 to 103 minutes** for G7.
-- G4 (×1): 155 runs ≈ **8 to 21 minutes**.
+- `(143 + 17) × 5 = 800` runs × 3–8 s ≈ **40 to 107 minutes** for G7.
+- G4 (×1): 160 runs ≈ **8 to 21 minutes**.
 - G9 (whole offline suite): the existing 42 steps measured wall 1:48 with peak RSS 331,740 kB
-  (`tests/run_offline.sh:88`); the two futoi steps add the G7 figure, so ≈ **43 to 107 minutes** total.
+  (`tests/run_offline.sh:88`); the two futoi steps add the G7 figure, so ≈ **44 to 111 minutes** total.
 
-The run count has moved twice: `585` at the first draft (102 + 15), `720` after the first round of
-operator changes (127 + 17), `775` now (138 + 17). The **per-run** estimate of 3–8 s has not changed
-and is still the weakest figure here, so the whole movement is run count and the whole uncertainty is
-still the per-run number. X21 and X23 are the first fixtures that drive a multi-process run inside one
-guard, which is the one thing that could push the per-run figure above the range — the `--only` run in
-G2 is what settles it.
+The run count has moved three times: `585` at the first draft (102 + 15), `720` (127 + 17), `775`
+(138 + 17), `800` now (143 + 17). The **per-run** estimate of 3–8 s has not changed and is still the
+weakest figure here, so the whole movement is run count and the whole uncertainty is still the per-run
+number. X21, X23, X24 and X25 drive multi-process runs inside one guard, and X22 walks up to 30
+directories — those are the things that could push the per-run figure above the range. The `--only`
+run in G2 is what settles it, and this section is corrected from that figure before G7 is asked for.
 
 Build effort, also an estimate: tape 2b ran 2026-11-14 → 2026-11-23 across several operator gates.
 futoi's surface is roughly one third (one table not four, no epochs, no S3, no rebuild scope), so

@@ -30,9 +30,9 @@ A2 = "    option_rows_raw = fetch_option_chain_rows(run_id, expected_symbol=expe
 I2 = "    _V2_STASH[\"rows\"] = option_rows_raw  # ADR-033 V2 hook: V1 does not read this\n"
 A3 = "    print(f\"gex_strike_snapshots_rows_written={gss_n}\")\n"
 I3 = (
-    "    try:  # ADR-033 V2 hook: after the V1 writes; never raises; never changes the exit code\n"
+    "    try:  # ADR-033 V2 hook: after the V1 writes; time-bounded; never raises; never changes the exit code\n"
     "        if gamma_v2_writer is not None:\n"
-    "            _v2_status = gamma_v2_writer.write_v2(\n"
+    "            _v2_status = gamma_v2_writer.write_v2_bounded(\n"
     "                SUPABASE, _V2_STASH.get(\"rows\"), run_id=result.run_id, symbol=result.symbol, ts=result.ts,\n"
     "                expiry_date=result.expiry_date,\n"
     "                dte=(result.gss_rows[0].get(\"dte\") if result.gss_rows else None),\n"

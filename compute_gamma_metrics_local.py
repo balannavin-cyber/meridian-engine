@@ -19,6 +19,11 @@ import requests as _requests_for_vix
 # rule `script_execution_log_contract`. Pattern mirrored from
 # ingest_option_chain_local.py and capture_spot_1m.py.
 from core.execution_log import ExecutionLog
+try:  # ADR-033 V2 hook (optional; a failed import must not affect V1)
+    import gamma_v2_writer
+except Exception as _v2_import_error:  # noqa: BLE001
+    gamma_v2_writer = None
+_V2_STASH: dict = {}  # ADR-033 V2 hook: the chain rows of this run, for the hook only
 from core.ts_parse import parse_pg_ts  # S103 TD-S101-NEW-3 / TD-S101-NEW-4: IST session bound of the prior-row read
 from zoneinfo import ZoneInfo  # S103
 # S101_MERDIAN_COMPUTE: pure compute lives in merdian_compute/gamma.py (moved byte-identical, S101);
@@ -371,6 +376,7 @@ def compute_gamma_metrics(
     run_type: str = "FULL",
 ) -> GammaMetricsResult:
     option_rows_raw = fetch_option_chain_rows(run_id, expected_symbol=expected_symbol)
+    _V2_STASH["rows"] = option_rows_raw  # ADR-033 V2 hook: V1 does not read this
 
     if not option_rows_raw:
         available = fetch_symbols_for_run_id(run_id)
@@ -631,6 +637,16 @@ def main() -> int:
         )
     log.record_write(GSS_TARGET_TABLE, gss_n)
     print(f"gex_strike_snapshots_rows_written={gss_n}")
+    try:  # ADR-033 V2 hook: after the V1 writes; time-bounded; never raises; never changes the exit code
+        if gamma_v2_writer is not None:
+            _v2_status = gamma_v2_writer.write_v2_bounded(
+                SUPABASE, _V2_STASH.get("rows"), run_id=result.run_id, symbol=result.symbol, ts=result.ts,
+                expiry_date=result.expiry_date,
+                dte=(result.gss_rows[0].get("dte") if result.gss_rows else None),
+                spot=result.spot, shadow=USE_SHADOW)
+            print(f"gamma_v2_status={_v2_status}")
+    except Exception as _v2_error:  # noqa: BLE001  # ADR-033 V2 hook
+        print(f"gamma_v2_status=HOOK_ERROR {type(_v2_error).__name__}: {_v2_error}", file=sys.stderr)
 
     print("=" * 72)
     print("MERDIAN - Local Python compute_gamma_metrics")

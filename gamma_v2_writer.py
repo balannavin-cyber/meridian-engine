@@ -9,11 +9,18 @@ OFF by default. It runs only when the environment variable MERDIAN_GAMMA_V2 is "
 code can be deployed before the tables exist. Skipped under --shadow (no shadow V2 tables).
 
 Writes ONLY public.gex_strike_v2 and public.gex_run_v2. Reads nothing from the database.
+
+The hook calls write_v2_bounded, which runs write_v2 in a daemon thread and waits at most
+MERDIAN_GAMMA_V2_TIMEOUT_S seconds (default 10). A V2 write that hangs therefore costs the V1
+run at most that long, and nothing raised inside the thread (BaseException included) reaches
+the caller. A write that times out may leave strike rows with no run row: p3b2 V0 reports that
+run and the stored-row backfill repairs it.
 """
 from __future__ import annotations
 
 import os
 import sys
+import threading
 from typing import Any
 
 from merdian_compute import gamma_v2
@@ -21,6 +28,7 @@ from merdian_compute import gamma_v2
 STRIKE_TABLE = "gex_strike_v2"
 RUN_TABLE = "gex_run_v2"
 CHUNK = 500
+DEFAULT_TIMEOUT_S = 10.0
 
 
 def enabled() -> bool:
@@ -65,3 +73,37 @@ def write_v2(client: Any, option_rows_raw: list[dict[str, Any]] | None, *, run_i
     except Exception as e:  # noqa: BLE001 -- the hook must never break the V1 run
         print(f"[gamma_v2] run_id={run_id} symbol={symbol} WRITE_ERROR: {type(e).__name__}: {e}", file=sys.stderr)
         return "WRITE_ERROR"
+
+
+def timeout_s() -> float:
+    """Seconds the hook may wait for the V2 write. Unset, unparsable or non-positive -> the default."""
+    try:
+        v = float(os.getenv("MERDIAN_GAMMA_V2_TIMEOUT_S", "").strip())
+    except ValueError:
+        return DEFAULT_TIMEOUT_S
+    return v if v > 0 else DEFAULT_TIMEOUT_S
+
+
+def write_v2_bounded(client: Any, option_rows_raw: list[dict[str, Any]] | None, *, shadow: bool = False, **ident: Any) -> str:
+    """write_v2 with a time bound. Returns write_v2's status, or TIMEOUT after <s>s, or THREAD_ERROR."""
+    if not enabled():
+        return "DISABLED"
+    if shadow:
+        return "SKIPPED_SHADOW"
+    box: dict[str, str] = {}
+
+    def _work() -> None:
+        try:
+            box["status"] = write_v2(client, option_rows_raw, shadow=shadow, **ident)
+        except BaseException as e:  # noqa: BLE001 -- nothing from V2 may reach the V1 run
+            box["status"] = f"THREAD_ERROR {type(e).__name__}"
+
+    limit = timeout_s()
+    t = threading.Thread(target=_work, name="gamma_v2_write", daemon=True)
+    t.start()
+    t.join(limit)
+    if t.is_alive():
+        print(f"[gamma_v2] run_id={ident.get('run_id')} symbol={ident.get('symbol')} TIMEOUT after {limit:g}s "
+              f"(the write is abandoned; p3b2 V0 will report the run if it is incomplete)", file=sys.stderr)
+        return f"TIMEOUT after {limit:g}s"
+    return box.get("status", "THREAD_ERROR no status")
